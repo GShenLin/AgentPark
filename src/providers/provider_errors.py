@@ -1,0 +1,2 @@
+class ProviderImageAttachmentError(RuntimeError):
+    pass

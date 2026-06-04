@@ -1,0 +1,8 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8788
+  },
+  "startup_graph_id": "default",
+  "startup_graph_name": "default"
+}

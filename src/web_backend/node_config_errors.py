@@ -1,0 +1,2 @@
+class NodeConfigWriteError(RuntimeError):
+    pass
