@@ -4,6 +4,7 @@ the biggest part of this is you can use any module to build any workflow to bene
 
 # Setup Project :   Current Python Version ：Python3.14
 pip install -e .
+build_and_run.bat
 
 - Production Mode （FastAPI ）
 
