@@ -197,7 +197,7 @@ def test_hyper3d_runtime_builds_documented_body_fields():
 
 
 def test_hyper3d_runtime_request_json_uses_keyword_url(monkeypatch):
-    import src.providers.hyper3d_rodin_runtime as runtime_module
+    import src.providers.hyper3d_runtime_base as runtime_base
     from src.providers.hyper3d_rodin_runtime import Hyper3DRodinRuntime
 
     calls = []
@@ -209,7 +209,7 @@ def test_hyper3d_runtime_request_json_uses_keyword_url(monkeypatch):
     class DummyHost:
         config = {"timeoutMs": 120000}
 
-    monkeypatch.setattr(runtime_module, "request_json", fake_request_json)
+    monkeypatch.setattr(runtime_base, "request_json", fake_request_json)
 
     runtime = Hyper3DRodinRuntime(DummyHost())
     result = runtime._request_json(url="https://api.hyper3d.com/api/v2/rodin", headers={"A": "B"}, body=b"body")
@@ -220,3 +220,18 @@ def test_hyper3d_runtime_request_json_uses_keyword_url(monkeypatch):
     assert calls[0]["headers"] == {"A": "B"}
     assert calls[0]["body"] == b"body"
     assert calls[0]["timeout_sec"] == 120
+
+
+def test_hyper3d_runtime_base_resolves_poll_config_strictly():
+    import pytest
+
+    from src.providers.hyper3d_rodin_runtime import Hyper3DRodinRuntime
+
+    class DummyHost:
+        config = {"pollIntervalSec": "2.5", "modelGenerationPollIntervalSec": "7", "maxWaitSec": "0"}
+
+    runtime = Hyper3DRodinRuntime(DummyHost())
+
+    assert runtime._resolve_poll_interval_seconds("pollIntervalSec", "modelGenerationPollIntervalSec", default=5) == 2.5
+    with pytest.raises(ValueError, match="maxWaitSec must be greater than 0"):
+        runtime._resolve_max_wait_seconds("maxWaitSec", "modelGenerationMaxWaitSec", default=1800)

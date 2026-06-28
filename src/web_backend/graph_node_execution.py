@@ -3,17 +3,23 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+from src.runtime_cancellation import CancellationRequested
+
 from .service_host import HostBoundService
 from .route_parser import NodeRouteParser
 from .node_runtime_event_sink import NodeRuntimeEventSink
 from .node_memory_store import NodeMemoryPersistenceError
+from .node_request_tracking import record_node_request_completion_or_log
 from .shared import (
     _preview_text,
+    _finish_node_stop_requested,
+    _is_node_stop_requested,
     _set_node_config_inflight,
     _set_node_config_last_message,
     _set_node_config_runtime_event,
     _touch_node_config_last_run_at,
     _transition_node_config_to_idle,
+    _read_json_dict,
     _write_json_dict,
     build_text_envelope,
     envelope_preview,
@@ -21,6 +27,10 @@ from .shared import (
     normalize_envelope,
     _run_node_logic_with_routes,
 )
+
+
+class NodeStopRequested(CancellationRequested):
+    pass
 
 
 class GraphNodeExecution(HostBoundService):
@@ -41,6 +51,9 @@ class GraphNodeExecution(HostBoundService):
         )
         from_node = str(pending_item.get("from") or "").strip()
 
+        if os.path.exists(config_path):
+            cfg = _read_json_dict(config_path)
+
         type_id = str(cfg.get("type_id") or "").strip()
         if not type_id:
             _set_node_config_inflight(config_path, None)
@@ -55,6 +68,7 @@ class GraphNodeExecution(HostBoundService):
             "input_port_index": to_input_index,
             "from_output_index": from_output_index,
             "from_output_port_index": from_output_index,
+            "source": source,
         }
         self._inject_node_config_into_context(context, cfg)
         self._log_graph_event(
@@ -84,28 +98,83 @@ class GraphNodeExecution(HostBoundService):
             stream_last_text=str(pending_full or ""),
             log_graph_event=self._log_graph_event,
             append_tool_call_entry=self._append_node_tool_call_entry,
+            update_live_output=self.core.node_live_outputs.update,
+            clear_live_output=self.core.node_live_outputs.clear,
+            publish_live_event=self.core.node_live_outputs.publish_event,
         )
+        cancel_event = self.core.node_cancellations.begin(config_path)
+        if _is_node_stop_requested(config_path):
+            cancel_event.set()
+
+        def stop_requested() -> bool:
+            return bool(cancel_event.is_set() or _is_node_stop_requested(config_path))
+
+        def handle_runtime_event(payload: dict) -> None:
+            if stop_requested():
+                raise NodeStopRequested()
+            runtime_event_sink.handle(payload)
+            if stop_requested():
+                raise NodeStopRequested()
+
+        def finish_stop_requested() -> bool:
+            if not _finish_node_stop_requested(config_path):
+                return False
+            self._log_graph_event(
+                safe_graph_id,
+                "node_stop_completed",
+                trace_id=trace_id,
+                node_instance_id=entry,
+                node_type_id=type_id,
+                depth=depth,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            return True
 
         started = time.monotonic()
         try:
-            context["stream_callback"] = runtime_event_sink.handle
+            context["stream_callback"] = handle_runtime_event
+            context["cancel_event"] = cancel_event
+            context["cancel_check"] = stop_requested
+            if stop_requested():
+                raise NodeStopRequested()
             routed = _run_node_logic_with_routes(nodes_dir, type_id, pending_message, context)
+            if finish_stop_requested():
+                return
             output_message = normalize_envelope((routed or {}).get("message"), default_role="assistant")
+            output_message["trace_id"] = trace_id
             routed_items = (routed or {}).get("routes") if isinstance(routed, dict) else []
             if not isinstance(routed_items, list):
                 routed_items = []
+        except CancellationRequested:
+            finish_stop_requested()
+            return
         except Exception as e:
+            if finish_stop_requested():
+                return
             _set_node_config_inflight(config_path, None)
             _transition_node_config_to_idle(config_path)
             error_text = f"{type(e).__name__}: {str(e)}"
-            _set_node_config_last_message(config_path, f"Error: {error_text}")
+            error_message = f"Error: {error_text}"
+            _set_node_config_last_message(config_path, error_message)
+            record_node_request_completion_or_log(
+                config_path,
+                request_id=trace_id,
+                depth=depth,
+                role="system",
+                message=error_message,
+                state="idle",
+                log_error=self._log_graph_event,
+                graph_id=safe_graph_id,
+                node_id=entry,
+                node_type_id=type_id,
+            )
             _touch_node_config_last_run_at(config_path)
             try:
                 self._append_node_memory_entry(
                     safe_graph_id,
                     entry,
                     "system",
-                    build_text_envelope(f"Error: {error_text}", role="system"),
+                    {**build_text_envelope(error_message, role="system"), "trace_id": trace_id},
                 )
             except NodeMemoryPersistenceError as memory_error:
                 self._log_memory_persistence_error(
@@ -129,6 +198,12 @@ class GraphNodeExecution(HostBoundService):
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
             return
+        finally:
+            self.core.node_live_outputs.clear(safe_graph_id, entry)
+            self.core.node_cancellations.end(config_path, cancel_event)
+
+        if finish_stop_requested():
+            return
 
         _set_node_config_inflight(config_path, None)
         _transition_node_config_to_idle(config_path)
@@ -136,6 +211,18 @@ class GraphNodeExecution(HostBoundService):
         final_message = output_full or pending_full or envelope_preview(output_message) or envelope_preview(pending_message)
         _set_node_config_runtime_event(config_path, None)
         _set_node_config_last_message(config_path, final_message)
+        record_node_request_completion_or_log(
+            config_path,
+            request_id=trace_id,
+            depth=depth,
+            role="assistant",
+            message=final_message,
+            state="idle",
+            log_error=self._log_graph_event,
+            graph_id=safe_graph_id,
+            node_id=entry,
+            node_type_id=type_id,
+        )
         _touch_node_config_last_run_at(config_path)
         try:
             self._append_node_memory_entry(safe_graph_id, entry, "assistant", output_message)
@@ -150,6 +237,13 @@ class GraphNodeExecution(HostBoundService):
             )
             raise
         duration_ms = int((time.monotonic() - started) * 1000)
+        self.core.node_live_outputs.publish_event(
+            safe_graph_id,
+            entry,
+            "node_output",
+            {"type": "node_output", "duration_ms": duration_ms, "text": final_message},
+            trace_id=trace_id,
+        )
         skip_propagation = self._should_skip_propagation(output_message)
         self._log_graph_event(
             safe_graph_id,
@@ -163,6 +257,29 @@ class GraphNodeExecution(HostBoundService):
             output_preview=_preview_text(envelope_preview(output_message)),
             skip_propagation=skip_propagation,
         )
+        goal_result = self._evaluate_node_goal_after_persist(
+            graph_id=safe_graph_id,
+            node_id=entry,
+            node_type_id=type_id,
+            config_path=config_path,
+            config=cfg,
+            input_message=pending_message,
+            output_message=output_message,
+            trace_id=trace_id,
+            depth=depth,
+            wake_event=wake_event,
+        )
+        if isinstance(goal_result, dict) and goal_result.get("should_continue"):
+            self._log_graph_event(
+                safe_graph_id,
+                "propagate_skipped",
+                trace_id=trace_id,
+                node_instance_id=entry,
+                node_type_id=type_id,
+                depth=depth,
+                reason="goal_continuation",
+            )
+            return
 
         if skip_propagation:
             self._log_graph_event(

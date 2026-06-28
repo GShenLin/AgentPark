@@ -1,4 +1,4 @@
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || ''
+import { getActiveApiBase } from './api'
 
 export type UploadedFileItem = {
   path: string
@@ -24,7 +24,7 @@ export async function uploadFiles(files: File[], traceId = ''): Promise<{ files:
     body.append('trace_id', safeTraceId)
   }
 
-  const res = await fetch(`${API_BASE}/api/files/upload`, {
+  const res = await fetch(`${getActiveApiBase()}/api/files/upload`, {
     method: 'POST',
     body,
   })

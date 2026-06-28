@@ -8,10 +8,6 @@ from .shared import *
 
 
 class NodeOpsDomain(DomainBase):
-    def __init__(self, core, graph_runtime):
-        super().__init__(core, graph_runtime)
-        object.__setattr__(self, "_service_targets_cache", None)
-
     def _iter_service_targets(self) -> tuple[object, ...]:
         try:
             cached = object.__getattribute__(self, "_service_targets_cache")

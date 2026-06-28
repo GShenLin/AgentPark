@@ -1,6 +1,13 @@
 from src.service_host import HostBoundService
-from src.tool_call_protocol import from_responses_function_call
-from src.tool_call_protocol import to_openai_tool_call
+from src.providers.responses_input_items import build_responses_function_call_input_item
+from src.providers.responses_input_items import build_responses_function_call_output_item
+from src.providers.responses_input_items import build_responses_message_input_item
+from src.tool.tool_call_protocol import ensure_json_text
+from src.tool.tool_call_protocol import from_responses_function_call
+from src.tool.tool_call_protocol import from_responses_function_call_parse_failure
+from src.tool.tool_call_protocol import ToolCallEnvelope
+from src.tool.tool_call_protocol import ToolCallParseFailure
+from src.tool.tool_call_protocol import to_openai_tool_call
 
 
 class DoubaoResponsesMapping(HostBoundService):
@@ -77,6 +84,31 @@ class DoubaoResponsesMapping(HostBoundService):
         content = message.get("content")
 
         if role in {"system", "user", "assistant"}:
+            if role == "assistant" and isinstance(message.get("tool_calls"), list) and message.get("tool_calls"):
+                items = []
+                content_item = self._message_content_to_responses_item(role, content)
+                if content_item is not None:
+                    items.append(content_item)
+                items.extend(self._openai_tool_calls_to_responses_items(message.get("tool_calls")))
+                return items or None
+            return self._message_content_to_responses_item(role, content)
+
+        if role == "tool":
+            call_id = str(message.get("tool_call_id") or message.get("call_id") or "").strip()
+            if not call_id:
+                return None
+            tool_name = str(message.get("name") or "").strip() or "tool"
+            output = self._compact_tool_result_for_submission_if_needed(
+                tool_name=tool_name,
+                call_id=call_id,
+                content=content,
+            )
+            return build_responses_function_call_output_item(call_id, output)
+
+        return None
+
+    def _message_content_to_responses_item(self, role, content):
+        if role in {"system", "user", "assistant"}:
             parts = []
             if isinstance(content, str):
                 text = content.strip()
@@ -103,23 +135,61 @@ class DoubaoResponsesMapping(HostBoundService):
                             parts.append({"type": "input_image", "image_url": url})
             if not parts:
                 return None
-            return {"role": role, "content": parts}
-
-        if role == "tool":
-            call_id = str(message.get("tool_call_id") or message.get("call_id") or "").strip()
-            if not call_id:
-                return None
-            output = self._ensure_json_text(content)
-            return {"type": "function_call_output", "call_id": call_id, "output": output}
-
+            return build_responses_message_input_item(role=role, content=parts)
         return None
+
+    def _openai_tool_calls_to_responses_items(self, tool_calls):
+        items = []
+        for call in tool_calls if isinstance(tool_calls, list) else []:
+            if not isinstance(call, dict):
+                continue
+            function_item = call.get("function")
+            if not isinstance(function_item, dict):
+                continue
+            call_id = str(call.get("id") or "").strip()
+            name = str(function_item.get("name") or "").strip()
+            if not call_id or not name:
+                continue
+            item_id = str(call.get("item_id") or call.get("output_item_id") or "").strip()
+            status = str(call.get("status") or "").strip()
+            items.append(
+                build_responses_function_call_input_item(
+                    call_id=call_id,
+                    name=name,
+                    arguments=function_item.get("arguments") if function_item.get("arguments") is not None else {},
+                    item_id=item_id,
+                    status=status,
+                )
+            )
+        return items
 
     def _build_responses_input(self, messages):
         items = []
         for message in messages if isinstance(messages, list) else []:
             item = self._message_to_responses_input_item(message)
-            if item is not None:
+            if isinstance(item, list):
+                items.extend(item)
+            elif item is not None:
                 items.append(item)
+        return items
+
+    def _build_responses_function_call_input_items(self, function_calls):
+        items = []
+        for call in function_calls if isinstance(function_calls, list) else []:
+            if not isinstance(call, (ToolCallEnvelope, ToolCallParseFailure)):
+                continue
+            raw = call.raw if isinstance(call.raw, dict) else {}
+            item_id = str(raw.get("id") or "").strip()
+            status = str(raw.get("status") or "").strip()
+            items.append(
+                build_responses_function_call_input_item(
+                    call_id=call.call_id,
+                    name=call.name,
+                    arguments=call.arguments_json,
+                    item_id=item_id,
+                    status=status,
+                )
+            )
         return items
 
     def _parse_responses_output(self, result):
@@ -138,7 +208,14 @@ class DoubaoResponsesMapping(HostBoundService):
                 continue
             item_type = str(item.get("type") or "").strip().lower()
             if item_type == "function_call":
-                call = from_responses_function_call(item, provider="doubao_responses")
+                try:
+                    call = from_responses_function_call(item, provider="doubao_responses")
+                except ValueError as exc:
+                    call = from_responses_function_call_parse_failure(
+                        item,
+                        provider="doubao_responses",
+                        error=exc,
+                    )
                 if call is None:
                     continue
                 function_calls.append(call)

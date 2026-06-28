@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from src.base_planer import BasePlaner
+from src.base_planner import BasePlaner
 from src.config_loader import ConfigLoader
 from src.message_protocol import (
     build_text_envelope,
@@ -49,16 +49,19 @@ from .runtime_paths import (
     _get_runtime_root,
 )
 from .state_store import (
+    _cancel_node_work,
     _dequeue_node_pending_to_working,
+    _finish_node_stop_requested,
+    _is_node_stop_requested,
     _set_node_config_last_message,
     _set_node_config_runtime_event,
     _touch_node_config_last_run_at,
     _set_node_config_inflight,
     _recover_node_config_inflight,
+    _recover_node_config_startup_state,
     _recover_node_config_stale_working,
     _append_jsonl_line,
     _append_node_pending,
-    _parse_node_state,
     _pop_node_pending,
     _preview_text,
     _read_json_dict,
@@ -109,15 +112,18 @@ __all__ = [
     "_get_resource_root",
     "_get_runtime_root",
     "_append_jsonl_line",
+    "_cancel_node_work",
     "_dequeue_node_pending_to_working",
+    "_finish_node_stop_requested",
+    "_is_node_stop_requested",
     "_set_node_config_last_message",
     "_set_node_config_runtime_event",
     "_touch_node_config_last_run_at",
     "_set_node_config_inflight",
     "_recover_node_config_inflight",
+    "_recover_node_config_startup_state",
     "_recover_node_config_stale_working",
     "_append_node_pending",
-    "_parse_node_state",
     "_pop_node_pending",
     "_preview_text",
     "_read_json_dict",

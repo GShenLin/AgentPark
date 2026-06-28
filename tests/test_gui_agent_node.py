@@ -228,11 +228,12 @@ class _FakeVerifier:
 
 def test_gui_agent_node_verify_finished_requires_structured_done_or_finished_action(tmp_path):
     from nodes.gui_agent_node import Node
+    from nodes.gui_agent_run import GuiAgentRun
 
     seed = _write_sample_png(tmp_path / "verify_seed.png")
-    node = Node()
+    run = GuiAgentRun(Node(), "", {})
 
-    done, _reason = node._verify_finished(
+    done, _reason = run._verify_finished(
         verifier_agent=_FakeVerifier("still not complete yet"),
         verify_prompt="check",
         instruction="task",
@@ -242,7 +243,7 @@ def test_gui_agent_node_verify_finished_requires_structured_done_or_finished_act
     )
     assert done is False
 
-    done, _reason = node._verify_finished(
+    done, _reason = run._verify_finished(
         verifier_agent=_FakeVerifier('{"done": true, "reason": "ok"}'),
         verify_prompt="check",
         instruction="task",
@@ -252,7 +253,7 @@ def test_gui_agent_node_verify_finished_requires_structured_done_or_finished_act
     )
     assert done is True
 
-    done, _reason = node._verify_finished(
+    done, _reason = run._verify_finished(
         verifier_agent=_FakeVerifier('{"action": "finished", "content": "done"}'),
         verify_prompt="check",
         instruction="task",
@@ -262,7 +263,7 @@ def test_gui_agent_node_verify_finished_requires_structured_done_or_finished_act
     )
     assert done is True
 
-    done, _reason = node._verify_finished(
+    done, _reason = run._verify_finished(
         verifier_agent=_FakeVerifier('{"content": "done"}'),
         verify_prompt="check",
         instruction="task",
@@ -272,7 +273,7 @@ def test_gui_agent_node_verify_finished_requires_structured_done_or_finished_act
     )
     assert done is True
 
-    done, _reason = node._verify_finished(
+    done, _reason = run._verify_finished(
         verifier_agent=_FakeVerifier('{"name":"finished","parameters":{"content":"done"}}'),
         verify_prompt="check",
         instruction="task",
@@ -285,6 +286,7 @@ def test_gui_agent_node_verify_finished_requires_structured_done_or_finished_act
 
 def test_gui_agent_node_call_planner_includes_previous_feedback_image(tmp_path):
     from nodes.gui_agent_node import Node
+    from nodes.gui_agent_run import GuiAgentRun
 
     class _FakePlanner:
         def __init__(self):
@@ -299,9 +301,9 @@ def test_gui_agent_node_call_planner_includes_previous_feedback_image(tmp_path):
     screenshot = _write_sample_png(tmp_path / "before.png")
     feedback = _write_sample_png(tmp_path / "after_marked.png")
     planner = _FakePlanner()
-    node = Node()
+    run = GuiAgentRun(Node(), "", {})
 
-    response = node._call_planner(
+    response = run._call_planner(
         planner_agent=planner,
         instruction="open google",
         step_index=2,
@@ -322,63 +324,57 @@ def test_gui_agent_node_call_planner_includes_previous_feedback_image(tmp_path):
 
 
 def test_gui_agent_node_parse_action_requires_action_line():
-    from nodes.gui_agent_node import Node
+    from nodes.gui_agent_actions import parse_action
 
-    node = Node()
-    thought, action = node._parse_action("action=click(point='<point>940 15</point>')")
+    thought, action = parse_action("action=click(point='<point>940 15</point>')")
     assert thought == ""
     assert action == ""
 
 
 def test_gui_agent_node_parse_action_rejects_json_action():
-    from nodes.gui_agent_node import Node
+    from nodes.gui_agent_actions import parse_action
 
-    node = Node()
-    thought, action = node._parse_action('{"action":"click","point":[150,18]}')
+    thought, action = parse_action('{"action":"click","point":[150,18]}')
     assert thought == ""
     assert action == ""
 
 
 def test_gui_agent_node_parse_action_args_rejects_csv_click():
-    from nodes.gui_agent_node import Node
+    from nodes.gui_agent_actions import parse_action_args
 
-    node = Node()
-    parsed = node._parse_action_args("click, 203, 15, minimize button", width=1920, height=1080)
+    parsed = parse_action_args("click, 203, 15, minimize button", width=1920, height=1080)
     assert parsed.get("name") != "click"
     assert parsed.get("point") is None
 
 
 def test_gui_agent_node_parse_action_args_rejects_open_app_positional():
-    from nodes.gui_agent_node import Node
+    from nodes.gui_agent_actions import parse_action_args, validate_action_args
 
-    node = Node()
-    parsed = node._parse_action_args("open_app('Unreal Engine')", width=1920, height=1080)
+    parsed = parse_action_args("open_app('Unreal Engine')", width=1920, height=1080)
     assert parsed.get("name") == "open_app"
-    assert node._validate_action_args(parsed) == "unsupported action: open_app"
+    assert validate_action_args(parsed) == "unsupported action: open_app"
 
 
 def test_gui_agent_node_parse_action_args_supports_type_text_alias():
-    from nodes.gui_agent_node import Node
+    from nodes.gui_agent_actions import parse_action_args
 
-    node = Node()
-    parsed = node._parse_action_args("type(text='google.com', target='url_bar')", width=1920, height=1080)
+    parsed = parse_action_args("type(text='google.com', target='url_bar')", width=1920, height=1080)
     assert parsed.get("name") == "type"
     assert parsed.get("content") == "google.com"
     assert parsed.get("target") == "url_bar"
 
 
 def test_gui_agent_node_validate_hotkey_is_unsupported():
-    from nodes.gui_agent_node import Node
+    from nodes.gui_agent_actions import parse_action_args, validate_action_args
 
-    node = Node()
-    parsed = node._parse_action_args("hotkey(key='ctrl l')", width=1920, height=1080)
+    parsed = parse_action_args("hotkey(key='ctrl l')", width=1920, height=1080)
     assert parsed.get("name") == "hotkey"
-    assert node._validate_action_args(parsed) == "unsupported action: hotkey"
+    assert validate_action_args(parsed) == "unsupported action: hotkey"
 
 
 def test_gui_agent_node_repairs_unsupported_action(monkeypatch, tmp_path):
     import nodes.base_node as base_node
-    import nodes.gui_agent_node as gui_agent_node
+    import nodes.gui_agent_run as gui_agent_run
     from nodes.gui_agent_node import Node
 
     monkeypatch.setattr(base_node, "_get_runtime_root", lambda: str(tmp_path))
@@ -402,7 +398,7 @@ def test_gui_agent_node_repairs_unsupported_action(monkeypatch, tmp_path):
             return self._responses.pop(0)
 
     fake_agent = _FakePlanner()
-    monkeypatch.setattr(gui_agent_node, "create_agent", lambda *_args, **_kwargs: fake_agent)
+    monkeypatch.setattr(gui_agent_run, "create_agent", lambda *_args, **_kwargs: fake_agent)
 
     seed = _write_sample_png(tmp_path / "seed_repair.png")
     message = {
@@ -449,7 +445,7 @@ def test_gui_agent_node_repairs_unsupported_action(monkeypatch, tmp_path):
 
 def test_gui_agent_node_repairs_invalid_action_args(monkeypatch, tmp_path):
     import nodes.base_node as base_node
-    import nodes.gui_agent_node as gui_agent_node
+    import nodes.gui_agent_run as gui_agent_run
     from nodes.gui_agent_node import Node
 
     monkeypatch.setattr(base_node, "_get_runtime_root", lambda: str(tmp_path))
@@ -473,7 +469,7 @@ def test_gui_agent_node_repairs_invalid_action_args(monkeypatch, tmp_path):
             return self._responses.pop(0)
 
     fake_agent = _FakePlanner()
-    monkeypatch.setattr(gui_agent_node, "create_agent", lambda *_args, **_kwargs: fake_agent)
+    monkeypatch.setattr(gui_agent_run, "create_agent", lambda *_args, **_kwargs: fake_agent)
 
     seed = _write_sample_png(tmp_path / "seed_invalid_args.png")
     message = {
@@ -519,7 +515,7 @@ def test_gui_agent_node_repairs_invalid_action_args(monkeypatch, tmp_path):
 
 def test_gui_agent_node_planner_timeout_stops_loop(monkeypatch, tmp_path):
     import nodes.base_node as base_node
-    import nodes.gui_agent_node as gui_agent_node
+    import nodes.gui_agent_run as gui_agent_run
     from nodes.gui_agent_node import Node
 
     monkeypatch.setattr(base_node, "_get_runtime_root", lambda: str(tmp_path))
@@ -533,7 +529,7 @@ def test_gui_agent_node_planner_timeout_stops_loop(monkeypatch, tmp_path):
             return "Thought: late\nAction: wait"
 
     slow_agent = _SlowPlanner()
-    monkeypatch.setattr(gui_agent_node, "create_agent", lambda *_args, **_kwargs: slow_agent)
+    monkeypatch.setattr(gui_agent_run, "create_agent", lambda *_args, **_kwargs: slow_agent)
 
     seed = _write_sample_png(tmp_path / "seed_timeout.png")
     message = {

@@ -1,17 +1,18 @@
-from src.node_routing import normalize_node_output
+from src.message_protocol import envelope_text
+from src.web_backend.route_parser import NodeRouteParser
 
 
-def test_normalize_node_output_requires_object():
+def test_parse_node_output_requires_object():
     try:
-        normalize_node_output("hello")
+        NodeRouteParser.parse_node_output("hello")
         assert False, "expected ValueError for non-object output"
     except ValueError as exc:
         assert "routes" in str(exc)
 
 
-def test_normalize_node_output_requires_routes_field():
+def test_parse_node_output_requires_routes_field():
     try:
-        normalize_node_output(
+        NodeRouteParser.parse_node_output(
             {
                 "display": "x",
             }
@@ -21,8 +22,8 @@ def test_normalize_node_output_requires_routes_field():
         assert "routes" in str(exc)
 
 
-def test_normalize_node_output_routes_only():
-    out = normalize_node_output(
+def test_parse_node_output_routes_only():
+    out = NodeRouteParser.parse_node_output(
         {
             "routes": [
                 {"output_index": 1, "payload": "x"},
@@ -32,14 +33,11 @@ def test_normalize_node_output_routes_only():
         }
     )
     assert out["display_text"] == "ok"
-    assert out["routes"] == [
-        {"output_index": 1, "payload": "x"},
-        {"output_index": 3, "payload": "y"},
-    ]
+    assert [(item["output_index"], envelope_text(item["payload"])) for item in out["routes"]] == [(1, "x"), (3, "y")]
 
 
-def test_normalize_node_output_allows_explicit_suppressed_output():
-    out = normalize_node_output(
+def test_parse_node_output_allows_explicit_suppressed_output():
+    out = NodeRouteParser.parse_node_output(
         {
             "display": "waiting 1/2",
             "routes": [],

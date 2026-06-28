@@ -16,8 +16,8 @@ def test_graph_runner_worker_count_accepts_camel_and_snake_case_settings():
     assert resolve_graph_runner_worker_count({"graph_runner": {"workers": 4}}) == 4
 
 
-def test_graph_runner_worker_count_clamps_to_maximum():
-    assert resolve_graph_runner_worker_count({"graphRunner": {"workerCount": 12}}) == 8
+def test_graph_runner_worker_count_accepts_large_configured_value():
+    assert resolve_graph_runner_worker_count({"graphRunner": {"workerCount": 30}}) == 30
 
 
 def test_graph_runner_worker_count_rejects_invalid_configured_value():
@@ -26,3 +26,8 @@ def test_graph_runner_worker_count_rejects_invalid_configured_value():
 
     with pytest.raises(GraphRunnerSettingsError, match="greater than zero"):
         resolve_graph_runner_worker_count({"graphRunner": {"workerCount": 0}})
+
+
+def test_graph_runner_worker_count_rejects_boolean_value():
+    with pytest.raises(GraphRunnerSettingsError, match="workerCount"):
+        resolve_graph_runner_worker_count({"graphRunner": {"workerCount": True}})

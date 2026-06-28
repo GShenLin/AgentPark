@@ -10,5 +10,9 @@ setup(
         "python-multipart>=0.0.9",
         "pyautogui>=0.9.54",
         "Pillow>=10.0.0",
+        "cryptography>=42.0.0",
+        "mcp>=1.28.0",
+        "prompt_toolkit>=3.0.52",
+        "PyYAML>=6.0",
     ],
 )

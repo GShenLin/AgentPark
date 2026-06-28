@@ -1,8 +1,18 @@
+import json
+
 import pytest
 
-from src.base_tool import BaseTool
+from src.tool.base_tool import BaseTool
 from src.providers.provider_errors import ProviderImageAttachmentError
-from src.tool_call_protocol import ToolCallExecution
+from src.tool.tool_call_protocol import ToolCallExecution
+
+
+def _runtime_notice_payloads(events, stage):
+    return [
+        json.loads(event["message"])
+        for event in events
+        if event.get("type") == "runtime_notice" and event.get("stage") == stage
+    ]
 
 
 def test_gemini_runtime_executes_function_call_via_tool_call_envelope():
@@ -69,6 +79,38 @@ def test_doubao_runtime_executes_tool_call_via_tool_call_envelope():
     assert results[0].error is None
 
 
+def test_doubao_runtime_returns_invalid_arguments_tool_error():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {}
+    agent.provider_name = "doubao"
+    agent.tools = BaseTool(agent)
+
+    tool_calls = [
+        {
+            "id": "call-bad",
+            "type": "function",
+            "function": {
+                "name": "apply_patch",
+                "arguments": '{"patch":"*** Begin Patch\n*** End Patch"}',
+            },
+        }
+    ]
+
+    extracted = agent._extract_tool_calls({"tool_calls": tool_calls})
+    results = agent._execute_tool_calls_parallel(extracted)
+
+    assert len(results) == 1
+    assert results[0].func_name == "apply_patch"
+    assert results[0].call_id == "call-bad"
+    assert results[0].status == "error"
+    payload = json.loads(results[0].cleaned_result)
+    assert payload["status"] == "invalid_arguments"
+    assert payload["call_id"] == "call-bad"
+    assert "failed to parse tool arguments JSON" in payload["error"]
+
+
 def test_tool_call_execution_serializes_only_at_explicit_boundary():
     execution = ToolCallExecution(
         func_name="echo_tool",
@@ -93,7 +135,7 @@ def test_tool_call_execution_serializes_only_at_explicit_boundary():
 
 def test_provider_parallel_tool_worker_error_returns_typed_execution():
     from src.providers.doubao_agent import DouBaoAgent
-    from src.tool_call_protocol import ToolCallEnvelope
+    from src.tool.tool_call_protocol import ToolCallEnvelope
 
     agent = DouBaoAgent.__new__(DouBaoAgent)
     agent.config = {}
@@ -122,6 +164,59 @@ def test_provider_parallel_tool_worker_error_returns_typed_execution():
     assert "worker boom" in results[0].error
 
 
+def test_provider_parallel_tool_worker_requires_envelope_list():
+    from src.providers.tool_call_execution import execute_tool_call_envelopes_parallel
+
+    with pytest.raises(TypeError, match="ToolCallEnvelope"):
+        execute_tool_call_envelopes_parallel(
+            tool_calls=[{"name": "bad"}],
+            execute_tool_call=lambda _call: None,
+            execute_tasks_parallel_ordered=lambda **_kwargs: [],
+        )
+
+
+def test_provider_openai_tool_call_items_preserve_parse_failures_in_order():
+    from src.providers.tool_call_execution import execute_tool_call_items_parallel
+    from src.providers.tool_call_execution import parse_openai_tool_call_items
+    from src.tool.tool_call_protocol import ToolCallExecution
+
+    items = parse_openai_tool_call_items(
+        [
+            {
+                "id": "call-bad",
+                "type": "function",
+                "function": {
+                    "name": "apply_patch",
+                    "arguments": '{"patch":"*** Begin Patch\n*** End Patch"}',
+                },
+            },
+            {
+                "id": "call-ok",
+                "type": "function",
+                "function": {"name": "echo_tool", "arguments": '{"message":"hello"}'},
+            },
+        ],
+        provider="unit",
+    )
+
+    executions = execute_tool_call_items_parallel(
+        tool_call_items=items,
+        execute_tool_call_envelopes=lambda calls: [
+            ToolCallExecution(
+                func_name=call.name,
+                call_id=call.call_id,
+                cleaned_result="ok",
+            )
+            for call in calls
+        ],
+    )
+
+    assert [item.call_id for item in executions] == ["call-bad", "call-ok"]
+    assert executions[0].status == "error"
+    assert json.loads(executions[0].cleaned_result)["status"] == "invalid_arguments"
+    assert executions[1].status == "completed"
+
+
 def test_doubao_responses_runtime_uses_envelopes_for_tool_continuation():
     from src.providers.doubao_agent import DouBaoAgent
 
@@ -130,8 +225,10 @@ def test_doubao_responses_runtime_uses_envelopes_for_tool_continuation():
         "apiKey": "test",
         "baseUrl": "https://example.test/v1",
         "model": "doubao-test",
+        "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
     }
     agent.provider_name = "doubao"
     agent.messages = []
@@ -178,6 +275,7 @@ def test_doubao_responses_runtime_uses_envelopes_for_tool_continuation():
         return next(responses)
 
     agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
 
     out = agent._send_via_responses(
         messages=[{"role": "user", "content": "run echo"}],
@@ -193,7 +291,995 @@ def test_doubao_responses_runtime_uses_envelopes_for_tool_continuation():
     second_payload = requests[1]["payload_json"]
     assert '"type": "function_call_output"' in second_payload
     assert '"call_id": "call-1"' in second_payload
+    assert '"status": "completed"' in second_payload
     assert '"previous_response_id": "resp-1"' in second_payload
+
+
+def test_doubao_responses_invalid_tool_arguments_return_tool_error_and_continue():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://example.test/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+    }
+    agent.provider_name = "doubao"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    requests = []
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": "call-bad",
+                        "name": "echo_tool",
+                        "arguments": '{"message":',
+                    }
+                ],
+            },
+            {
+                "id": "resp-final",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "fixed"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        thinking_mode="disabled",
+        web_search_mode="disabled",
+    ) == "fixed"
+
+    tool_message = agent.messages[1]
+    assert tool_message["role"] == "tool"
+    assert tool_message["tool_call_id"] == "call-bad"
+    tool_payload = json.loads(tool_message["content"])
+    assert tool_payload["status"] == "invalid_arguments"
+    assert "failed to parse tool arguments JSON" in tool_payload["error"]
+    assert requests[1]["previous_response_id"] == "resp-1"
+    assert requests[1]["input"][0]["type"] == "function_call_output"
+    assert requests[1]["input"][0]["status"] == "completed"
+    output_payload = json.loads(requests[1]["input"][0]["output"])
+    assert output_payload["status"] == "invalid_arguments"
+
+
+def test_doubao_responses_compacts_oversized_tool_output_before_continuation():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://example.test/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 1000,
+    }
+    agent.provider_name = "doubao"
+    agent.messages = []
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.tools = BaseTool(agent)
+    requests = []
+
+    def huge_tool():
+        return "x" * 5000
+
+    agent.tools.function_map["huge_tool"] = huge_tool
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": "call-big",
+                        "name": "huge_tool",
+                        "arguments": "{}",
+                    }
+                ],
+            },
+            {
+                "id": "resp-2",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "narrowing"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run huge"}],
+        active_tools=[],
+        run_tools=True,
+        thinking_mode="disabled",
+        web_search_mode="disabled",
+    )
+
+    assert out == "narrowing"
+    assert len(requests) == 2
+    output_text = requests[1]["input"][0]["output"]
+    assert len(output_text) < 1000
+    assert "x" * 1000 not in output_text
+    compact_payload = json.loads(output_text)
+    assert compact_payload["status"] == "tool_result_submission_error"
+    assert compact_payload["tool"] == "huge_tool"
+    assert compact_payload["call_id"] == "call-big"
+    assert compact_payload["original_result_chars"] == 5000
+    assert "local submission limit" in compact_payload["provider_error"]
+    notices = [
+        event
+        for event in agent.events
+        if event.get("type") == "runtime_notice"
+        and event.get("stage") == "tool_result_submission_compacted"
+    ]
+    assert len(notices) == 1
+    assert "huge_tool" in notices[0]["message"]
+    assert "call-big" in notices[0]["message"]
+    assert "provider.toolResultSubmissionMaxChars=1000" in notices[0]["message"]
+
+
+def test_doubao_tool_result_submission_limit_requires_provider_config():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {}
+
+    with pytest.raises(ValueError, match="provider.toolResultSubmissionMaxChars"):
+        agent._compact_tool_result_for_submission_if_needed(
+            tool_name="huge_tool",
+            call_id="call-big",
+            content="x",
+        )
+
+
+def test_doubao_responses_continuation_includes_tool_image_data():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://example.test/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+    }
+    agent.provider_name = "doubao"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    requests = []
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        if len(requests) == 1:
+            return {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": "call-1",
+                        "name": "capture_screenshot",
+                        "arguments": "{}",
+                    }
+                ],
+            }
+        return {
+            "id": "resp-2",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "screenshot visible"}],
+                }
+            ],
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+    agent._execute_tool_call_envelopes_parallel = lambda _calls: [
+        ToolCallExecution(
+            func_name="capture_screenshot",
+            call_id="call-1",
+            cleaned_result='{"status":"success","base64_image":"<base64_image_data_truncated>"}',
+            image_data={"base64": "YWJj", "path": "", "mime_type": "image/png"},
+        )
+    ]
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "look at the screen"}],
+        active_tools=[],
+        run_tools=True,
+        thinking_mode="disabled",
+        web_search_mode="disabled",
+    )
+
+    assert out == "screenshot visible"
+    assert len(requests) == 2
+    assert requests[1]["previous_response_id"] == "resp-1"
+    assert requests[1]["input"][0]["type"] == "function_call_output"
+    image_item = requests[1]["input"][1]
+    assert image_item["type"] == "message"
+    assert image_item["role"] == "user"
+    assert image_item["status"] == "completed"
+    assert image_item["content"][0] == {"type": "input_text", "text": "Image captured by tool."}
+    assert image_item["content"][1] == {
+        "type": "input_image",
+        "image_url": "data:image/png;base64,YWJj",
+    }
+
+
+def test_doubao_responses_replays_context_when_previous_response_missing():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://example.test/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+    }
+    agent.provider_name = "doubao"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    requests = []
+    captured = []
+
+    def echo_tool(message=None):
+        captured.append(message)
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        if len(requests) == 1:
+            return {
+                "id": "resp-missing",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                        "status": "completed",
+                    }
+                ],
+            }
+        if len(requests) == 2:
+            raise RuntimeError(
+                "HTTP Error 400: InvalidParameter.PreviousResponseNotFound: "
+                "Previous response with id resp-missing not found"
+            )
+        return {
+            "id": "resp-final",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "done"}],
+                }
+            ],
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        thinking_mode="disabled",
+        web_search_mode="disabled",
+    )
+
+    assert out == "done"
+    assert captured == ["hello"]
+    assert len(requests) == 3
+    assert requests[1]["previous_response_id"] == "resp-missing"
+    assert "previous_response_id" not in requests[2]
+    assert requests[2]["input"][0]["type"] == "message"
+    assert requests[2]["input"][0]["role"] == "user"
+    assert requests[2]["input"][0]["status"] == "completed"
+    assert requests[2]["input"][1] == {
+        "type": "function_call",
+        "call_id": "call-1",
+        "name": "echo_tool",
+        "arguments": '{"message":"hello"}',
+        "id": "fc-1",
+        "status": "completed",
+    }
+    assert requests[2]["input"][2]["type"] == "function_call_output"
+    assert requests[2]["input"][2]["call_id"] == "call-1"
+    assert "echo:hello" in requests[2]["input"][2]["output"]
+
+
+def test_openai_responses_payload_includes_reasoning_effort():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "previous_response_id",
+        "responsesReplayReasoningItems": False,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "hello"}],
+        active_tools=[],
+        run_tools=False,
+        reasoning_effort="xhigh",
+    )
+
+    assert out == "ok"
+    assert payloads[0]["reasoning"] == {"effort": "xhigh"}
+
+
+def test_openai_stream_uses_response_call_id_not_function_item_id(monkeypatch):
+    import json as json_module
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    events = [
+        {
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc_item_1", "name": "echo_tool"},
+        },
+        {
+            "type": "response.function_call_arguments.delta",
+            "item_id": "fc_item_1",
+            "delta": '{"message":"hello"}',
+        },
+        {
+            "type": "response.output_item.done",
+            "item": {
+                "type": "function_call",
+                "id": "fc_item_1",
+                "call_id": "call_real_1",
+                "name": "echo_tool",
+                "arguments": '{"message":"hello"}',
+            },
+        },
+    ]
+    monkeypatch.setattr(agent, "_curl_post_sse_data_lines", lambda **_kwargs: (json_module.dumps(event) for event in events))
+
+    result = agent._stream_responses_once(
+        url="https://api.openai.test/v1/responses",
+        headers={},
+        payload_json="{}",
+        timeout_sec=1,
+        stream_handler=None,
+    )
+
+    assert result["output"][0]["id"] == "fc_item_1"
+    assert result["output"][0]["call_id"] == "call_real_1"
+    assert result["output"][0]["arguments"] == '{"message":"hello"}'
+
+
+def test_openai_stream_repairs_completed_response_function_call_id(monkeypatch):
+    import json as json_module
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    events = [
+        {
+            "type": "response.output_item.added",
+            "item": {"type": "function_call", "id": "fc_item_1", "name": "echo_tool"},
+        },
+        {
+            "type": "response.output_item.done",
+            "item": {
+                "type": "function_call",
+                "id": "fc_item_1",
+                "call_id": "call_real_1",
+                "name": "echo_tool",
+                "arguments": '{"message":"hello"}',
+            },
+        },
+        {
+            "type": "response.completed",
+            "response": {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_item_1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                    }
+                ],
+            },
+        },
+    ]
+    monkeypatch.setattr(agent, "_curl_post_sse_data_lines", lambda **_kwargs: (json_module.dumps(event) for event in events))
+
+    result = agent._stream_responses_once(
+        url="https://api.openai.test/v1/responses",
+        headers={},
+        payload_json="{}",
+        timeout_sec=1,
+        stream_handler=None,
+    )
+    _content, calls, _response_id = agent._parse_responses_output_envelopes(result)
+
+    assert result["output"][0]["call_id"] == "call_real_1"
+    assert calls[0].call_id == "call_real_1"
+
+
+def test_openai_stream_retries_response_failed_503(monkeypatch):
+    import json as json_module
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    calls = {"count": 0}
+    failed_event = {
+        "type": "response.failed",
+        "response": {
+            "error": {"status_code": 503, "code": "service_unavailable", "message": "busy"}
+        },
+    }
+    success_event = {
+        "type": "response.completed",
+        "response": {
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "ok"}]}
+            ]
+        },
+    }
+    def fake_sse_lines(**_kwargs):
+        calls["count"] += 1
+        event = failed_event if calls["count"] == 1 else success_event
+        yield json_module.dumps(event)
+
+    monkeypatch.setattr(agent, "_curl_post_sse_data_lines", fake_sse_lines)
+    monkeypatch.setattr("src.providers.openai_transport.time.sleep", lambda _seconds: None)
+    result = agent._stream_responses_with_retry(
+        endpoint="responses",
+        url="https://api.openai.test/v1/responses",
+        headers={},
+        payload_json="{}",
+        stream_handler=None,
+    )
+
+    assert calls["count"] == 2
+    assert result["output"][0]["content"][0]["text"] == "ok"
+    assert agent.events[0]["type"] == "runtime_notice"
+    assert agent.events[0]["stage"] == "openai_responses_retry"
+    assert "503" in agent.events[0]["message"]
+
+
+def test_openai_stream_does_not_retry_account_quota_exceeded(monkeypatch):
+    import json as json_module
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000, "maxRetries": 5, "retryDelaySec": 0}
+    agent.provider_name = "openai"
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    calls = {"count": 0}
+    failed_event = {
+        "type": "response.failed",
+        "response": {
+            "error": {
+                "status_code": 429,
+                "code": "AccountQuotaExceeded",
+                "message": "You have exceeded the 5-hour usage quota.",
+            }
+        },
+    }
+
+    def fake_sse_lines(**_kwargs):
+        calls["count"] += 1
+        yield json_module.dumps(failed_event)
+
+    monkeypatch.setattr(agent, "_curl_post_sse_data_lines", fake_sse_lines)
+    monkeypatch.setattr("src.providers.openai_transport.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(RuntimeError, match="AccountQuotaExceeded"):
+        agent._stream_responses_with_retry(
+            endpoint="responses",
+            url="https://api.openai.test/v1/responses",
+            headers={},
+            payload_json="{}",
+            stream_handler=None,
+        )
+
+    assert calls["count"] == 1
+    assert agent.events == []
+
+
+def test_openai_responses_continuation_uses_previous_response_id():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "previous_response_id",
+        "responsesReplayReasoningItems": False,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    captured = []
+    requests = []
+
+    def echo_tool(message=None):
+        captured.append(message)
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_real_1",
+                        "call_id": "call_real_1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                        "status": "completed",
+                    }
+                ],
+            },
+            {
+                "id": "resp-2",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "done"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    )
+
+    assert out == "done"
+    assert captured == ["hello"]
+    assert len(requests) == 2
+    second_input = requests[1]["input"]
+    assert requests[1]["previous_response_id"] == "resp-1"
+    assert second_input[0] == {
+        "type": "function_call",
+        "call_id": "call_real_1",
+        "name": "echo_tool",
+        "arguments": '{"message":"hello"}',
+        "id": "fc_real_1",
+        "status": "completed",
+    }
+    assert second_input[1] == {
+        "type": "function_call_output",
+        "call_id": "call_real_1",
+        "output": "echo:hello",
+        "status": "completed",
+    }
+    turn_events = _runtime_notice_payloads(agent.events, "openai_responses_turn")
+    assert turn_events[0]["response_id_present"] is True
+    assert turn_events[0]["response_id"] == "resp-1"
+    assert turn_events[0]["next_continuation_mode"] == "previous_response_id"
+    assert turn_events[0]["followup_item_count"] == 1
+    assert turn_events[1]["next_continuation_mode"] == "final_message"
+
+
+def test_openai_responses_logs_explicit_context_when_response_id_missing():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "previous_response_id",
+        "responsesReplayReasoningItems": False,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    requests = []
+
+    def echo_tool(message=None):
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    responses = iter(
+        [
+            {
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_real_1",
+                        "call_id": "call_real_1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                        "status": "completed",
+                    }
+                ],
+            },
+            {
+                "id": "resp-final",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "done"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    )
+
+    assert out == "done"
+    assert len(requests) == 2
+    assert "previous_response_id" not in requests[1]
+    turn_events = _runtime_notice_payloads(agent.events, "openai_responses_turn")
+    assert turn_events[0]["response_id_present"] is False
+    assert turn_events[0]["response_id"] == ""
+    assert turn_events[0]["next_continuation_mode"] == "explicit_context"
+    assert turn_events[0]["followup_item_count"] == 1
+
+
+def test_openai_responses_replays_context_when_previous_response_missing():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "previous_response_id",
+        "responsesReplayReasoningItems": False,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    requests = []
+    captured = []
+
+    def echo_tool(message=None):
+        captured.append(message)
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        if len(requests) == 1:
+            return {
+                "id": "resp-missing",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_real_1",
+                        "call_id": "call_real_1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                        "status": "completed",
+                    }
+                ],
+            }
+        if len(requests) == 2:
+            raise RuntimeError("responses: HTTP 400 - previous_response_id not found")
+        return {
+            "id": "resp-final",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "done"}],
+                }
+            ],
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    )
+
+    assert out == "done"
+    assert captured == ["hello"]
+    assert len(requests) == 3
+    assert requests[1]["previous_response_id"] == "resp-missing"
+    assert "previous_response_id" not in requests[2]
+    assert requests[2]["input"][0] == {
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "input_text", "text": "run echo"}],
+        "status": "completed",
+    }
+    assert requests[2]["input"][1] == {
+        "type": "function_call",
+        "call_id": "call_real_1",
+        "name": "echo_tool",
+        "arguments": '{"message":"hello"}',
+        "id": "fc_real_1",
+        "status": "completed",
+    }
+    assert requests[2]["input"][2] == {
+        "type": "function_call_output",
+        "call_id": "call_real_1",
+        "output": "echo:hello",
+        "status": "completed",
+    }
+    fallback_events = _runtime_notice_payloads(agent.events, "openai_responses_previous_response_missing")
+    assert fallback_events == [
+        {
+            "fallback": "explicit_context",
+            "fallback_input_item_count": 3,
+            "previous_response_id": "resp-missing",
+            "stream": True,
+        }
+    ]
+
+
+def test_openai_responses_rebuilds_input_after_tool_context_compaction():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolContextCompactionEnabled": True,
+        "toolContextCompactionEveryToolCalls": 1,
+        "responsesContinuationMode": "previous_response_id",
+        "responsesReplayReasoningItems": False,
+    }
+    agent.provider_name = "openai"
+    agent.messages = [{"role": "user", "content": "run echo"}]
+    agent.tools = BaseTool(agent)
+    agent.tool_context_compaction_gate_enabled = True
+    agent._tool_context_compaction_since_last = 0
+    agent.internal_memory_enabled = False
+    agent.system_prompt = None
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    agent.tools.function_map["echo_tool"] = lambda message=None: f"echo:{message}"
+    requests = []
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                    }
+                ],
+            },
+            {
+                "id": "resp-compact",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-compact",
+                        "call_id": "compact-1",
+                        "name": "compact_tool_context",
+                        "arguments": json.dumps(
+                            {
+                                "action": "replace",
+                                "reason": "The echo result was summarized.",
+                                "summary": "echo_tool returned echo:hello.",
+                            }
+                        ),
+                    }
+                ],
+            },
+            {
+                "id": "resp-final",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "done"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=list(agent.messages),
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    )
+
+    assert out == "done"
+    assert len(requests) == 3
+    final_input_text = json.dumps(requests[2]["input"], ensure_ascii=False)
+    assert "echo_tool returned echo:hello" in final_input_text
+    assert "function_call_output" not in final_input_text
+    assert "compact_tool_context" not in final_input_text
+
+
+def test_openai_responses_rejects_function_item_id_as_call_id():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+
+    with pytest.raises(ValueError, match="output item id"):
+        agent._parse_responses_output_envelopes(
+            {
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_real_1",
+                        "call_id": "fc_real_1",
+                        "name": "echo_tool",
+                        "arguments": "{}",
+                    }
+                ]
+            }
+        )
 
 
 def test_doubao_inject_image_message_reports_missing_image(tmp_path):
@@ -215,6 +1301,24 @@ def test_gemini_function_response_content_parses_only_json_objects():
     assert GeminiAgent._build_function_response_content('{"status":"ok"}') == {"status": "ok"}
     assert GeminiAgent._build_function_response_content("[1, 2]") == {"result": "[1, 2]"}
     assert GeminiAgent._build_function_response_content("plain text") == {"result": "plain text"}
+
+
+def test_gemini_tool_schema_preserves_action_specific_composites():
+    from src.operational_memory_tool import record_operational_memory_declaration
+    from src.providers.gemini_agent import GeminiAgent
+
+    agent = GeminiAgent.__new__(GeminiAgent)
+    converted = agent._convert_tool_to_gemini(record_operational_memory_declaration)
+    params = converted["parameters"]
+
+    assert params["type"] == "OBJECT"
+    assert isinstance(params["oneOf"], list)
+    resolve_branch = next(
+        item
+        for item in params["oneOf"]
+        if item.get("properties", {}).get("action", {}).get("enum") == ["resolve"]
+    )
+    assert resolve_branch["anyOf"] == [{"required": ["key"]}, {"required": ["resolve_key"]}]
 
 
 def test_gemini_send_reports_missing_local_image(tmp_path):

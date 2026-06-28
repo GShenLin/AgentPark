@@ -1,0 +1,105 @@
+import json
+
+import functions.system_tools as patch_tools
+import functions.system_tools as system_tools
+from src.tool.base_tool import BaseTool
+
+
+class _DummyAgent:
+    def __init__(self):
+        self.config = {}
+
+
+def test_apply_patch_add_update_delete_file(tmp_path):
+    file_path = tmp_path / "demo.txt"
+    added_path = tmp_path / "added.txt"
+    delete_path = tmp_path / "delete.txt"
+    delete_path.write_text("remove me\n", encoding="utf-8")
+
+    raw = patch_tools.apply_patch(
+        f"""*** Begin Patch
+*** Add File: {added_path}
++created
+*** Update File: {file_path}
+*** End Patch"""
+    )
+    payload = json.loads(raw)
+    assert payload["status"] == "error"
+    assert "Update File target does not exist" in payload["error"]
+    assert not added_path.exists()
+
+    file_path.write_text("hello\nold value\nbye\n", encoding="utf-8")
+    raw = patch_tools.apply_patch(
+        f"""*** Begin Patch
+*** Add File: {added_path}
++created
+*** Update File: {file_path}
+@@ demo block
+ hello
+-old value
++new value
+ bye
+*** Delete File: {delete_path}
+*** End Patch"""
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert file_path.read_text(encoding="utf-8") == "hello\nnew value\nbye\n"
+    assert added_path.read_text(encoding="utf-8") == "created\n"
+    assert not delete_path.exists()
+
+
+def test_apply_patch_move_file(tmp_path):
+    source_path = tmp_path / "source.txt"
+    target_path = tmp_path / "target.txt"
+    source_path.write_text("alpha\nbeta\n", encoding="utf-8")
+
+    raw = patch_tools.apply_patch(
+        f"""*** Begin Patch
+*** Update File: {source_path}
+*** Move to: {target_path}
+@@
+ alpha
+-beta
++gamma
+*** End Patch"""
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert not source_path.exists()
+    assert target_path.read_text(encoding="utf-8") == "alpha\ngamma\n"
+
+
+def test_apply_patch_rejects_missing_context(tmp_path):
+    file_path = tmp_path / "demo.txt"
+    file_path.write_text("actual\n", encoding="utf-8")
+
+    raw = patch_tools.apply_patch(
+        f"""*** Begin Patch
+*** Update File: {file_path}
+@@
+-expected
++changed
+*** End Patch"""
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "error"
+    assert "Could not locate update hunk" in payload["error"]
+    assert file_path.read_text(encoding="utf-8") == "actual\n"
+
+
+def test_system_tools_registers_apply_patch():
+    tool = BaseTool(_DummyAgent())
+    tool.addTool("system_tools")
+
+    assert "apply_patch" in system_tools.__all__
+    assert "apply_patch_declaration" in system_tools.__all__
+    assert "apply_patch" in tool.function_map
+    assert callable(system_tools.apply_patch)
+    assert any(
+        item.get("function", {}).get("name") == "apply_patch"
+        for item in tool.tool_declarations
+    )

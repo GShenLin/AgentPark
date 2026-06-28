@@ -1,13 +1,15 @@
-import json
 import os
 
 from nodes.base_node import BaseNode
-from src.config_loader import ConfigLoader
-from src.message_protocol import build_resource_part, normalize_envelope
+from nodes.video_generation_resources import merge_configured_video_resources
+from src.generation_output import ResourceOutputField, StructuredOutputSpec, build_generation_output_message
+from src.media_resource_utils import resolve_public_base_url
+from src.message_protocol import envelope_text
+from src.node_config_overlay import load_node_config_file
 from src.providers import create_agent
+from src.switch_utils import parse_switch_mode
 from src.video_generation_content import (
     build_doubao_video_generation_content,
-    normalize_public_base_url,
 )
 
 
@@ -192,167 +194,6 @@ class Node(BaseNode):
         },
     }
 
-    @staticmethod
-    def _normalize_switch(value: object, default: str = "disabled") -> str:
-        if isinstance(value, bool):
-            return "enabled" if value else "disabled"
-        text = str(value or "").strip().lower()
-        if text in {"enabled", "enable", "on", "true", "1", "yes"}:
-            return "enabled"
-        if text in {"disabled", "disable", "off", "false", "0", "no"}:
-            return "disabled"
-        return default
-
-    def _resolve_public_base_url(self, explicit: object, provider_id: str) -> str:
-        direct = normalize_public_base_url(explicit)
-        if direct:
-            return direct
-
-        env_value = normalize_public_base_url(os.environ.get("AITOOLS_PUBLIC_BASE_URL"))
-        if env_value:
-            return env_value
-
-        try:
-            full_config = ConfigLoader().get_config()
-        except Exception:
-            full_config = {}
-        if isinstance(full_config, dict):
-            top_level = normalize_public_base_url(
-                full_config.get("publicBaseUrl") or full_config.get("public_base_url")
-            )
-            if top_level:
-                return top_level
-
-        try:
-            provider_config = ConfigLoader().get_provider_config(provider_id)
-        except Exception:
-            provider_config = {}
-        if isinstance(provider_config, dict):
-            provider_level = normalize_public_base_url(
-                provider_config.get("publicBaseUrl") or provider_config.get("public_base_url")
-            )
-            if provider_level:
-                return provider_level
-
-        return ""
-
-    def _build_output_message(self, response: object) -> dict:
-        if isinstance(response, dict):
-            parts: list[dict] = []
-            response_text = str(response.get("response") or response.get("text") or "").strip()
-            if response_text:
-                parts.append({"type": "text", "text": response_text})
-
-            video_path = response.get("video_path")
-            if isinstance(video_path, str) and video_path.strip():
-                parts.append(build_resource_part(uri=video_path.strip(), kind="video", source="video_generation"))
-            elif isinstance(video_path, list):
-                for item in video_path:
-                    uri = str(item or "").strip()
-                    if uri:
-                        parts.append(build_resource_part(uri=uri, kind="video", source="video_generation"))
-
-            last_frame_url = response.get("last_frame_url")
-            if isinstance(last_frame_url, str) and last_frame_url.strip():
-                parts.append(build_resource_part(uri=last_frame_url.strip(), kind="image", source="video_generation"))
-
-            meta = {}
-            for key in ("task_id", "video_url", "last_frame_url", "status"):
-                value = response.get(key)
-                if value is not None and value != "":
-                    meta[key] = value
-            if meta:
-                parts.append({"type": "structured", "data": meta})
-
-            if not parts:
-                parts.append({"type": "text", "text": json.dumps(response, ensure_ascii=False)})
-            return normalize_envelope({"role": "assistant", "parts": parts}, default_role="assistant")
-
-        return normalize_envelope({"role": "assistant", "parts": [{"type": "text", "text": str(response or "")}]})
-
-    @staticmethod
-    def _parse_resource_list(value: object) -> list[str]:
-        if isinstance(value, list):
-            return [str(item).strip() for item in value if str(item).strip()]
-        text = str(value or "").strip()
-        if not text:
-            return []
-        if text.startswith("["):
-            try:
-                parsed = json.loads(text)
-            except Exception:
-                parsed = None
-            if isinstance(parsed, list):
-                return [str(item).strip() for item in parsed if str(item).strip()]
-        return [line.strip() for line in text.splitlines() if line.strip()]
-
-    def _merge_configured_resources(
-        self,
-        message: object,
-        *,
-        first_frame_path: object = "",
-        last_frame_path: object = "",
-        reference_images: object = "",
-        reference_videos: object = "",
-        reference_audios: object = "",
-    ) -> dict:
-        envelope = normalize_envelope(message, default_role="user")
-        parts = list(envelope.get("parts") or [])
-
-        first_frame = str(first_frame_path or "").strip()
-        if first_frame:
-            parts.append(
-                build_resource_part(
-                    uri=first_frame,
-                    kind="image",
-                    source="video_generation_node",
-                    metadata={"role": "first_frame"},
-                )
-            )
-
-        last_frame = str(last_frame_path or "").strip()
-        if last_frame:
-            parts.append(
-                build_resource_part(
-                    uri=last_frame,
-                    kind="image",
-                    source="video_generation_node",
-                    metadata={"role": "last_frame"},
-                )
-            )
-
-        for uri in self._parse_resource_list(reference_images):
-            parts.append(
-                build_resource_part(
-                    uri=uri,
-                    kind="image",
-                    source="video_generation_node",
-                    metadata={"role": "reference_image"},
-                )
-            )
-
-        for uri in self._parse_resource_list(reference_videos):
-            parts.append(
-                build_resource_part(
-                    uri=uri,
-                    kind="video",
-                    source="video_generation_node",
-                    metadata={"role": "reference_video"},
-                )
-            )
-
-        for uri in self._parse_resource_list(reference_audios):
-            parts.append(
-                build_resource_part(
-                    uri=uri,
-                    kind="audio",
-                    source="video_generation_node",
-                    metadata={"role": "reference_audio"},
-                )
-            )
-
-        return normalize_envelope({"role": envelope.get("role") or "user", "parts": parts}, default_role="user")
-
     def on_input(self, message: object, context: dict | None = None) -> dict:
         ctx = context or {}
         node_id = str(ctx.get("node_instance_id") or ctx.get("node_id") or "video_generation").strip() or "video_generation"
@@ -381,44 +222,40 @@ class Node(BaseNode):
         web_search = ctx.get("web_search")
         filename_prefix = str(ctx.get("filename_prefix") or "").strip()
         public_base_url = ctx.get("public_base_url")
+        skills = ctx.get("skills")
 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         node_dir = os.path.join(base_dir, "memories", graph_id, node_id)
-        config_path = os.path.join(node_dir, "config.json")
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict):
-                    provider_id = str(data.get("provider_id") or provider_id or "").strip()
-                    prompt = str(data.get("prompt") or prompt or "").strip()
-                    first_frame_path = data.get("first_frame_path", first_frame_path)
-                    last_frame_path = data.get("last_frame_path", last_frame_path)
-                    reference_images = data.get("reference_images", reference_images)
-                    reference_videos = data.get("reference_videos", reference_videos)
-                    reference_audios = data.get("reference_audios", reference_audios)
-                    resolution = data.get("resolution", resolution)
-                    ratio = data.get("ratio", ratio)
-                    duration = data.get("duration", duration)
-                    seed = data.get("seed", seed)
-                    generate_audio = data.get("generate_audio", generate_audio)
-                    watermark = data.get("watermark", watermark)
-                    return_last_frame = data.get("return_last_frame", return_last_frame)
-                    callback_url = data.get("callback_url", callback_url)
-                    service_tier = data.get("service_tier", service_tier)
-                    execution_expires_after = data.get("execution_expires_after", execution_expires_after)
-                    safety_identifier = data.get("safety_identifier", safety_identifier)
-                    web_search = data.get("web_search", web_search)
-                    filename_prefix = str(data.get("filename_prefix") or filename_prefix or "").strip()
-                    if data.get("public_base_url") is not None:
-                        public_base_url = data.get("public_base_url")
-            except Exception:
-                pass
+        data = load_node_config_file(node_dir)
+        provider_id = str(data.get("provider_id") or provider_id or "").strip()
+        prompt = str(data.get("prompt") or prompt or "").strip()
+        first_frame_path = data.get("first_frame_path", first_frame_path)
+        last_frame_path = data.get("last_frame_path", last_frame_path)
+        reference_images = data.get("reference_images", reference_images)
+        reference_videos = data.get("reference_videos", reference_videos)
+        reference_audios = data.get("reference_audios", reference_audios)
+        resolution = data.get("resolution", resolution)
+        ratio = data.get("ratio", ratio)
+        duration = data.get("duration", duration)
+        seed = data.get("seed", seed)
+        generate_audio = data.get("generate_audio", generate_audio)
+        watermark = data.get("watermark", watermark)
+        return_last_frame = data.get("return_last_frame", return_last_frame)
+        callback_url = data.get("callback_url", callback_url)
+        service_tier = data.get("service_tier", service_tier)
+        execution_expires_after = data.get("execution_expires_after", execution_expires_after)
+        safety_identifier = data.get("safety_identifier", safety_identifier)
+        web_search = data.get("web_search", web_search)
+        filename_prefix = str(data.get("filename_prefix") or filename_prefix or "").strip()
+        if data.get("public_base_url") is not None:
+            public_base_url = data.get("public_base_url")
+        if data.get("skills") is not None:
+            skills = data.get("skills")
 
         if not provider_id:
             raise ValueError("provider_id is required")
 
-        merged_message = self._merge_configured_resources(
+        merged_message = merge_configured_video_resources(
             message,
             first_frame_path=first_frame_path,
             last_frame_path=last_frame_path,
@@ -426,7 +263,7 @@ class Node(BaseNode):
             reference_videos=reference_videos,
             reference_audios=reference_audios,
         )
-        resolved_public_base_url = self._resolve_public_base_url(public_base_url, provider_id)
+        resolved_public_base_url = resolve_public_base_url(public_base_url, provider_id)
         content = build_doubao_video_generation_content(
             merged_message,
             public_base_url=resolved_public_base_url,
@@ -435,10 +272,11 @@ class Node(BaseNode):
 
         memory_path = os.path.join(node_dir, f"{node_id}.md")
         agent = create_agent(provider_id, memory_file_path=memory_path)
+        self._inject_configured_skills(agent, {"skills": skills}, node_id=node_id)
         if not hasattr(agent, "generate_video"):
             raise ValueError(f"Provider '{provider_id}' does not support video generation")
 
-        tools = [{"type": "web_search"}] if self._normalize_switch(web_search, default="disabled") == "enabled" else None
+        tools = [{"type": "web_search"}] if parse_switch_mode(web_search, default="disabled", allow_auto=False) == "enabled" else None
         result = agent.generate_video(
             content,
             resolution=resolution,
@@ -458,8 +296,17 @@ class Node(BaseNode):
             tools=tools,
         )
 
-        output_message = self._build_output_message(result)
+        output_message = build_generation_output_message(
+            result,
+            text_fields=("response", "text"),
+            resource_fields=(
+                ResourceOutputField(name="video_path", kind="video", source="video_generation", allow_list=True),
+                ResourceOutputField(name="last_frame_url", kind="image", source="video_generation"),
+            ),
+            structured=StructuredOutputSpec(field_names=("task_id", "video_url", "last_frame_url", "status")),
+            json_fallback="when_no_parts",
+        )
         return {
-            "display": self._message_text(output_message),
+            "display": envelope_text(output_message),
             "routes": [{"output_index": 0, "payload": output_message}],
         }

@@ -158,6 +158,14 @@ def _normalize_part(item: object) -> dict:
             payload["error"] = str(item.get("error"))
         if item.get("result_preview") is not None:
             payload["result_preview"] = str(item.get("result_preview"))
+        if item.get("result_chars") is not None:
+            payload["result_chars"] = item.get("result_chars")
+        if item.get("result_preview_truncated") is not None:
+            payload["result_preview_truncated"] = bool(item.get("result_preview_truncated"))
+        if item.get("result_tail_preview") is not None:
+            payload["result_tail_preview"] = str(item.get("result_tail_preview"))
+        if item.get("result_tail_preview_truncated") is not None:
+            payload["result_tail_preview_truncated"] = bool(item.get("result_tail_preview_truncated"))
         diagnostics = item.get("diagnostics")
         if isinstance(diagnostics, list):
             payload["diagnostics"] = [str(entry) for entry in diagnostics]
@@ -249,7 +257,46 @@ def envelope_text(value: object) -> str:
                     output.append(str(data))
             else:
                 output.append(str(data))
+            continue
+        if typ == "tool_call":
+            text = _tool_call_part_text(part)
+            if text:
+                output.append(text)
     return "\n".join([line for line in output if line]).strip()
+
+
+def _tool_call_part_text(part: dict) -> str:
+    name = str(part.get("name") or "tool").strip() or "tool"
+    status = str(part.get("status") or "").strip()
+    call_id = str(part.get("call_id") or "").strip()
+    preview = str(part.get("result_preview") or "").strip()
+    error = str(part.get("error") or "").strip()
+    result_chars = part.get("result_chars")
+    preview_truncated = bool(part.get("result_preview_truncated"))
+
+    label_parts = [f"Tool {name}"]
+    if status:
+        label_parts.append(status)
+    if call_id:
+        label_parts.append(f"call_id={call_id}")
+    label = " ".join(label_parts)
+
+    details = []
+    if isinstance(result_chars, int):
+        details.append(f"result_chars={result_chars}")
+    if preview_truncated:
+        details.append("result_preview_truncated=true")
+    suffix = f" ({', '.join(details)})" if details else ""
+
+    if error:
+        body = f"error={error}"
+    elif preview_truncated:
+        body = "result_preview omitted from markdown; structured history stores only a display preview"
+    elif preview:
+        body = f"result_preview={preview}"
+    else:
+        body = "result_preview=(empty)"
+    return f"{label}: {body}{suffix}"
 
 
 def envelope_preview(value: object, limit: int = 260) -> str:

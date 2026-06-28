@@ -1,3 +1,6 @@
+from src.value_parsing import parse_optional_int_value
+
+
 class GraphRunnerSettingsError(ValueError):
     pass
 
@@ -17,9 +20,11 @@ def resolve_graph_runner_worker_count(config: dict, default: int = 3) -> int:
     if raw_workers is None or raw_workers == "":
         return default
     try:
-        worker_count = int(float(raw_workers))
-    except Exception as exc:
+        worker_count = parse_optional_int_value("graphRunner.workerCount", raw_workers)
+    except ValueError as exc:
         raise GraphRunnerSettingsError(f"graphRunner.workerCount must be a number: {raw_workers!r}") from exc
+    if worker_count is None:
+        return default
     if worker_count <= 0:
         raise GraphRunnerSettingsError("graphRunner.workerCount must be greater than zero.")
-    return max(1, min(8, worker_count))
+    return worker_count

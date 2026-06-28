@@ -35,6 +35,13 @@ function parseInternalDroppedItem(raw: string): DroppedPathItem | null {
   }
 }
 
+function uploadResultToDroppedItems(uploaded: unknown): DroppedPathItem[] {
+  const items = Array.isArray((uploaded as any)?.files) ? (uploaded as any).files : []
+  return items
+    .map((item: any) => normalizeDroppedItem(String(item?.path || ''), String(item?.name || '')))
+    .filter((item: DroppedPathItem | null): item is DroppedPathItem => !!item)
+}
+
 export async function resolveDroppedPaths(event: DragEvent, traceId: string): Promise<DroppedPathItem[]> {
   const raw = event.dataTransfer?.getData('application/x-aitools-file')
   if (raw) {
@@ -46,10 +53,26 @@ export async function resolveDroppedPaths(event: DragEvent, traceId: string): Pr
   if (!nativeFiles.length) return []
 
   const uploaded = await uploadFiles(nativeFiles, traceId)
-  const items = Array.isArray(uploaded?.files) ? uploaded.files : []
-  return items
-    .map((item) => normalizeDroppedItem(String(item?.path || ''), String(item?.name || '')))
-    .filter((item): item is DroppedPathItem => !!item)
+  return uploadResultToDroppedItems(uploaded)
+}
+
+export async function resolvePastedImagePaths(event: ClipboardEvent, traceId: string): Promise<DroppedPathItem[]> {
+  const clipboardItems = Array.from(event.clipboardData?.items || [])
+  const imageFiles = clipboardItems
+    .filter((item) => item.kind === 'file' && item.type.toLowerCase().startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file instanceof File)
+
+  if (!imageFiles.length) return []
+
+  const files = imageFiles.map((file, index) => {
+    if (String(file.name || '').trim()) return file
+    const ext = file.type.split('/')[1]?.split('+')[0] || 'png'
+    return new File([file], `pasted-image-${Date.now()}-${index + 1}.${ext}`, { type: file.type })
+  })
+
+  const uploaded = await uploadFiles(files, traceId)
+  return uploadResultToDroppedItems(uploaded)
 }
 
 export function mergeDroppedPaths(fieldType: string, currentValue: unknown, droppedItems: DroppedPathItem[]): string {

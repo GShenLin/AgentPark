@@ -3,6 +3,12 @@ import time
 from datetime import datetime
 
 from src.message_protocol import envelope_text
+from src.web_backend.node_config_service import node_runtime_state_path
+
+
+def _read_runtime_state(config_path):
+    with open(node_runtime_state_path(str(config_path)), "r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def test_basic_trigger_node_outputs_config_text():
@@ -12,11 +18,17 @@ def test_basic_trigger_node_outputs_config_text():
     cfg = {}
     node.on_create(cfg, None)
 
+    assert cfg.get("skills") == []
     assert cfg.get("working_path") == ""
     assert cfg.get("OutputText") == ""
     assert "schema" not in cfg
-    assert "OutputText" in node.get_config_schema(None)
-    assert list(node.get_config_schema(None).keys())[-1] == "working_path"
+    schema = node.get_config_schema(None)
+    assert "OutputText" in schema
+    assert schema["skills"]["type"] == "multiselect"
+    skill_options = schema["skills"]["options"]
+    assert isinstance(skill_options, list)
+    assert any(isinstance(item, dict) and item.get("value") for item in skill_options)
+    assert list(schema.keys())[-3:] == ["plugins", "skills", "working_path"]
 
     out = node.on_input("ignored", {"OutputText": "hello-trigger"})
     routes = out.get("routes")
@@ -154,17 +166,17 @@ def test_timer_trigger_scan_enqueues_once_per_minute(monkeypatch, tmp_path):
     }
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    first = graph_runtime._scan_and_emit_timer_triggers_once()
+    first = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert first == 1
 
-    updated = json.loads(config_path.read_text(encoding="utf-8"))
-    pending = updated.get("pending")
+    updated_runtime = _read_runtime_state(config_path)
+    pending = updated_runtime.get("pending")
     assert isinstance(pending, list)
     assert len(pending) == 1
     assert envelope_text(pending[0].get("payload")) == "timer-fire"
     assert pending[0].get("source") == "timer_trigger"
 
-    second = graph_runtime._scan_and_emit_timer_triggers_once()
+    second = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert second == 0
 
 
@@ -205,10 +217,11 @@ def test_clock_control_start_sets_working_state(monkeypatch, tmp_path):
     assert result["state"] == "working"
 
     updated = json.loads(config_path.read_text(encoding="utf-8"))
+    runtime_updated = _read_runtime_state(config_path)
     assert updated.get("_clock_running") is True
-    assert updated.get("state") == "working"
+    assert runtime_updated.get("state") == "working"
     assert updated.get("_clock_trigger_count") == 0
-    assert str(updated.get("last_message") or "").startswith("Working")
+    assert str(runtime_updated.get("last_message") or "").startswith("Working")
 
 
 def test_clock_trigger_scan_requires_start_and_enqueues_after_interval(monkeypatch, tmp_path):
@@ -262,18 +275,104 @@ def test_clock_trigger_scan_requires_start_and_enqueues_after_interval(monkeypat
     second = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert second == 1
 
-    updated = json.loads(config_path.read_text(encoding="utf-8"))
-    pending = updated.get("pending")
+    updated_runtime = _read_runtime_state(config_path)
+    updated_config = json.loads(config_path.read_text(encoding="utf-8"))
+    pending = updated_runtime.get("pending")
     assert isinstance(pending, list)
     assert len(pending) == 1
     assert envelope_text(pending[0].get("payload")) == "clock-fire"
     assert pending[0].get("source") == "clock_trigger"
-    assert updated.get("_clock_running") is True
-    assert updated.get("_clock_trigger_count") == 1
-    assert updated.get("state") == "working"
+    assert updated_config.get("_clock_running") is True
+    assert updated_config.get("_clock_trigger_count") == 1
+    assert updated_runtime.get("state") == "working"
 
     third = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert third == 0
+
+
+def test_running_clock_scan_does_not_persist_countdown_before_due(monkeypatch, tmp_path):
+    import src.web_backend.graph_timer_scheduler as timer_module
+    from src.web_backend.core import BackendCore
+
+    core = BackendCore()
+    graph_runtime = core.graph_runtime
+
+    monkeypatch.setattr(timer_module.runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(graph_runtime, "_ensure_graph_runner", lambda _graph_id: None)
+    monkeypatch.setattr(graph_runtime, "_wake_graph_runner", lambda _graph_id: None)
+
+    graph_id = "clock_graph_no_countdown_write"
+    node_id = "clock_node_no_countdown_write"
+    node_dir = tmp_path / "memories" / graph_id / node_id
+    node_dir.mkdir(parents=True, exist_ok=True)
+    config_path = node_dir / "config.json"
+    config = {
+        "node_id": node_id,
+        "type_id": "clock_node",
+        "state": "working",
+        "IntervalDays": "0",
+        "IntervalHours": "0",
+        "IntervalMinutes": "0",
+        "IntervalSeconds": "60",
+        "IsLoop": "true",
+        "LoopCount": "0",
+        "OutputText": "clock-fire",
+        "_clock_running": True,
+        "_clock_next_fire_at": time.time() + 60,
+        "_clock_remaining_seconds": 60,
+        "_clock_trigger_count": 0,
+        "last_message": "Working: 60s",
+    }
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    before = config_path.read_text(encoding="utf-8")
+
+    enqueued = graph_runtime._scan_and_emit_scheduled_nodes_once()
+
+    assert enqueued == 0
+    assert config_path.read_text(encoding="utf-8") == before
+
+
+def test_stop_timer_scheduler_persists_running_clock_snapshot(monkeypatch, tmp_path):
+    import src.web_backend.graph_timer_scheduler as timer_module
+    from src.web_backend.core import BackendCore
+
+    core = BackendCore()
+    graph_runtime = core.graph_runtime
+
+    monkeypatch.setattr(timer_module.runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    graph_id = "clock_shutdown_graph"
+    node_id = "clock_shutdown_node"
+    node_dir = tmp_path / "memories" / graph_id / node_id
+    node_dir.mkdir(parents=True, exist_ok=True)
+    config_path = node_dir / "config.json"
+    config = {
+        "node_id": node_id,
+        "type_id": "clock_node",
+        "state": "working",
+        "IntervalDays": "0",
+        "IntervalHours": "0",
+        "IntervalMinutes": "0",
+        "IntervalSeconds": "120",
+        "IsLoop": "true",
+        "LoopCount": "0",
+        "OutputText": "clock-fire",
+        "_clock_running": True,
+        "_clock_next_fire_at": time.time() + 90,
+        "_clock_remaining_seconds": 120,
+        "_clock_trigger_count": 0,
+        "last_message": "Working: 120s",
+    }
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    graph_runtime._stop_timer_trigger_scheduler()
+
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    runtime_updated = _read_runtime_state(config_path)
+    remaining = int(updated.get("_clock_remaining_seconds"))
+    assert 0 < remaining <= 90
+    assert runtime_updated.get("state") == "working"
+    assert runtime_updated.get("last_message") == f"Working: {remaining}s"
 
 
 def test_clock_trigger_respects_loop_count_and_stops_after_limit(monkeypatch, tmp_path):
@@ -314,10 +413,11 @@ def test_clock_trigger_respects_loop_count_and_stops_after_limit(monkeypatch, tm
     assert first == 1
 
     updated = json.loads(config_path.read_text(encoding="utf-8"))
+    runtime_updated = _read_runtime_state(config_path)
     assert updated.get("_clock_running") is False
     assert updated.get("_clock_trigger_count") == 1
-    assert updated.get("state") == "idle"
-    assert str(updated.get("last_message") or "").startswith("Completed")
+    assert runtime_updated.get("state") == "idle"
+    assert str(runtime_updated.get("last_message") or "").startswith("Completed")
 
     second = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert second == 0
@@ -436,6 +536,49 @@ def test_loop_node_routes_continue_until_remaining_count_reaches_zero(monkeypatc
 
     second_saved = json.loads(config_path.read_text(encoding="utf-8"))
     assert second_saved.get("_loop_remaining") == 0
+
+
+def test_loop_node_infinite_loop_ignores_remaining_count(monkeypatch, tmp_path):
+    import nodes.base_node as base_node_module
+    from nodes.loop_node import Node
+
+    monkeypatch.setattr(base_node_module, "_get_runtime_root", lambda: str(tmp_path))
+
+    node = Node()
+    graph_id = "loop_graph_forever"
+    node_id = "loop_node_forever"
+    ctx = {"graph_id": graph_id, "node_instance_id": node_id, "node_type_id": "loop_node"}
+    cfg = {}
+    node.on_create(cfg, ctx)
+
+    assert cfg.get("IsInfiniteLoop") is False
+    assert node.get_config_schema(None)["IsInfiniteLoop"]["type"] == "boolean"
+
+    node_dir = tmp_path / "memories" / graph_id / node_id
+    node_dir.mkdir(parents=True, exist_ok=True)
+    config_path = node_dir / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "LoopCount": "1",
+                "IsInfiniteLoop": True,
+                "_loop_remaining": 0,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    out = node.on_input("forever", {**ctx, "LoopCount": "1"})
+    routes = out.get("routes")
+    assert isinstance(routes, list) and routes
+    assert routes[0].get("output_index") == 0
+    assert envelope_text(routes[0].get("payload")) == "forever"
+    assert out.get("display") == "loop continue (forever)"
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved.get("_loop_remaining") == 0
 
 
 def test_loop_node_routes_finish_and_resets_remaining_count(monkeypatch, tmp_path):

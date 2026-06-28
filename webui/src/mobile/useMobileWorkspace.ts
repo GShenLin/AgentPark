@@ -1,16 +1,23 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import {
+  clearNodeInstanceMemory,
   getMobileNodeConversation,
+  listNodeInstanceConfigs,
   listMobileGraphs,
   listMobileNodes,
   listMobilePcs,
+  listProviders,
+  listTools,
   sendMobileNodeMessage,
+  updateNodeInstanceConfig,
   type MessageEnvelope,
   type MobileGraph,
   type MobileGraphInstance,
   type MobileNode,
   type MobileNodeConversation,
   type MobilePc,
+  type NodeInstanceConfig,
+  type ProviderInfo,
 } from '../api'
 
 export type MobileView = 'pcs' | 'graphs' | 'nodes' | 'chat'
@@ -20,6 +27,9 @@ export function useMobileWorkspace() {
   const pcs = ref<MobilePc[]>([])
   const graphInstances = ref<MobileGraphInstance[]>([])
   const nodes = ref<MobileNode[]>([])
+  const nodeConfigs = ref<Record<string, NodeInstanceConfig>>({})
+  const providers = ref<ProviderInfo[]>([])
+  const availableTools = ref<string[]>([])
   const conversation = ref<MobileNodeConversation | null>(null)
   const selectedPc = ref<MobilePc | null>(null)
   const selectedGraph = ref<MobileGraph | null>(null)
@@ -31,6 +41,11 @@ export function useMobileWorkspace() {
   let chatPollTimer: number | null = null
 
   const flatGraphs = computed(() => graphInstances.value.flatMap((item) => item.graphs))
+  const selectedConfig = computed(() => {
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    if (!nodeId) return null
+    return nodeConfigs.value[nodeId] || null
+  })
 
   function setError(value: unknown) {
     error.value = String((value as { message?: unknown })?.message || value || '')
@@ -54,6 +69,16 @@ export function useMobileWorkspace() {
     } finally {
       loading.value = false
     }
+  }
+
+  async function loadEditorCatalog() {
+    if (providers.value.length && availableTools.value.length) return
+    const [nextProviders, nextTools] = await Promise.all([
+      listProviders(),
+      listTools(),
+    ])
+    providers.value = nextProviders
+    availableTools.value = nextTools
   }
 
   async function selectPc(pc: MobilePc) {
@@ -88,6 +113,35 @@ export function useMobileWorkspace() {
     }
   }
 
+  async function refreshNodeConfigs() {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    if (!graphId) throw new Error('Graph selection is required')
+    const response = await listNodeInstanceConfigs(graphId)
+    const configs = response.nodes || []
+    const next: Record<string, NodeInstanceConfig> = {}
+    for (const item of configs) {
+      const nodeId = String(item.node_id || '').trim()
+      if (nodeId) next[nodeId] = item
+    }
+    nodeConfigs.value = next
+  }
+
+  async function setSelectedNodeFields(fields: Record<string, unknown>) {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
+    await updateNodeInstanceConfig(nodeId, { fields }, graphId)
+    await refreshNodeConfigs()
+  }
+
+  async function clearSelectedNodeFields(fields: string[]) {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
+    await updateNodeInstanceConfig(nodeId, { clear_fields: fields }, graphId)
+    await refreshNodeConfigs()
+  }
+
   async function selectGraph(graph: MobileGraph) {
     const graphId = String(graph.id || '').trim()
     if (!graphId) throw new Error('Graph id is required')
@@ -98,7 +152,7 @@ export function useMobileWorkspace() {
     error.value = ''
     loading.value = true
     try {
-      await refreshNodes()
+      await Promise.all([loadEditorCatalog(), refreshNodes(), refreshNodeConfigs()])
       startNodePolling()
     } catch (e) {
       setError(e)
@@ -149,6 +203,23 @@ export function useMobileWorkspace() {
     }
   }
 
+  async function clearSelectedNodeMemory() {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
+    error.value = ''
+    loading.value = true
+    try {
+      await clearNodeInstanceMemory(nodeId, graphId)
+      conversation.value = null
+      await Promise.all([refreshNodes(), refreshConversation()])
+    } catch (e) {
+      setError(e)
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function refreshCurrent() {
     if (view.value === 'pcs') {
       await loadPcs()
@@ -161,10 +232,10 @@ export function useMobileWorkspace() {
       return
     }
     if (view.value === 'nodes') {
-      await refreshNodes()
+      await Promise.all([refreshNodes(), refreshNodeConfigs()])
       return
     }
-    await Promise.all([refreshNodes(), refreshConversation()])
+    await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshConversation()])
   }
 
   function backToPcs() {
@@ -228,10 +299,14 @@ export function useMobileWorkspace() {
     graphInstances,
     flatGraphs,
     nodes,
+    nodeConfigs,
+    providers,
+    availableTools,
     conversation,
     selectedPc,
     selectedGraph,
     selectedNode,
+    selectedConfig,
     loading,
     sending,
     error,
@@ -240,7 +315,11 @@ export function useMobileWorkspace() {
     selectGraph,
     selectNode,
     sendMessage,
+    setSelectedNodeFields,
+    clearSelectedNodeFields,
+    clearSelectedNodeMemory,
     refreshCurrent,
+    refreshNodeConfigs,
     backToPcs,
     backToGraphs,
     backToNodes,

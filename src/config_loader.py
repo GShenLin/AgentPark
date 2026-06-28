@@ -2,6 +2,8 @@ import copy
 import json
 import os
 
+from src.provider_feature_matrix import build_provider_feature_matrix
+from src.value_parsing import parse_optional_int_value
 from .workspace_settings import get_workspace_root
 
 
@@ -15,10 +17,7 @@ class ConfigLoader:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def _get_runtime_root(self):
-        return get_workspace_root()
-
-    def _resolve_config_path(self):
+    def _resolve_provider_config_path(self):
         explicit_path = str(os.environ.get(self.CONFIG_PATH_ENV) or "").strip()
         if explicit_path:
             resolved = os.path.abspath(explicit_path)
@@ -28,7 +27,7 @@ class ConfigLoader:
                 )
             return resolved
 
-        runtime_root = self._get_runtime_root()
+        runtime_root = get_workspace_root()
         candidates = [
             os.path.join(runtime_root, "config", "moduleProvider.json"),
             os.path.join(os.getcwd(), "config", "moduleProvider.json"),
@@ -37,6 +36,32 @@ class ConfigLoader:
             if os.path.isfile(candidate):
                 return candidate
         raise FileNotFoundError(f"Config file not found. Checked: {candidates}")
+
+    def _resolve_workspace_config_path(self, provider_config_path):
+        explicit_path = str(os.environ.get(self.CONFIG_PATH_ENV) or "").strip()
+        if explicit_path:
+            candidate = os.path.join(os.path.dirname(os.path.abspath(provider_config_path)), "config.json")
+            return candidate if os.path.isfile(candidate) else ""
+
+        runtime_root = get_workspace_root()
+        candidates = [
+            os.path.join(runtime_root, "config", "config.json"),
+            os.path.join(os.getcwd(), "config", "config.json"),
+        ]
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return ""
+
+    def _load_workspace_config(self, provider_config_path):
+        path = self._resolve_workspace_config_path(provider_config_path)
+        if not path:
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            raise ValueError("config/config.json must contain a top-level object.")
+        return payload
 
     def _normalize_support_modes(self, provider_name, value):
         if value is None:
@@ -62,16 +87,11 @@ class ConfigLoader:
         if value is None or value == "":
             return value
         try:
-            timeout_ms = int(float(value))
-        except Exception as exc:
+            return parse_optional_int_value("timeoutMs", value, minimum=1)
+        except ValueError as exc:
             raise ValueError(
                 f"Provider '{provider_name}' has invalid timeoutMs: {value!r}"
             ) from exc
-        if timeout_ms <= 0:
-            raise ValueError(
-                f"Provider '{provider_name}' timeoutMs must be greater than zero."
-            )
-        return timeout_ms
 
     def _normalize_provider_config(self, provider_name, payload, require_api_key):
         if not isinstance(payload, dict):
@@ -92,9 +112,14 @@ class ConfigLoader:
             provider["timeoutMs"] = self._normalize_timeout_ms(
                 provider_name, provider.get("timeoutMs")
             )
+        if "responsesApi" in provider and not isinstance(provider.get("responsesApi"), bool):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid responsesApi; expected a boolean."
+            )
 
         provider.pop("apiKeyEnv", None)
         provider["apiKey"] = str(provider.get("apiKey") or "").strip()
+        provider["features"] = build_provider_feature_matrix(provider)
 
         if require_api_key and not provider["apiKey"]:
             raise ValueError(
@@ -104,8 +129,8 @@ class ConfigLoader:
         return provider
 
     def _load_config(self):
-        config_path = self._resolve_config_path()
-        with open(config_path, "r", encoding="utf-8") as f:
+        provider_config_path = self._resolve_provider_config_path()
+        with open(provider_config_path, "r", encoding="utf-8") as f:
             payload = json.load(f)
 
         if not isinstance(payload, dict):
@@ -117,7 +142,7 @@ class ConfigLoader:
         if not isinstance(providers, dict):
             raise ValueError("moduleProvider.json 'providers' must be an object.")
 
-        normalized = copy.deepcopy(payload)
+        normalized = copy.deepcopy(self._load_workspace_config(provider_config_path))
         normalized["providers"] = {
             str(provider_name): self._normalize_provider_config(
                 str(provider_name),

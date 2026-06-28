@@ -1,16 +1,13 @@
 import os
 from urllib.parse import quote, urlparse
 
+from src.media_resource_utils import dedupe_preserve_order
+from src.media_resource_utils import normalize_public_base_url
 from src.message_protocol import normalize_envelope
 
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 _VIDEO_EXTS = {".mp4", ".mov", ".avi"}
-
-
-def normalize_public_base_url(value: object) -> str:
-    text = str(value or "").strip()
-    return text.rstrip("/") if text else ""
 
 
 def _guess_kind_from_uri(uri: object) -> str:
@@ -69,21 +66,6 @@ def resolve_public_media_url(uri: object, *, public_base_url: object = "") -> st
     return f"{base}/api/files/raw?path={quote(local_path, safe='')}&download=1"
 
 
-def _dedupe_preserve_order(items: list[str]) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for item in items:
-        text = str(item or "").strip()
-        if not text:
-            continue
-        key = text.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        output.append(text)
-    return output
-
-
 def _collect_media_candidates(message: object, *, configured_image_path: object = "", configured_video_path: object = "") -> tuple[list[str], list[str]]:
     envelope = normalize_envelope(message, default_role="user")
     parts = envelope.get("parts") if isinstance(envelope, dict) else []
@@ -117,7 +99,7 @@ def _collect_media_candidates(message: object, *, configured_image_path: object 
         elif kind == "video":
             video_candidates.append(uri)
 
-    return _dedupe_preserve_order(image_candidates), _dedupe_preserve_order(video_candidates)
+    return dedupe_preserve_order(image_candidates), dedupe_preserve_order(video_candidates)
 
 
 def resolve_video_change_person_inputs(

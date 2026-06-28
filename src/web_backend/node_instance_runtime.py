@@ -3,15 +3,18 @@ import math
 import os
 import time
 
+from fastapi.responses import StreamingResponse
+
 from src.clock_config import build_clock_interval_fields, parse_clock_interval_seconds
 
 from . import node_runtime, runtime_paths
+from .channel_api import call_channel_http
+from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
 from .shared import (
     HTTPException,
-    _parse_node_state,
     _read_json_dict,
-    _read_tail_text,
+    _cancel_node_work,
     _set_node_config_last_message,
     _touch_node_config_last_run_at,
     _update_node_config_state,
@@ -20,14 +23,14 @@ from .shared import (
     envelope_text,
     normalize_envelope,
 )
+from .node_memory_store import current_node_memory_paths
+from .node_memory_store import load_recent_node_memory_records
+from .node_memory_store import read_node_memory_text
 
 
 class NodeInstanceRuntime(HostBoundService):
-    def _read_clock_interval_seconds(self, cfg: dict) -> int:
-        return parse_clock_interval_seconds(cfg)
-
     def _control_clock_node(self, config_path: str, cfg: dict, action: str) -> dict:
-        interval_seconds = self._read_clock_interval_seconds(cfg)
+        interval_seconds = parse_clock_interval_seconds(cfg)
         if interval_seconds <= 0:
             raise HTTPException(status_code=400, detail="clock interval must be greater than 0")
 
@@ -35,7 +38,7 @@ class NodeInstanceRuntime(HostBoundService):
         next_cfg = dict(cfg)
         next_cfg.update(build_clock_interval_fields(next_cfg))
         if action == "start":
-            current_state = _parse_node_state(next_cfg.get("state"))
+            current_state = parse_node_state(next_cfg.get("state"))
             if current_state == "stop":
                 remaining_raw = next_cfg.get("_clock_remaining_seconds")
                 try:
@@ -69,7 +72,7 @@ class NodeInstanceRuntime(HostBoundService):
 
         if not _write_json_dict(config_path, next_cfg):
             raise HTTPException(status_code=500, detail="failed to write node config")
-        return {"ok": True, "state": _parse_node_state(next_cfg.get("state")), "config": next_cfg}
+        return {"ok": True, "state": parse_node_state(next_cfg.get("state")), "config": next_cfg}
 
     def run_node(self, payload: dict):
         node_id = (payload or {}).get("node_id")
@@ -122,27 +125,73 @@ class NodeInstanceRuntime(HostBoundService):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
-        text = _read_tail_text(memory_path, max_chars=max_chars) if memory_path and os.path.exists(memory_path) else ""
-        messages: list[dict] = []
-        if messages_path and os.path.exists(messages_path):
-            try:
-                with open(messages_path, "r", encoding="utf-8", errors="replace") as f:
-                    for line in f.readlines()[-400:]:
-                        raw = str(line or "").strip()
-                        if raw:
-                            item = json.loads(raw)
-                            if isinstance(item, dict):
-                                messages.append(normalize_envelope(item, default_role="assistant"))
-            except Exception:
-                messages = []
+        text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
+        messages = [
+            normalize_envelope(item, default_role="assistant")
+            for item in load_recent_node_memory_records(memory_path, messages_path, limit=400)
+        ]
+        current_paths = current_node_memory_paths(memory_path, messages_path)
         return {
-            "memory_path": memory_path,
-            "messages_path": messages_path,
+            "memory_path": current_paths.get("memory_path") or memory_path,
+            "messages_path": current_paths.get("messages_path") or messages_path,
             "text": text,
             "messages": messages,
-            "state": _parse_node_state(cfg.get("state")) if isinstance(cfg, dict) else "idle",
+            "state": parse_node_state(cfg.get("state")) if isinstance(cfg, dict) else "idle",
             "last_message": str(cfg.get("last_message") or "") if isinstance(cfg, dict) else "",
+            "live_message": str((self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}).get("text") or ""),
         }
+
+    def get_node_instance_live(self, node_id: str, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
+        if not isinstance(cfg, dict) or not cfg:
+            raise HTTPException(status_code=404, detail="node instance not found")
+        return {
+            "node_id": safe_node_id,
+            "graph_id": safe_graph_id,
+            "live_message": str((self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}).get("text") or ""),
+        }
+
+    def stream_node_instance_live(self, node_id: str, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
+        if not isinstance(cfg, dict) or not cfg:
+            raise HTTPException(status_code=404, detail="node instance not found")
+
+        def encode_event(item: dict) -> str:
+            payload = {
+                "node_id": safe_node_id,
+                "graph_id": safe_graph_id,
+                "live_message": str((item or {}).get("text") or ""),
+                "version": int((item or {}).get("version") or 0),
+                "is_streaming": bool((item or {}).get("is_streaming")),
+                "event_type": str((item or {}).get("event_type") or ""),
+                "event": (item or {}).get("event") if isinstance((item or {}).get("event"), dict) else None,
+            }
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        def events():
+            item = self.core.node_live_outputs.get(safe_graph_id, safe_node_id)
+            last_version = int((item or {}).get("version") or 0)
+            yield encode_event(item or {"version": last_version, "text": "", "is_streaming": False})
+            while True:
+                item = self.core.node_live_outputs.wait_for_change(safe_graph_id, safe_node_id, last_version, timeout=15.0)
+                version = int((item or {}).get("version") or 0)
+                if version <= last_version:
+                    yield ": keep-alive\n\n"
+                    continue
+                last_version = version
+                yield encode_event(item)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     def set_node_instance_state(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -150,7 +199,7 @@ class NodeInstanceRuntime(HostBoundService):
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
-        mapped = _parse_node_state((payload or {}).get("state"))
+        mapped = parse_node_state((payload or {}).get("state"))
         _update_node_config_state(config_path, mapped)
         self.graph_runtime._log_graph_event(safe_graph_id, "node_state_set", node_id=safe_node_id, state=mapped)
         if mapped == "idle":
@@ -170,6 +219,24 @@ class NodeInstanceRuntime(HostBoundService):
 
         action = str((payload or {}).get("action") or "").strip().lower()
         type_id = str(cfg.get("type_id") or "").strip()
+        if type_id == "channel_receiver_node":
+            return call_channel_http(self.core.channel_service.control_receiver, safe_graph_id, safe_node_id, payload)
+        if type_id != "clock_node" and action == "stop":
+            result = _cancel_node_work(config_path)
+            active_cancelled = self.core.node_cancellations.request(config_path)
+            self.graph_runtime._log_graph_event(
+                safe_graph_id,
+                "node_control",
+                node_id=safe_node_id,
+                node_type_id=type_id or None,
+                action="stop",
+                state=str(result.get("state") or "idle"),
+                cleared_pending=int(result.get("cleared_pending") or 0),
+                cleared_inflight=bool(result.get("cleared_inflight")),
+                active_cancelled=active_cancelled,
+            )
+            result["active_cancelled"] = active_cancelled
+            return {"ok": True, "state": parse_node_state(result.get("state")), "cancelled": result}
         if type_id != "clock_node":
             raise HTTPException(status_code=400, detail="node control is not supported for this node type")
         if action not in {"start", "stop"}:

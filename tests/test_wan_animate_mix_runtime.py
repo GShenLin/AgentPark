@@ -1,4 +1,5 @@
 import os
+import pytest
 
 
 def test_wan_animate_mix_runtime_creates_task_polls_and_downloads(tmp_path):
@@ -86,3 +87,36 @@ def test_wan_animate_mix_runtime_creates_task_polls_and_downloads(tmp_path):
     get_payload = host.get_calls[0]
     assert get_payload["url"] == "https://dashscope.aliyuncs.com/api/v1/tasks/task-123"
     assert any("task-123" in str(item.get("content") or "") for item in host.messages)
+
+
+def test_wan_animate_mix_runtime_rejects_invalid_switch_and_poll_config(tmp_path):
+    from src.providers.wan_animate_mix_runtime import WanAnimateMixRuntime
+
+    class DummyHost:
+        def __init__(self):
+            self.config = {
+                "apiKey": "token",
+                "baseUrl": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis",
+                "model": "wan2.2-animate-mix",
+                "watermark": "maybe",
+                "wanAnimateMixPollIntervalSec": 0,
+            }
+            self.current_memory_path = str(tmp_path / "agent" / "agent.md")
+
+        def _post_json_with_retry(self, **_kwargs):
+            return {"output": {"task_id": "task-123"}}
+
+    runtime = WanAnimateMixRuntime(DummyHost())
+
+    with pytest.raises(ValueError, match="watermark must be a boolean value"):
+        runtime.generate_video_change_person(
+            image_url="https://cdn.example.com/actor.png",
+            video_url="https://cdn.example.com/source.mp4",
+        )
+
+    runtime.config["watermark"] = "true"
+    with pytest.raises(ValueError, match="wanAnimateMixPollIntervalSec must be greater than 0"):
+        runtime.generate_video_change_person(
+            image_url="https://cdn.example.com/actor.png",
+            video_url="https://cdn.example.com/source.mp4",
+        )

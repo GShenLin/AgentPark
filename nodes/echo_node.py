@@ -1,6 +1,7 @@
 from nodes.base_node import BaseNode
 import json
 import os
+from src.message_protocol import envelope_text
 
 
 class Node(BaseNode):
@@ -35,6 +36,6 @@ class Node(BaseNode):
                             my_text = str(data.get("MyText") or "")
                 except Exception:
                     my_text = ""
-        input_text = self._message_text(message)
+        input_text = envelope_text(message)
         output_text = f"{my_text}{input_text}" if my_text else f"{input_text}"
         return self._text_output(output_text)

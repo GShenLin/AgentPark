@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  cloneNodeInstance,
   controlNodeInstance,
   createNodeInstance,
   deleteNodeInstance,
@@ -7,13 +8,14 @@ import {
   getPasteAgentConfig,
   listNodeInstanceConfigs,
   listNodes,
+  openNodeInstanceFolder,
   renameNodeInstance,
   saveGraph,
   setNodeInstanceState,
   startGraphRunner,
+  stopNodeRun,
   updateNodeInstanceConfig,
   type GraphConfig,
-  type GraphLinkEndpoint,
   type MessageEnvelope,
   type NodeInstanceConfig,
   type NodeInstanceState,
@@ -22,20 +24,77 @@ import {
 } from '../../api'
 import { resolveDroppedPaths } from '../../composables/droppedPaths'
 import { useGlobalState } from '../../composables/useGlobalState'
+import {
+  buildBoardPastePlan,
+  hasBoardClipboardSnapshot,
+  makeBoardCopySnapshot,
+  type BoardClipboardSnapshot,
+  type BoardPastePlan,
+} from './boardClipboard'
+import {
+  clearPendingBoardPosition,
+  rememberPendingBoardPositions,
+  traceBoardDrag,
+  type BoardPosition,
+} from './boardDragState'
+import {
+  assignMissingNodePositions,
+  canvasPointFromClient,
+  computeBoardCanvasSize,
+  nodeCardStyle,
+} from './boardLayout'
+import { boardLinkExists, createBoardLink, createBoardLinkSession, createBoardLinkTarget } from './boardLinks'
+import { appendUniqueBoardAttachment, isBoardFileDropEvent } from './boardFiles'
+import { createBoardGraphPersistence } from './boardGraphPersistence'
+import { createBoardNodeConfigRefresh } from './boardNodeConfigRefresh'
+import { removeBoardNodeRuntimeState, renameBoardNodeIdentity } from './boardNodeIdentity'
+import { createBoardRuntimeRefresh } from './boardRuntimeRefresh'
+import {
+  getBoardNodeState,
+  isBoardClockNode,
+  isBoardClockRunning,
+  isBoardNodeStopped,
+  isBoardNodeWorking,
+  resolveBoardNodeTypeId,
+  waitForBoardNodeOutput,
+} from './boardNodeRuntime'
+import {
+  computeNodeIdsInSelectionRect,
+  selectionRectExceedsThreshold,
+  selectionRectFromSession,
+  type BoardSelectionSession,
+} from './boardSelection'
 import type { AgentBoardContext, DragSession, LinkItem, LinkSession, NodeCard, NodeRunState, PanSession } from './context'
-import { normalizeRuntimeEvent, normalizeRuntimeEvents, normalizeRuntimeToolCalls } from './toolRuntimeEvents'
+import {
+  clampX,
+  applyNodeFieldPatchToCard,
+  messageToText,
+  mergeNodeConfigFields,
+  buildLinkPath,
+  getNodePortPosition,
+  pruneLinksForNodePorts,
+  normalizeGraphLinks,
+  normalizePasteAgentConfig,
+  normalizePortCount,
+  normalizeSwitch,
+  previewMessage,
+  sanitizeBoardPoint,
+  type BoardNodePlacement,
+} from './boardModel'
 
 export function useAgentBoard(): AgentBoardContext {
   const {
     selectedNodeId,
     lastError,
     memoryMode,
+    memoryRefreshRequest,
     graphSnapshot,
     graphLoadRequest,
     currentGraphId,
     currentGraphName,
     nodeSettingsRequest,
     nodeEditorAttachments,
+    nodeTriggerInputs,
   } =
     useGlobalState()
 
@@ -46,24 +105,14 @@ export function useAgentBoard(): AgentBoardContext {
   const suppressClickUntil = ref(0)
 
   const selectedItemIds = ref<string[]>([])
-  let selectionSession:
-    | {
-        startX: number
-        startY: number
-        currentX: number
-        currentY: number
-        additive: boolean
-      }
-    | null = null
+  let selectionSession: BoardSelectionSession | null = null
 
   let dragBatchStart: Record<string, { x: number; y: number }> | null = null
   let activeDragItemIds = new Set<string>()
-  const pendingUiPositions = new Map<string, { x: number; y: number }>()
+  const pendingUiPositions = new Map<string, BoardPosition>()
+  let nodeConfigRefreshPromise: Promise<void> | null = null
   let pasteCount = 0
-  let clipboardSnapshot: {
-    nodes: NodeCard[]
-    links: LinkItem[]
-  } | null = null
+  let clipboardSnapshot: BoardClipboardSnapshot | null = null
   let pasteAgentConfigCache: PasteAgentConfig | null = null
 
   function selectNode(id: string) {
@@ -82,12 +131,25 @@ export function useAgentBoard(): AgentBoardContext {
     if (!targetId) return
     if (nodes.value.some((node) => node.id === targetId)) {
       selectNode(targetId)
+      refreshNodeConfig(targetId).catch(() => null)
     } else {
       return
     }
     nodeSettingsRequest.value = {
       id: targetId,
       nonce: Date.now(),
+    }
+  }
+
+  async function openNodeFolder(id: string) {
+    const targetId = String(id || '').trim()
+    if (!targetId) return
+    if (!nodes.value.some((node) => node.id === targetId)) return
+    selectNode(targetId)
+    try {
+      await openNodeInstanceFolder(targetId, currentGraphId.value || 'default')
+    } catch (e: any) {
+      lastError.value = `Failed to open node folder: ${String(e?.message || e)}`
     }
   }
 
@@ -99,72 +161,63 @@ export function useAgentBoard(): AgentBoardContext {
     selectedNodeWorkingPathRevision.value += 1
   }
 
-  function traceBoardDrag(event: string, payload: Record<string, unknown>) {
-    if (typeof window === 'undefined') return
-    const entry = {
-      ts: new Date().toISOString(),
-      event,
-      ...payload,
-    }
-    const bag = window as unknown as { __agentBoardDragTrace?: unknown[] }
-    const trace = Array.isArray(bag.__agentBoardDragTrace) ? bag.__agentBoardDragTrace : []
-    trace.push(entry)
-    if (trace.length > 300) trace.shift()
-    bag.__agentBoardDragTrace = trace
-    console.debug('[board-drag]', entry)
-  }
-
-  function getClampedUiPosition(id: string) {
-    const pos = getItemPosition(id)
-    if (!pos) return null
-    return {
-      x: clampX(pos.x),
-      y: Math.max(0, pos.y),
-    }
-  }
-
   function rememberPendingUiPositions(itemIds: Iterable<string>, reason: string) {
-    for (const itemId of itemIds) {
-      const pos = getClampedUiPosition(itemId)
-      if (!pos) continue
-      pendingUiPositions.set(itemId, pos)
-      traceBoardDrag('ui_pending', { itemId, reason, x: pos.x, y: pos.y })
-    }
+    rememberPendingBoardPositions({
+      itemIds,
+      pending: pendingUiPositions,
+      reason,
+      getPosition: getItemPosition,
+    })
   }
 
   function clearPendingUiPosition(itemId: string, reason: string) {
-    if (!pendingUiPositions.has(itemId)) return
-    pendingUiPositions.delete(itemId)
-    traceBoardDrag('ui_pending_cleared', { itemId, reason })
+    clearPendingBoardPosition({
+      itemId,
+      pending: pendingUiPositions,
+      reason,
+    })
   }
 
   function hasClipboardSnapshot() {
-    return !!clipboardSnapshot && clipboardSnapshot.nodes.length > 0
+    return hasBoardClipboardSnapshot(clipboardSnapshot)
   }
 
-  function normalizePasteAgentConfig(raw: PasteAgentConfig | null | undefined): PasteAgentConfig {
-    const cfg = raw || ({} as PasteAgentConfig)
-    const toolsRaw = Array.isArray(cfg.tools) ? cfg.tools : []
-    const safeTools: string[] = []
-    const seen = new Set<string>()
-    for (const item of toolsRaw) {
-      const value = String(item || '').trim()
-      if (!value) continue
-      const key = value.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      safeTools.push(value)
+  function buildPastePlanFromSnapshot(snapshot: BoardClipboardSnapshot) {
+    pasteCount += 1
+    const offset = 36 * pasteCount
+    return buildBoardPastePlan({
+      snapshot,
+      offset,
+      makeUniqueId,
+      makeLinkId: () => `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    })
+  }
+
+  async function clonePastePlanNodes(snapshot: BoardClipboardSnapshot, plan: BoardPastePlan, graphId: string) {
+    const targetNodesById = new Map(plan.nodes.map((node) => [node.id, node]))
+    for (const sourceNode of snapshot.nodes) {
+      const targetId = plan.idMap.get(sourceNode.id)
+      const targetNode = targetId ? targetNodesById.get(targetId) : null
+      if (!targetNode) throw new Error(`Missing pasted node for ${sourceNode.id}`)
+      await cloneNodeInstance(sourceNode.id, graphId, targetNode.id, targetNode.name, targetNode.ui)
     }
-    return {
-      agent_id: String(cfg.agent_id || 'pastagent').trim() || 'pastagent',
-      name: String(cfg.name || 'PasteAgent').trim() || 'PasteAgent',
-      provider_id: String(cfg.provider_id || '').trim(),
-      mode: String(cfg.mode || 'chat').trim() || 'chat',
-      web_search: normalizeSwitch(cfg.web_search, 'enabled'),
-      thinking: normalizeSwitch(cfg.thinking, 'enabled'),
-      system_prompt: String(cfg.system_prompt || ''),
-      tools: safeTools,
+  }
+
+  async function applyPastePlanToBoard(plan: BoardPastePlan, persistReason: string) {
+    nodes.value.push(...plan.nodes)
+    links.value.push(...plan.links)
+
+    selectedItemIds.value = plan.nodes.map((node) => node.id)
+    if (selectedItemIds.value.length === 1) {
+      const selectedId = selectedItemIds.value[0]
+      if (selectedId && nodes.value.some((node) => node.id === selectedId)) {
+        selectNode(selectedId)
+      }
     }
+    updateCanvasSize()
+    syncGraphSnapshot()
+    await persistGraphConfig(persistReason)
+    refreshNodeConfigsAndMemory().catch(() => null)
   }
 
   async function ensurePasteAgentConfigLoaded(forceReload = false) {
@@ -173,54 +226,34 @@ export function useAgentBoard(): AgentBoardContext {
       const cfg = await getPasteAgentConfig()
       pasteAgentConfigCache = normalizePasteAgentConfig(cfg)
       return pasteAgentConfigCache
-    } catch {
-      pasteAgentConfigCache = normalizePasteAgentConfig(null)
-      return pasteAgentConfigCache
+    } catch (error) {
+      pasteAgentConfigCache = null
+      const message = error instanceof Error ? error.message : String(error || 'unknown error')
+      throw new Error(message)
     }
   }
 
   async function pasteClipboardTextAsAgent(rawText: string) {
     const text = String(rawText || '').trim()
     if (!text) return false
-    const pasteCfg = await ensurePasteAgentConfigLoaded()
+    const pasteCfg = await ensurePasteAgentConfigLoaded(true)
+    const providerId = String(pasteCfg.provider_id || '').trim()
+    if (!providerId) {
+      throw new Error('PasteAgent config provider_id is empty. Check /api/paste-agent/config and config/pastagent.json for the running backend.')
+    }
     const nodeName = String(pasteCfg.name || pasteCfg.agent_id || 'PasteAgent').trim() || 'PasteAgent'
     const nodeId = await createNodeFromPalette('agent_node', nodeName, {
-      provider_id: pasteCfg.provider_id,
+      provider_id: providerId,
       system_prompt: pasteCfg.system_prompt,
       mode: pasteCfg.mode,
       web_search: normalizeSwitch(pasteCfg.web_search, 'enabled'),
       thinking: normalizeSwitch(pasteCfg.thinking, 'enabled'),
+      reasoning_effort: pasteCfg.reasoning_effort ?? 'high',
       tools: Array.isArray(pasteCfg.tools) ? pasteCfg.tools : [],
     })
     if (!nodeId) return false
     await sendNodeMessage(nodeId, text)
     return true
-  }
-
-  function previewMessage(value: string | null) {
-    const text = String(value ?? '').trim()
-    if (!text) return ''
-    return text.length > 64 ? `${text.slice(0, 64)}...` : text
-  }
-
-  function messageToText(value: string | MessageEnvelope) {
-    if (typeof value === 'string') return value
-    const parts = Array.isArray(value?.parts) ? value.parts : []
-    const output: string[] = []
-    for (const part of parts) {
-      if (!part || typeof part !== 'object') continue
-      const typ = String((part as any).type || '').toLowerCase()
-      if (typ === 'text') {
-        const text = String((part as any).text || '')
-        if (text) output.push(text)
-      } else if (typ === 'resource') {
-        const res = (part as any).resource || {}
-        const kind = String(res.kind || 'file')
-        const uri = String(res.uri || '')
-        if (uri) output.push(`[${kind}] ${uri}`)
-      }
-    }
-    return output.join('\n').trim()
   }
 
   function nodeWorkingPath(nodeId: string) {
@@ -241,20 +274,6 @@ export function useAgentBoard(): AgentBoardContext {
 
   function isNodeSelected(id: string) {
     return selectedItemIds.value.includes(id)
-  }
-
-  type BoardNodePlacement =
-    | { kind: 'selection-anchor' }
-    | {
-        kind: 'fixed'
-        ui: { x: number; y: number }
-      }
-
-  function sanitizeBoardPoint(ui: { x: number; y: number }) {
-    return {
-      x: clampX(Number(ui?.x ?? 0)),
-      y: Math.max(0, Number(ui?.y ?? 0)),
-    }
   }
 
   function resolveNodePlacement(placement: BoardNodePlacement) {
@@ -280,11 +299,17 @@ export function useAgentBoard(): AgentBoardContext {
     const safeTypeId = String(typeId || '').trim()
     if (!safeTypeId) return null
     const requestedId = String(nodeName || safeTypeId).trim() || safeTypeId
-    const nodeId = makeUniqueId(requestedId)
+    const requestedNodeId = makeUniqueId(requestedId)
     const graphId = currentGraphId.value || 'default'
     const ui = resolveNodePlacement(placement)
 
-    await createNodeInstance(nodeId, safeTypeId, nodeId, graphId, ui)
+    const created = await createNodeInstance(requestedNodeId, safeTypeId, requestedNodeId, graphId, ui)
+    const nodeId = String(created?.node_id || requestedNodeId).trim() || requestedNodeId
+    if (nodeId !== requestedNodeId && nodes.value.some((node) => node.id === nodeId)) {
+      const message = `Node id collision after creation: ${nodeId}`
+      lastError.value = message
+      throw new Error(message)
+    }
     if (fields && Object.keys(fields).length) {
       await updateNodeInstanceConfig(nodeId, { fields }, graphId)
     }
@@ -305,9 +330,12 @@ export function useAgentBoard(): AgentBoardContext {
       providerId: String((fields as any)?.provider_id ?? '').trim(),
       mode: String((fields as any)?.mode ?? '').trim(),
       webSearch: normalizeSwitch((fields as any)?.web_search, 'disabled'),
-      thinking: normalizeSwitch((fields as any)?.thinking, 'enabled'),
+      thinking: normalizeSwitch((fields as any)?.thinking, 'disabled'),
+      reasoningEffort: (fields as any)?.reasoning_effort ?? 'high',
       systemPrompt: String((fields as any)?.system_prompt ?? ''),
+      plugins: Array.isArray((fields as any)?.plugins) ? (fields as any).plugins.map(String).filter(Boolean) : [],
       tools: Array.isArray((fields as any)?.tools) ? (fields as any).tools.map(String).filter(Boolean) : [],
+      mcpServers: Array.isArray((fields as any)?.mcp_servers) ? (fields as any).mcp_servers.map(String).filter(Boolean) : [],
       workingPath: String((fields as any)?.working_path ?? '').trim(),
     })
     selectedItemIds.value = [nodeId]
@@ -315,8 +343,9 @@ export function useAgentBoard(): AgentBoardContext {
     memoryMode.value = 'agent'
     syncGraphSnapshot()
     await persistGraphConfig('create_node_from_palette')
-    refreshNodeConfigs().catch(() => null)
+    refreshNodeConfigsAndMemory().catch(() => null)
     ensureNodeConfig(nodeId).catch(() => null)
+    scheduleActiveNodeRefresh()
     return nodeId
   }
 
@@ -351,51 +380,18 @@ export function useAgentBoard(): AgentBoardContext {
   }
 
   function applyLocalRename(oldId: string, newId: string) {
-    const node = nodes.value.find((item) => item.id === oldId)
-    if (node) {
-      node.id = newId
-      node.name = newId
-    }
-
-    if (selectedNodeId.value === oldId) selectedNodeId.value = newId
-    selectedItemIds.value = selectedItemIds.value.map((id) => (id === oldId ? newId : id))
-
-    for (const link of links.value) {
-      if (link.from.node === oldId) link.from.node = newId
-      if (link.to.node === oldId) link.to.node = newId
-    }
-
-    const prevCfg = nodeConfigs.value[oldId]
-    const nextCfg = { ...nodeConfigs.value }
-    delete nextCfg[oldId]
-    if (prevCfg) {
-      nextCfg[newId] = {
-        ...prevCfg,
-        node_id: newId,
-        name: newId,
-      } as NodeInstanceConfig
-    }
-    nodeConfigs.value = nextCfg
-
-    const prevState = nodeStates.value[oldId]
-    const nextState = { ...nodeStates.value }
-    delete nextState[oldId]
-    if (prevState) nextState[newId] = prevState
-    nodeStates.value = nextState
-
-    const prevRun = nodeRuns.value[oldId]
-    const nextRuns = { ...nodeRuns.value }
-    delete nextRuns[oldId]
-    if (prevRun) {
-      nextRuns[newId] = { ...prevRun, nodeId: newId }
-    }
-    nodeRuns.value = nextRuns
-
-    const prevPulse = nodeDonePulse.value[oldId]
-    const nextPulse = { ...nodeDonePulse.value }
-    delete nextPulse[oldId]
-    if (typeof prevPulse === 'number') nextPulse[newId] = prevPulse
-    nodeDonePulse.value = nextPulse
+    renameBoardNodeIdentity({
+      oldId,
+      newId,
+      nodes,
+      links,
+      selectedNodeId,
+      selectedItemIds,
+      nodeConfigs,
+      nodeStates,
+      nodeRuns,
+      nodeDonePulse,
+    })
   }
 
   async function renameNodeCard(itemId: string, nextName: string) {
@@ -413,7 +409,7 @@ export function useAgentBoard(): AgentBoardContext {
 
     syncGraphSnapshot()
     await persistGraphConfig('rename_board_item')
-    refreshNodeConfigs().catch(() => null)
+    refreshNodeConfigsAndMemory().catch(() => null)
   }
 
   const CARD_WIDTH = 200
@@ -442,175 +438,52 @@ export function useAgentBoard(): AgentBoardContext {
 
   const LINK_FLOW_DURATION_MS = 1200
   const LINK_FLOW_BUBBLES = [0, 0.14, 0.28, 0.42, 0.56]
-
-  function sleep(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms))
-  }
-
-  function clampX(value: number) {
-    return Math.max(0, value)
-  }
-
-  function normalizePortCount(value: unknown, fallback = 1) {
-    const num = Number(value)
-    if (!Number.isFinite(num)) return fallback
-    const intNum = Math.floor(num)
-    return intNum > 0 ? intNum : fallback
-  }
-
-  function normalizePortIndex(value: unknown, fallback = 0) {
-    const num = Number(value)
-    if (!Number.isFinite(num)) return fallback
-    const intNum = Math.floor(num)
-    return intNum >= 0 ? intNum : fallback
-  }
-
-  function normalizeSwitch(value: unknown, fallback: 'enabled' | 'disabled'): 'enabled' | 'disabled' {
-    const text = String(value ?? '').trim().toLowerCase()
-    if (['enabled', 'enable', 'on', 'true', '1', 'yes'].includes(text)) return 'enabled'
-    if (['disabled', 'disable', 'off', 'false', '0', 'no'].includes(text)) return 'disabled'
-    return fallback
-  }
-
-  function isFileDropEvent(event: DragEvent) {
-    const types = Array.from(event.dataTransfer?.types || [])
-    return types.includes('application/x-aitools-file') || types.includes('Files')
-  }
+  const graphPersistence = createBoardGraphPersistence({
+    graphSnapshot,
+    lastError,
+    currentGraphId,
+    currentGraphName,
+    nodes,
+    links,
+    saveGraph,
+  })
 
   function appendNodeEditorAttachment(path: string, name = '') {
-    const safePath = String(path || '').trim()
-    const safeName = String(name || '').trim() || safePath
-    if (!safePath) return
-    if (nodeEditorAttachments.value.some((item) => item.path === safePath)) return
-    nodeEditorAttachments.value.push({ path: safePath, name: safeName })
+    appendUniqueBoardAttachment(nodeEditorAttachments.value, path, name)
   }
 
   function updateCanvasSize() {
-    const nodePoints = nodes.value.map((n) => ({ x: n.ui.x, y: n.ui.y }))
-    const points = nodePoints
-    if (!points.length) {
-      canvasWidth.value = 1400
-      canvasHeight.value = 900
-      return
-    }
-    const maxX = Math.max(...points.map((p) => p.x)) + CARD_WIDTH + BOARD_PADDING * 2
-    const maxY = Math.max(...points.map((p) => p.y)) + CARD_HEIGHT + BOARD_PADDING * 2
-    canvasWidth.value = Math.max(1000, Math.ceil(maxX))
-    canvasHeight.value = Math.max(700, Math.ceil(maxY))
+    const size = computeBoardCanvasSize({
+      nodes: nodes.value,
+      cardWidth: CARD_WIDTH,
+      cardHeight: CARD_HEIGHT,
+      padding: BOARD_PADDING,
+      emptyWidth: 1400,
+      emptyHeight: 900,
+      minWidth: 1000,
+      minHeight: 700,
+    })
+    canvasWidth.value = size.width
+    canvasHeight.value = size.height
   }
 
   function ensurePositions() {
-    const baseX = BOARD_PADDING
-    const baseY = BOARD_PADDING
-    let idx = 0
-    for (const node of nodes.value) {
-      if (node.ui) continue
-      const col = idx % 4
-      const row = Math.floor(idx / 4)
-      node.ui = { x: baseX + col * (CARD_WIDTH + BOARD_GAP), y: baseY + row * (CARD_HEIGHT + BOARD_GAP) }
-      idx += 1
-    }
+    assignMissingNodePositions({
+      nodes: nodes.value,
+      cardWidth: CARD_WIDTH,
+      cardHeight: CARD_HEIGHT,
+      padding: BOARD_PADDING,
+      gap: BOARD_GAP,
+    })
     updateCanvasSize()
   }
 
-  function linkKey(from: { node: string; index: number }, to: { node: string; index: number }) {
-    return `${from.node}:${from.index}->${to.node}:${to.index}`
-  }
-
-  function dedupeLinks(items: { id: string; from: { node: string; index: number }; to: { node: string; index: number } }[]) {
-    const seen = new Set<string>()
-    const out: { id: string; from: { node: string; index: number }; to: { node: string; index: number } }[] = []
-    for (const link of items) {
-      const key = linkKey(link.from, link.to)
-      if (seen.has(key)) continue
-      seen.add(key)
-      out.push(link)
-    }
-    return out
-  }
-
-  function buildGraphSnapshot(): GraphConfig {
-    return {
-      id: currentGraphId.value || 'default',
-      name: currentGraphName.value || 'default',
-      nodes: nodes.value.map((node) => ({
-          id: node.id,
-          typeId: node.typeId,
-          name: node.name,
-          input_num: normalizePortCount(node.inputNum, 1),
-          output_num: normalizePortCount(node.outputNum, 1),
-          ui: { x: node.ui.x, y: node.ui.y },
-          providerId: node.providerId,
-          mode: node.mode,
-          web_search: node.webSearch,
-          thinking: node.thinking,
-          systemPrompt: node.systemPrompt,
-          tools: node.tools,
-          workingPath: node.workingPath,
-        })),
-      links: dedupeLinks(
-        links.value.map((link) => ({
-          id: link.id,
-          from: { node: link.from.node, index: normalizePortIndex(link.from.index, 0) },
-          to: { node: link.to.node, index: normalizePortIndex(link.to.index, 0) },
-        })),
-      ),
-    }
-  }
-
-  let graphSaveRunning = false
-  let graphSavePending = false
-  let graphSavePendingReason = 'unknown'
-
   function syncGraphSnapshot() {
-    graphSnapshot.value = buildGraphSnapshot()
+    graphPersistence.syncSnapshot()
   }
 
   async function persistGraphConfig(reason = 'unknown') {
-    const saveReason = String(reason || '').trim() || 'unknown'
-    if (graphSaveRunning) {
-      graphSavePending = true
-      graphSavePendingReason = saveReason
-      return
-    }
-    graphSaveRunning = true
-    graphSavePending = false
-    graphSavePendingReason = 'unknown'
-    try {
-      const snapshot = buildGraphSnapshot()
-      const graphId = currentGraphId.value || snapshot.id || 'default'
-      const payload: GraphConfig = {
-        ...snapshot,
-        id: graphId,
-        name: currentGraphName.value || snapshot.name || graphId,
-        source_graph_id: graphId,
-      }
-      await saveGraph(graphId, payload, { saveReason })
-      if (typeof window !== 'undefined') {
-        const event = {
-          ts: new Date().toISOString(),
-          reason: saveReason,
-          graphId,
-          nodesCount: Array.isArray(snapshot.nodes) ? snapshot.nodes.length : 0,
-          linksCount: Array.isArray(snapshot.links) ? snapshot.links.length : 0,
-        }
-        const bag = window as unknown as { __graphSaveTrace?: any[] }
-        const trace = Array.isArray(bag.__graphSaveTrace) ? bag.__graphSaveTrace : []
-        trace.push(event)
-        if (trace.length > 200) trace.shift()
-        bag.__graphSaveTrace = trace
-        console.debug('[graph-save]', event)
-      }
-    } catch (e: any) {
-      lastError.value = String(e?.message || e)
-    } finally {
-      graphSaveRunning = false
-      if (graphSavePending) {
-        const pendingReason = graphSavePendingReason
-        graphSavePendingReason = 'unknown'
-        void persistGraphConfig(pendingReason)
-      }
-    }
+    await graphPersistence.persist(reason)
   }
 
   function applyGraphConfig(config: GraphConfig) {
@@ -621,44 +494,19 @@ export function useAgentBoard(): AgentBoardContext {
     selectedNodeWorkingPath.value = ''
     selectedNodeWorkingPathRevision.value += 1
     nodes.value = []
+    nodeConfigs.value = {}
+    nodeStates.value = {}
+    resetNodeConfigWatermark()
 
     void startGraphRunner(graphId).catch(() => null)
 
-    links.value = dedupeLinks(
-      (config.links || [])
-        .map((link) => {
-          const fromRaw = (link as any).from
-          const toRaw = (link as any).to
-          let fromNode = ''
-          let toNode = ''
-          let fromIndex = 0
-          let toIndex = 0
-
-          if (fromRaw && typeof fromRaw === 'object') {
-            fromNode = String((fromRaw as any).node || '').trim()
-            fromIndex = normalizePortIndex((fromRaw as any).index, 0)
-          } else {
-            fromNode = String(fromRaw || '').trim()
-          }
-
-          if (toRaw && typeof toRaw === 'object') {
-            toNode = String((toRaw as any).node || '').trim()
-            toIndex = normalizePortIndex((toRaw as any).index, 0)
-          } else {
-            toNode = String(toRaw || '').trim()
-          }
-
-          return {
-            id: link.id,
-            from: { node: fromNode, index: fromIndex },
-            to: { node: toNode, index: toIndex },
-          }
-        })
-        .filter((link) => link.from.node && link.to.node),
-    )
+    links.value = normalizeGraphLinks(config.links || [])
 
     updateCanvasSize()
     syncGraphSnapshot()
+    if (graphSnapshot.value && Number(config.version || 0) > 0) {
+      graphSnapshot.value = { ...graphSnapshot.value, version: Number(config.version || 0) }
+    }
   }
 
   function detachLinks(id: string) {
@@ -686,15 +534,12 @@ export function useAgentBoard(): AgentBoardContext {
       selectedNodeId.value = null
     }
 
-    const nextStates = { ...nodeStates.value }
-    delete nextStates[nodeId]
-    nodeStates.value = nextStates
-
-    const nextDone = { ...nodeDonePulse.value }
-    delete nextDone[nodeId]
-    nodeDonePulse.value = nextDone
-
-    nodeRuns.value = Object.fromEntries(Object.entries(nodeRuns.value).filter(([, run]) => run.nodeId !== nodeId))
+    removeBoardNodeRuntimeState({
+      nodeId,
+      nodeStates,
+      nodeDonePulse,
+      nodeRuns,
+    })
 
     syncGraphSnapshot()
     void persistGraphConfig('delete_node_card')
@@ -705,14 +550,10 @@ export function useAgentBoard(): AgentBoardContext {
   }
 
   function itemStyle(id: string) {
-    const node = nodes.value.find((n) => n.id === id)
-    const x = node?.ui?.x ?? 0
-    const y = node?.ui?.y ?? 0
-    return {
-      left: `${x}px`,
-      top: `${y}px`,
-      zIndex: isDragging(id) ? 10 : 1,
-    }
+    return nodeCardStyle({
+      node: nodes.value.find((n) => n.id === id),
+      dragging: isDragging(id),
+    })
   }
 
   function onItemClick(id: string, event: MouseEvent) {
@@ -736,7 +577,7 @@ export function useAgentBoard(): AgentBoardContext {
     if (nodes.value.some((n) => n.id === id)) {
       selectedItemIds.value = [id]
       selectNode(id)
-      ensureNodeConfig(id).catch(() => null)
+      refreshNodeConfig(id).catch(() => null)
     }
   }
 
@@ -747,10 +588,10 @@ export function useAgentBoard(): AgentBoardContext {
 
     dragHoverTargetId.value = null
     const selected = new Set<string>(selectedItemIds.value)
-    if (!selected.has(id)) {
-      selected.clear()
-      selected.add(id)
-      selectedItemIds.value = Array.from(selected)
+    if (!selected.has(id) && !event.ctrlKey && !event.metaKey) {
+      if (nodes.value.some((n) => n.id === id)) {
+        selectNode(id)
+      }
     }
     activeDragItemIds = new Set(selectedItemIds.value)
     dragBatchStart = {}
@@ -816,30 +657,13 @@ export function useAgentBoard(): AgentBoardContext {
     prevMessage: string | null,
     graphId: string,
   ): Promise<{ status: 'completed' | 'stopped' | 'deadline'; message: string }> {
-    const deadline = Date.now() + 60_000
-    while (Date.now() < deadline) {
-      const items = await listNodeInstanceConfigs(graphId).catch(() => null)
-      const cfg = Array.isArray(items) ? (items as any[]).find((c) => String(c?.node_id || '') === nodeId) : null
-      if (!cfg) {
-        await sleep(250)
-        continue
-      }
-      const state = String(cfg.state || 'idle')
-      if (state === 'stop') return { status: 'stopped', message: '' }
-      const runAt = String(cfg.last_run_at ?? '')
-      const message = String(cfg.last_message ?? '')
-      const pendingCount = Number((cfg as any)?.pending_count ?? 0)
-      const hasInflight = !!(cfg as any)?.inflight
-      const busy = state === 'working' || pendingCount > 0 || hasInflight
-      if (runAt && (!prevRunAt || runAt !== prevRunAt)) {
-        return { status: 'completed', message }
-      }
-      if (!runAt && !busy && message.trim() && message !== String(prevMessage ?? '')) {
-        return { status: 'completed', message }
-      }
-      await sleep(250)
-    }
-    return { status: 'deadline', message: '' }
+    return waitForBoardNodeOutput({
+      nodeId,
+      prevRunAt,
+      prevMessage,
+      graphId,
+      listNodeInstanceConfigs,
+    })
   }
 
   function triggerNodeDone(nodeId: string) {
@@ -847,37 +671,105 @@ export function useAgentBoard(): AgentBoardContext {
   }
 
   function getNodeState(nodeId: string): NodeInstanceState {
-    return nodeStates.value[nodeId] || 'idle'
+    return getBoardNodeState(nodeStates.value, nodeId)
   }
 
   function isNodeWorking(nodeId: string) {
-    const state = getNodeState(nodeId)
-    return state === 'working'
+    return isBoardNodeWorking(nodeStates.value, nodeId)
   }
 
   function isClockNode(nodeId: string) {
-    const cfg = nodeConfigs.value[nodeId]
-    const typeId = String(cfg?.type_id || nodes.value.find((n) => n.id === nodeId)?.typeId || '').trim()
-    return typeId === 'clock_node'
+    return isBoardClockNode({
+      nodeConfigs: nodeConfigs.value,
+      nodes: nodes.value,
+      nodeId,
+    })
   }
 
   function isClockRunning(nodeId: string) {
-    if (!isClockNode(nodeId)) return false
-    return !!nodeConfigs.value[nodeId]?.['_clock_running']
+    return isBoardClockRunning({
+      nodeConfigs: nodeConfigs.value,
+      nodes: nodes.value,
+      nodeId,
+    })
   }
 
   function isNodeStopped(nodeId: string) {
-    return getNodeState(nodeId) === 'stop'
+    return isBoardNodeStopped(nodeStates.value, nodeId)
   }
 
   function isNodeRunning(nodeId: string) {
-    void nodeId
-    return false
+    const id = String(nodeId || '').trim()
+    if (!id) return false
+    const activeRun = Object.values(nodeRuns.value).some(
+      (run) => run.nodeId === id && run.status === 'running' && !run.canceled,
+    )
+    if (activeRun) return true
+    const state = getNodeState(id)
+    if (state === 'stop') return false
+    const cfg = nodeConfigs.value[id] as any
+    const pendingCount = Number(cfg?.pending_count ?? 0)
+    return state === 'working' || pendingCount > 0 || !!cfg?.inflight
   }
 
-  function stopNodeWork(nodeId: string) {
-    if (!isClockNode(nodeId)) return
-    void toggleNodeStop(nodeId)
+  function markNodeStopRequested(nodeId: string) {
+    const id = String(nodeId || '').trim()
+    if (!id) return
+    const cfg = nodeConfigs.value[id]
+    nodeConfigs.value = {
+      ...nodeConfigs.value,
+      [id]: {
+        ...(cfg || ({ node_id: id, type_id: '' } as NodeInstanceConfig)),
+        node_id: id,
+        _stop_requested: true,
+        state: 'working',
+        last_message: 'Stop requested. Cancelling active work.',
+      } as NodeInstanceConfig,
+    }
+    nodeStates.value = { ...nodeStates.value, [id]: 'working' }
+    const node = nodes.value.find((item) => item.id === id)
+    if (node) {
+      node.last_message = 'Stop requested. Cancelling active work.'
+    }
+  }
+
+  async function stopNodeWork(nodeId: string) {
+    const id = String(nodeId || '').trim()
+    if (!id) return
+    await stopNodeWorkNow(id)
+  }
+
+  async function stopNodeWorkNow(nodeId: string) {
+    const graphId = currentGraphId.value || 'default'
+    if (!isClockNode(nodeId)) {
+      markNodeStopRequested(nodeId)
+    }
+    const activeRuns = Object.values(nodeRuns.value).filter(
+      (run) => run.nodeId === nodeId && run.status === 'running' && !run.canceled,
+    )
+    try {
+      if (activeRuns.length) {
+        const nextRuns = { ...nodeRuns.value }
+        for (const run of activeRuns) {
+          nextRuns[run.runId] = { ...run, canceled: true, status: 'stopped' }
+        }
+        nodeRuns.value = nextRuns
+        await Promise.allSettled(activeRuns.map((run) => stopNodeRun(run.runId)))
+      }
+
+      if (isClockNode(nodeId)) {
+        await toggleNodeStop(nodeId)
+        return
+      }
+
+      const res = await controlNodeInstance(nodeId, 'stop', graphId)
+      nodeStates.value = { ...nodeStates.value, [nodeId]: res.state }
+      await refreshNodeConfigsAndMemory().catch(() => null)
+    } catch (e: any) {
+      lastError.value = String(e?.message || e)
+      await refreshNodeConfigsAndMemory().catch(() => null)
+      throw e
+    }
   }
 
   async function startClockNode(nodeId: string) {
@@ -886,7 +778,8 @@ export function useAgentBoard(): AgentBoardContext {
     const res = await controlNodeInstance(nodeId, 'start', graphId)
     nodeStates.value = { ...nodeStates.value, [nodeId]: res.state }
     await startGraphRunner(graphId).catch(() => null)
-    await refreshNodeConfigs().catch(() => null)
+    await refreshNodeConfigsAndMemory().catch(() => null)
+    scheduleActiveNodeRefresh()
   }
 
   async function toggleNodeStop(nodeId: string) {
@@ -897,8 +790,9 @@ export function useAgentBoard(): AgentBoardContext {
       nodeStates.value = { ...nodeStates.value, [nodeId]: res.state }
       if (res.state === 'working') {
         await startGraphRunner(graphId).catch(() => null)
+        scheduleActiveNodeRefresh()
       }
-      await refreshNodeConfigs().catch(() => null)
+      await refreshNodeConfigsAndMemory().catch(() => null)
       return
     }
     const current = getNodeState(nodeId)
@@ -907,147 +801,53 @@ export function useAgentBoard(): AgentBoardContext {
     nodeStates.value = { ...nodeStates.value, [nodeId]: next }
     if (next === 'idle') {
       startGraphRunner(graphId).catch(() => null)
+      scheduleActiveNodeRefresh()
     }
   }
 
-  let nodeStatePollTimer: number | null = null
-
-  async function refreshNodeConfigs() {
-    const graphId = currentGraphId.value || 'default'
-    const items = await listNodeInstanceConfigs(graphId)
-    const next: Record<string, NodeInstanceState> = {}
-    const nextConfigs: Record<string, NodeInstanceConfig> = {}
-    const prevConfigs = nodeConfigs.value
-
-    for (const cfg of items as NodeInstanceConfig[]) {
-      const nodeId = String(cfg.node_id || '').trim()
-      if (!nodeId) continue
-      const typeId = String((cfg as any)?.type_id || '').trim()
-      const uiCfg = (cfg as any)?.ui
-      const serverUi = {
-        x: clampX(Number(uiCfg?.x ?? 0)),
-        y: Math.max(0, Number(uiCfg?.y ?? 0)),
-      }
-      let ui = serverUi
-      const draggingLocally = activeDragItemIds.has(nodeId)
-      const pendingUi = pendingUiPositions.get(nodeId)
-      if (draggingLocally) {
-        const localUi = getClampedUiPosition(nodeId)
-        if (localUi) {
-          ui = localUi
-        }
-      } else if (pendingUi) {
-        if (pendingUi.x === serverUi.x && pendingUi.y === serverUi.y) {
-          clearPendingUiPosition(nodeId, 'refresh_confirmed')
-        } else {
-          ui = pendingUi
-        }
-      }
-
-      const existingNode = nodes.value.find((n) => n.id === nodeId)
-      if (!existingNode) {
-        nodes.value.push({
-          id: nodeId,
-          typeId: typeId || 'echo_node',
-          name: String((cfg as any)?.name || nodeId),
-          inputNum: normalizePortCount((cfg as any)?.input_num, 1),
-          outputNum: normalizePortCount((cfg as any)?.output_num, 1),
-          ui,
-          last_message: String((cfg as any)?.last_message ?? '') || null,
-          lastRuntimeEvent: normalizeRuntimeEvent((cfg as any)?.last_runtime_event),
-          runtimeEvents: normalizeRuntimeEvents((cfg as any)?.runtime_events),
-          runtimeToolCalls: normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls),
-          providerId: String((cfg as any)?.provider_id ?? '').trim(),
-          mode: String((cfg as any)?.mode ?? '').trim(),
-          webSearch: normalizeSwitch((cfg as any)?.web_search, 'disabled'),
-          thinking: normalizeSwitch((cfg as any)?.thinking, 'enabled'),
-          systemPrompt: String((cfg as any)?.system_prompt ?? ''),
-          tools: Array.isArray((cfg as any)?.tools) ? (cfg as any).tools.map((item: unknown) => String(item)) : [],
-          workingPath: String((cfg as any)?.working_path ?? '').trim(),
-        })
-      } else {
-        existingNode.typeId = typeId || existingNode.typeId || 'echo_node'
-        existingNode.name = String((cfg as any)?.name || existingNode.name || nodeId)
-        existingNode.ui.x = ui.x
-        existingNode.ui.y = ui.y
-        existingNode.providerId = String((cfg as any)?.provider_id ?? existingNode.providerId ?? '').trim()
-        existingNode.mode = String((cfg as any)?.mode ?? existingNode.mode ?? '').trim()
-        existingNode.webSearch = normalizeSwitch((cfg as any)?.web_search ?? existingNode.webSearch, 'disabled')
-        existingNode.thinking = normalizeSwitch((cfg as any)?.thinking ?? existingNode.thinking, 'enabled')
-        existingNode.systemPrompt = String((cfg as any)?.system_prompt ?? existingNode.systemPrompt ?? '')
-        existingNode.tools = Array.isArray((cfg as any)?.tools) ? (cfg as any).tools.map((item: unknown) => String(item)) : existingNode.tools || []
-        existingNode.workingPath = String((cfg as any)?.working_path ?? existingNode.workingPath ?? '').trim()
-        existingNode.lastRuntimeEvent = normalizeRuntimeEvent((cfg as any)?.last_runtime_event)
-        existingNode.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
-        existingNode.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
-      }
-    }
-
-    const cfgIds = new Set<string>((items as NodeInstanceConfig[]).map((cfg) => String(cfg.node_id || '').trim()).filter(Boolean))
-    if (cfgIds.size > 0) {
-      nodes.value = nodes.value.filter((n) => cfgIds.has(n.id))
-    }
-
-    for (const cfg of items as NodeInstanceConfig[]) {
-      const nodeId = String(cfg.node_id || '')
-      if (!nodeId) continue
-      nextConfigs[nodeId] = cfg
-      const state = cfg.state
-      next[nodeId] = state === 'working' || state === 'stop' ? state : 'idle'
-
-      const prev = (prevConfigs as any)?.[nodeId]
-      const prevRunAt = prev?.last_run_at != null ? String(prev.last_run_at) : ''
-      const runAt = (cfg as any)?.last_run_at != null ? String((cfg as any).last_run_at) : ''
-      const prevOut = prev?.last_message != null ? String(prev.last_message) : ''
-      const out = (cfg as any)?.last_message != null ? String((cfg as any).last_message) : ''
-      const runAtChanged = runAt !== prevRunAt
-      const outputChanged = out !== prevOut
-      const changed = runAtChanged || outputChanged
-      const node = nodes.value.find((n) => n.id === nodeId)
-      if (node) {
-        node.inputNum = normalizePortCount((cfg as any)?.input_num, node.inputNum || 1)
-        node.outputNum = normalizePortCount((cfg as any)?.output_num, node.outputNum || 1)
-        if ((cfg as any)?.provider_id != null) {
-          node.providerId = String((cfg as any).provider_id ?? '').trim()
-        }
-        if ((cfg as any)?.mode != null) {
-          node.mode = String((cfg as any).mode ?? '').trim()
-        }
-        if ((cfg as any)?.web_search != null) {
-          node.webSearch = normalizeSwitch((cfg as any).web_search, 'disabled')
-        }
-        if ((cfg as any)?.thinking != null) {
-          node.thinking = normalizeSwitch((cfg as any).thinking, 'enabled')
-        }
-        if ((cfg as any)?.system_prompt != null) {
-          node.systemPrompt = String((cfg as any).system_prompt ?? '')
-        }
-        if ((cfg as any)?.tools != null) {
-          const tools = (cfg as any).tools
-          node.tools = Array.isArray(tools) ? tools.map((item: unknown) => String(item)) : []
-        }
-        if ((cfg as any)?.working_path != null) {
-          node.workingPath = String((cfg as any).working_path ?? '').trim()
-        }
-      }
-      const nodeNeedsHydrate = node ? !String(node.last_message || '').trim() : false
-      const shouldUpdatePreview = changed || nodeNeedsHydrate
-      if (shouldUpdatePreview) {
-        if (node) {
-          node.last_message = out
-          node.lastRuntimeEvent = normalizeRuntimeEvent((cfg as any)?.last_runtime_event)
-          node.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
-          node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
-          if (runAtChanged) triggerNodeDone(nodeId)
-        }
-      }
-    }
-    nodeStates.value = next
-    nodeConfigs.value = nextConfigs
-    if (selectedNodeId.value) {
-      syncSelectedNodeWorkingPath(selectedNodeId.value)
-    }
+  function requestMemoryRefresh() {
+    memoryRefreshRequest.value += 1
   }
+
+  function requestSelectedNodeMemoryRefresh(nodeId: string) {
+    if (selectedNodeId.value !== nodeId) return
+    if (memoryMode.value !== 'agent') return
+    requestMemoryRefresh()
+  }
+
+  const nodeConfigRefresh = createBoardNodeConfigRefresh({
+    currentGraphId,
+    selectedNodeId,
+    nodes,
+    nodeConfigs,
+    nodeStates,
+    nodeRuns,
+    activeDragItemIds,
+    pendingUiPositions,
+    getItemPosition,
+    clearPendingUiPosition,
+    triggerNodeDone,
+    syncSelectedNodeWorkingPath,
+    requestMemoryRefresh,
+  })
+  const {
+    hasActiveNodeWork,
+    refreshNodeConfigs,
+    refreshNodeConfigsAndMemory,
+    resetNodeConfigWatermark,
+  } = nodeConfigRefresh
+
+  const runtimeRefresh = createBoardRuntimeRefresh({
+    currentGraphId,
+    refreshNodeConfigs,
+    hasActiveNodeWork,
+  })
+  const {
+    scheduleActiveNodeRefresh,
+    startGraphEventStream,
+    stopActiveNodeRefresh,
+    stopGraphEventStream,
+  } = runtimeRefresh
 
   async function ensureNodeConfig(nodeId: string) {
     const graphId = currentGraphId.value || 'default'
@@ -1055,24 +855,44 @@ export function useAgentBoard(): AgentBoardContext {
     const node = nodes.value.find((n) => n.id === nodeId)
     if (!node) return
     await createNodeInstance(node.id, node.typeId, node.name, graphId, node.ui).catch(() => null)
-    await refreshNodeConfigs().catch(() => null)
+    await refreshNodeConfigsAndMemory().catch(() => null)
+  }
+
+  async function refreshNodeConfig(nodeId: string) {
+    const id = String(nodeId || '').trim()
+    if (!id) return
+    if (!nodes.value.some((node) => node.id === id)) return
+    if (!nodeConfigs.value[id]) {
+      await ensureNodeConfig(id)
+      return
+    }
+    if (!nodeConfigRefreshPromise) {
+      nodeConfigRefreshPromise = refreshNodeConfigs().finally(() => {
+        nodeConfigRefreshPromise = null
+      })
+    }
+    await nodeConfigRefreshPromise
   }
 
   async function triggerNode(nodeId: string) {
-    const graphId = currentGraphId.value || 'default'
-    const cfg = (nodeConfigs.value as any)?.[nodeId] || null
-    const typeId = String(cfg?.type_id || nodes.value.find((n) => n.id === nodeId)?.typeId || '')
-    if (typeId !== 'basic_trigger_node') return
+    const id = String(nodeId || '').trim()
+    if (!id) return
+    const node = nodes.value.find((n) => n.id === id)
+    if (!node) return
 
+    const graphId = currentGraphId.value || 'default'
+    const cfg = (nodeConfigs.value as any)?.[id] || null
+    const input = String(nodeTriggerInputs.value[id] || '')
     const prevRunAt = String(cfg?.last_run_at ?? '')
     const prevMessage = String(cfg?.last_message ?? '')
     await startGraphRunner(graphId).catch(() => null)
-    await emitGraph(graphId, nodeId, '').catch(() => null)
-    const waited = await waitForNodeOutput(nodeId, prevRunAt || null, prevMessage || null, graphId)
+    await emitGraph(graphId, id, input).catch(() => null)
+    scheduleActiveNodeRefresh()
+    const waited = await waitForNodeOutput(id, prevRunAt || null, prevMessage || null, graphId)
     if (waited.status === 'completed') {
-      const node = nodes.value.find((n) => n.id === nodeId)
-      if (node) node.last_message = waited.message
+      node.last_message = waited.message
     }
+    await refreshNodeConfigsAndMemory().catch(() => null)
   }
 
   async function sendNodeMessage(nodeId: string, message: string | MessageEnvelope) {
@@ -1080,9 +900,17 @@ export function useAgentBoard(): AgentBoardContext {
     if (!id) return
 
     const text = messageToText(message)
-    const cfg = (nodeConfigs.value as any)?.[id] || null
-    const typeId = String(cfg?.type_id || nodes.value.find((n) => n.id === id)?.typeId || '')
+    const graphId = currentGraphId.value || 'default'
+    const typeId = resolveBoardNodeTypeId({
+      nodeConfigs: nodeConfigs.value,
+      nodes: nodes.value,
+      nodeId: id,
+    })
     if (!typeId) return
+    if (getNodeState(id) === 'stop') {
+      const resumed = await setNodeInstanceState(id, 'idle', graphId)
+      nodeStates.value = { ...nodeStates.value, [id]: resumed.state }
+    }
 
     if (typeId === 'basic_trigger_node') {
       if (text) {
@@ -1095,97 +923,71 @@ export function useAgentBoard(): AgentBoardContext {
     }
 
     if (!text && typeof message === 'string') return
-    const graphId = currentGraphId.value || 'default'
     lastError.value = null
     try {
       const node = nodes.value.find((n) => n.id === id)
       if (node) node.last_message = text
-      const prevRunAt = String(cfg?.last_run_at ?? '')
-      const prevMessage = String(cfg?.last_message ?? '')
+      requestSelectedNodeMemoryRefresh(id)
       await startGraphRunner(graphId).catch(() => null)
       await emitGraph(graphId, id, message)
-      const waited = await waitForNodeOutput(id, prevRunAt || null, prevMessage || null, graphId)
-      if (waited.status === 'completed') {
-        const node = nodes.value.find((n) => n.id === id)
-        if (node) node.last_message = waited.message
-      }
+      await refreshNodeConfigsAndMemory().catch(() => null)
+      scheduleActiveNodeRefresh()
     } catch (e: any) {
       lastError.value = String(e?.message || e)
+      throw e
     }
   }
 
   async function setNodeFields(nodeId: string, fields: Record<string, unknown>) {
     const graphId = currentGraphId.value || 'default'
     lastError.value = null
-    await updateNodeInstanceConfig(nodeId, { fields }, graphId)
+    const result = await updateNodeInstanceConfig(nodeId, { fields }, graphId)
     const existing = nodeConfigs.value[nodeId]
-    const base = existing || (() => {
-      const node = nodes.value.find((n) => n.id === nodeId)
-      return {
-        node_id: nodeId,
-        type_id: node?.typeId || '',
-        name: node?.name || '',
-        graph_id: graphId,
-      } as NodeInstanceConfig
-    })()
-    const merged = {
-      ...base,
-      type_id: String((base as any)?.type_id || (nodes.value.find((n) => n.id === nodeId)?.typeId || '')),
-      ...fields,
-    } as NodeInstanceConfig
+    const fallbackNode = nodes.value.find((n) => n.id === nodeId)
+    const merged = mergeNodeConfigFields({
+      nodeId,
+      graphId,
+      existing,
+      fallbackTypeId: fallbackNode?.typeId || '',
+      fallbackName: fallbackNode?.name || '',
+      fields,
+    })
     nodeConfigs.value = { ...nodeConfigs.value, [nodeId]: merged }
 
     const node = nodes.value.find((item) => item.id === nodeId)
     if (node) {
-      if (Object.prototype.hasOwnProperty.call(fields, 'provider_id')) {
-        node.providerId = String((merged as any)?.provider_id ?? '').trim()
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'mode')) {
-        node.mode = String((merged as any)?.mode ?? '').trim()
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'web_search')) {
-        node.webSearch = normalizeSwitch((merged as any)?.web_search, 'disabled')
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'thinking')) {
-        node.thinking = normalizeSwitch((merged as any)?.thinking, 'enabled')
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'system_prompt')) {
-        node.systemPrompt = String((merged as any)?.system_prompt ?? '')
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'tools')) {
-        const tools = (merged as any)?.tools
-        node.tools = Array.isArray(tools) ? tools.map((item: unknown) => String(item)) : []
-      }
-      if (Object.prototype.hasOwnProperty.call(fields, 'working_path')) {
-        node.workingPath = String((merged as any)?.working_path ?? '').trim()
-      }
+      applyNodeFieldPatchToCard(node, merged, fields)
     }
 
     if (selectedNodeId.value === nodeId) {
       syncSelectedNodeWorkingPath(nodeId)
     }
 
-    await refreshNodeConfigs().catch(() => null)
+    await refreshNodeConfigsAndMemory().catch(() => null)
     pruneInvalidLinksForNode(nodeId)
     syncGraphSnapshot()
     await persistGraphConfig('set_node_fields')
+    return result
   }
 
-  function startNodeStatePolling() {
-    if (nodeStatePollTimer != null) {
-      window.clearInterval(nodeStatePollTimer)
-      nodeStatePollTimer = null
+  async function clearNodeFields(nodeId: string, fields: string[]) {
+    const graphId = currentGraphId.value || 'default'
+    const clearFields = Array.from(new Set((fields || []).map((item) => String(item || '').trim()).filter(Boolean)))
+    if (!nodeId || clearFields.length === 0) return
+    lastError.value = null
+    const result = await updateNodeInstanceConfig(nodeId, { clear_fields: clearFields }, graphId)
+    const existing = nodeConfigs.value[nodeId]
+    if (existing) {
+      const next = { ...existing }
+      for (const field of clearFields) {
+        delete (next as any)[field]
+      }
+      nodeConfigs.value = { ...nodeConfigs.value, [nodeId]: next }
     }
-    nodeStatePollTimer = window.setInterval(() => {
-      refreshNodeConfigs().catch(() => null)
-    }, 100)
-    refreshNodeConfigs().catch(() => null)
-  }
-
-  function stopNodeStatePolling() {
-    if (nodeStatePollTimer == null) return
-    window.clearInterval(nodeStatePollTimer)
-    nodeStatePollTimer = null
+    await refreshNodeConfigsAndMemory().catch(() => null)
+    syncGraphSnapshot()
+    await persistGraphConfig('clear_node_fields')
+    return result
   }
 
   function getDropTargetItemId(clientX: number, clientY: number, excludeIds: Set<string>) {
@@ -1410,13 +1212,13 @@ export function useAgentBoard(): AgentBoardContext {
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'copy'
     }
-    if (isFileDropEvent(event)) {
+    if (isBoardFileDropEvent(event)) {
       dragHoverTargetId.value = null
     }
   }
 
   function onNodeCardDragOver(id: string, event: DragEvent) {
-    if (!isFileDropEvent(event)) return
+    if (!isBoardFileDropEvent(event)) return
     event.preventDefault()
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'copy'
@@ -1427,7 +1229,7 @@ export function useAgentBoard(): AgentBoardContext {
   async function onNodeCardDrop(nodeId: string, event: DragEvent) {
     const id = String(nodeId || '').trim()
     dragHoverTargetId.value = null
-    if (!id || !isFileDropEvent(event)) return
+    if (!id || !isBoardFileDropEvent(event)) return
 
     event.preventDefault()
     lastError.value = null
@@ -1439,7 +1241,7 @@ export function useAgentBoard(): AgentBoardContext {
       }
       if (nodes.value.some((node) => node.id === id)) {
         selectNode(id)
-        ensureNodeConfig(id).catch(() => null)
+        refreshNodeConfig(id).catch(() => null)
       }
     } catch (e: any) {
       lastError.value = String(e?.message || e)
@@ -1447,17 +1249,12 @@ export function useAgentBoard(): AgentBoardContext {
   }
 
   function getCanvasPoint(event: PointerEvent | DragEvent) {
-    const canvas = canvasRef.value
-    if (!canvas) return { x: 0, y: 0 }
-    const rect = canvas.getBoundingClientRect()
-    const style = window.getComputedStyle(canvas)
-    const paddingLeft = Number.parseFloat(style.paddingLeft || '0') || 0
-    const paddingTop = Number.parseFloat(style.paddingTop || '0') || 0
-    const scale = canvasScale.value || 1
-    return {
-      x: (event.clientX - rect.left - paddingLeft) / scale,
-      y: (event.clientY - rect.top - paddingTop) / scale,
-    }
+    return canvasPointFromClient({
+      canvas: canvasRef.value,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      scale: canvasScale.value,
+    })
   }
 
   function getItemPosition(id: string) {
@@ -1467,36 +1264,16 @@ export function useAgentBoard(): AgentBoardContext {
   }
 
   function updateSelectionRect() {
-    const session = selectionSession
-    if (!session) {
-      selectionRect.value = null
-      return
-    }
-    const x = Math.min(session.startX, session.currentX)
-    const y = Math.min(session.startY, session.currentY)
-    const width = Math.abs(session.currentX - session.startX)
-    const height = Math.abs(session.currentY - session.startY)
-    selectionRect.value = { x, y, width, height }
+    selectionRect.value = selectionRectFromSession(selectionSession)
   }
 
   function computeItemsInRect(rect: { x: number; y: number; width: number; height: number }) {
-    const selected = new Set<string>()
-    const minX = rect.x
-    const minY = rect.y
-    const maxX = rect.x + rect.width
-    const maxY = rect.y + rect.height
-    const allIds = nodes.value.map((n) => n.id)
-    for (const id of allIds) {
-      const pos = getItemPosition(id)
-      if (!pos) continue
-      const left = pos.x
-      const top = pos.y
-      const right = pos.x + CARD_WIDTH
-      const bottom = pos.y + CARD_HEIGHT
-      const overlap = !(right < minX || left > maxX || bottom < minY || top > maxY)
-      if (overlap) selected.add(id)
-    }
-    return selected
+    return computeNodeIdsInSelectionRect({
+      nodes: nodes.value,
+      rect,
+      cardWidth: CARD_WIDTH,
+      cardHeight: CARD_HEIGHT,
+    })
   }
 
   function onSelectionPointerMove(event: PointerEvent) {
@@ -1518,7 +1295,7 @@ export function useAgentBoard(): AgentBoardContext {
   function onSelectionPointerUp() {
     const rect = selectionRect.value
     const session = selectionSession
-    if (rect && session && (rect.width > 3 || rect.height > 3)) {
+    if (rect && session && selectionRectExceedsThreshold(rect)) {
       const selected = computeItemsInRect(rect)
       const merged = new Set<string>(session.additive ? selectedItemIds.value : [])
       for (const id of selected) merged.add(id)
@@ -1534,114 +1311,19 @@ export function useAgentBoard(): AgentBoardContext {
   }
 
   function makeCopySnapshot() {
-    const selected = new Set<string>(selectedItemIds.value)
-    if (!selected.size) return null
-    const copiedNodes = nodes.value
-      .filter((node) => selected.has(node.id))
-      .map((node) => ({
-        id: node.id,
-        typeId: node.typeId,
-        name: node.name,
-        inputNum: node.inputNum,
-        outputNum: node.outputNum,
-        ui: { x: node.ui.x, y: node.ui.y },
-        last_message: node.last_message,
-        lastRuntimeEvent: null,
-        runtimeEvents: [],
-        providerId: node.providerId,
-        mode: node.mode,
-        webSearch: node.webSearch,
-        thinking: node.thinking,
-        systemPrompt: node.systemPrompt,
-        tools: Array.isArray(node.tools) ? node.tools.map(String).filter(Boolean) : [],
-        workingPath: node.workingPath,
-      }))
-    if (!copiedNodes.length) return null
-    const copiedIds = new Set<string>(copiedNodes.map((n) => n.id))
-    const copiedLinks = links.value
-      .filter((link) => copiedIds.has(link.from.node) && copiedIds.has(link.to.node))
-      .map((link) => ({
-        id: link.id,
-        from: { node: link.from.node, index: link.from.index },
-        to: { node: link.to.node, index: link.to.index },
-      }))
-    return { nodes: copiedNodes, links: copiedLinks }
+    return makeBoardCopySnapshot({
+      nodes: nodes.value,
+      links: links.value,
+      selectedItemIds: selectedItemIds.value,
+    })
   }
 
   async function pasteSnapshot() {
     if (!hasClipboardSnapshot() || !clipboardSnapshot) return
     const graphId = currentGraphId.value || 'default'
-    pasteCount += 1
-    const offset = 36 * pasteCount
-    const idMap = new Map<string, string>()
-    const newNodes: NodeCard[] = []
-
-    for (const node of clipboardSnapshot.nodes) {
-      const nodeId = makeUniqueId(`${String(node.name || node.id || 'node').trim() || 'node'}1`)
-      idMap.set(node.id, nodeId)
-      const ui = { x: clampX(node.ui.x + offset), y: Math.max(0, node.ui.y + offset) }
-      await createNodeInstance(nodeId, node.typeId, node.name, graphId, ui).catch(() => null)
-      await updateNodeInstanceConfig(
-        nodeId,
-        {
-          fields: {
-            provider_id: node.providerId,
-            system_prompt: node.systemPrompt,
-            mode: node.mode,
-            web_search: node.webSearch,
-            thinking: node.thinking,
-            tools: node.tools,
-            working_path: node.workingPath,
-          },
-        },
-        graphId,
-      ).catch(() => null)
-      newNodes.push({
-        id: nodeId,
-        typeId: node.typeId,
-        name: node.name,
-        inputNum: node.inputNum,
-        outputNum: node.outputNum,
-        ui,
-        last_message: null,
-        lastRuntimeEvent: null,
-        runtimeEvents: [],
-        providerId: node.providerId,
-        mode: node.mode,
-        webSearch: node.webSearch,
-        thinking: node.thinking,
-        systemPrompt: node.systemPrompt,
-        tools: Array.isArray(node.tools) ? [...node.tools] : [],
-        workingPath: node.workingPath,
-      })
-    }
-
-    nodes.value.push(...newNodes)
-
-    for (const link of clipboardSnapshot.links) {
-      const fromId = idMap.get(link.from.node)
-      const toId = idMap.get(link.to.node)
-      if (!fromId || !toId) continue
-      links.value.push({
-        id: `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        from: { node: fromId, index: link.from.index },
-        to: { node: toId, index: link.to.index },
-      })
-    }
-
-    selectedItemIds.value = newNodes.map((node) => node.id)
-    if (selectedItemIds.value.length === 1) {
-      const selectedId = selectedItemIds.value[0]
-      if (selectedId) {
-        if (nodes.value.some((node) => node.id === selectedId)) {
-          selectNode(selectedId)
-        }
-      }
-    }
-    updateCanvasSize()
-    syncGraphSnapshot()
-    await persistGraphConfig('paste_snapshot')
-    refreshNodeConfigs().catch(() => null)
+    const plan = buildPastePlanFromSnapshot(clipboardSnapshot)
+    await clonePastePlanNodes(clipboardSnapshot, plan, graphId)
+    await applyPastePlanToBoard(plan, 'paste_snapshot')
   }
 
   function onWindowKeyDown(event: KeyboardEvent) {
@@ -1663,25 +1345,22 @@ export function useAgentBoard(): AgentBoardContext {
       event.preventDefault()
       return
     }
-    if (key === 'v') {
-      if (hasClipboardSnapshot()) {
-        void pasteSnapshot()
-        event.preventDefault()
-      }
-    }
   }
 
   function onWindowPaste(event: ClipboardEvent) {
     const target = event.target as HTMLElement | null
     if (target?.closest('input, textarea, [contenteditable="true"], select')) return
 
+    const text = String(event.clipboardData?.getData('text/plain') || '')
     if (hasClipboardSnapshot()) {
       event.preventDefault()
-      void pasteSnapshot()
+      lastError.value = null
+      pasteSnapshot().catch((e: any) => {
+        lastError.value = String(e?.message || e)
+      })
       return
     }
 
-    const text = String(event.clipboardData?.getData('text/plain') || '')
     if (!text.trim()) return
     event.preventDefault()
     lastError.value = null
@@ -1722,32 +1401,25 @@ export function useAgentBoard(): AgentBoardContext {
   const PORT_RADIUS = 6
 
   function getPortPosition(id: string, side: 'input' | 'output', portIndex = 0) {
-    const offsetX = side === 'input' ? -PORT_RADIUS : CARD_WIDTH + PORT_RADIUS
-    const node = nodes.value.find((n) => n.id === id)
-    if (!node?.ui) return null
-    const portCount = side === 'input' ? normalizePortCount(node.inputNum, 1) : normalizePortCount(node.outputNum, 1)
-    const idx = Math.min(Math.max(0, portIndex), portCount - 1)
-    const ratio = (idx + 0.5) / portCount
-    return {
-      x: node.ui.x + offsetX,
-      y: node.ui.y + CARD_HEIGHT * ratio,
-    }
+    return getNodePortPosition({
+      node: nodes.value.find((n) => n.id === id),
+      side,
+      portIndex,
+      cardWidth: CARD_WIDTH,
+      cardHeight: CARD_HEIGHT,
+      portRadius: PORT_RADIUS,
+    })
   }
 
   function pruneInvalidLinksForNode(nodeId: string) {
     const node = nodes.value.find((item) => item.id === nodeId)
     if (!node) return false
-    const maxInputs = normalizePortCount(node.inputNum, 1)
-    const maxOutputs = normalizePortCount(node.outputNum, 1)
     const before = links.value.length
-    links.value = links.value.filter((link) => {
-      if (link.from.node === nodeId && normalizePortIndex(link.from.index, 0) >= maxOutputs) {
-        return false
-      }
-      if (link.to.node === nodeId && normalizePortIndex(link.to.index, 0) >= maxInputs) {
-        return false
-      }
-      return true
+    links.value = pruneLinksForNodePorts({
+      links: links.value,
+      nodeId,
+      inputNum: node.inputNum,
+      outputNum: node.outputNum,
     })
     return links.value.length !== before
   }
@@ -1756,14 +1428,12 @@ export function useAgentBoard(): AgentBoardContext {
     if (event.button !== 0) return
     const pos = getPortPosition(id, 'output', outputIndex)
     if (!pos) return
-    linkSession.value = {
-      from: { node: id, index: normalizePortIndex(outputIndex, 0) },
+    linkSession.value = createBoardLinkSession({
+      nodeId: id,
+      outputIndex,
       pointerId: event.pointerId,
-      startX: pos.x,
-      startY: pos.y,
-      currentX: pos.x,
-      currentY: pos.y,
-    }
+      position: pos,
+    })
     window.addEventListener('pointermove', onLinkPointerMove)
     window.addEventListener('pointerup', onLinkPointerUp)
     window.addEventListener('blur', onLinkPointerUp)
@@ -1799,26 +1469,19 @@ export function useAgentBoard(): AgentBoardContext {
       clearLinkSession(event)
       return
     }
-    const targetEndpoint: GraphLinkEndpoint = { node: targetId, index: normalizePortIndex(inputIndex, 0) }
-    if (links.value.some((link) => link.from.node === session.from.node && link.from.index === session.from.index && link.to.node === targetEndpoint.node && link.to.index === targetEndpoint.index)) {
+    const targetEndpoint = createBoardLinkTarget(targetId, inputIndex)
+    if (boardLinkExists(links.value, session.from, targetEndpoint)) {
       clearLinkSession(event)
       return
     }
-    links.value.push({
-      id: `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      from: session.from,
-      to: targetEndpoint,
-    })
+    links.value.push(createBoardLink(session.from, targetEndpoint))
     syncGraphSnapshot()
     void persistGraphConfig('complete_link')
     clearLinkSession(event)
   }
 
   function buildPath(start: { x: number; y: number }, end: { x: number; y: number }) {
-    const dx = end.x - start.x
-    const c1 = start.x + dx * 0.4
-    const c2 = start.x + dx * 0.6
-    return `M ${start.x} ${start.y} C ${c1} ${start.y}, ${c2} ${end.y}, ${end.x} ${end.y}`
+    return buildLinkPath(start, end)
   }
 
   function linkPath(link: LinkItem) {
@@ -1865,11 +1528,13 @@ export function useAgentBoard(): AgentBoardContext {
         lastError.value = String(e?.message || e)
       })
     syncGraphSnapshot()
-    startNodeStatePolling()
+    refreshNodeConfigs().catch(() => null)
+    startGraphEventStream()
   })
 
   onBeforeUnmount(() => {
-    stopNodeStatePolling()
+    stopActiveNodeRefresh()
+    stopGraphEventStream()
     activeDragItemIds.clear()
     pendingUiPositions.clear()
     window.removeEventListener('resize', onWindowResize)
@@ -1890,7 +1555,15 @@ export function useAgentBoard(): AgentBoardContext {
       applyGraphConfig(config)
       graphLoadRequest.value = null
       selectedItemIds.value = []
-      refreshNodeConfigs().catch(() => null)
+      refreshNodeConfigsAndMemory().catch(() => null)
+      startGraphEventStream()
+    },
+  )
+
+  watch(
+    () => currentGraphId.value,
+    () => {
+      startGraphEventStream()
     },
   )
 
@@ -1928,6 +1601,7 @@ export function useAgentBoard(): AgentBoardContext {
 
     selectNode,
     openNodeSettings,
+    openNodeFolder,
     openGraphPanel,
     triggerNode,
     startClockNode,
@@ -1939,7 +1613,9 @@ export function useAgentBoard(): AgentBoardContext {
     renameNodeCard,
     deleteNodeCard,
     ensureNodeConfig,
+    refreshNodeConfig,
     setNodeFields,
+    clearNodeFields,
 
     isDragging,
     isNodeSelected,
@@ -1976,3 +1652,4 @@ export function useAgentBoard(): AgentBoardContext {
     stopNodeWork,
   }
 }
+

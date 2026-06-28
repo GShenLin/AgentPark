@@ -1,10 +1,9 @@
+from src.providers.tool_call_runtime import ToolCallExecutionMixin
 from src.service_host import HostBoundService
-from src.tool_call_protocol import ToolCallEnvelope
-from src.tool_call_protocol import build_tool_call_error_execution
-from src.tool_call_protocol import from_gemini_function_call
+from src.tool.tool_call_protocol import from_gemini_function_call
 
 
-class GeminiFunctionRuntime(HostBoundService):
+class GeminiFunctionRuntime(ToolCallExecutionMixin, HostBoundService):
     def _convert_tool_to_gemini(self, openai_tool):
         if openai_tool.get("type") == "function":
             func = openai_tool.get("function", {})
@@ -31,6 +30,12 @@ class GeminiFunctionRuntime(HostBoundService):
             new_schema["properties"] = new_props
         if "items" in new_schema:
             new_schema["items"] = self._convert_schema_type(new_schema["items"])
+        for key in ("oneOf", "anyOf", "allOf"):
+            if isinstance(new_schema.get(key), list):
+                new_schema[key] = [
+                    self._convert_schema_type(item)
+                    for item in new_schema[key]
+                ]
         return new_schema
 
     def _execute_function_calls_parallel(self, function_calls):
@@ -38,40 +43,6 @@ class GeminiFunctionRuntime(HostBoundService):
             return []
         envelopes = self._normalize_gemini_function_calls(function_calls)
         return self._execute_tool_call_envelopes_parallel(envelopes)
-
-    def _execute_tool_call_envelopes_parallel(self, tool_calls):
-        if not isinstance(tool_calls, list) or not tool_calls:
-            return []
-        if not all(isinstance(item, ToolCallEnvelope) for item in tool_calls):
-            raise TypeError("_execute_tool_call_envelopes_parallel requires ToolCallEnvelope items")
-
-        def _run_single_call(tool_call):
-            return self.tools.execute_tool_call(tool_call)
-
-        def _task_meta(tool_call):
-            return tool_call.name, tool_call.call_id
-
-        def _build_error_result(tool_call, error, _index):
-            return build_tool_call_error_execution(
-                tool_call,
-                status="error",
-                error=f"{type(error).__name__}: {error}",
-            )
-
-        def _build_timeout_result(tool_call, timeout_seconds, _index):
-            return build_tool_call_error_execution(
-                tool_call,
-                status="timeout",
-                error=f"Tool worker exceeded {timeout_seconds:.2f}s.",
-            )
-
-        return self._execute_tasks_parallel_ordered(
-            tasks=tool_calls,
-            run_task=_run_single_call,
-            task_to_meta=_task_meta,
-            build_error_result=_build_error_result,
-            build_timeout_result=_build_timeout_result,
-        )
 
     def _normalize_gemini_function_calls(self, function_calls):
         envelopes = []

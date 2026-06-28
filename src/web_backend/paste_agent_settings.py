@@ -1,6 +1,8 @@
 import json
 import os
 
+from src.file_transaction import atomic_write_text
+
 from . import runtime_paths
 from .service_host import HostBoundService
 from .shared import ConfigLoader, HTTPException
@@ -9,6 +11,28 @@ from .shared import ConfigLoader, HTTPException
 class PasteAgentSettings(HostBoundService):
     def _paste_agent_config_path(self) -> str:
         return os.path.join(runtime_paths._get_runtime_root(), "config", "pastagent.json")
+
+    def _map_provider_alias(self, provider_id: object) -> str:
+        value = str(provider_id or "").strip()
+        if not value:
+            return ""
+
+        try:
+            providers = ConfigLoader().get_all_providers()
+        except Exception:
+            providers = {}
+        if not isinstance(providers, dict) or not providers:
+            return value
+
+        if value in providers:
+            return value
+
+        lowered = value.lower()
+        for key in providers.keys():
+            key_text = str(key or "").strip()
+            if key_text.lower() == lowered:
+                return key_text
+        return value
 
     def _default_provider_id(self) -> str:
         try:
@@ -33,6 +57,7 @@ class PasteAgentSettings(HostBoundService):
             "mode": "chat",
             "web_search": "enabled",
             "thinking": "enabled",
+            "reasoning_effort": "high",
             "system_prompt": "You are an assistant created from pasted text. Keep responses concise and actionable.",
             "tools": [],
         }
@@ -63,6 +88,9 @@ class PasteAgentSettings(HostBoundService):
         thinking = payload.get("thinking")
         if thinking is None:
             thinking = default.get("thinking")
+        reasoning_effort = payload.get("reasoning_effort")
+        if reasoning_effort is None:
+            reasoning_effort = default.get("reasoning_effort")
 
         return {
             "agent_id": "pastagent",
@@ -71,17 +99,16 @@ class PasteAgentSettings(HostBoundService):
             "mode": str(payload.get("mode") or default.get("mode") or "chat"),
             "web_search": web_search,
             "thinking": thinking,
+            "reasoning_effort": reasoning_effort,
             "system_prompt": str(payload.get("system_prompt") or default.get("system_prompt") or ""),
             "tools": safe_tools,
         }
 
     def _write_paste_agent_config(self, config_payload: dict) -> str:
         config_path = self._paste_agent_config_path()
-        parent = os.path.dirname(config_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config_payload, f, ensure_ascii=False, indent=2)
+        if not isinstance(config_payload, dict):
+            raise ValueError("pastagent config payload must be an object")
+        atomic_write_text(config_path, json.dumps(config_payload, ensure_ascii=False, indent=2) + "\n")
         return config_path
 
     def _read_paste_agent_config(self, ensure_exists: bool = True) -> dict:
@@ -91,27 +118,33 @@ class PasteAgentSettings(HostBoundService):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     loaded = json.load(f)
-                if isinstance(loaded, dict):
-                    raw = loaded
-            except Exception:
-                raw = {}
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"pastagent config contains invalid JSON: {config_path}: line {exc.lineno} column {exc.colno}: {exc.msg}"
+                ) from exc
+            except OSError as exc:
+                raise ValueError(f"failed to read pastagent config {config_path}: {type(exc).__name__}: {exc}") from exc
+            if not isinstance(loaded, dict):
+                raise ValueError(f"pastagent config must be a JSON object: {config_path}")
+            raw = loaded
 
         mapped = self._build_paste_agent_config(raw)
         if ensure_exists:
             needs_write = not os.path.exists(config_path)
             if not needs_write:
-                try:
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        current = json.load(f)
-                    needs_write = not isinstance(current, dict) or current != mapped
-                except Exception:
-                    needs_write = True
+                needs_write = raw != mapped
             if needs_write:
                 self._write_paste_agent_config(mapped)
         return mapped
 
     def get_paste_agent_config(self):
-        return {"config": self._read_paste_agent_config(ensure_exists=True)}
+        try:
+            config = self._read_paste_agent_config(ensure_exists=True)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"failed to read pastagent config: {str(e)}")
+        return {"config": config}
 
     def update_paste_agent_config(self, payload: dict):
         if not isinstance(payload, dict):
@@ -130,6 +163,8 @@ class PasteAgentSettings(HostBoundService):
             merged["web_search"] = payload.get("web_search")
         if "thinking" in payload:
             merged["thinking"] = payload.get("thinking")
+        if "reasoning_effort" in payload:
+            merged["reasoning_effort"] = payload.get("reasoning_effort")
         if "system_prompt" in payload:
             merged["system_prompt"] = payload.get("system_prompt")
         if "tools" in payload:

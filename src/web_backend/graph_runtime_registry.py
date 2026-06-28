@@ -3,10 +3,15 @@ import os
 import re
 import threading
 from datetime import datetime
+from json import JSONDecodeError
 
 from . import runtime_paths, state_store
 from .service_host import HostBoundService
 from .shared import envelope_preview
+
+
+class GraphConfigReadError(RuntimeError):
+    pass
 
 
 class GraphRuntimeRegistry(HostBoundService):
@@ -29,6 +34,7 @@ class GraphRuntimeRegistry(HostBoundService):
                 continue
             payload[k] = v
         state_store._append_jsonl_line(self._graph_event_log_path(safe_id), payload)
+        self.core.graph_events.publish(safe_id, payload)
 
     def _sanitize_graph_id(self, graph_id: str | None) -> str:
         raw = str(graph_id or "").strip()
@@ -51,9 +57,17 @@ class GraphRuntimeRegistry(HostBoundService):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
-            return payload if isinstance(payload, dict) else {}
-        except Exception:
-            return {}
+        except JSONDecodeError as exc:
+            raise GraphConfigReadError(
+                f"graph config contains invalid JSON: {config_path}: line {exc.lineno} column {exc.colno}: {exc.msg}"
+            ) from exc
+        except OSError as exc:
+            raise GraphConfigReadError(
+                f"failed to read graph config {config_path}: {type(exc).__name__}: {exc}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise GraphConfigReadError(f"graph config must be a JSON object: {config_path}")
+        return payload
 
     @staticmethod
     def _sanitize_node_id(node_id: str | None) -> str:

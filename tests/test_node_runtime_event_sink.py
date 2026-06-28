@@ -2,11 +2,14 @@ import json
 
 import pytest
 
+from src.web_backend.node_memory_store import NodeMemoryPersistenceError
+from src.web_backend.node_memory_store import NodeMemoryPersistenceFailure
 from src.web_backend.node_runtime_event_sink import NodeRuntimeEventSink
+from src.web_backend.node_config_service import node_runtime_state_path
 
 
 def _read_config(path):
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(node_runtime_state_path(str(path)), "r", encoding="utf-8") as handle:
         return json.load(handle)
 
 
@@ -99,6 +102,10 @@ def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
             "status": "completed",
             "duration_ms": 3.4,
             "result_preview": "ok",
+            "result_chars": 2,
+            "result_preview_truncated": False,
+            "result_tail_preview": "ok",
+            "result_tail_preview_truncated": False,
             "diagnostics": (" diag ", None),
             "unexpected": "drop me",
         }
@@ -123,8 +130,63 @@ def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
                 "duration_ms": 3,
                 "arguments": {"filePath": "README.md"},
                 "result_preview": "ok",
+                "result_chars": 2,
+                "result_preview_truncated": False,
+                "result_tail_preview": "ok",
+                "result_tail_preview_truncated": False,
                 "diagnostics": ["diag"],
             },
         }
     ]
     assert "unexpected" not in tool_entries[0]["event"]
+
+
+def test_node_runtime_event_sink_keeps_tool_end_nonfatal_when_history_persist_fails(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"node_id": "agent1"}, ensure_ascii=False), encoding="utf-8")
+    logs = []
+    live_events = []
+
+    def fail_append(_graph_id, _node_id, _event):
+        raise NodeMemoryPersistenceError(
+            [
+                NodeMemoryPersistenceFailure(
+                    target="messages",
+                    path=str(tmp_path / "messages.jsonl"),
+                    error="PermissionError: locked",
+                )
+            ]
+        )
+
+    sink = NodeRuntimeEventSink(
+        graph_id="default",
+        node_id="agent1",
+        node_type_id="agent_node",
+        config_path=str(config_path),
+        trace_id="trace-1",
+        depth=2,
+        stream_last_text="",
+        log_graph_event=lambda graph_id, event, **fields: logs.append(
+            {"graph_id": graph_id, "event": event, **fields}
+        ),
+        append_tool_call_entry=fail_append,
+        publish_live_event=lambda graph_id, node_id, event_type, event, **fields: live_events.append(
+            {"graph_id": graph_id, "node_id": node_id, "event_type": event_type, "event": event, **fields}
+        ),
+    )
+
+    sink.handle({"type": "tool_call_start", "name": "read_file", "call_id": "call-1"})
+    feedback = sink.handle({"type": "tool_call_end", "name": "read_file", "call_id": "call-1", "status": "completed"})
+
+    payload = _read_config(config_path)
+    assert "NodeMemoryPersistenceError" in feedback["memory_persistence_warning"]
+    assert payload["last_runtime_event"]["type"] == "tool_call_end"
+    assert "NodeMemoryPersistenceError" in payload["last_runtime_event"]["memory_persistence_warning"]
+    assert payload["runtime_tool_calls"][0]["status"] == "completed"
+    assert "NodeMemoryPersistenceError" in payload["runtime_tool_calls"][0]["memory_persistence_warning"]
+    failure_log = next(item for item in logs if item["event"] == "node_memory_persist_failed")
+    assert failure_log["target"] == "tool_history"
+    assert failure_log["failures"][0]["target"] == "messages"
+    assert any(item["event_type"] == "runtime_notice" for item in live_events)
+    assert live_events[-1]["event_type"] == "tool_call_end"
+    assert "NodeMemoryPersistenceError" in live_events[-1]["event"]["memory_persistence_warning"]

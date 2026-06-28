@@ -5,8 +5,8 @@ import time
 import types
 
 import functions.multi_tool_use_tools as parallel_tools
-from src.base_tool import BaseTool
-from src.tool_load_errors import ToolLoadError
+from src.tool.base_tool import BaseTool
+from src.tool.tool_load_errors import ToolLoadError
 
 
 class _DummyAgent:
@@ -62,6 +62,40 @@ def test_multi_tool_use_parallel_rejects_invalid_recipient_namespace():
     payload = json.loads(raw)
     assert payload["status"] == "error"
     assert "must start with 'functions.'" in payload["error"]
+
+
+def test_multi_tool_use_parallel_rejects_slow_console_timeout():
+    agent = _DummyAgent()
+    raw = parallel_tools.multi_tool_use_parallel(
+        tool_uses=[
+            {
+                "recipient_name": "functions.execute_console_command",
+                "parameters": {"command": "git status", "timeout_seconds": 60},
+            },
+        ],
+        agent=agent,
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "error"
+    assert "must be run directly" in payload["error"]
+
+
+def test_multi_tool_use_parallel_rejects_known_slow_console_command():
+    agent = _DummyAgent()
+    raw = parallel_tools.multi_tool_use_parallel(
+        tool_uses=[
+            {
+                "recipient_name": "functions.execute_console_command",
+                "parameters": {"command": "python -m pytest --collect-only -q"},
+            },
+        ],
+        agent=agent,
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "error"
+    assert "looks slow or interactive" in payload["error"]
 
 
 def test_system_tools_registers_multi_tool_use_parallel():

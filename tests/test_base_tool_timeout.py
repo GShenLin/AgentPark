@@ -1,5 +1,5 @@
-from src.base_tool import BaseTool
-from src.tool_result_processing import process_tool_result_outcome
+from src.tool.base_tool import BaseTool
+from src.tool.tool_result_processing import process_tool_result_outcome
 
 
 class _DummyAgent:

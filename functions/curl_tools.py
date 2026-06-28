@@ -2,7 +2,7 @@ import json
 import locale
 import subprocess
 
-from functions._tool_helpers import decode_bytes, redact_sensitive_curl_args, truncate_text
+from src.tool_helpers import decode_bytes, redact_sensitive_curl_args, truncate_text
 
 
 def execute_curl_command(

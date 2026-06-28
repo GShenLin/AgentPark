@@ -1,13 +1,35 @@
 import json
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 
 
 _TOOL_NAME = "multi_tool_use_parallel"
 _LEGACY_TOOL_NAME = "multi_tool_use.parallel"
 _RECIPIENT_PREFIX = "functions."
 _MAX_TOOL_USES = 64
-_ERROR_STATUSES = {"error", "exception", "blocked", "timeout", "permission_denied", "locked", "locked_or_readonly"}
+_ERROR_STATUSES = {
+    "error",
+    "exception",
+    "blocked",
+    "timeout",
+    "partial_success_timeout",
+    "stopped",
+    "permission_denied",
+    "locked",
+    "locked_or_readonly",
+}
+_DIRECT_ONLY_CONSOLE_PATTERNS = (
+    "pytest",
+    "npm run build",
+    "npx",
+    "git diff",
+    "get-childitem",
+    "gci ",
+    "rg --files",
+)
+_MAX_PARALLEL_CONSOLE_TIMEOUT_SECONDS = 20
 
 
 def _validate_tool_uses(tool_uses):
@@ -51,6 +73,37 @@ def _validate_tool_uses(tool_uses):
             }
         )
     return normalized, None
+
+
+def _validate_parallel_use_policy(normalized):
+    for spec in normalized:
+        if spec.get("tool_name") != "execute_console_command":
+            continue
+
+        parameters = spec.get("parameters") or {}
+        command = str(parameters.get("command") or "")
+        command_lower = command.lower()
+        timeout_seconds = _parse_optional_number(parameters.get("timeout_seconds"))
+        if timeout_seconds is not None and timeout_seconds > _MAX_PARALLEL_CONSOLE_TIMEOUT_SECONDS:
+            return (
+                f"tool_uses[{spec['index']}] execute_console_command has timeout_seconds={timeout_seconds:g}; "
+                "slow console commands must be run directly, not through multi_tool_use_parallel."
+            )
+        if any(pattern in command_lower for pattern in _DIRECT_ONLY_CONSOLE_PATTERNS):
+            return (
+                f"tool_uses[{spec['index']}] execute_console_command looks slow or interactive; "
+                "run it directly instead of through multi_tool_use_parallel."
+            )
+    return None
+
+
+def _parse_optional_number(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
 
 
 def _classify_tool_result(raw_result):
@@ -114,6 +167,16 @@ def multi_tool_use_parallel(tool_uses, agent=None):
                 },
                 ensure_ascii=False,
             )
+        policy_error = _validate_parallel_use_policy(normalized)
+        if policy_error:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "tool": _TOOL_NAME,
+                    "error": policy_error,
+                },
+                ensure_ascii=False,
+            )
 
         task_count = len(normalized)
         max_workers = task_count
@@ -131,25 +194,44 @@ def multi_tool_use_parallel(tool_uses, agent=None):
             for spec in normalized:
                 results[spec["index"]] = _run_single_use(agent, spec)
         else:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            cancel_source = cancel_source_from_agent(agent)
+            executor = ThreadPoolExecutor(max_workers=max_workers)
+            try:
                 future_to_index = {
                     executor.submit(_run_single_use, agent, spec): spec["index"]
                     for spec in normalized
                 }
-                for future in as_completed(future_to_index):
-                    index = future_to_index[future]
-                    try:
-                        results[index] = future.result()
-                    except Exception as e:
-                        results[index] = {
-                            "index": index,
-                            "recipient_name": normalized[index]["recipient_name"],
-                            "tool_name": normalized[index]["tool_name"],
-                            "status": "error",
-                            "duration_ms": 0,
-                            "error": f"{type(e).__name__}: {str(e)}",
-                            "result": None,
-                        }
+                pending = set(future_to_index.keys())
+                while pending:
+                    raise_if_cancel_requested(cancel_source)
+                    done, pending = wait(pending, timeout=0.05, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        index = future_to_index[future]
+                        try:
+                            results[index] = future.result()
+                        except Exception as e:
+                            results[index] = {
+                                "index": index,
+                                "recipient_name": normalized[index]["recipient_name"],
+                                "tool_name": normalized[index]["tool_name"],
+                                "status": "error",
+                                "duration_ms": 0,
+                                "error": f"{type(e).__name__}: {str(e)}",
+                                "result": None,
+                            }
+            except CancellationRequested as exc:
+                executor.shutdown(wait=False, cancel_futures=True)
+                return json.dumps(
+                    {
+                        "status": "stopped",
+                        "tool": _TOOL_NAME,
+                        "error": str(exc),
+                        "results": [item for item in results if isinstance(item, dict)],
+                    },
+                    ensure_ascii=False,
+                )
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 
         succeeded = sum(1 for item in results if isinstance(item, dict) and item.get("status") == "success")
         failed = task_count - succeeded

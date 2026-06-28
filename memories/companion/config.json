@@ -1,0 +1,24 @@
+{
+  "node_id": "Agent",
+  "type_id": "agent_node",
+  "name": "Agent",
+  "graph_id": "default",
+  "input_num": 1,
+  "output_num": 1,
+  "ui": {
+    "x": 120,
+    "y": 279
+  },
+  "schemaVersion": 1,
+  "plugins": [],
+  "skills": [],
+  "working_path": "",
+  "provider_id": "krill_gpt55",
+  "system_prompt": "",
+  "mode": "chat",
+  "tools": [],
+  "mcp_servers": [],
+  "web_search": "disabled",
+  "thinking": "disabled",
+  "reasoning_effort": "high"
+}

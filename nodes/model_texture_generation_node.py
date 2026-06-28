@@ -1,10 +1,11 @@
-import json
 import os
 
 from nodes.base_node import BaseNode
-from src.config_loader import ConfigLoader
-from src.message_protocol import build_resource_part, normalize_envelope
+from src.generation_output import ResourceOutputField, StructuredOutputSpec, build_generation_output_message
+from src.message_protocol import envelope_text
 from src.model_texture_content import resolve_model_texture_inputs
+from src.node_config_overlay import merge_node_config_overlay
+from src.provider_options import build_provider_options_for_support_modes
 from src.providers import create_agent
 
 
@@ -91,29 +92,9 @@ class Node(BaseNode):
         "filename_prefix": {"type": "string", "label": "filename_prefix"},
     }
 
-    @staticmethod
-    def _provider_options() -> list[dict]:
-        try:
-            providers = ConfigLoader().get_all_providers()
-        except Exception:
-            providers = {}
-        options: list[dict] = []
-        if isinstance(providers, dict):
-            for provider_id, config in providers.items():
-                if not isinstance(config, dict):
-                    continue
-                modes = config.get("supportmode")
-                mode_set = {str(item or "").strip().lower() for item in modes} if isinstance(modes, list) else set()
-                if mode_set.intersection(_SUPPORTED_PROVIDER_MODES):
-                    text = str(provider_id or "").strip()
-                    if text:
-                        options.append({"value": text, "label": text})
-        options.sort(key=lambda item: item["label"].lower())
-        return options
-
     def get_config_schema(self, context: dict | None = None) -> dict:
         schema = super().get_config_schema(context)
-        options = self._provider_options()
+        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
         if options:
             provider_schema = dict(schema.get("provider_id") or {})
             provider_schema["type"] = "select"
@@ -125,47 +106,9 @@ class Node(BaseNode):
         super().on_create(config, context)
         if not isinstance(config, dict) or str(config.get("provider_id") or "").strip():
             return
-        options = self._provider_options()
+        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
         if options:
             config["provider_id"] = options[0]["value"]
-
-    def _load_persisted_config(self, ctx: dict, node_dir: str) -> dict:
-        merged = dict(ctx)
-        config_path = os.path.join(node_dir, "config.json")
-        if not os.path.exists(config_path):
-            return merged
-        try:
-            with open(config_path, "r", encoding="utf-8") as file_obj:
-                data = json.load(file_obj)
-        except Exception:
-            return merged
-        if isinstance(data, dict):
-            merged.update(data)
-        return merged
-
-    def _build_output_message(self, result: object, *, provider_id: str) -> dict:
-        if not isinstance(result, dict):
-            return normalize_envelope({"role": "assistant", "parts": [{"type": "text", "text": str(result or "")}]})
-        parts: list[dict] = []
-        response_text = str(result.get("response") or "").strip()
-        if response_text:
-            parts.append({"type": "text", "text": response_text})
-        saved_files = result.get("saved_files")
-        if isinstance(saved_files, str):
-            saved_files = [saved_files]
-        for path in saved_files if isinstance(saved_files, list) else []:
-            uri = str(path or "").strip()
-            if uri:
-                parts.append(build_resource_part(uri=uri, kind="file", source="model_texture_generation"))
-        meta = {"provider_id": provider_id}
-        for key in ("task_uuid", "subscription_key", "status"):
-            value = result.get(key)
-            if value is not None and value != "":
-                meta[key] = value
-        if isinstance(saved_files, list):
-            meta["file_count"] = len(saved_files)
-        parts.append({"type": "structured", "data": meta})
-        return normalize_envelope({"role": "assistant", "parts": parts}, default_role="assistant")
 
     def on_input(self, message: object, context: dict | None = None) -> dict:
         ctx = context or {}
@@ -173,7 +116,7 @@ class Node(BaseNode):
         graph_id = str(ctx.get("graph_id") or "default").strip() or "default"
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         node_dir = os.path.join(base_dir, "memories", graph_id, node_id)
-        merged_ctx = self._load_persisted_config(ctx, node_dir)
+        merged_ctx = merge_node_config_overlay(ctx, node_dir)
 
         provider_id = str(merged_ctx.get("provider_id") or "").strip()
         if not provider_id:
@@ -188,6 +131,7 @@ class Node(BaseNode):
 
         memory_path = os.path.join(node_dir, f"{node_id}.md")
         agent = create_agent(provider_id, memory_file_path=memory_path)
+        self._inject_configured_skills(agent, merged_ctx, node_id=node_id)
         if not hasattr(agent, "generate_3d_texture"):
             raise ValueError(f"Provider '{provider_id}' does not support 3D texture generation")
 
@@ -202,8 +146,25 @@ class Node(BaseNode):
             material=merged_ctx.get("material"),
             resolution=merged_ctx.get("resolution"),
         )
-        output_message = self._build_output_message(result, provider_id=provider_id)
+        output_message = build_generation_output_message(
+            result,
+            text_fields=("response",),
+            resource_fields=(
+                ResourceOutputField(
+                    name="saved_files",
+                    kind="file",
+                    source="model_texture_generation",
+                    allow_list=True,
+                ),
+            ),
+            structured=StructuredOutputSpec(
+                base={"provider_id": provider_id},
+                field_names=("task_uuid", "subscription_key", "status"),
+                count_field="saved_files",
+                count_name="file_count",
+            ),
+        )
         return {
-            "display": self._message_text(output_message),
+            "display": envelope_text(output_message),
             "routes": [{"output_index": 0, "payload": output_message}],
         }

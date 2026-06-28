@@ -31,3 +31,19 @@ def test_curl_tool_does_not_emit_progress_to_stdout(monkeypatch, capsys):
     assert result["status"] == "success"
     assert result["stdout"] == "ok"
     assert capsys.readouterr().out == ""
+
+
+def test_curl_tool_html_output_remains_json_string(monkeypatch):
+    class _Completed:
+        stdout = b'<!doctype html><html lang="en"></html>'
+        stderr = b""
+        returncode = 0
+
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _Completed())
+
+    raw = execute_curl_command("https://example.com")
+    result = json.loads(raw)
+
+    assert isinstance(raw, str)
+    assert result["status"] == "success"
+    assert result["stdout"].startswith("<!doctype html>")

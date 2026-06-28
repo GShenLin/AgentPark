@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 
 def test_image_generation_node_calls_provider_and_returns_image(monkeypatch, tmp_path):
     import nodes.image_generation_node as node_module
@@ -82,6 +84,28 @@ def test_image_generation_node_uses_configured_prompt_and_reference_images(monke
     call = dummy_agent.calls[0]
     assert call["prompt"] == "make a clean logo"
     assert call["image"] == ["C:/tmp/ref-a.png", "C:/tmp/ref-b.png"]
+
+
+def test_image_generation_node_rejects_invalid_watermark(monkeypatch):
+    import nodes.image_generation_node as node_module
+
+    class DummyAgent:
+        def generate_image(self, **_kwargs):
+            raise AssertionError("generate_image should not be called")
+
+    monkeypatch.setattr(node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    node = node_module.Node()
+    with pytest.raises(ValueError, match="watermark must be a boolean value"):
+        node.on_input(
+            {"role": "user", "parts": [{"type": "text", "text": "generate"}]},
+            {
+                "graph_id": "g1",
+                "node_instance_id": "img-invalid",
+                "provider_id": "371NanoBanana",
+                "watermark": "maybe",
+            },
+        )
 
 
 def test_image_generation_node_schema_filters_image_generation_providers(monkeypatch, tmp_path):

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { GraphInfo, MessageEnvelope } from '../api'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
+import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
 
 type MemoryMode = 'agent' | 'file' | 'graph'
 
@@ -9,6 +10,7 @@ const props = defineProps<{
   mode: MemoryMode
   memoryText: string
   messages: MessageEnvelope[]
+  liveMessage: string
   markdownPreview: boolean
   wordWrap: boolean
   showLineNumbers: boolean
@@ -26,7 +28,10 @@ const emit = defineEmits<{
   (event: 'saveGraphConfig'): void
   (event: 'refreshGraphs'): void
   (event: 'loadGraphConfig', graph: GraphInfo): void
+  (event: 'deleteGraphConfig', graph: GraphInfo): void
   (event: 'autoScrollChange', value: boolean): void
+  (event: 'saveMessage', text: string): void
+  (event: 'copyMessage', text: string): void
 }>()
 
 const memoryPanelRef = ref<HTMLElement | null>(null)
@@ -34,6 +39,7 @@ const gutterRef = ref<HTMLElement | null>(null)
 
 const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/) : []))
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
+const renderedLiveMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.liveMessage))
 
 function updateMemoryText(event: Event) {
   emit('update:memoryText', String((event.target as HTMLTextAreaElement | null)?.value || ''))
@@ -93,19 +99,39 @@ defineExpose({ scrollToBottom })
               <div class="graph-name">{{ graph.name }}</div>
               <div class="graph-meta">{{ graph.updated_at || graph.id }}</div>
             </div>
-            <button class="graph-btn" @click="emit('loadGraphConfig', graph)">Load</button>
+            <div class="graph-item-actions">
+              <button class="graph-btn" @click="emit('loadGraphConfig', graph)">Load</button>
+              <button class="graph-btn danger" @click="emit('deleteGraphConfig', graph)">Delete</button>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
     <div
-      v-else-if="mode === 'agent' && messages.length > 0"
+      v-else-if="mode === 'agent' && (messages.length > 0 || liveMessage)"
       ref="memoryPanelRef"
       class="panel-body message-feed"
       @scroll="syncScroll"
     >
-      <MemoryMessageFeed :messages="messages" :markdown-preview="markdownPreview" />
+      <MemoryMessageFeed
+        :messages="messages"
+        :markdown-preview="markdownPreview"
+        @save-message="emit('saveMessage', $event)"
+        @copy-message="emit('copyMessage', $event)"
+      />
+      <div v-if="liveMessage" class="live-message">
+        <div class="live-head">
+          <span class="live-role">Live</span>
+          <span class="live-status">streaming</span>
+        </div>
+        <div
+          v-if="markdownPreview"
+          class="live-body live-markdown"
+          v-html="renderedLiveMarkdown"
+        ></div>
+        <div v-else class="live-body">{{ liveMessage }}</div>
+      </div>
     </div>
 
     <div
@@ -237,6 +263,19 @@ defineExpose({ scrollToBottom })
   background: rgba(14, 116, 144, 0.34);
 }
 
+.graph-btn.danger {
+  border-color: rgba(248, 113, 113, 0.7);
+  background: rgba(127, 29, 29, 0.35);
+  color: rgba(254, 226, 226, 0.96);
+}
+
+.graph-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .graph-list,
 .graph-items {
   gap: 8px;
@@ -317,6 +356,78 @@ defineExpose({ scrollToBottom })
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.live-message {
+  flex: 0 0 auto;
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-left: 4px solid rgba(56, 189, 248, 0.75);
+  border-radius: 8px;
+  background: rgba(8, 47, 73, 0.28);
+  overflow: hidden;
+}
+
+.live-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(125, 211, 252, 0.18);
+  background: rgba(3, 105, 161, 0.16);
+}
+
+.live-role {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(186, 230, 253, 0.96);
+}
+
+.live-status {
+  font-size: 11px;
+  color: rgba(125, 211, 252, 0.86);
+}
+
+.live-body {
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.96);
+}
+
+.live-markdown {
+  white-space: normal;
+}
+
+:deep(.live-markdown p) {
+  margin: 0 0 8px 0;
+}
+
+:deep(.live-markdown p:last-child) {
+  margin-bottom: 0;
+}
+
+:deep(.live-markdown pre) {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  overflow: auto;
+}
+
+:deep(.live-markdown code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+:deep(.live-markdown ul),
+:deep(.live-markdown ol) {
+  margin: 6px 0 6px 18px;
+  padding: 0;
+}
+
+:deep(.live-markdown li) {
+  margin: 2px 0;
 }
 
 .wrap-container {

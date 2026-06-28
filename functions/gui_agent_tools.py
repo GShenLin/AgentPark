@@ -3,24 +3,12 @@ import os
 from datetime import datetime
 
 from src.config_loader import ConfigLoader
+from src.value_parsing import parse_bool_value
 
 
 GUI_MODE = "GUIAgent"
 DEFAULT_GUI_PROVIDER_ID = "doubao-seed-1-6-vision-250815"
 Node = None
-
-
-def _to_bool(value, default=False):
-    if isinstance(value, bool):
-        return value
-    text = str(value or "").strip().lower()
-    if not text:
-        return default
-    if text in {"1", "true", "yes", "y", "on"}:
-        return True
-    if text in {"0", "false", "no", "n", "off"}:
-        return False
-    return default
 
 
 def _safe_text(value):
@@ -208,8 +196,8 @@ def run_gui_agent_task(
         "mode": GUI_MODE,
         "verify_mode": GUI_MODE,
         "instruction": instruction,
-        "verify_on_finish": "true" if _to_bool(verify_on_finish, default=True) else "false",
-        "dry_run": "true" if _to_bool(dry_run, default=False) else "false",
+        "verify_on_finish": "true" if parse_bool_value(verify_on_finish, default=True) else "false",
+        "dry_run": "true" if parse_bool_value(dry_run, default=False) else "false",
     }
     prompt_text = _safe_text(system_prompt)
     if prompt_text:
@@ -264,7 +252,7 @@ def run_gui_agent_task(
 
     response_payload = {
         "status": str(structured.get("status") or "stopped"),
-        "finished": _to_bool(structured.get("finished"), default=False),
+        "finished": parse_bool_value(structured.get("finished"), default=False),
         "reason": str(structured.get("reason") or ""),
         "instruction": str(structured.get("instruction") or instruction),
         "summary": str(result.get("display") or ""),
@@ -274,7 +262,7 @@ def run_gui_agent_task(
         "step_count": len(steps),
         "steps": steps,
     }
-    is_finished = _to_bool(response_payload.get("finished"), default=False)
+    is_finished = parse_bool_value(response_payload.get("finished"), default=False)
     response_payload["task_result"] = "completed" if is_finished else "failed"
     response_payload["task_completed"] = bool(is_finished)
     response_payload["task_failed"] = not bool(is_finished)

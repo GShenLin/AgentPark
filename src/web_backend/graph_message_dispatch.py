@@ -2,8 +2,9 @@ import os
 import uuid
 
 from . import runtime_paths, state_store
+from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
-from .shared import _append_node_pending, _parse_node_state, envelope_preview, normalize_envelope
+from .shared import _append_node_pending, envelope_preview, normalize_envelope
 from .route_parser import NodeRouteParser
 
 
@@ -69,6 +70,8 @@ class GraphMessageDispatch(HostBoundService):
                 graph_dir = os.path.join(graphs_dir, entry)
                 if not os.path.isdir(graph_dir):
                     continue
+                if entry == "companion":
+                    continue
                 safe_entry = self._sanitize_graph_id(entry)
                 if safe_entry and safe_entry not in graph_ids:
                     graph_ids.append(safe_entry)
@@ -104,7 +107,7 @@ class GraphMessageDispatch(HostBoundService):
                     matched = str(cfg.get("EventKey") or "").strip() == event_key_text
                 if not matched or (target_graph_id == source_graph_id and event_node_id == source_node_id):
                     continue
-                if _parse_node_state(cfg.get("state")) == "stop":
+                if parse_node_state(cfg.get("state")) == "stop":
                     continue
 
                 for link in target_outgoing.get(event_node_id, []):
@@ -132,7 +135,7 @@ class GraphMessageDispatch(HostBoundService):
                         continue
 
                     target_cfg = state_store._read_json_dict(target_cfg_path)
-                    if isinstance(target_cfg, dict) and _parse_node_state(target_cfg.get("state")) == "stop":
+                    if isinstance(target_cfg, dict) and parse_node_state(target_cfg.get("state")) == "stop":
                         self._log_graph_event(
                             source_graph_id,
                             "event_dispatch_skip_target_stopped",
@@ -208,6 +211,7 @@ class GraphMessageDispatch(HostBoundService):
             "from_output_index": task["route_output_index"],
             "to_input_index": task["to_input_index"],
             "source": str(task.get("source") or "propagate"),
+            "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
         }
         link_id = str(task.get("link_id") or "")
         if link_id:

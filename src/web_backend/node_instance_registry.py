@@ -1,19 +1,37 @@
 import json
-import math
 import os
 import shutil
+import subprocess
 
 from . import runtime_paths
 from .node_config_errors import NodeConfigWriteError
+from .node_config_errors import NodeConfigReadError
+from .node_config_service import RUNTIME_STATE_FIELDS, node_config_service, node_runtime_state_path
+from .node_instance_artifacts import rename_node_artifacts
+from .node_instance_artifacts import rename_node_references_in_graph
 from .node_metadata_reader import NodeMetadataError
-from .node_memory_store import NodeMemoryPersistenceError
+from .node_memory_store import NodeMemoryPersistenceError, clear_node_memory
+from .node_event_sequence import bump_node_event_seq
+from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
 from .shared import (
     HTTPException,
-    _parse_node_state,
     _read_json_dict,
     _write_json_dict,
 )
+
+
+def _config_file_version(config_path: str) -> int:
+    version = 0
+    try:
+        version = max(version, int(os.stat(config_path).st_mtime_ns))
+    except OSError:
+        pass
+    try:
+        version = max(version, int(os.stat(node_runtime_state_path(config_path)).st_mtime_ns))
+    except OSError:
+        pass
+    return version
 
 
 class NodeInstanceRegistry(HostBoundService):
@@ -90,9 +108,10 @@ class NodeInstanceRegistry(HostBoundService):
         if safe_new_node_id != safe_node_id and os.path.exists(new_dir):
             raise HTTPException(status_code=409, detail="target node id already exists")
 
-        cfg = _read_json_dict(old_config_path)
-        if not isinstance(cfg, dict) or not cfg:
-            cfg = {"node_id": safe_node_id, "graph_id": safe_graph_id}
+        try:
+            cfg = node_config_service.read_strict(old_config_path)
+        except NodeConfigReadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
         type_id = str(cfg.get("type_id") or "").strip()
 
         try:
@@ -102,9 +121,10 @@ class NodeInstanceRegistry(HostBoundService):
             raise HTTPException(status_code=500, detail=f"failed to rename node directory: {str(e)}")
 
         config_path = self.graph_runtime._node_config_path(safe_new_node_id, safe_graph_id)
-        next_cfg = _read_json_dict(config_path)
-        if not isinstance(next_cfg, dict) or not next_cfg:
-            next_cfg = cfg
+        try:
+            next_cfg = node_config_service.read_strict(config_path)
+        except NodeConfigReadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
         next_cfg["node_id"] = safe_new_node_id
         next_cfg["graph_id"] = safe_graph_id
         next_cfg["name"] = safe_new_node_id
@@ -112,9 +132,9 @@ class NodeInstanceRegistry(HostBoundService):
             raise HTTPException(status_code=500, detail="failed to update node config")
 
         if safe_new_node_id != safe_node_id and os.path.isdir(new_dir):
-            self._rename_node_artifacts(new_dir, safe_node_id, safe_new_node_id)
+            rename_node_artifacts(new_dir, safe_node_id, safe_new_node_id)
 
-        self._rename_node_references_in_graph(safe_graph_id, safe_node_id, safe_new_node_id, new_name_raw)
+        rename_node_references_in_graph(self.graph_runtime, safe_graph_id, safe_node_id, safe_new_node_id, new_name_raw)
 
         self.graph_runtime._log_graph_event(
             safe_graph_id,
@@ -132,65 +152,89 @@ class NodeInstanceRegistry(HostBoundService):
             "config_path": config_path,
         }
 
-    def _rename_node_artifacts(self, new_dir: str, old_node_id: str, new_node_id: str) -> None:
-        old_memory = os.path.join(new_dir, f"{old_node_id}.md")
-        new_memory = os.path.join(new_dir, f"{new_node_id}.md")
-        try:
-            if os.path.exists(old_memory) and not os.path.exists(new_memory):
-                os.rename(old_memory, new_memory)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"failed to rename node memory artifact: {str(exc)}")
-        old_prefix = f"{old_node_id}_"
-        new_prefix = f"{new_node_id}_"
-        try:
-            filenames = os.listdir(new_dir)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"failed to list node artifacts: {str(exc)}")
-        for filename in filenames:
-            if filename.startswith(old_prefix):
-                src_path = os.path.join(new_dir, filename)
-                dst_path = os.path.join(new_dir, f"{new_prefix}{filename[len(old_prefix):]}")
-                try:
-                    if not os.path.exists(dst_path):
-                        os.rename(src_path, dst_path)
-                except Exception as exc:
-                    raise HTTPException(status_code=500, detail=f"failed to rename node artifact: {str(exc)}")
+    def clone_node_instance(self, node_id: str, payload: dict, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="payload must be object")
+        new_node_id_raw = payload.get("new_node_id")
+        new_name_raw = payload.get("new_name")
+        ui_raw = payload.get("ui")
+        if not isinstance(new_node_id_raw, str) or not new_node_id_raw.strip():
+            raise HTTPException(status_code=400, detail="new_node_id is required")
+        if new_name_raw is not None and not isinstance(new_name_raw, str):
+            raise HTTPException(status_code=400, detail="new_name must be string")
+        if ui_raw is not None and not isinstance(ui_raw, dict):
+            raise HTTPException(status_code=400, detail="ui must be object")
 
-    def _rename_node_references_in_graph(self, graph_id: str, old_node_id: str, new_node_id: str, new_name_raw) -> None:
-        graph_cfg = self.graph_runtime._read_graph_config(graph_id)
-        graph_changed = False
-        if isinstance(graph_cfg, dict) and graph_cfg:
-            nodes = graph_cfg.get("nodes")
-            if isinstance(nodes, list):
-                for node_item in nodes:
-                    if isinstance(node_item, dict) and str(node_item.get("id") or "").strip() == old_node_id:
-                        node_item["id"] = new_node_id
-                        if isinstance(new_name_raw, str) and new_name_raw.strip():
-                            node_item["name"] = new_name_raw.strip()
-                        graph_changed = True
-            links = graph_cfg.get("links")
-            if isinstance(links, list):
-                for link in links:
-                    if not isinstance(link, dict):
-                        continue
-                    for side in ("from", "to"):
-                        endpoint = link.get(side)
-                        if isinstance(endpoint, dict):
-                            if str(endpoint.get("node") or "").strip() == old_node_id:
-                                endpoint["node"] = new_node_id
-                                graph_changed = True
-                        elif isinstance(endpoint, str) and endpoint.strip() == old_node_id:
-                            link[side] = new_node_id
-                            graph_changed = True
-        if graph_changed:
-            graph_dir = os.path.join(runtime_paths._get_graphs_dir(), graph_id)
-            os.makedirs(graph_dir, exist_ok=True)
-            graph_cfg["id"] = graph_id
-            try:
-                with open(os.path.join(graph_dir, "config.json"), "w", encoding="utf-8") as f:
-                    json.dump(graph_cfg, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"failed to update graph config: {str(e)}")
+        safe_new_node_id = self.graph_runtime._sanitize_node_id(new_node_id_raw)
+        if not safe_new_node_id:
+            raise HTTPException(status_code=400, detail="invalid new_node_id")
+        if safe_new_node_id == safe_node_id:
+            raise HTTPException(status_code=409, detail="target node id already exists")
+
+        old_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
+        old_config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        if not old_config_path or not os.path.exists(old_config_path) or not os.path.isdir(old_dir):
+            raise HTTPException(status_code=404, detail="node instance not found")
+
+        new_dir = self.graph_runtime._node_dir(safe_graph_id, safe_new_node_id)
+        if os.path.exists(new_dir):
+            raise HTTPException(status_code=409, detail="target node id already exists")
+
+        memory_root = os.path.join(runtime_paths._get_runtime_root(), "memories")
+        if not self.graph_runtime._is_safe_subdir(memory_root, old_dir) or not self.graph_runtime._is_safe_subdir(memory_root, new_dir):
+            raise HTTPException(status_code=400, detail="invalid node path")
+
+        try:
+            source_cfg = node_config_service.read_strict(old_config_path)
+        except NodeConfigReadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        type_id = str(source_cfg.get("type_id") or "").strip()
+
+        try:
+            shutil.copytree(old_dir, new_dir)
+            rename_node_artifacts(new_dir, safe_node_id, safe_new_node_id)
+
+            config_path = self.graph_runtime._node_config_path(safe_new_node_id, safe_graph_id)
+            next_cfg = node_config_service.read_strict(config_path)
+            next_cfg["node_id"] = safe_new_node_id
+            next_cfg["graph_id"] = safe_graph_id
+            next_cfg["name"] = (
+                new_name_raw.strip()
+                if isinstance(new_name_raw, str) and new_name_raw.strip()
+                else str(source_cfg.get("name") or safe_new_node_id).strip() or safe_new_node_id
+            )
+            if isinstance(ui_raw, dict):
+                next_cfg["ui"] = ui_raw
+            next_cfg["state"] = "idle"
+            for key in RUNTIME_STATE_FIELDS:
+                next_cfg.pop(key, None)
+            next_cfg["state"] = "idle"
+            if not _write_json_dict(config_path, next_cfg):
+                raise HTTPException(status_code=500, detail="failed to update cloned node config")
+        except HTTPException:
+            shutil.rmtree(new_dir, ignore_errors=True)
+            raise
+        except Exception as e:
+            shutil.rmtree(new_dir, ignore_errors=True)
+            raise HTTPException(status_code=500, detail=f"failed to clone node instance: {str(e)}")
+
+        self.graph_runtime._log_graph_event(
+            safe_graph_id,
+            "node_cloned",
+            source_node_id=safe_node_id,
+            node_id=safe_new_node_id,
+            node_type_id=type_id or None,
+        )
+        return {
+            "ok": True,
+            "source_node_id": safe_node_id,
+            "node_id": safe_new_node_id,
+            "graph_id": safe_graph_id,
+            "type_id": type_id,
+            "config_path": config_path,
+        }
 
     def delete_node_instance(self, node_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -212,36 +256,124 @@ class NodeInstanceRegistry(HostBoundService):
             raise HTTPException(status_code=404, detail="node instance not found")
         return {"ok": True, "node_id": safe_node_id, "graph_id": safe_graph_id, "removed_memory_dir": removed_dir}
 
-    def list_node_instance_configs(self, graph_id: str = ""):
+    def clear_node_instance_memory(self, node_id: str, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        if not config_path or not os.path.exists(config_path):
+            raise HTTPException(status_code=404, detail="node instance not found")
+        try:
+            cleared_files = clear_node_memory(
+                self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id),
+                self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id),
+            )
+        except NodeMemoryPersistenceError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        summary = self._clear_node_runtime_summary(config_path)
+        self.core.node_live_outputs.clear(safe_graph_id, safe_node_id)
+        return {
+            "ok": True,
+            "node_id": safe_node_id,
+            "graph_id": safe_graph_id,
+            "cleared_files": cleared_files,
+            "cleared_summary_fields": summary.changed_fields,
+        }
+
+    def _clear_node_runtime_summary(self, config_path: str):
+        def mutate(next_cfg: dict) -> None:
+            changed = False
+            if next_cfg.get("last_message") != "":
+                next_cfg["last_message"] = ""
+                changed = True
+            for key in ("last_runtime_event", "runtime_events", "runtime_tool_calls", "last_run_at"):
+                if key in next_cfg:
+                    next_cfg.pop(key, None)
+                    changed = True
+            if changed:
+                bump_node_event_seq(next_cfg)
+
+        return node_config_service.update(config_path, mutate, effective="immediate")
+
+    def open_node_instance_folder(self, node_id: str, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        if not node_dir or not config_path or not os.path.exists(config_path):
+            raise HTTPException(status_code=404, detail="node instance not found")
+
+        try:
+            cfg = node_config_service.read_strict(config_path)
+        except NodeConfigReadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        working_path = str((cfg if isinstance(cfg, dict) else {}).get("working_path") or "").strip()
+        target_dir = working_path or node_dir
+        source = "working_path" if working_path else "node_folder"
+
+        if not os.path.isdir(target_dir):
+            raise HTTPException(status_code=404, detail=f"{source} is not an existing folder: {target_dir}")
+
+        try:
+            if os.name == "nt":
+                subprocess.Popen(["explorer.exe", os.path.normpath(target_dir)], close_fds=True)
+            else:
+                raise RuntimeError("opening folders is only supported on Windows")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to open folder: {str(exc)}")
+
+        return {"ok": True, "node_id": safe_node_id, "graph_id": safe_graph_id, "path": target_dir, "source": source}
+
+    def list_node_instance_configs(self, graph_id: str = "", since_version: int = 0):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         base_dir = self.graph_runtime._graph_dir(safe_graph_id)
         if not base_dir or not os.path.isdir(base_dir):
-            return {"nodes": []}
+            return {"nodes": [], "node_ids": [], "version": 0, "partial": bool(since_version)}
         items = []
+        node_ids = []
+        max_version = 0
+        try:
+            min_version = int(since_version or 0)
+        except Exception:
+            min_version = 0
         for entry in os.listdir(base_dir):
             if entry == "agents":
                 continue
             config_path = os.path.join(base_dir, entry, "config.json")
             if not os.path.exists(config_path):
                 continue
-            cfg = _read_json_dict(config_path)
-            if isinstance(cfg, dict) and cfg:
-                type_id = str(cfg.get("type_id") or "").strip()
-                if type_id == "clock_node" or (type_id and "working_path" not in cfg):
-                    before = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
-                    try:
-                        self.graph_runtime._try_init_node_config(type_id, cfg, safe_graph_id, entry)
-                    except NodeMetadataError as exc:
-                        raise HTTPException(status_code=500, detail=str(exc))
-                    after = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
-                    if after != before:
-                        _write_json_dict(config_path, cfg)
-                cfg.pop("schema", None)
-                cfg["state"] = _parse_node_state(cfg.get("state"))
-                pending = cfg.get("pending")
-                cfg["pending_count"] = len(pending) if isinstance(pending, list) else 0
-                items.append(cfg)
-        return {"nodes": items}
+            node_ids.append(entry)
+            config_version = _config_file_version(config_path)
+            max_version = max(max_version, config_version)
+            if min_version > 0 and config_version <= min_version:
+                continue
+            try:
+                cfg = node_config_service.read_strict(config_path)
+            except NodeConfigReadError as exc:
+                raise HTTPException(status_code=500, detail=str(exc))
+            type_id = str(cfg.get("type_id") or "").strip()
+            if type_id == "clock_node" or (type_id and "working_path" not in cfg):
+                before = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
+                try:
+                    self.graph_runtime._try_init_node_config(type_id, cfg, safe_graph_id, entry)
+                except NodeMetadataError as exc:
+                    raise HTTPException(status_code=500, detail=str(exc))
+                after = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
+                if after != before:
+                    _write_json_dict(config_path, cfg)
+                    config_version = _config_file_version(config_path)
+                    max_version = max(max_version, config_version)
+            cfg.pop("schema", None)
+            cfg["state"] = parse_node_state(cfg.get("state"))
+            pending = cfg.get("pending")
+            cfg["pending_count"] = len(pending) if isinstance(pending, list) else 0
+            cfg["_config_version"] = config_version
+            items.append(cfg)
+        return {
+            "nodes": items,
+            "node_ids": sorted(node_ids),
+            "version": max_version,
+            "partial": min_version > 0,
+        }
 
     def update_node_instance_config(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -251,51 +383,23 @@ class NodeInstanceRegistry(HostBoundService):
             raise HTTPException(status_code=404, detail="node instance not found")
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="payload must be object")
-
-        next_cfg = _read_json_dict(config_path)
-        if not isinstance(next_cfg, dict) or not next_cfg:
-            next_cfg = {"node_id": safe_node_id, "graph_id": safe_graph_id}
-
-        reserved = {
-            "node_id", "type_id", "name", "graph_id", "state", "ui", "pending",
-            "pending_count", "inflight", "schema", "last_message", "last_runtime_event", "runtime_events", "runtime_tool_calls", "last_run_at",
-            "input_num", "output_num",
-        }
-        fields = payload.get("fields")
-        if fields is not None and not isinstance(fields, dict):
-            raise HTTPException(status_code=400, detail="fields must be object")
-        if isinstance(fields, dict):
-            for k, v in fields.items():
-                if isinstance(k, str) and k.strip() and k not in reserved:
-                    next_cfg[k] = v
-
-        next_cfg.pop("schema", None)
-
-        if "ui" in payload:
-            ui = payload.get("ui")
-            if ui is not None and not isinstance(ui, dict):
-                raise HTTPException(status_code=400, detail="ui must be object")
-            if isinstance(ui, dict):
-                x = float(ui.get("x") or 0)
-                y = float(ui.get("y") or 0)
-                if not math.isfinite(x):
-                    x = 0
-                if not math.isfinite(y):
-                    y = 0
-                next_cfg["ui"] = {"x": max(0, int(round(x))), "y": max(0, int(round(y)))}
-
-        type_id = str(next_cfg.get("type_id") or "").strip()
-        if type_id:
-            if type_id == "clock_node":
-                try:
-                    self.graph_runtime._try_init_node_config(type_id, next_cfg, safe_graph_id, safe_node_id)
-                except NodeMetadataError as exc:
-                    raise HTTPException(status_code=500, detail=str(exc))
-            try:
-                self.graph_runtime._sync_node_config_ports(type_id, next_cfg, safe_graph_id, safe_node_id)
-            except NodeMetadataError as exc:
-                raise HTTPException(status_code=500, detail=str(exc))
-
-        if not _write_json_dict(config_path, next_cfg):
-            raise HTTPException(status_code=500, detail="failed to write node config")
-        return {"ok": True}
+        try:
+            result = node_config_service.apply_webui_payload(
+                config_path,
+                payload,
+                init_clock=lambda type_id, cfg: self.graph_runtime._try_init_node_config(
+                    type_id, cfg, safe_graph_id, safe_node_id
+                ),
+                sync_ports=lambda type_id, cfg: self.graph_runtime._sync_node_config_ports(
+                    type_id, cfg, safe_graph_id, safe_node_id
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except NodeMetadataError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        except NodeConfigReadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        except NodeConfigWriteError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        return {"ok": True, **result.to_payload()}

@@ -1,0 +1,39 @@
+{
+  "id": "default",
+  "name": "default",
+  "links": [
+    {
+      "id": "link-1782588387204-u46vos",
+      "from": {
+        "node": "BasicTrigger",
+        "index": 0
+      },
+      "to": {
+        "node": "doubao",
+        "index": 0
+      }
+    },
+    {
+      "id": "link-1782588389396-w6psrm",
+      "from": {
+        "node": "BasicTrigger",
+        "index": 0
+      },
+      "to": {
+        "node": "Agent",
+        "index": 0
+      }
+    },
+    {
+      "id": "link-1782588391188-8civ3e",
+      "from": {
+        "node": "BasicTrigger",
+        "index": 0
+      },
+      "to": {
+        "node": "Agent11",
+        "index": 0
+      }
+    }
+  ]
+}

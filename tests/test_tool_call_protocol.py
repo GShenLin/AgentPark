@@ -1,11 +1,14 @@
 import pytest
 import json
 
-from src.tool_call_protocol import build_tool_call_error_execution
-from src.tool_call_protocol import from_gemini_function_call
-from src.tool_call_protocol import from_openai_tool_call
-from src.tool_call_protocol import from_responses_function_call
-from src.tool_call_protocol import to_openai_tool_call
+from src.tool.tool_call_protocol import build_tool_call_error_execution
+from src.tool.tool_call_protocol import build_tool_call_parse_error_execution
+from src.tool.tool_call_protocol import from_openai_tool_call_parse_failure
+from src.tool.tool_call_protocol import from_gemini_function_call
+from src.tool.tool_call_protocol import from_openai_tool_call
+from src.tool.tool_call_protocol import from_responses_function_call
+from src.tool.tool_call_protocol import from_responses_function_call_parse_failure
+from src.tool.tool_call_protocol import to_openai_tool_call
 
 
 def test_openai_tool_call_round_trips_through_envelope():
@@ -113,6 +116,58 @@ def test_invalid_tool_arguments_are_rejected():
                 "function": {"name": "read_file", "arguments": '{"filePath":'},
             }
         )
+
+
+def test_invalid_openai_tool_arguments_can_be_returned_as_tool_error():
+    raw = {
+        "id": "call-bad",
+        "type": "function",
+        "function": {"name": "apply_patch", "arguments": '{"patch":"line1\nline2"}'},
+    }
+    failure = from_openai_tool_call_parse_failure(
+        raw,
+        provider="unit",
+        error="failed to parse tool arguments JSON: Invalid control character",
+    )
+
+    assert failure is not None
+    assert failure.name == "apply_patch"
+    assert failure.call_id == "call-bad"
+    execution = build_tool_call_parse_error_execution(failure)
+
+    assert execution.func_name == "apply_patch"
+    assert execution.call_id == "call-bad"
+    assert execution.status == "error"
+    payload = json.loads(execution.cleaned_result)
+    assert payload["status"] == "invalid_arguments"
+    assert payload["tool"] == "apply_patch"
+    assert "valid JSON" in payload["instruction"]
+
+
+def test_invalid_responses_tool_arguments_can_be_returned_as_tool_error():
+    raw = {
+        "type": "function_call",
+        "call_id": "call-bad",
+        "name": "apply_patch",
+        "arguments": '{"patch":"line1\nline2"}',
+    }
+    failure = from_responses_function_call_parse_failure(
+        raw,
+        provider="unit_responses",
+        error="failed to parse tool arguments JSON: Invalid control character",
+    )
+
+    assert failure is not None
+    assert failure.name == "apply_patch"
+    assert failure.call_id == "call-bad"
+    execution = build_tool_call_parse_error_execution(failure)
+
+    assert execution.func_name == "apply_patch"
+    assert execution.call_id == "call-bad"
+    assert execution.status == "error"
+    payload = json.loads(execution.cleaned_result)
+    assert payload["status"] == "invalid_arguments"
+    assert payload["tool"] == "apply_patch"
 
 
 def test_build_tool_call_error_execution_uses_envelope_identity():

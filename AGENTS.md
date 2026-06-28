@@ -3,6 +3,7 @@
 - Prioritize clear architecture and long-term extensibility over delivery speed.
 - Prefer meaningful abstraction and explicit boundaries; avoid thin wrapper layers.
 - Do not preserve backward-compatibility paths for legacy logic unless explicitly required.
+- use utf-8 format
 
 ## Implementation Constraints
 

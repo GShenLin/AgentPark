@@ -3,12 +3,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.providers.provider_errors import ProviderImageAttachmentError
+from src.providers.tool_call_execution import execute_tool_call_items_parallel
+from src.providers.tool_call_execution import parse_openai_tool_call_items
+from src.providers.tool_call_runtime import ToolCallExecutionMixin
 from src.service_host import HostBoundService
-from src.tool_call_protocol import ToolCallEnvelope
-from src.tool_call_protocol import build_tool_call_error_execution
-from src.tool_call_protocol import ensure_json_text
-from src.tool_call_protocol import from_openai_tool_call
-from src.tool_call_protocol import to_openai_tool_call
+from src.tool.tool_call_protocol import ensure_json_text
+from src.tool.tool_call_protocol import to_openai_tool_call
 
 
 @dataclass(frozen=True)
@@ -18,11 +18,11 @@ class TaggedFunctionCallParseResult:
     diagnostics: tuple[str, ...] = ()
 
 
-class DoubaoToolRuntime(HostBoundService):
+class DoubaoToolRuntime(ToolCallExecutionMixin, HostBoundService):
     _FUNCTION_CALL_BEGIN = "<|FunctionCallBegin|>"
     _FUNCTION_CALL_END = "<|FunctionCallEnd|>"
 
-    def _inject_image_message(self, image_path, base64_data=None, text=None):
+    def _inject_image_message(self, image_path, base64_data=None, text=None, mime_type="image/png"):
         import base64
         import os
 
@@ -56,10 +56,11 @@ class DoubaoToolRuntime(HostBoundService):
         text_value = str(text or "").strip()
         if text_value:
             message_content.append({"type": "text", "text": text_value})
+        safe_mime = str(mime_type or "image/png").strip() or "image/png"
         message_content.append(
             {
                 "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{encoded_string}"},
+                "image_url": {"url": f"data:{safe_mime};base64,{encoded_string}"},
             }
         )
         self.messages.append({"role": "user", "content": message_content})
@@ -67,57 +68,24 @@ class DoubaoToolRuntime(HostBoundService):
     def _execute_tool_calls_parallel(self, tool_calls):
         if not isinstance(tool_calls, list) or not tool_calls:
             return []
-        envelopes = self._normalize_openai_tool_calls(tool_calls)
-        return self._execute_tool_call_envelopes_parallel(envelopes)
-
-    def _execute_tool_call_envelopes_parallel(self, tool_calls):
-        if not isinstance(tool_calls, list) or not tool_calls:
+        call_items = parse_openai_tool_call_items(tool_calls, provider="doubao_chat")
+        if not call_items:
             return []
-        if not all(isinstance(item, ToolCallEnvelope) for item in tool_calls):
-            raise TypeError("_execute_tool_call_envelopes_parallel requires ToolCallEnvelope items")
 
-        def _run_single_tool(tool_call):
-            return self.tools.execute_tool_call(tool_call)
-
-        def _task_meta(tool_call):
-            return tool_call.name, tool_call.call_id
-
-        def _build_error_result(tool_call, error, _index):
-            return build_tool_call_error_execution(
-                tool_call,
-                status="error",
-                error=f"{type(error).__name__}: {error}",
-            )
-
-        def _build_timeout_result(tool_call, timeout_seconds, _index):
-            return build_tool_call_error_execution(
-                tool_call,
-                status="timeout",
-                error=f"Tool worker exceeded {timeout_seconds:.2f}s.",
-            )
-
-        return self._execute_tasks_parallel_ordered(
-            tasks=tool_calls,
-            run_task=_run_single_tool,
-            task_to_meta=_task_meta,
-            build_error_result=_build_error_result,
-            build_timeout_result=_build_timeout_result,
+        return execute_tool_call_items_parallel(
+            tool_call_items=call_items,
+            execute_tool_call_envelopes=self._execute_tool_call_envelopes_parallel,
         )
-
-    def _normalize_openai_tool_calls(self, tool_calls):
-        envelopes = []
-        for item in tool_calls if isinstance(tool_calls, list) else []:
-            call = from_openai_tool_call(item, provider="doubao_chat")
-            if call is not None:
-                envelopes.append(call)
-        return envelopes
 
     def _extract_tool_calls(self, message):
         if not isinstance(message, dict):
             return []
         raw_tool_calls = message.get("tool_calls")
         if isinstance(raw_tool_calls, list):
-            valid = [to_openai_tool_call(call) for call in self._normalize_openai_tool_calls(raw_tool_calls)]
+            valid = [
+                to_openai_tool_call(call)
+                for call in parse_openai_tool_call_items(raw_tool_calls, provider="doubao_chat")
+            ]
             if valid:
                 return valid
         return []
@@ -132,10 +100,6 @@ class DoubaoToolRuntime(HostBoundService):
                     return msg, idx
         first = choices[0] or {}
         return first.get("message"), 0
-
-    @staticmethod
-    def _ensure_json_text(value):
-        return ensure_json_text(value)
 
     def _parse_tagged_function_calls_from_text(self, content) -> TaggedFunctionCallParseResult:
         text = str(content or "")
@@ -219,7 +183,7 @@ class DoubaoToolRuntime(HostBoundService):
                         "type": "function",
                         "function": {
                             "name": name,
-                            "arguments": self._ensure_json_text(args_raw if args_raw is not None else {}),
+                            "arguments": ensure_json_text(args_raw if args_raw is not None else {}),
                         },
                     }
                 )

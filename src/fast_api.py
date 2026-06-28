@@ -10,8 +10,11 @@ from copy import deepcopy
 import uvicorn
 from uvicorn.config import LOGGING_CONFIG
 
+from src.server_pid_file import install_server_pid_file
+from src.web_backend import create_app
+from src.windows_parent_monitor import start_env_parent_exit_monitor
 from src.windows_parent_monitor import start_frozen_parent_exit_monitor
-from src.workspace_settings import find_available_server_port, read_server_settings, resolve_local_client_host
+from src.workspace_settings import find_available_server_port, get_workspace_root, read_server_settings, resolve_local_client_host
 
 
 class Ignore200OKFilter(logging.Filter):
@@ -44,19 +47,51 @@ def _build_uvicorn_log_config() -> dict:
     return cfg
 
 
+def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        reload=False,
+        workers=1,
+        log_config=log_config,
+    )
+    server = uvicorn.Server(config)
+
+    def _request_exit() -> None:
+        server.should_exit = True
+
+    start_frozen_parent_exit_monitor(exit_func=_request_exit)
+    start_env_parent_exit_monitor(exit_func=_request_exit)
+    server.run()
+
+
 def main(argv=None):
-    start_frozen_parent_exit_monitor()
-    server = read_server_settings()
+    argv = list(argv or [])
+    if argv and argv[0] in {"doctor", "capabilities", "config", "chat"}:
+        from src.cli import main as cli_main
+
+        raise SystemExit(cli_main(argv))
+
+    server_settings = read_server_settings()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", type=str, default=server["host"])
-    parser.add_argument("--port", type=int, default=server["port"])
+    parser.add_argument("--host", type=str, default=server_settings["host"])
+    parser.add_argument("--port", type=int, default=server_settings["port"])
+    parser.add_argument("--workspace-root", type=str, default="")
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args(argv)
+    if args.workspace_root:
+        expected_root = os.path.abspath(get_workspace_root())
+        provided_root = os.path.abspath(args.workspace_root)
+        if os.path.normcase(provided_root) != os.path.normcase(expected_root):
+            raise ValueError(f"--workspace-root must match the resolved workspace root: {expected_root}")
     actual_port = find_available_server_port(args.host, args.port)
     if actual_port != int(args.port):
         print(f"[server] preferred port {args.port} unavailable, using {actual_port}")
     os.environ["AITOOLS_SERVER_HOST"] = str(args.host)
     os.environ["AITOOLS_SERVER_PORT"] = str(actual_port)
+    pid_path = install_server_pid_file(args.host, actual_port)
+    print(f"[server] pid file: {pid_path}")
     browser_host = resolve_local_client_host(args.host)
 
     def _open_browser():
@@ -68,12 +103,10 @@ def main(argv=None):
 
     if not args.no_browser:
         threading.Thread(target=_open_browser, daemon=True).start()
-    uvicorn.run(
-        "src.web_backend:app",
+    _run_server(
+        create_app(),
         host=args.host,
         port=actual_port,
-        reload=False,
-        workers=1,
         log_config=_build_uvicorn_log_config(),
     )
 

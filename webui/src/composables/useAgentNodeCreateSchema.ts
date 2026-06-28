@@ -10,6 +10,14 @@ export const switchOptions = [
   { value: 'disabled', label: 'disabled' },
 ]
 
+export const reasoningEffortOptions = [
+  { value: 'minimal', label: 'minimal' },
+  { value: 'low', label: 'low' },
+  { value: 'medium', label: 'medium' },
+  { value: 'high', label: 'high' },
+  { value: 'xhigh', label: 'xhigh' },
+]
+
 export const GUI_AGENT_NODE_TYPE = 'gui_agent_node'
 export const GUI_AGENT_MODE = 'guiagent'
 export const IMAGE_GENERATION_NODE_TYPE = 'image_generation_node'
@@ -46,6 +54,8 @@ export function normalizeSwitch(value: unknown, fallback: 'enabled' | 'disabled'
   if (['disabled', 'disable', 'off', 'false', '0', 'no'].includes(text)) return 'disabled'
   return fallback
 }
+
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export function providerModes(provider: Pick<ProviderInfo, 'supportmode'>) {
   const modes = normalizeModeList(provider?.supportmode)
@@ -144,6 +154,10 @@ export function useAgentNodeCreateSchema(options: {
     return selectedTypeId.value === 'agent_node' && key === 'thinking'
   }
 
+  function isCreateReasoningEffortField(key: string) {
+    return selectedTypeId.value === 'agent_node' && key === 'reasoning_effort'
+  }
+
   function ensureCreateAgentSelections() {
     if (
       selectedTypeId.value !== 'agent_node' &&
@@ -166,7 +180,10 @@ export function useAgentNodeCreateSchema(options: {
     if (selectedTypeId.value === 'agent_node') {
       selectedNodeFields.value.tools = normalizeToolSelection(selectedNodeFields.value.tools, toolOptions.value)
       selectedNodeFields.value.web_search = normalizeSwitch(selectedNodeFields.value.web_search, 'disabled')
-      selectedNodeFields.value.thinking = normalizeSwitch(selectedNodeFields.value.thinking, 'enabled')
+      selectedNodeFields.value.thinking = normalizeSwitch(selectedNodeFields.value.thinking, 'disabled')
+      if (selectedNodeFields.value.reasoning_effort == null) {
+        selectedNodeFields.value.reasoning_effort = 'high'
+      }
     } else if (selectedTypeId.value === VIDEO_GENERATION_NODE_TYPE) {
       selectedNodeFields.value.web_search = normalizeSwitch(selectedNodeFields.value.web_search, 'disabled')
     }
@@ -191,7 +208,9 @@ export function useAgentNodeCreateSchema(options: {
     isCreateToolsField,
     isCreateWebSearchField,
     isCreateThinkingField,
+    isCreateReasoningEffortField,
     normalizeSwitch,
+    reasoningEffortOptions,
     ensureCreateAgentSelections,
     toggleCreateTool,
   }

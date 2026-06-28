@@ -6,60 +6,17 @@ import time
 import urllib.parse
 from datetime import datetime
 
-from src.providers.hyper3d_transport import build_multipart_body, download_bytes, request_json
-from src.service_host import HostBoundService
+from src.providers.hyper3d_common import is_hyper3d_remote_url
+from src.providers.hyper3d_common import parse_hyper3d_int
+from src.providers.hyper3d_common import resolve_hyper3d_enum
+from src.providers.hyper3d_runtime_base import Hyper3DRuntimeBase
+from src.providers.hyper3d_transport import build_multipart_body
+from src.value_parsing import parse_optional_bool_value
 
 
-class Hyper3DRodinRuntime(HostBoundService):
+class Hyper3DRodinRuntime(Hyper3DRuntimeBase):
     _TERMINAL_STATUSES = {"done", "failed"}
     _DOWNLOAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9._ -]+")
-
-    @staticmethod
-    def _parse_bool(name, value):
-        if value is None or value == "":
-            return None
-        if isinstance(value, bool):
-            return value
-        text = str(value or "").strip().lower()
-        if text in {"1", "true", "yes", "on", "enabled"}:
-            return True
-        if text in {"0", "false", "no", "off", "disabled"}:
-            return False
-        raise ValueError(f"{name} must be a boolean value.")
-
-    @staticmethod
-    def _parse_int(name, value, *, minimum=None, maximum=None):
-        if value is None or value == "":
-            return None
-        try:
-            parsed = int(float(value))
-        except Exception as exc:
-            raise ValueError(f"{name} must be an integer.") from exc
-        if minimum is not None and parsed < minimum:
-            raise ValueError(f"{name} must be >= {minimum}.")
-        if maximum is not None and parsed > maximum:
-            raise ValueError(f"{name} must be <= {maximum}.")
-        return parsed
-
-    @staticmethod
-    def _resolve_enum(name, value, allowed):
-        text = str(value or "").strip()
-        if not text:
-            return None
-        if text not in allowed:
-            raise ValueError(f"{name} must be one of: {', '.join(allowed)}.")
-        return text
-
-    @staticmethod
-    def _is_remote_url(value):
-        text = str(value or "").strip().lower()
-        return text.startswith("http://") or text.startswith("https://")
-
-    def _base_url(self):
-        base_url = str(self.config.get("baseUrl") or "https://api.hyper3d.com/api/v2").strip().rstrip("/")
-        if not base_url:
-            raise ValueError("Hyper3D provider requires baseUrl.")
-        return base_url
 
     def _api_url(self, endpoint):
         endpoint_text = str(endpoint or "").strip("/")
@@ -68,39 +25,13 @@ class Hyper3DRodinRuntime(HostBoundService):
             return base_url
         return f"{base_url}/{endpoint_text}"
 
-    def _headers(self, *, json_content=False, multipart_content_type=""):
-        headers = {
-            "Authorization": f"Bearer {self.config['apiKey']}",
-            "accept": "application/json",
-        }
-        if json_content:
-            headers["Content-Type"] = "application/json"
-        if multipart_content_type:
-            headers["Content-Type"] = multipart_content_type
-        return headers
-
-    def _timeout_sec(self):
-        return float(self.config.get("timeoutMs", 60000)) / 1000.0
-
-    def _request_json(self, *, url, method="POST", headers=None, body=None):
-        return request_json(
-            url=url,
-            method=method,
-            headers=headers or {},
-            body=body,
-            timeout_sec=self._timeout_sec(),
-        )
-
-    def _download_bytes(self, url):
-        return download_bytes(url, timeout_sec=self._timeout_sec())
-
     def _materialize_image_paths(self, images, temp_dir):
         local_paths: list[str] = []
         for index, uri in enumerate(images or []):
             text = str(uri or "").strip()
             if not text:
                 continue
-            if self._is_remote_url(text):
+            if is_hyper3d_remote_url(text):
                 parsed = urllib.parse.urlparse(text)
                 ext = os.path.splitext(parsed.path)[1] or ".jpg"
                 temp_path = os.path.join(temp_dir, f"hyper3d_image_{index}{ext}")
@@ -132,21 +63,21 @@ class Hyper3DRodinRuntime(HostBoundService):
         preview_render,
         hd_texture,
     ):
-        resolved_mesh_mode = self._resolve_enum("mesh_mode", mesh_mode, {"Raw", "Quad"})
+        resolved_mesh_mode = resolve_hyper3d_enum("mesh_mode", mesh_mode, {"Raw", "Quad"})
         fields: list[tuple[str, object]] = [("tier", tier or self.config.get("tier") or "Gen-2")]
         if prompt:
             fields.append(("prompt", prompt))
 
         for name, value in (
-            ("use_original_alpha", self._parse_bool("use_original_alpha", use_original_alpha)),
-            ("TAPose", self._parse_bool("TAPose", tapose)),
-            ("preview_render", self._parse_bool("preview_render", preview_render)),
-            ("hd_texture", self._parse_bool("hd_texture", hd_texture)),
+            ("use_original_alpha", parse_optional_bool_value("use_original_alpha", use_original_alpha)),
+            ("TAPose", parse_optional_bool_value("TAPose", tapose)),
+            ("preview_render", parse_optional_bool_value("preview_render", preview_render)),
+            ("hd_texture", parse_optional_bool_value("hd_texture", hd_texture)),
         ):
             if value is not None:
                 fields.append((name, "true" if value else "false"))
 
-        resolved_seed = self._parse_int("seed", seed, minimum=0, maximum=65535)
+        resolved_seed = parse_hyper3d_int("seed", seed, minimum=0, maximum=65535)
         if resolved_seed is not None:
             fields.append(("seed", resolved_seed))
 
@@ -156,7 +87,7 @@ class Hyper3DRodinRuntime(HostBoundService):
             ("quality", quality, {"high", "medium", "low", "extra-low"}),
         )
         for name, value, allowed in enum_values:
-            resolved = self._resolve_enum(name, value, allowed)
+            resolved = resolve_hyper3d_enum(name, value, allowed)
             if resolved is not None:
                 fields.append((name, resolved))
 
@@ -166,7 +97,7 @@ class Hyper3DRodinRuntime(HostBoundService):
             fields.append(
                 (
                     "quality_override",
-                    self._parse_int("quality_override", quality_override, minimum=min_count, maximum=max_count),
+                    parse_hyper3d_int("quality_override", quality_override, minimum=min_count, maximum=max_count),
                 )
             )
 
@@ -273,11 +204,16 @@ class Hyper3DRodinRuntime(HostBoundService):
         if not self.config.get("apiKey"):
             raise ValueError("Hyper3D provider requires apiKey.")
 
-        poll_interval_sec = float(self.config.get("pollIntervalSec", self.config.get("modelGenerationPollIntervalSec", 5)))
-        if poll_interval_sec <= 0:
-            raise ValueError("pollIntervalSec must be greater than zero.")
-        max_wait_raw = self.config.get("maxWaitSec", self.config.get("modelGenerationMaxWaitSec", 1800))
-        max_wait_sec = float(max_wait_raw) if max_wait_raw not in {None, ""} else None
+        poll_interval_sec = self._resolve_poll_interval_seconds(
+            "pollIntervalSec",
+            "modelGenerationPollIntervalSec",
+            default=5,
+        )
+        max_wait_sec = self._resolve_max_wait_seconds(
+            "maxWaitSec",
+            "modelGenerationMaxWaitSec",
+            default=1800,
+        )
 
         with tempfile.TemporaryDirectory(prefix="aitools_hyper3d_") as temp_dir:
             image_paths = self._materialize_image_paths(images or [], temp_dir)

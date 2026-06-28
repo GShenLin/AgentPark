@@ -5,23 +5,11 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from src.service_host import HostBoundService
+from src.value_parsing import parse_optional_bool_value, parse_optional_float_value
 
 
 class WanAnimateMixRuntime(HostBoundService):
     _TASK_TERMINAL_STATUSES = {"SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"}
-
-    @staticmethod
-    def _normalize_bool(value, default=None):
-        if value is None or value == "":
-            return default
-        if isinstance(value, bool):
-            return value
-        text = str(value or "").strip().lower()
-        if text in {"1", "true", "yes", "on", "enabled"}:
-            return True
-        if text in {"0", "false", "no", "off", "disabled"}:
-            return False
-        return default
 
     def _build_create_url(self) -> str:
         base_url = str(self.config.get("baseUrl") or "").strip().rstrip("/")
@@ -139,18 +127,18 @@ class WanAnimateMixRuntime(HostBoundService):
         if not payload["input"]["video_url"]:
             raise ValueError("video_url is required")
 
-        resolved_watermark = self._normalize_bool(
+        resolved_watermark = parse_optional_bool_value(
+            "watermark",
             watermark if watermark is not None else self.config.get("watermark"),
-            default=None,
         )
         if resolved_watermark is not None:
             payload["input"]["watermark"] = resolved_watermark
 
-        resolved_check_image = self._normalize_bool(
+        resolved_check_image = parse_optional_bool_value(
+            "check_image",
             check_image
             if check_image is not None
             else self.config.get("wanAnimateMixCheckImage", self.config.get("videoChangePersonCheckImage")),
-            default=None,
         )
         if resolved_check_image is not None:
             payload["parameters"]["check_image"] = resolved_check_image
@@ -176,26 +164,26 @@ class WanAnimateMixRuntime(HostBoundService):
         if not task_id:
             raise ValueError(f"Unexpected Wan Animate Mix task creation response: {json.dumps(create_result, ensure_ascii=False)}")
 
-        poll_interval_sec = self.config.get(
+        poll_interval = parse_optional_float_value(
             "wanAnimateMixPollIntervalSec",
-            self.config.get("videoChangePersonPollIntervalSec", 15),
+            self.config.get(
+                "wanAnimateMixPollIntervalSec",
+                self.config.get("videoChangePersonPollIntervalSec", 15),
+            ),
+            minimum_exclusive=0,
         )
-        try:
-            poll_interval = float(poll_interval_sec)
-        except Exception:
-            poll_interval = 15.0
-        if poll_interval <= 0:
+        if poll_interval is None:
             poll_interval = 15.0
 
-        max_wait_raw = self.config.get(
+        max_wait = parse_optional_float_value(
             "wanAnimateMixMaxWaitSec",
-            self.config.get("videoChangePersonMaxWaitSec", 900),
+            self.config.get(
+                "wanAnimateMixMaxWaitSec",
+                self.config.get("videoChangePersonMaxWaitSec", 900),
+            ),
+            minimum_exclusive=0,
         )
-        try:
-            max_wait = float(max_wait_raw) if max_wait_raw is not None and max_wait_raw != "" else None
-        except Exception:
-            max_wait = 900.0
-        if max_wait is not None and max_wait <= 0:
+        if max_wait is None:
             max_wait = 900.0
 
         task_result = self._poll_task_result(

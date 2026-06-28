@@ -1,16 +1,20 @@
 import os
 import re
-import json
 from copy import deepcopy
-from datetime import datetime
 from typing import Any
 
 from src.message_protocol import build_text_envelope, envelope_text, normalize_envelope
+from src.node_capabilities import NODE_CAPABILITY_LIST
 
 try:
-    from src.web_backend.runtime_paths import _get_runtime_root
+    from src.web_backend import runtime_paths as _runtime_paths
+
+    _get_runtime_root = _runtime_paths._get_runtime_root
+    _ORIGINAL_GET_RUNTIME_ROOT = _get_runtime_root
 except Exception:
+    _runtime_paths = None
     _get_runtime_root = None
+    _ORIGINAL_GET_RUNTIME_ROOT = None
 
 
 class BaseNode:
@@ -18,8 +22,20 @@ class BaseNode:
     description = ""
     input_capabilities = ["text"]
     output_capabilities = ["text"]
-    common_config_defaults: dict[str, Any] = {"working_path": ""}
+    common_config_defaults: dict[str, Any] = {"plugins": [], "skills": [], "working_path": ""}
     common_config_schema: dict[str, dict[str, Any]] = {
+        "plugins": {
+            "type": "multiselect",
+            "label": "Plugins",
+            "description": "List of node-scoped plugin bundles loaded from the project plugins folder.",
+            "options": [],
+        },
+        "skills": {
+            "type": "multiselect",
+            "label": "Skills",
+            "description": "List of node-scoped skill names loaded from the project skills folder.",
+            "options": [],
+        },
         "working_path": {
             "type": "text",
             "label": "Working Path",
@@ -30,23 +46,6 @@ class BaseNode:
     config_defaults: dict[str, Any] = {}
     config_schema: dict[str, dict[str, Any]] = {}
     internal_config_fields: set[str] = set()
-
-    @staticmethod
-    def _normalize_capabilities(values: object) -> list[str]:
-        if not isinstance(values, (list, tuple)):
-            return []
-        result: list[str] = []
-        seen: set[str] = set()
-        for item in values:
-            text = str(item or "").strip()
-            if not text:
-                continue
-            key = text.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            result.append(text)
-        return result
 
     @staticmethod
     def _sanitize_graph_id(value: object) -> str:
@@ -67,73 +66,66 @@ class BaseNode:
 
     def _resolve_memory_path(self, context: dict | None = None) -> str:
         ctx = context if isinstance(context, dict) else {}
+        explicit_memory_path = str(ctx.get("memory_path") or "").strip()
+        if explicit_memory_path:
+            return explicit_memory_path
         graph_id = self._sanitize_graph_id(ctx.get("graph_id"))
         node_id = self._sanitize_node_id(ctx.get("node_instance_id") or ctx.get("agent_id") or ctx.get("node_id"))
         base_dir = ""
-        if callable(_get_runtime_root):
+        resolver = _get_runtime_root
+        if _runtime_paths is not None and resolver is _ORIGINAL_GET_RUNTIME_ROOT:
+            resolver = getattr(_runtime_paths, "_get_runtime_root", resolver)
+        if callable(resolver):
             try:
-                base_dir = str(_get_runtime_root() or "").strip()
+                base_dir = str(resolver() or "").strip()
             except Exception:
                 base_dir = ""
         if not base_dir:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(base_dir, "memories", graph_id, node_id, f"{node_id}.md")
+        return os.path.join(base_dir, "memories", graph_id, node_id, "memory.md")
 
     def _resolve_messages_path(self, context: dict | None = None) -> str:
+        ctx = context if isinstance(context, dict) else {}
+        explicit_messages_path = str(ctx.get("messages_path") or "").strip()
+        if explicit_messages_path:
+            return explicit_messages_path
         memory_path = self._resolve_memory_path(context)
         if not memory_path:
             return ""
         return os.path.join(os.path.dirname(memory_path), "messages.jsonl")
 
-    def _normalize_message(self, value: object, default_role: str = "user") -> dict:
-        return normalize_envelope(value, default_role=default_role)
-
-    def _message_text(self, value: object) -> str:
-        return envelope_text(value)
-
     def _text_output(self, text: object, role: str = "assistant") -> dict:
         envelope = build_text_envelope(text, role=role)
         return {
-            "display": self._message_text(envelope),
+            "display": envelope_text(envelope),
             "routes": [{"output_index": 0, "payload": envelope}],
         }
+
+    def _inject_configured_skills(
+        self,
+        agent: object,
+        context: dict | None = None,
+        *,
+        node_id: object = "",
+        extra_skills: list | tuple | None = None,
+    ) -> list:
+        from nodes.agent_skill_loader import inject_node_skills
+
+        ctx = context if isinstance(context, dict) else {}
+        return inject_node_skills(agent, ctx.get("skills"), node_id=node_id, extra_skills=extra_skills)
 
     def _persist_input_default(self, message: object, context: dict | None = None) -> None:
         ctx = context if isinstance(context, dict) else {}
 
-        envelope = self._normalize_message(message, default_role="user")
-        payload = self._message_text(envelope)
+        envelope = normalize_envelope(message, default_role="user")
         memory_path = self._resolve_memory_path(ctx)
         messages_path = self._resolve_messages_path(ctx)
+        try:
+            from src.web_backend.node_memory_store import append_node_memory_entry
 
-        if memory_path:
-            try:
-                os.makedirs(os.path.dirname(memory_path), exist_ok=True)
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                entry = f"\n**[{timestamp}] user**: {payload}\n"
-                with open(memory_path, "a", encoding="utf-8") as f:
-                    f.write(entry)
-            except Exception:
-                pass
-
-        if messages_path:
-            try:
-                os.makedirs(os.path.dirname(messages_path), exist_ok=True)
-                with open(messages_path, "a", encoding="utf-8") as f:
-                    f.write(
-                        json.dumps(
-                            {
-                                "id": str(envelope.get("id") or ""),
-                                "role": "user",
-                                "parts": envelope.get("parts") if isinstance(envelope.get("parts"), list) else [],
-                                "created_at": str(envelope.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")),
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
+            append_node_memory_entry(memory_path, messages_path, "user", envelope)
+        except Exception:
+            pass
 
     def getInputNum(self, context: dict | None = None) -> int:
         return 1
@@ -154,6 +146,17 @@ class BaseNode:
         common = deepcopy(getattr(self, "common_config_schema", {}))
         if not isinstance(common, dict):
             common = {}
+        capability_payload = None
+        if isinstance(common.get("skills"), dict):
+            from src.capabilities.registry import CapabilityRegistry
+
+            capability_payload = capability_payload or CapabilityRegistry().discover_payload(context)
+            common["skills"]["options"] = list((capability_payload.get("skill") or {}).get("available") or [])
+        if isinstance(common.get("plugins"), dict):
+            from src.capabilities.registry import CapabilityRegistry
+
+            capability_payload = capability_payload or CapabilityRegistry().discover_payload(context)
+            common["plugins"]["options"] = list((capability_payload.get("plugin") or {}).get("available") or [])
         merged.update(common)
         return merged
 
@@ -175,13 +178,13 @@ class BaseNode:
 
     def get_capabilities(self, context: dict | None = None) -> dict:
         return {
-            "accepts": self._normalize_capabilities(getattr(self, "input_capabilities", [])),
-            "produces": self._normalize_capabilities(getattr(self, "output_capabilities", [])),
+            "accepts": NODE_CAPABILITY_LIST.parse(getattr(self, "input_capabilities", [])),
+            "produces": NODE_CAPABILITY_LIST.parse(getattr(self, "output_capabilities", [])),
         }
 
     def on_input(self, message: object, context: dict | None = None) -> Any:
-        envelope = self._normalize_message(message, default_role="assistant")
+        envelope = normalize_envelope(message, default_role="assistant")
         return {
-            "display": self._message_text(envelope),
+            "display": envelope_text(envelope),
             "routes": [{"output_index": 0, "payload": envelope}],
         }

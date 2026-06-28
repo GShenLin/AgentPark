@@ -3,6 +3,40 @@
     "host": "0.0.0.0",
     "port": 8788
   },
-  "startup_graph_id": "default",
-  "startup_graph_name": "default"
+  "mcpServers": {
+    "ark-docs-mcp": {
+      "label": "Ark Docs MCP",
+      "transport": "streamable-http",
+      "url": "https://sd6j8o9hu8aldae0o6es0.apigateway-cn-beijing.volceapi.com/mcp"
+    },
+    "unreal-engine-skills": {
+      "label": "Unreal Engine Skills",
+      "transport": "streamable-http",
+      "url": "https://www.unrealengineskills.com/api/mcp"
+    },
+    "asset-to-json": {
+      "label": "XYJ Asset To Json",
+      "transport": "streamable-http",
+      "url": "http://127.0.0.1:37657/mcp"
+    },
+    "aitools-companion": {
+      "label": "AITools Companion Control",
+      "transport": "streamable-http",
+      "url": "http://127.0.0.1:8788/mcp/",
+      "readTimeoutSeconds": 180
+    }
+  },
+  "agentNode": {
+    "minSendDelayMs": 200,
+    "historyMessageLimit": 40
+  },
+  "graphRunner": {
+    "workerCount": 30
+  },
+  "consoleCommand": {
+    "timeoutSec": 300
+  },
+  "nodeMemory": {
+    "maxEntries": 20
+  }
 }

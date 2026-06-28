@@ -1,0 +1,66 @@
+{
+  "pending": [],
+  "last_completed_request": {
+    "request_id": "7becbcfbf7834262ac0e666afac4f8ae",
+    "trace_id": "7becbcfbf7834262ac0e666afac4f8ae",
+    "role": "assistant",
+    "message": "Error after 3 retries: DoubaoStreamRuntime._stream_chat_completions_once() got an unexpected keyword argument 'item_event_handler'",
+    "state": "idle",
+    "node_event_seq": 28,
+    "completed_at": "2026-06-28 03:24:29.774580"
+  },
+  "last_message": "Error after 3 retries: DoubaoStreamRuntime._stream_chat_completions_once() got an unexpected keyword argument 'item_event_handler'",
+  "pending_count": 0,
+  "node_event_seq": 28,
+  "last_run_at": "2026-06-28 03:24:29.780580",
+  "state": "idle",
+  "completed_requests": [
+    {
+      "request_id": "f8cc566f11c24a05a82fdea87bac56fb",
+      "trace_id": "f8cc566f11c24a05a82fdea87bac56fb",
+      "role": "assistant",
+      "message": "Error after 3 retries: DoubaoStreamRuntime._stream_chat_completions_once() got an unexpected keyword argument 'item_event_handler'",
+      "state": "idle",
+      "node_event_seq": 14,
+      "completed_at": "2026-06-28 03:23:35.454796"
+    },
+    {
+      "request_id": "7becbcfbf7834262ac0e666afac4f8ae",
+      "trace_id": "7becbcfbf7834262ac0e666afac4f8ae",
+      "role": "assistant",
+      "message": "Error after 3 retries: DoubaoStreamRuntime._stream_chat_completions_once() got an unexpected keyword argument 'item_event_handler'",
+      "state": "idle",
+      "node_event_seq": 28,
+      "completed_at": "2026-06-28 03:24:29.774580"
+    }
+  ],
+  "runtime_events": [
+    {
+      "type": "runtime_notice",
+      "message": "Request failed (DoubaoStreamRuntime._stream_chat_completions_once() got an unexpected keyword argument 'item_event_handler'). Retrying in 1.0s.",
+      "source": "provider_runtime",
+      "stage": "chat_completions_retry",
+      "provider": "tavern_deepseek_v31",
+      "event_time": "2026-06-28T03:24:22.099150+08:00",
+      "monotonic_ns": 929400000000000
+    },
+    {
+      "type": "runtime_notice",
+      "message": "Request failed (DoubaoStreamRuntime._stream_chat_completions_once() got an unexpected keyword argument 'item_event_handler'). Retrying in 2.0s.",
+      "source": "provider_runtime",
+      "stage": "chat_completions_retry",
+      "provider": "tavern_deepseek_v31",
+      "event_time": "2026-06-28T03:24:23.191426+08:00",
+      "monotonic_ns": 929401078000000
+    },
+    {
+      "type": "runtime_notice",
+      "message": "Request failed (DoubaoStreamRuntime._stream_chat_completions_once() got an unexpected keyword argument 'item_event_handler'). Retrying in 4.0s.",
+      "source": "provider_runtime",
+      "stage": "chat_completions_retry",
+      "provider": "tavern_deepseek_v31",
+      "event_time": "2026-06-28T03:24:25.390884+08:00",
+      "monotonic_ns": 929403281000000
+    }
+  ]
+}

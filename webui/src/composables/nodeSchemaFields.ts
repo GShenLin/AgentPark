@@ -4,6 +4,15 @@ export type NodeSchema = Record<string, NodeSchemaField>
 export type NodeSchemaOption = {
   value: string
   label: string
+  kind?: string
+  description?: string
+  source?: string
+  enabled?: boolean
+  status?: string
+  diagnostics?: string[]
+  dependencies?: Array<{ kind: string; id: string }>
+  config_schema?: Record<string, unknown>
+  effective?: string
 }
 
 function normalizeSchemaField(field: unknown): NodeSchemaField {
@@ -57,18 +66,53 @@ export function isSchemaSelectField(schema: NodeSchema | null | undefined, key: 
   return Array.isArray(field.options) && field.options.length > 0
 }
 
+export function isSchemaMultiSelectField(schema: NodeSchema | null | undefined, key: string): boolean {
+  const field = getSchemaField(schema, key)
+  return String(field.type || '').trim().toLowerCase() === 'multiselect'
+}
+
 export function getSchemaFieldOptions(schema: NodeSchema | null | undefined, key: string): NodeSchemaOption[] {
   const field = getSchemaField(schema, key)
   const rawOptions = Array.isArray(field.options) ? field.options : []
   return rawOptions
     .map((option) => {
       if (option && typeof option === 'object' && !Array.isArray(option)) {
-        const value = (option as Record<string, unknown>).value
-        const label = (option as Record<string, unknown>).label
-        return {
+        const raw = option as Record<string, unknown>
+        const value = raw.value
+        const label = raw.label
+        const normalized: NodeSchemaOption = {
           value: String(value ?? ''),
           label: String(label ?? value ?? ''),
         }
+        const kind = String(raw.kind ?? '').trim()
+        if (kind) normalized.kind = kind
+        const description = String(raw.description ?? '').trim()
+        if (description) normalized.description = description
+        const source = String(raw.source ?? '').trim()
+        if (source) normalized.source = source
+        if (typeof raw.enabled === 'boolean') normalized.enabled = raw.enabled
+        const status = String(raw.status ?? '').trim()
+        if (status) normalized.status = status
+        if (Array.isArray(raw.diagnostics)) {
+          normalized.diagnostics = raw.diagnostics.map((item) => String(item || '').trim()).filter(Boolean)
+        }
+        if (Array.isArray(raw.dependencies)) {
+          normalized.dependencies = raw.dependencies
+            .map((item) => {
+              if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+              const dep = item as Record<string, unknown>
+              const depKind = String(dep.kind ?? '').trim()
+              const depId = String(dep.id ?? '').trim()
+              return depKind && depId ? { kind: depKind, id: depId } : null
+            })
+            .filter((item): item is { kind: string; id: string } => item != null)
+        }
+        if (raw.config_schema && typeof raw.config_schema === 'object' && !Array.isArray(raw.config_schema)) {
+          normalized.config_schema = raw.config_schema as Record<string, unknown>
+        }
+        const effective = String(raw.effective ?? '').trim()
+        if (effective) normalized.effective = effective
+        return normalized
       }
       return {
         value: String(option ?? ''),
@@ -106,6 +150,21 @@ function getSchemaValueType(schema: NodeSchema | null | undefined, key: string):
 
 export function normalizeSchemaFieldValue(schema: NodeSchema | null | undefined, key: string, value: unknown): any {
   const type = getSchemaFieldType(schema, key)
+  if (type === 'multiselect') {
+    const values = Array.isArray(value) ? value : String(value ?? '').split(',')
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const item of values) {
+      const text = String(item ?? '').trim()
+      if (!text) continue
+      const dedupeKey = text.replace(/[\\/]+/g, '/').toLowerCase()
+      if (seen.has(dedupeKey)) continue
+      seen.add(dedupeKey)
+      out.push(text)
+    }
+    return out
+  }
+
   if (type === 'json') {
     if (typeof value !== 'string') return value
     try {

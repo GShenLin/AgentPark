@@ -7,22 +7,29 @@ import time
 from src.base_agent_manager import BaseAgentManager
 from src.config_loader import ConfigLoader
 from src.base_memory import BaseMemory
-from src.base_tool import BaseTool
+from src.tool.base_tool import BaseTool
+from src.operational_memory_gate import OperationalMemoryGateMixin
+from src.tool_context_compaction_gate import ToolContextCompactionGateMixin
 
 
-class BaseAgent(ABC):
-    def __init__(self, provider_name, memory_file_path=None, system_prompt=None):
+class BaseAgent(ToolContextCompactionGateMixin, OperationalMemoryGateMixin, ABC):
+    def __init__(self, provider_name, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
         self.provider_name = provider_name
         self._config = {}
         self.messages = []
+        self.operational_memory_gate_enabled = False
+        self.tool_context_compaction_gate_enabled = False
+        self._tool_context_compaction_since_last = 0
+        self.internal_memory_enabled = bool(internal_memory_enabled)
         self.memory = BaseMemory(provider_name, memory_file_path=memory_file_path)
         self.tools = BaseTool(self)
         self.manager = BaseAgentManager(self)
         if isinstance(system_prompt, str) and system_prompt.strip():
             self.Message("system", system_prompt.strip())
-        tail = self.memory.read_tail_lines(100)
-        if isinstance(tail, str) and tail.strip():
-            self.Message("system", f"[Memory Tail]\n{tail.strip()}", persist=False)
+        if self.internal_memory_enabled:
+            tail = self.memory.read_tail_lines(100)
+            if isinstance(tail, str) and tail.strip():
+                self.Message("system", f"[Memory Tail]\n{tail.strip()}", persist=False)
 
     @property
     def config(self):
@@ -106,13 +113,15 @@ class BaseAgent(ABC):
         msg = {"role": role, "content": content}
         msg.update(kwargs)
         self.messages.append(msg)
-        if persist:
+        if persist and self.internal_memory_enabled:
             self.memory.on_message(msg)
 
     def Log(self, line):
         self.memory.Log(line)
 
     def _append_memory(self, role, content, write_memory=True):
+        if not self.internal_memory_enabled:
+            return ""
         return self.memory._append_memory(role, content, write_memory=write_memory)
 
     def execute_tool(self, name, args):
@@ -133,6 +142,9 @@ class BaseAgent(ABC):
 
     def _get_messages_with_memory(self):
         current_messages = self.memory.build_messages_with_memory(self.messages)
+        if not self.internal_memory_enabled:
+            return current_messages
+
         system_messages = []
         last_user_index = -1
         for i, msg in enumerate(current_messages):

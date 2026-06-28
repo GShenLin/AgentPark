@@ -4,6 +4,9 @@ import pkgutil
 
 from . import runtime_paths
 from .node_metadata_reader import NodeMetadataError
+from .node_metadata_reader import load_node_instance
+from .node_metadata_reader import read_node_internal_fields
+from .node_metadata_reader import read_node_schema
 from .service_host import HostBoundService
 from .route_parser import NodeRouteParser
 from .shared import HTTPException, _list_node_metas, _read_node_capabilities
@@ -37,7 +40,7 @@ class NodeCatalog(HostBoundService):
 
         safe_type_id = type_id.strip()
         try:
-            node = self.graph_runtime._load_node_instance(safe_type_id)
+            node = load_node_instance(safe_type_id)
         except NodeMetadataError as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         if node is None:
@@ -56,8 +59,8 @@ class NodeCatalog(HostBoundService):
         context = self.graph_runtime._build_node_context(safe_type_id, self.default_graph_id, "template", cfg)
 
         try:
-            schema = self.graph_runtime._read_node_schema(node, context)
-            internal_fields = self.graph_runtime._read_node_internal_fields(node, context)
+            schema = read_node_schema(node, context)
+            internal_fields = read_node_internal_fields(node, context)
         except NodeMetadataError as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         fields: dict[str, object] = {}

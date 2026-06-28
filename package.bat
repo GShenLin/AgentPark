@@ -28,8 +28,15 @@ call :mirror_dir "functions" "dist\functions"
 if errorlevel 1 goto :fail
 call :mirror_dir "nodes" "dist\nodes"
 if errorlevel 1 goto :fail
+call :mirror_dir "skills" "dist\skills"
+if errorlevel 1 goto :fail
+call :mirror_dir "plugins" "dist\plugins"
+if errorlevel 1 goto :fail
+call :mirror_dir "docs" "dist\docs"
+if errorlevel 1 goto :fail
 
 echo [INFO] Package complete: dist\AITools.exe
+echo [INFO] Offline doctor: dist\AITools.exe doctor --json
 endlocal
 exit /b 0
 

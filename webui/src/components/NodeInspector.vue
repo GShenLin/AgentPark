@@ -3,7 +3,9 @@ import { computed, inject, ref, watch } from 'vue'
 import { AgentBoardKey } from './agent-board/context'
 import {
   getSchemaFieldOptions,
+  isSchemaMultiSelectField,
   isSchemaSelectField,
+  normalizeSchemaFieldValue,
 } from '../composables/nodeSchemaFields'
 
 const injected = inject(AgentBoardKey, null)
@@ -63,7 +65,7 @@ async function commitField(key: string) {
   if (!nodeId) return
   if (!dirtyKeys.value[key]) return
 
-  const value = (draftFields.value as any)?.[key]
+  const value = normalizeSchemaFieldValue(schema.value, key, (draftFields.value as any)?.[key])
   syncLock.value += 1
   try {
     await ctx.setNodeFields(nodeId, { [key]: value })
@@ -115,6 +117,10 @@ function isSelectField(key: string) {
   return isSchemaSelectField(schema.value, key)
 }
 
+function isMultiSelectField(key: string) {
+  return isSchemaMultiSelectField(schema.value, key)
+}
+
 function getFieldOptions(key: string) {
   return getSchemaFieldOptions(schema.value, key)
 }
@@ -129,6 +135,46 @@ function getDraftValue(key: string) {
   return String((draftFields.value as any)?.[key] ?? '')
 }
 
+function getMultiSelectValue(key: string) {
+  return normalizeSchemaFieldValue(schema.value, key, (draftFields.value as any)?.[key]) as string[]
+}
+
+function getMultiSelectPlaceholder(key: string) {
+  if (key === 'plugins') return 'Select plugins'
+  if (key === 'tools') return 'Select tools'
+  if (key === 'mcp_servers') return 'Select MCP servers'
+  if (key === 'skills') return 'Select skills'
+  return `Select ${getFieldLabel(key)}`
+}
+
+function getMultiSelectLabel(key: string) {
+  const selected = new Set(getMultiSelectValue(key))
+  const labels = getFieldOptions(key)
+    .filter((option) => selected.has(option.value))
+    .map((option) => option.label)
+  if (!labels.length) return getMultiSelectPlaceholder(key)
+  if (labels.length <= 2) return labels.join(', ')
+  return `${labels.length} selected`
+}
+
+function getMultiSelectEmptyText(key: string) {
+  if (key === 'plugins') return 'No plugins found.'
+  if (key === 'tools') return 'No tools found.'
+  if (key === 'mcp_servers') return 'No MCP servers found.'
+  if (key === 'skills') return 'No skills found.'
+  return 'No options found.'
+}
+
+function toggleMultiSelectOption(key: string, value: string) {
+  const optionValue = String(value || '').trim()
+  if (!optionValue) return
+  const current = getMultiSelectValue(key)
+  const next = current.includes(optionValue)
+    ? current.filter((item) => item !== optionValue)
+    : [...current, optionValue]
+  setField(key, next)
+}
+
 watch(
   () => ctx.selectedNodeId.value,
   async (id, prevId) => {
@@ -138,7 +184,7 @@ watch(
     }
     if (!id) return
     dirtyKeys.value = {}
-    await ctx.ensureNodeConfig(id).catch(() => null)
+    await ctx.refreshNodeConfig(id).catch(() => null)
   },
 )
 
@@ -177,8 +223,39 @@ watch(
         <label v-for="key in fieldKeys" :key="key" class="field" :class="{ 'field-check': getFieldType(key) === 'boolean' }">
           <span class="field-label">{{ getFieldLabel(key) }}</span>
 
+          <details
+            v-if="isMultiSelectField(key)"
+            class="multi-select-dropdown"
+            @focus="onFieldFocus(key)"
+          >
+            <summary class="field-input multi-select-summary">{{ getMultiSelectLabel(key) }}</summary>
+            <div class="multi-select-menu">
+              <div
+                v-for="option in getFieldOptions(key)"
+                :key="`inspect-multi-${key}-${option.value}`"
+                class="multi-select-option"
+                role="checkbox"
+                tabindex="0"
+                :aria-checked="getMultiSelectValue(key).includes(option.value)"
+                @click="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
+                @keydown.enter.prevent="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
+                @keydown.space.prevent="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
+              >
+                <input
+                  type="checkbox"
+                  :checked="getMultiSelectValue(key).includes(option.value)"
+                  tabindex="-1"
+                  @click.stop="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
+                  @change.stop
+                />
+                <span>{{ option.label }}</span>
+              </div>
+              <div v-if="getFieldOptions(key).length === 0" class="multi-select-empty">{{ getMultiSelectEmptyText(key) }}</div>
+            </div>
+          </details>
+
           <select
-            v-if="isSelectField(key)"
+            v-else-if="isSelectField(key)"
             class="field-input"
             :value="getDraftValue(key)"
             @focus="onFieldFocus(key)"
@@ -253,5 +330,64 @@ watch(
 .empty-hint {
   font-size: 12px;
   color: rgba(148, 163, 184, 0.7);
+}
+
+.multi-select-dropdown {
+  position: relative;
+}
+
+.multi-select-summary {
+  cursor: pointer;
+  list-style: none;
+  min-height: 38px;
+}
+
+.multi-select-summary::-webkit-details-marker {
+  display: none;
+}
+
+.multi-select-summary::after {
+  content: 'v';
+  float: right;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.multi-select-dropdown[open] .multi-select-summary::after {
+  content: '^';
+}
+
+.multi-select-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.98);
+  padding: 8px;
+  position: absolute;
+  z-index: 20;
+  width: 100%;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3);
+}
+
+.multi-select-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.95);
+  line-height: 1.35;
+}
+
+.multi-select-option input {
+  margin-top: 2px;
+}
+
+.multi-select-empty {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.78);
 }
 </style>

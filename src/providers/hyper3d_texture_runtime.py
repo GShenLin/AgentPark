@@ -7,86 +7,24 @@ import urllib.parse
 import uuid
 from datetime import datetime
 
-from src.providers.hyper3d_transport import build_multipart_body, download_bytes, request_json
-from src.service_host import HostBoundService
+from src.providers.hyper3d_common import is_hyper3d_remote_url
+from src.providers.hyper3d_common import parse_hyper3d_int
+from src.providers.hyper3d_common import resolve_hyper3d_enum
+from src.providers.hyper3d_runtime_base import Hyper3DRuntimeBase
+from src.providers.hyper3d_transport import build_multipart_body
+from src.value_parsing import parse_optional_float_value
 
 
-class Hyper3DTextureRuntime(HostBoundService):
+class Hyper3DTextureRuntime(Hyper3DRuntimeBase):
     _TERMINAL_STATUSES = {"done", "failed"}
     _DOWNLOAD_NAME_PATTERN = re.compile(r"[^A-Za-z0-9._ -]+")
     _MAX_MODEL_BYTES = 10 * 1024 * 1024
-
-    @staticmethod
-    def _parse_int(name, value, *, minimum=None, maximum=None):
-        if value is None or value == "":
-            return None
-        try:
-            parsed = int(float(value))
-        except Exception as exc:
-            raise ValueError(f"{name} must be an integer.") from exc
-        if minimum is not None and parsed < minimum:
-            raise ValueError(f"{name} must be >= {minimum}.")
-        if maximum is not None and parsed > maximum:
-            raise ValueError(f"{name} must be <= {maximum}.")
-        return parsed
-
-    @staticmethod
-    def _parse_float(name, value):
-        if value is None or value == "":
-            return None
-        try:
-            parsed = float(value)
-        except Exception as exc:
-            raise ValueError(f"{name} must be a number.") from exc
-        if parsed <= 0:
-            raise ValueError(f"{name} must be greater than zero.")
-        return parsed
-
-    @staticmethod
-    def _resolve_enum(name, value, allowed):
-        text = str(value or "").strip()
-        if not text:
-            return None
-        if text not in allowed:
-            raise ValueError(f"{name} must be one of: {', '.join(allowed)}.")
-        return text
-
-    @staticmethod
-    def _is_remote_url(value):
-        text = str(value or "").strip().lower()
-        return text.startswith("http://") or text.startswith("https://")
-
-    def _base_url(self):
-        base_url = str(self.config.get("baseUrl") or "https://api.hyper3d.com/api/v2").strip().rstrip("/")
-        if not base_url:
-            raise ValueError("Hyper3D provider requires baseUrl.")
-        return base_url
-
-    def _api_url(self, endpoint):
-        return f"{self._base_url()}/{str(endpoint or '').strip('/')}"
-
-    def _headers(self, *, json_content=False, multipart_content_type=""):
-        headers = {"Authorization": f"Bearer {self.config['apiKey']}", "accept": "application/json"}
-        if json_content:
-            headers["Content-Type"] = "application/json"
-        if multipart_content_type:
-            headers["Content-Type"] = multipart_content_type
-        return headers
-
-    def _timeout_sec(self):
-        return float(self.config.get("timeoutMs", 60000)) / 1000.0
-
-    def _request_json(self, *, url, headers=None, body=None):
-        return request_json(url=url, headers=headers or {}, body=body, timeout_sec=self._timeout_sec())
-
-    def _download_bytes(self, url):
-        return download_bytes(url, timeout_sec=self._timeout_sec())
 
     def _materialize_path(self, uri, temp_dir, *, prefix, default_ext):
         text = str(uri or "").strip()
         if not text:
             raise ValueError(f"{prefix} path is required.")
-        if self._is_remote_url(text):
+        if is_hyper3d_remote_url(text):
             parsed = urllib.parse.urlparse(text)
             ext = os.path.splitext(parsed.path)[1] or default_ext
             temp_path = os.path.join(temp_dir, f"{prefix}{ext}")
@@ -107,10 +45,14 @@ class Hyper3DTextureRuntime(HostBoundService):
         fields: list[tuple[str, object]] = []
         if prompt:
             fields.append(("prompt", prompt))
-        parsed_seed = self._parse_int("seed", seed, minimum=0, maximum=65535)
+        parsed_seed = parse_hyper3d_int("seed", seed, minimum=0, maximum=65535)
         if parsed_seed is not None:
             fields.append(("seed", parsed_seed))
-        parsed_reference_scale = self._parse_float("reference_scale", reference_scale)
+        parsed_reference_scale = parse_optional_float_value(
+            "reference_scale",
+            reference_scale,
+            minimum_exclusive=0,
+        )
         if parsed_reference_scale is not None:
             fields.append(("reference_scale", parsed_reference_scale))
         for name, value, allowed in (
@@ -118,7 +60,7 @@ class Hyper3DTextureRuntime(HostBoundService):
             ("material", material, {"PBR", "Shaded"}),
             ("resolution", resolution, {"Basic", "High"}),
         ):
-            resolved = self._resolve_enum(name, value, allowed)
+            resolved = resolve_hyper3d_enum(name, value, allowed)
             if resolved is not None:
                 fields.append((name, resolved))
         return fields
@@ -190,11 +132,16 @@ class Hyper3DTextureRuntime(HostBoundService):
         if not self.config.get("apiKey"):
             raise ValueError("Hyper3D provider requires apiKey.")
 
-        poll_interval_sec = float(self.config.get("texturePollIntervalSec", self.config.get("pollIntervalSec", 5)))
-        if poll_interval_sec <= 0:
-            raise ValueError("pollIntervalSec must be greater than zero.")
-        max_wait_raw = self.config.get("textureMaxWaitSec", self.config.get("maxWaitSec", 1800))
-        max_wait_sec = float(max_wait_raw) if max_wait_raw not in {None, ""} else None
+        poll_interval_sec = self._resolve_poll_interval_seconds(
+            "texturePollIntervalSec",
+            "pollIntervalSec",
+            default=5,
+        )
+        max_wait_sec = self._resolve_max_wait_seconds(
+            "textureMaxWaitSec",
+            "maxWaitSec",
+            default=1800,
+        )
 
         with tempfile.TemporaryDirectory(prefix="aitools_hyper3d_texture_") as temp_dir:
             local_model = self._materialize_path(model_path, temp_dir, prefix="model", default_ext=".obj")

@@ -1,34 +1,53 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { listGraphs, loadGraph, saveGraph, setStartupGraphConfig, type GraphConfig, type GraphInfo } from '../api'
+import { clearNodeInstanceMemory, deleteGraph, listGraphs, loadGraph, saveGraph, setStartupGraphConfig, type GraphConfig, type GraphInfo } from '../api'
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
+import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import MemoryContentView from './MemoryContentView.vue'
 import MemoryPanelHeader from './MemoryPanelHeader.vue'
+import MemorySaveDialog from './MemorySaveDialog.vue'
 import { renderMemoryMarkdown } from './memoryMarkdown'
 
 const {
   memoryText,
   memoryMessages,
+  memoryLiveMessage,
   memoryTitle,
   memoryMeta,
   memoryMode,
+  memoryRefreshRequest,
+  memoryLiveRefreshRequest,
   agentImages,
   selectedNodeId,
   graphSnapshot,
   graphLoadRequest,
   currentGraphId,
   currentGraphName,
+  lastError,
 } = useGlobalState()
 
 const {
   isSaving,
   memoryAutoScroll,
   loadAgentMemory,
+  loadAgentLiveMessage,
+  startAgentLiveStream,
   saveCurrentFile,
-  startPolling,
-  stopPolling,
+  stopLoading,
 } = useMemory()
+
+const {
+  saveDialogOpen,
+  saveDialogFilename,
+  saveDialogTargetDir,
+  saveDialogError,
+  saveDialogSaving,
+  openSaveMessageDialog,
+  confirmSaveMessageDialog,
+  cancelSaveMessageDialog,
+  copyMessageText,
+} = useMemoryMessageExport()
 
 const isWordWrap = ref(true)
 const showLineNumbers = ref(false)
@@ -41,9 +60,36 @@ const graphStatus = ref<string | null>(null)
 const graphLoading = ref(false)
 
 const structuredMessages = computed(() => (Array.isArray(memoryMessages.value) ? memoryMessages.value : []))
+const canClearMemory = computed(() => hasSelectedNodeTarget())
 
 function hasSelectedNodeTarget() {
   return !!String(selectedNodeId.value || '').trim()
+}
+
+function defaultMemoryMode() {
+  return hasSelectedNodeTarget() ? 'agent' : 'graph'
+}
+
+function toggleFileMode() {
+  memoryMode.value = memoryMode.value === 'file' ? defaultMemoryMode() : 'file'
+}
+
+async function clearSelectedNodeMemory() {
+  const nodeId = String(selectedNodeId.value || '').trim()
+  if (!nodeId) return
+  const ok = window.confirm(`Clear all memory for node "${nodeId}"?`)
+  if (!ok) return
+  try {
+    await clearNodeInstanceMemory(nodeId, currentGraphId.value || 'default')
+    if (String(selectedNodeId.value || '').trim() === nodeId) {
+      memoryText.value = ''
+      memoryMessages.value = []
+      memoryLiveMessage.value = ''
+      await loadAgentMemory()
+    }
+  } catch (e: any) {
+    lastError.value = String(e?.message || e)
+  }
 }
 
 const renderedMarkdown = computed(() => {
@@ -100,7 +146,17 @@ async function saveGraphConfig() {
 async function loadGraphConfig(item: GraphInfo) {
   graphStatus.value = null
   try {
-    const res = await loadGraph(item.id)
+    const current = graphSnapshot.value
+    const ifVersion = current?.id === item.id ? Number((current as any)?.version || 0) : 0
+    const res = await loadGraph(item.id, { ifVersion })
+    if (res.unchanged) {
+      currentGraphId.value = item.id
+      currentGraphName.value = item.name || item.id
+      graphNameInput.value = item.name || item.id
+      await setStartupGraphConfig(item.id, item.name || item.id).catch(() => null)
+      memoryMode.value = 'graph'
+      return
+    }
     currentGraphId.value = res.id
     currentGraphName.value = res.name
     graphNameInput.value = res.name
@@ -112,30 +168,48 @@ async function loadGraphConfig(item: GraphInfo) {
   }
 }
 
+async function deleteGraphConfig(item: GraphInfo) {
+  const name = item.name || item.id
+  const ok = window.confirm(`Delete graph "${name}"? This will remove the whole graph folder and cannot be undone.`)
+  if (!ok) return
+
+  graphStatus.value = null
+  try {
+    await deleteGraph(item.id)
+    if (currentGraphId.value === item.id) {
+      currentGraphId.value = 'default'
+      currentGraphName.value = 'default'
+      graphNameInput.value = 'default'
+      graphLoadRequest.value = { id: 'default', name: 'default', nodes: [], links: [] }
+      await setStartupGraphConfig('default', 'default').catch(() => null)
+    }
+    await refreshGraphs()
+    graphStatus.value = `Graph deleted: ${name}`
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  }
+}
+
 watch(
   () => selectedNodeId.value,
   async () => {
     if (memoryMode.value !== 'agent') return
-    stopPolling()
+    stopLoading()
     memoryAutoScroll.value = true
     await loadAgentMemory()
-    if (hasSelectedNodeTarget()) {
-      startPolling()
-    }
+    startAgentLiveStream()
   },
 )
 
 watch(
   () => memoryMode.value,
   async (mode) => {
-    stopPolling()
+    stopLoading()
 
     if (mode === 'agent') {
       memoryAutoScroll.value = true
       await loadAgentMemory()
-      if (hasSelectedNodeTarget()) {
-        startPolling()
-      }
+      startAgentLiveStream()
       return
     }
 
@@ -145,6 +219,25 @@ watch(
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => memoryRefreshRequest.value,
+  async () => {
+    if (memoryMode.value !== 'agent') return
+    if (!hasSelectedNodeTarget()) return
+    await loadAgentMemory()
+    startAgentLiveStream()
+  },
+)
+
+watch(
+  () => memoryLiveRefreshRequest.value,
+  async () => {
+    if (memoryMode.value !== 'agent') return
+    if (!hasSelectedNodeTarget()) return
+    await loadAgentLiveMessage()
+  },
 )
 
 watch(
@@ -170,23 +263,32 @@ watch(memoryMessages, async () => {
   contentViewRef.value?.scrollToBottom()
 })
 
+watch(memoryLiveMessage, async () => {
+  if (!memoryAutoScroll.value) return
+  if (memoryMode.value !== 'agent') return
+  await nextTick()
+  contentViewRef.value?.scrollToBottom()
+})
+
 onBeforeUnmount(() => {
-  stopPolling()
+  stopLoading()
 })
 </script>
 
 <template>
   <div class="panel">
     <MemoryPanelHeader
-      v-model:memory-mode="memoryMode"
+      :memory-mode="memoryMode"
       v-model:is-markdown-preview="isMarkdownPreview"
       v-model:show-line-numbers="showLineNumbers"
       v-model:is-word-wrap="isWordWrap"
-      v-model:memory-auto-scroll="memoryAutoScroll"
       :memory-title="memoryTitle"
       :memory-meta="memoryMeta"
       :is-saving="isSaving"
       :graph-status="graphStatus"
+      :can-clear-memory="canClearMemory"
+      @clear-memory="clearSelectedNodeMemory"
+      @toggle-file-mode="toggleFileMode"
     />
 
     <MemoryContentView
@@ -195,6 +297,7 @@ onBeforeUnmount(() => {
       v-model:graph-name-input="graphNameInput"
       :mode="memoryMode"
       :messages="structuredMessages"
+      :live-message="memoryLiveMessage"
       :markdown-preview="isMarkdownPreview"
       :word-wrap="isWordWrap"
       :show-line-numbers="showLineNumbers"
@@ -206,7 +309,20 @@ onBeforeUnmount(() => {
       @save-graph-config="saveGraphConfig"
       @refresh-graphs="refreshGraphs"
       @load-graph-config="loadGraphConfig"
+      @delete-graph-config="deleteGraphConfig"
       @auto-scroll-change="memoryAutoScroll = $event"
+      @save-message="openSaveMessageDialog"
+      @copy-message="copyMessageText"
+    />
+
+    <MemorySaveDialog
+      v-model:filename="saveDialogFilename"
+      :open="saveDialogOpen"
+      :target-dir="saveDialogTargetDir"
+      :error="saveDialogError"
+      :saving="saveDialogSaving"
+      @confirm="confirmSaveMessageDialog"
+      @cancel="cancelSaveMessageDialog"
     />
   </div>
 </template>

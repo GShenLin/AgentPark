@@ -1,36 +1,14 @@
-import json
-import os
-from urllib.parse import urlparse
-
+from src.media_resource_utils import dedupe_preserve_order
+from src.media_resource_utils import parse_resource_list
+from src.media_resource_utils import uri_has_extension
 from src.message_protocol import normalize_envelope
 
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 
 
-def parse_resource_list(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    text = str(value or "").strip()
-    if not text:
-        return []
-    if text.startswith("["):
-        try:
-            parsed = json.loads(text)
-        except Exception:
-            parsed = None
-        if isinstance(parsed, list):
-            return [str(item).strip() for item in parsed if str(item).strip()]
-    return [line.strip() for line in text.splitlines() if line.strip()]
-
-
 def _is_image_uri(uri: object) -> bool:
-    raw = str(uri or "").strip()
-    if not raw:
-        return False
-    parsed = urlparse(raw)
-    path = parsed.path if parsed.scheme else raw
-    return os.path.splitext(path.lower())[1] in _IMAGE_EXTS
+    return uri_has_extension(uri, _IMAGE_EXTS)
 
 
 def resolve_model_generation_inputs(
@@ -64,14 +42,7 @@ def resolve_model_generation_inputs(
             image_uris.append(uri)
 
     resolved_prompt = "\n".join(text_parts).strip() or str(prompt or "").strip()
-    deduped_images: list[str] = []
-    seen: set[str] = set()
-    for uri in image_uris:
-        key = uri.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped_images.append(uri)
+    deduped_images = dedupe_preserve_order(image_uris)
 
     if not resolved_prompt and not deduped_images:
         raise ValueError("Model generation requires a prompt or at least one image.")

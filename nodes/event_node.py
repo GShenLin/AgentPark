@@ -2,6 +2,7 @@ import json
 import os
 
 from nodes.base_node import BaseNode
+from src.message_protocol import envelope_text, normalize_envelope
 
 
 class Node(BaseNode):
@@ -37,10 +38,10 @@ class Node(BaseNode):
                         event_key = str(data.get("EventKey") or "").strip()
                 except Exception:
                     event_key = ""
-        envelope = self._normalize_message(message, default_role="assistant")
+        envelope = normalize_envelope(message, default_role="assistant")
 
         return {
-            "display": self._message_text(envelope),
+            "display": envelope_text(envelope),
             "routes": [{"output_index": 0, "payload": envelope}],
             "event_key": event_key,
         }

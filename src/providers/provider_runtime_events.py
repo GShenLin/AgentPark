@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 import json
 
-from src.tool_event_protocol import RuntimeNoticeEvent
+from src.tool.tool_event_protocol import RuntimeNoticeEvent
 
 
 def emit_provider_runtime_notice(

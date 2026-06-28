@@ -140,6 +140,134 @@ select:focus {
   white-space: pre-wrap;
 }
 
+.interaction-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.interaction-dialog {
+  position: absolute;
+  max-width: calc(100% - 32px);
+  max-height: 620px;
+  overflow: auto;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+  user-select: text;
+}
+
+.interaction-dialog.dragging {
+  user-select: none;
+}
+
+.interaction-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.interaction-kicker,
+.interaction-agent,
+.interaction-count,
+.interaction-field small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.interaction-header h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+
+.interaction-drag-handle {
+  flex: 0 0 auto;
+  cursor: grab;
+  border-color: rgba(125, 211, 252, 0.3);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.interaction-dialog.dragging .interaction-drag-handle {
+  cursor: grabbing;
+}
+
+.interaction-description {
+  margin: 12px 0;
+  color: rgba(226, 232, 240, 0.92);
+  white-space: pre-wrap;
+}
+
+.interaction-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.interaction-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.interaction-label {
+  font-weight: 650;
+}
+
+.interaction-label b {
+  margin-left: 4px;
+  color: #fb7185;
+}
+
+.interaction-field input:not([type='checkbox']),
+.interaction-field textarea,
+.interaction-field select {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text-main);
+  background: rgba(2, 6, 23, 0.5);
+  font: inherit;
+}
+
+.interaction-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.interaction-options button.selected {
+  border-color: rgba(56, 189, 248, 0.95);
+  background: rgba(14, 165, 233, 0.22);
+}
+
+.interaction-custom-frame {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: #020617;
+}
+
+.interaction-error {
+  margin-top: 14px;
+  color: #fecaca;
+  font-size: 13px;
+}
+
+.interaction-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
 @media (max-width: 960px) {
   .topbar {
     height: auto;

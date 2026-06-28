@@ -5,13 +5,23 @@ hiddenimports = []
 hiddenimports += collect_submodules('src')
 hiddenimports += collect_submodules('fastapi')
 hiddenimports += collect_submodules('uvicorn')
+hiddenimports += collect_submodules('nodes')
+hiddenimports += collect_submodules('functions')
 
 
 a = Analysis(
     ['src\\fast_api.py'],
     pathex=[],
     binaries=[],
-    datas=[('webui\\dist', 'webui\\dist')],
+    datas=[
+        ('webui\\dist', 'webui\\dist'),
+        ('config', 'config'),
+        ('functions', 'functions'),
+        ('nodes', 'nodes'),
+        ('skills', 'skills'),
+        ('plugins', 'plugins'),
+        ('docs', 'docs'),
+    ],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

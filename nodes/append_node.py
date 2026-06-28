@@ -1,4 +1,5 @@
 from nodes.base_node import BaseNode
+from src.message_protocol import envelope_text
 
 
 class Node(BaseNode):
@@ -16,6 +17,6 @@ class Node(BaseNode):
     def on_input(self, message: object, context: dict | None = None) -> dict:
         ctx = context or {}
         append_text = str(ctx.get("AppendText") or "")
-        input_text = self._message_text(message)
+        input_text = envelope_text(message)
         output_text = f"{input_text}{append_text}"
         return self._text_output(output_text)

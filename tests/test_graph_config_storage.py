@@ -32,3 +32,102 @@ def test_graph_config_strips_nodes_field():
         assert "nodes" not in loaded
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_graph_load_supports_version_unchanged_response():
+    import src.web_backend as backend
+
+    graph_id = f"ut_graph_version_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    try:
+        client = TestClient(app)
+        graph = {
+            "id": graph_id,
+            "name": graph_id,
+            "nodes": [],
+            "links": [{"id": "l1", "from": {"node": "a", "index": 0}, "to": {"node": "b", "index": 0}}],
+        }
+        r = client.post(f"/api/graphs/{graph_id}", json={"graph": graph})
+        assert r.status_code == 200
+
+        loaded = client.get(f"/api/graphs/{graph_id}")
+        assert loaded.status_code == 200
+        payload = loaded.json().get("graph") or {}
+        version = int(payload.get("version") or 0)
+        assert version > 0
+        assert payload.get("links")
+
+        unchanged = client.get(f"/api/graphs/{graph_id}?if_version={version}")
+        assert unchanged.status_code == 200
+        unchanged_payload = unchanged.json().get("graph") or {}
+        assert unchanged_payload == {"id": graph_id, "version": version, "unchanged": True}
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_graph_load_rejects_non_object_config():
+    import src.web_backend as backend
+
+    graph_id = f"ut_graph_bad_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graph_dir = os.path.join(_get_graphs_dir(), graph_id)
+    try:
+        os.makedirs(graph_dir, exist_ok=True)
+        with open(os.path.join(graph_dir, "config.json"), "w", encoding="utf-8") as handle:
+            handle.write("[]")
+
+        response = TestClient(app).get(f"/api/graphs/{graph_id}")
+
+        assert response.status_code == 500
+        assert "JSON object" in response.json().get("detail", "")
+    finally:
+        shutil.rmtree(graph_dir, ignore_errors=True)
+
+
+def test_graph_list_rejects_corrupt_config():
+    import src.web_backend as backend
+
+    graph_id = f"ut_graph_list_bad_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graph_dir = os.path.join(_get_graphs_dir(), graph_id)
+    try:
+        os.makedirs(graph_dir, exist_ok=True)
+        with open(os.path.join(graph_dir, "config.json"), "w", encoding="utf-8") as handle:
+            handle.write("{bad")
+
+        response = TestClient(app).get("/api/graphs")
+
+        assert response.status_code == 500
+        assert "invalid JSON" in response.json().get("detail", "")
+        assert graph_id in response.json().get("detail", "")
+    finally:
+        shutil.rmtree(graph_dir, ignore_errors=True)
+
+
+def test_runtime_graph_read_rejects_non_object_config(tmp_path, monkeypatch):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+    from src.web_backend.graph_runtime_registry import GraphConfigReadError
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    graph_dir = tmp_path / "memories" / "bad_graph"
+    graph_dir.mkdir(parents=True)
+    (graph_dir / "config.json").write_text("[]", encoding="utf-8")
+
+    runtime = backend.WebBackendFacade().core.graph_runtime
+
+    try:
+        runtime._read_graph_config("bad_graph")
+    except GraphConfigReadError as exc:
+        assert "JSON object" in str(exc)
+    else:
+        raise AssertionError("non-object graph config was not rejected")

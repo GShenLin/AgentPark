@@ -13,8 +13,13 @@ from src.service_host import ServiceHost
 
 
 class GeminiAgent(ServiceHost, BaseAgent):
-    def __init__(self, provider_id="gemini", memory_file_path=None, system_prompt=None):
-        super().__init__(provider_id, memory_file_path=memory_file_path, system_prompt=system_prompt)
+    def __init__(self, provider_id="gemini", memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
+        super().__init__(
+            provider_id,
+            memory_file_path=memory_file_path,
+            system_prompt=system_prompt,
+            internal_memory_enabled=internal_memory_enabled,
+        )
         self.config = self._read_provider_config_from_file()
         self._service_targets_cache = None
 
@@ -249,7 +254,8 @@ class GeminiAgent(ServiceHost, BaseAgent):
                         if has_function_call:
                             self.Message("assistant", text_content if has_text else None, parts=parts)
                             if run_tools:
-                                for execution in self._execute_function_calls_parallel(function_calls):
+                                executions = self._execute_function_calls_parallel(function_calls)
+                                for execution in executions:
                                     self.Message("function", execution.cleaned_result, name=execution.func_name)
                                     non_retry_warn = self._build_non_retryable_tool_warning(
                                         execution.func_name,
@@ -280,6 +286,12 @@ class GeminiAgent(ServiceHost, BaseAgent):
                                                 },
                                             )
 
+                                if self._operational_memory_gate_completed(executions):
+                                    return json.dumps({"status": "memory_gate_completed"}, ensure_ascii=False)
+                                if self._tool_context_compaction_gate_completed(executions):
+                                    return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
+                                self._run_operational_memory_gate_for_failed_executions(executions)
+                                self._run_tool_context_compaction_gate_if_needed(executions)
                                 return self.Send(
                                     tools=tools,
                                     run_tools=run_tools,

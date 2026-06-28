@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -6,32 +7,42 @@ from src.message_protocol import build_text_envelope
 from src.web_backend.node_memory_store import NodeMemoryPersistenceError
 from src.web_backend.node_memory_store import append_node_memory_entry
 from src.web_backend.node_memory_store import append_node_tool_call_entry
+from src.web_backend.node_memory_store import current_node_memory_paths
 from src.web_backend.node_memory_store import ensure_node_memory_files
+from src.web_backend.node_memory_store import load_recent_node_memory_records
+from src.web_backend.node_memory_store import read_node_memory_text
 
 
 def test_append_node_memory_entry_writes_markdown_and_jsonl(tmp_path):
-    memory_path = tmp_path / "agent.md"
+    memory_path = tmp_path / "memory.md"
     messages_path = tmp_path / "messages.jsonl"
+    message = {
+        "id": "msg-1",
+        "role": "assistant",
+        "parts": [{"type": "text", "text": "hello"}],
+        "created_at": "2026-06-21 10:11:12.000000",
+    }
 
     append_node_memory_entry(
         str(memory_path),
         str(messages_path),
         "assistant",
-        build_text_envelope("hello", role="assistant"),
+        message,
     )
 
-    assert "**" in memory_path.read_text(encoding="utf-8")
-    assert "assistant" in memory_path.read_text(encoding="utf-8")
-    assert "hello" in memory_path.read_text(encoding="utf-8")
+    markdown = memory_path.read_text(encoding="utf-8")
+    assert "<!-- message_id: msg-1 -->" in markdown
+    assert "**[2026-06-21 10:11:12] assistant**: hello" in markdown
     lines = messages_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     payload = json.loads(lines[0])
+    assert payload["id"] == "msg-1"
     assert payload["role"] == "assistant"
     assert payload["parts"][0]["text"] == "hello"
 
 
 def test_append_node_tool_call_entry_writes_structured_tool_history(tmp_path):
-    memory_path = tmp_path / "agent.md"
+    memory_path = tmp_path / "memory.md"
     messages_path = tmp_path / "messages.jsonl"
 
     append_node_tool_call_entry(
@@ -43,13 +54,163 @@ def test_append_node_tool_call_entry_writes_structured_tool_history(tmp_path):
             "name": "read_file",
             "status": "completed",
             "result_preview": "ok",
+            "result_chars": 2,
+            "result_preview_truncated": False,
+            "result_tail_preview": "ok",
+            "result_tail_preview_truncated": False,
         },
     )
 
-    payload = json.loads(messages_path.read_text(encoding="utf-8").splitlines()[0])
+    current = current_node_memory_paths(str(memory_path), str(messages_path))
+    payload = json.loads(open(current["messages_path"], encoding="utf-8").read().splitlines()[0])
     assert payload["role"] == "tool"
     assert payload["parts"][0]["type"] == "tool_call"
     assert payload["parts"][0]["call_id"] == "call-1"
+    assert payload["parts"][0]["result_preview"] == "ok"
+    assert payload["parts"][0]["result_chars"] == 2
+    assert payload["parts"][0]["result_preview_truncated"] is False
+    assert payload["parts"][0]["result_tail_preview"] == "ok"
+    assert payload["parts"][0]["result_tail_preview_truncated"] is False
+    markdown = open(current["memory_path"], encoding="utf-8").read()
+    assert f"<!-- message_id: {payload['id']} -->" in markdown
+    assert "Tool read_file completed call_id=call-1" in markdown
+    assert "result_preview=ok" in markdown
+    assert "result_chars=2" in markdown
+
+
+def test_legacy_root_messages_rebuild_missing_active_markdown(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    messages_path.write_text(
+        json.dumps(
+            {
+                "id": "old-user",
+                "role": "user",
+                "parts": [{"type": "text", "text": "old hello"}],
+                "created_at": "2026-06-20 09:00:00.000000",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    records = load_recent_node_memory_records(str(memory_path), str(messages_path), limit=10)
+
+    assert records[0]["id"] == "old-user"
+    assert memory_path.exists()
+    assert messages_path.exists()
+    markdown = memory_path.read_text(encoding="utf-8")
+    assert "<!-- message_id: old-user -->" in markdown
+    assert "**[2026-06-20 09:00:00] user**: old hello" in markdown
+
+
+def test_records_over_limit_archive_old_entries_and_keep_recent_active(tmp_path, monkeypatch):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    monkeypatch.setattr("src.web_backend.node_memory_store._read_max_active_memory_entries", lambda: 2)
+
+    for index, date_text in enumerate(["2026-06-20", "2026-06-21", "2026-06-22"], start=1):
+        append_node_memory_entry(
+            str(memory_path),
+            str(messages_path),
+            "user",
+            {
+                "id": f"msg-{index}",
+                "role": "user",
+                "parts": [{"type": "text", "text": f"hello {index}"}],
+                "created_at": f"{date_text} 08:00:00.000000",
+            },
+        )
+
+    assert [json.loads(line)["id"] for line in messages_path.read_text(encoding="utf-8").splitlines()] == [
+        "msg-2",
+        "msg-3",
+    ]
+    archived_messages = tmp_path / "archive" / "2026-06-20" / "messages.jsonl"
+    assert [json.loads(line)["id"] for line in archived_messages.read_text(encoding="utf-8").splitlines()] == [
+        "msg-1"
+    ]
+
+    records = load_recent_node_memory_records(str(memory_path), str(messages_path), limit=2)
+    assert [item["id"] for item in records] == ["msg-2", "msg-3"]
+    text = read_node_memory_text(str(memory_path), str(messages_path), max_chars=5000)
+    assert "<!-- message_id: msg-1 -->" in text
+    assert "<!-- message_id: msg-2 -->" in text
+    assert "<!-- message_id: msg-3 -->" in text
+
+
+def test_concurrent_node_memory_appends_keep_all_records(tmp_path, monkeypatch):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    monkeypatch.setattr("src.web_backend.node_memory_store._read_max_active_memory_entries", lambda: 200)
+
+    def append(index):
+        append_node_memory_entry(
+            str(memory_path),
+            str(messages_path),
+            "assistant",
+            {
+                "id": f"msg-{index}",
+                "role": "assistant",
+                "parts": [{"type": "text", "text": f"hello {index}"}],
+                "created_at": "2026-06-22 08:00:00.000000",
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        list(executor.map(append, range(50)))
+
+    records = [json.loads(line) for line in messages_path.read_text(encoding="utf-8").splitlines()]
+    assert {item["id"] for item in records} == {f"msg-{index}" for index in range(50)}
+    markdown = memory_path.read_text(encoding="utf-8")
+    for index in range(50):
+        assert f"<!-- message_id: msg-{index} -->" in markdown
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_concurrent_node_memory_appends_with_archive_keep_all_records(tmp_path, monkeypatch):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    monkeypatch.setattr("src.web_backend.node_memory_store._read_max_active_memory_entries", lambda: 5)
+
+    def append(index):
+        append_node_memory_entry(
+            str(memory_path),
+            str(messages_path),
+            "user",
+            {
+                "id": f"msg-{index}",
+                "role": "user",
+                "parts": [{"type": "text", "text": f"hello {index}"}],
+                "created_at": "2026-06-22 08:00:00.000000",
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        list(executor.map(append, range(30)))
+
+    active_records = [json.loads(line) for line in messages_path.read_text(encoding="utf-8").splitlines()]
+    archived_messages = tmp_path / "archive" / "2026-06-22" / "messages.jsonl"
+    archived_records = [json.loads(line) for line in archived_messages.read_text(encoding="utf-8").splitlines()]
+    all_ids = [item["id"] for item in active_records + archived_records]
+
+    assert len(active_records) == 5
+    assert set(all_ids) == {f"msg-{index}" for index in range(30)}
+    assert len(all_ids) == len(set(all_ids))
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_migrates_legacy_named_memory_file_to_active_memory_file(tmp_path):
+    legacy_memory_path = tmp_path / "agent.md"
+    messages_path = tmp_path / "messages.jsonl"
+    legacy_memory_path.write_text("legacy markdown without ids", encoding="utf-8")
+
+    ensure_node_memory_files(str(legacy_memory_path), str(messages_path))
+
+    active_memory_path = tmp_path / "memory.md"
+    assert not legacy_memory_path.exists()
+    assert active_memory_path.read_text(encoding="utf-8") == "legacy markdown without ids"
 
 
 def test_append_node_memory_entry_reports_all_target_failures():
@@ -65,3 +226,28 @@ def test_ensure_node_memory_files_reports_empty_paths():
         ensure_node_memory_files("", "")
 
     assert [failure.target for failure in exc.value.failures] == ["memory", "messages"]
+
+
+def test_read_node_memory_text_reports_unreadable_memory_file(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    memory_path.write_bytes(b"\xff\xfe\xfa")
+
+    with pytest.raises(NodeMemoryPersistenceError) as exc:
+        read_node_memory_text(str(memory_path), str(messages_path), max_chars=5000)
+
+    assert exc.value.failures[0].target == "memory"
+    assert "UnicodeDecodeError" in exc.value.failures[0].error
+
+
+def test_load_recent_node_memory_records_reports_invalid_jsonl(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    memory_path.write_text("", encoding="utf-8")
+    messages_path.write_text("{not json}\n", encoding="utf-8")
+
+    with pytest.raises(NodeMemoryPersistenceError) as exc:
+        load_recent_node_memory_records(str(memory_path), str(messages_path), limit=10)
+
+    assert exc.value.failures[0].target in {"messages", "migration"}
+    assert "invalid JSONL record" in exc.value.failures[0].error

@@ -1,4 +1,8 @@
-import { marked } from 'marked'
+import { Marked, marked } from 'marked'
+import markedKatex from 'marked-katex-extension'
+
+marked.use(markedKatex({ throwOnError: false }))
+const liveMarked = new Marked()
 
 function escapeHtml(value: string) {
   return value
@@ -31,8 +35,13 @@ function memoryRoleLabel(roleKey: string, rawRole: string) {
   return text || 'Other'
 }
 
-function renderMarkdownSync(text: string): string {
+export function renderMarkdownText(text: string): string {
   const rendered = marked.parse(text, { async: false })
+  return typeof rendered === 'string' ? rendered : text
+}
+
+export function renderMarkdownTextWithoutKatex(text: string): string {
+  const rendered = liveMarked.parse(text, { async: false })
   return typeof rendered === 'string' ? rendered : text
 }
 
@@ -70,7 +79,7 @@ function renderMemoryLogMarkdown(text: string) {
       const roleKey = normalizeMemoryRole(block.role)
       const roleLabel = memoryRoleLabel(roleKey, block.role)
       const bodyMarkdown = block.bodyLines.join('\n').trim()
-      const bodyHtml = bodyMarkdown ? renderMarkdownSync(bodyMarkdown) : ''
+      const bodyHtml = bodyMarkdown ? renderMarkdownText(bodyMarkdown) : ''
       return `<div class="mem-msg mem-msg-${escapeHtml(roleKey)}"><div class="mem-msg-head"><span class="mem-role mem-role-${escapeHtml(roleKey)}">${escapeHtml(roleLabel)}</span><span class="mem-time">${escapeHtml(block.time)}</span></div><div class="mem-msg-body">${bodyHtml}</div></div>`
     })
     .join('')
@@ -82,7 +91,7 @@ export function renderMemoryMarkdown(text: string) {
   if (!text) return ''
   try {
     const memoryHtml = renderMemoryLogMarkdown(text)
-    return memoryHtml ?? renderMarkdownSync(text)
+    return memoryHtml ?? renderMarkdownText(text)
   } catch {
     return String(text)
   }

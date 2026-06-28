@@ -1,17 +1,22 @@
 import os
 import socket
+import uuid
 
 from .domain_base import DomainBase
-from .shared import HTTPException, _get_runtime_root
+from .shared import (
+    HTTPException,
+    _get_runtime_root,
+    _set_node_config_last_message,
+    envelope_preview,
+    envelope_text,
+    normalize_envelope,
+)
 
 
 LOCAL_PC_ID = "local"
 
 
 class MobileApiDomain(DomainBase):
-    def __init__(self, core, graph_runtime):
-        super().__init__(core, graph_runtime)
-
     def _local_pc_name(self) -> str:
         name = socket.gethostname().strip()
         if not name:
@@ -148,14 +153,44 @@ class MobileApiDomain(DomainBase):
             message = (payload or {}).get("message")
         if message is None:
             raise HTTPException(status_code=400, detail="message is required")
-        return self.core.graph_api.emit_graph(
-            safe_graph_id,
+        message = normalize_envelope(message, default_role="user")
+        trace_id = str((payload or {}).get("trace_id") or "").strip() or uuid.uuid4().hex
+        text_full = envelope_text(message).strip()
+        text_preview = envelope_preview(message)
+        result = self.core.node_ops.enqueue_node_instance_pending(
+            safe_node_id,
             {
-                "from_id": safe_node_id,
                 "payload": message,
-                "trace_id": (payload or {}).get("trace_id"),
+                "trace_id": trace_id,
+                "depth": 0,
+                "visited": [],
+                "from": safe_node_id,
+                "source": "emit",
             },
+            graph_id=safe_graph_id,
         )
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        _set_node_config_last_message(config_path, text_full or text_preview)
+        try:
+            self.graph_runtime._append_node_memory_entry(safe_graph_id, safe_node_id, "user", message)
+        except Exception as exc:
+            self.graph_runtime._log_graph_event(
+                safe_graph_id,
+                "mobile_emit_memory_persistence_error",
+                trace_id=trace_id,
+                from_id=safe_node_id,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        self.graph_runtime._ensure_graph_runner(safe_graph_id)
+        self.core.node_live_outputs.publish_event(
+            safe_graph_id,
+            safe_node_id,
+            "node_input",
+            {"type": "node_input", "text": text_full or text_preview},
+            trace_id=trace_id,
+        )
+        self.graph_runtime._wake_graph_runner(safe_graph_id)
+        return {"ok": True, "queued": True, "trace_id": trace_id, "pending_count": result.get("pending_count")}
 
 
 __all__ = ["MobileApiDomain", "LOCAL_PC_ID"]

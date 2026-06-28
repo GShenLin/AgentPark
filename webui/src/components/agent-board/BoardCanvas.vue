@@ -4,6 +4,7 @@ import { AgentBoardKey } from './context'
 import CanvasContextMenu from './CanvasContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
 import NodeSideEditor from './NodeSideEditor.vue'
+import UserInteractionDialog from '../UserInteractionDialog.vue'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -117,6 +118,11 @@ watchEffect(() => {
           v-for="node in items"
           :key="`node:${node.id}`"
           :node="node"
+        />
+        <UserInteractionDialog
+          :nodes="items"
+          :canvas-width="ctx.canvasWidth.value"
+          :canvas-height="ctx.canvasHeight.value"
         />
         <NodeSideEditor />
       </div>

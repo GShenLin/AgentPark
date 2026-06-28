@@ -21,6 +21,15 @@ def build_tool_call_history_envelope(event: dict[str, Any]) -> dict[str, Any]:
         "error": str(event.get("error") or "").strip(),
         "result_preview": str(event.get("result_preview") or "").strip(),
     }
+    if isinstance(event.get("result_chars"), int):
+        part["result_chars"] = event.get("result_chars")
+    if "result_preview_truncated" in event:
+        part["result_preview_truncated"] = bool(event.get("result_preview_truncated"))
+    result_tail_preview = str(event.get("result_tail_preview") or "").strip()
+    if result_tail_preview:
+        part["result_tail_preview"] = result_tail_preview
+    if "result_tail_preview_truncated" in event:
+        part["result_tail_preview_truncated"] = bool(event.get("result_tail_preview_truncated"))
     arguments = event.get("arguments")
     if isinstance(arguments, dict):
         part["args"] = arguments

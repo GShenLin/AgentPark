@@ -3,10 +3,10 @@ import os
 
 from . import runtime_paths, state_store
 from .service_host import HostBoundService
+from .node_config_service import read_node_config_strict, write_node_config
+from .node_state_machine import parse_node_state
 from .shared import (
-    _parse_node_state,
-    _recover_node_config_inflight,
-    _update_node_config_state,
+    _recover_node_config_startup_state,
     _write_json_dict,
     normalize_envelope,
 )
@@ -16,9 +16,7 @@ from .node_memory_store import append_node_tool_call_entry
 from .node_memory_store import ensure_node_memory_files
 from .node_config_errors import NodeConfigWriteError
 from .node_metadata_reader import load_node_instance
-from .node_metadata_reader import read_node_internal_fields
 from .node_metadata_reader import read_node_ports
-from .node_metadata_reader import read_node_schema
 from .node_metadata_reader import run_node_on_create
 
 
@@ -29,7 +27,7 @@ class GraphNodeStore(HostBoundService):
         safe_type_id = str(type_id or "").strip()
         if not safe_type_id:
             return
-        node = self._load_node_instance(safe_type_id)
+        node = load_node_instance(safe_type_id)
         if node is None:
             return
         context = self._build_node_context(safe_type_id, graph_id, node_instance_id, config)
@@ -114,8 +112,7 @@ class GraphNodeStore(HostBoundService):
 
     def _node_memory_path(self, node_id: str, graph_id: str) -> str:
         node_dir = self._node_dir(graph_id, node_id)
-        safe_id = self._sanitize_node_id(node_id)
-        return os.path.join(node_dir, f"{safe_id}.md") if node_dir else ""
+        return os.path.join(node_dir, "memory.md") if node_dir else ""
 
     def _node_messages_path(self, node_id: str, graph_id: str) -> str:
         node_dir = self._node_dir(graph_id, node_id)
@@ -129,23 +126,11 @@ class GraphNodeStore(HostBoundService):
             self._node_messages_path(safe_node_id, safe_graph_id),
         )
 
-    def _load_node_instance(self, type_id: str):
-        return load_node_instance(type_id)
-
-    def _read_node_ports(self, node: object, context: dict | None = None) -> tuple[int, int]:
-        return read_node_ports(node, context)
-
-    def _read_node_schema(self, node: object, context: dict | None = None) -> dict[str, dict]:
-        return read_node_schema(node, context)
-
-    def _read_node_internal_fields(self, node: object, context: dict | None = None) -> set[str]:
-        return read_node_internal_fields(node, context)
-
     def _persist_node_input_default(self, type_id: str, message: object, context: dict | None = None) -> None:
         safe_type_id = str(type_id or "").strip()
         if not safe_type_id:
             return
-        node = self._load_node_instance(safe_type_id)
+        node = load_node_instance(safe_type_id)
         persist_input_fn = getattr(node, "_persist_input_default", None) if node is not None else None
         if callable(persist_input_fn):
             persist_input_fn(message, context if isinstance(context, dict) else {})
@@ -184,12 +169,7 @@ class GraphNodeStore(HostBoundService):
         existing: dict = {}
         if os.path.exists(config_path):
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    raw = json.load(f) or {}
-                    if isinstance(raw, dict):
-                        existing = raw
-                    else:
-                        raise NodeConfigWriteError(f"Existing node config is not an object: {config_path}")
+                existing = read_node_config_strict(config_path)
             except NodeConfigWriteError:
                 raise
             except Exception as exc:
@@ -209,7 +189,7 @@ class GraphNodeStore(HostBoundService):
                 "type_id": str(type_id),
                 "name": str(node_id),
                 "graph_id": graph_id,
-                "state": _parse_node_state(existing_state),
+                "state": parse_node_state(existing_state),
                 "input_num": existing_input_num,
                 "output_num": existing_output_num,
             }
@@ -221,9 +201,7 @@ class GraphNodeStore(HostBoundService):
         elif isinstance(existing_ui, dict) and "ui" not in payload:
             payload["ui"] = existing_ui
         try:
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
+            write_node_config(config_path, payload)
             return config_path
         except Exception as exc:
             raise NodeConfigWriteError(
@@ -234,7 +212,7 @@ class GraphNodeStore(HostBoundService):
         if not isinstance(config, dict) or not config:
             return
         context = self._build_node_context(type_id, graph_id, node_instance_id, config)
-        node = self._load_node_instance(type_id)
+        node = load_node_instance(type_id)
         if node is None:
             return
 
@@ -270,29 +248,23 @@ class GraphNodeStore(HostBoundService):
                 if not isinstance(cfg, dict) or not cfg:
                     continue
 
-                before_state = _parse_node_state(cfg.get("state"))
-                recovered_inflight = False
-                if before_state != "stop":
-                    recovered_inflight = _recover_node_config_inflight(config_path)
-                    if recovered_inflight:
-                        summary["inflight_requeued"] += 1
-
-                is_clock_waiting = (
-                    before_state == "working"
-                    and str(cfg.get("type_id") or "").strip() == "clock_node"
-                    and bool(cfg.get("_clock_running"))
-                )
-                if before_state == "working" and not is_clock_waiting:
-                    _update_node_config_state(config_path, "idle")
+                recovery = _recover_node_config_startup_state(config_path)
+                if not isinstance(recovery, dict):
+                    continue
+                before_state = parse_node_state(recovery.get("before_state"))
+                recovered = bool(recovery.get("recovered"))
+                if bool(recovery.get("inflight_requeued")):
+                    summary["inflight_requeued"] += 1
+                if recovered and before_state == "working":
                     summary["nodes_reset_to_idle"] += 1
 
-                if not recovered_inflight and before_state != "working":
+                if not recovered and before_state != "working":
                     continue
 
                 next_cfg = state_store._read_json_dict(config_path)
                 pending = next_cfg.get("pending") if isinstance(next_cfg, dict) else None
                 pending_count = len(pending) if isinstance(pending, list) else 0
-                next_state = _parse_node_state((next_cfg or {}).get("state"))
+                next_state = parse_node_state((next_cfg or {}).get("state"))
                 if next_state == "idle" and pending_count > 0:
                     graphs_to_wake.add(safe_graph_id)
 
@@ -302,7 +274,8 @@ class GraphNodeStore(HostBoundService):
                     node_id=self._sanitize_node_id(node_entry),
                     before_state=before_state,
                     after_state=next_state,
-                    inflight_requeued=bool(recovered_inflight),
+                    reason=str(recovery.get("reason") or ""),
+                    inflight_requeued=bool(recovery.get("inflight_requeued")),
                     pending_count=pending_count,
                 )
 

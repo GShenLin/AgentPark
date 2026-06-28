@@ -1,5 +1,14 @@
 import type { InjectionKey, Ref } from 'vue'
-import type { MessageEnvelope, NodeInfo, GraphConfig, NodeInstanceConfig, NodeInstanceState, RuntimeEvent, RuntimeToolCall } from '../../api'
+import type {
+  MessageEnvelope,
+  NodeConfigChangeResponse,
+  NodeInfo,
+  GraphConfig,
+  NodeInstanceConfig,
+  NodeInstanceState,
+  RuntimeEvent,
+  RuntimeToolCall,
+} from '../../api'
 
 export type LinkEndpoint = {
   node: string
@@ -36,8 +45,11 @@ export type NodeCard = {
   mode?: string
   webSearch?: 'enabled' | 'disabled'
   thinking?: 'enabled' | 'disabled'
+  reasoningEffort?: string
   systemPrompt?: string
+  plugins?: string[]
   tools?: string[]
+  mcpServers?: string[]
   workingPath?: string
 }
 
@@ -101,6 +113,7 @@ export type AgentBoardContext = {
 
   selectNode: (id: string) => void
   openNodeSettings: (id: string) => void
+  openNodeFolder: (id: string) => Promise<void>
   openGraphPanel: () => void
   triggerNode: (nodeId: string) => Promise<void>
   startClockNode: (nodeId: string) => Promise<void>
@@ -117,7 +130,9 @@ export type AgentBoardContext = {
   renameNodeCard: (nodeId: string, nextName: string) => Promise<void>
   deleteNodeCard: (nodeId: string) => void
   ensureNodeConfig: (nodeId: string) => Promise<void>
-  setNodeFields: (nodeId: string, fields: Record<string, unknown>) => Promise<void>
+  refreshNodeConfig: (nodeId: string) => Promise<void>
+  setNodeFields: (nodeId: string, fields: Record<string, unknown>) => Promise<NodeConfigChangeResponse | void>
+  clearNodeFields: (nodeId: string, fields: string[]) => Promise<NodeConfigChangeResponse | void>
 
   isDragging: (id: string) => boolean
   isNodeSelected: (id: string) => boolean
@@ -151,7 +166,7 @@ export type AgentBoardContext = {
   isClockRunning: (nodeId: string) => boolean
   isNodeStopped: (nodeId: string) => boolean
   toggleNodeStop: (nodeId: string) => Promise<void>
-  stopNodeWork: (nodeId: string) => void
+  stopNodeWork: (nodeId: string) => Promise<void>
 }
 
 export const AgentBoardKey: InjectionKey<AgentBoardContext> = Symbol('AgentBoardContext')

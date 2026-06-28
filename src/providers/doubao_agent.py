@@ -6,15 +6,22 @@ from src.providers.doubao_image_generation import DoubaoImageGeneration
 from src.providers.doubao_responses_mapping import DoubaoResponsesMapping
 from src.providers.doubao_responses_runtime import DoubaoResponsesRuntime
 from src.providers.doubao_stream_runtime import DoubaoStreamRuntime
+from src.providers.doubao_tool_feedback import DoubaoToolFeedbackMixin
 from src.providers.doubao_tool_runtime import DoubaoToolRuntime
 from src.providers.doubao_video_generation import DoubaoVideoGeneration
 from src.providers.wan_animate_mix_runtime import WanAnimateMixRuntime
 from src.service_host import ServiceHost
+from src.switch_utils import parse_switch_mode
 
 
-class DouBaoAgent(ServiceHost, BaseAgent):
-    def __init__(self, provider_id="doubao", memory_file_path=None, system_prompt=None):
-        super().__init__(provider_id, memory_file_path=memory_file_path, system_prompt=system_prompt)
+class DouBaoAgent(DoubaoToolFeedbackMixin, ServiceHost, BaseAgent):
+    def __init__(self, provider_id="doubao", memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
+        super().__init__(
+            provider_id,
+            memory_file_path=memory_file_path,
+            system_prompt=system_prompt,
+            internal_memory_enabled=internal_memory_enabled,
+        )
         self.config = self._read_provider_config_from_file()
         self.system_prompt = system_prompt
         self._service_targets_cache = None
@@ -38,24 +45,13 @@ class DouBaoAgent(ServiceHost, BaseAgent):
             object.__setattr__(self, "_service_targets_cache", cached)
         return cached
 
-    @staticmethod
-    def _normalize_switch(value, default=None):
-        if isinstance(value, bool):
-            return "enabled" if value else "disabled"
-        text = str(value or "").strip().lower()
-        if text in {"enabled", "enable", "on", "true", "1", "yes"}:
-            return "enabled"
-        if text in {"disabled", "disable", "off", "false", "0", "no"}:
-            return "disabled"
-        if text == "auto":
-            return "auto"
-        return default
-
     def _supports_responses_api(self) -> bool:
         value = self.config.get("responsesApi")
         if value is None:
-            value = self.config.get("responses_api")
-        return bool(value)
+            return False
+        if not isinstance(value, bool):
+            raise ValueError("provider.responsesApi must be a boolean.")
+        return value
 
     def _require_responses_api(self, feature_name: str) -> None:
         if self._supports_responses_api():
@@ -110,6 +106,7 @@ class DouBaoAgent(ServiceHost, BaseAgent):
         thinking=None,
         stream=False,
         stream_handler=None,
+        _tool_submission_error_recovered=False,
     ):
         self.config = self._read_provider_config_from_file()
         if mode == "video_generation":
@@ -118,7 +115,7 @@ class DouBaoAgent(ServiceHost, BaseAgent):
                 return "Error: No content found for video generation."
 
             try:
-                tools_payload = [{"type": "web_search"}] if self._normalize_switch(web_search, default="disabled") == "enabled" else None
+                tools_payload = [{"type": "web_search"}] if parse_switch_mode(web_search, default="disabled") == "enabled" else None
                 return self.generate_video(content, tools=tools_payload)
             except Exception as e:
                 return f"Video generation failed: {str(e)}"
@@ -145,15 +142,16 @@ class DouBaoAgent(ServiceHost, BaseAgent):
             except Exception as e:
                 return f"Image generation failed: {str(e)}"
 
-        messages = self._get_messages_with_memory()
+        messages = self._restore_recent_tool_results(self._get_messages_with_memory())
         if isinstance(self.system_prompt, str) and self.system_prompt.strip():
             has_system = any((msg or {}).get("role") == "system" for msg in messages)
             if not has_system:
                 messages = [{"role": "system", "content": self.system_prompt.strip()}] + messages
+        messages = self._compact_tool_result_messages_for_submission(messages)
 
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
-        web_search_mode = self._normalize_switch(web_search, default="disabled")
-        thinking_mode = self._normalize_switch(thinking, default=None)
+        web_search_mode = parse_switch_mode(web_search, default="disabled")
+        thinking_mode = parse_switch_mode(thinking, default=None)
         if web_search_mode == "enabled":
             self._require_responses_api("web_search")
             response_text = self._send_via_responses(
@@ -208,6 +206,21 @@ class DouBaoAgent(ServiceHost, BaseAgent):
                     retry_delay=retry_delay,
                 )
         except Exception as e:
+            error_text = str(e)
+            if (
+                not _tool_submission_error_recovered
+                and self._replace_recent_tool_result_with_submission_error(error_text)
+            ):
+                return self.Send(
+                    tools=tools,
+                    run_tools=run_tools,
+                    mode=mode,
+                    web_search=web_search_mode,
+                    thinking=thinking_mode,
+                    stream=stream,
+                    stream_handler=stream_handler,
+                    _tool_submission_error_recovered=True,
+                )
             return str(e)
 
         if "choices" in result and len(result["choices"]) > 0:
@@ -220,7 +233,8 @@ class DouBaoAgent(ServiceHost, BaseAgent):
             if tool_calls:
                 self.Message("assistant", message.get("content"), tool_calls=tool_calls)
                 if run_tools:
-                    for execution in self._execute_tool_calls_parallel(tool_calls):
+                    executions = self._execute_tool_calls_parallel(tool_calls)
+                    for execution in executions:
                         self.Message(
                             "tool",
                             execution.cleaned_result,
@@ -239,8 +253,15 @@ class DouBaoAgent(ServiceHost, BaseAgent):
                             self._inject_image_message(
                                 image_data.get("path"),
                                 base64_data=image_data.get("base64"),
+                                mime_type=image_data.get("mime_type", "image/png"),
                             )
 
+                    if self._operational_memory_gate_completed(executions):
+                        return json.dumps({"status": "memory_gate_completed"}, ensure_ascii=False)
+                    if self._tool_context_compaction_gate_completed(executions):
+                        return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
+                    self._run_operational_memory_gate_for_failed_executions(executions)
+                    self._run_tool_context_compaction_gate_if_needed(executions)
                     return self.Send(
                         tools=tools,
                         run_tools=run_tools,

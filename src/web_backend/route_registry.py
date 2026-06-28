@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from .channel_api import channel_http_endpoint
+
 
 class ApiRouteRegistry:
     ROUTES = [
@@ -16,14 +18,21 @@ class ApiRouteRegistry:
         ("get", "/api/config/prompts/{filename}", lambda core: core.agent_domain.get_prompt),
         ("post", "/api/config/prompts", lambda core: core.agent_domain.save_prompt),
         ("get", "/api/tools", lambda core: core.node_ops.list_tools),
+        ("get", "/api/user-interactions", lambda core: core.user_interaction_api.list_user_interactions),
+        ("post", "/api/user-interactions/{request_id}/submit", lambda core: core.user_interaction_api.submit_user_interaction),
         ("get", "/api/nodes", lambda core: core.node_ops.list_nodes),
         ("get", "/api/nodes/templates/{type_id}", lambda core: core.node_ops.get_node_template),
         ("post", "/api/nodes/run", lambda core: core.node_ops.run_node),
         ("post", "/api/nodes/instances", lambda core: core.node_ops.create_node_instance),
+        ("post", "/api/nodes/instances/{node_id}/clone", lambda core: core.node_ops.clone_node_instance),
         ("post", "/api/nodes/instances/{node_id}/rename", lambda core: core.node_ops.rename_node_instance),
+        ("post", "/api/nodes/instances/{node_id}/clear-memory", lambda core: core.node_ops.clear_node_instance_memory),
+        ("post", "/api/nodes/instances/{node_id}/open-folder", lambda core: core.node_ops.open_node_instance_folder),
         ("delete", "/api/nodes/instances/{node_id}", lambda core: core.node_ops.delete_node_instance),
         ("get", "/api/nodes/instances/configs", lambda core: core.node_ops.list_node_instance_configs),
         ("get", "/api/nodes/instances/{node_id}/memory", lambda core: core.node_ops.get_node_instance_memory),
+        ("get", "/api/nodes/instances/{node_id}/live", lambda core: core.node_ops.get_node_instance_live),
+        ("get", "/api/nodes/instances/{node_id}/live/stream", lambda core: core.node_ops.stream_node_instance_live),
         ("post", "/api/nodes/instances/{node_id}/config", lambda core: core.node_ops.update_node_instance_config),
         ("post", "/api/nodes/instances/{node_id}/state", lambda core: core.node_ops.set_node_instance_state),
         ("post", "/api/nodes/instances/{node_id}/control", lambda core: core.node_ops.control_node_instance),
@@ -34,6 +43,7 @@ class ApiRouteRegistry:
         ("post", "/api/nodes/run/{run_id}/stop", lambda core: core.graph_api.stop_node_run),
         ("post", "/api/graphs/{graph_id}/runner/start", lambda core: core.graph_api.start_graph_runner),
         ("get", "/api/graphs/{graph_id}/runner/status", lambda core: core.graph_api.get_graph_runner_status),
+        ("get", "/api/graphs/{graph_id}/events/stream", lambda core: core.graph_api.stream_graph_events),
         ("post", "/api/graphs/{graph_id}/emit", lambda core: core.graph_api.emit_graph),
         ("get", "/api/graphs/startup/config", lambda core: core.graph_api.get_startup_graph_config),
         ("post", "/api/graphs/startup/config", lambda core: core.graph_api.set_startup_graph_config),
@@ -43,6 +53,7 @@ class ApiRouteRegistry:
         ("get", "/api/graphs", lambda core: core.graph_api.list_graphs),
         ("get", "/api/graphs/{graph_id}", lambda core: core.graph_api.get_graph),
         ("post", "/api/graphs/{graph_id}", lambda core: core.graph_api.save_graph),
+        ("delete", "/api/graphs/{graph_id}", lambda core: core.graph_api.delete_graph),
         ("get", "/api/files", lambda core: core.system_api.list_files),
         ("get", "/api/files/read", lambda core: core.system_api.read_file),
         ("get", "/api/files/raw", lambda core: core.system_api.raw_file),
@@ -52,6 +63,17 @@ class ApiRouteRegistry:
         ("post", "/api/files/rename", lambda core: core.system_api.rename_file),
         ("post", "/api/files/delete", lambda core: core.system_api.delete_file),
         ("get", "/api/providers", lambda core: core.system_api.list_providers),
+        ("post", "/api/system/restart", lambda core: core.system_api.restart_server),
+        ("post", "/api/system/webui-close", lambda core: core.system_api.request_webui_close),
+        ("get", "/api/system/webui-close", lambda core: core.system_api.get_webui_close_signal),
+        ("get", "/api/remotes", lambda core: core.remote_api.list_remotes),
+        ("post", "/api/remotes", lambda core: core.remote_api.add_remote),
+        ("delete", "/api/remotes/{remote_id}", lambda core: core.remote_api.delete_remote),
+        ("get", "/api/channels", lambda core: channel_http_endpoint(core.channel_service.list_channels)),
+        ("get", "/api/channels/receivers", lambda core: channel_http_endpoint(core.channel_service.list_receivers)),
+        ("post", "/api/channels/receivers/{graph_id}/{node_id}/control", lambda core: channel_http_endpoint(core.channel_service.control_receiver)),
+        ("post", "/api/channels/receivers/{graph_id}/{node_id}/login/start", lambda core: channel_http_endpoint(core.channel_service.login_start)),
+        ("post", "/api/channels/receivers/{graph_id}/{node_id}/login/wait", lambda core: channel_http_endpoint(core.channel_service.login_wait)),
     ]
 
     @classmethod

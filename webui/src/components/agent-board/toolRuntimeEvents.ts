@@ -55,6 +55,9 @@ export function normalizeRuntimeEvent(value: unknown): RuntimeEvent | null {
     duration_ms: typeof event.duration_ms === 'number' ? event.duration_ms : undefined,
     error: event.error != null ? String(event.error) : undefined,
     result_preview: event.result_preview != null ? String(event.result_preview) : undefined,
+    result_chars: typeof event.result_chars === 'number' ? event.result_chars : undefined,
+    result_preview_truncated:
+      typeof event.result_preview_truncated === 'boolean' ? event.result_preview_truncated : undefined,
     diagnostics: Array.isArray(event.diagnostics) ? event.diagnostics.map((item) => String(item)) : undefined,
   }
 }
@@ -101,6 +104,9 @@ export function normalizeRuntimeToolCall(value: unknown): RuntimeToolCall | null
     duration_ms: typeof item.duration_ms === 'number' ? item.duration_ms : null,
     error: item.error != null ? String(item.error) : null,
     result_preview: item.result_preview != null ? String(item.result_preview) : null,
+    result_chars: typeof item.result_chars === 'number' ? item.result_chars : null,
+    result_preview_truncated:
+      typeof item.result_preview_truncated === 'boolean' ? item.result_preview_truncated : null,
     diagnostics: Array.isArray(item.diagnostics) ? item.diagnostics.map((entry) => String(entry)) : null,
   }
 }
@@ -118,7 +124,7 @@ export function buildToolCallViewsFromCalls(calls: RuntimeToolCall[] | undefined
     const status = String(call.status || 'running').trim() || 'running'
     const durationMs = typeof call.duration_ms === 'number' ? Math.max(0, Math.round(call.duration_ms)) : null
     const diagnostics = Array.isArray(call.diagnostics) ? call.diagnostics.map((item) => String(item)).filter(Boolean) : []
-    const preview = String(call.error || call.result_preview || '').trim()
+    const preview = formatResultPreview(call.error, call.result_preview, call.result_chars, call.result_preview_truncated)
     const argumentsPreview = compactArgumentsPreview(call.arguments)
     const argumentsJson = stringifyJson(call.arguments, true)
     return {
@@ -167,7 +173,7 @@ export function buildToolCallViews(events: RuntimeEvent[] | ToolRuntimeEvent[] |
       const name = String(latest.name || start?.name || 'tool').trim() || 'tool'
       const status = String(end?.status || (latest.type === 'tool_call_start' ? 'running' : 'completed')).trim()
       const durationMs = typeof end?.duration_ms === 'number' ? Math.max(0, Math.round(end.duration_ms)) : null
-      const preview = String(end?.error || end?.result_preview || '').trim()
+      const preview = formatResultPreview(end?.error, end?.result_preview, end?.result_chars, end?.result_preview_truncated)
       const diagnostics = Array.isArray(end?.diagnostics) ? end.diagnostics.map((item) => String(item)).filter(Boolean) : []
       const argumentsSource = end?.arguments || start?.arguments || null
       const argumentsPreview = compactArgumentsPreview(argumentsSource)
@@ -185,4 +191,21 @@ export function buildToolCallViews(events: RuntimeEvent[] | ToolRuntimeEvent[] |
       } satisfies ToolCallView
     })
     .filter((item): item is ToolCallView => !!item)
+}
+
+function formatResultPreview(
+  error: unknown,
+  resultPreview: unknown,
+  resultChars: unknown,
+  previewTruncated: unknown,
+) {
+  const errorText = String(error || '').trim()
+  if (errorText) return errorText
+  const preview = String(resultPreview || '').trim()
+  const total = typeof resultChars === 'number' ? Math.max(0, Math.round(resultChars)) : null
+  const truncated = previewTruncated === true
+  if (!preview && total === 0) return '(empty result)'
+  if (!truncated) return preview
+  const suffix = total != null ? ` (${total} chars total)` : ''
+  return preview ? `Result preview${suffix}: ${preview}` : `Result preview omitted${suffix}`
 }

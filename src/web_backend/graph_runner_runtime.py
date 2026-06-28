@@ -3,8 +3,11 @@ import threading
 import time
 
 from . import runtime_paths, state_store
+from .graph_runtime_registry import GraphConfigReadError
 from .graph_runner_settings import resolve_graph_runner_worker_count
 from .node_metadata_reader import NodeMetadataError
+from .node_metadata_reader import load_node_instance
+from .node_metadata_reader import read_node_ports
 from .service_host import HostBoundService
 from .shared import (
     ConfigLoader,
@@ -37,7 +40,11 @@ class GraphRunnerRuntime(HostBoundService):
             for _ in range(200):
                 if stop_event.is_set():
                     break
-                graph_cfg = self._read_graph_config(safe_graph_id)
+                try:
+                    graph_cfg = self._read_graph_config(safe_graph_id)
+                except GraphConfigReadError as exc:
+                    self._log_graph_event(safe_graph_id, "graph_config_read_failed", error=str(exc))
+                    break
                 outgoing = self._build_outgoing_links_map(graph_cfg)
                 base_dir = self._graph_dir(safe_graph_id)
                 if not base_dir or not os.path.isdir(base_dir):
@@ -60,8 +67,8 @@ class GraphRunnerRuntime(HostBoundService):
                     if cfg.get("input_num") is None or cfg.get("output_num") is None:
                         type_id_for_ports = str(cfg.get("type_id") or "").strip()
                         try:
-                            node_for_ports = self._load_node_instance(type_id_for_ports) if type_id_for_ports else None
-                            input_num, output_num = self._read_node_ports(
+                            node_for_ports = load_node_instance(type_id_for_ports) if type_id_for_ports else None
+                            input_num, output_num = read_node_ports(
                                 node_for_ports,
                                 {"graph_id": safe_graph_id, "node_instance_id": entry, "node_type_id": type_id_for_ports},
                             )
@@ -89,7 +96,10 @@ class GraphRunnerRuntime(HostBoundService):
                         cfg = state_store._read_json_dict(config_path)
                         if not isinstance(cfg, dict) or not cfg:
                             continue
-                    item = _dequeue_node_pending_to_working(config_path)
+                    item = _dequeue_node_pending_to_working(
+                        config_path,
+                        runtime_owner_id=getattr(self.core, "runtime_owner_id", ""),
+                    )
                     if not isinstance(item, dict):
                         continue
                     self._run_single_node_iteration(

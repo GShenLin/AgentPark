@@ -5,67 +5,12 @@ import urllib.parse
 from datetime import datetime
 
 from src.service_host import HostBoundService
+from src.value_parsing import parse_optional_bool_value, parse_optional_float_value, parse_optional_int_value
 
 
 class DoubaoVideoGeneration(HostBoundService):
     _TASKS_ENDPOINT = "/contents/generations/tasks"
     _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
-
-    @staticmethod
-    def _normalize_bool(value):
-        if isinstance(value, bool):
-            return value
-        text = str(value or "").strip().lower()
-        if text in {"1", "true", "yes", "y", "on", "enabled"}:
-            return True
-        if text in {"0", "false", "no", "n", "off", "disabled"}:
-            return False
-        return None
-
-    @staticmethod
-    def _parse_optional_bool(name, value):
-        if value is None or value == "":
-            return None
-        parsed = DoubaoVideoGeneration._normalize_bool(value)
-        if parsed is None:
-            raise ValueError(f"{name} must be a boolean value.")
-        return parsed
-
-    @staticmethod
-    def _normalize_positive_int(value):
-        if value is None or value == "":
-            return None
-        try:
-            parsed = int(float(value))
-        except Exception:
-            return None
-        return parsed if parsed > 0 else None
-
-    @staticmethod
-    def _parse_optional_int(name, value, *, allow_negative_one=False, minimum=None, maximum=None):
-        if value is None or value == "":
-            return None
-        try:
-            parsed = int(float(value))
-        except Exception as exc:
-            raise ValueError(f"{name} must be an integer.") from exc
-        if allow_negative_one and parsed == -1:
-            return parsed
-        if minimum is not None and parsed < minimum:
-            raise ValueError(f"{name} must be >= {minimum}.")
-        if maximum is not None and parsed > maximum:
-            raise ValueError(f"{name} must be <= {maximum}.")
-        return parsed
-
-    @staticmethod
-    def _normalize_positive_float(value):
-        if value is None or value == "":
-            return None
-        try:
-            parsed = float(value)
-        except Exception:
-            return None
-        return parsed if parsed > 0 else None
 
     @staticmethod
     def _guess_ext_from_url(raw_url):
@@ -155,16 +100,16 @@ class DoubaoVideoGeneration(HostBoundService):
         if resolved_ratio:
             payload["ratio"] = resolved_ratio
 
-        resolved_duration = self._parse_optional_int(
+        resolved_duration = parse_optional_int_value(
             "duration",
             duration if duration is not None else self.config.get("videoDuration", self.config.get("duration")),
-            allow_negative_one=True,
+            allowed_values=(-1,),
             minimum=1,
         )
         if resolved_duration is not None:
             payload["duration"] = resolved_duration
 
-        resolved_frames = self._parse_optional_int(
+        resolved_frames = parse_optional_int_value(
             "frames",
             frames if frames is not None else self.config.get("videoFrames", self.config.get("frames")),
             minimum=1,
@@ -172,31 +117,31 @@ class DoubaoVideoGeneration(HostBoundService):
         if resolved_frames is not None:
             payload["frames"] = resolved_frames
 
-        resolved_seed = self._parse_optional_int(
+        resolved_seed = parse_optional_int_value(
             "seed",
             seed if seed is not None else self.config.get("videoSeed", self.config.get("seed")),
-            allow_negative_one=True,
+            allowed_values=(-1,),
             minimum=0,
             maximum=4294967295,
         )
         if resolved_seed is not None:
             payload["seed"] = resolved_seed
 
-        resolved_camera_fixed = self._parse_optional_bool(
+        resolved_camera_fixed = parse_optional_bool_value(
             "camera_fixed",
             camera_fixed if camera_fixed is not None else self.config.get("videoCameraFixed", self.config.get("cameraFixed")),
         )
         if resolved_camera_fixed is not None:
             payload["camera_fixed"] = resolved_camera_fixed
 
-        resolved_watermark = self._parse_optional_bool(
+        resolved_watermark = parse_optional_bool_value(
             "watermark",
             watermark if watermark is not None else self.config.get("videoWatermark", self.config.get("watermark"))
         )
         if resolved_watermark is not None:
             payload["watermark"] = resolved_watermark
 
-        resolved_generate_audio = self._parse_optional_bool(
+        resolved_generate_audio = parse_optional_bool_value(
             "generate_audio",
             generate_audio
             if generate_audio is not None
@@ -214,7 +159,7 @@ class DoubaoVideoGeneration(HostBoundService):
         if resolved_callback_url:
             payload["callback_url"] = resolved_callback_url
 
-        resolved_return_last_frame = self._parse_optional_bool(
+        resolved_return_last_frame = parse_optional_bool_value(
             "return_last_frame",
             return_last_frame
             if return_last_frame is not None
@@ -232,7 +177,7 @@ class DoubaoVideoGeneration(HostBoundService):
         if resolved_service_tier:
             payload["service_tier"] = resolved_service_tier
 
-        resolved_execution_expires_after = self._parse_optional_int(
+        resolved_execution_expires_after = parse_optional_int_value(
             "execution_expires_after",
             execution_expires_after
             if execution_expires_after is not None
@@ -396,14 +341,18 @@ class DoubaoVideoGeneration(HostBoundService):
         if not task_id:
             raise ValueError(f"Unexpected task creation response: {json.dumps(create_result, ensure_ascii=False)}")
 
-        poll_interval_sec = self._normalize_positive_float(
-            self.config.get("videoPollIntervalSec", self.config.get("contentGenerationPollIntervalSec", 10))
+        poll_interval_sec = parse_optional_float_value(
+            "videoPollIntervalSec",
+            self.config.get("videoPollIntervalSec", self.config.get("contentGenerationPollIntervalSec", 10)),
+            minimum_exclusive=0,
         )
         if poll_interval_sec is None:
             poll_interval_sec = 10.0
 
-        max_wait_sec = self._normalize_positive_float(
-            self.config.get("videoMaxWaitSec", self.config.get("contentGenerationMaxWaitSec", 900))
+        max_wait_sec = parse_optional_float_value(
+            "videoMaxWaitSec",
+            self.config.get("videoMaxWaitSec", self.config.get("contentGenerationMaxWaitSec", 900)),
+            minimum_exclusive=0,
         )
 
         task_result = self._poll_task_result(

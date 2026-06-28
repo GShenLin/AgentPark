@@ -3,6 +3,7 @@ import mimetypes
 import os
 from urllib.parse import quote
 
+from src.media_resource_utils import normalize_public_base_url
 from src.message_protocol import normalize_envelope
 
 
@@ -30,11 +31,6 @@ _MIME_OVERRIDES = {
     ".m4a": "audio/mp4",
     ".aac": "audio/aac",
 }
-
-
-def normalize_public_base_url(value: object) -> str:
-    text = str(value or "").strip()
-    return text.rstrip("/") if text else ""
 
 
 def is_remote_generation_uri(uri: object) -> bool:

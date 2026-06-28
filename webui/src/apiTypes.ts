@@ -1,3 +1,11 @@
+
+export type RemoteEndpoint = {
+  id: string
+  name: string
+  host: string
+  port: number
+}
+
 export type RunInfo = {
   task_id: number
   pid: number | null
@@ -12,6 +20,12 @@ export type RunInfo = {
 export type ProviderInfo = {
   id: string
   supportmode: string[]
+  features?: Record<string, {
+    supported?: boolean
+    values?: string[]
+    requires?: string
+    transport?: string
+  }>
 }
 
 export type NodeInfo = {
@@ -43,6 +57,7 @@ export type PasteAgentConfig = {
   mode?: string
   web_search?: 'enabled' | 'disabled'
   thinking?: 'enabled' | 'disabled'
+  reasoning_effort?: string
   system_prompt?: string
   tools?: string[]
 }
@@ -72,8 +87,11 @@ export type GraphNode = {
   mode?: string
   web_search?: 'enabled' | 'disabled'
   thinking?: 'enabled' | 'disabled'
+  reasoning_effort?: string
   systemPrompt?: string
+  plugins?: string[]
   tools?: string[]
+  mcpServers?: string[]
   workingPath?: string
 }
 
@@ -83,6 +101,8 @@ export type GraphConfig = {
   nodes: GraphNode[]
   links: GraphLink[]
   source_graph_id?: string
+  version?: number
+  unchanged?: boolean
 }
 
 export type GraphInfo = {
@@ -115,10 +135,57 @@ export type ToolRuntimeEvent = {
   duration_ms?: number
   error?: string
   result_preview?: string
+  result_chars?: number
+  result_preview_truncated?: boolean
   diagnostics?: string[]
 }
 
 export type RuntimeEvent = RuntimeNoticeEvent | ToolRuntimeEvent
+
+export type UserInteractionOption = {
+  value: string
+  label: string
+  disabled?: boolean
+}
+
+export type UserInteractionField = {
+  id: string
+  type: 'text' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'file' | 'custom_html'
+  label: string
+  description?: string
+  placeholder?: string
+  required?: boolean
+  default?: unknown
+  options?: UserInteractionOption[]
+  accept?: string
+  multiple?: boolean
+  html?: string
+  css?: string
+  js?: string
+  height?: number
+  initial_data?: Record<string, unknown>
+}
+
+export type UserInteractionRequest = {
+  id: string
+  status: 'pending' | 'submitted' | 'cancelled' | 'expired'
+  created_at?: string
+  updated_at?: string
+  expires_at?: number
+  timeout_sec?: number
+  schema: {
+    title: string
+    description?: string
+    confirm_label?: string
+    fields: UserInteractionField[]
+  }
+  agent?: {
+    graph_id?: string
+    node_id?: string
+    node_name?: string
+  }
+  response?: Record<string, unknown> | null
+}
 
 export type RuntimeToolCall = {
   call_id: string
@@ -129,6 +196,8 @@ export type RuntimeToolCall = {
   duration_ms?: number | null
   error?: string | null
   result_preview?: string | null
+  result_chars?: number | null
+  result_preview_truncated?: boolean | null
   diagnostics?: string[] | null
 }
 
@@ -147,8 +216,27 @@ export type NodeInstanceConfig = {
   }
   state?: NodeInstanceState
   pending_count?: number
+  inflight?: Record<string, unknown> | null
+  _stop_requested?: boolean
   schema?: Record<string, any>
   [key: string]: any
+}
+
+export type NodeInstanceConfigListResponse = {
+  nodes: NodeInstanceConfig[]
+  node_ids?: string[]
+  version?: number
+  partial?: boolean
+}
+
+export type NodeConfigChangeResponse = {
+  ok: boolean
+  config_path: string
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  changed_fields: string[]
+  effective: string
+  warnings: string[]
 }
 
 export type ResourceKind = 'image' | 'video' | 'audio' | 'doc' | 'file' | 'url'
@@ -168,7 +256,20 @@ export type MessagePart =
       }
     }
   | { type: 'structured'; data: unknown }
-  | { type: 'tool_call'; name?: string; args?: unknown }
+  | {
+      type: 'tool_call'
+      call_id?: string
+      name?: string
+      provider?: string
+      status?: string
+      duration_ms?: number
+      error?: string
+      result_preview?: string
+      result_chars?: number
+      result_preview_truncated?: boolean
+      diagnostics?: string[]
+      args?: unknown
+    }
   | { type: 'meta'; meta?: Record<string, unknown> }
 
 export type MessageEnvelope = {
@@ -248,4 +349,5 @@ export type MobileNodeConversation = {
   messages: MessageEnvelope[]
   state?: NodeInstanceState
   last_message?: string
+  live_message?: string
 }

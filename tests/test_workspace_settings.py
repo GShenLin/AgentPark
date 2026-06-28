@@ -14,9 +14,7 @@ def test_read_server_settings_from_workspace_config(monkeypatch, tmp_path):
                 "server": {
                     "host": "127.0.0.1",
                     "port": 9001,
-                },
-                "startup_graph_id": "default",
-                "startup_graph_name": "default",
+                }
             },
             ensure_ascii=False,
         ),
@@ -54,19 +52,20 @@ def test_fast_api_main_uses_workspace_server_defaults(monkeypatch):
     import src.fast_api as fast_api
 
     captured = {}
+    fake_app = object()
 
     monkeypatch.setattr(fast_api, "read_server_settings", lambda: {"host": "127.0.0.1", "port": 9101})
     monkeypatch.setattr(fast_api, "find_available_server_port", lambda host, port: 9103)
+    monkeypatch.setattr(fast_api, "install_server_pid_file", lambda host, port: captured.update({"pid_host": host, "pid_port": port}) or "pid-file")
+    monkeypatch.setattr(fast_api, "create_app", lambda: fake_app)
     monkeypatch.setattr(
-        fast_api.uvicorn,
-        "run",
-        lambda app, host, port, reload, workers, log_config: captured.update(
+        fast_api,
+        "_run_server",
+        lambda app, host, port, log_config: captured.update(
             {
                 "app": app,
                 "host": host,
                 "port": port,
-                "reload": reload,
-                "workers": workers,
                 "log_config": log_config,
             }
         ),
@@ -74,11 +73,11 @@ def test_fast_api_main_uses_workspace_server_defaults(monkeypatch):
 
     fast_api.main(["--no-browser"])
 
-    assert captured["app"] == "src.web_backend:app"
+    assert captured["app"] is fake_app
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 9103
-    assert captured["reload"] is False
-    assert captured["workers"] == 1
+    assert captured["pid_host"] == "127.0.0.1"
+    assert captured["pid_port"] == 9103
 
 
 def test_find_available_server_port_skips_occupied_port():
@@ -106,7 +105,42 @@ def test_find_available_server_port_skips_occupied_port():
         second.close()
 
 
-def test_graph_api_updates_startup_graph_without_overwriting_server_settings(monkeypatch, tmp_path):
+def test_read_startup_graph_settings_uses_local_cache(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    cache_dir = tmp_path / ".cache"
+    cache_dir.mkdir()
+    (cache_dir / "startup_graph.json").write_text(
+        json.dumps(
+            {
+                "graph_id": "graph-b",
+                "graph_name": "Graph B",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.read_startup_graph_settings() == {
+        "graph_id": "graph-b",
+        "graph_name": "Graph B",
+    }
+
+
+def test_read_startup_graph_settings_defaults_when_cache_missing(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.read_startup_graph_settings() == {
+        "graph_id": "default",
+        "graph_name": "default",
+    }
+
+
+def test_graph_api_updates_startup_graph_cache_without_overwriting_server_settings(monkeypatch, tmp_path):
     import src.workspace_settings as workspace_settings
     from src.web_backend.core_graph_api import GraphApiDomain
 
@@ -118,9 +152,7 @@ def test_graph_api_updates_startup_graph_without_overwriting_server_settings(mon
                 "server": {
                     "host": "127.0.0.1",
                     "port": 9301,
-                },
-                "startup_graph_id": "default",
-                "startup_graph_name": "default",
+                }
             },
             ensure_ascii=False,
         ),
@@ -142,7 +174,10 @@ def test_graph_api_updates_startup_graph_without_overwriting_server_settings(mon
         "server": {
             "host": "127.0.0.1",
             "port": 9301,
-        },
-        "startup_graph_id": "graph-b",
-        "startup_graph_name": "Graph B",
+        }
+    }
+    startup = json.loads((tmp_path / ".cache" / "startup_graph.json").read_text(encoding="utf-8"))
+    assert startup == {
+        "graph_id": "graph-b",
+        "graph_name": "Graph B",
     }

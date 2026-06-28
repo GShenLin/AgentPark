@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import threading
+import time
+
+
+class NodeLiveOutputStore:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._items: dict[tuple[str, str], dict] = {}
+        self._versions: dict[tuple[str, str], int] = {}
+
+    @staticmethod
+    def _key(graph_id: str, node_id: str) -> tuple[str, str]:
+        return (str(graph_id or "default").strip() or "default", str(node_id or "").strip())
+
+    def update(self, graph_id: str, node_id: str, text: str, *, trace_id: str = "") -> None:
+        key = self._key(graph_id, node_id)
+        if not key[1]:
+            return
+        now = time.time()
+        with self._condition:
+            version = int(self._versions.get(key) or 0) + 1
+            self._versions[key] = version
+            self._items[key] = {
+                "text": str(text or ""),
+                "trace_id": str(trace_id or ""),
+                "updated_at": now,
+                "is_streaming": True,
+                "version": version,
+            }
+            self._condition.notify_all()
+
+    def publish_event(
+        self,
+        graph_id: str,
+        node_id: str,
+        event_type: str,
+        event: dict | None = None,
+        *,
+        trace_id: str = "",
+    ) -> None:
+        key = self._key(graph_id, node_id)
+        if not key[1]:
+            return
+        now = time.time()
+        with self._condition:
+            version = int(self._versions.get(key) or 0) + 1
+            current = self._items.get(key) if isinstance(self._items.get(key), dict) else {}
+            self._versions[key] = version
+            self._items[key] = {
+                "text": str((current or {}).get("text") or ""),
+                "trace_id": str(trace_id or (current or {}).get("trace_id") or ""),
+                "updated_at": now,
+                "is_streaming": bool((current or {}).get("is_streaming")),
+                "version": version,
+                "event_type": str(event_type or "").strip(),
+                "event": dict(event or {}),
+            }
+            self._condition.notify_all()
+
+    def clear(self, graph_id: str, node_id: str) -> None:
+        key = self._key(graph_id, node_id)
+        with self._condition:
+            if key not in self._items:
+                return
+            version = int(self._versions.get(key) or 0) + 1
+            self._versions[key] = version
+            self._items.pop(key, None)
+            self._condition.notify_all()
+
+    def get(self, graph_id: str, node_id: str) -> dict:
+        key = self._key(graph_id, node_id)
+        with self._lock:
+            item = self._items.get(key)
+            if isinstance(item, dict):
+                return dict(item)
+            version = int(self._versions.get(key) or 0)
+            return {"version": version} if version > 0 else {}
+
+    def wait_for_change(self, graph_id: str, node_id: str, last_version: int, timeout: float = 15.0) -> dict:
+        key = self._key(graph_id, node_id)
+        deadline = time.monotonic() + max(0.1, float(timeout or 0.1))
+        with self._condition:
+            while int(self._versions.get(key) or 0) <= int(last_version or 0):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._condition.wait(timeout=remaining)
+            item = self._items.get(key)
+            version = int(self._versions.get(key) or 0)
+            if isinstance(item, dict):
+                return dict(item)
+            return {"version": version, "text": "", "is_streaming": False}

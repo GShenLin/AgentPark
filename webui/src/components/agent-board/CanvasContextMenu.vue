@@ -424,26 +424,6 @@ defineExpose({
   height: 16px;
 }
 
-.tools-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tool-chip {
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.7);
-  color: rgba(226, 232, 240, 0.95);
-  font-size: 11px;
-  padding: 4px 10px;
-}
-
-.tool-chip.active {
-  border-color: rgba(56, 189, 248, 0.7);
-  background: rgba(14, 116, 144, 0.3);
-}
-
 .modal-actions {
   display: flex;
   justify-content: flex-end;

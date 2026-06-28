@@ -1,18 +1,19 @@
 import json
 import os
 import random
-import subprocess
-import tempfile
 import time
 from datetime import datetime
 from typing import Callable
 
+from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
 from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportError, format_doubao_http_error
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.runtime_cancellation import CancellationRequested
+from src.runtime_cancellation import sleep_with_cancel
 from src.service_host import HostBoundService
 
 
-class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
+class DoubaoHttpTransport(CurlHttpTransport, ProviderRuntimeEventMixin, HostBoundService):
     def _mask_headers_for_log(self, headers):
         masked = {}
         if not isinstance(headers, dict):
@@ -80,161 +81,48 @@ class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
         return code == 429 or code >= 500
 
     def _curl_post_json_once(self, *, url, headers, payload_json, timeout_sec):
-        timeout_val = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, timeout_val))
-        payload_path = ""
-        marker = "__DOUBAO_HTTP_CODE__:"
         try:
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json", delete=False) as temp_file:
-                temp_file.write(payload_json)
-                payload_path = temp_file.name
-
-            cmd = [
-                "curl.exe",
-                "--silent",
-                "--show-error",
-                "--location",
-                "--max-time",
-                str(timeout_val),
-                "--connect-timeout",
-                str(connect_timeout),
-                "-X",
-                "POST",
-                str(url),
-            ]
-            for key, value in (headers or {}).items():
-                cmd.extend(["-H", f"{key}: {value}"])
-            cmd.extend(["--data-binary", f"@{payload_path}", "-w", f"\n{marker}%{{http_code}}"])
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_val + 10,
+            response = self._curl_post_once_raw(
+                url=url,
+                headers=headers,
+                payload_json=payload_json,
+                timeout_sec=timeout_sec,
+                marker="__DOUBAO_HTTP_CODE__:",
             )
-        except subprocess.TimeoutExpired as e:
-            raise _CurlTransportError(f"curl timeout: {e}") from e
-        except Exception as e:
+        except CurlTransportError as e:
             raise _CurlTransportError(str(e)) from e
-        finally:
-            if payload_path:
-                try:
-                    os.remove(payload_path)
-                except Exception:
-                    pass
-
-        stdout = proc.stdout or ""
-        stderr = (proc.stderr or "").strip()
-        marker_pos = stdout.rfind(f"\n{marker}")
-        if marker_pos < 0:
-            detail = stderr or stdout[-400:]
-            raise _CurlTransportError(f"invalid curl output: {detail}")
-
-        body = stdout[:marker_pos]
-        status_text = stdout[marker_pos + len(f"\n{marker}") :].strip().splitlines()[0]
-        try:
-            status_code = int(status_text)
-        except Exception as e:
-            raise _CurlTransportError(f"invalid HTTP status from curl: {status_text}") from e
-
-        if proc.returncode != 0:
-            detail = stderr or body[-400:]
-            raise _CurlTransportError(detail or f"curl exit code: {proc.returncode}")
-        if status_code != 200:
-            raise _CurlHTTPError(status_code, body)
+        if response.status_code != 200:
+            raise _CurlHTTPError(response.status_code, response.body)
 
         try:
-            return json.loads(body)
+            return json.loads(response.body)
         except Exception as e:
-            preview = body[:500]
+            preview = response.body[:500]
             raise RuntimeError(f"Invalid JSON response: {e}; body={preview}") from e
 
     def _curl_get_bytes_once(self, *, url, timeout_sec):
-        timeout_val = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, timeout_val))
         try:
-            proc = subprocess.run(
-                [
-                    "curl.exe",
-                    "--silent",
-                    "--show-error",
-                    "--location",
-                    "--max-time",
-                    str(timeout_val),
-                    "--connect-timeout",
-                    str(connect_timeout),
-                    str(url),
-                ],
-                capture_output=True,
-                timeout=timeout_val + 10,
-            )
-        except subprocess.TimeoutExpired as e:
-            raise _CurlTransportError(f"curl timeout: {e}") from e
-        except Exception as e:
+            return self._curl_get_bytes_raw(url=url, timeout_sec=timeout_sec)
+        except CurlTransportError as e:
             raise _CurlTransportError(str(e)) from e
-
-        if proc.returncode != 0:
-            stderr_text = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
-            raise _CurlTransportError(stderr_text or f"curl exit code: {proc.returncode}")
-        return proc.stdout or b""
 
     def _curl_get_json_once(self, *, url, headers, timeout_sec):
-        timeout_val = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, timeout_val))
-        marker = "__DOUBAO_HTTP_CODE__:"
         try:
-            cmd = [
-                "curl.exe",
-                "--silent",
-                "--show-error",
-                "--location",
-                "--max-time",
-                str(timeout_val),
-                "--connect-timeout",
-                str(connect_timeout),
-                str(url),
-            ]
-            for key, value in (headers or {}).items():
-                cmd.extend(["-H", f"{key}: {value}"])
-            cmd.extend(["-w", f"\n{marker}%{{http_code}}"])
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_val + 10,
+            response = self._curl_get_text_once_raw(
+                url=url,
+                headers=headers,
+                timeout_sec=timeout_sec,
+                marker="__DOUBAO_HTTP_CODE__:",
             )
-        except subprocess.TimeoutExpired as e:
-            raise _CurlTransportError(f"curl timeout: {e}") from e
-        except Exception as e:
+        except CurlTransportError as e:
             raise _CurlTransportError(str(e)) from e
-
-        stdout = proc.stdout or ""
-        stderr = (proc.stderr or "").strip()
-        marker_pos = stdout.rfind(f"\n{marker}")
-        if marker_pos < 0:
-            detail = stderr or stdout[-400:]
-            raise _CurlTransportError(f"invalid curl output: {detail}")
-
-        body = stdout[:marker_pos]
-        status_text = stdout[marker_pos + len(f"\n{marker}") :].strip().splitlines()[0]
-        try:
-            status_code = int(status_text)
-        except Exception as e:
-            raise _CurlTransportError(f"invalid HTTP status from curl: {status_text}") from e
-
-        if proc.returncode != 0:
-            detail = stderr or body[-400:]
-            raise _CurlTransportError(detail or f"curl exit code: {proc.returncode}")
-        if status_code != 200:
-            raise _CurlHTTPError(status_code, body)
+        if response.status_code != 200:
+            raise _CurlHTTPError(response.status_code, response.body)
 
         try:
-            return json.loads(body)
+            return json.loads(response.body)
         except Exception as e:
-            preview = body[:500]
+            preview = response.body[:500]
             raise RuntimeError(f"Invalid JSON response: {e}; body={preview}") from e
 
     def _post_json_with_retry(self, *, endpoint, url, headers, payload_json, max_retries, retry_delay):
@@ -260,7 +148,7 @@ class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
                 retryable = self._http_status_retryable(status_code)
                 if retryable and attempt < max_retries:
                     self._emit_retry_notice(error=error_str, delay=current_delay, stage="post_json_retry")
-                    time.sleep(current_delay + random.uniform(0, 0.5))
+                    sleep_with_cancel(current_delay + random.uniform(0, 0.5), self._cancel_source())
                     current_delay *= 2
                     continue
                 raise RuntimeError(error_str)
@@ -268,15 +156,17 @@ class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
                 error_str = str(e)
                 if attempt < max_retries:
                     self._emit_retry_notice(error=error_str, delay=current_delay, stage="post_json_retry")
-                    time.sleep(current_delay + random.uniform(0, 0.5))
+                    sleep_with_cancel(current_delay + random.uniform(0, 0.5), self._cancel_source())
                     current_delay *= 2
                     continue
                 raise RuntimeError(f"Error after {max_retries} retries: {error_str}")
+            except CancellationRequested:
+                raise
             except Exception as e:
                 error_str = str(e)
                 if attempt < max_retries:
                     self._emit_retry_notice(error=error_str, delay=current_delay, stage="post_json_retry")
-                    time.sleep(current_delay + random.uniform(0, 0.5))
+                    sleep_with_cancel(current_delay + random.uniform(0, 0.5), self._cancel_source())
                     current_delay *= 2
                     continue
                 raise RuntimeError(f"Error after {max_retries} retries: {error_str}")
@@ -288,11 +178,13 @@ class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
         for attempt in range(max_retries + 1):
             try:
                 return self._curl_get_bytes_once(url=url, timeout_sec=timeout)
+            except CancellationRequested:
+                raise
             except Exception as e:
                 error_str = str(e)
                 if attempt < max_retries:
                     self._emit_retry_notice(error=error_str, delay=current_delay, stage="get_bytes_retry")
-                    time.sleep(current_delay + random.uniform(0, 0.5))
+                    sleep_with_cancel(current_delay + random.uniform(0, 0.5), self._cancel_source())
                     current_delay *= 2
                     continue
                 raise RuntimeError(f"Error after {max_retries} retries: {error_str}") from e
@@ -311,7 +203,7 @@ class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
                 retryable = self._http_status_retryable(status_code)
                 if retryable and attempt < max_retries:
                     self._emit_retry_notice(error=error_str, delay=current_delay, stage="get_json_retry")
-                    time.sleep(current_delay + random.uniform(0, 0.5))
+                    sleep_with_cancel(current_delay + random.uniform(0, 0.5), self._cancel_source())
                     current_delay *= 2
                     continue
                 raise RuntimeError(f"{endpoint}: {error_str}")
@@ -319,15 +211,17 @@ class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
                 error_str = str(e)
                 if attempt < max_retries:
                     self._emit_retry_notice(error=error_str, delay=current_delay, stage="get_json_retry")
-                    time.sleep(current_delay + random.uniform(0, 0.5))
+                    sleep_with_cancel(current_delay + random.uniform(0, 0.5), self._cancel_source())
                     current_delay *= 2
                     continue
                 raise RuntimeError(f"{endpoint}: Error after {max_retries} retries: {error_str}")
+            except CancellationRequested:
+                raise
             except Exception as e:
                 error_str = str(e)
                 if attempt < max_retries:
                     self._emit_retry_notice(error=error_str, delay=current_delay, stage="get_json_retry")
-                    time.sleep(current_delay + random.uniform(0, 0.5))
+                    sleep_with_cancel(current_delay + random.uniform(0, 0.5), self._cancel_source())
                     current_delay *= 2
                     continue
                 raise RuntimeError(f"{endpoint}: Error after {max_retries} retries: {error_str}") from e
@@ -339,5 +233,7 @@ class DoubaoHttpTransport(ProviderRuntimeEventMixin, HostBoundService):
             return
         try:
             stream_handler(delta_text, full_text)
+        except CancellationRequested:
+            raise
         except Exception:
             return

@@ -1,16 +1,18 @@
 import json
 import random
 import time
-import urllib.error
-import urllib.request
 from typing import Callable
 
 from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportError, format_doubao_http_error
+from src.providers.doubao_curl_stream_transport import DoubaoCurlStreamTransport
+from src.providers.doubao_sse_debug import DoubaoSseDebugMixin
+from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.providers.responses_stream_events import ResponsesStreamEvent
 from src.service_host import HostBoundService
 
 
-class DoubaoStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
+class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, ProviderRuntimeEventMixin, HostBoundService):
     def _stream_chat_completions_once(
         self,
         *,
@@ -20,100 +22,83 @@ class DoubaoStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
         timeout_sec: float,
         stream_handler: Callable[[object, object], None] | None,
     ) -> dict:
-        req = urllib.request.Request(
-            str(url),
-            data=str(payload_json).encode("utf-8"),
-            headers=headers or {},
-            method="POST",
-        )
         content_chunks: list[str] = []
         tool_calls_by_index: dict[int, dict] = {}
-        try:
-            with urllib.request.urlopen(req, timeout=max(1, float(timeout_sec or 60))) as response:
-                status_code = int(getattr(response, "status", 200) or 200)
-                if status_code != 200:
-                    raw = response.read()
-                    body = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
-                    raise _CurlHTTPError(status_code, body)
-
-                for raw_line in response:
-                    line = raw_line.decode("utf-8", errors="replace").strip()
-                    if not line or not line.startswith("data:"):
+        debug_events: list[dict] = []
+        for data_text in self._curl_post_sse_data_lines(
+            url=url,
+            headers=headers,
+            payload_json=payload_json,
+            timeout_sec=timeout_sec,
+        ):
+            if not data_text:
+                continue
+            if data_text == "[DONE]":
+                debug_events.append({"index": len(debug_events), "raw": "[DONE]"})
+                continue
+            event = self._parse_sse_json_event(data_text, stage="chat_completions_stream_parse")
+            debug_events.append(
+                self._build_chat_sse_debug_event(
+                    index=len(debug_events),
+                    raw_data=data_text,
+                    parsed_event=event,
+                )
+            )
+            if event is None:
+                continue
+            choices = event.get("choices") if isinstance(event, dict) else None
+            if not isinstance(choices, list):
+                continue
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                delta = choice.get("delta")
+                if not isinstance(delta, dict):
+                    continue
+                delta_text = delta.get("content")
+                if isinstance(delta_text, str) and delta_text:
+                    content_chunks.append(delta_text)
+                    self._emit_stream_text(stream_handler, delta_text, "".join(content_chunks))
+                tool_calls_delta = delta.get("tool_calls")
+                if not isinstance(tool_calls_delta, list):
+                    continue
+                for tool_item in tool_calls_delta:
+                    if not isinstance(tool_item, dict):
                         continue
-                    data_text = line[5:].strip()
-                    if not data_text:
+                    index_raw = tool_item.get("index")
+                    try:
+                        index = int(index_raw) if index_raw is not None else len(tool_calls_by_index)
+                    except Exception:
+                        index = len(tool_calls_by_index)
+                    if index < 0:
+                        index = len(tool_calls_by_index)
+                    bucket = tool_calls_by_index.get(index)
+                    if not isinstance(bucket, dict):
+                        bucket = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                        tool_calls_by_index[index] = bucket
+                    tool_id = str(tool_item.get("id") or "").strip()
+                    if tool_id:
+                        bucket["id"] = tool_id
+                    tool_type = str(tool_item.get("type") or "").strip()
+                    if tool_type:
+                        bucket["type"] = tool_type
+                    fn = tool_item.get("function")
+                    if not isinstance(fn, dict):
                         continue
-                    if data_text == "[DONE]":
-                        break
-                    event = self._parse_sse_json_event(data_text, stage="chat_completions_stream_parse")
-                    if event is None:
-                        continue
-                    choices = event.get("choices") if isinstance(event, dict) else None
-                    if not isinstance(choices, list):
-                        continue
-                    for choice in choices:
-                        if not isinstance(choice, dict):
-                            continue
-                        delta = choice.get("delta")
-                        if not isinstance(delta, dict):
-                            continue
-                        delta_text = delta.get("content")
-                        if isinstance(delta_text, str) and delta_text:
-                            content_chunks.append(delta_text)
-                            self._emit_stream_text(stream_handler, delta_text, "".join(content_chunks))
-                        tool_calls_delta = delta.get("tool_calls")
-                        if not isinstance(tool_calls_delta, list):
-                            continue
-                        for tool_item in tool_calls_delta:
-                            if not isinstance(tool_item, dict):
-                                continue
-                            index_raw = tool_item.get("index")
-                            try:
-                                index = int(index_raw) if index_raw is not None else len(tool_calls_by_index)
-                            except Exception:
-                                index = len(tool_calls_by_index)
-                            if index < 0:
-                                index = len(tool_calls_by_index)
-                            bucket = tool_calls_by_index.get(index)
-                            if not isinstance(bucket, dict):
-                                bucket = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
-                                tool_calls_by_index[index] = bucket
-                            tool_id = str(tool_item.get("id") or "").strip()
-                            if tool_id:
-                                bucket["id"] = tool_id
-                            tool_type = str(tool_item.get("type") or "").strip()
-                            if tool_type:
-                                bucket["type"] = tool_type
-                            fn = tool_item.get("function")
-                            if not isinstance(fn, dict):
-                                continue
-                            fn_name = str(fn.get("name") or "")
-                            if fn_name:
-                                bucket_fn = bucket.get("function")
-                                if not isinstance(bucket_fn, dict):
-                                    bucket_fn = {"name": "", "arguments": ""}
-                                    bucket["function"] = bucket_fn
-                                bucket_fn["name"] = str(bucket_fn.get("name") or "") + fn_name
-                            fn_args = str(fn.get("arguments") or "")
-                            if fn_args:
-                                bucket_fn = bucket.get("function")
-                                if not isinstance(bucket_fn, dict):
-                                    bucket_fn = {"name": "", "arguments": ""}
-                                    bucket["function"] = bucket_fn
-                                bucket_fn["arguments"] = str(bucket_fn.get("arguments") or "") + fn_args
-        except urllib.error.HTTPError as e:
-            body = ""
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise _CurlHTTPError(getattr(e, "code", 0), body) from e
-        except urllib.error.URLError as e:
-            raise _CurlTransportError(str(e.reason or e)) from e
-        except _CurlHTTPError:
-            raise
-        except Exception as e:
-            raise _CurlTransportError(str(e)) from e
+                    fn_name = str(fn.get("name") or "")
+                    if fn_name:
+                        bucket_fn = bucket.get("function")
+                        if not isinstance(bucket_fn, dict):
+                            bucket_fn = {"name": "", "arguments": ""}
+                            bucket["function"] = bucket_fn
+                        bucket_fn["name"] = str(bucket_fn.get("name") or "") + fn_name
+                    fn_args = str(fn.get("arguments") or "")
+                    if fn_args:
+                        bucket_fn = bucket.get("function")
+                        if not isinstance(bucket_fn, dict):
+                            bucket_fn = {"name": "", "arguments": ""}
+                            bucket["function"] = bucket_fn
+                        bucket_fn["arguments"] = str(bucket_fn.get("arguments") or "") + fn_args
         assembled_tool_calls: list[dict] = []
         for idx in sorted(tool_calls_by_index.keys()):
             bucket = tool_calls_by_index.get(idx)
@@ -137,7 +122,15 @@ class DoubaoStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
                 self._emit_stream_text(stream_handler, "", parse_result.visible_text)
         if assembled_tool_calls:
             message["tool_calls"] = assembled_tool_calls
-        return {"choices": [{"message": message}]}
+        result = {"choices": [{"message": message}]}
+        self._write_chat_sse_debug_if_needed(
+            url=url,
+            payload_json=payload_json,
+            events=debug_events,
+            assembled_message=message,
+        )
+        return result
+
     def _stream_chat_completions_with_retry(
         self,
         *,
@@ -206,15 +199,11 @@ class DoubaoStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
         payload_json: str,
         timeout_sec: float,
         stream_handler: Callable[[object, object], None] | None,
+        item_event_handler: Callable[[ResponsesStreamEvent], None] | None = None,
     ) -> dict:
-        req = urllib.request.Request(
-            str(url),
-            data=str(payload_json).encode("utf-8"),
-            headers=headers or {},
-            method="POST",
-        )
         text_chunks: list[str] = []
         saw_text_delta = False
+        normalizer = OpenAIResponsesStreamEventNormalizer(provider="doubao_responses")
         function_call_buckets: dict[str, dict] = {}
         function_call_order: list[str] = []
         completed_response: dict | None = None
@@ -242,89 +231,73 @@ class DoubaoStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
             if response_id:
                 payload["id"] = response_id
             return payload
-        try:
-            with urllib.request.urlopen(req, timeout=max(1, float(timeout_sec or 60))) as response:
-                status_code = int(getattr(response, "status", 200) or 200)
-                if status_code != 200:
-                    raw = response.read()
-                    body = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
-                    raise _CurlHTTPError(status_code, body)
-                for raw_line in response:
-                    line = raw_line.decode("utf-8", errors="replace").strip()
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data_text = line[5:].strip()
-                    if not data_text:
-                        continue
-                    if data_text == "[DONE]":
-                        break
-                    event = self._parse_sse_json_event(data_text, stage="responses_stream_parse")
-                    if event is None:
-                        continue
-                    if not isinstance(event, dict):
-                        continue
-                    event_type = str(event.get("type") or "").strip().lower()
-                    if event_type in {"response.output_text.delta", "output_text.delta"}:
-                        delta_text = str(event.get("delta") or "")
-                        if delta_text:
-                            saw_text_delta = True
-                            text_chunks.append(delta_text)
-                            self._emit_stream_text(stream_handler, delta_text, "".join(text_chunks))
-                        continue
-                    if event_type in {"response.output_text.done", "output_text.done"}:
-                        done_text = str(event.get("text") or "")
-                        if done_text:
-                            current_full = "".join(text_chunks)
-                            if done_text != current_full:
-                                delta = done_text[len(current_full) :] if done_text.startswith(current_full) else done_text
-                                self._emit_stream_text(stream_handler, delta, done_text)
-                                text_chunks = [done_text]
-                        continue
-                    if event_type in {"response.output_item.added", "response.output_item.done", "response.output_item.delta"}:
-                        item = event.get("item")
-                        if not isinstance(item, dict):
-                            continue
-                        item_type = str(item.get("type") or "").strip().lower()
-                        if item_type != "function_call":
-                            continue
-                        key = str(item.get("call_id") or item.get("id") or "").strip() or f"call_{len(function_call_order)}"
-                        bucket = _ensure_function_call_bucket(key)
-                        name = str(item.get("name") or "").strip()
-                        if name:
-                            bucket["name"] = name
-                        args_text = item.get("arguments")
-                        if args_text is not None:
-                            bucket["arguments"] = str(bucket.get("arguments") or "") + str(args_text)
-                        if item.get("id") is not None:
-                            bucket["id"] = str(item.get("id") or "")
-                        continue
-                    if event_type in {"response.function_call_arguments.delta", "function_call_arguments.delta"}:
-                        key = str(event.get("call_id") or event.get("item_id") or "").strip()
-                        if not key:
-                            continue
-                        bucket = _ensure_function_call_bucket(key)
-                        delta_text = str(event.get("delta") or "")
-                        if delta_text:
-                            bucket["arguments"] = str(bucket.get("arguments") or "") + delta_text
-                        continue
-                    if event_type in {"response.completed", "response.done"}:
-                        response_obj = event.get("response")
-                        if isinstance(response_obj, dict):
-                            completed_response = response_obj
-                        continue
-        except urllib.error.HTTPError as e:
-            body = ""
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise _CurlHTTPError(getattr(e, "code", 0), body) from e
-        except urllib.error.URLError as e:
-            raise _CurlTransportError(str(e.reason or e)) from e
-        except _CurlHTTPError:
-            raise
-        except Exception as e:
-            raise _CurlTransportError(str(e)) from e
+        for data_text in self._curl_post_sse_data_lines(
+            url=url,
+            headers=headers,
+            payload_json=payload_json,
+            timeout_sec=timeout_sec,
+        ):
+            if not data_text:
+                continue
+            if data_text == "[DONE]":
+                continue
+            event = self._parse_sse_json_event(data_text, stage="responses_stream_parse")
+            if event is None:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if callable(item_event_handler):
+                for normalized_event in normalizer.ingest_event(event):
+                    item_event_handler(normalized_event)
+            event_type = str(event.get("type") or "").strip().lower()
+            if event_type in {"response.output_text.delta", "output_text.delta"}:
+                delta_text = str(event.get("delta") or "")
+                if delta_text:
+                    saw_text_delta = True
+                    text_chunks.append(delta_text)
+                    self._emit_stream_text(stream_handler, delta_text, "".join(text_chunks))
+                continue
+            if event_type in {"response.output_text.done", "output_text.done"}:
+                done_text = str(event.get("text") or "")
+                if done_text:
+                    current_full = "".join(text_chunks)
+                    if done_text != current_full:
+                        delta = done_text[len(current_full) :] if done_text.startswith(current_full) else done_text
+                        self._emit_stream_text(stream_handler, delta, done_text)
+                        text_chunks = [done_text]
+                continue
+            if event_type in {"response.output_item.added", "response.output_item.done", "response.output_item.delta"}:
+                item = event.get("item")
+                if not isinstance(item, dict):
+                    continue
+                item_type = str(item.get("type") or "").strip().lower()
+                if item_type != "function_call":
+                    continue
+                key = str(item.get("call_id") or item.get("id") or "").strip() or f"call_{len(function_call_order)}"
+                bucket = _ensure_function_call_bucket(key)
+                name = str(item.get("name") or "").strip()
+                if name:
+                    bucket["name"] = name
+                args_text = item.get("arguments")
+                if args_text is not None:
+                    bucket["arguments"] = str(bucket.get("arguments") or "") + str(args_text)
+                if item.get("id") is not None:
+                    bucket["id"] = str(item.get("id") or "")
+                continue
+            if event_type in {"response.function_call_arguments.delta", "function_call_arguments.delta"}:
+                key = str(event.get("call_id") or event.get("item_id") or "").strip()
+                if not key:
+                    continue
+                bucket = _ensure_function_call_bucket(key)
+                delta_text = str(event.get("delta") or "")
+                if delta_text:
+                    bucket["arguments"] = str(bucket.get("arguments") or "") + delta_text
+                continue
+            if event_type in {"response.completed", "response.done"}:
+                response_obj = event.get("response")
+                if isinstance(response_obj, dict):
+                    completed_response = response_obj
+                break
         if isinstance(completed_response, dict):
             final_text, function_calls, _ = self._parse_responses_output_envelopes(completed_response)
             streamed_text = "".join(text_chunks)
@@ -348,6 +321,7 @@ class DoubaoStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
         max_retries: int,
         retry_delay: float,
         stream_handler: Callable[[object, object], None] | None,
+        item_event_handler: Callable[[ResponsesStreamEvent], None] | None = None,
     ) -> dict:
         timeout = self.config.get("timeoutMs", 60000) / 1000
         current_delay = float(retry_delay)
@@ -359,6 +333,7 @@ class DoubaoStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
                     payload_json=payload_json,
                     timeout_sec=timeout,
                     stream_handler=stream_handler,
+                    item_event_handler=item_event_handler,
                 )
             except _CurlHTTPError as e:
                 status_code = int(e.status_code or 0)

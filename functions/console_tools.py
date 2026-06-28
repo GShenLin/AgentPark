@@ -1,6 +1,228 @@
 import json
 import locale
+import re
 import subprocess
+import threading
+import time
+from dataclasses import dataclass
+
+from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
+from src.workspace_settings import load_workspace_settings
+
+
+DEFAULT_CONSOLE_COMMAND_TIMEOUT_SECONDS = 120
+MAX_CONSOLE_COMMAND_TIMEOUT_SECONDS = 3600
+DEFAULT_CONSOLE_COMMAND_OUTPUT_CHARS = 131072
+MAX_CONSOLE_COMMAND_OUTPUT_CHARS = 262144
+
+
+@dataclass(frozen=True)
+class _ConsoleConfigValue:
+    value: object
+    field_name: str
+
+
+@dataclass(frozen=True)
+class _ConsoleCommandProfile:
+    blocked: bool = False
+    block_error: str = ""
+    hint: str = ""
+    minimum_timeout_seconds: int | None = None
+    completion_kind: str = ""
+
+
+@dataclass
+class _PipeReader:
+    thread: threading.Thread
+    chunks: list[bytes]
+    errors: list[BaseException]
+
+
+def _classify_console_command(command) -> _ConsoleCommandProfile:
+    command_text = str(command or "")
+    command_lower = command_text.lower()
+
+    if _looks_like_cmd_unix_pwd(command_lower):
+        return _ConsoleCommandProfile(
+            blocked=True,
+            block_error="Unix 'pwd' is blocked for execute_console_command because this tool runs through Windows cmd semantics.",
+            hint="Use 'cd' for cmd current directory, or run PowerShell explicitly with 'powershell -NoProfile -Command \"Get-Location\"'.",
+        )
+
+    if _looks_like_high_context_git_diff(command_lower):
+        return _ConsoleCommandProfile(
+            blocked=True,
+            block_error="High-context git diff commands are blocked because they can produce output and still time out.",
+            hint="Use 'git --no-pager diff --stat', '--numstat', '--name-only', or read narrow changed regions directly.",
+        )
+
+    if (
+        "npx" in command_lower
+        and "skills" in command_lower
+        and "find" in command_lower
+        and "--yes" not in command_lower
+        and "npx -y" not in command_lower
+    ):
+        return _ConsoleCommandProfile(
+            blocked=True,
+            block_error="Interactive npx skill discovery is blocked because it can wait for package-install confirmation.",
+            hint="Use 'npx --yes skills find ...' or 'npx -y skills find ...'.",
+        )
+
+    if _looks_like_broad_powershell_file_scan(command_lower):
+        return _ConsoleCommandProfile(
+            blocked=True,
+            block_error="Broad recursive PowerShell file scans are blocked because they repeatedly time out in this workspace.",
+            hint=(
+                "Use rg_search_text for text search, rg_list_files for inventories, or project_file_stats "
+                "for file counts and largest-file analysis."
+            ),
+        )
+
+    if _looks_like_webui_build(command_lower):
+        return _ConsoleCommandProfile(minimum_timeout_seconds=540, completion_kind="webui_build")
+
+    if _looks_like_pytest_collect(command_lower):
+        return _ConsoleCommandProfile(minimum_timeout_seconds=180, completion_kind="pytest_collect")
+
+    if _looks_like_pytest_run(command_lower):
+        return _ConsoleCommandProfile(minimum_timeout_seconds=300, completion_kind="pytest")
+
+    return _ConsoleCommandProfile()
+
+
+def _looks_like_cmd_unix_pwd(command_lower: str) -> bool:
+    if "powershell" in command_lower or "pwsh" in command_lower:
+        return False
+    return bool(re.search(r"(^|[&|]\s*)pwd(\s*(&&|\|\||[&|])|\s*$)", command_lower.strip()))
+
+
+def _looks_like_high_context_git_diff(command_lower: str) -> bool:
+    if "git" not in command_lower or "diff" not in command_lower:
+        return False
+    for match in re.finditer(r"--unified[=\s]+(\d+)|-u\s*(\d+)", command_lower):
+        value = match.group(1) or match.group(2)
+        try:
+            if int(value) > 20:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _looks_like_broad_powershell_file_scan(command_lower: str) -> bool:
+    has_recursive_ps_listing = (
+        ("get-childitem" in command_lower or re.search(r"(^|\W)gci(\W|$)", command_lower))
+        and "-recurse" in command_lower
+    )
+    has_content_line_count = "measure-object" in command_lower and "get-content" in command_lower
+    has_rg_file_content_count = bool(
+        "measure-object" in command_lower
+        and "get-content" in command_lower
+        and re.search(r"\brg(\.exe)?\s+--files\b", command_lower)
+    )
+    return bool((has_recursive_ps_listing and has_content_line_count) or has_rg_file_content_count)
+
+
+def _looks_like_webui_build(command_lower: str) -> bool:
+    return "npm" in command_lower and "run" in command_lower and "build" in command_lower
+
+
+def _looks_like_pytest_collect(command_lower: str) -> bool:
+    return "pytest" in command_lower and "--collect-only" in command_lower
+
+
+def _looks_like_pytest_run(command_lower: str) -> bool:
+    return "pytest" in command_lower
+
+
+def _parse_timeout_seconds(value, *, field_name: str = "timeout_seconds") -> int | None:
+    if value is None or value == "":
+        return DEFAULT_CONSOLE_COMMAND_TIMEOUT_SECONDS
+    try:
+        timeout = int(float(value))
+    except Exception as exc:
+        raise ValueError(f"{field_name} must be a number.") from exc
+    if timeout <= 0:
+        return None
+    return max(1, min(timeout, MAX_CONSOLE_COMMAND_TIMEOUT_SECONDS))
+
+
+def _resolve_command_timeout_seconds(
+    timeout_seconds=None,
+    agent=None,
+    profile: _ConsoleCommandProfile | None = None,
+) -> int | None:
+    if timeout_seconds is not None and timeout_seconds != "":
+        resolved = _parse_timeout_seconds(timeout_seconds, field_name="timeout_seconds")
+    else:
+        configured = _find_console_config_value(
+            agent,
+            root_fields=("consoleCommandTimeoutSec", "console_command_timeout_sec"),
+            section_fields={
+                "consoleCommand": ("timeoutSec", "timeout_seconds"),
+                "console_command": ("timeout_sec", "timeoutSeconds"),
+            },
+        )
+        if configured is not None:
+            resolved = _parse_timeout_seconds(configured.value, field_name=configured.field_name)
+        else:
+            resolved = DEFAULT_CONSOLE_COMMAND_TIMEOUT_SECONDS
+
+    minimum_timeout = profile.minimum_timeout_seconds if profile else None
+    if resolved is not None and minimum_timeout is not None and resolved < minimum_timeout:
+        return minimum_timeout
+    return resolved
+
+
+def _parse_output_char_limit(value, *, field_name: str) -> int:
+    if value is None or value == "":
+        return DEFAULT_CONSOLE_COMMAND_OUTPUT_CHARS
+    try:
+        limit = int(float(value))
+    except Exception as exc:
+        raise ValueError(f"{field_name} must be a number.") from exc
+    if limit <= 0:
+        raise ValueError(f"{field_name} must be greater than zero.")
+    return max(1, min(limit, MAX_CONSOLE_COMMAND_OUTPUT_CHARS))
+
+
+def _resolve_command_output_char_limit(agent=None) -> int:
+    configured = _find_console_config_value(
+        agent,
+        root_fields=("consoleCommandOutputMaxChars", "console_command_output_max_chars"),
+        section_fields={
+            "consoleCommand": ("outputMaxChars", "output_max_chars", "maxOutputChars", "max_output_chars"),
+            "console_command": ("output_max_chars", "outputMaxChars", "max_output_chars", "maxOutputChars"),
+        },
+    )
+    if configured is not None:
+        return _parse_output_char_limit(configured.value, field_name=configured.field_name)
+    return DEFAULT_CONSOLE_COMMAND_OUTPUT_CHARS
+
+
+def _iter_console_config_sources(agent=None):
+    agent_config = getattr(agent, "config", None)
+    if isinstance(agent_config, dict):
+        yield "agent.config", agent_config
+    workspace_config = load_workspace_settings()
+    if isinstance(workspace_config, dict):
+        yield "config/config.json", workspace_config
+
+
+def _find_console_config_value(agent=None, *, root_fields, section_fields) -> _ConsoleConfigValue | None:
+    for source_name, payload in _iter_console_config_sources(agent):
+        for field in root_fields:
+            if field in payload:
+                return _ConsoleConfigValue(payload.get(field), f"{source_name}.{field}")
+        for section_name, fields in section_fields.items():
+            section = payload.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            for field in fields:
+                if field in section:
+                    return _ConsoleConfigValue(section.get(field), f"{source_name}.{section_name}.{field}")
+    return None
 
 
 def _preferred_text_encodings(command: str) -> list[str]:
@@ -35,12 +257,201 @@ def _decode_output(data: bytes | None, command: str) -> str:
     return data.decode(_preferred_text_encodings(command)[0], errors="replace")
 
 
-def execute_console_command(command):
+def _tail_limit_stream_text(text: str, *, stream_name: str, limit: int) -> tuple[str, dict]:
+    value = str(text or "")
+    original_chars = len(value)
+    if original_chars <= limit:
+        return value, {
+            "truncated": False,
+            "original_chars": original_chars,
+            "returned_chars": original_chars,
+        }
+    return value[-limit:], {
+        "truncated": True,
+        "original_chars": original_chars,
+        "returned_chars": limit,
+        "omitted_chars": original_chars - limit,
+        "strategy": "tail",
+        "notice": (
+            f"{stream_name} exceeded the hard limit of {limit} characters; "
+            f"only the tail of this stream is returned."
+        ),
+    }
+
+
+def _build_console_command_result(
+    *,
+    command,
+    stdout: str,
+    stderr: str,
+    status: str,
+    agent=None,
+    returncode=None,
+    error: str | None = None,
+    extra: dict | None = None,
+) -> str:
+    output_limit = _resolve_command_output_char_limit(agent)
+    stdout, stdout_meta = _tail_limit_stream_text(stdout, stream_name="stdout", limit=output_limit)
+    stderr, stderr_meta = _tail_limit_stream_text(stderr, stream_name="stderr", limit=output_limit)
+    result = {
+        "command": command,
+        "stdout": stdout,
+        "stderr": stderr,
+        "status": status,
+    }
+    if returncode is not None:
+        result["returncode"] = returncode
+    if error is not None:
+        result["error"] = error
+    if isinstance(extra, dict) and extra:
+        result.update(extra)
+
+    result.update(
+        {
+            "stdout_truncated": stdout_meta["truncated"],
+            "stdout_original_chars": stdout_meta["original_chars"],
+            "stdout_returned_chars": stdout_meta["returned_chars"],
+            "stderr_truncated": stderr_meta["truncated"],
+            "stderr_original_chars": stderr_meta["original_chars"],
+            "stderr_returned_chars": stderr_meta["returned_chars"],
+            "output_max_chars_per_stream": output_limit,
+        }
+    )
+    truncated_streams = []
+    if stdout_meta["truncated"]:
+        truncated_streams.append({"stream": "stdout", **stdout_meta})
+    if stderr_meta["truncated"]:
+        truncated_streams.append({"stream": "stderr", **stderr_meta})
+    if truncated_streams:
+        result["output_truncated"] = True
+        result["output_truncation_notice"] = (
+            "Command output exceeded the hard stdout/stderr size limit. "
+            "The returned stdout/stderr fields are partial and contain only tail content for truncated streams."
+        )
+        result["output_truncation"] = {
+            "max_chars_per_stream": output_limit,
+            "streams": truncated_streams,
+        }
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _analyze_console_completion(command, stdout: str, stderr: str, status: str, profile: _ConsoleCommandProfile):
+    extra: dict = {}
+    final_status = status
+    error = None
+    combined_output = f"{stdout or ''}\n{stderr or ''}"
+    combined_lower = combined_output.lower()
+
+    if profile.completion_kind == "webui_build":
+        completed = bool(re.search(r"\bbuilt in\s+\d", combined_lower) or "vite" in combined_lower and "built in" in combined_lower)
+        extra["detected_completion"] = {
+            "kind": "webui_build",
+            "completed": completed,
+        }
+        if status == "timeout" and completed:
+            final_status = "partial_success_timeout"
+            error = "Command timed out after output that matches a completed WebUI build."
+
+    elif profile.completion_kind == "pytest_collect":
+        match = re.search(r"(\d+)\s+tests?\s+collected", combined_lower)
+        completed = match is not None
+        details = {
+            "kind": "pytest_collect",
+            "completed": completed,
+        }
+        if match:
+            details["collected_tests"] = int(match.group(1))
+        extra["detected_completion"] = details
+        if status == "timeout" and completed:
+            final_status = "partial_success_timeout"
+            error = "Command timed out after pytest reported completed collection."
+
+    return final_status, error, extra
+
+
+def _terminate_process(proc: subprocess.Popen | None) -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=0.5)
+    except Exception:
+        try:
+            proc.kill()
+            proc.wait(timeout=0.5)
+        except Exception:
+            pass
+
+
+def _start_pipe_reader(pipe, *, name: str) -> _PipeReader:
+    chunks: list[bytes] = []
+    errors: list[BaseException] = []
+
+    def _read_pipe() -> None:
+        try:
+            while True:
+                data = pipe.read(8192)
+                if not data:
+                    break
+                chunks.append(data)
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            try:
+                pipe.close()
+            except Exception:
+                pass
+
+    thread = threading.Thread(target=_read_pipe, daemon=True, name=name)
+    thread.start()
+    return _PipeReader(thread=thread, chunks=chunks, errors=errors)
+
+
+def _start_process_pipe_readers(proc: subprocess.Popen) -> tuple[_PipeReader | None, _PipeReader | None]:
+    stdout_reader = _start_pipe_reader(proc.stdout, name="console-stdout-reader") if proc.stdout is not None else None
+    stderr_reader = _start_pipe_reader(proc.stderr, name="console-stderr-reader") if proc.stderr is not None else None
+    return stdout_reader, stderr_reader
+
+
+def _collect_pipe_reader(reader: _PipeReader | None, *, stream_name: str) -> bytes:
+    if reader is None:
+        return b""
+    reader.thread.join(timeout=1.0)
+    if reader.thread.is_alive():
+        raise RuntimeError(f"{stream_name} reader did not finish after process exit.")
+    if reader.errors:
+        error = reader.errors[0]
+        raise RuntimeError(f"{stream_name} reader failed: {type(error).__name__}: {error}") from error
+    return b"".join(reader.chunks)
+
+
+def _collect_process_output(
+    stdout_reader: _PipeReader | None,
+    stderr_reader: _PipeReader | None,
+) -> tuple[bytes, bytes]:
+    stdout_raw = _collect_pipe_reader(stdout_reader, stream_name="stdout")
+    stderr_raw = _collect_pipe_reader(stderr_reader, stream_name="stderr")
+    return stdout_raw, stderr_raw
+
+
+def execute_console_command(command, timeout_seconds=None, agent=None):
     """
     Executes a console command and returns the output.
-    Has a 15-second timeout. If it times out, returns captured output so far (if possible) or a timeout message.
+    Uses a configurable timeout. If it times out, returns captured output so far (if possible) or a timeout message.
     """
     try:
+        profile = _classify_console_command(command)
+        if profile.blocked:
+            return json.dumps(
+                {
+                    "command": command,
+                    "status": "blocked",
+                    "error": profile.block_error,
+                    "hint": profile.hint,
+                },
+                ensure_ascii=False,
+            )
+
         cmd_lower = str(command).lower()
         if "findstr" in cmd_lower and "/s" in cmd_lower and ("*.h" in cmd_lower or "*.cpp" in cmd_lower or "*.hpp" in cmd_lower):
             return json.dumps(
@@ -54,38 +465,95 @@ def execute_console_command(command):
             )
 
         try:
-            result = subprocess.run(
+            cancel_source = cancel_source_from_agent(agent)
+            command_timeout = _resolve_command_timeout_seconds(timeout_seconds, agent, profile=profile)
+            proc = subprocess.Popen(
                 command,
                 shell=True,
-                capture_output=True,
-                timeout=15,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            stdout_reader, stderr_reader = _start_process_pipe_readers(proc)
+            deadline = time.monotonic() + command_timeout if command_timeout is not None else None
+            while proc.poll() is None:
+                try:
+                    raise_if_cancel_requested(cancel_source)
+                except CancellationRequested as e:
+                    _terminate_process(proc)
+                    stdout_raw, stderr_raw = _collect_process_output(stdout_reader, stderr_reader)
+                    return _build_console_command_result(
+                        command=command,
+                        stdout=_decode_output(stdout_raw, command),
+                        stderr=_decode_output(stderr_raw, command),
+                        status="stopped",
+                        agent=agent,
+                        error=str(e),
+                    )
+                if deadline is not None and time.monotonic() >= deadline:
+                    _terminate_process(proc)
+                    stdout_raw, stderr_raw = _collect_process_output(stdout_reader, stderr_reader)
+                    stdout = _decode_output(stdout_raw, command)
+                    stderr = _decode_output(stderr_raw, command)
+                    timeout_label = f"{command_timeout} seconds" if command_timeout is not None else "disabled timeout"
+                    status, completion_error, extra = _analyze_console_completion(
+                        command,
+                        stdout,
+                        stderr,
+                        "timeout",
+                        profile,
+                    )
+                    return _build_console_command_result(
+                        command=command,
+                        stdout=stdout,
+                        stderr=stderr,
+                        status=status,
+                        agent=agent,
+                        error=completion_error or f"Command execution timed out after {timeout_label}.",
+                        extra=extra,
+                    )
+                time.sleep(0.05)
+
+            stdout_raw, stderr_raw = _collect_process_output(stdout_reader, stderr_reader)
+            stdout = _decode_output(stdout_raw, command)
+            stderr = _decode_output(stderr_raw, command)
+            status = "success" if proc.returncode == 0 else "error"
+            status, completion_error, extra = _analyze_console_completion(command, stdout, stderr, status, profile)
+
+            return _build_console_command_result(
+                command=command,
+                stdout=stdout,
+                stderr=stderr,
+                returncode=proc.returncode,
+                status=status,
+                agent=agent,
+                error=completion_error,
+                extra=extra,
             )
 
-            stdout = _decode_output(result.stdout, command)
-            stderr = _decode_output(result.stderr, command)
-
-            return json.dumps(
-                {
-                    "command": command,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "returncode": result.returncode,
-                    "status": "success" if result.returncode == 0 else "error",
-                }
+        except CancellationRequested as e:
+            return _build_console_command_result(
+                command=command,
+                stdout="",
+                stderr="",
+                status="stopped",
+                agent=agent,
+                error=str(e),
             )
-
         except subprocess.TimeoutExpired as e:
             stdout = _decode_output(e.stdout, command)
             stderr = _decode_output(e.stderr, command)
+            command_timeout = _resolve_command_timeout_seconds(timeout_seconds, agent, profile=profile)
+            timeout_label = f"{command_timeout} seconds" if command_timeout is not None else "disabled timeout"
+            status, completion_error, extra = _analyze_console_completion(command, stdout, stderr, "timeout", profile)
 
-            return json.dumps(
-                {
-                    "command": command,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "error": "Command execution timed out after 15 seconds.",
-                    "status": "timeout",
-                }
+            return _build_console_command_result(
+                command=command,
+                stdout=stdout,
+                stderr=stderr,
+                status=status,
+                agent=agent,
+                error=completion_error or f"Command execution timed out after {timeout_label}.",
+                extra=extra,
             )
 
     except Exception as e:
@@ -102,16 +570,33 @@ execute_console_command_declaration = {
     "type": "function",
     "function": {
         "name": "execute_console_command",
-        "description": "Execute a shell command on the local machine. Prefer structured tools (rg_search_text/rg_list_files) for file and text search.",
+        "description": (
+            "Execute a shell command on the local machine. Prefer structured tools "
+            "(rg_search_text/rg_list_files) for file and text search. On Windows, the default shell "
+            "uses cmd-style semantics; use 'cd' for the current directory, 'dir' for directory listing, "
+            "and call powershell -NoProfile -Command \"...\" explicitly when PowerShell syntax is required. "
+            "Large stdout/stderr values are hard-limited; truncated streams return tail content only with "
+            "explicit truncation metadata."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "command": {
                     "type": "string",
                     "description": "The command to execute (e.g., 'dir', 'git status', 'python --version')",
+                },
+                "timeout_seconds": {
+                    "type": "number",
+                    "description": (
+                        "Optional command timeout in seconds. Defaults to 120; use 300 or more for known long "
+                        "project builds such as WebUI production builds. Use 0 to disable the command timeout "
+                        "and rely on Stop cancellation."
+                    ),
                 }
             },
             "required": ["command"],
         },
     },
 }
+
+execute_console_command.tool_timeout_seconds = 0

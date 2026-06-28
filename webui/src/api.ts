@@ -7,15 +7,19 @@ import type {
   MobileNode,
   MobileNodeConversation,
   MobilePc,
+  NodeConfigChangeResponse,
   NodeInfo,
   NodeInstanceConfig,
+  NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
   NodeTemplate,
   PasteAgentConfig,
   PendingNodeInput,
   ProviderInfo,
+  RemoteEndpoint,
   RunInfo,
+  UserInteractionRequest,
 } from './apiTypes'
 
 export type {
@@ -34,26 +38,52 @@ export type {
   MobileNodeConversation,
   MobilePc,
   MobilePcInstance,
+  NodeConfigChangeResponse,
   NodeInfo,
   NodeInstanceConfig,
+  NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
   NodeTemplate,
   PasteAgentConfig,
   PendingNodeInput,
   ProviderInfo,
+  RemoteEndpoint,
   ResourceKind,
   RuntimeEvent,
   RuntimeNoticeEvent,
   RuntimeToolCall,
   RunInfo,
   ToolRuntimeEvent,
+  UserInteractionField,
+  UserInteractionRequest,
 } from './apiTypes'
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || ''
+const DEFAULT_API_BASE = (import.meta as any).env?.VITE_API_BASE || ''
+const ACTIVE_REMOTE_KEY = 'aitools.activeRemoteBaseUrl'
 
-async function apiFetch(path: string, init?: RequestInit) {
-  const res = await fetch(`${API_BASE}${path}`, {
+function readActiveApiBase() {
+  try {
+    return window.localStorage.getItem(ACTIVE_REMOTE_KEY) || DEFAULT_API_BASE
+  } catch {
+    return DEFAULT_API_BASE
+  }
+}
+
+export function setActiveApiBase(baseUrl: string) {
+  try {
+    window.localStorage.setItem(ACTIVE_REMOTE_KEY, String(baseUrl || '').replace(/\/$/, ''))
+  } catch {
+    // ignore local storage errors
+  }
+}
+
+export function getActiveApiBase() {
+  return readActiveApiBase()
+}
+
+async function requestJson(baseUrl: string, path: string, init?: RequestInit) {
+  const res = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -62,9 +92,56 @@ async function apiFetch(path: string, init?: RequestInit) {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(text || `HTTP ${res.status}`)
+    let detail = text.trim()
+    if (detail) {
+      try {
+        const parsed = JSON.parse(detail)
+        if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
+          detail = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail)
+        }
+      } catch {
+        // Keep the raw response body when it is not JSON.
+      }
+    }
+    throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`)
   }
   return res.json()
+}
+
+async function apiFetch(path: string, init?: RequestInit) {
+  return requestJson(readActiveApiBase(), path, init)
+}
+
+async function remoteConfigFetch(path: string, init?: RequestInit) {
+  return requestJson(DEFAULT_API_BASE, path, init)
+}
+
+export async function restartServer(): Promise<{ ok: boolean }> {
+  return remoteConfigFetch('/api/system/restart', { method: 'POST' })
+}
+
+export async function getWebuiCloseSignal(): Promise<{ close: boolean; token: string; reason?: string }> {
+  return remoteConfigFetch('/api/system/webui-close')
+}
+
+export async function listRemotes(): Promise<RemoteEndpoint[]> {
+  const res = await remoteConfigFetch('/api/remotes')
+  return (res.remotes || []) as RemoteEndpoint[]
+}
+
+export async function addRemote(payload: {
+  name: string
+  host: string
+  port: number | string
+}): Promise<{ ok: boolean; remote: RemoteEndpoint; remotes: RemoteEndpoint[] }> {
+  return remoteConfigFetch('/api/remotes', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteRemote(remoteId: string): Promise<{ ok: boolean; remotes: RemoteEndpoint[] }> {
+  return remoteConfigFetch(`/api/remotes/${encodeURIComponent(remoteId)}`, { method: 'DELETE' })
 }
 
 export async function listRuns(): Promise<RunInfo[]> {
@@ -103,6 +180,21 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 export async function listTools(): Promise<string[]> {
   const res = await apiFetch('/api/tools')
   return res.tools
+}
+
+export async function listUserInteractions(): Promise<UserInteractionRequest[]> {
+  const res = await apiFetch('/api/user-interactions?status=pending')
+  return (res.requests || []) as UserInteractionRequest[]
+}
+
+export async function submitUserInteraction(
+  requestId: string,
+  response: Record<string, unknown>,
+): Promise<{ ok: boolean; request: UserInteractionRequest }> {
+  return apiFetch(`/api/user-interactions/${encodeURIComponent(requestId)}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({ status: 'submitted', response }),
+  })
 }
 
 export async function listNodes(): Promise<NodeInfo[]> {
@@ -152,16 +244,63 @@ export async function renameNodeInstance(
   })
 }
 
-export async function listNodeInstanceConfigs(graphId: string): Promise<NodeInstanceConfig[]> {
-  const res = await apiFetch(`/api/nodes/instances/configs?graph_id=${encodeURIComponent(graphId)}`)
-  return (res.nodes || []) as NodeInstanceConfig[]
+export async function cloneNodeInstance(
+  nodeId: string,
+  graphId: string,
+  newNodeId: string,
+  newName?: string,
+  ui?: { x: number; y: number },
+): Promise<{ ok: boolean; source_node_id: string; node_id: string; graph_id: string; type_id: string; config_path: string }> {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/clone?graph_id=${encodeURIComponent(graphId)}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      new_node_id: newNodeId,
+      new_name: newName,
+      ui,
+    }),
+  })
+}
+
+export async function openNodeInstanceFolder(
+  nodeId: string,
+  graphId: string,
+): Promise<{ ok: boolean; node_id: string; graph_id: string; path: string; source: 'working_path' | 'node_folder' }> {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/open-folder?graph_id=${encodeURIComponent(graphId)}`, {
+    method: 'POST',
+  })
+}
+
+export async function clearNodeInstanceMemory(
+  nodeId: string,
+  graphId: string,
+): Promise<{ ok: boolean; node_id: string; graph_id: string; cleared_files: number; cleared_summary_fields?: string[] }> {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/clear-memory?graph_id=${encodeURIComponent(graphId)}`, {
+    method: 'POST',
+  })
+}
+
+export async function listNodeInstanceConfigs(graphId: string, sinceVersion = 0): Promise<NodeInstanceConfigListResponse> {
+  const query = new URLSearchParams({ graph_id: graphId })
+  if (sinceVersion > 0) query.set('since_version', String(Math.floor(sinceVersion)))
+  const res = await apiFetch(`/api/nodes/instances/configs?${query.toString()}`)
+  return {
+    nodes: (res.nodes || []) as NodeInstanceConfig[],
+    node_ids: Array.isArray(res.node_ids) ? res.node_ids.map((item: unknown) => String(item)) : undefined,
+    version: Number(res.version || 0),
+    partial: !!res.partial,
+  }
 }
 
 export async function updateNodeInstanceConfig(
   nodeId: string,
-  payload: { fields?: Record<string, unknown>; schema?: Record<string, any>; ui?: { x?: number; y?: number } },
+  payload: {
+    fields?: Record<string, unknown>
+    clear_fields?: string[]
+    schema?: Record<string, any>
+    ui?: { x?: number; y?: number }
+  },
   graphId: string,
-): Promise<{ ok: boolean }> {
+): Promise<NodeConfigChangeResponse> {
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/config?graph_id=${encodeURIComponent(graphId)}`, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -187,6 +326,64 @@ export async function controlNodeInstance(
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/control?graph_id=${encodeURIComponent(graphId)}`, {
     method: 'POST',
     body: JSON.stringify({ action }),
+  })
+}
+
+export type ChannelReceiverStatus = {
+  ok?: boolean
+  key?: string
+  running?: boolean
+  channel?: string
+  account_id?: string
+  last_error?: string
+  last_message_at?: string
+}
+
+export type ChannelLoginStartResponse = {
+  session_key: string
+  qrcode_url: string
+  message?: string
+}
+
+export type ChannelLoginWaitResponse = {
+  connected: boolean
+  status?: string
+  account_id?: string
+  message?: string
+}
+
+export async function controlChannelReceiver(
+  graphId: string,
+  nodeId: string,
+  action: 'start' | 'stop' | 'status',
+): Promise<ChannelReceiverStatus> {
+  return apiFetch(`/api/channels/receivers/${encodeURIComponent(graphId)}/${encodeURIComponent(nodeId)}/control`, {
+    method: 'POST',
+    body: JSON.stringify({ action }),
+  })
+}
+
+export async function startChannelLogin(
+  graphId: string,
+  nodeId: string,
+  accountId?: string,
+  force = false,
+): Promise<ChannelLoginStartResponse> {
+  return apiFetch(`/api/channels/receivers/${encodeURIComponent(graphId)}/${encodeURIComponent(nodeId)}/login/start`, {
+    method: 'POST',
+    body: JSON.stringify({ account_id: accountId || '', force }),
+  })
+}
+
+export async function waitChannelLogin(
+  graphId: string,
+  nodeId: string,
+  sessionKey: string,
+  timeoutSeconds = 60,
+): Promise<ChannelLoginWaitResponse> {
+  return apiFetch(`/api/channels/receivers/${encodeURIComponent(graphId)}/${encodeURIComponent(nodeId)}/login/wait`, {
+    method: 'POST',
+    body: JSON.stringify({ session_key: sessionKey, timeout_seconds: timeoutSeconds }),
   })
 }
 
@@ -250,8 +447,12 @@ export async function listGraphs(): Promise<GraphInfo[]> {
   return (res.graphs || []) as GraphInfo[]
 }
 
-export async function loadGraph(graphId: string): Promise<GraphConfig> {
-  const res = await apiFetch(`/api/graphs/${encodeURIComponent(graphId)}`)
+export async function loadGraph(graphId: string, options?: { ifVersion?: number }): Promise<GraphConfig> {
+  const query = new URLSearchParams()
+  const ifVersion = Number(options?.ifVersion || 0)
+  if (ifVersion > 0) query.set('if_version', String(Math.floor(ifVersion)))
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const res = await apiFetch(`/api/graphs/${encodeURIComponent(graphId)}${suffix}`)
   return res.graph as GraphConfig
 }
 
@@ -272,8 +473,16 @@ export async function saveGraph(
   return res.graph as GraphInfo
 }
 
+export async function deleteGraph(graphId: string): Promise<{ ok: boolean; graph_id: string; deleted: boolean }> {
+  return apiFetch(`/api/graphs/${encodeURIComponent(graphId)}`, { method: 'DELETE' })
+}
+
 export async function startGraphRunner(graphId: string): Promise<{ ok: boolean; graph_id: string }> {
   return apiFetch(`/api/graphs/${encodeURIComponent(graphId)}/runner/start`, { method: 'POST' })
+}
+
+export function graphEventsStreamUrl(graphId: string): string {
+  return `${readActiveApiBase()}/api/graphs/${encodeURIComponent(graphId)}/events/stream`
 }
 
 export async function emitGraph(
@@ -299,8 +508,18 @@ export async function setStartupGraphConfig(graphId: string, graphName?: string)
 }
 
 export async function getPasteAgentConfig(): Promise<PasteAgentConfig> {
-  const res = await apiFetch('/api/paste-agent/config')
-  return (res?.config || {}) as PasteAgentConfig
+  const baseUrl = getActiveApiBase()
+  let res: any
+  try {
+    res = await apiFetch('/api/paste-agent/config')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || 'unknown error')
+    throw new Error(`Failed to load PasteAgent config from ${baseUrl || 'current origin'}: ${message}`)
+  }
+  if (!res || typeof res !== 'object' || !res.config || typeof res.config !== 'object') {
+    throw new Error(`PasteAgent config response from ${baseUrl || 'current origin'} is missing object field "config"`)
+  }
+  return res.config as PasteAgentConfig
 }
 
 export async function updatePasteAgentConfig(payload: Partial<PasteAgentConfig>): Promise<{ ok: boolean; config: PasteAgentConfig }> {
@@ -321,9 +540,23 @@ export async function getNodeInstanceMemory(
   messages?: MessageEnvelope[]
   state?: NodeInstanceState
   last_message?: string
+  live_message?: string
 }> {
   const query = graphId ? `&graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}${query}`)
+}
+
+export async function getNodeInstanceLive(
+  nodeId: string,
+  graphId?: string,
+): Promise<{ node_id: string; graph_id: string; live_message: string }> {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/live${query}`)
+}
+
+export function nodeInstanceLiveStreamUrl(nodeId: string, graphId?: string): string {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return `${readActiveApiBase()}/api/nodes/instances/${encodeURIComponent(nodeId)}/live/stream${query}`
 }
 
 export async function listPrompts(): Promise<string[]> {

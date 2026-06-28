@@ -33,6 +33,7 @@ class NodeInstanceQueue(HostBoundService):
             "trace_id": trace_id,
             "from_output_index": NodeRouteParser.parse_port_index((payload or {}).get("from_output_index")) or 0,
             "to_input_index": NodeRouteParser.parse_port_index((payload or {}).get("to_input_index")) or 0,
+            "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
         }
         if isinstance((payload or {}).get("link_id"), str) and str((payload or {}).get("link_id")).strip():
             item["link_id"] = str((payload or {}).get("link_id")).strip()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { ProviderInfo } from '../../api'
 import { ASSET_FIELD_KEYS } from '../../composables/droppedPaths'
 import {
@@ -12,6 +12,7 @@ import {
   normalizeSwitch,
   normalizeToolSelection,
   providerModes,
+  reasoningEffortOptions,
   switchOptions,
   VIDEO_GENERATION_MODE,
   VIDEO_GENERATION_NODE_TYPE,
@@ -26,7 +27,9 @@ import {
   getSchemaInputType,
   isSchemaBooleanValue,
   isSchemaSelectField,
+  normalizeSchemaFieldValue,
 } from '../../composables/nodeSchemaFields'
+import FieldMultiSelect from './FieldMultiSelect.vue'
 import WorkingPathField from './WorkingPathField.vue'
 
 type NodeFields = Record<string, any>
@@ -55,6 +58,7 @@ const emit = defineEmits<{
 }>()
 
 const defaultModeOrder = ['chat', 'image_generation', 'video_generation', 'imagechat', 'vision_understand']
+const multiSelectSearchQueries = ref<Record<string, string>>({})
 const schemaKeys = computed(() => Object.keys(props.schema || {}))
 const modeOptions = computed(() => {
   const discovered = props.providers.flatMap((provider) => providerModes(provider))
@@ -75,9 +79,8 @@ const providerOptions = computed(() => {
       .filter((provider) => providerModes(provider).includes(mode))
       .map((provider) => String(provider.id || '').trim())
       .filter(Boolean),
-  ).sort((a, b) => a.localeCompare(b))
+    ).sort((a, b) => a.localeCompare(b))
 })
-const toolSelection = computed(() => normalizeToolSelection(props.fields.tools, toolOptions.value))
 
 function setField(key: string, value: any) {
   emit('update-field', key, value)
@@ -97,16 +100,42 @@ function isProviderField(key: string) {
   )
 }
 
-function isToolsField(key: string) {
-  return props.typeId === 'agent_node' && key === 'tools'
-}
-
 function isWebSearchField(key: string) {
   return (props.typeId === 'agent_node' || props.typeId === VIDEO_GENERATION_NODE_TYPE) && key === 'web_search'
 }
 
 function isThinkingField(key: string) {
   return props.typeId === 'agent_node' && key === 'thinking'
+}
+
+function isReasoningEffortField(key: string) {
+  return props.typeId === 'agent_node' && key === 'reasoning_effort'
+}
+
+function getSelectedProvider() {
+  const providerId = String(props.fields.provider_id ?? '').trim()
+  if (!providerId) return null
+  return props.providers.find((provider) => String(provider.id || '').trim() === providerId) || null
+}
+
+function getProviderFeatureHint(key: string) {
+  if (props.typeId !== 'agent_node') return ''
+  if (!['web_search', 'thinking', 'reasoning_effort'].includes(key)) return ''
+  const provider = getSelectedProvider()
+  const feature = provider?.features?.[key]
+  if (!feature || typeof feature !== 'object') return ''
+  const providerId = String(provider?.id || '').trim()
+  const label = providerId ? `${providerId}: ` : ''
+  const values = Array.isArray(feature.values) ? feature.values.map((item) => String(item || '').trim()).filter(Boolean) : []
+  const requires = String(feature.requires || '').trim()
+  if (feature.supported) {
+    return `${label}${key} supported${values.length ? ` (${values.join(', ')})` : ''}.`
+  }
+  return `${label}${key} unsupported${requires ? `; requires ${requires}` : ''}.`
+}
+
+function isToolsField(key: string) {
+  return props.typeId === 'agent_node' && key === 'tools'
 }
 
 function getFieldType(key: string) {
@@ -130,7 +159,9 @@ function getFieldText(key: string) {
 }
 
 function getFieldHint(key: string) {
-  return getSchemaFieldHint(props.schema, key)
+  const schemaHint = getSchemaFieldHint(props.schema, key)
+  const providerHint = getProviderFeatureHint(key)
+  return [schemaHint, providerHint].filter(Boolean).join(' ')
 }
 
 function isSelectField(key: string) {
@@ -138,6 +169,11 @@ function isSelectField(key: string) {
 }
 
 function getFieldOptions(key: string) {
+  if (isToolsField(key)) {
+    const schemaOptions = getSchemaFieldOptions(props.schema, key)
+    if (schemaOptions.length) return schemaOptions
+    return toolOptions.value.map((value) => ({ value, label: value }))
+  }
   return getSchemaFieldOptions(props.schema, key)
 }
 
@@ -153,12 +189,74 @@ function isWorkingPathField(key: string) {
   return String(key || '').trim() === 'working_path'
 }
 
-function toggleTool(tool: string) {
-  const value = String(tool || '').trim()
-  if (!value) return
-  const current = toolSelection.value
-  setField('tools', current.includes(value) ? current.filter((item) => item !== value) : [...current, value])
+function getMultiSelectValue(key: string) {
+  if (isToolsField(key)) {
+    const allowedTools = getFieldOptions(key).map((option) => option.value)
+    return normalizeToolSelection(props.fields.tools, allowedTools)
+  }
+  return normalizeSchemaFieldValue(props.schema, key, props.fields[key]) as string[]
 }
+
+function getMultiSelectPlaceholder(key: string) {
+  if (String(key || '').trim() === 'plugins') return 'Select plugins'
+  if (isToolsField(key)) return 'Select tools'
+  if (String(key || '').trim() === 'mcp_servers') return 'Select MCP servers'
+  if (String(key || '').trim() === 'skills') return 'Select skills'
+  return `Select ${getFieldLabel(key)}`
+}
+
+function getMultiSelectLabel(key: string) {
+  const selected = new Set(getMultiSelectValue(key))
+  const labels = getFieldOptions(key)
+    .filter((option) => selected.has(option.value))
+    .map((option) => option.label)
+  if (!labels.length) return getMultiSelectPlaceholder(key)
+  if (labels.length <= 2) return labels.join(', ')
+  return `${labels.length} selected`
+}
+
+function getMultiSelectEmptyText(key: string) {
+  if (String(key || '').trim() === 'plugins') return 'No plugins found.'
+  if (isToolsField(key)) return 'No tools found.'
+  if (String(key || '').trim() === 'mcp_servers') return 'No MCP servers found.'
+  if (String(key || '').trim() === 'skills') return 'No skills found.'
+  return 'No options found.'
+}
+
+function getMultiSelectSearchQuery(key: string) {
+  return String(multiSelectSearchQueries.value[key] || '')
+}
+
+function setMultiSelectSearchQuery(key: string, value: string) {
+  multiSelectSearchQueries.value = {
+    ...multiSelectSearchQueries.value,
+    [key]: String(value || ''),
+  }
+}
+
+function getMultiSelectSearchPlaceholder(key: string) {
+  return `Search ${getFieldLabel(key)}`
+}
+
+function toggleMultiSelectOption(key: string, value: string) {
+  const optionValue = String(value || '').trim()
+  if (!optionValue) return
+  const current = getMultiSelectValue(key)
+  const next = current.includes(optionValue)
+    ? current.filter((item) => item !== optionValue)
+    : [...current, optionValue]
+  setField(key, next)
+}
+
+function isDropdownMultiSelectField(key: string) {
+  if (isToolsField(key)) return true
+  return String(props.schema?.[key]?.type || '').trim().toLowerCase() === 'multiselect'
+}
+
+function getReasoningEffortValue() {
+  return props.fields.reasoning_effort ?? 'high'
+}
+
 </script>
 
 <template>
@@ -173,7 +271,19 @@ function toggleTool(tool: string) {
         'field-busy': uploadingKey === key,
       }"
     >
-      <span class="field-label">{{ getFieldLabel(key) }}</span>
+      <span class="field-head" :class="{ 'field-head-search': isDropdownMultiSelectField(key) }">
+        <span class="field-label">{{ getFieldLabel(key) }}</span>
+        <input
+          v-if="isDropdownMultiSelectField(key)"
+          class="field-search-input"
+          type="search"
+          :placeholder="getMultiSelectSearchPlaceholder(key)"
+          :value="getMultiSelectSearchQuery(key)"
+          @click.stop
+          @keydown.stop
+          @input="setMultiSelectSearchQuery(key, ($event.target as HTMLInputElement).value)"
+        />
+      </span>
 
       <select
         v-if="isModeField(key)"
@@ -210,26 +320,34 @@ function toggleTool(tool: string) {
       <select
         v-else-if="isThinkingField(key)"
         class="field-input"
-        :value="normalizeSwitch(fields.thinking, 'enabled')"
-        @change="setField('thinking', normalizeSwitch(($event.target as HTMLSelectElement).value, 'enabled'))"
+        :value="normalizeSwitch(fields.thinking, 'disabled')"
+        @change="setField('thinking', normalizeSwitch(($event.target as HTMLSelectElement).value, 'disabled'))"
       >
         <option v-for="option in switchOptions" :key="`thinking-${option.value}`" :value="option.value">
           {{ option.label }}
         </option>
       </select>
 
-      <div v-else-if="isToolsField(key)" class="tools-picker">
-        <button
-          v-for="tool in toolOptions"
-          :key="`tool-${tool}`"
-          type="button"
-          class="tool-chip"
-          :class="{ active: toolSelection.includes(tool) }"
-          @click="toggleTool(tool)"
-        >
-          {{ tool }}
-        </button>
-      </div>
+      <select
+        v-else-if="isReasoningEffortField(key)"
+        class="field-input"
+        :value="getReasoningEffortValue()"
+        @change="setField('reasoning_effort', ($event.target as HTMLSelectElement).value)"
+      >
+        <option v-for="option in reasoningEffortOptions" :key="`reasoning-${option.value}`" :value="option.value">
+          {{ option.label }}
+        </option>
+      </select>
+
+      <FieldMultiSelect
+        v-else-if="isDropdownMultiSelectField(key)"
+        :label="getMultiSelectLabel(key)"
+        :options="getFieldOptions(key)"
+        :selected-values="getMultiSelectValue(key)"
+        :empty-text="getMultiSelectEmptyText(key)"
+        :search-query="getMultiSelectSearchQuery(key)"
+        @toggle="toggleMultiSelectOption(key, $event)"
+      />
 
       <select
         v-else-if="isSelectField(key)"
@@ -314,6 +432,44 @@ function toggleTool(tool: string) {
   color: #cbd5e1;
 }
 
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field-head-search .field-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-search-input {
+  flex: 0 1 150px;
+  min-width: 96px;
+  max-width: 56%;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #f8fafc;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  outline: none;
+}
+
+.field-search-input:focus {
+  border-color: rgba(56, 189, 248, 0.7);
+}
+
+.field-search-input::placeholder {
+  color: rgba(148, 163, 184, 0.74);
+}
+
 .field-input {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.22);
@@ -355,23 +511,4 @@ function toggleTool(tool: string) {
   opacity: 0.7;
 }
 
-.tools-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tool-chip {
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.7);
-  color: rgba(226, 232, 240, 0.95);
-  font-size: 11px;
-  padding: 4px 10px;
-}
-
-.tool-chip.active {
-  border-color: rgba(56, 189, 248, 0.7);
-  background: rgba(14, 116, 144, 0.3);
-}
 </style>

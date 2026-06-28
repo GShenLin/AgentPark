@@ -1,6 +1,7 @@
 import os
 
 from nodes.base_node import BaseNode
+from src.message_protocol import envelope_text
 
 
 class Node(BaseNode):
@@ -31,7 +32,7 @@ class Node(BaseNode):
         ctx = context or {}
         base_dir = str(ctx.get("FilePath") or "").strip()
         file_name = str(ctx.get("FileName") or "").strip()
-        content = self._message_text(message)
+        content = envelope_text(message)
 
         if not base_dir:
             raise ValueError("FilePath is required")

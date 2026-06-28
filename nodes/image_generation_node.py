@@ -1,10 +1,14 @@
-import json
 import os
 
 from nodes.base_node import BaseNode
-from src.config_loader import ConfigLoader
-from src.message_protocol import build_resource_part, normalize_envelope
+from src.media_resource_utils import parse_resource_list
+from src.message_protocol import build_resource_part, envelope_text, normalize_envelope
+from src.provider_options import build_provider_options_for_support_modes
 from src.providers import create_agent
+from src.value_parsing import parse_optional_bool_value
+
+
+_SUPPORTED_PROVIDER_MODES = {"image_generation"}
 
 
 class Node(BaseNode):
@@ -90,29 +94,9 @@ class Node(BaseNode):
         },
     }
 
-    @staticmethod
-    def _image_generation_provider_options() -> list[dict]:
-        try:
-            providers = ConfigLoader().get_all_providers()
-        except Exception:
-            providers = {}
-        options: list[dict] = []
-        if isinstance(providers, dict):
-            for provider_id, config in providers.items():
-                if not isinstance(config, dict):
-                    continue
-                modes = config.get("supportmode")
-                mode_set = {str(item or "").strip().lower() for item in modes} if isinstance(modes, list) else set()
-                if "image_generation" in mode_set:
-                    text = str(provider_id or "").strip()
-                    if text:
-                        options.append({"value": text, "label": text})
-        options.sort(key=lambda item: item["label"].lower())
-        return options
-
     def get_config_schema(self, context: dict | None = None) -> dict:
         schema = super().get_config_schema(context)
-        options = self._image_generation_provider_options()
+        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
         if options:
             provider_schema = dict(schema.get("provider_id") or {})
             provider_schema["type"] = "select"
@@ -124,42 +108,15 @@ class Node(BaseNode):
         super().on_create(config, context)
         if not isinstance(config, dict) or str(config.get("provider_id") or "").strip():
             return
-        options = self._image_generation_provider_options()
+        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
         if options:
             config["provider_id"] = options[0]["value"]
-
-    @staticmethod
-    def _normalize_switch(value: object, default: bool = False) -> bool:
-        if isinstance(value, bool):
-            return value
-        text = str(value or "").strip().lower()
-        if text in {"enabled", "enable", "on", "true", "1", "yes"}:
-            return True
-        if text in {"disabled", "disable", "off", "false", "0", "no"}:
-            return False
-        return bool(default)
-
-    @staticmethod
-    def _parse_resource_list(value: object) -> list[str]:
-        if isinstance(value, list):
-            return [str(item).strip() for item in value if str(item).strip()]
-        text = str(value or "").strip()
-        if not text:
-            return []
-        if text.startswith("["):
-            try:
-                parsed = json.loads(text)
-            except Exception:
-                parsed = None
-            if isinstance(parsed, list):
-                return [str(item).strip() for item in parsed if str(item).strip()]
-        return [line.strip() for line in text.splitlines() if line.strip()]
 
     def _extract_prompt_and_images(self, message: object, configured_prompt: object, configured_images: object) -> tuple[str, list[str]]:
         envelope = normalize_envelope(message, default_role="user")
         parts = envelope.get("parts") if isinstance(envelope, dict) else []
         text_parts: list[str] = []
-        images = self._parse_resource_list(configured_images)
+        images = parse_resource_list(configured_images)
 
         for part in parts if isinstance(parts, list) else []:
             if not isinstance(part, dict):
@@ -235,7 +192,9 @@ class Node(BaseNode):
         image_size = str(ctx.get("image_size") or "").strip()
         response_format = str(ctx.get("response_format") or "url").strip() or "url"
         filename_prefix = str(ctx.get("filename_prefix") or "generated_image").strip() or "generated_image"
-        watermark = self._normalize_switch(ctx.get("watermark"), default=False)
+        watermark = parse_optional_bool_value("watermark", ctx.get("watermark"))
+        if watermark is None:
+            watermark = False
 
         if not provider_id:
             raise ValueError("provider_id is required")
@@ -246,6 +205,7 @@ class Node(BaseNode):
         node_dir = os.path.join(base_dir, "memories", graph_id, node_id)
         memory_path = os.path.join(node_dir, f"{node_id}.md")
         agent = create_agent(provider_id, memory_file_path=memory_path)
+        self._inject_configured_skills(agent, ctx, node_id=node_id)
         if not hasattr(agent, "generate_image"):
             raise ValueError(f"Provider '{provider_id}' does not support image generation")
 
@@ -266,6 +226,6 @@ class Node(BaseNode):
             image_size=image_size,
         )
         return {
-            "display": self._message_text(output_message),
+            "display": envelope_text(output_message),
             "routes": [{"output_index": 0, "payload": output_message}],
         }

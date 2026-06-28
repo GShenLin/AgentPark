@@ -1,0 +1,163 @@
+<script setup lang="ts">
+import type { MobileNode } from '../api'
+
+defineProps<{
+  node: MobileNode
+}>()
+
+const emit = defineEmits<{
+  (event: 'select', node: MobileNode): void
+}>()
+
+function nodeStateLabel(node: MobileNode) {
+  const state = String(node.state || 'idle')
+  if (state === 'working') return '工作中'
+  if (state === 'stop') return '已停止'
+  return '空闲'
+}
+
+function nodeStateClass(node: MobileNode) {
+  const state = String(node.state || 'idle')
+  if (state === 'working') return 'state-working'
+  if (state === 'stop') return 'state-stop'
+  return 'state-idle'
+}
+
+function selectNode(node: MobileNode) {
+  emit('select', node)
+}
+</script>
+
+<template>
+  <button
+    class="node-row"
+    type="button"
+    @click="selectNode(node)"
+  >
+    <span class="node-status" :class="nodeStateClass(node)"></span>
+    <div class="row-body">
+      <div class="row-main">{{ node.name || node.id }}</div>
+      <div class="row-sub">{{ node.type_id }} · {{ nodeStateLabel(node) }}</div>
+      <div v-if="node.last_message" class="row-last">{{ node.last_message }}</div>
+    </div>
+    <span v-if="node.pending_count" class="pending-pill">{{ node.pending_count }}</span>
+    <span class="row-arrow">›</span>
+  </button>
+</template>
+
+<style scoped>
+.node-row {
+  width: 100%;
+  height: auto;
+  min-height: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 12px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
+  overflow: visible;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+}
+
+.node-row:active {
+  border-color: rgba(125, 211, 252, 0.58);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.node-row:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.8);
+  outline-offset: 1px;
+}
+
+.row-body {
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: visible;
+}
+
+.row-main,
+.row-sub,
+.row-last {
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.row-main {
+  color: rgba(248, 250, 252, 0.96);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.row-sub {
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 12px;
+}
+
+.row-last {
+  margin-top: 4px;
+  color: rgba(203, 213, 225, 0.9);
+  font-size: 12px;
+  line-height: 1.38;
+  overflow: visible;
+  white-space: pre-wrap;
+}
+
+.row-arrow {
+  align-self: center;
+  flex: 0 0 auto;
+  color: rgba(125, 211, 252, 0.88);
+  font-size: 24px;
+}
+
+.node-status {
+  align-self: center;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.75);
+}
+
+.state-working {
+  background: #22c55e;
+}
+
+.state-stop {
+  background: #f87171;
+}
+
+.state-idle {
+  background: #38bdf8;
+}
+
+.pending-pill {
+  align-self: start;
+  flex: 0 0 auto;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.22);
+  color: rgba(224, 242, 254, 0.96);
+  font-size: 12px;
+  font-weight: 700;
+}
+</style>

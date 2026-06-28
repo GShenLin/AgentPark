@@ -3,10 +3,10 @@ import queue
 import uuid
 
 from . import runtime_paths
+from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
 from .shared import (
     HTTPException,
-    _parse_node_state,
     _read_json_dict,
     _set_node_config_last_message,
     _touch_node_config_last_run_at,
@@ -48,7 +48,7 @@ class NodeAsyncRuns(HostBoundService):
                 node_config_path = self.graph_runtime._node_config_path(safe_node_instance_id, safe_graph_id)
                 if node_config_path and os.path.exists(node_config_path):
                     current = _read_json_dict(node_config_path)
-                    if _parse_node_state(current.get("state")) == "stop":
+                    if parse_node_state(current.get("state")) == "stop":
                         raise HTTPException(status_code=409, detail="node is stopped")
                     _update_node_config_state(node_config_path, "working")
                     _set_node_config_last_message(node_config_path, message_full or message_preview)

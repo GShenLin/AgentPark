@@ -24,10 +24,6 @@ class NodeRouteParser:
             return None
         return number
 
-    @staticmethod
-    def normalize_payload(value: Any, default_role: str = "assistant") -> dict:
-        return normalize_envelope(value, default_role=default_role)
-
     @classmethod
     def parse_node_output(cls, output: Any) -> dict:
         if not isinstance(output, dict):
@@ -53,7 +49,7 @@ class NodeRouteParser:
             deduped_routes.append(
                 {
                     "output_index": port_index,
-                    "payload": cls.normalize_payload(item.get("payload"), default_role="assistant"),
+                    "payload": normalize_envelope(item.get("payload"), default_role="assistant"),
                 }
             )
         if not deduped_routes and not suppress_output:
@@ -66,7 +62,7 @@ class NodeRouteParser:
             display_payload = deduped_routes[0]["payload"]
         if display_payload is None:
             display_payload = ""
-        display_env = cls.normalize_payload(display_payload, default_role="assistant")
+        display_env = normalize_envelope(display_payload, default_role="assistant")
 
         return {
             "display_text": envelope_preview(display_env),

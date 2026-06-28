@@ -5,14 +5,11 @@ from .graph_node_store import GraphNodeStore
 from .graph_runner_runtime import GraphRunnerRuntime
 from .graph_runtime_registry import GraphRuntimeRegistry
 from .graph_timer_scheduler import GraphTimerScheduler
+from .node_goal_runtime import NodeGoalRuntime
 from .shared import *
 
 
 class GraphRuntimeDomain(DomainBase):
-    def __init__(self, core):
-        super().__init__(core)
-        object.__setattr__(self, "_service_targets_cache", None)
-
     def _iter_service_targets(self) -> tuple[object, ...]:
         try:
             cached = object.__getattribute__(self, "_service_targets_cache")
@@ -25,6 +22,7 @@ class GraphRuntimeDomain(DomainBase):
                 GraphNodeStore(self),
                 GraphMessageDispatch(self),
                 GraphRunnerRuntime(self),
+                NodeGoalRuntime(self),
                 GraphNodeExecution(self),
             )
             object.__setattr__(self, "_service_targets_cache", cached)

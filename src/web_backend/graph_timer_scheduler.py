@@ -5,20 +5,29 @@ import uuid
 from datetime import datetime
 
 from src.clock_config import parse_clock_interval_seconds
+from src.value_parsing import parse_bool_value, parse_int_value
 
+from .clock_runtime import CLOCK_NEXT_FIRE_AT_KEY
+from .clock_runtime import CLOCK_REMAINING_KEY
+from .clock_runtime import CLOCK_RUNNING_KEY
+from .clock_runtime import CLOCK_TRIGGER_COUNT_KEY
+from .clock_runtime import build_running_clock_snapshot
+from .clock_runtime import format_clock_countdown
+from .clock_runtime import read_clock_next_fire_at
 from . import runtime_paths, state_store
+from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
-from .shared import _append_node_pending, _parse_node_state, build_text_envelope
+from .shared import _append_node_pending, build_text_envelope
 
 
 class GraphTimerScheduler(HostBoundService):
     _OUTPUT_KEYS = ("OutputText", "output_text")
     _CLOCK_LOOP_KEYS = ("IsLoop", "is_loop")
     _CLOCK_LOOP_COUNT_KEYS = ("LoopCount", "loop_count")
-    _CLOCK_RUNNING_KEY = "_clock_running"
-    _CLOCK_NEXT_FIRE_AT_KEY = "_clock_next_fire_at"
-    _CLOCK_REMAINING_KEY = "_clock_remaining_seconds"
-    _CLOCK_TRIGGER_COUNT_KEY = "_clock_trigger_count"
+    _CLOCK_RUNNING_KEY = CLOCK_RUNNING_KEY
+    _CLOCK_NEXT_FIRE_AT_KEY = CLOCK_NEXT_FIRE_AT_KEY
+    _CLOCK_REMAINING_KEY = CLOCK_REMAINING_KEY
+    _CLOCK_TRIGGER_COUNT_KEY = CLOCK_TRIGGER_COUNT_KEY
 
     def _iter_node_configs(self):
         graphs_dir = runtime_paths._get_graphs_dir()
@@ -73,6 +82,7 @@ class GraphTimerScheduler(HostBoundService):
             "trace_id": uuid.uuid4().hex,
             "from": node_id,
             "source": source,
+            "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
         }
         _append_node_pending(config_path, item)
         self._ensure_graph_runner(graph_id)
@@ -124,9 +134,6 @@ class GraphTimerScheduler(HostBoundService):
             and parsed.minute == now_dt.minute
         )
 
-    def _parse_clock_interval_seconds(self, cfg: dict) -> int:
-        return parse_clock_interval_seconds(cfg)
-
     def _parse_clock_loop_enabled(self, cfg: dict) -> bool:
         if not isinstance(cfg, dict):
             return True
@@ -136,14 +143,12 @@ class GraphTimerScheduler(HostBoundService):
             if value is not None:
                 raw_value = value
                 break
-        if isinstance(raw_value, bool):
-            return raw_value
-        text = str(raw_value or "").strip().lower()
-        if text in {"false", "0", "no", "off", "disabled"}:
-            return False
-        if text in {"true", "1", "yes", "on", "enabled"}:
-            return True
-        return True
+        return parse_bool_value(
+            raw_value,
+            default=True,
+            true_values=("true", "1", "yes", "on", "enabled"),
+            false_values=("false", "0", "no", "off", "disabled"),
+        )
 
     def _parse_clock_loop_count(self, cfg: dict) -> int:
         if not isinstance(cfg, dict):
@@ -154,24 +159,10 @@ class GraphTimerScheduler(HostBoundService):
             if value is not None:
                 raw_value = value
                 break
-        try:
-            parsed = int(float(raw_value))
-        except Exception:
-            parsed = 0
-        return max(0, parsed)
+        return parse_int_value(raw_value, default=0, minimum=0)
 
     def _read_clock_next_fire_at(self, cfg: dict) -> float | None:
-        if not isinstance(cfg, dict):
-            return None
-        raw_value = cfg.get(self._CLOCK_NEXT_FIRE_AT_KEY)
-        if isinstance(raw_value, (int, float)):
-            return float(raw_value)
-        if isinstance(raw_value, str) and raw_value.strip():
-            try:
-                return float(raw_value.strip())
-            except Exception:
-                return None
-        return None
+        return read_clock_next_fire_at(cfg) if isinstance(cfg, dict) else None
 
     def _merge_clock_fields(self, config_path: str, cfg: dict, fields: dict[str, object]) -> None:
         next_cfg = state_store._read_json_dict(config_path)
@@ -186,7 +177,7 @@ class GraphTimerScheduler(HostBoundService):
             pass
 
     def _format_clock_countdown(self, remaining_seconds: int) -> str:
-        return f"Working: {max(0, int(remaining_seconds))}s"
+        return format_clock_countdown(remaining_seconds)
 
     def _handle_timer_trigger(
         self,
@@ -228,7 +219,7 @@ class GraphTimerScheduler(HostBoundService):
     ) -> int:
         if not bool(cfg.get(self._CLOCK_RUNNING_KEY)):
             return 0
-        interval_seconds = self._parse_clock_interval_seconds(cfg)
+        interval_seconds = parse_clock_interval_seconds(cfg)
         if interval_seconds <= 0:
             return 0
         loop_enabled = self._parse_clock_loop_enabled(cfg)
@@ -254,19 +245,6 @@ class GraphTimerScheduler(HostBoundService):
                 },
             )
             return 0
-
-        remaining_seconds = max(0, int(next_fire_at - now_ts + 0.999))
-        countdown_text = self._format_clock_countdown(remaining_seconds)
-        if str(cfg.get("last_message") or "") != countdown_text or cfg.get(self._CLOCK_REMAINING_KEY) != remaining_seconds:
-            self._merge_clock_fields(
-                config_path,
-                cfg,
-                {
-                    self._CLOCK_REMAINING_KEY: remaining_seconds,
-                    "last_message": countdown_text,
-                    "state": "working",
-                },
-            )
 
         if now_ts < next_fire_at:
             return 0
@@ -309,6 +287,34 @@ class GraphTimerScheduler(HostBoundService):
         self._merge_clock_fields(config_path, cfg, fields)
         return 1
 
+    def _persist_running_clock_snapshots(self) -> dict[str, int]:
+        result = {"saved": 0, "failed": 0}
+        now_ts = time.time()
+        for graph_id, _node_id, config_path, cfg in self._iter_node_configs():
+            if str(cfg.get("type_id") or "").strip() != "clock_node":
+                continue
+            fields = build_running_clock_snapshot(cfg, now_ts=now_ts)
+            if not fields:
+                continue
+            next_cfg = state_store._read_json_dict(config_path)
+            if not isinstance(next_cfg, dict) or not next_cfg:
+                next_cfg = dict(cfg)
+            next_cfg.update(fields)
+            try:
+                if state_store._write_json_dict(config_path, next_cfg):
+                    result["saved"] += 1
+                else:
+                    result["failed"] += 1
+            except Exception as exc:
+                result["failed"] += 1
+                self._log_graph_event(
+                    graph_id,
+                    "clock_shutdown_snapshot_failed",
+                    config_path=config_path,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+        return result
+
     def _scan_and_emit_scheduled_nodes_once(self) -> int:
         now_ts = time.time()
         now_dt = datetime.fromtimestamp(now_ts)
@@ -316,7 +322,7 @@ class GraphTimerScheduler(HostBoundService):
         enqueued = 0
 
         for graph_id, node_id, config_path, cfg in self._iter_node_configs():
-            if _parse_node_state(cfg.get("state")) == "stop":
+            if parse_node_state(cfg.get("state")) == "stop":
                 continue
 
             type_id = str(cfg.get("type_id") or "").strip()
@@ -347,9 +353,6 @@ class GraphTimerScheduler(HostBoundService):
             }
 
         return enqueued
-
-    def _scan_and_emit_timer_triggers_once(self) -> int:
-        return self._scan_and_emit_scheduled_nodes_once()
 
     def _timer_trigger_scheduler_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
@@ -389,3 +392,4 @@ class GraphTimerScheduler(HostBoundService):
                 thread.join(timeout=1.0)
             except Exception:
                 pass
+        self._persist_running_clock_snapshots()

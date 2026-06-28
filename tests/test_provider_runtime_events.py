@@ -38,15 +38,14 @@ def test_provider_runtime_notice_builds_runtime_notice_event():
 
     agent._emit_provider_runtime_notice(message="hello", stage="unit")
 
-    assert agent.events == [
-        {
-            "type": "runtime_notice",
-            "message": "hello",
-            "source": "provider_runtime",
-            "stage": "unit",
-            "provider": "doubao",
-        }
-    ]
+    assert len(agent.events) == 1
+    assert agent.events[0]["type"] == "runtime_notice"
+    assert agent.events[0]["message"] == "hello"
+    assert agent.events[0]["source"] == "provider_runtime"
+    assert agent.events[0]["stage"] == "unit"
+    assert agent.events[0]["provider"] == "doubao"
+    assert agent.events[0]["event_time"]
+    assert isinstance(agent.events[0]["monotonic_ns"], int)
 
 
 def test_doubao_stream_parse_reports_malformed_sse_event():

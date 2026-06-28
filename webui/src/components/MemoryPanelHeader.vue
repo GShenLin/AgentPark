@@ -6,17 +6,17 @@ defineProps<{
   isMarkdownPreview: boolean
   showLineNumbers: boolean
   isWordWrap: boolean
-  memoryAutoScroll: boolean
   isSaving: boolean
   graphStatus: string | null
+  canClearMemory: boolean
 }>()
 
 const emit = defineEmits<{
-  (event: 'update:memoryMode', value: 'agent' | 'file' | 'graph'): void
   (event: 'update:isMarkdownPreview', value: boolean): void
   (event: 'update:showLineNumbers', value: boolean): void
   (event: 'update:isWordWrap', value: boolean): void
-  (event: 'update:memoryAutoScroll', value: boolean): void
+  (event: 'toggleFileMode'): void
+  (event: 'clearMemory'): void
 }>()
 
 function readChecked(event: Event) {
@@ -32,9 +32,8 @@ function readChecked(event: Event) {
     </div>
 
     <div class="mode-tabs">
-      <button class="mode-tab" :class="{ active: memoryMode === 'agent' }" @click="emit('update:memoryMode', 'agent')">Node</button>
-      <button class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('update:memoryMode', 'file')">File</button>
-      <button class="mode-tab" :class="{ active: memoryMode === 'graph' }" @click="emit('update:memoryMode', 'graph')">Graph</button>
+      <button class="mode-tab clear-memory" :disabled="!canClearMemory" @click="emit('clearMemory')">ClearMemory</button>
+      <button class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('toggleFileMode')">File</button>
     </div>
 
     <div v-if="memoryMode !== 'graph'" class="view-controls">
@@ -54,10 +53,6 @@ function readChecked(event: Event) {
       <label class="toggle-item">
         <input type="checkbox" :checked="isWordWrap" @change="emit('update:isWordWrap', readChecked($event))" />
         <span>Wrap</span>
-      </label>
-      <label class="toggle-item">
-        <input type="checkbox" :checked="memoryAutoScroll" @change="emit('update:memoryAutoScroll', readChecked($event))" />
-        <span>AutoScroll</span>
       </label>
     </div>
 
@@ -123,6 +118,16 @@ function readChecked(event: Event) {
 .mode-tab.active {
   border-color: rgba(56, 189, 248, 0.65);
   background: rgba(14, 116, 144, 0.28);
+}
+
+.mode-tab.clear-memory {
+  border-color: rgba(248, 113, 113, 0.38);
+  color: rgba(254, 226, 226, 0.96);
+}
+
+.mode-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .view-controls {

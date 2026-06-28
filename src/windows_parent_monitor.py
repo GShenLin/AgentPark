@@ -56,20 +56,16 @@ def get_parent_pid() -> int:
     return 0
 
 
-def start_frozen_parent_exit_monitor(exit_func=None) -> None:
+def start_process_exit_monitor(parent_pid: int, exit_func=None, *, thread_name: str = "parent-exit-monitor") -> bool:
     if os.name != "nt":
-        return
-    if not getattr(sys, "frozen", False):
-        return
-
-    parent_pid = get_parent_pid()
+        return False
     if parent_pid <= 0 or parent_pid == os.getpid():
-        return
+        return False
 
     kernel32 = _kernel32()
     parent_handle = kernel32.OpenProcess(_SYNCHRONIZE, False, parent_pid)
     if not parent_handle:
-        return
+        return False
 
     if exit_func is None:
         exit_func = lambda: os._exit(0)
@@ -82,7 +78,33 @@ def start_frozen_parent_exit_monitor(exit_func=None) -> None:
         finally:
             kernel32.CloseHandle(parent_handle)
 
-    threading.Thread(target=_watch_parent, name="parent-exit-monitor", daemon=True).start()
+    threading.Thread(target=_watch_parent, name=thread_name, daemon=True).start()
+    return True
 
 
-__all__ = ["get_parent_pid", "start_frozen_parent_exit_monitor"]
+def start_env_parent_exit_monitor(env_var: str = "AITOOLS_EXIT_WHEN_PID_EXITS", exit_func=None) -> bool:
+    raw_pid = str(os.environ.get(env_var) or "").strip()
+    if not raw_pid:
+        return False
+    try:
+        parent_pid = int(raw_pid)
+    except ValueError:
+        return False
+    return start_process_exit_monitor(parent_pid, exit_func=exit_func, thread_name="launcher-exit-monitor")
+
+
+def start_frozen_parent_exit_monitor(exit_func=None) -> None:
+    if os.name != "nt":
+        return
+    if not getattr(sys, "frozen", False):
+        return
+
+    start_process_exit_monitor(get_parent_pid(), exit_func=exit_func, thread_name="parent-exit-monitor")
+
+
+__all__ = [
+    "get_parent_pid",
+    "start_env_parent_exit_monitor",
+    "start_frozen_parent_exit_monitor",
+    "start_process_exit_monitor",
+]

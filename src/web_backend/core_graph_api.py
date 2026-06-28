@@ -1,22 +1,25 @@
 from .domain_base import DomainBase
 from .shared import *
+from .graph_api_storage import GraphApiStorage
+from .graph_runtime_registry import GraphConfigReadError
+from .node_state_machine import parse_node_state
+from fastapi.responses import StreamingResponse
 from ..workspace_settings import (
-    load_workspace_settings,
     read_startup_graph_settings,
-    save_workspace_settings,
+    save_startup_graph_settings,
 )
 
 
 class GraphApiDomain(DomainBase):
-    def __init__(self, core, graph_runtime):
-        super().__init__(core, graph_runtime)
-
-    def _sanitize_graph_payload_for_storage(self, payload: dict) -> dict:
-        if not isinstance(payload, dict):
-            return {}
-        graph = dict(payload)
-        graph.pop("nodes", None)
-        return graph
+    def _iter_service_targets(self) -> tuple[object, ...]:
+        try:
+            cached = object.__getattribute__(self, "_service_targets_cache")
+        except AttributeError:
+            cached = None
+        if cached is None:
+            cached = (GraphApiStorage(self),)
+            object.__setattr__(self, "_service_targets_cache", cached)
+        return cached
 
     def get_startup_graph_config(self):
         cfg = read_startup_graph_settings()
@@ -31,14 +34,11 @@ class GraphApiDomain(DomainBase):
             raise HTTPException(status_code=400, detail="graph_id is required")
 
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        cfg = load_workspace_settings()
-        cfg["startup_graph_id"] = safe_graph_id
-        cfg["startup_graph_name"] = graph_name or safe_graph_id
         try:
-            save_workspace_settings(cfg)
+            save_startup_graph_settings(safe_graph_id, graph_name or safe_graph_id)
         except Exception:
-            raise HTTPException(status_code=500, detail="failed to write config/config.json")
-        return {"ok": True, "graph_id": safe_graph_id, "graph_name": cfg.get("startup_graph_name")}
+            raise HTTPException(status_code=500, detail="failed to write .cache/startup_graph.json")
+        return {"ok": True, "graph_id": safe_graph_id, "graph_name": graph_name or safe_graph_id}
 
     def _enqueue_external_event_tasks(self, source_graph_id: str, trace_id: str, tasks: list[dict]) -> int:
         safe_source_graph_id = self.graph_runtime._sanitize_graph_id(source_graph_id)
@@ -71,6 +71,7 @@ class GraphApiDomain(DomainBase):
                 "from_output_index": route_output_index,
                 "to_input_index": to_input_index,
                 "source": "event_dispatch_external",
+                "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
             }
             link_id = str(task.get("link_id") or "").strip()
             if link_id:
@@ -97,14 +98,17 @@ class GraphApiDomain(DomainBase):
         source_graph_id = self.graph_runtime._sanitize_graph_id((payload or {}).get("graph_id") or self.default_graph_id)
         trace_id = str((payload or {}).get("trace_id") or "").strip() or uuid.uuid4().hex
         next_visited = []
-        tasks = self.graph_runtime._collect_event_dispatch_tasks(
-            source_graph_id=source_graph_id,
-            source_node_id="__external_event__",
-            event_key=event_key,
-            route_payload=event_payload,
-            trace_id=trace_id,
-            next_visited=next_visited,
-        )
+        try:
+            tasks = self.graph_runtime._collect_event_dispatch_tasks(
+                source_graph_id=source_graph_id,
+                source_node_id="__external_event__",
+                event_key=event_key,
+                route_payload=event_payload,
+                trace_id=trace_id,
+                next_visited=next_visited,
+            )
+        except GraphConfigReadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
 
         if not tasks:
             self.graph_runtime._log_graph_event(
@@ -190,6 +194,34 @@ class GraphApiDomain(DomainBase):
             "worker_count": int(worker_count) if isinstance(worker_count, int) else len(threads),
         }
 
+    def stream_graph_events(self, graph_id: str):
+        safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
+
+        def encode_event(item: dict) -> str:
+            payload = dict(item or {})
+            payload["graph_id"] = safe_id
+            payload["version"] = int(payload.get("version") or 0)
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        def events():
+            item = self.core.graph_events.get(safe_id)
+            last_version = int((item or {}).get("version") or 0)
+            yield encode_event(item or {"graph_id": safe_id, "version": last_version})
+            while True:
+                item = self.core.graph_events.wait_for_change(safe_id, last_version, timeout=15.0)
+                version = int((item or {}).get("version") or 0)
+                if version <= last_version:
+                    yield ": keep-alive\n\n"
+                    continue
+                last_version = version
+                yield encode_event(item)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     def emit_graph(self, graph_id: str, payload: dict):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         trace_id = (payload or {}).get("trace_id")
@@ -207,6 +239,7 @@ class GraphApiDomain(DomainBase):
         if message is None:
             raise HTTPException(status_code=400, detail="payload is required")
         message = normalize_envelope(message, default_role="user")
+        message["trace_id"] = trace_id
         text_full = envelope_text(message).strip()
         text_preview = envelope_preview(message)
 
@@ -228,7 +261,7 @@ class GraphApiDomain(DomainBase):
                 text_full = envelope_text(message).strip()
                 text_preview = envelope_preview(message)
 
-        state = _parse_node_state(cfg.get("state"))
+        state = parse_node_state(cfg.get("state"))
         if state == "stop":
             self.graph_runtime._log_graph_event(
                 safe_graph_id,
@@ -244,12 +277,33 @@ class GraphApiDomain(DomainBase):
             "depth": 0,
             "visited": [],
             "trace_id": trace_id,
+            "request_id": trace_id,
             "from": safe_from_id,
             "source": "emit",
+            "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
         }
         _set_node_config_last_message(config_path, text_full or text_preview)
         _append_node_pending(config_path, item)
         self.graph_runtime._ensure_graph_runner(safe_graph_id)
+        # Write the user message to node memory so the Memory panel reflects it immediately.
+        try:
+            self.graph_runtime._append_node_memory_entry(safe_graph_id, safe_from_id, 'user', message)
+        except Exception as exc:
+            self.graph_runtime._log_graph_event(
+                safe_graph_id,
+                'emit_memory_persistence_error',
+                trace_id=trace_id,
+                from_id=safe_from_id,
+                error=f'{type(exc).__name__}: {exc}',
+            )
+        # Publish a live event so the SSE stream triggers a memory refresh in the frontend.
+        self.core.node_live_outputs.publish_event(
+            safe_graph_id,
+            safe_from_id,
+            'node_input',
+            {'type': 'node_input', 'text': text_full or text_preview},
+            trace_id=trace_id,
+        )
         self.graph_runtime._wake_graph_runner(safe_graph_id)
         self.graph_runtime._log_graph_event(
             safe_graph_id,
@@ -258,146 +312,6 @@ class GraphApiDomain(DomainBase):
             from_id=safe_from_id,
             input_preview=_preview_text(text_preview),
         )
-        return {"ok": True, "queued": True, "trace_id": trace_id}
-
-    def list_graphs(self):
-        graphs_dir = _get_graphs_dir()
-        graphs = []
-        if not os.path.isdir(graphs_dir):
-            graphs.append({"id": "default", "name": "default", "updated_at": None})
-            return {"graphs": graphs}
-        default_config = os.path.join(graphs_dir, "default", "config.json")
-        default_updated = None
-        default_name = "default"
-        if os.path.exists(default_config):
-            try:
-                default_updated = datetime.fromtimestamp(os.path.getmtime(default_config)).strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                default_updated = None
-            try:
-                with open(default_config, "r", encoding="utf-8") as f:
-                    payload = json.load(f)
-                if isinstance(payload, dict) and payload.get("name"):
-                    default_name = str(payload.get("name"))
-            except Exception:
-                pass
-        graphs.append({"id": "default", "name": default_name, "updated_at": default_updated})
-        for entry in os.listdir(graphs_dir):
-            if entry == "agents":
-                continue
-            if entry == "default":
-                continue
-            graph_dir = os.path.join(graphs_dir, entry)
-            if not os.path.isdir(graph_dir):
-                continue
-            config_path = os.path.join(graph_dir, "config.json")
-            if not os.path.exists(config_path):
-                continue
-            name = entry
-            if os.path.exists(config_path):
-                try:
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        payload = json.load(f)
-                    if isinstance(payload, dict) and payload.get("name"):
-                        name = str(payload.get("name"))
-                except Exception:
-                    pass
-            updated_at = None
-            try:
-                updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                updated_at = None
-            graphs.append({"id": entry, "name": name, "updated_at": updated_at})
-        graphs.sort(key=lambda item: item["name"].lower())
-        return {"graphs": graphs}
-
-    def get_graph(self, graph_id: str):
-        safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        if not safe_id:
-            raise HTTPException(status_code=400, detail="invalid graph id")
-        self.graph_runtime._log_graph_event(safe_id, "graph_load_api")
-        graphs_dir = _get_graphs_dir()
-        config_path = os.path.join(graphs_dir, safe_id, "config.json")
-        if not os.path.exists(config_path):
-            if safe_id == "default":
-                return {
-                    "graph": {
-                        "id": "default",
-                        "name": "default",
-                        "links": [],
-                    }
-                }
-            raise HTTPException(status_code=404, detail="graph not found")
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-            if not isinstance(payload, dict):
-                payload = {}
-            cleaned = self._sanitize_graph_payload_for_storage(payload)
-            if cleaned != payload:
-                try:
-                    with open(config_path, "w", encoding="utf-8") as wf:
-                        json.dump(cleaned, wf, ensure_ascii=False, indent=2)
-                except Exception:
-                    pass
-            return {"graph": cleaned}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    def save_graph(self, graph_id: str, payload: dict):
-        graph = (payload or {}).get("graph")
-        safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        if not safe_id:
-            raise HTTPException(status_code=400, detail="invalid graph id")
-        if not isinstance(graph, dict):
-            raise HTTPException(status_code=400, detail="graph is required")
-        save_reason = str((payload or {}).get("save_reason") or "").strip()
-        source_graph_id = graph.get("source_graph_id")
-        if source_graph_id is None:
-            source_graph_id = (payload or {}).get("source_graph_id")
-        source_graph_id = self.graph_runtime._sanitize_graph_id(source_graph_id)
-        self.graph_runtime._log_graph_event(
-            safe_id,
-            "graph_save_api",
-            source_graph_id=source_graph_id,
-            save_reason=save_reason,
-            nodes_count=len(graph.get("nodes") or []) if isinstance(graph.get("nodes"), list) else None,
-            links_count=len(graph.get("links") or []) if isinstance(graph.get("links"), list) else None,
-        )
-        graphs_dir = _get_graphs_dir()
-        os.makedirs(graphs_dir, exist_ok=True)
-        graph_dir = os.path.join(graphs_dir, safe_id)
-        os.makedirs(graph_dir, exist_ok=True)
-        config_path = os.path.join(graph_dir, "config.json")
-        graph = dict(graph)
-        graph.pop("source_graph_id", None)
-        graph = self._sanitize_graph_payload_for_storage(graph)
-        graph["id"] = safe_id
-        if not graph.get("name"):
-            graph["name"] = safe_id
-        if source_graph_id and source_graph_id != safe_id:
-            source_dir = os.path.join(graphs_dir, source_graph_id)
-            if os.path.isdir(source_dir):
-                for entry in os.listdir(source_dir):
-                    if entry == "config.json":
-                        continue
-                    src_path = os.path.join(source_dir, entry)
-                    dst_path = os.path.join(graph_dir, entry)
-                    try:
-                        if os.path.isdir(src_path):
-                            if os.path.exists(dst_path):
-                                shutil.rmtree(dst_path)
-                            shutil.copytree(src_path, dst_path)
-                        elif os.path.isfile(src_path):
-                            shutil.copy2(src_path, dst_path)
-                    except Exception:
-                        pass
-        try:
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(graph, f, ensure_ascii=False, indent=2)
-            updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
-            return {"graph": {"id": safe_id, "name": graph.get("name"), "updated_at": updated_at}}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        return {"ok": True, "queued": True, "trace_id": trace_id, "request_id": trace_id}
 
 __all__ = ["GraphApiDomain"]

@@ -1,0 +1,85 @@
+<script setup lang="ts">
+defineProps<{
+  disabled?: boolean
+}>()
+
+const emit = defineEmits<{
+  (event: 'save'): void
+  (event: 'copy'): void
+}>()
+</script>
+
+<template>
+  <div class="message-actions">
+    <button
+      class="message-action-btn"
+      type="button"
+      title="保存为 Markdown"
+      aria-label="保存为 Markdown"
+      :disabled="disabled"
+      @click.stop="emit('save')"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path
+          fill="currentColor"
+          d="M5 3h12.2L21 6.8V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 2v6h9V5H7Zm1 11v3h8v-3H8Zm7-11v4h1V5h-1Z"
+        />
+      </svg>
+    </button>
+    <button
+      class="message-action-btn"
+      type="button"
+      title="复制文字"
+      aria-label="复制文字"
+      :disabled="disabled"
+      @click.stop="emit('copy')"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path
+          fill="currentColor"
+          d="M8 7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2V7Zm2 0v11h8V7h-8ZM4 3h9v2H5v10H3V4a1 1 0 0 1 1-1Z"
+        />
+      </svg>
+    </button>
+  </div>
+</template>
+
+<style scoped>
+.message-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.message-action-btn {
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 7px;
+  padding: 0;
+  background: rgba(15, 23, 42, 0.74);
+  color: rgba(203, 213, 225, 0.94);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.message-action-btn:hover:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.52);
+  color: rgba(240, 249, 255, 0.98);
+  background: rgba(8, 47, 73, 0.72);
+}
+
+.message-action-btn:disabled {
+  opacity: 0.44;
+  cursor: not-allowed;
+}
+
+.message-action-btn svg {
+  display: block;
+  flex: 0 0 auto;
+}
+</style>

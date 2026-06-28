@@ -1,4 +1,5 @@
 import time
+import json
 from datetime import datetime, timedelta
 
 
@@ -88,14 +89,19 @@ def test_basic_trigger_node_click_emit_flows_to_next_node(tmp_path):
 
 def test_runner_recovers_working_node_without_inflight(tmp_path):
     import src.web_backend as backend
+    import src.web_backend.runtime_paths as runtime_paths_module
 
     runtime_root = str(tmp_path)
     original_get_runtime_root = backend._get_runtime_root
     original_get_resource_root = backend._get_resource_root
+    original_runtime_paths_get_runtime_root = runtime_paths_module._get_runtime_root
+    original_runtime_paths_get_resource_root = runtime_paths_module._get_resource_root
     resource_root = original_get_runtime_root()
 
     backend._get_runtime_root = lambda: runtime_root
     backend._get_resource_root = lambda: resource_root
+    runtime_paths_module._get_runtime_root = lambda: runtime_root
+    runtime_paths_module._get_resource_root = lambda: resource_root
 
     try:
         app = backend.create_app()
@@ -143,6 +149,112 @@ def test_runner_recovers_working_node_without_inflight(tmp_path):
     finally:
         backend._get_runtime_root = original_get_runtime_root
         backend._get_resource_root = original_get_resource_root
+        runtime_paths_module._get_runtime_root = original_runtime_paths_get_runtime_root
+        runtime_paths_module._get_resource_root = original_runtime_paths_get_resource_root
+
+
+def test_startup_recovery_requeues_inflight_and_logs_reason(tmp_path):
+    import src.web_backend as backend
+    import src.web_backend.runtime_paths as runtime_paths_module
+
+    runtime_root = str(tmp_path)
+    original_get_runtime_root = backend._get_runtime_root
+    original_get_resource_root = backend._get_resource_root
+    original_runtime_paths_get_runtime_root = runtime_paths_module._get_runtime_root
+    original_runtime_paths_get_resource_root = runtime_paths_module._get_resource_root
+    resource_root = original_get_runtime_root()
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+    runtime_paths_module._get_runtime_root = lambda: runtime_root
+    runtime_paths_module._get_resource_root = lambda: resource_root
+
+    try:
+        graph_id = "startup_recovery_graph"
+        graph_dir = tmp_path / "memories" / graph_id
+        node_dir = graph_dir / "agent1"
+        node_dir.mkdir(parents=True)
+        config_path = node_dir / "config.json"
+        config_path.write_text(
+            json.dumps(
+                {
+                    "node_id": "agent1",
+                    "type_id": "agent_node",
+                    "state": "working",
+                    "pending": [{"payload": "queued"}],
+                    "pending_count": 1,
+                    "inflight": {"payload": "running"},
+                    "_stop_requested": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        facade = backend.WebBackendFacade()
+        recovery = facade.core.graph_runtime._recover_node_runtime_state_on_startup()
+
+        from src.web_backend.node_config_service import node_runtime_state_path
+
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        runtime_cfg = json.loads(open(node_runtime_state_path(str(config_path)), "r", encoding="utf-8").read())
+        assert recovery["inflight_requeued"] == 1
+        assert recovery["nodes_reset_to_idle"] == 1
+        assert recovery["graphs_woken"] == 1
+        for key in ("state", "pending", "pending_count", "inflight", "_stop_requested"):
+            assert key not in cfg
+        assert runtime_cfg["state"] == "idle"
+        assert runtime_cfg["pending"] == [{"payload": "running"}, {"payload": "queued"}]
+        assert runtime_cfg["pending_count"] == 2
+        assert "inflight" not in runtime_cfg
+        assert "_stop_requested" not in runtime_cfg
+
+        events_path = graph_dir / "runner.events.jsonl"
+        events = [
+            json.loads(line)
+            for line in events_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        recovered_event = next(item for item in events if item.get("event") == "startup_node_state_recovered")
+        assert recovered_event["before_state"] == "working"
+        assert recovered_event["after_state"] == "idle"
+        assert recovered_event["reason"] == "startup_inflight_requeued"
+        assert recovered_event["inflight_requeued"] is True
+        assert recovered_event["pending_count"] == 2
+    finally:
+        backend._get_runtime_root = original_get_runtime_root
+        backend._get_resource_root = original_get_resource_root
+        runtime_paths_module._get_runtime_root = original_runtime_paths_get_runtime_root
+        runtime_paths_module._get_resource_root = original_runtime_paths_get_resource_root
+
+
+def test_startup_recovery_preserves_stop_state(tmp_path):
+    from src.web_backend.state_store import _read_json_dict, _recover_node_config_startup_state, _write_json_dict
+
+    config_path = tmp_path / "node" / "config.json"
+    _write_json_dict(
+        str(config_path),
+        {
+            "node_id": "agent1",
+            "type_id": "agent_node",
+            "state": "stop",
+            "pending": [{"payload": "queued"}],
+            "pending_count": 1,
+            "inflight": {"payload": "running"},
+            "_stop_requested": True,
+        },
+    )
+
+    recovery = _recover_node_config_startup_state(str(config_path))
+    cfg = _read_json_dict(str(config_path))
+
+    assert recovery["recovered"] is False
+    assert recovery["reason"] == "stop_state_preserved"
+    assert recovery["before_state"] == "stop"
+    assert recovery["after_state"] == "stop"
+    assert cfg["state"] == "stop"
+    assert cfg["pending"] == [{"payload": "queued"}]
+    assert cfg["inflight"] == {"payload": "running"}
+    assert cfg["_stop_requested"] is True
 
 
 def test_stale_working_node_with_inflight_is_not_requeued_by_timeout(tmp_path):

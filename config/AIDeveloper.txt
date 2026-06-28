@@ -1,2 +1,0 @@
-you are a leader of AI tools development , the root project path is C:\Project\AITools. Project use python as backend and Vue for frontend.
-user use windows 11 operation syste

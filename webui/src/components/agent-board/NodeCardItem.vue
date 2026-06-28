@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, inject, nextTick, ref, watch } from 'vue'
 import { AgentBoardKey, type AgentBoardContext, type NodeCard } from './context'
 import NodeAgentMeta from './NodeAgentMeta.vue'
@@ -19,9 +19,10 @@ const endpointId = computed(() => props.node.id)
 const isAgentNode = computed(() => String(props.node.typeId || '') === 'agent_node')
 const donePulse = computed(() => ctx.nodeDonePulse.value[props.node.id] || 0)
 const isDone = computed(() => !!ctx.nodeDonePulse.value[props.node.id])
-const canTrigger = computed(() => String(props.node.typeId || '') === 'basic_trigger_node')
 const isClockNode = computed(() => ctx.isClockNode(props.node.id))
 const isClockRunning = computed(() => ctx.isClockRunning(props.node.id))
+const isNodeRunning = computed(() => ctx.isNodeRunning(endpointId.value))
+const isStopRequested = computed(() => !!ctx.nodeConfigs.value[endpointId.value]?._stop_requested)
 const clockStartLabel = computed(() => (ctx.isNodeStopped(endpointId.value) ? 'Resume' : 'Start'))
 const previewText = computed(() => ctx.previewMessage(props.node.last_message))
 const hasPreview = computed(() => !!String(previewText.value || '').trim())
@@ -64,7 +65,13 @@ function cancelEditName() {
 function selectItemOnly() {
   if (Date.now() < ctx.suppressClickUntil.value) return
   ctx.selectNode(props.node.id)
-  ctx.ensureNodeConfig(props.node.id).catch(() => null)
+  ctx.refreshNodeConfig(props.node.id).catch(() => null)
+}
+
+function openNodeFolder(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('button, input, textarea, select, a, .node-title, .port')) return
+  ctx.openNodeFolder(endpointId.value).catch(() => null)
 }
 </script>
 
@@ -87,6 +94,7 @@ function selectItemOnly() {
     :data-board-item-id="endpointId"
     :data-agent-id="isAgentNode ? props.node.id : null"
     @click="ctx.onItemClick(endpointId, $event)"
+    @dblclick.stop.prevent="openNodeFolder"
     @pointerdown="ctx.onItemPointerDown(endpointId, $event)"
     @pointermove="ctx.onItemPointerMove"
     @pointerup="ctx.endDrag"
@@ -127,22 +135,21 @@ function selectItemOnly() {
         </div>
         <div v-if="isClockRunning" class="node-status-badge">Working</div>
         <div class="node-actions">
-          <button v-if="canTrigger" class="node-trigger" @click.stop="ctx.triggerNode(endpointId).catch(() => null)">
+          <button type="button" class="node-trigger" @pointerdown.stop @click.stop="ctx.triggerNode(endpointId).catch(() => null)">
             Trigger
           </button>
-          <button v-if="isClockNode && !isClockRunning" class="node-start" @click.stop="ctx.startClockNode(endpointId).catch(() => null)">
+          <button v-if="isClockNode && !isClockRunning" type="button" class="node-start" @pointerdown.stop @click.stop="ctx.startClockNode(endpointId).catch(() => null)">
             {{ clockStartLabel }}
           </button>
-          <button v-if="isClockNode && isClockRunning" class="node-pause" @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
+          <button v-if="isClockNode && isClockRunning" type="button" class="node-pause" @pointerdown.stop @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
             Pause
           </button>
-          <button v-if="!isClockNode" class="node-pause" @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
+          <button v-if="!isClockNode && !isNodeRunning" type="button" class="node-pause" @pointerdown.stop @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
             {{ ctx.isNodeStopped(endpointId) ? 'Resume' : 'Pause' }}
           </button>
-          <button v-if="!isClockNode && ctx.isNodeRunning(endpointId)" class="node-stop" @click.stop="ctx.stopNodeWork(endpointId)">
-            Stop
+          <button v-if="!isClockNode && isNodeRunning" type="button" class="node-stop" @pointerdown.stop @click.stop="ctx.stopNodeWork(endpointId).catch(() => null)">
+            {{ isStopRequested ? 'Stopping' : 'Stop' }}
           </button>
-          <div v-if="isAgentNode" class="node-id">{{ props.node.id.slice(-6) }}</div>
           <button
             class="node-delete"
             @pointerdown.stop
@@ -299,6 +306,8 @@ function selectItemOnly() {
 }
 
 .node-title {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   font-size: 14px;
   color: #fff;
@@ -322,7 +331,10 @@ function selectItemOnly() {
 .node-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .node-status-badge {
@@ -336,11 +348,6 @@ function selectItemOnly() {
   border-radius: 999px;
 }
 
-.node-id {
-  font-family: monospace;
-  font-size: 10px;
-  color: rgba(148, 163, 184, 0.6);
-}
 
 .node-delete {
   background: none;
@@ -435,3 +442,5 @@ function selectItemOnly() {
 }
 
 </style>
+
+

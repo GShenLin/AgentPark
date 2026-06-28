@@ -1,12 +1,13 @@
-import json
 import os
 
 from nodes.base_node import BaseNode
-from src.config_loader import ConfigLoader
-from src.message_protocol import build_resource_part, normalize_envelope
+from src.generation_output import ResourceOutputField, StructuredOutputSpec, build_generation_output_message
+from src.media_resource_utils import resolve_public_base_url
+from src.message_protocol import envelope_text
+from src.node_config_overlay import load_node_config_file
+from src.provider_options import build_provider_options_for_support_modes
 from src.providers import create_agent
 from src.video_change_person_content import (
-    normalize_public_base_url,
     resolve_video_change_person_inputs,
 )
 
@@ -92,34 +93,9 @@ class Node(BaseNode):
         },
     }
 
-    @staticmethod
-    def _provider_options() -> list[dict]:
-        try:
-            providers = ConfigLoader().get_all_providers()
-        except Exception:
-            providers = {}
-        options: list[dict] = []
-        if isinstance(providers, dict):
-            for provider_id, config in providers.items():
-                if not isinstance(config, dict):
-                    continue
-                modes = config.get("supportmode")
-                normalized_modes = (
-                    {str(item or "").strip().lower() for item in modes}
-                    if isinstance(modes, list)
-                    else set()
-                )
-                if not normalized_modes.intersection(_SUPPORTED_PROVIDER_MODES):
-                    continue
-                text = str(provider_id or "").strip()
-                if text:
-                    options.append({"value": text, "label": text})
-        options.sort(key=lambda item: item["label"].lower())
-        return options
-
     def get_config_schema(self, context: dict | None = None) -> dict:
         schema = super().get_config_schema(context)
-        options = self._provider_options()
+        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
         if options:
             provider_schema = dict(schema.get("provider_id") or {})
             provider_schema["type"] = "select"
@@ -131,66 +107,9 @@ class Node(BaseNode):
         super().on_create(config, context)
         if not isinstance(config, dict) or str(config.get("provider_id") or "").strip():
             return
-        options = self._provider_options()
+        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
         if options:
             config["provider_id"] = options[0]["value"]
-
-    def _resolve_public_base_url(self, explicit: object, provider_id: str) -> str:
-        direct = normalize_public_base_url(explicit)
-        if direct:
-            return direct
-
-        env_value = normalize_public_base_url(os.environ.get("AITOOLS_PUBLIC_BASE_URL"))
-        if env_value:
-            return env_value
-
-        try:
-            full_config = ConfigLoader().get_config()
-        except Exception:
-            full_config = {}
-        if isinstance(full_config, dict):
-            top_level = normalize_public_base_url(
-                full_config.get("publicBaseUrl") or full_config.get("public_base_url")
-            )
-            if top_level:
-                return top_level
-
-        try:
-            provider_config = ConfigLoader().get_provider_config(provider_id)
-        except Exception:
-            provider_config = {}
-        if isinstance(provider_config, dict):
-            provider_level = normalize_public_base_url(
-                provider_config.get("publicBaseUrl") or provider_config.get("public_base_url")
-            )
-            if provider_level:
-                return provider_level
-        return ""
-
-    def _build_output_message(self, response: object, *, provider_id: str, mode: str) -> dict:
-        if not isinstance(response, dict):
-            return normalize_envelope({"role": "assistant", "parts": [{"type": "text", "text": str(response or "")}]})
-
-        parts: list[dict] = []
-        response_text = str(response.get("response") or response.get("text") or "").strip()
-        if response_text:
-            parts.append({"type": "text", "text": response_text})
-
-        video_path = str(response.get("video_path") or "").strip()
-        if video_path:
-            parts.append(build_resource_part(uri=video_path, kind="video", source="video_change_person"))
-
-        meta = {"provider_id": provider_id, "mode": mode}
-        for key in ("task_id", "video_url", "status", "request_id", "video_duration", "video_ratio"):
-            value = response.get(key)
-            if value is not None and value != "":
-                meta[key] = value
-        parts.append({"type": "structured", "data": meta})
-
-        if len(parts) == 1 and parts[0].get("type") == "structured":
-            parts.insert(0, {"type": "text", "text": json.dumps(response, ensure_ascii=False)})
-
-        return normalize_envelope({"role": "assistant", "parts": parts}, default_role="assistant")
 
     def on_input(self, message: object, context: dict | None = None) -> dict:
         ctx = context or {}
@@ -205,31 +124,27 @@ class Node(BaseNode):
         check_image = ctx.get("check_image")
         filename_prefix = str(ctx.get("filename_prefix") or "generated_video_change_person").strip() or "generated_video_change_person"
         public_base_url = ctx.get("public_base_url")
+        skills = ctx.get("skills")
 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         node_dir = os.path.join(base_dir, "memories", graph_id, node_id)
-        config_path = os.path.join(node_dir, "config.json")
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as file_obj:
-                    data = json.load(file_obj)
-                if isinstance(data, dict):
-                    provider_id = str(data.get("provider_id") or provider_id or "").strip()
-                    image_path = data.get("image_path", image_path)
-                    video_path = data.get("video_path", video_path)
-                    mode = str(data.get("mode") or mode or "wan-std").strip() or "wan-std"
-                    watermark = data.get("watermark", watermark)
-                    check_image = data.get("check_image", check_image)
-                    filename_prefix = str(data.get("filename_prefix") or filename_prefix or "generated_video_change_person").strip() or "generated_video_change_person"
-                    if data.get("public_base_url") is not None:
-                        public_base_url = data.get("public_base_url")
-            except Exception:
-                pass
+        data = load_node_config_file(node_dir)
+        provider_id = str(data.get("provider_id") or provider_id or "").strip()
+        image_path = data.get("image_path", image_path)
+        video_path = data.get("video_path", video_path)
+        mode = str(data.get("mode") or mode or "wan-std").strip() or "wan-std"
+        watermark = data.get("watermark", watermark)
+        check_image = data.get("check_image", check_image)
+        filename_prefix = str(data.get("filename_prefix") or filename_prefix or "generated_video_change_person").strip() or "generated_video_change_person"
+        if data.get("public_base_url") is not None:
+            public_base_url = data.get("public_base_url")
+        if data.get("skills") is not None:
+            skills = data.get("skills")
 
         if not provider_id:
             raise ValueError("provider_id is required")
 
-        resolved_public_base_url = self._resolve_public_base_url(public_base_url, provider_id)
+        resolved_public_base_url = resolve_public_base_url(public_base_url, provider_id)
         image_url, video_url = resolve_video_change_person_inputs(
             message,
             image_path=image_path,
@@ -239,6 +154,7 @@ class Node(BaseNode):
 
         memory_path = os.path.join(node_dir, f"{node_id}.md")
         agent = create_agent(provider_id, memory_file_path=memory_path)
+        self._inject_configured_skills(agent, {"skills": skills}, node_id=node_id)
         if not hasattr(agent, "generate_video_change_person"):
             raise ValueError(f"Provider '{provider_id}' does not support video change person")
 
@@ -250,8 +166,19 @@ class Node(BaseNode):
             check_image=check_image,
             filename_prefix=filename_prefix,
         )
-        output_message = self._build_output_message(result, provider_id=provider_id, mode=mode)
+        output_message = build_generation_output_message(
+            result,
+            text_fields=("response", "text"),
+            resource_fields=(
+                ResourceOutputField(name="video_path", kind="video", source="video_change_person"),
+            ),
+            structured=StructuredOutputSpec(
+                base={"provider_id": provider_id, "mode": mode},
+                field_names=("task_id", "video_url", "status", "request_id", "video_duration", "video_ratio"),
+            ),
+            json_fallback="when_only_structured",
+        )
         return {
-            "display": self._message_text(output_message),
+            "display": envelope_text(output_message),
             "routes": [{"output_index": 0, "payload": output_message}],
         }

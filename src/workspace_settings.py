@@ -7,6 +7,7 @@ import sys
 DEFAULT_SERVER_HOST = "0.0.0.0"
 DEFAULT_SERVER_PORT = 8766
 DEFAULT_STARTUP_GRAPH_ID = "default"
+STARTUP_GRAPH_CACHE_FILENAME = "startup_graph.json"
 
 
 def get_workspace_root() -> str:
@@ -17,6 +18,14 @@ def get_workspace_root() -> str:
 
 def get_workspace_config_path() -> str:
     return os.path.join(get_workspace_root(), "config", "config.json")
+
+
+def get_workspace_cache_dir() -> str:
+    return os.path.join(get_workspace_root(), ".cache")
+
+
+def get_startup_graph_cache_path() -> str:
+    return os.path.join(get_workspace_cache_dir(), STARTUP_GRAPH_CACHE_FILENAME)
 
 
 def load_workspace_settings() -> dict:
@@ -37,6 +46,35 @@ def save_workspace_settings(payload: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def load_startup_graph_cache() -> dict:
+    path = get_startup_graph_cache_path()
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError(".cache/startup_graph.json must contain a top-level object.")
+    return payload
+
+
+def save_startup_graph_settings(graph_id: str, graph_name: str) -> None:
+    safe_graph_id = str(graph_id or "").strip()
+    if not safe_graph_id:
+        raise ValueError("startup graph_id is required.")
+    safe_graph_name = str(graph_name or "").strip() or safe_graph_id
+    path = get_startup_graph_cache_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {
+        "graph_id": safe_graph_id,
+        "graph_name": safe_graph_name,
+    }
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(tmp_path, path)
 
 
 def read_server_settings() -> dict:
@@ -134,7 +172,7 @@ def find_available_server_port(host: str, preferred_port: int, max_attempts: int
 
 
 def read_startup_graph_settings() -> dict:
-    payload = load_workspace_settings()
-    graph_id = str(payload.get("startup_graph_id") or "").strip() or DEFAULT_STARTUP_GRAPH_ID
-    graph_name = str(payload.get("startup_graph_name") or "").strip() or graph_id
+    payload = load_startup_graph_cache()
+    graph_id = str(payload.get("graph_id") or "").strip() or DEFAULT_STARTUP_GRAPH_ID
+    graph_name = str(payload.get("graph_name") or "").strip() or graph_id
     return {"graph_id": graph_id, "graph_name": graph_name}

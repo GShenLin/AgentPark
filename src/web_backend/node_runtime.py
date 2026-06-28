@@ -8,7 +8,9 @@ import uuid
 from fastapi import HTTPException
 
 from src.message_protocol import normalize_envelope
+from src.node_capabilities import NODE_CAPABILITY_LIST
 
+from .node_runtime_event_sink import NodeRuntimeEventSink
 from .route_parser import NodeRouteParser
 from .runtime_paths import _get_nodes_dir, _get_resource_root, _get_runtime_root
 from .state_store import _transition_node_config_to_idle, _write_json_dict
@@ -32,23 +34,6 @@ def _read_tail_text(file_path: str, max_chars: int = 20000) -> str:
             return ""
 
 
-def _normalize_capability_list(values: object) -> list[str]:
-    if not isinstance(values, (list, tuple)):
-        return []
-    output: list[str] = []
-    seen: set[str] = set()
-    for item in values:
-        text = str(item or "").strip()
-        if not text:
-            continue
-        key = text.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        output.append(text)
-    return output
-
-
 def _read_node_capabilities(node: object, context: dict | None = None) -> tuple[list[str], list[str]]:
     accepts: list[str] = []
     produces: list[str] = []
@@ -59,12 +44,12 @@ def _read_node_capabilities(node: object, context: dict | None = None) -> tuple[
         except Exception:
             caps = None
         if isinstance(caps, dict):
-            accepts = _normalize_capability_list(caps.get("accepts"))
-            produces = _normalize_capability_list(caps.get("produces"))
+            accepts = NODE_CAPABILITY_LIST.parse(caps.get("accepts"))
+            produces = NODE_CAPABILITY_LIST.parse(caps.get("produces"))
     if not accepts:
-        accepts = _normalize_capability_list(getattr(node, "input_capabilities", []))
+        accepts = NODE_CAPABILITY_LIST.parse(getattr(node, "input_capabilities", []))
     if not produces:
-        produces = _normalize_capability_list(getattr(node, "output_capabilities", []))
+        produces = NODE_CAPABILITY_LIST.parse(getattr(node, "output_capabilities", []))
     if not accepts:
         accepts = ["text"]
     if not produces:
@@ -109,7 +94,9 @@ def _run_node_logic_with_routes(nodes_dir: str, node_id: str, message: object, c
     input_message = normalize_envelope(message, default_role="user")
 
     persist_input_fn = getattr(node, "_persist_input_default", None)
-    if callable(persist_input_fn):
+    item_source = str(base_context.get("source") or "").strip()
+    # Skip re-persisting the user input when it was already written by emit_graph().
+    if callable(persist_input_fn) and item_source != "emit":
         try:
             persist_input_fn(input_message, base_context)
         except Exception:
@@ -160,6 +147,7 @@ def _list_node_metas(nodes_dir: str) -> list[dict]:
         accepts = ["text"]
         produces = ["text"]
         file_path = os.path.join(nodes_dir, filename)
+        has_node_class = False
         if os.path.exists(file_path):
             try:
                 module_name = f"nodes_meta_{node_id}_{uuid.uuid4().hex}"
@@ -169,6 +157,7 @@ def _list_node_metas(nodes_dir: str) -> list[dict]:
                     spec.loader.exec_module(module)
                     node_cls = getattr(module, "Node", None)
                     if node_cls is not None:
+                        has_node_class = True
                         node = node_cls()
                         node_name = str(getattr(node, "name", node_id) or node_id)
                         node_description = str(getattr(node, "description", "") or "")
@@ -193,6 +182,8 @@ def _list_node_metas(nodes_dir: str) -> list[dict]:
                         accepts, produces = _read_node_capabilities(node, None)
             except Exception:
                 pass
+        if not has_node_class:
+            continue
         nodes.append(
             {
                 "id": node_id,
@@ -216,8 +207,33 @@ def _node_worker(
     result_queue: multiprocessing.Queue,
     node_config_path: str | None = None,
 ) -> None:
+    worker_context = dict(context) if isinstance(context, dict) else None
+    if isinstance(node_config_path, str) and node_config_path and isinstance(worker_context, dict):
+        graph_id = str(worker_context.get("graph_id") or "default").strip() or "default"
+        node_instance_id = str(worker_context.get("node_instance_id") or node_id).strip() or node_id
+        node_type_id = str(worker_context.get("node_type_id") or node_id).strip() or node_id
+
+        def _noop_log_graph_event(*args, **kwargs) -> None:
+            return None
+
+        def _noop_append_tool_call_entry(*args, **kwargs) -> None:
+            return None
+
+        runtime_event_sink = NodeRuntimeEventSink(
+            graph_id=graph_id,
+            node_id=node_instance_id,
+            node_type_id=node_type_id,
+            config_path=node_config_path,
+            trace_id=str(worker_context.get("trace_id") or ""),
+            depth=0,
+            stream_last_text="",
+            log_graph_event=_noop_log_graph_event,
+            append_tool_call_entry=_noop_append_tool_call_entry,
+        )
+        worker_context["stream_callback"] = runtime_event_sink.handle
+
     try:
-        routed = _run_node_logic_with_routes(nodes_dir, node_id, message, context)
+        routed = _run_node_logic_with_routes(nodes_dir, node_id, message, worker_context)
         output = str((routed or {}).get("text") or "")
         output_message = normalize_envelope((routed or {}).get("message"), default_role="assistant")
         result_queue.put({"status": "finished", "output": output, "output_message": output_message})

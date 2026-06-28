@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.value_parsing import parse_int_value
+
 
 CLOCK_INTERVAL_DAYS_KEY = "IntervalDays"
 CLOCK_INTERVAL_HOURS_KEY = "IntervalHours"
@@ -18,14 +20,6 @@ DEFAULT_CLOCK_INTERVAL_FIELDS = {
 _SECONDS_PER_MINUTE = 60
 _SECONDS_PER_HOUR = 60 * _SECONDS_PER_MINUTE
 _SECONDS_PER_DAY = 24 * _SECONDS_PER_HOUR
-
-
-def _parse_non_negative_int(value: object) -> int:
-    try:
-        parsed = int(float(value))
-    except Exception:
-        parsed = 0
-    return max(0, parsed)
 
 
 def _split_total_seconds(total_seconds: int) -> dict[str, str]:
@@ -55,10 +49,10 @@ def build_clock_interval_fields(cfg: dict | None) -> dict[str, str]:
     )
     if has_explicit_parts:
         total_seconds = (
-            _parse_non_negative_int(cfg.get(CLOCK_INTERVAL_DAYS_KEY)) * _SECONDS_PER_DAY
-            + _parse_non_negative_int(cfg.get(CLOCK_INTERVAL_HOURS_KEY)) * _SECONDS_PER_HOUR
-            + _parse_non_negative_int(cfg.get(CLOCK_INTERVAL_MINUTES_KEY)) * _SECONDS_PER_MINUTE
-            + _parse_non_negative_int(cfg.get(CLOCK_INTERVAL_SECONDS_KEY))
+            parse_int_value(cfg.get(CLOCK_INTERVAL_DAYS_KEY), default=0, minimum=0) * _SECONDS_PER_DAY
+            + parse_int_value(cfg.get(CLOCK_INTERVAL_HOURS_KEY), default=0, minimum=0) * _SECONDS_PER_HOUR
+            + parse_int_value(cfg.get(CLOCK_INTERVAL_MINUTES_KEY), default=0, minimum=0) * _SECONDS_PER_MINUTE
+            + parse_int_value(cfg.get(CLOCK_INTERVAL_SECONDS_KEY), default=0, minimum=0)
         )
         return _split_total_seconds(total_seconds)
 
@@ -72,15 +66,15 @@ def build_clock_interval_fields(cfg: dict | None) -> dict[str, str]:
     if legacy_value is None:
         return dict(DEFAULT_CLOCK_INTERVAL_FIELDS)
 
-    return _split_total_seconds(_parse_non_negative_int(legacy_value))
+    return _split_total_seconds(parse_int_value(legacy_value, default=0, minimum=0))
 
 
 def parse_clock_interval_seconds(cfg: dict | None) -> int:
     fields = build_clock_interval_fields(cfg)
-    days = _parse_non_negative_int(fields.get(CLOCK_INTERVAL_DAYS_KEY))
-    hours = _parse_non_negative_int(fields.get(CLOCK_INTERVAL_HOURS_KEY))
-    minutes = _parse_non_negative_int(fields.get(CLOCK_INTERVAL_MINUTES_KEY))
-    seconds = _parse_non_negative_int(fields.get(CLOCK_INTERVAL_SECONDS_KEY))
+    days = parse_int_value(fields.get(CLOCK_INTERVAL_DAYS_KEY), default=0, minimum=0)
+    hours = parse_int_value(fields.get(CLOCK_INTERVAL_HOURS_KEY), default=0, minimum=0)
+    minutes = parse_int_value(fields.get(CLOCK_INTERVAL_MINUTES_KEY), default=0, minimum=0)
+    seconds = parse_int_value(fields.get(CLOCK_INTERVAL_SECONDS_KEY), default=0, minimum=0)
     return (
         days * _SECONDS_PER_DAY
         + hours * _SECONDS_PER_HOUR

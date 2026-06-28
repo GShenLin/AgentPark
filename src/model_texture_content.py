@@ -1,7 +1,5 @@
-import json
-import os
-from urllib.parse import urlparse
-
+from src.media_resource_utils import parse_resource_list
+from src.media_resource_utils import uri_has_extension
 from src.message_protocol import normalize_envelope
 
 
@@ -9,37 +7,12 @@ _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"
 _MODEL_EXTS = {".glb", ".gltf", ".obj", ".fbx", ".usdz", ".stl"}
 
 
-def _parse_resource_list(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    text = str(value or "").strip()
-    if not text:
-        return []
-    if text.startswith("["):
-        try:
-            parsed = json.loads(text)
-        except Exception:
-            parsed = None
-        if isinstance(parsed, list):
-            return [str(item).strip() for item in parsed if str(item).strip()]
-    return [line.strip() for line in text.splitlines() if line.strip()]
-
-
-def _ext_from_uri(uri: object) -> str:
-    raw = str(uri or "").strip()
-    if not raw:
-        return ""
-    parsed = urlparse(raw)
-    path = parsed.path if parsed.scheme else raw
-    return os.path.splitext(path.lower())[1]
-
-
 def _looks_like_image(uri: object) -> bool:
-    return _ext_from_uri(uri) in _IMAGE_EXTS
+    return uri_has_extension(uri, _IMAGE_EXTS)
 
 
 def _looks_like_model(uri: object) -> bool:
-    return _ext_from_uri(uri) in _MODEL_EXTS
+    return uri_has_extension(uri, _MODEL_EXTS)
 
 
 def resolve_model_texture_inputs(
@@ -52,8 +25,8 @@ def resolve_model_texture_inputs(
     envelope = normalize_envelope(message, default_role="user")
     parts = envelope.get("parts") if isinstance(envelope, dict) else []
     text_parts: list[str] = []
-    model_candidates = _parse_resource_list(model_path)
-    image_candidates = _parse_resource_list(image_path)
+    model_candidates = parse_resource_list(model_path)
+    image_candidates = parse_resource_list(image_path)
 
     for part in parts if isinstance(parts, list) else []:
         if not isinstance(part, dict):

@@ -1,3 +1,4 @@
+from src.message_protocol import envelope_text
 from src.message_protocol import normalize_envelope
 
 
@@ -15,6 +16,10 @@ def test_tool_call_part_preserves_lifecycle_fields():
                     "duration_ms": 12,
                     "arguments": {"filePath": "README.md"},
                     "result_preview": "ok",
+                    "result_chars": 2,
+                    "result_preview_truncated": False,
+                    "result_tail_preview": "ok",
+                    "result_tail_preview_truncated": False,
                     "diagnostics": ["image skipped"],
                 }
             ],
@@ -32,4 +37,74 @@ def test_tool_call_part_preserves_lifecycle_fields():
     assert part["duration_ms"] == 12
     assert part["args"] == {"filePath": "README.md"}
     assert part["result_preview"] == "ok"
+    assert part["result_chars"] == 2
+    assert part["result_preview_truncated"] is False
+    assert part["result_tail_preview"] == "ok"
+    assert part["result_tail_preview_truncated"] is False
     assert part["diagnostics"] == ["image skipped"]
+
+
+def test_envelope_text_renders_tool_call_parts():
+    text = envelope_text(
+        {
+            "role": "tool",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "call_id": "call-1",
+                    "name": "execute_console_command",
+                    "status": "completed",
+                    "result_preview": '{"stdout": "hello"}',
+                    "result_chars": 19,
+                    "result_preview_truncated": False,
+                }
+            ],
+        }
+    )
+
+    assert "Tool execute_console_command completed call_id=call-1" in text
+    assert 'result_preview={"stdout": "hello"}' in text
+    assert "result_chars=19" in text
+
+
+def test_envelope_text_marks_empty_tool_call_parts_explicitly():
+    text = envelope_text(
+        {
+            "role": "tool",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "call_id": "call-empty",
+                    "name": "read_file",
+                    "status": "completed",
+                    "result_chars": 0,
+                }
+            ],
+        }
+    )
+
+    assert "result_preview=(empty)" in text
+    assert "result_chars=0" in text
+
+
+def test_envelope_text_does_not_render_truncated_preview_as_tool_result():
+    text = envelope_text(
+        {
+            "role": "tool",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "call_id": "call-large",
+                    "name": "read_file",
+                    "status": "completed",
+                    "result_preview": '{"content": "partial',
+                    "result_chars": 4096,
+                    "result_preview_truncated": True,
+                }
+            ],
+        }
+    )
+
+    assert "partial" not in text
+    assert "result_preview omitted from markdown" in text
+    assert "result_preview_truncated=true" in text

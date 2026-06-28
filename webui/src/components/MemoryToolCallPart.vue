@@ -23,7 +23,15 @@ function toolCallMeta(part: Record<string, unknown>) {
 }
 
 function toolCallPreview(part: Record<string, unknown>) {
-  return String(part.error || part.result_preview || '').trim()
+  const error = String(part.error || '').trim()
+  if (error) return error
+  const preview = String(part.result_preview || '').trim()
+  const resultChars = typeof part.result_chars === 'number' ? Math.max(0, Math.round(part.result_chars)) : null
+  const truncated = part.result_preview_truncated === true
+  if (!preview && resultChars === 0) return '(empty result)'
+  if (!truncated) return preview
+  const suffix = resultChars != null ? ` (${resultChars} chars total)` : ''
+  return preview ? `Result preview${suffix}: ${preview}` : `Result preview omitted${suffix}`
 }
 
 function toolCallArguments(part: Record<string, unknown>) {

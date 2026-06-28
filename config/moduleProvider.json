@@ -1,53 +1,101 @@
 {
   "providers": {
-    "openai": {
-      "apiKey": "",
-      "baseUrl": "https://api.openai.com/v1",
-      "model": "gpt-4o-mini",
+    "krill_gpt55": {
+      "apiKey": "YOUR-KEY",
+      "baseUrl": "https://api.krill-ai.com/codex/v1/",
+      "model": "gpt-5.5",
+      "supportmode": ["chat", "imagechat"],
+      "type": "openai",
+      "responsesApi": true,
+      "reasoningEffort": "xhigh",
+      "responsesContinuationMode": "explicit_context",
+      "responsesReplayReasoningItems": false,
+      "toolContextCompactionEnabled": false,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
       "timeoutMs": 60000
     },
     "deepseek_v4_pro": {
-      "apiKey": "API_KEY",
+      "apiKey": "YOUR-KEY",
       "baseUrl": "https://api.deepseek.com",
       "model": "deepseek-v4-pro",
       "supportmode": ["chat"],
       "type":"doubao",
-      "timeoutMs": 60000
-    },
-    "deepseek_v4_flash": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://api.deepseek.com",
-      "model": "deepseek-v4-flash",
-      "supportmode": ["chat"],
-      "type":"doubao",
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
       "timeoutMs": 60000
     },
     "gemini": {
-      "apiKey": "API_KEY",
+      "apiKey": "YOUR-KEY",
       "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
       "model": "gemini-3-pro-preview",
       "supportmode": ["chat", "image_generation", "imagechat"],
       "timeoutMs": 180000,
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
       "type":"gemini"
     },
+    "371NanoBanana": {
+      "apiKey": "YOUR-KEY",
+      "baseUrl": "https://www.371181668.xyz/v1/",
+      "model": "firefly-nano-banana-4k-16x9",
+      "supportmode": ["chat", "image_generation", "imagechat"],
+      "timeoutMs": 180000,
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
+      "type":"doubao"
+    }
+    ,
      "gemini-2.5-flash-image": {
-      "apiKey": "API_KEY",
+      "apiKey": "YOUR-KEY",
       "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
       "model": "gemini-2.5-flash-image",
       "timeoutMs": 180000,
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
       "type":"gemini"
     },
-    "doubao-1.8": {
-      "apiKey": "API_KEY",
+    "doubao-pro": {
+      "apiKey": "YOUR-KEY",
       "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "doubao-seed-1-8-251228",
+      "model": "doubao-seed-2-1-pro-260628",
       "timeoutMs": 60000,
       "supportmode": ["chat", "image_generation", "imagechat"],
-      "type":"doubao"
+      "webSearchMaxKeyword": 5,
+      "webSearchLimit": 10,
+      "webSearchSources": ["toutiao"],
+      "responsesApi": true,
+      "responsesContinuationMode": "previous_response_id",
+      "responsesReplayReasoningItems": false,
+      "toolContextCompactionEnabled": false,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
+      "type":"openai"
     },
-    "doubao-2.0-pro": {
-      "apiKey": "API_KEY",
+    "doubao-seed-evolving": {
+      "apiKey": "YOUR-KEY",
       "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+      "model": "doubao-seed-evolving",
+      "timeoutMs": 60000,
+      "supportmode": ["chat", "image_generation", "imagechat"],
+      "webSearchMaxKeyword": 5,
+      "webSearchLimit": 10,
+      "webSearchSources": ["toutiao"],
+      "responsesApi": true,
+      "responsesContinuationMode": "previous_response_id",
+      "responsesReplayReasoningItems": false,
+      "toolContextCompactionEnabled": false,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
+      "type":"openai"
+    },
+    "doubao-pro_CodingPlan": {
+      "apiKey": "YOUR-KEY",
+      "baseUrl": "https://ark.cn-beijing.volces.com/api/coding/v3",
       "model": "doubao-seed-2-0-pro-260215",
       "timeoutMs": 60000,
       "supportmode": ["chat", "image_generation", "imagechat"],
@@ -55,92 +103,51 @@
       "webSearchLimit": 10,
       "webSearchSources": ["toutiao"],
       "responsesApi": true,
-      "type":"doubao"
-    },
-    "doubao-seedream-4-5-251128": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3/images/generations",
-      "model": "doubao-seedream-4-5-251128",
-      "timeoutMs": 60000,
-      "supportmode": ["chat", "image_generation", "imagechat"],
-      "type":"doubao"
-    },
-    "doubao_flash": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "doubao-seed-1-6-flash-250828",
-      "timeoutMs": 60000,
-      "supportmode": ["chat"],
-      "type":"doubao"
-    },
-    "doubao_kimi_k2": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "kimi-k2-thinking-251104",
-      "timeoutMs": 60000,
-      "type":"doubao"
-    },
-    "doubao_deepseek_v31": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "deepseek-v3-1-terminus",
-      "timeoutMs": 60000,
-      "type":"doubao"
-    },
-    "doubaoglm": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "glm-4-7-251222",
-      "timeoutMs": 60000,
-      "type":"doubao"
-    },
-    "doubao_vision": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "doubao-seed-1-6-vision-250815",
-      "supportmode": ["vision_understand"],
-      "timeoutMs": 60000,
-      "type":"doubao"
-    },
-    "doubao-seed-1-6-vision-250815": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "doubao-seed-1-6-vision-250815",
-      "supportmode": ["GUIAgent"],
-      "timeoutMs": 60000,
-      "type":"doubao"
-    },
-    "doubao-seedance-2-0-260128": {
-      "apiKey": "API_KEY",
-      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "model": "doubao-seedance-2-0-260128",
-      "supportmode": ["video_generation"],
-      "timeoutMs": 60000,
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
       "type":"doubao"
     },
     "wan2.2-animate-mix": {
-      "apiKey": "API_KEY",
+      "apiKey": "YOUR-KEY",
       "baseUrl": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis",
       "model": "wan2.2-animate-mix",
       "supportmode": ["video_changePerson"],
       "timeoutMs": 60000999,
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
       "type":"doubao"
     },
     "hyper3d-rodin-gen2": {
-      "apiKey": "API_KEY",
+      "apiKey": "YOUR-KEY",
       "baseUrl": "https://api.hyper3d.com/api/v2",
       "model": "rodin",
       "supportmode": ["model_generation", "model_texture_generation"],
-      "tier": "Gen-2",
+      "tier": "Gen-2.5-Extreme-High",
       "pollIntervalSec": 5,
       "texturePollIntervalSec": 5,
       "maxWaitSec": 1800,
       "textureMaxWaitSec": 1800,
       "timeoutMs": 120000,
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
       "type":"hyper3d"
+    },
+    "GLM_5.2_HuoShan": {
+      "apiKey": "YOUR-KEY",
+      "baseUrl": "https://ark.cn-beijing.volces.com/api/coding/v3",
+      "model": "glm-5.2",
+      "supportmode": ["chat"],
+      "type": "zhipu",
+      "thinking": "enabled",
+      "reasoningEffort": "max",
+      "maxTokens": 65536,
+      "toolContextCompactionEnabled": true,
+      "toolContextCompactionEveryToolCalls": 10,
+      "toolResultSubmissionMaxChars": 50000,
+      "timeoutMs": 180000
     }
-  },
-  "agentNode": {
-    "minSendDelayMs": 200
   }
 }

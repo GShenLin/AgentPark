@@ -2,17 +2,16 @@ from .domain_base import DomainBase
 from .shared import *
 import subprocess
 import mimetypes
+import time
 import uuid
 from fastapi.responses import FileResponse
 from fastapi import File, Form, UploadFile
+from src.provider_options import build_provider_support_list
 from src.message_protocol import build_resource_part
 
 
 class SystemApiDomain(DomainBase):
     _MAX_UPLOAD_BYTES = 256 * 1024 * 1024
-
-    def __init__(self, core, agent_domain):
-        super().__init__(core, agent_domain)
 
     def _sanitize_upload_trace_id(self, value: object) -> str:
         raw = str(value or "").strip()
@@ -35,6 +34,51 @@ class SystemApiDomain(DomainBase):
         if safe_ext and not safe_ext.startswith("."):
             safe_ext = f".{safe_ext}"
         return f"{safe_stem}{safe_ext}"
+
+    def restart_server(self):
+        self.request_webui_close({"reason": "restart"})
+        runtime_root = _get_runtime_root()
+        restart_path = os.path.join(runtime_root, "Restart.bat")
+        if not os.path.isfile(restart_path):
+            raise HTTPException(status_code=404, detail="Restart.bat not found")
+        try:
+            if os.name == "nt":
+                subprocess.Popen(
+                    ["cmd.exe", "/c", "start", "AITools Restart", restart_path],
+                    cwd=runtime_root,
+                    close_fds=True,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
+            else:
+                subprocess.Popen([restart_path], cwd=runtime_root, start_new_session=True)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        return {"ok": True}
+
+    def request_webui_close(self, payload: dict | None = None):
+        reason = str((payload or {}).get("reason") or "restart").strip() or "restart"
+        token = uuid.uuid4().hex
+        self.core.webui_close_signal = {
+            "token": token,
+            "requested_at": time.time(),
+            "reason": reason,
+        }
+        return {"ok": True, "token": token, "reason": reason}
+
+    def get_webui_close_signal(self):
+        signal = getattr(self.core, "webui_close_signal", None)
+        if not isinstance(signal, dict):
+            return {"close": False, "token": "", "reason": ""}
+        requested_at = float(signal.get("requested_at") or 0)
+        if requested_at <= 0:
+            return {"close": False, "token": "", "reason": ""}
+        if time.time() - requested_at > 30:
+            return {"close": False, "token": "", "reason": ""}
+        return {
+            "close": True,
+            "token": str(signal.get("token") or ""),
+            "reason": str(signal.get("reason") or "restart"),
+        }
 
     def upload_files(self, files: list[UploadFile] = File(...), trace_id: str = Form("")):
         upload_list = [item for item in (files or []) if item is not None]
@@ -370,6 +414,6 @@ class SystemApiDomain(DomainBase):
             raise HTTPException(status_code=500, detail=str(e))
 
     def list_providers(self):
-        return {"providers": self.agent_domain._list_provider_support()}
+        return {"providers": build_provider_support_list()}
 
 __all__ = ["SystemApiDomain"]

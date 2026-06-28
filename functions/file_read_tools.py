@@ -1,9 +1,13 @@
 import json
 import os
+import queue
 import shutil
 import subprocess
+import threading
 import time
 from collections import Counter
+
+from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 
 
 _READ_FILE_MAX_CHARS = 300000
@@ -85,7 +89,7 @@ def _terminate_process(proc):
             pass
 
 
-def _run_rg_stream_lines(cmd, on_line, timeout_sec):
+def _run_rg_stream_lines(cmd, on_line, timeout_sec, cancel_source=None):
     proc = None
     timed_out = False
     stopped_early = False
@@ -103,25 +107,42 @@ def _run_rg_stream_lines(cmd, on_line, timeout_sec):
             errors="replace",
         )
         deadline = time.monotonic() + float(timeout_sec or 0)
+        line_queue: queue.Queue[str | None] = queue.Queue()
+
+        def _read_stdout() -> None:
+            try:
+                if proc.stdout:
+                    for raw in proc.stdout:
+                        line_queue.put(raw)
+            finally:
+                line_queue.put(None)
+
+        threading.Thread(target=_read_stdout, daemon=True, name="project-overview-rg-reader").start()
 
         while True:
+            raise_if_cancel_requested(cancel_source)
             if timeout_sec and time.monotonic() >= deadline:
                 timed_out = True
                 break
 
-            line = proc.stdout.readline() if proc.stdout else ""
-            if line:
-                had_output = True
-                if on_line(line.rstrip("\r\n")):
-                    stopped_early = True
-                    break
+            try:
+                line = line_queue.get(timeout=0.05)
+            except queue.Empty:
                 continue
+            if line is None:
+                break
+
+            had_output = True
+            if on_line(line.rstrip("\r\n")):
+                stopped_early = True
+                break
 
             if proc.poll() is not None:
                 break
 
-            time.sleep(0.001)
-
+    except CancellationRequested:
+        stopped_early = True
+        raise
     except Exception as e:
         return {
             "ok": False,
@@ -164,7 +185,7 @@ def _iter_files_walk(root):
             yield os.path.join(current_root, filename)
 
 
-def read_file(file_path, start_line=1, end_line=None):
+def read_file(file_path, start_line=1, end_line=None, agent=None):
     """
     Reads a file from the local filesystem.
     """
@@ -195,8 +216,10 @@ def read_file(file_path, start_line=1, end_line=None):
         total_lines = 0
         output_truncated = False
 
+        cancel_source = cancel_source_from_agent(agent)
         with open(target, "r", encoding="utf-8", errors="replace") as f:
             for line_no, line in enumerate(f, start=1):
+                raise_if_cancel_requested(cancel_source)
                 total_lines = line_no
                 if line_no < start_line:
                     continue
@@ -238,6 +261,8 @@ def read_file(file_path, start_line=1, end_line=None):
             payload["output_char_limit"] = _READ_FILE_MAX_CHARS
         return json.dumps(payload, ensure_ascii=False)
 
+    except CancellationRequested as e:
+        return json.dumps({"file_path": file_path, "error": str(e), "status": "stopped"}, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"file_path": file_path, "error": str(e), "status": "exception"}, ensure_ascii=False)
 
@@ -270,7 +295,7 @@ read_file_declaration = {
 }
 
 
-def project_overview(project_root=None, sample_limit=120, max_scan_files=200000):
+def project_overview(project_root=None, sample_limit=120, max_scan_files=200000, agent=None):
     """
     Fast project overview for LLM planning: top dirs/extensions and sample files.
     """
@@ -281,6 +306,7 @@ def project_overview(project_root=None, sample_limit=120, max_scan_files=200000)
 
         sample_limit = _resolve_limit(sample_limit, default_value=120, hard_max=1000)
         max_scan_files = _resolve_limit(max_scan_files, default_value=200000, hard_max=1000000)
+        cancel_source = cancel_source_from_agent(agent)
 
         top_dirs = Counter()
         top_exts = Counter()
@@ -316,7 +342,7 @@ def project_overview(project_root=None, sample_limit=120, max_scan_files=200000)
                     return True
                 return False
 
-            meta = _run_rg_stream_lines(cmd, _on_line, timeout_sec=_RG_OVERVIEW_TIMEOUT_SEC)
+            meta = _run_rg_stream_lines(cmd, _on_line, timeout_sec=_RG_OVERVIEW_TIMEOUT_SEC, cancel_source=cancel_source)
             return_code = meta.get("return_code")
             rg_ok = bool(meta.get("ok")) and (meta.get("timed_out") or return_code in (0, 1, None))
             if rg_ok:
@@ -337,6 +363,7 @@ def project_overview(project_root=None, sample_limit=120, max_scan_files=200000)
                 )
 
         for file_path in _iter_files_walk(root):
+            raise_if_cancel_requested(cancel_source)
             total_files += 1
             rel = _safe_relpath(file_path, root)
             rel_norm = rel.replace("\\", "/")
@@ -363,6 +390,8 @@ def project_overview(project_root=None, sample_limit=120, max_scan_files=200000)
             },
             ensure_ascii=False,
         )
+    except CancellationRequested as e:
+        return json.dumps({"status": "stopped", "error": str(e)}, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"status": "exception", "error": str(e)}, ensure_ascii=False)
 
