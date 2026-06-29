@@ -459,12 +459,16 @@ export async function loadGraph(graphId: string, options?: { ifVersion?: number 
 export async function saveGraph(
   graphId: string,
   graph: GraphConfig,
-  options?: { saveReason?: string },
+  options?: { saveReason?: string; sourceGraphId?: string },
 ): Promise<GraphInfo> {
   const body: Record<string, unknown> = { graph }
   const saveReason = String(options?.saveReason || '').trim()
   if (saveReason) {
     body.save_reason = saveReason
+  }
+  const sourceGraphId = String(options?.sourceGraphId || '').trim()
+  if (sourceGraphId) {
+    body.source_graph_id = sourceGraphId
   }
   const res = await apiFetch(`/api/graphs/${encodeURIComponent(graphId)}`, {
     method: 'POST',
@@ -544,6 +548,17 @@ export async function getNodeInstanceMemory(
 }> {
   const query = graphId ? `&graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}${query}`)
+}
+
+export async function deleteNodeInstanceMemoryMessage(
+  nodeId: string,
+  messageId: string,
+  graphId?: string,
+): Promise<{ ok: boolean; deleted: number; message_id: string }> {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory/messages/${encodeURIComponent(messageId)}${query}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function getNodeInstanceLive(
@@ -652,4 +667,16 @@ export async function sendMobileNodeMessage(
     method: 'POST',
     body: JSON.stringify({ message }),
   })
+}
+
+export async function deleteMobileNodeMessage(
+  pcId: string,
+  graphId: string,
+  nodeId: string,
+  messageId: string,
+): Promise<{ ok: boolean; deleted: number; message_id: string }> {
+  return apiFetch(
+    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages/${encodeURIComponent(messageId)}`,
+    { method: 'DELETE' },
+  )
 }

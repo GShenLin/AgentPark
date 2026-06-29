@@ -142,6 +142,18 @@ class MobileApiDomain(DomainBase):
             raise HTTPException(status_code=400, detail="invalid node id")
         return self.core.node_ops.get_node_instance_memory(safe_node_id, max_chars=max_chars, graph_id=safe_graph_id)
 
+    def delete_mobile_node_message(self, pc_id: str, graph_id: str, node_id: str, message_id: str):
+        self._require_local_pc(pc_id)
+        safe_graph_id = self._require_graph(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        if not safe_node_id:
+            raise HTTPException(status_code=400, detail="invalid node id")
+        return self.core.node_ops.delete_node_instance_memory_message(
+            safe_node_id,
+            message_id,
+            graph_id=safe_graph_id,
+        )
+
     def send_mobile_node_message(self, pc_id: str, graph_id: str, node_id: str, payload: dict):
         self._require_local_pc(pc_id)
         safe_graph_id = self._require_graph(graph_id)

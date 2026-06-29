@@ -166,6 +166,55 @@ def test_cli_chat_uses_companion_config_and_persists_messages(monkeypatch, tmp_p
     assert records[1]["parts"][0]["text"] == "pong"
 
 
+def test_cli_chat_renders_assistant_markdown(monkeypatch, tmp_path, capsys):
+    import src.cli_commands.chat as chat_command
+    from src.web_backend import runtime_paths
+
+    config_path = tmp_path / "memories" / "companion" / "config.json"
+    _write_config(
+        config_path,
+        {
+            "node_id": "companion",
+            "graph_id": "companion",
+            "type_id": "agent_node",
+            "provider_id": "unit-provider",
+        },
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setenv("AITOOLS_COLOR", "1")
+
+    markdown_text = "# Plan\n- inspect `code`\n```py\nprint(1)\n```"
+
+    class DummyAgentNode:
+        def on_input(self, message, context):
+            callback = context.get("stream_callback")
+            if callable(callback):
+                callback({"type": "node_message_delta", "delta": markdown_text, "text": markdown_text})
+                callback({"type": "node_message_done", "text": markdown_text})
+            return {
+                "display": markdown_text,
+                "routes": [
+                    {
+                        "output_index": 0,
+                        "payload": {"role": "assistant", "parts": [{"type": "text", "text": markdown_text}]},
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(chat_command, "AgentNode", lambda: DummyAgentNode())
+
+    exit_code = main(["chat", "--message", "render markdown"])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "> Plan" in output
+    assert "- inspect" in output
+    assert "code py" in output
+    assert "print(1)" in output
+    assert "# Plan" not in output
+
+
 def test_cli_chat_reports_missing_companion_config(tmp_path, capsys):
     missing_path = tmp_path / "memories" / "companion" / "config.json"
 
@@ -450,6 +499,77 @@ def test_cli_chat_plain_restart_launches_restart_and_exits(monkeypatch, tmp_path
     assert exit_code == 43
     assert "Started Restart.bat" in output
     assert "1234" in output
+
+
+def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, capsys):
+    import src.cli_commands.chat as chat_command
+    from src.companion_inbox import deliver_companion_notice
+    from src.web_backend import runtime_paths
+
+    config_path = tmp_path / "memories" / "companion" / "config.json"
+    _write_config(
+        config_path,
+        {
+            "graph_id": "companion",
+            "type_id": "agent_node",
+            "provider_id": "unit-provider",
+            "mode": "chat",
+        },
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    seen_inputs = []
+
+    class DummyAgentNode:
+        def on_input(self, message, context):
+            text = message["parts"][0]["text"]
+            seen_inputs.append(text)
+            assert context["graph_id"] == "companion"
+            assert context["node_instance_id"] == "companion"
+            return {
+                "display": "acknowledged",
+                "routes": [
+                    {
+                        "output_index": 0,
+                        "payload": {"role": "assistant", "parts": [{"type": "text", "text": "acknowledged"}]},
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(chat_command, "AgentNode", lambda: DummyAgentNode())
+    assert deliver_companion_notice(
+        {
+            "source": {"graph_id": "default", "node_id": "Agent1", "provider": "unit"},
+            "issue": {"tool_name": "execute_console_command", "error": "boom"},
+            "memory": {"action": "upsert", "title": "Avoid boom", "lesson": "Use the stable path."},
+        },
+        config_path=str(config_path),
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: "/exit")
+
+    exit_code = main(["chat", "--plain"])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "A node encountered the following issue. Determine whether project code changes are needed." in output
+    assert "If needed, update this model's prompt to improve the node's future runs." in output
+    assert "Node: default/Agent1" in output
+    assert "Issue: boom" in output
+    assert "acknowledged" in output
+    assert len(seen_inputs) == 1
+    assert seen_inputs[0].startswith(
+        "A node encountered the following issue. Determine whether project code changes are needed."
+    )
+    assert "If needed, update this model's prompt to improve the node's future runs." in seen_inputs[0]
+    assert "Node: default/Agent1" in seen_inputs[0]
+    assert (config_path.parent / "inbox.jsonl").read_text(encoding="utf-8") == ""
+    records = [
+        json.loads(line)
+        for line in (config_path.parent / "messages.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [item["role"] for item in records] == ["user", "assistant"]
+    assert "Issue: boom" in records[0]["parts"][0]["text"]
 
 
 def test_companion_tui_edits_draft_from_key_events(tmp_path):

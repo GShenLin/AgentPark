@@ -7,7 +7,6 @@ import {
   restartServer,
 } from '../api'
 import type { RemoteEndpoint } from '../apiTypes'
-import { useGlobalState } from '../composables/useGlobalState'
 
 const props = defineProps<{
   activeView: 'board' | 'settings'
@@ -21,13 +20,6 @@ const emit = defineEmits<{
   toggleRight: []
   error: [message: string]
 }>()
-
-const {
-  currentGraphId,
-  currentGraphName,
-  selectedNodeId,
-  memoryMode,
-} = useGlobalState()
 
 const remoteEndpoints = ref<RemoteEndpoint[]>([])
 const selectedRemoteId = ref('default')
@@ -46,15 +38,6 @@ const selectedRemoteAddress = computed(() => {
   if (!remote) return '127.0.0.1:8788'
   return `${remote.host}:${remote.port}`
 })
-
-const modeLabel = computed(() => {
-  if (memoryMode.value === 'agent') return 'Node Memory'
-  if (memoryMode.value === 'file') return 'File'
-  if (memoryMode.value === 'graph') return 'Graph'
-  return 'Node Memory'
-})
-
-const selectedLabel = computed(() => String(selectedNodeId.value || '').trim() || 'none')
 
 function remoteBaseUrl(remote: RemoteEndpoint) {
   return `http://${remote.host}:${remote.port}`
@@ -147,11 +130,6 @@ onMounted(async () => {
       <input v-model="remoteFormPort" class="remote-input port" placeholder="Port" />
       <button class="topbar-btn primary" type="submit">Save</button>
     </form>
-    <div class="topbar-meta">
-      <span class="chip">Graph: {{ currentGraphName || currentGraphId || 'default' }}</span>
-      <span class="chip">Mode: {{ modeLabel }}</span>
-      <span class="chip">Selected: {{ selectedLabel }}</span>
-    </div>
     <div class="topbar-actions">
       <button v-if="props.activeView === 'board'" class="topbar-btn" type="button" @click="emit('toggleLeft')">
         {{ props.leftCollapsed ? 'Show Files' : 'Hide Files' }}
@@ -226,31 +204,10 @@ onMounted(async () => {
   min-width: 74px;
 }
 
-.topbar-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.chip {
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(15, 23, 42, 0.5);
-  color: rgba(226, 232, 240, 0.92);
-  border-radius: 999px;
-  font-size: 11px;
-  padding: 3px 10px;
-  white-space: nowrap;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .topbar-actions {
   display: flex;
   gap: 8px;
+  margin-left: auto;
 }
 
 .topbar-btn {
@@ -293,10 +250,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 1280px) {
-  .chip {
-    max-width: 190px;
-  }
-
   .topbar-btn {
     padding: 6px 8px;
     font-size: 11px;

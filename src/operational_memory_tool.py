@@ -3,6 +3,7 @@ import json
 from src.operational_memory import OperationalMemoryError
 from src.operational_memory import operational_memory_path_for_agent
 from src.operational_memory import record_operational_memory_entry
+from src.operational_memory_companion import notify_companion_about_operational_memory
 
 
 def record_operational_memory(
@@ -27,27 +28,47 @@ def record_operational_memory(
 ):
     try:
         path = operational_memory_path_for_agent(agent)
+        arguments = {
+            "action": action,
+            "reason": reason,
+            "kind": kind,
+            "title": title,
+            "lesson": lesson,
+            "evidence": evidence,
+            "scope": scope if isinstance(scope, dict) else {},
+            "tool_name": tool_name,
+            "error": error,
+            "command": command,
+            "conclusion": conclusion,
+            "avoid": avoid if isinstance(avoid, list) else [],
+            "prefer": prefer if isinstance(prefer, list) else [],
+            "confidence": confidence,
+            "key": key,
+            "resolve_key": resolve_key,
+            "memories": memories if isinstance(memories, dict) else None,
+        }
         result = record_operational_memory_entry(
             path=path,
-            action=action,
-            reason=reason,
-            kind=kind,
-            title=title,
-            lesson=lesson,
-            evidence=evidence,
-            scope=scope if isinstance(scope, dict) else {},
-            tool_name=tool_name,
-            error=error,
-            command=command,
-            conclusion=conclusion,
-            avoid=avoid if isinstance(avoid, list) else [],
-            prefer=prefer if isinstance(prefer, list) else [],
-            confidence=confidence,
-            key=key,
-            resolve_key=resolve_key,
-            memories=memories if isinstance(memories, dict) else None,
+            action=arguments["action"],
+            reason=arguments["reason"],
+            kind=arguments["kind"],
+            title=arguments["title"],
+            lesson=arguments["lesson"],
+            evidence=arguments["evidence"],
+            scope=arguments["scope"],
+            tool_name=arguments["tool_name"],
+            error=arguments["error"],
+            command=arguments["command"],
+            conclusion=arguments["conclusion"],
+            avoid=arguments["avoid"],
+            prefer=arguments["prefer"],
+            confidence=arguments["confidence"],
+            key=arguments["key"],
+            resolve_key=arguments["resolve_key"],
+            memories=arguments["memories"],
         )
         result["path"] = path
+        notify_companion_about_operational_memory(agent=agent, arguments=arguments, result=result)
         return json.dumps(result, ensure_ascii=False)
     except OperationalMemoryError as exc:
         return json.dumps({"status": "error", "error": str(exc), "tool": "record_operational_memory"}, ensure_ascii=False)

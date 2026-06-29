@@ -1,21 +1,31 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   clearNodeInstanceMemory,
+  createNodeInstance,
+  deleteGraph,
+  deleteMobileNodeMessage,
+  deleteNodeInstance,
   getMobileNodeConversation,
+  listNodes,
   listNodeInstanceConfigs,
   listMobileGraphs,
   listMobileNodes,
   listMobilePcs,
   listProviders,
   listTools,
+  loadGraph,
+  saveGraph,
   sendMobileNodeMessage,
+  setStartupGraphConfig,
   updateNodeInstanceConfig,
+  type GraphConfig,
   type MessageEnvelope,
   type MobileGraph,
   type MobileGraphInstance,
   type MobileNode,
   type MobileNodeConversation,
   type MobilePc,
+  type NodeInfo,
   type NodeInstanceConfig,
   type ProviderInfo,
 } from '../api'
@@ -28,6 +38,7 @@ export function useMobileWorkspace() {
   const graphInstances = ref<MobileGraphInstance[]>([])
   const nodes = ref<MobileNode[]>([])
   const nodeConfigs = ref<Record<string, NodeInstanceConfig>>({})
+  const availableNodeTypes = ref<NodeInfo[]>([])
   const providers = ref<ProviderInfo[]>([])
   const availableTools = ref<string[]>([])
   const conversation = ref<MobileNodeConversation | null>(null)
@@ -72,17 +83,19 @@ export function useMobileWorkspace() {
   }
 
   async function loadEditorCatalog() {
-    if (providers.value.length && availableTools.value.length) return
+    if (providers.value.length && availableTools.value.length && availableNodeTypes.value.length) return
     await refreshEditorCatalog()
   }
 
   async function refreshEditorCatalog() {
-    const [nextProviders, nextTools] = await Promise.all([
+    const [nextProviders, nextTools, nextNodeTypes] = await Promise.all([
       listProviders(),
       listTools(),
+      listNodes(),
     ])
     providers.value = nextProviders
     availableTools.value = nextTools
+    availableNodeTypes.value = nextNodeTypes
   }
 
   async function selectPc(pc: MobilePc) {
@@ -128,6 +141,166 @@ export function useMobileWorkspace() {
       if (nodeId) next[nodeId] = item
     }
     nodeConfigs.value = next
+  }
+
+  async function saveGraphByName(name: string) {
+    const graphName = String(name || '').trim()
+    if (!graphName) throw new Error('GraphName is required')
+    error.value = ''
+    loading.value = true
+    try {
+      const payload: GraphConfig = {
+        id: graphName,
+        name: graphName,
+        nodes: [],
+        links: [],
+      }
+      const result = await saveGraph(graphName, payload, { saveReason: 'mobile_save_graph' })
+      await setStartupGraphConfig(result.id, result.name).catch(() => null)
+      const pc = selectedPc.value
+      if (pc) {
+        graphInstances.value = await listMobileGraphs(pc.id)
+      }
+      return result
+    } catch (e) {
+      setError(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteGraphById(graphId: string) {
+    const safeGraphId = String(graphId || '').trim()
+    if (!safeGraphId) throw new Error('Graph id is required')
+    error.value = ''
+    loading.value = true
+    try {
+      await deleteGraph(safeGraphId)
+      if (selectedGraph.value?.id === safeGraphId) {
+        selectedGraph.value = null
+        selectedNode.value = null
+        nodes.value = []
+        conversation.value = null
+        view.value = 'graphs'
+        await setStartupGraphConfig('default', 'default').catch(() => null)
+      }
+      const pc = selectedPc.value
+      if (pc) {
+        graphInstances.value = await listMobileGraphs(pc.id)
+      }
+    } catch (e) {
+      setError(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function makeUniqueNodeId(base: string) {
+    const raw = String(base || '').trim() || 'node'
+    const cleaned = raw.replace(/[<>:"/\\|?*]/g, '_').trim() || 'node'
+    const hasId = (id: string) => nodes.value.some((node) => node.id === id)
+    if (!hasId(cleaned)) return cleaned
+    for (let index = 1; index < 10000; index += 1) {
+      const candidate = `${cleaned}${index}`
+      if (!hasId(candidate)) return candidate
+    }
+    return `${cleaned}_${Date.now()}`
+  }
+
+  function nextMobileNodeUi() {
+    const index = nodes.value.length
+    return {
+      x: 80 + (index % 3) * 260,
+      y: 80 + Math.floor(index / 3) * 180,
+    }
+  }
+
+  async function persistGraphNodeList(graphId: string, mutate: (graph: GraphConfig) => GraphConfig) {
+    const graph = await loadGraph(graphId)
+    const next = mutate({
+      ...graph,
+      nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
+      links: Array.isArray(graph.links) ? graph.links : [],
+    })
+    await saveGraph(graphId, next, { saveReason: 'mobile_node_list_change' })
+  }
+
+  async function createNode(typeId: string, nodeName: string, fields: Record<string, unknown>) {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const safeTypeId = String(typeId || '').trim()
+    if (!graphId || !safeTypeId) throw new Error('Graph and node type are required')
+    const requestedName = String(nodeName || safeTypeId).trim() || safeTypeId
+    const nodeId = makeUniqueNodeId(requestedName)
+    const ui = nextMobileNodeUi()
+    error.value = ''
+    loading.value = true
+    try {
+      const created = await createNodeInstance(nodeId, safeTypeId, nodeId, graphId, ui)
+      const createdNodeId = String(created?.node_id || nodeId).trim() || nodeId
+      if (fields && Object.keys(fields).length) {
+        await updateNodeInstanceConfig(createdNodeId, { fields }, graphId)
+      }
+      const typeInfo = availableNodeTypes.value.find((item) => item.id === safeTypeId)
+      await persistGraphNodeList(graphId, (graph) => ({
+        ...graph,
+        nodes: [
+          ...(graph.nodes || []).filter((node) => node.id !== createdNodeId),
+          {
+            id: createdNodeId,
+            typeId: safeTypeId,
+            name: createdNodeId,
+            input_num: Number(typeInfo?.input_num || 1),
+            output_num: Number(typeInfo?.output_num || 1),
+            ui,
+            providerId: String((fields as any)?.provider_id ?? '').trim(),
+            mode: String((fields as any)?.mode ?? '').trim(),
+            web_search: (fields as any)?.web_search as any,
+            thinking: (fields as any)?.thinking as any,
+            reasoning_effort: String((fields as any)?.reasoning_effort ?? ''),
+            systemPrompt: String((fields as any)?.system_prompt ?? ''),
+            plugins: Array.isArray((fields as any)?.plugins) ? (fields as any).plugins.map(String).filter(Boolean) : [],
+            tools: Array.isArray((fields as any)?.tools) ? (fields as any).tools.map(String).filter(Boolean) : [],
+            mcpServers: Array.isArray((fields as any)?.mcp_servers) ? (fields as any).mcp_servers.map(String).filter(Boolean) : [],
+            workingPath: String((fields as any)?.working_path ?? '').trim(),
+          },
+        ],
+      }))
+      await Promise.all([refreshNodes(), refreshNodeConfigs()])
+      return createdNodeId
+    } catch (e) {
+      setError(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function deleteNode(node: MobileNode) {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(node?.id || '').trim()
+    if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
+    error.value = ''
+    loading.value = true
+    try {
+      await deleteNodeInstance(nodeId, graphId)
+      await persistGraphNodeList(graphId, (graph) => ({
+        ...graph,
+        nodes: (graph.nodes || []).filter((item) => item.id !== nodeId),
+        links: (graph.links || []).filter((link) => link.from?.node !== nodeId && link.to?.node !== nodeId),
+      }))
+      if (selectedNode.value?.id === nodeId) {
+        selectedNode.value = null
+        conversation.value = null
+      }
+      await Promise.all([refreshNodes(), refreshNodeConfigs()])
+    } catch (e) {
+      setError(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
   }
 
   async function setSelectedNodeFields(fields: Record<string, unknown>) {
@@ -224,6 +397,28 @@ export function useMobileWorkspace() {
     }
   }
 
+  async function deleteSelectedNodeMessage(messageId: string) {
+    const pcId = String(selectedPc.value?.id || '').trim()
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    const safeMessageId = String(messageId || '').trim()
+    if (!pcId || !graphId || !nodeId || !safeMessageId) throw new Error('PC, Graph, Node, and Message selection are required')
+    error.value = ''
+    try {
+      await deleteMobileNodeMessage(pcId, graphId, nodeId, safeMessageId)
+      if (conversation.value?.messages) {
+        conversation.value = {
+          ...conversation.value,
+          messages: conversation.value.messages.filter((item) => String((item as any)?.id || '') !== safeMessageId),
+        }
+      }
+      await refreshConversation()
+    } catch (e) {
+      setError(e)
+      throw e
+    }
+  }
+
   async function refreshCurrent() {
     if (view.value === 'pcs') {
       await loadPcs()
@@ -304,6 +499,7 @@ export function useMobileWorkspace() {
     flatGraphs,
     nodes,
     nodeConfigs,
+    availableNodeTypes,
     providers,
     availableTools,
     conversation,
@@ -322,6 +518,11 @@ export function useMobileWorkspace() {
     setSelectedNodeFields,
     clearSelectedNodeFields,
     clearSelectedNodeMemory,
+    deleteSelectedNodeMessage,
+    saveGraphByName,
+    deleteGraphById,
+    createNode,
+    deleteNode,
     refreshCurrent,
     refreshNodeConfigs,
     refreshEditorCatalog,

@@ -2,12 +2,13 @@ from src.base_agent import BaseAgent
 from src.providers.openai_mapping import OpenAIResponsesMapping
 from src.providers.openai_responses_runtime import OpenAIResponsesRuntime
 from src.providers.openai_transport import OpenAITransport
+from src.providers.tool_feedback import ToolFeedbackMixin
 from src.providers.tool_call_runtime import ToolCallExecutionRuntime
 from src.service_host import ServiceHost
 from src.switch_utils import parse_switch_mode
 
 
-class OpenAIAgent(ServiceHost, BaseAgent):
+class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
     def __init__(self, provider_id="openai", memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
         super().__init__(
             provider_id,

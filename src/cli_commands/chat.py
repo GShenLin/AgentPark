@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nodes.agent_node import Node as AgentNode
+from src.cli_commands.companion_markdown_render import render_markdown_lines
 from src.cli_commands.companion_prompt import PromptCompanionTerminal
 from src.cli_commands.companion_restart import RESTART_EXIT_CODE
 from src.cli_commands.companion_style import error, muted, role_label
@@ -224,6 +225,7 @@ class _StreamPrinter:
         self.messages_path = messages_path
         self.stream_handler = stream_handler
         self.last_text = ""
+        self.buffered_text = ""
         self.printed_any = False
         self.done = False
         self.assistant_header_printed = False
@@ -250,9 +252,11 @@ class _StreamPrinter:
             self._print_tool_event(payload)
 
     def finish(self, final_text: str) -> None:
-        if self.enabled and not self.printed_any and final_text:
+        text = str(final_text or self.last_text or self.buffered_text or "")
+        if self.enabled and text:
             self._print_assistant_header()
-            print(final_text, flush=True)
+            for line in render_markdown_lines(text, indent="  "):
+                print(line, flush=True)
             self.printed_any = True
             return
         if self.enabled and self.printed_any:
@@ -261,9 +265,7 @@ class _StreamPrinter:
     def _print_delta(self, delta: str) -> None:
         if not self.enabled or not delta:
             return
-        self._print_assistant_header()
-        print(delta, end="", flush=True)
-        self.printed_any = True
+        self.buffered_text += delta
 
     def _print_assistant_header(self) -> None:
         if self.assistant_header_printed:

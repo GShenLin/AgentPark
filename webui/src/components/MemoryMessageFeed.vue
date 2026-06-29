@@ -29,6 +29,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
+  (event: 'deleteMessage', message: MessageEnvelope): void
 }>()
 
 const expandedToolGroups = ref<Set<string>>(new Set())
@@ -108,6 +109,7 @@ function textForMessage(message: MessageEnvelope) {
             class="feed-actions"
             @save="emit('saveMessage', textForMessage(entry.message))"
             @copy="emit('copyMessage', textForMessage(entry.message))"
+            @delete="emit('deleteMessage', entry.message)"
           />
         </div>
       </div>

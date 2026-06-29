@@ -10,6 +10,30 @@ def _write_json(path, payload):
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def test_companion_mcp_decodes_non_ascii_caller_headers():
+    from src.mcp.caller_context_headers import encode_caller_header_value
+    from src.web_backend.companion_mcp import _caller_from_context
+
+    class Headers:
+        def get(self, name):
+            values = {
+                "x-aitools-graph-id": encode_caller_header_value("默认图"),
+                "x-aitools-node-id": encode_caller_header_value("核对答案"),
+            }
+            return values.get(name)
+
+    class Request:
+        headers = Headers()
+
+    class RequestContext:
+        request = Request()
+
+    class Context:
+        request_context = RequestContext()
+
+    assert _caller_from_context(Context()) == {"graph_id": "默认图", "node_id": "核对答案"}
+
+
 def test_companion_mcp_tools_operate_on_backend_domains(monkeypatch, tmp_path):
     import src.web_backend as backend
     from src.web_backend import runtime_paths
@@ -60,6 +84,140 @@ def test_companion_mcp_tools_operate_on_backend_domains(monkeypatch, tmp_path):
     assert changed["ok"] is True
     assert changed["after"]["mode"] == "chat"
     assert "mode" in changed["changed_fields"]
+
+
+def test_companion_mcp_link_tools_manage_graph_links(monkeypatch, tmp_path):
+    import json
+
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+    from src.web_backend.companion_mcp_links import CompanionMcpLinkTools
+
+    graphs_dir = tmp_path / "memories"
+    graph_dir = graphs_dir / "default"
+    _write_json(
+        graph_dir / "config.json",
+        {
+            "id": "default",
+            "name": "Default Graph",
+            "links": [
+                {
+                    "id": "existing",
+                    "from": {"node": "source", "index": 0},
+                    "to": {"node": "target", "index": 0},
+                }
+            ],
+        },
+    )
+    _write_json(
+        graph_dir / "source" / "config.json",
+        {
+            "schemaVersion": 1,
+            "node_id": "source",
+            "graph_id": "default",
+            "type_id": "echo_node",
+            "input_num": 1,
+            "output_num": 2,
+        },
+    )
+    _write_json(
+        graph_dir / "target" / "config.json",
+        {
+            "schemaVersion": 1,
+            "node_id": "target",
+            "graph_id": "default",
+            "type_id": "echo_node",
+            "input_num": 1,
+            "output_num": 1,
+        },
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    core = backend.WebBackendFacade().core
+    tools = CompanionMcpLinkTools(core)
+
+    listed = tools.list_link(graph_id="default")
+    assert listed["ok"] is True
+    assert listed["count"] == 1
+    assert listed["links"][0]["id"] == "existing"
+
+    created = tools.connect_node(
+        graph_id="default",
+        from_node="source",
+        to_node="target",
+        from_output_index=1,
+        to_input_index=0,
+    )
+
+    assert created["ok"] is True
+    assert created["created"] is True
+    assert created["link"]["from"] == {"node": "source", "index": 1}
+    assert created["count"] == 2
+    graph_event = core.graph_events.get("default")
+    assert graph_event["event"] == "graph_save_api"
+    assert graph_event["save_reason"] == "companion_connect_node"
+
+    duplicate = tools.connect_node(
+        graph_id="default",
+        from_node="source",
+        to_node="target",
+        from_output_index=1,
+        to_input_index=0,
+    )
+
+    assert duplicate["ok"] is True
+    assert duplicate["created"] is False
+    assert duplicate["count"] == 2
+
+    removed_by_endpoint = tools.disconnect_node(
+        graph_id="default",
+        from_node="source",
+        to_node="target",
+        from_output_index=1,
+        to_input_index=0,
+    )
+
+    assert removed_by_endpoint["ok"] is True
+    assert removed_by_endpoint["removed_count"] == 1
+
+    removed_by_id = tools.disconnect_node(graph_id="default", link_id="existing")
+
+    assert removed_by_id["ok"] is True
+    assert removed_by_id["removed"][0]["id"] == "existing"
+    saved = json.loads((graph_dir / "config.json").read_text(encoding="utf-8"))
+    assert saved["links"] == []
+
+
+def test_companion_mcp_connect_node_validates_ports(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+    from src.web_backend.companion_mcp_links import CompanionMcpLinkTools
+
+    graphs_dir = tmp_path / "memories"
+    graph_dir = graphs_dir / "default"
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(
+        graph_dir / "source" / "config.json",
+        {"schemaVersion": 1, "node_id": "source", "graph_id": "default", "type_id": "echo_node", "output_num": 1},
+    )
+    _write_json(
+        graph_dir / "target" / "config.json",
+        {"schemaVersion": 1, "node_id": "target", "graph_id": "default", "type_id": "echo_node", "input_num": 1},
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    result = CompanionMcpLinkTools(backend.WebBackendFacade().core).connect_node(
+        graph_id="default",
+        from_node="source",
+        to_node="target",
+        from_output_index=1,
+        to_input_index=0,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid_port"
 
 
 def test_companion_mcp_aggregate_tools_propagate_structured_errors(monkeypatch, tmp_path):
@@ -639,11 +797,14 @@ def test_companion_mcp_endpoint_exposes_requested_tools(monkeypatch, tmp_path):
 
     assert names == [
         "change_node_config",
+        "connect_node",
+        "disconnect_node",
         "get_companion_meta",
         "get_node_last_message",
         "get_node_memory",
         "get_working_node",
         "list_graph",
+        "list_link",
         "list_node",
         "list_node_status",
         "send_message_to_node",

@@ -1,13 +1,20 @@
-from .domain_base import DomainBase
-from .shared import *
-import subprocess
 import mimetypes
+import os
+import shutil
+import subprocess
 import time
 import uuid
+from urllib.parse import unquote
+
+from fastapi import File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from fastapi import File, Form, UploadFile
-from src.provider_options import build_provider_support_list
+
+from src.file_transaction import atomic_write_text
 from src.message_protocol import build_resource_part
+from src.provider_options import build_provider_support_list
+
+from .domain_base import DomainBase
+from .runtime_paths import _get_runtime_root
 
 
 class SystemApiDomain(DomainBase):
@@ -24,6 +31,20 @@ class SystemApiDomain(DomainBase):
         path = os.path.join(_get_runtime_root(), "memories", "uploads", trace_id)
         os.makedirs(path, exist_ok=True)
         return path
+
+    def _resolve_file_api_path(self, value: object, *, default_to_runtime_root: bool = False) -> str:
+        raw_path = str(value or "").strip()
+        if not raw_path:
+            return _get_runtime_root() if default_to_runtime_root else ""
+
+        if raw_path.startswith("file://"):
+            raw_path = unquote(raw_path[7:])
+            if os.name == "nt" and len(raw_path) >= 3 and raw_path[0] == "/" and raw_path[2] == ":":
+                raw_path = raw_path[1:]
+
+        if os.path.isabs(raw_path):
+            return os.path.abspath(raw_path)
+        return os.path.abspath(os.path.join(_get_runtime_root(), raw_path))
 
     def _sanitize_upload_name(self, value: object) -> str:
         raw_name = os.path.basename(str(value or "").strip())
@@ -145,7 +166,7 @@ class SystemApiDomain(DomainBase):
 
     def list_files(self, path: str = "", search: str = ""):
         try:
-            target_path = path if path and path.strip() else _get_runtime_root()
+            target_path = self._resolve_file_api_path(path, default_to_runtime_root=True)
 
             # Basic validation
             if not target_path:
@@ -272,40 +293,33 @@ class SystemApiDomain(DomainBase):
 
     def read_file(self, path: str):
         try:
-            if not path or not os.path.exists(path):
+            resolved_path = self._resolve_file_api_path(path)
+            if not resolved_path or not os.path.exists(resolved_path):
                 raise HTTPException(status_code=404, detail="File not found")
-            if not os.path.isfile(path):
+            if not os.path.isfile(resolved_path):
                 raise HTTPException(status_code=400, detail="Not a file")
 
             # Limit file size to avoid crashing
             max_size = 1024 * 1024  # 1MB
-            size = os.path.getsize(path)
+            size = os.path.getsize(resolved_path)
             if size > max_size:
-                 with open(path, "r", encoding="utf-8", errors="replace") as f:
+                 with open(resolved_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read(max_size)
                     content += "\n\n... (File truncated due to size limit) ..."
             else:
-                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                with open(resolved_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
 
-            return {"content": content, "path": path}
+            return {"content": content, "path": resolved_path}
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     def raw_file(self, path: str, download: bool = False):
-        raw_path = str(path or "").strip()
-        if not raw_path:
+        resolved_path = self._resolve_file_api_path(path)
+        if not resolved_path:
             raise HTTPException(status_code=400, detail="path is required")
-
-        if raw_path.startswith("file://"):
-            raw_path = raw_path[7:]
-
-        if os.path.isabs(raw_path):
-            resolved_path = raw_path
-        else:
-            resolved_path = os.path.join(_get_runtime_root(), raw_path)
-
-        resolved_path = os.path.abspath(resolved_path)
         if not os.path.exists(resolved_path):
             raise HTTPException(status_code=404, detail="file not found")
         if not os.path.isfile(resolved_path):
@@ -350,22 +364,21 @@ class SystemApiDomain(DomainBase):
         return {"ok": True, "path": str(selected or "")}
 
     def write_file(self, payload: dict):
-        path = (payload or {}).get("path")
+        path = self._resolve_file_api_path((payload or {}).get("path"))
         content = (payload or {}).get("content")
 
         if not path:
              raise HTTPException(status_code=400, detail="path is required")
 
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content if content is not None else "")
+            atomic_write_text(path, content if content is not None else "")
             return {"ok": True, "path": path}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
     def rename_file(self, payload: dict):
-        old_path = str((payload or {}).get("old_path") or "").strip()
-        new_path = str((payload or {}).get("new_path") or "").strip()
+        old_path = self._resolve_file_api_path((payload or {}).get("old_path"))
+        new_path = self._resolve_file_api_path((payload or {}).get("new_path"))
 
         if not old_path:
             raise HTTPException(status_code=400, detail="old_path is required")
@@ -390,7 +403,7 @@ class SystemApiDomain(DomainBase):
             raise HTTPException(status_code=500, detail=str(e))
 
     def delete_file(self, payload: dict):
-        path = str((payload or {}).get("path") or "").strip()
+        path = self._resolve_file_api_path((payload or {}).get("path"))
         recursive = bool((payload or {}).get("recursive", True))
 
         if not path:

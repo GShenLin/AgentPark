@@ -458,6 +458,9 @@ class Node(BaseNode):
             system_prompt=system_prompt if isinstance(system_prompt, str) else None,
             internal_memory_enabled=False,
         )
+        agent._aitools_graph_id = graph_id
+        agent._aitools_node_id = agent_id
+        agent._aitools_node_type_id = "agent_node"
         agent.operational_memory_gate_enabled = True
         agent.tool_context_compaction_gate_enabled = True
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")

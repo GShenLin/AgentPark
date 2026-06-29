@@ -36,6 +36,10 @@ def _append_jsonl_line(file_path: str, payload: dict) -> None:
         return
 
 
+class NodeDeletingError(RuntimeError):
+    pass
+
+
 class NodeConfigStore:
     def __init__(self) -> None:
         self._path_locks: dict[str, threading.Lock] = {}
@@ -87,6 +91,8 @@ class NodeConfigStore:
             payload = self._read_unlocked(config_path)
             if not isinstance(payload, dict) or not payload:
                 return
+            if bool(payload.get("_delete_requested")):
+                return
             next_state = parse_node_state(state)
             if parse_node_state(payload.get("state")) != next_state:
                 bump_node_event_seq(payload)
@@ -102,6 +108,13 @@ class NodeConfigStore:
         with lock:
             payload = self._read_unlocked(config_path)
             if not isinstance(payload, dict) or not payload:
+                return
+            if bool(payload.get("_delete_requested")):
+                if parse_node_state(payload.get("state")) != "stop":
+                    bump_node_event_seq(payload)
+                payload["state"] = "stop"
+                payload.pop("_stop_requested", None)
+                self._write_unlocked(config_path, payload)
                 return
             if parse_node_state(payload.get("state")) == "stop":
                 return
@@ -124,6 +137,8 @@ class NodeConfigStore:
             payload = self._read_unlocked(config_path)
             if not isinstance(payload, dict):
                 payload = {}
+            if bool(payload.get("_delete_requested")):
+                raise NodeDeletingError("node is being deleted")
             pending = payload.get("pending")
             if not isinstance(pending, list):
                 pending = []
@@ -164,6 +179,9 @@ class NodeConfigStore:
         with lock:
             payload = self._read_unlocked(config_path)
             if not isinstance(payload, dict) or not payload:
+                return result
+            if bool(payload.get("_delete_requested")):
+                result["state"] = parse_node_state(payload.get("state"))
                 return result
             pending = payload.get("pending")
             if isinstance(pending, list):
@@ -230,6 +248,8 @@ class NodeConfigStore:
             payload = self._read_unlocked(config_path)
             if not isinstance(payload, dict) or not payload:
                 return None
+            if bool(payload.get("_delete_requested")):
+                return None
             current_state = parse_node_state(payload.get("state"))
             if current_state != "idle":
                 is_clock_waiting = (
@@ -275,6 +295,36 @@ class NodeConfigStore:
             bump_node_event_seq(payload)
             self._write_unlocked(config_path, payload)
             return picked
+
+    def mark_delete_requested(self, config_path: str) -> dict:
+        result = {"cleared_pending": 0, "cleared_inflight": False, "state": "stop"}
+        if not config_path:
+            return result
+        lock = self._get_lock(config_path)
+        with lock:
+            payload = self._read_unlocked(config_path)
+            if not isinstance(payload, dict) or not payload:
+                return result
+            pending = payload.get("pending")
+            if isinstance(pending, list):
+                result["cleared_pending"] = len(pending)
+            has_inflight = isinstance(payload.get("inflight"), dict)
+            result["cleared_inflight"] = has_inflight
+            payload["pending"] = []
+            payload["pending_count"] = 0
+            payload["_delete_requested"] = True
+            payload["last_message"] = "Delete requested. Cancelling active work."
+            if has_inflight:
+                payload["_stop_requested"] = True
+                payload["state"] = "working"
+                result["state"] = "working"
+            else:
+                payload.pop("_stop_requested", None)
+                payload["state"] = "stop"
+                result["state"] = "stop"
+            bump_node_event_seq(payload)
+            self._write_unlocked(config_path, payload)
+            return result
 
     def set_last_message(self, config_path: str, output: str) -> None:
         if not config_path:
@@ -436,6 +486,10 @@ def _pop_node_pending(config_path: str) -> dict | None:
 
 def _cancel_node_work(config_path: str) -> dict:
     return _NODE_CONFIG_STORE.cancel_work(config_path)
+
+
+def _mark_node_delete_requested(config_path: str) -> dict:
+    return _NODE_CONFIG_STORE.mark_delete_requested(config_path)
 
 
 def _is_node_stop_requested(config_path: str) -> bool:

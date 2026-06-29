@@ -12,6 +12,7 @@ from .shared import (
     envelope_preview,
     normalize_envelope,
 )
+from .state_store import NodeDeletingError
 
 
 class NodeInstanceQueue(HostBoundService):
@@ -41,7 +42,10 @@ class NodeInstanceQueue(HostBoundService):
             item["from"] = self.graph_runtime._sanitize_node_id((payload or {}).get("from"))
         if isinstance((payload or {}).get("source"), str) and str((payload or {}).get("source")).strip():
             item["source"] = str((payload or {}).get("source")).strip()
-        _append_node_pending(config_path, item)
+        try:
+            _append_node_pending(config_path, item)
+        except NodeDeletingError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         cfg = _read_json_dict(config_path)
         pending = cfg.get("pending")
         pending_count = len(pending) if isinstance(pending, list) else 0

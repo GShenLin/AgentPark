@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from src.companion_inbox import drain_companion_notices
+from src.companion_inbox import format_companion_notice
 from src.cli_commands.companion_console import ConsoleEvent, ConsoleEventReader, MsvcrtConsole, TerminalScreen, WindowsConsole
 from src.cli_commands.companion_debug import build_terminal_debug_text
 from src.cli_commands.companion_restart import launch_restart_bat
@@ -74,6 +76,7 @@ class CompanionTui:
         self.worker_events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.spinner_index = 0
         self.started_at = time.monotonic()
+        self.last_inbox_check = 0.0
 
     @classmethod
     def is_available(cls) -> bool:
@@ -110,6 +113,7 @@ class CompanionTui:
                 event = reader.get(timeout=0.08)
                 if event is not None:
                     self._handle_console_event(event)
+                self._drain_inbox()
                 self._drain_worker_events()
                 if self.state.running:
                     self.spinner_index = (self.spinner_index + 1) % 4
@@ -351,6 +355,28 @@ class CompanionTui:
                 self._finish_turn(payload)
             elif kind == "error":
                 self._finish_turn({"response": str(payload), "error": True})
+
+    def _drain_inbox(self) -> None:
+        now = time.monotonic()
+        if now - self.last_inbox_check < 0.5:
+            return
+        self.last_inbox_check = now
+        try:
+            notices = drain_companion_notices(config_path=self.target.config_path)
+        except Exception as exc:
+            self.state.transcript.append(
+                TranscriptItem(role="error", text=f"companion inbox error: {type(exc).__name__}: {exc}")
+            )
+            self.state.status = "inbox error"
+            return
+        for notice in notices:
+            text = format_companion_notice(notice)
+            self.state.transcript.append(TranscriptItem(role="notice", text=text))
+            if self.state.running:
+                self.state.queued.append(text)
+                self.state.status = f"queued {len(self.state.queued)} notice(s)"
+                continue
+            self._start_turn(text)
 
     def _handle_stream(self, payload: object) -> None:
         if not isinstance(payload, dict):

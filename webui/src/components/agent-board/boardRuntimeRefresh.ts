@@ -22,9 +22,14 @@ const nodeRuntimeGraphEvents = new Set([
   'startup_node_state_recovered',
 ])
 
+const graphStructureEvents = new Set([
+  'graph_save_api',
+])
+
 export function createBoardRuntimeRefresh(options: {
   currentGraphId: Ref<string | null>
   refreshNodeConfigs: () => Promise<void>
+  refreshGraphLinks: () => Promise<void>
   hasActiveNodeWork: () => boolean
 }) {
   let activeNodeRefreshTimer: number | null = null
@@ -34,6 +39,8 @@ export function createBoardRuntimeRefresh(options: {
   let graphEventStreamKey = ''
   let graphEventRefreshTimer: number | null = null
   let graphEventRefreshInFlight = false
+  let graphStructureRefreshTimer: number | null = null
+  let graphStructureRefreshInFlight = false
 
   function stopActiveNodeRefresh() {
     if (activeNodeRefreshTimer != null) {
@@ -46,6 +53,10 @@ export function createBoardRuntimeRefresh(options: {
 
   function isNodeRuntimeGraphEvent(eventName: string) {
     return nodeRuntimeGraphEvents.has(eventName)
+  }
+
+  function isGraphStructureEvent(eventName: string) {
+    return graphStructureEvents.has(eventName)
   }
 
   function scheduleGraphEventRefresh() {
@@ -67,6 +78,25 @@ export function createBoardRuntimeRefresh(options: {
     }, GRAPH_EVENT_REFRESH_DELAY_MS)
   }
 
+  function scheduleGraphStructureRefresh() {
+    if (graphStructureRefreshTimer != null) return
+    graphStructureRefreshTimer = window.setTimeout(async () => {
+      graphStructureRefreshTimer = null
+      if (graphStructureRefreshInFlight) {
+        scheduleGraphStructureRefresh()
+        return
+      }
+      graphStructureRefreshInFlight = true
+      try {
+        await options.refreshGraphLinks()
+      } catch (error) {
+        console.error('Failed to refresh graph links from graph event stream.', error)
+      } finally {
+        graphStructureRefreshInFlight = false
+      }
+    }, GRAPH_EVENT_REFRESH_DELAY_MS)
+  }
+
   function stopGraphEventStream() {
     if (graphEventSource) {
       graphEventSource.close()
@@ -77,7 +107,12 @@ export function createBoardRuntimeRefresh(options: {
       window.clearTimeout(graphEventRefreshTimer)
       graphEventRefreshTimer = null
     }
+    if (graphStructureRefreshTimer != null) {
+      window.clearTimeout(graphStructureRefreshTimer)
+      graphStructureRefreshTimer = null
+    }
     graphEventRefreshInFlight = false
+    graphStructureRefreshInFlight = false
   }
 
   function startGraphEventStream() {
@@ -95,6 +130,9 @@ export function createBoardRuntimeRefresh(options: {
         const eventName = String(payload?.event || '').trim()
         if (isNodeRuntimeGraphEvent(eventName)) {
           scheduleGraphEventRefresh()
+        }
+        if (isGraphStructureEvent(eventName)) {
+          scheduleGraphStructureRefresh()
         }
       } catch (error) {
         console.error('Failed to process graph event stream payload.', error)

@@ -4,6 +4,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from src.runtime_cancellation import CancellationRequested
+from src.node_error_companion import notify_companion_about_node_error
 
 from .service_host import HostBoundService
 from .route_parser import NodeRouteParser
@@ -155,6 +156,7 @@ class GraphNodeExecution(HostBoundService):
             _transition_node_config_to_idle(config_path)
             error_text = f"{type(e).__name__}: {str(e)}"
             error_message = f"Error: {error_text}"
+            traceback_text = traceback.format_exc()
             _set_node_config_last_message(config_path, error_message)
             record_node_request_completion_or_log(
                 config_path,
@@ -194,8 +196,32 @@ class GraphNodeExecution(HostBoundService):
                 depth=depth,
                 link_id=link_id or None,
                 error=error_text,
-                traceback=_preview_text(traceback.format_exc(), 4000),
+                traceback=_preview_text(traceback_text, 4000),
                 duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            companion_notice_delivered = notify_companion_about_node_error(
+                graph_id=safe_graph_id,
+                node_id=entry,
+                node_type_id=type_id,
+                error=error_text,
+                error_message=error_message,
+                traceback_text=traceback_text,
+                trigger={
+                    "trace_id": trace_id,
+                    "from_node": from_node,
+                    "link_id": link_id,
+                    "source": source,
+                    "depth": depth,
+                    "input": _preview_text(pending_full or envelope_preview(pending_message), 2000),
+                },
+            )
+            self._log_graph_event(
+                safe_graph_id,
+                "node_error_companion_notice",
+                trace_id=trace_id,
+                node_instance_id=entry,
+                node_type_id=type_id,
+                delivered=companion_notice_delivered,
             )
             return
         finally:

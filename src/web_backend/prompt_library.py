@@ -6,18 +6,21 @@ from .shared import HTTPException
 
 
 class PromptLibrary(HostBoundService):
+    def _prompt_dir(self):
+        return os.path.join(runtime_paths._get_runtime_root(), "prompt")
+
     def list_prompts(self):
-        config_dir = os.path.join(runtime_paths._get_runtime_root(), "config")
-        if not os.path.exists(config_dir):
+        prompt_dir = self._prompt_dir()
+        if not os.path.exists(prompt_dir):
             return {"prompts": []}
-        files = [f for f in os.listdir(config_dir) if f.endswith(".txt")]
+        files = [f for f in os.listdir(prompt_dir) if f.endswith(".txt")]
         return {"prompts": files}
 
     def get_prompt(self, filename: str):
-        config_dir = os.path.join(runtime_paths._get_runtime_root(), "config")
-        file_path = os.path.join(config_dir, filename)
+        prompt_dir = self._prompt_dir()
+        file_path = os.path.join(prompt_dir, filename)
         if not os.path.exists(file_path):
-            file_path = os.path.join(config_dir, f"{filename}.txt")
+            file_path = os.path.join(prompt_dir, f"{filename}.txt")
             if not os.path.exists(file_path):
                 raise HTTPException(status_code=404, detail="Prompt file not found")
 
@@ -38,9 +41,9 @@ class PromptLibrary(HostBoundService):
         if not filename.endswith(".txt"):
             filename += ".txt"
 
-        config_dir = os.path.join(runtime_paths._get_runtime_root(), "config")
-        os.makedirs(config_dir, exist_ok=True)
-        file_path = os.path.join(config_dir, filename)
+        prompt_dir = self._prompt_dir()
+        os.makedirs(prompt_dir, exist_ok=True)
+        file_path = os.path.join(prompt_dir, filename)
 
         try:
             with open(file_path, "w", encoding="utf-8") as f:

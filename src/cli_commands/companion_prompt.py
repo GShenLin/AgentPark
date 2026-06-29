@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from src.companion_inbox import drain_companion_notices
+from src.companion_inbox import format_companion_notice
 from src.cli_commands.companion_debug import build_terminal_debug_text
+from src.cli_commands.companion_inbox_watcher import CompanionInboxWatcher
 from src.cli_commands.companion_restart import launch_restart_bat
 from src.cli_commands.companion_style import accent, error, field_line, muted, role_label
 
@@ -95,6 +99,7 @@ class PromptCompanionTerminal:
         self.debug_terminal = debug_terminal
         self.run_turn = run_turn
         self.turn_count = 0
+        self.turn_lock = threading.Lock()
 
     @classmethod
     def is_available(cls) -> bool:
@@ -145,47 +150,55 @@ class PromptCompanionTerminal:
         if self.debug_terminal:
             self._print_block("terminal", self._terminal_debug_text())
 
-        while True:
-            try:
-                line = session.prompt([("class:prompt", "> ")])
-            except EOFError:
-                self._print_muted("exit")
-                break
-            except KeyboardInterrupt:
-                self._print_muted("cancelled")
-                continue
+        self._drain_inbox()
+        watcher = CompanionInboxWatcher(self._drain_inbox)
+        watcher.start()
+        try:
+            while True:
+                try:
+                    line = session.prompt([("class:prompt", "> ")])
+                except EOFError:
+                    self._print_muted("exit")
+                    break
+                except KeyboardInterrupt:
+                    self._print_muted("cancelled")
+                    continue
 
-            text = line.strip()
-            if not text:
-                continue
-            command = text.lower()
-            if command in EXIT_COMMANDS:
-                break
-            if command == "/help":
-                self._print_block("help", HELP_TEXT)
-                continue
-            if command == "/status":
-                self._print_block("status", self._status_text())
-                continue
-            if command == "/restart":
-                if self._restart():
-                    return "restart"
-                continue
-            if command == "/clear":
-                self._clear()
-                self._print_banner()
-                continue
+                text = line.strip()
+                if not text:
+                    continue
+                command = text.lower()
+                if command in EXIT_COMMANDS:
+                    break
+                if command == "/help":
+                    self._print_block("help", HELP_TEXT)
+                    continue
+                if command == "/status":
+                    self._print_block("status", self._status_text())
+                    continue
+                if command == "/restart":
+                    if self._restart():
+                        return "restart"
+                    continue
+                if command == "/clear":
+                    self._clear()
+                    self._print_banner()
+                    continue
 
-            self._print_user_message(line)
-            self._print_muted("working")
-            try:
-                self.run_turn(self.target, line, print_stream=True)
-                self.turn_count += 1
-            except KeyboardInterrupt:
-                self._print_error("interrupted")
-            except Exception as exc:
-                self._print_error(f"{type(exc).__name__}: {exc}")
-        return ""
+                self._print_user_message(line)
+                self._print_muted("working")
+                try:
+                    with self.turn_lock:
+                        self.run_turn(self.target, line, print_stream=True)
+                    self.turn_count += 1
+                    self._drain_inbox()
+                except KeyboardInterrupt:
+                    self._print_error("interrupted")
+                except Exception as exc:
+                    self._print_error(f"{type(exc).__name__}: {exc}")
+            return ""
+        finally:
+            watcher.stop()
 
     def _load_prompt_toolkit(self):
         try:
@@ -250,6 +263,25 @@ class PromptCompanionTerminal:
 
     def _print_error(self, text: str) -> None:
         print(error(f"[error] {text}", stream=sys.stderr), file=sys.stderr, flush=True)
+
+    def _drain_inbox(self) -> None:
+        try:
+            notices = drain_companion_notices(config_path=self.target.config_path)
+        except Exception as exc:
+            self._print_error(f"companion inbox error: {type(exc).__name__}: {exc}")
+            return
+        for notice in notices:
+            text = format_companion_notice(notice)
+            self._print_block("notice", text)
+            self._print_muted("working")
+            try:
+                with self.turn_lock:
+                    self.run_turn(self.target, text, print_stream=True)
+                self.turn_count += 1
+            except KeyboardInterrupt:
+                self._print_error("interrupted")
+            except Exception as exc:
+                self._print_error(f"{type(exc).__name__}: {exc}")
 
     def _restart(self) -> bool:
         try:

@@ -32,6 +32,7 @@ RUNTIME_STATE_FIELDS = {
     "inflight",
     "inflight_at",
     "_stop_requested",
+    "_delete_requested",
     "node_event_seq",
     "last_message",
     "last_run_at",

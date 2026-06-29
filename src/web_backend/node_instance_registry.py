@@ -236,26 +236,6 @@ class NodeInstanceRegistry(HostBoundService):
             "config_path": config_path,
         }
 
-    def delete_node_instance(self, node_id: str, graph_id: str = ""):
-        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
-        node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
-        memory_root = os.path.join(runtime_paths._get_runtime_root(), "memories")
-        removed_dir = False
-        if node_dir:
-            try:
-                if not self.graph_runtime._is_safe_subdir(memory_root, node_dir):
-                    raise RuntimeError("refusing to delete outside memory root")
-                dir_real = os.path.realpath(node_dir)
-                if os.path.isdir(dir_real):
-                    shutil.rmtree(dir_real)
-                    removed_dir = True
-            except Exception as exc:
-                raise HTTPException(status_code=500, detail=f"failed to delete node instance: {str(exc)}")
-        if not removed_dir:
-            raise HTTPException(status_code=404, detail="node instance not found")
-        return {"ok": True, "node_id": safe_node_id, "graph_id": safe_graph_id, "removed_memory_dir": removed_dir}
-
     def clear_node_instance_memory(self, node_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)

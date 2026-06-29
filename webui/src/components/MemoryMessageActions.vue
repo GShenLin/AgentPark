@@ -6,6 +6,7 @@ defineProps<{
 const emit = defineEmits<{
   (event: 'save'): void
   (event: 'copy'): void
+  (event: 'delete'): void
 }>()
 </script>
 
@@ -41,6 +42,21 @@ const emit = defineEmits<{
         />
       </svg>
     </button>
+    <button
+      class="message-action-btn danger"
+      type="button"
+      title="删除这条对话"
+      aria-label="删除这条对话"
+      :disabled="disabled"
+      @click.stop="emit('delete')"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path
+          fill="currentColor"
+          d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9h8V9h2v10a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9Z"
+        />
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -71,6 +87,17 @@ const emit = defineEmits<{
   border-color: rgba(125, 211, 252, 0.52);
   color: rgba(240, 249, 255, 0.98);
   background: rgba(8, 47, 73, 0.72);
+}
+
+.message-action-btn.danger {
+  border-color: rgba(248, 113, 113, 0.32);
+  color: rgba(252, 165, 165, 0.95);
+}
+
+.message-action-btn.danger:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.62);
+  color: rgba(254, 226, 226, 0.98);
+  background: rgba(127, 29, 29, 0.58);
 }
 
 .message-action-btn:disabled {

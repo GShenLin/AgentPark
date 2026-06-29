@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { clearNodeInstanceMemory, deleteGraph, listGraphs, loadGraph, saveGraph, setStartupGraphConfig, type GraphConfig, type GraphInfo } from '../api'
+import { clearNodeInstanceMemory, deleteGraph, deleteNodeInstanceMemoryMessage, listGraphs, loadGraph, saveGraph, setStartupGraphConfig, type GraphConfig, type GraphInfo, type MessageEnvelope } from '../api'
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
@@ -92,6 +92,21 @@ async function clearSelectedNodeMemory() {
   }
 }
 
+async function deleteMemoryMessage(message: MessageEnvelope) {
+  const nodeId = String(selectedNodeId.value || '').trim()
+  const messageId = String((message as any)?.id || '').trim()
+  if (!nodeId || !messageId) return
+  const ok = window.confirm('Delete this conversation entry?')
+  if (!ok) return
+  try {
+    await deleteNodeInstanceMemoryMessage(nodeId, messageId, currentGraphId.value || 'default')
+    memoryMessages.value = memoryMessages.value.filter((item) => String((item as any)?.id || '') !== messageId)
+    await loadAgentMemory()
+  } catch (e: any) {
+    lastError.value = String(e?.message || e)
+  }
+}
+
 const renderedMarkdown = computed(() => {
   return renderMemoryMarkdown(memoryText.value)
 })
@@ -123,18 +138,25 @@ async function saveGraphConfig() {
 
   graphStatus.value = null
   const name = resolveGraphName(snapshot)
+  const sourceGraphId = String(currentGraphId.value || snapshot.id || '').trim()
   const payload: GraphConfig = {
     ...snapshot,
     id: currentGraphId.value || snapshot.id || name,
     name,
-    source_graph_id: currentGraphId.value || snapshot.id || 'default',
   }
 
   try {
-    const result = await saveGraph(name, payload, { saveReason: 'memory_panel_save' })
+    const result = await saveGraph(name, payload, {
+      saveReason: 'memory_panel_save',
+      sourceGraphId: sourceGraphId && sourceGraphId !== name ? sourceGraphId : undefined,
+    })
+    const savedAsNewGraph = !!sourceGraphId && sourceGraphId !== result.id
     currentGraphId.value = result.id
     currentGraphName.value = result.name
     graphNameInput.value = result.name
+    if (savedAsNewGraph) {
+      graphLoadRequest.value = await loadGraph(result.id)
+    }
     await setStartupGraphConfig(result.id, result.name).catch(() => null)
     await refreshGraphs()
     graphStatus.value = 'Graph saved.'
@@ -313,6 +335,7 @@ onBeforeUnmount(() => {
       @auto-scroll-change="memoryAutoScroll = $event"
       @save-message="openSaveMessageDialog"
       @copy-message="copyMessageText"
+      @delete-message="deleteMemoryMessage"
     />
 
     <MemorySaveDialog

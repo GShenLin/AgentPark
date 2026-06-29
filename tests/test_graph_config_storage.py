@@ -34,6 +34,57 @@ def test_graph_config_strips_nodes_field():
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
 
+def test_graph_copy_artifacts_retargets_node_configs_and_skips_runner_log():
+    import src.web_backend as backend
+
+    source_graph_id = f"ut_copy_src_{uuid.uuid4().hex[:8]}"
+    target_graph_id = f"ut_copy_dst_{uuid.uuid4().hex[:8]}"
+    node_id = "Agent"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graphs_dir = _get_graphs_dir()
+    source_dir = os.path.join(graphs_dir, source_graph_id)
+    target_dir = os.path.join(graphs_dir, target_graph_id)
+    try:
+        os.makedirs(os.path.join(source_dir, node_id), exist_ok=True)
+        with open(os.path.join(source_dir, "config.json"), "w", encoding="utf-8") as handle:
+            json.dump({"id": source_graph_id, "name": source_graph_id, "links": []}, handle)
+        with open(os.path.join(source_dir, "runner.events.jsonl"), "w", encoding="utf-8") as handle:
+            handle.write('{"event":"old"}\n')
+        with open(os.path.join(source_dir, node_id, "config.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "node_id": node_id,
+                    "type_id": "agent_node",
+                    "name": node_id,
+                    "graph_id": source_graph_id,
+                },
+                handle,
+            )
+
+        response = TestClient(app).post(
+            f"/api/graphs/{target_graph_id}",
+            json={
+                "graph": {"id": target_graph_id, "name": target_graph_id, "links": []},
+                "source_graph_id": source_graph_id,
+            },
+        )
+
+        assert response.status_code == 200
+        copied_config_path = os.path.join(target_dir, node_id, "config.json")
+        copied_config = json.loads(open(copied_config_path, "r", encoding="utf-8").read())
+        assert copied_config["node_id"] == node_id
+        assert copied_config["graph_id"] == target_graph_id
+        runner_log = os.path.join(target_dir, "runner.events.jsonl")
+        if os.path.exists(runner_log):
+            assert '{"event":"old"}' not in open(runner_log, "r", encoding="utf-8").read()
+    finally:
+        shutil.rmtree(source_dir, ignore_errors=True)
+        shutil.rmtree(target_dir, ignore_errors=True)
+
+
 def test_graph_load_supports_version_unchanged_response():
     import src.web_backend as backend
 

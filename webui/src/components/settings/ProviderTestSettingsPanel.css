@@ -1,0 +1,224 @@
+.provider-test {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.provider-list,
+.provider-detail {
+  min-height: 0;
+  overflow: auto;
+}
+
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-right: 10px;
+  border-right: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.test-actions {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.test-actions button,
+.provider-item {
+  min-height: 32px;
+}
+
+.start-btn {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: rgba(186, 230, 253, 0.98);
+}
+
+.model-btn {
+  border-color: rgba(52, 211, 153, 0.4);
+  color: rgba(187, 247, 208, 0.98);
+}
+
+.provider-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+}
+
+.provider-item.ok {
+  border-color: rgba(34, 197, 94, 0.36);
+  background: rgba(22, 101, 52, 0.18);
+}
+
+.provider-item.bad {
+  border-color: rgba(248, 113, 113, 0.48);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.provider-item.active {
+  outline: 1px solid rgba(56, 189, 248, 0.72);
+}
+
+.provider-item small,
+.detail-head span,
+.status-line span,
+.generated-at,
+.model-list-head span {
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 11px;
+}
+
+.provider-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.generated-at {
+  flex: 0 0 auto;
+  font-family: Consolas, 'Cascadia Mono', monospace;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  border-left: 3px solid rgba(148, 163, 184, 0.4);
+  padding-left: 10px;
+}
+
+.job-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: rgba(186, 230, 253, 0.96);
+  background: rgba(14, 165, 233, 0.12);
+  font-size: 12px;
+}
+
+.status-line.ok {
+  border-left-color: rgba(34, 197, 94, 0.8);
+}
+
+.status-line.bad {
+  border-left-color: rgba(248, 113, 113, 0.8);
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 6px;
+}
+
+.model-grid span {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: rgba(226, 232, 240, 0.95);
+  background: rgba(15, 23, 42, 0.22);
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.unsupported-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unsupported-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 8px 0;
+}
+
+.limit-key {
+  color: rgba(254, 202, 202, 0.96);
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 12px;
+}
+
+.limit-value {
+  min-width: 0;
+  color: rgba(226, 232, 240, 0.95);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.empty-list,
+.empty-detail,
+.all-supported {
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 12px;
+}
+
+.settings-error {
+  flex: 0 0 auto;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: rgba(254, 226, 226, 0.95);
+  background: rgba(127, 29, 29, 0.32);
+  font-size: 12px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 1120px) {
+  .provider-test {
+    grid-template-columns: minmax(132px, 38vw) minmax(0, 1fr);
+  }
+
+  .test-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .unsupported-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

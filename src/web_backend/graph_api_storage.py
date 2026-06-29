@@ -9,7 +9,7 @@ from datetime import datetime
 from src.file_transaction import atomic_write_text
 
 from .graph_runtime_registry import GraphConfigReadError
-from .runtime_paths import _get_graphs_dir
+from . import runtime_paths
 from .service_host import HostBoundService
 from .shared import HTTPException
 
@@ -53,7 +53,7 @@ class GraphApiStorage(HostBoundService):
         return graph
 
     def list_graphs(self):
-        graphs_dir = _get_graphs_dir()
+        graphs_dir = runtime_paths._get_graphs_dir()
         graphs = []
         if not os.path.isdir(graphs_dir):
             graphs.append({"id": "default", "name": "default", "updated_at": None})
@@ -105,7 +105,7 @@ class GraphApiStorage(HostBoundService):
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
         self.graph_runtime._log_graph_event(safe_id, "graph_load_api")
-        graphs_dir = _get_graphs_dir()
+        graphs_dir = runtime_paths._get_graphs_dir()
         config_path = os.path.join(graphs_dir, safe_id, "config.json")
         if not os.path.exists(config_path):
             if safe_id == "default":
@@ -151,7 +151,7 @@ class GraphApiStorage(HostBoundService):
             links_count=len(graph.get("links") or []) if isinstance(graph.get("links"), list) else None,
         )
 
-        graphs_dir = _get_graphs_dir()
+        graphs_dir = runtime_paths._get_graphs_dir()
         os.makedirs(graphs_dir, exist_ok=True)
         graph_dir = os.path.join(graphs_dir, safe_id)
         os.makedirs(graph_dir, exist_ok=True)
@@ -163,7 +163,7 @@ class GraphApiStorage(HostBoundService):
         if not graph.get("name"):
             graph["name"] = safe_id
         if source_graph_id and source_graph_id != safe_id:
-            self._copy_graph_artifacts(source_graph_id, graph_dir)
+            self._copy_graph_artifacts(source_graph_id, graph_dir, safe_id)
         try:
             _write_graph_config(config_path, graph)
             updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -171,12 +171,12 @@ class GraphApiStorage(HostBoundService):
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 
-    def _copy_graph_artifacts(self, source_graph_id: str, graph_dir: str) -> None:
-        source_dir = os.path.join(_get_graphs_dir(), source_graph_id)
+    def _copy_graph_artifacts(self, source_graph_id: str, graph_dir: str, target_graph_id: str) -> None:
+        source_dir = os.path.join(runtime_paths._get_graphs_dir(), source_graph_id)
         if not os.path.isdir(source_dir):
             return
         for entry in os.listdir(source_dir):
-            if entry == "config.json":
+            if entry in {"config.json", "runner.events.jsonl"}:
                 continue
             src_path = os.path.join(source_dir, entry)
             dst_path = os.path.join(graph_dir, entry)
@@ -185,17 +185,33 @@ class GraphApiStorage(HostBoundService):
                     if os.path.exists(dst_path):
                         shutil.rmtree(dst_path)
                     shutil.copytree(src_path, dst_path)
+                    self._retarget_copied_node_config(dst_path, entry, target_graph_id)
                 elif os.path.isfile(src_path):
                     shutil.copy2(src_path, dst_path)
             except Exception:
                 pass
+
+    def _retarget_copied_node_config(self, node_dir: str, node_id: str, target_graph_id: str) -> None:
+        config_path = os.path.join(node_dir, "config.json")
+        if not os.path.exists(config_path):
+            return
+        try:
+            with open(config_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if not isinstance(payload, dict):
+                return
+            payload["node_id"] = str(node_id)
+            payload["graph_id"] = str(target_graph_id)
+            _write_graph_config(config_path, payload)
+        except Exception:
+            pass
 
     def delete_graph(self, graph_id: str):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
 
-        graphs_dir = os.path.abspath(_get_graphs_dir())
+        graphs_dir = os.path.abspath(runtime_paths._get_graphs_dir())
         graph_dir = os.path.abspath(os.path.join(graphs_dir, safe_id))
         try:
             common = os.path.commonpath([graphs_dir, graph_dir])

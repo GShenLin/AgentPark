@@ -32,6 +32,7 @@ const emit = defineEmits<{
   (event: 'autoScrollChange', value: boolean): void
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
+  (event: 'deleteMessage', message: MessageEnvelope): void
 }>()
 
 const memoryPanelRef = ref<HTMLElement | null>(null)
@@ -119,6 +120,7 @@ defineExpose({ scrollToBottom })
         :markdown-preview="markdownPreview"
         @save-message="emit('saveMessage', $event)"
         @copy-message="emit('copyMessage', $event)"
+        @delete-message="emit('deleteMessage', $event)"
       />
       <div v-if="liveMessage" class="live-message">
         <div class="live-head">

@@ -4,6 +4,7 @@ import type { MessageEnvelope, MobileNode, ResourceKind } from '../api'
 import { restartServer } from '../api'
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemoryToolCallPart from '../components/MemoryToolCallPart.vue'
+import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import {
   lastToolInstruction,
   toolDuration,
@@ -16,21 +17,39 @@ import {
 } from '../components/memoryFeedTools'
 import MobileLiveMessage from './MobileLiveMessage.vue'
 import MobileMessageText from './MobileMessageText.vue'
+import MobileNodeCreateDialog from './MobileNodeCreateDialog.vue'
 import MobileNodeConfigDialog from './MobileNodeConfigDialog.vue'
 import MobileNodeListItem from './MobileNodeListItem.vue'
 import SettingsPage from '../components/SettingsPage.vue'
+import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { useMobileWorkspace } from './useMobileWorkspace'
 import { buildMessageSignature, messageRoleClass } from './mobileMessageRender'
+import { extractMemoryMessageText } from '../components/memoryMessageText'
 
 const workspace = useMobileWorkspace()
+const {
+  saveDialogOpen,
+  saveDialogFilename,
+  saveDialogTargetDir,
+  saveDialogError,
+  saveDialogSaving,
+  openSaveMessageDialog,
+  confirmSaveMessageDialog,
+  cancelSaveMessageDialog,
+  copyMessageText,
+} = useMemoryMessageExport()
 const draft = ref('')
 const feedRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<UploadedFileItem[]>([])
 const uploadingFiles = ref(false)
 const configOpen = ref(false)
+const createNodeOpen = ref(false)
 const settingsOpen = ref(false)
 const isRestarting = ref(false)
+const graphNameInput = ref('')
+const graphStatus = ref('')
+const graphSaving = ref(false)
 const goalArmedByNode = ref<Record<string, boolean>>({})
 const expandedToolGroups = ref<Set<string>>(new Set())
 const SCROLL_STICK_THRESHOLD = 48
@@ -252,6 +271,71 @@ function closeSettings() {
   settingsOpen.value = false
 }
 
+async function saveMobileGraph() {
+  const name = graphNameInput.value.trim()
+  if (!name) {
+    graphStatus.value = 'GraphName is required.'
+    return
+  }
+  graphSaving.value = true
+  graphStatus.value = ''
+  try {
+    const result = await workspace.saveGraphByName(name)
+    graphNameInput.value = result.name || result.id
+    graphStatus.value = `Graph saved: ${result.name || result.id}`
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  } finally {
+    graphSaving.value = false
+  }
+}
+
+async function deleteMobileGraph(graph: { id: string; name?: string; display_name?: string }) {
+  const graphId = String(graph.id || '').trim()
+  if (!graphId) return
+  const name = String(graph.display_name || graph.name || graphId)
+  const ok = window.confirm(`Delete graph "${name}"? This will remove the whole graph folder and cannot be undone.`)
+  if (!ok) return
+  graphStatus.value = ''
+  try {
+    await workspace.deleteGraphById(graphId)
+    graphStatus.value = `Graph deleted: ${name}`
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  }
+}
+
+async function openCreateNode() {
+  if (workspace.view.value !== 'nodes' || !workspace.selectedGraph.value) return
+  try {
+    await workspace.refreshEditorCatalog()
+    createNodeOpen.value = true
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
+async function createMobileNode(payload: { typeId: string; nodeName: string; fields: Record<string, unknown> }) {
+  try {
+    await workspace.createNode(payload.typeId, payload.nodeName, payload.fields)
+    createNodeOpen.value = false
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
+async function deleteMobileNode(node: MobileNode) {
+  const nodeId = String(node.id || '').trim()
+  if (!nodeId) return
+  const ok = window.confirm(`Delete node "${nodeId}"?`)
+  if (!ok) return
+  try {
+    await workspace.deleteNode(node)
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
 async function clearMemory() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   const nodeId = String(workspace.selectedNode.value.id || '').trim()
@@ -260,6 +344,22 @@ async function clearMemory() {
   await workspace.clearSelectedNodeMemory()
   await nextTick()
   scrollFeedToBottom()
+}
+
+function messageTextForActions(message: MessageEnvelope) {
+  return extractMemoryMessageText(message)
+}
+
+async function deleteMobileMessage(message: MessageEnvelope) {
+  const messageId = String((message as any)?.id || '').trim()
+  if (!messageId) return
+  const ok = window.confirm('Delete this conversation entry?')
+  if (!ok) return
+  try {
+    await workspace.deleteSelectedNodeMessage(messageId)
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
 }
 
 async function onConfigSaved() {
@@ -353,12 +453,27 @@ onMounted(() => {
             <span>{{ instance.name }}</span>
             <small>{{ instance.path }}</small>
           </div>
-          <button v-for="graph in instance.graphs" :key="graph.id" class="list-row graph-row" type="button" @click="workspace.selectGraph(graph)">
-            <span class="row-main">{{ graph.display_name }}</span>
-            <span class="row-sub">{{ graph.updated_at || 'not saved yet' }}</span>
-            <span class="row-arrow">&gt;</span>
-          </button>
+          <div v-for="graph in instance.graphs" :key="graph.id" class="graph-row-wrap">
+            <button class="list-row graph-row" type="button" @click="workspace.selectGraph(graph)">
+              <span>
+                <span class="row-main">{{ graph.display_name }}</span>
+                <span class="row-sub">{{ graph.updated_at || 'not saved yet' }}</span>
+              </span>
+              <span class="row-arrow">&gt;</span>
+            </button>
+            <button class="mobile-delete-btn" type="button" @click="deleteMobileGraph(graph)">Delete</button>
+          </div>
         </div>
+        <form class="graph-save-panel" @submit.prevent="saveMobileGraph">
+          <label class="graph-name-field">
+            <span>GraphName</span>
+            <input v-model="graphNameInput" type="text" placeholder="NewGraph" />
+          </label>
+          <button class="primary-action-btn" type="submit" :disabled="graphSaving">
+            {{ graphSaving ? 'Saving...' : 'SaveGraph' }}
+          </button>
+          <div v-if="graphStatus" class="graph-status">{{ graphStatus }}</div>
+        </form>
       </section>
 
       <section v-else-if="workspace.view.value === 'nodes'" class="mobile-list node-list">
@@ -367,7 +482,9 @@ onMounted(() => {
           :key="node.id"
           :node="node"
           @select="workspace.selectNode"
+          @delete="deleteMobileNode"
         />
+        <button class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
       </section>
 
         <section v-else class="chat-view">
@@ -385,6 +502,11 @@ onMounted(() => {
             <article v-if="entry.type === 'message'" class="bubble" :class="messageRoleClass(entry.message)">
               <div class="bubble-meta">{{ String(entry.message.role || 'assistant') }}</div>
               <MobileMessageText :message="entry.message" />
+              <div v-if="messageTextForActions(entry.message)" class="mobile-message-actions">
+                <button type="button" class="mobile-message-action save" @click="openSaveMessageDialog(messageTextForActions(entry.message))">Save</button>
+                <button type="button" class="mobile-message-action copy" @click="copyMessageText(messageTextForActions(entry.message))">Copy</button>
+                <button type="button" class="mobile-message-action delete" @click="deleteMobileMessage(entry.message)">Delete</button>
+              </div>
             </article>
             <section v-else class="mobile-tool-group" :class="{ expanded: isToolGroupExpanded(entry.key) }">
               <button class="mobile-tool-group-head" type="button" @click="toggleToolGroup(entry.key)">
@@ -461,6 +583,24 @@ onMounted(() => {
       @close="configOpen = false"
       @saved="onConfigSaved"
       @error="workspace.error.value = $event"
+    />
+    <MobileNodeCreateDialog
+      :open="createNodeOpen"
+      :node-types="workspace.availableNodeTypes.value"
+      :providers="workspace.providers.value"
+      :available-tools="workspace.availableTools.value"
+      @close="createNodeOpen = false"
+      @create="createMobileNode"
+      @error="workspace.error.value = $event"
+    />
+    <MemorySaveDialog
+      v-model:filename="saveDialogFilename"
+      :open="saveDialogOpen"
+      :target-dir="saveDialogTargetDir"
+      :error="saveDialogError"
+      :saving="saveDialogSaving"
+      @confirm="confirmSaveMessageDialog"
+      @cancel="cancelSaveMessageDialog"
     />
   </div>
 </template>
@@ -607,6 +747,85 @@ onMounted(() => {
   gap: 8px;
 }
 
+.graph-row-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.graph-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mobile-delete-btn {
+  flex: 0 0 68px;
+  min-height: 54px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.3);
+  color: rgba(254, 226, 226, 0.96);
+  font-size: 12px;
+}
+
+.graph-save-panel {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.graph-name-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: rgba(203, 213, 225, 0.92);
+  font-size: 12px;
+}
+
+.graph-name-field input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: rgba(248, 250, 252, 0.96);
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.primary-action-btn,
+.add-node-btn {
+  min-height: 38px;
+  border-radius: 8px;
+  border-color: rgba(56, 189, 248, 0.48);
+  background: rgba(14, 165, 233, 0.3);
+  color: rgba(224, 242, 254, 0.96);
+}
+
+.primary-action-btn {
+  align-self: end;
+  min-width: 96px;
+  padding: 0 12px;
+}
+
+.graph-status {
+  grid-column: 1 / -1;
+  color: rgba(148, 163, 184, 0.95);
+  font-size: 12px;
+}
+
+.add-node-btn {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 46px;
+  font-weight: 700;
+}
+
 .instance-head {
   display: flex;
   flex-direction: column;
@@ -686,6 +905,11 @@ onMounted(() => {
   align-self: flex-start;
 }
 
+.bubble.from-node {
+  width: 100%;
+  max-width: none;
+}
+
 .from-tool {
   background: rgba(129, 140, 248, 0.18);
 }
@@ -694,6 +918,40 @@ onMounted(() => {
   margin-bottom: 4px;
   color: rgba(148, 163, 184, 0.92);
   font-size: 11px;
+}
+
+.mobile-message-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mobile-message-action {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.74);
+  color: rgba(226, 232, 240, 0.94);
+  font-size: 12px;
+}
+
+.mobile-message-action.save {
+  border-color: rgba(74, 222, 128, 0.4);
+  color: rgba(187, 247, 208, 0.96);
+}
+
+.mobile-message-action.copy {
+  border-color: rgba(125, 211, 252, 0.4);
+  color: rgba(186, 230, 253, 0.96);
+}
+
+.mobile-message-action.delete {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: rgba(254, 202, 202, 0.98);
+  background: rgba(127, 29, 29, 0.28);
 }
 
 .mobile-tool-group {

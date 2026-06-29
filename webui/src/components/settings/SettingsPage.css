@@ -1,0 +1,182 @@
+.settings-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 12px;
+}
+
+.settings-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-title-wrap {
+  min-width: 0;
+}
+
+.settings-title-wrap h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.settings-path {
+  margin-top: 6px;
+  color: rgba(148, 163, 184, 0.9);
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(880px, 70vw);
+}
+
+.settings-head-actions,
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.settings-tabs {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.settings-tab {
+  width: 100%;
+  min-height: 34px;
+  text-align: left;
+  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.settings-tab.active {
+  border-color: rgba(56, 189, 248, 0.65);
+  background: rgba(14, 165, 233, 0.18);
+  color: rgba(224, 242, 254, 0.98);
+}
+
+.settings-editor {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.editor-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.editor-state {
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: rgba(254, 240, 138, 0.98);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.editor-state.saved {
+  border-color: rgba(34, 197, 94, 0.4);
+  color: rgba(187, 247, 208, 0.98);
+}
+
+.json-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  padding: 14px;
+  color: rgba(226, 232, 240, 0.96);
+  background: rgba(2, 6, 23, 0.72);
+  font: 12px/1.55 Consolas, 'Cascadia Mono', monospace;
+  tab-size: 2;
+}
+
+.settings-btn {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.settings-btn.primary {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: rgba(186, 230, 253, 0.98);
+}
+
+.settings-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.settings-error {
+  flex: 0 0 auto;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: rgba(254, 226, 226, 0.95);
+  background: rgba(127, 29, 29, 0.32);
+  font-size: 12px;
+}
+
+@media (max-width: 960px) {
+  .settings-body {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  }
+
+  .settings-tab {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .editor-toolbar,
+  .settings-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .editor-actions {
+    flex-wrap: wrap;
+  }
+}

@@ -7,8 +7,11 @@ from typing import Any
 import anyio
 from mcp.server.fastmcp import Context, FastMCP
 
+from src.mcp.caller_context_headers import decode_caller_header_value
+
 from .companion_mcp_guidance import COMPANION_MCP_INSTRUCTIONS
 from .companion_mcp_errors import companion_error_from_exception
+from .companion_mcp_links import CompanionMcpLinkTools
 from .companion_mcp_tools import CompanionMcpTools
 
 
@@ -49,8 +52,8 @@ def _caller_from_context(ctx: Context | None) -> dict[str, str]:
 
     def header(name: str) -> str:
         try:
-            return str(headers.get(name) or "").strip()
-        except Exception:
+            return decode_caller_header_value(headers.get(name) or "").strip()
+        except (TypeError, ValueError):
             return ""
 
     return {
@@ -68,6 +71,7 @@ def build_companion_mcp(core: object) -> FastMCP:
         stateless_http=True,
     )
     tools = CompanionMcpTools(core)
+    link_tools = CompanionMcpLinkTools(core)
 
     @mcp.tool(name="get_companion_meta")
     async def get_companion_meta(ctx: Context) -> dict[str, Any]:
@@ -88,6 +92,49 @@ def build_companion_mcp(core: object) -> FastMCP:
     async def list_node_status(graph_id: str = "default", ctx: Context | None = None) -> dict[str, Any]:
         """Return compact state, last message, errors, and capabilities for all nodes in a graph."""
         return await _run_blocking_tool(tools.list_node_status, graph_id=graph_id, caller=_caller_from_context(ctx))
+
+    @mcp.tool(name="list_link")
+    async def list_link(graph_id: str = "default") -> dict[str, Any]:
+        """List node links for one graph."""
+        return await _run_blocking_tool(link_tools.list_link, graph_id=graph_id)
+
+    @mcp.tool(name="connect_node")
+    async def connect_node(
+        graph_id: str = "default",
+        from_node: str = "",
+        to_node: str = "",
+        from_output_index: int = 0,
+        to_input_index: int = 0,
+    ) -> dict[str, Any]:
+        """Create a directed link between two nodes in one graph."""
+        return await _run_blocking_tool(
+            link_tools.connect_node,
+            graph_id=graph_id,
+            from_node=from_node,
+            to_node=to_node,
+            from_output_index=from_output_index,
+            to_input_index=to_input_index,
+        )
+
+    @mcp.tool(name="disconnect_node")
+    async def disconnect_node(
+        graph_id: str = "default",
+        link_id: str = "",
+        from_node: str = "",
+        to_node: str = "",
+        from_output_index: int = 0,
+        to_input_index: int = 0,
+    ) -> dict[str, Any]:
+        """Remove a graph link by link_id or by exact endpoints."""
+        return await _run_blocking_tool(
+            link_tools.disconnect_node,
+            graph_id=graph_id,
+            link_id=link_id,
+            from_node=from_node,
+            to_node=to_node,
+            from_output_index=from_output_index,
+            to_input_index=to_input_index,
+        )
 
     @mcp.tool(name="change_node_config")
     async def change_node_config(graph_id: str = "default", node_id: str = "", fields: dict[str, Any] | None = None) -> dict[str, Any]:

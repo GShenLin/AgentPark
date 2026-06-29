@@ -48,6 +48,8 @@ class NodeAsyncRuns(HostBoundService):
                 node_config_path = self.graph_runtime._node_config_path(safe_node_instance_id, safe_graph_id)
                 if node_config_path and os.path.exists(node_config_path):
                     current = _read_json_dict(node_config_path)
+                    if bool((current or {}).get("_delete_requested")):
+                        raise HTTPException(status_code=409, detail="node is being deleted")
                     if parse_node_state(current.get("state")) == "stop":
                         raise HTTPException(status_code=409, detail="node is stopped")
                     _update_node_config_state(node_config_path, "working")

@@ -31,6 +31,37 @@ function joinPath(baseDir: string, filename: string) {
   return `${base.replace(/[\\/]+$/, '')}${separator}${filename}`
 }
 
+function copyTextWithSelectionFallback(text: string) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  document.body.appendChild(textarea)
+
+  const selection = document.getSelection()
+  const previousRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+  textarea.focus({ preventScroll: true })
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
+  try {
+    const copied = document.execCommand('copy')
+    if (!copied) throw new Error('Copy command was rejected.')
+  } finally {
+    document.body.removeChild(textarea)
+    if (selection) {
+      selection.removeAllRanges()
+      if (previousRange) selection.addRange(previousRange)
+    }
+  }
+}
+
 export function useMemoryMessageExport() {
   const { graphSnapshot, selectedNodeId, lastError } = useGlobalState()
 
@@ -83,10 +114,11 @@ export function useMemoryMessageExport() {
       return
     }
     try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('Clipboard API is not available.')
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(payload)
+      } else {
+        copyTextWithSelectionFallback(payload)
       }
-      await navigator.clipboard.writeText(payload)
     } catch (e: any) {
       lastError.value = `Failed to copy message: ${String(e?.message || e)}`
     }

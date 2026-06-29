@@ -16,6 +16,7 @@ from .remote_api import RemoteApiDomain
 from .settings_api import SettingsApiDomain
 from .user_interaction_api import UserInteractionApiDomain
 from src.channels.service import ChannelService
+from src.provider_limit_jobs import ProviderLimitJobStore
 
 
 class BackendCore:
@@ -34,6 +35,7 @@ class BackendCore:
         self.node_cancellations = NodeCancellationRegistry()
         self.node_live_outputs = NodeLiveOutputStore()
         self.graph_events = GraphEventStreamStore()
+        self.provider_limit_jobs = ProviderLimitJobStore()
         self.webui_close_signal = {"token": "", "requested_at": 0.0}
         self.reserved_node_fields = {
             "node_id",

@@ -338,6 +338,7 @@ watch(
       :uploading-key="uploadingFieldKey"
       :reset-key="node.id"
       enable-asset-drop
+      enable-prompt-library
       @update-field="setField"
       @field-dragover="onFieldDragOver"
       @field-dragleave="onFieldDragLeave"

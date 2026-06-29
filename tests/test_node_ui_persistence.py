@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import threading
 import uuid
 
 from src.web_backend.node_config_service import node_runtime_state_path
@@ -555,3 +556,155 @@ def test_delete_node_instance_reports_delete_failures(monkeypatch, tmp_path):
 
     assert response.status_code == 500
     assert "delete boom" in response.json().get("detail", "")
+
+
+def test_delete_node_instance_waits_for_active_cancellation(tmp_path, monkeypatch):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    facade = backend.WebBackendFacade()
+    app = facade.build()
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": "delete_active", "type_id": "missing_node", "graph_id": "ut_delete_active"},
+    )
+    assert created.status_code == 200
+
+    config_path = os.path.join(tmp_path, "memories", "ut_delete_active", "delete_active", "config.json")
+    node_dir = os.path.dirname(config_path)
+    cancel_event = facade.core.node_cancellations.begin(config_path)
+    response_holder = {}
+
+    def delete_node():
+        response_holder["response"] = client.delete(
+            "/api/nodes/instances/delete_active?graph_id=ut_delete_active&wait_timeout_seconds=2"
+        )
+
+    thread = threading.Thread(target=delete_node)
+    thread.start()
+    try:
+        assert cancel_event.wait(timeout=1)
+        facade.core.node_cancellations.end(config_path, cancel_event)
+        thread.join(timeout=2)
+    finally:
+        if thread.is_alive():
+            facade.core.node_cancellations.end(config_path, cancel_event)
+            thread.join(timeout=2)
+
+    response = response_holder.get("response")
+    assert response is not None
+    assert response.status_code == 200
+    assert response.json().get("active_cancelled") == 1
+    assert not os.path.exists(node_dir)
+
+
+def test_delete_node_instance_reports_active_timeout(tmp_path, monkeypatch):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    facade = backend.WebBackendFacade()
+    app = facade.build()
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": "delete_busy", "type_id": "missing_node", "graph_id": "ut_delete_busy"},
+    )
+    assert created.status_code == 200
+
+    config_path = os.path.join(tmp_path, "memories", "ut_delete_busy", "delete_busy", "config.json")
+    node_dir = os.path.dirname(config_path)
+    cancel_event = facade.core.node_cancellations.begin(config_path)
+    try:
+        response = client.delete(
+            "/api/nodes/instances/delete_busy?graph_id=ut_delete_busy&wait_timeout_seconds=0.01"
+        )
+    finally:
+        facade.core.node_cancellations.end(config_path, cancel_event)
+
+    assert response.status_code == 409
+    assert "active task" in response.json().get("detail", "")
+    assert os.path.isdir(node_dir)
+
+
+def test_delete_node_instance_stops_async_run(tmp_path, monkeypatch):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+
+    class FakeProcess:
+        def __init__(self):
+            self.terminated = False
+            self.joined = False
+            self.alive = True
+
+        def terminate(self):
+            self.terminated = True
+
+        def join(self, timeout=None):
+            self.joined = True
+            self.alive = False
+
+        def is_alive(self):
+            return self.alive
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    facade = backend.WebBackendFacade()
+    app = facade.build()
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": "delete_async", "type_id": "missing_node", "graph_id": "ut_delete_async"},
+    )
+    assert created.status_code == 200
+
+    config_path = os.path.join(tmp_path, "memories", "ut_delete_async", "delete_async", "config.json")
+    process = FakeProcess()
+    facade.core.node_runs["run-1"] = {
+        "process": process,
+        "status": "running",
+        "node_config_path": config_path,
+    }
+
+    response = client.delete("/api/nodes/instances/delete_async?graph_id=ut_delete_async")
+
+    assert response.status_code == 200
+    assert response.json().get("stopped_runs") == 1
+    assert process.terminated
+    assert process.joined
+    assert facade.core.node_runs["run-1"]["status"] == "stopped"
+    assert not os.path.exists(os.path.dirname(config_path))
+
+
+def test_enqueue_pending_rejects_node_being_deleted(tmp_path, monkeypatch):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+    from src.web_backend.shared import _mark_node_delete_requested
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": "delete_pending", "type_id": "missing_node", "graph_id": "ut_delete_pending"},
+    )
+    assert created.status_code == 200
+
+    config_path = os.path.join(tmp_path, "memories", "ut_delete_pending", "delete_pending", "config.json")
+    _mark_node_delete_requested(config_path)
+    response = client.post(
+        "/api/nodes/instances/delete_pending/pending?graph_id=ut_delete_pending",
+        json={"payload": "hello"},
+    )
+
+    assert response.status_code == 409
+    assert "being deleted" in response.json().get("detail", "")

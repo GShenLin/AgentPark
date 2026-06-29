@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { getProviderLimits, type ProviderLimitDocument } from '../../settingsApi'
 import SupportModeMultiSelect from './SupportModeMultiSelect.vue'
 
 const props = defineProps<{
@@ -12,6 +13,8 @@ const emit = defineEmits<{
 
 const selectedProviderId = ref('')
 const newProviderId = ref('')
+const providerLimits = ref<ProviderLimitDocument | null>(null)
+const limitWarning = ref('')
 
 const providers = computed<Record<string, Record<string, unknown>>>(() => {
   const value = props.data.providers
@@ -22,6 +25,18 @@ const providers = computed<Record<string, Record<string, unknown>>>(() => {
 
 const providerIds = computed(() => Object.keys(providers.value))
 const selectedProvider = computed(() => providers.value[selectedProviderId.value] || null)
+const selectedLimit = computed(() => providerLimits.value?.providers?.[selectedProviderId.value] || null)
+const availableModelIds = computed(() => selectedLimit.value?.available_model_ids || [])
+const activeLimitWarnings = computed(() => {
+  const warnings: string[] = []
+  const provider = selectedProvider.value
+  if (!provider) return warnings
+  for (const key of Object.keys(provider)) {
+    const warning = unsupportedWarningFor(key, provider[key])
+    if (warning && !warnings.includes(warning)) warnings.push(warning)
+  }
+  return warnings
+})
 
 watch(
   providerIds,
@@ -81,8 +96,13 @@ function numberValue(key: string) {
   return String(value)
 }
 
+function currentModelValue() {
+  return stringValue('model').trim()
+}
+
 function setField(key: string, value: unknown) {
   if (!selectedProviderId.value || !selectedProvider.value) return
+  limitWarning.value = unsupportedWarningFor(key, value)
   const provider = { ...selectedProvider.value }
   if (value === '' || value === null || value === undefined) {
     delete provider[key]
@@ -124,6 +144,63 @@ function deleteProvider() {
   emit('update:data', next)
   selectedProviderId.value = Object.keys(nextProviders)[0] || ''
 }
+
+function unsupportedWarningFor(key: string, value: unknown) {
+  const limit = selectedLimit.value
+  if (!limit) return ''
+  if (limit.accessible === false) {
+    return `Provider '${selectedProviderId.value}' is unavailable: ${limit.access_error || 'access test failed'}`
+  }
+  if (key === 'responsesApi' || key === 'responsesContinuationMode' || key === 'responsesReplayReasoningItems') {
+    if (key !== 'responsesApi' && (value === '' || value === null || value === undefined)) return ''
+    if (key === 'responsesApi' && value !== true) return ''
+    return featureUnsupportedWarning('responses_api')
+  }
+  if (key === 'reasoningEffort') {
+    const text = String(value || '').trim()
+    if (!text) return ''
+    return valueUnsupportedWarning('reasoning_effort', text)
+  }
+  if (key === 'thinking') {
+    const text = String(value || '').trim()
+    if (!text) return ''
+    return valueUnsupportedWarning('thinking', text)
+  }
+  if (key === 'webSearchSources' || key === 'webSearchMaxKeyword' || key === 'webSearchLimit') {
+    const hasValue = Array.isArray(value) ? value.length > 0 : value !== '' && value !== null && value !== undefined
+    if (!hasValue) return ''
+    return featureUnsupportedWarning('web_search')
+  }
+  return ''
+}
+
+function featureUnsupportedWarning(featureKey: string) {
+  const feature = selectedLimit.value?.features?.[featureKey]
+  if (!feature || feature.supported) return ''
+  return `${selectedProviderId.value}.${featureKey} is not supported: ${feature.reason || 'not supported by ProviderLimit.json'}`
+}
+
+function valueUnsupportedWarning(featureKey: string, value: string) {
+  const feature = selectedLimit.value?.features?.[featureKey]
+  const valueFeature = feature?.values?.[value]
+  if (valueFeature && valueFeature.supported === false) {
+    return `${selectedProviderId.value}.${featureKey}.${value} is not supported: ${valueFeature.reason || 'not supported by ProviderLimit.json'}`
+  }
+  if (feature && feature.supported === false) {
+    return `${selectedProviderId.value}.${featureKey} is not supported: ${feature.reason || 'not supported by ProviderLimit.json'}`
+  }
+  return ''
+}
+
+async function loadProviderLimits() {
+  try {
+    providerLimits.value = await getProviderLimits()
+  } catch {
+    providerLimits.value = null
+  }
+}
+
+onMounted(loadProviderLimits)
 </script>
 
 <template>
@@ -155,6 +232,11 @@ function deleteProvider() {
         <button type="button" class="danger" @click="deleteProvider">Delete</button>
       </div>
 
+      <div v-if="limitWarning || activeLimitWarnings.length" class="limit-warning">
+        <strong>ProviderLimit</strong>
+        <span>{{ limitWarning || activeLimitWarnings[0] }}</span>
+      </div>
+
       <div class="form-grid">
         <label>
           <span>Type</span>
@@ -169,7 +251,16 @@ function deleteProvider() {
         </label>
         <label>
           <span>Model</span>
-          <input :value="stringValue('model')" @input="setField('model', ($event.target as HTMLInputElement).value)" />
+          <select
+            v-if="availableModelIds.length"
+            :value="stringValue('model')"
+            @change="setField('model', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">Unset</option>
+            <option v-if="currentModelValue() && !availableModelIds.includes(currentModelValue())" :value="currentModelValue()">{{ currentModelValue() }}</option>
+            <option v-for="modelId in availableModelIds" :key="modelId" :value="modelId">{{ modelId }}</option>
+          </select>
+          <input v-else :value="stringValue('model')" @input="setField('model', ($event.target as HTMLInputElement).value)" />
         </label>
         <label>
           <span>Base URL</span>
@@ -197,6 +288,15 @@ function deleteProvider() {
             <option value="high">high</option>
             <option value="xhigh">xhigh</option>
             <option value="max">max</option>
+            <option value="auto">auto</option>
+          </select>
+        </label>
+        <label>
+          <span>Thinking</span>
+          <select :value="stringValue('thinking')" @change="setField('thinking', ($event.target as HTMLSelectElement).value)">
+            <option value="">Unset</option>
+            <option value="enabled">enabled</option>
+            <option value="disabled">disabled</option>
             <option value="auto">auto</option>
           </select>
         </label>
@@ -250,155 +350,4 @@ function deleteProvider() {
   </div>
 </template>
 
-<style scoped>
-.provider-settings {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 12px;
-}
-
-.provider-list,
-.provider-form {
-  min-height: 0;
-  overflow: auto;
-}
-
-.provider-list {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding-right: 10px;
-  border-right: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.provider-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  text-align: left;
-}
-
-.provider-item.active {
-  border-color: rgba(56, 189, 248, 0.66);
-  background: rgba(14, 165, 233, 0.18);
-}
-
-.provider-item small,
-.form-head span {
-  color: rgba(148, 163, 184, 0.9);
-  font-size: 11px;
-}
-
-.provider-add {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.provider-add input {
-  min-width: 0;
-  flex: 1;
-}
-
-.provider-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-right: 4px;
-}
-
-.form-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.form-head h2 {
-  margin: 0;
-  font-size: 17px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.switch-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 8px 12px;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  color: rgba(226, 232, 240, 0.94);
-  font-size: 12px;
-}
-
-.switch-field {
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  min-height: 32px;
-}
-
-.switch-field input {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: #38bdf8;
-}
-
-.dropdown-field {
-  position: relative;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 8px 9px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.5);
-  font: inherit;
-}
-
-textarea {
-  min-height: 76px;
-  resize: vertical;
-}
-
-button.danger {
-  border-color: rgba(248, 113, 113, 0.35);
-  color: rgba(254, 202, 202, 0.95);
-}
-
-@media (max-width: 1120px) {
-  .form-grid,
-  .switch-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .provider-settings {
-    grid-template-columns: minmax(132px, 38vw) minmax(0, 1fr);
-  }
-
-  .provider-list {
-    padding-right: 8px;
-  }
-
-  .provider-add {
-    flex-direction: column;
-  }
-}
-</style>
+<style scoped src="./ModuleProviderSettingsForm.css"></style>

@@ -8,6 +8,7 @@ import {
   getPasteAgentConfig,
   listNodeInstanceConfigs,
   listNodes,
+  loadGraph,
   openNodeInstanceFolder,
   renameNodeInstance,
   saveGraph,
@@ -486,6 +487,18 @@ export function useAgentBoard(): AgentBoardContext {
     await graphPersistence.persist(reason)
   }
 
+  async function refreshGraphLinks() {
+    const graphId = currentGraphId.value || 'default'
+    const config = await loadGraph(graphId)
+    if ((currentGraphId.value || 'default') !== graphId) return
+    if (!config || config.unchanged) return
+    links.value = normalizeGraphLinks(config.links || [])
+    syncGraphSnapshot()
+    if (graphSnapshot.value && Number(config.version || 0) > 0) {
+      graphSnapshot.value = { ...graphSnapshot.value, version: Number(config.version || 0) }
+    }
+  }
+
   function applyGraphConfig(config: GraphConfig) {
     const graphId = currentGraphId.value || config.id || 'default'
     activeDragItemIds.clear()
@@ -518,17 +531,23 @@ export function useAgentBoard(): AgentBoardContext {
     }
   }
 
-  function deleteNodeCard(nodeId: string) {
+  async function deleteNodeCard(nodeId: string) {
     const index = nodes.value.findIndex((node) => node.id === nodeId)
     if (index === -1) return
-    detachLinks(nodeId)
-    stopNodeWork(nodeId)
     lastError.value = null
     const graphId = currentGraphId.value || 'default'
-    deleteNodeInstance(nodeId, graphId).catch((e: any) => {
+    try {
+      await deleteNodeInstance(nodeId, graphId)
+    } catch (e: any) {
       lastError.value = String(e?.message || e)
-    })
-    nodes.value.splice(index, 1)
+      await refreshNodeConfigsAndMemory().catch(() => null)
+      throw e
+    }
+    detachLinks(nodeId)
+    const confirmedIndex = nodes.value.findIndex((node) => node.id === nodeId)
+    if (confirmedIndex !== -1) {
+      nodes.value.splice(confirmedIndex, 1)
+    }
     selectedItemIds.value = selectedItemIds.value.filter((id) => id !== nodeId)
     if (selectedNodeId.value === nodeId) {
       selectedNodeId.value = null
@@ -840,6 +859,7 @@ export function useAgentBoard(): AgentBoardContext {
   const runtimeRefresh = createBoardRuntimeRefresh({
     currentGraphId,
     refreshNodeConfigs,
+    refreshGraphLinks,
     hasActiveNodeWork,
   })
   const {

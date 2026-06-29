@@ -1,7 +1,7 @@
 import json
 
 
-class DoubaoToolFeedbackMixin:
+class ToolFeedbackMixin:
     @staticmethod
     def _openai_tool_call_ids(message):
         if not isinstance(message, dict):
@@ -293,7 +293,7 @@ class DoubaoToolFeedbackMixin:
             except Exception:
                 payload = None
             if isinstance(payload, dict) and payload.get("status") == "tool_result_submission_error":
-                return False
+                continue
 
             original_chars = len(str(content or ""))
             tool_name = str(message.get("name") or "").strip() or "tool"

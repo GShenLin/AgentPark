@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -459,6 +460,180 @@ def test_doubao_responses_compacts_oversized_tool_output_before_continuation():
     assert "huge_tool" in notices[0]["message"]
     assert "call-big" in notices[0]["message"]
     assert "provider.toolResultSubmissionMaxChars=1000" in notices[0]["message"]
+
+
+def test_doubao_responses_recovers_when_provider_rejects_tool_output_size():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://example.test/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+    }
+    agent.provider_name = "doubao"
+    agent.messages = []
+    agent.events = []
+    agent.memory = SimpleNamespace(build_messages_with_memory=lambda messages: [dict(item) for item in messages])
+    agent.internal_memory_enabled = False
+    agent.tool_event_callback = agent.events.append
+    agent.tools = BaseTool(agent)
+    requests = []
+
+    def tool_returns_provider_heavy_payload():
+        return "x" * 2000
+
+    agent.tools.function_map["heavy_tool"] = tool_returns_provider_heavy_payload
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        if len(requests) == 1:
+            return {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-heavy",
+                        "name": "heavy_tool",
+                        "arguments": "{}",
+                        "status": "completed",
+                    }
+                ],
+            }
+        if len(requests) == 2:
+            raise RuntimeError(
+                "responses: HTTP 400: "
+                '{"error":{"message":"Total tokens of image and text exceed max message tokens"}}'
+            )
+        return {
+            "id": "resp-3",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "use a narrower request"}],
+                }
+            ],
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run heavy"}],
+        active_tools=[],
+        run_tools=True,
+        thinking_mode="disabled",
+        web_search_mode="disabled",
+    )
+
+    assert out == "use a narrower request"
+    assert len(requests) == 3
+    assert requests[1]["previous_response_id"] == "resp-1"
+    assert "previous_response_id" not in requests[2]
+    recovered_output = next(item for item in requests[2]["input"] if item.get("type") == "function_call_output")
+    recovered_payload = json.loads(recovered_output["output"])
+    assert recovered_payload["status"] == "tool_result_submission_error"
+    assert recovered_payload["tool"] == "heavy_tool"
+    assert recovered_payload["call_id"] == "call-heavy"
+    assert recovered_payload["original_result_chars"] == 2000
+    assert "Total tokens" in recovered_payload["provider_error"]
+
+
+def test_openai_responses_recovers_when_provider_rejects_tool_output_size():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "previous_response_id",
+        "responsesReplayReasoningItems": False,
+        "responsesMode": "whole_response",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.events = []
+    agent.memory = SimpleNamespace(build_messages_with_memory=lambda messages: [dict(item) for item in messages])
+    agent.internal_memory_enabled = False
+    agent.tool_event_callback = agent.events.append
+    agent.tools = BaseTool(agent)
+    requests = []
+
+    def tool_returns_provider_heavy_payload():
+        return "x" * 2000
+
+    agent.tools.function_map["heavy_tool"] = tool_returns_provider_heavy_payload
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        if len(requests) == 1:
+            return {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-heavy",
+                        "name": "heavy_tool",
+                        "arguments": "{}",
+                        "status": "completed",
+                    }
+                ],
+            }
+        if len(requests) == 2:
+            raise RuntimeError(
+                "responses: HTTP 400: "
+                '{"error":{"message":"Total tokens of image and text exceed max message tokens"}}'
+            )
+        return {
+            "id": "resp-3",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "use a narrower request"}],
+                }
+            ],
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run heavy"}],
+        active_tools=[],
+        run_tools=True,
+        web_search_mode="disabled",
+    )
+
+    assert out == "use a narrower request"
+    assert len(requests) == 3
+    assert requests[1]["previous_response_id"] == "resp-1"
+    assert "previous_response_id" not in requests[2]
+    recovered_output = next(item for item in requests[2]["input"] if item.get("type") == "function_call_output")
+    recovered_payload = json.loads(recovered_output["output"])
+    assert recovered_payload["status"] == "tool_result_submission_error"
+    assert recovered_payload["tool"] == "heavy_tool"
+    assert recovered_payload["call_id"] == "call-heavy"
+    assert recovered_payload["original_result_chars"] == 2000
+    assert "Total tokens" in recovered_payload["provider_error"]
 
 
 def test_doubao_tool_result_submission_limit_requires_provider_config():

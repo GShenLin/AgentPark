@@ -1,0 +1,2545 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-29 18:50:37",
+  "status": "finished",
+  "duration_ms": 287720,
+  "completed_providers": 17,
+  "total_providers": 17,
+  "current_provider_id": "",
+  "providers": {
+    "krill_gpt55": {
+      "provider_id": "krill_gpt55",
+      "type": "openai",
+      "model": "gpt-5.5",
+      "tested_at": "2026-06-29 18:50:37",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Unsupported value: 'minimal' is not supported with the 'gpt-5.5' model. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"unsupported_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+              "status_code": 400
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": true,
+              "status_code": 200
+            },
+            "max": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Invalid value: 'max'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"invalid_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+              "status_code": 400
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Invalid value: 'auto'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"invalid_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+              "status_code": 400
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": "OpenAI provider contract does not send thinking",
+        "reasoning_effort": {
+          "minimal": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Unsupported value: 'minimal' is not supported with the 'gpt-5.5' model. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"unsupported_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+          "max": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Invalid value: 'max'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"invalid_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+          "auto": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Invalid value: 'auto'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"invalid_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-7",
+        "gpt-image-2",
+        "gpt-5.5",
+        "wan2.7-image",
+        "wan2.7-image-pro",
+        "qwen-image-2.0-pro",
+        "qwen-image-2.0",
+        "gpt-5.3-codex-spark",
+        "claude-opus-4-8",
+        "deepseek-v4-flash:free",
+        "GLM-5.1",
+        "minimax-m2.7-highspeed",
+        "kimi-k2.6",
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+        "codex-auto-review",
+        "minimax-m3",
+        "qwen3.7-plus",
+        "GLM-5.2",
+        "kimi-k2.7-code",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:22",
+        "endpoint": "https://api.krill-ai.com/codex/v1/models",
+        "status_code": 200
+      }
+    },
+    "gpt55_NowCoding_BuyOther": {
+      "provider_id": "gpt55_NowCoding_BuyOther",
+      "type": "openai",
+      "model": "gpt-5.5",
+      "tested_at": "2026-06-29 18:51:00",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "values": {
+            "minimal": {
+              "supported": true,
+              "status_code": 200
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": true,
+              "status_code": 200
+            },
+            "max": {
+              "supported": false,
+              "reason": "HTTP 502: {\"error\":{\"message\":\"Upstream request failed\",\"type\":\"upstream_error\",\"param\":\"\",\"code\":null}}",
+              "status_code": 502
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 502: {\"error\":{\"message\":\"Upstream request failed\",\"type\":\"upstream_error\",\"param\":\"\",\"code\":null}}",
+              "status_code": 502
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": "OpenAI provider contract does not send thinking",
+        "reasoning_effort": {
+          "max": "HTTP 502: {\"error\":{\"message\":\"Upstream request failed\",\"type\":\"upstream_error\",\"param\":\"\",\"code\":null}}",
+          "auto": "HTTP 502: {\"error\":{\"message\":\"Upstream request failed\",\"type\":\"upstream_error\",\"param\":\"\",\"code\":null}}"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "codex-auto-review",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-openai-compact",
+        "gpt-5.5",
+        "gpt-5.5-openai-compact"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:23",
+        "endpoint": "https://nowcoding.ai/v1/models",
+        "status_code": 200
+      }
+    },
+    "now_code_gpt55_high": {
+      "provider_id": "now_code_gpt55_high",
+      "type": "doubao",
+      "model": "gpt-5.5",
+      "tested_at": "2026-06-29 18:51:33",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": true,
+          "supported_values": [
+            "enabled",
+            "disabled",
+            "auto"
+          ],
+          "values": {
+            "enabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "disabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": true,
+              "status_code": 200
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "codex-auto-review",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-openai-compact",
+        "gpt-5.5",
+        "gpt-5.5-openai-compact"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:24",
+        "endpoint": "https://nowcoding.ai/v1/models",
+        "status_code": 200
+      }
+    },
+    "deepseek_v4_pro": {
+      "provider_id": "deepseek_v4_pro",
+      "type": "doubao",
+      "model": "deepseek-v4-pro",
+      "tested_at": "2026-06-29 18:51:49",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "HTTP 404:",
+          "status_code": 404
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "HTTP 404:",
+          "status_code": 404
+        },
+        "thinking": {
+          "supported": true,
+          "supported_values": [
+            "enabled",
+            "disabled"
+          ],
+          "values": {
+            "enabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "disabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"message\":\"Failed to deserialize the JSON body into the target type: thinking.type: unknown variant `auto`, expected one of `adaptive`, `enabled`, `disabled` at line 1 column 120\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}",
+              "status_code": 400
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "responses_api": "HTTP 404:",
+        "web_search": "HTTP 404:",
+        "thinking": {
+          "auto": "HTTP 400: {\"error\":{\"message\":\"Failed to deserialize the JSON body into the target type: thinking.type: unknown variant `auto`, expected one of `adaptive`, `enabled`, `disabled` at line 1 column 120\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:25",
+        "endpoint": "https://api.deepseek.com/models",
+        "status_code": 200
+      }
+    },
+    "gemini": {
+      "provider_id": "gemini",
+      "type": "gemini",
+      "model": "gemini-3-pro-preview",
+      "tested_at": "2026-06-29 18:51:55",
+      "accessible": false,
+      "features": {
+        "access": {
+          "supported": false,
+          "reason": "curl: curl: (28) Connection timed out after 15009 milliseconds"
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "Gemini provider contract uses generateContent, not Responses API"
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "Gemini provider contract does not send web_search"
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "Gemini provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "access": "curl: curl: (28) Connection timed out after 15009 milliseconds",
+        "responses_api": "Gemini provider contract uses generateContent, not Responses API",
+        "web_search": "Gemini provider contract does not send web_search",
+        "thinking": "Gemini provider contract does not send thinking",
+        "reasoning_effort": {
+          "minimal": "Gemini provider contract does not send reasoning_effort",
+          "low": "Gemini provider contract does not send reasoning_effort",
+          "medium": "Gemini provider contract does not send reasoning_effort",
+          "high": "Gemini provider contract does not send reasoning_effort",
+          "xhigh": "Gemini provider contract does not send reasoning_effort",
+          "max": "Gemini provider contract does not send reasoning_effort",
+          "auto": "Gemini provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "unavailable",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-06-29 19:06:25",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
+        "reason": "curl: curl: (28) Connection timed out after 15002 milliseconds"
+      }
+    },
+    "371NanoBanana": {
+      "provider_id": "371NanoBanana",
+      "type": "doubao",
+      "model": "firefly-nano-banana-4k-16x9",
+      "tested_at": "2026-06-29 18:52:10",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": false,
+          "reason": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-7BA6A81726\"}}",
+          "status_code": 500
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "HTTP 404: {\"error\":{\"message\":\"Not Found\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+          "status_code": 404
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "HTTP 404: {\"error\":{\"message\":\"Not Found\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+          "status_code": 404
+        },
+        "thinking": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "enabled": {
+              "supported": false,
+              "reason": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-9DE1F80620\"}}",
+              "status_code": 500
+            },
+            "disabled": {
+              "supported": false,
+              "reason": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-97043B0D2D\"}}",
+              "status_code": 500
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-DFCD7A767F\"}}",
+              "status_code": 500
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "access": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-7BA6A81726\"}}",
+        "responses_api": "HTTP 404: {\"error\":{\"message\":\"Not Found\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+        "web_search": "HTTP 404: {\"error\":{\"message\":\"Not Found\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+        "thinking": {
+          "enabled": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-9DE1F80620\"}}",
+          "disabled": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-97043B0D2D\"}}",
+          "auto": "HTTP 500: {\"error\":{\"message\":\"submit failed: 408 {\\\"error_code\\\":\\\"timeout_error\\\",\\\"message\\\":\\\"system under load\\\"} (check x-arp-session-id risk-control header)\",\"type\":\"server_error\",\"param\":\"\",\"code\":\"ERR-DFCD7A767F\"}}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "agnes-1.5-flash",
+        "agnes-2.0-flash",
+        "agnes-image-2.0-flash",
+        "agnes-image-2.1-flash",
+        "agnes-video-v2.0",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "firefly-gpt-image-1k-16x9",
+        "firefly-gpt-image-1k-1x1",
+        "firefly-gpt-image-1k-21x9",
+        "firefly-gpt-image-1k-2x3",
+        "firefly-gpt-image-1k-3x2",
+        "firefly-gpt-image-1k-3x4",
+        "firefly-gpt-image-1k-4x3",
+        "firefly-gpt-image-1k-4x5",
+        "firefly-gpt-image-1k-5x4",
+        "firefly-gpt-image-1k-9x16",
+        "firefly-gpt-image-2k-16x9",
+        "firefly-gpt-image-2k-1x1",
+        "firefly-gpt-image-2k-21x9",
+        "firefly-gpt-image-2k-2x3",
+        "firefly-gpt-image-2k-3x2",
+        "firefly-gpt-image-2k-3x4",
+        "firefly-gpt-image-2k-4x3",
+        "firefly-gpt-image-2k-4x5",
+        "firefly-gpt-image-2k-5x4",
+        "firefly-gpt-image-2k-9x16",
+        "firefly-gpt-image-4k-16x9",
+        "firefly-gpt-image-4k-1x1",
+        "firefly-gpt-image-4k-21x9",
+        "firefly-gpt-image-4k-2x3",
+        "firefly-gpt-image-4k-3x2",
+        "firefly-gpt-image-4k-3x4",
+        "firefly-gpt-image-4k-4x3",
+        "firefly-gpt-image-4k-4x5",
+        "firefly-gpt-image-4k-5x4",
+        "firefly-gpt-image-4k-9x16",
+        "firefly-nano-banana-1k-16x9",
+        "firefly-nano-banana-1k-1x1",
+        "firefly-nano-banana-1k-3x4",
+        "firefly-nano-banana-1k-4x3",
+        "firefly-nano-banana-1k-9x16",
+        "firefly-nano-banana-2k-16x9",
+        "firefly-nano-banana-2k-1x1",
+        "firefly-nano-banana-2k-3x4",
+        "firefly-nano-banana-2k-4x3",
+        "firefly-nano-banana-2k-9x16",
+        "firefly-nano-banana-4k-16x9",
+        "firefly-nano-banana-4k-1x1",
+        "firefly-nano-banana-4k-3x4",
+        "firefly-nano-banana-4k-4x3",
+        "firefly-nano-banana-4k-9x16",
+        "firefly-nano-banana-pro-1k-16x9",
+        "firefly-nano-banana-pro-1k-1x1",
+        "firefly-nano-banana-pro-1k-3x4",
+        "firefly-nano-banana-pro-1k-4x3",
+        "firefly-nano-banana-pro-1k-9x16",
+        "firefly-nano-banana-pro-2k-16x9",
+        "firefly-nano-banana-pro-2k-1x1",
+        "firefly-nano-banana-pro-2k-3x4",
+        "firefly-nano-banana-pro-2k-4x3",
+        "firefly-nano-banana-pro-2k-9x16",
+        "firefly-nano-banana-pro-4k-16x9",
+        "firefly-nano-banana-pro-4k-1x1",
+        "firefly-nano-banana-pro-4k-3x4",
+        "firefly-nano-banana-pro-4k-4x3",
+        "firefly-nano-banana-pro-4k-9x16",
+        "firefly-nano-banana2-1k-16x9",
+        "firefly-nano-banana2-1k-1x1",
+        "firefly-nano-banana2-1k-1x4",
+        "firefly-nano-banana2-1k-1x8",
+        "firefly-nano-banana2-1k-3x4",
+        "firefly-nano-banana2-1k-4x1",
+        "firefly-nano-banana2-1k-4x3",
+        "firefly-nano-banana2-1k-8x1",
+        "firefly-nano-banana2-1k-9x16",
+        "firefly-nano-banana2-2k-16x9",
+        "firefly-nano-banana2-2k-1x1",
+        "firefly-nano-banana2-2k-1x4",
+        "firefly-nano-banana2-2k-1x8",
+        "firefly-nano-banana2-2k-3x4",
+        "firefly-nano-banana2-2k-4x1",
+        "firefly-nano-banana2-2k-4x3",
+        "firefly-nano-banana2-2k-8x1",
+        "firefly-nano-banana2-2k-9x16",
+        "firefly-nano-banana2-4k-16x9",
+        "firefly-nano-banana2-4k-1x1",
+        "firefly-nano-banana2-4k-1x4",
+        "firefly-nano-banana2-4k-1x8",
+        "firefly-nano-banana2-4k-3x4",
+        "firefly-nano-banana2-4k-4x1",
+        "firefly-nano-banana2-4k-4x3",
+        "firefly-nano-banana2-4k-8x1",
+        "firefly-nano-banana2-4k-9x16",
+        "firefly-sora2-pro-12s-9x16",
+        "gemini-3-pro-image-preview",
+        "gemini-3-pro-preview",
+        "gemini-3.0-pro-image-2k",
+        "gemini-3.0-pro-image-4k",
+        "gemini-3.1-flash-image",
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-pro-preview",
+        "gpt-5.4",
+        "gpt-5.5",
+        "gpt-image-2",
+        "grok-imagine-image",
+        "grok-imagine-image-edit",
+        "grok-imagine-image-lite",
+        "grok-imagine-image-pro",
+        "grok-imagine-video"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:40",
+        "endpoint": "https://www.371181668.xyz/v1/models",
+        "status_code": 200
+      }
+    },
+    "gemini-2.5-flash-image": {
+      "provider_id": "gemini-2.5-flash-image",
+      "type": "gemini",
+      "model": "gemini-2.5-flash-image",
+      "tested_at": "2026-06-29 18:53:00",
+      "accessible": false,
+      "features": {
+        "access": {
+          "supported": false,
+          "reason": "curl: curl: (28) Connection timed out after 15001 milliseconds"
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "Gemini provider contract uses generateContent, not Responses API"
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "Gemini provider contract does not send web_search"
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "Gemini provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Gemini provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "access": "curl: curl: (28) Connection timed out after 15001 milliseconds",
+        "responses_api": "Gemini provider contract uses generateContent, not Responses API",
+        "web_search": "Gemini provider contract does not send web_search",
+        "thinking": "Gemini provider contract does not send thinking",
+        "reasoning_effort": {
+          "minimal": "Gemini provider contract does not send reasoning_effort",
+          "low": "Gemini provider contract does not send reasoning_effort",
+          "medium": "Gemini provider contract does not send reasoning_effort",
+          "high": "Gemini provider contract does not send reasoning_effort",
+          "xhigh": "Gemini provider contract does not send reasoning_effort",
+          "max": "Gemini provider contract does not send reasoning_effort",
+          "auto": "Gemini provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "unavailable",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-06-29 19:06:42",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
+        "reason": "curl: curl: (28) Connection timed out after 15012 milliseconds"
+      }
+    },
+    "doubao-pro": {
+      "provider_id": "doubao-pro",
+      "type": "openai",
+      "model": "doubao-seed-2-1-pro-260628",
+      "tested_at": "2026-06-29 18:53:15",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "values": {
+            "minimal": {
+              "supported": true,
+              "status_code": 200
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: xhigh. Request id: 021782730406887160995723eabea0b8c1f90eb8f6ac3e33492cf\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "max": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: max. Request id: 021782730407075bba9dcb446c9769753d8e06563bdd07f9fed04\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: auto. Request id: 021782730407260c03100eb43b2c5f2b8bc80f756d3dfef5d6bce\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": "OpenAI provider contract does not send thinking",
+        "reasoning_effort": {
+          "xhigh": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: xhigh. Request id: 021782730406887160995723eabea0b8c1f90eb8f6ac3e33492cf\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+          "max": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: max. Request id: 021782730407075bba9dcb446c9769753d8e06563bdd07f9fed04\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: auto. Request id: 021782730407260c03100eb43b2c5f2b8bc80f756d3dfef5d6bce\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "doubao-lite-128k-240428",
+        "doubao-pro-128k-240515",
+        "doubao-lite-4k-240328",
+        "doubao-lite-32k-240428",
+        "doubao-pro-4k-240515",
+        "doubao-lite-4k-character-240515",
+        "doubao-embedding-text-240515",
+        "mistral-7b-instruct-v0.2",
+        "doubao-pro-4k-character-240515",
+        "doubao-pro-4k-functioncall-240515",
+        "doubao-lite-4k-pretrain-character-240516",
+        "doubao-pro-32k-character-240528",
+        "doubao-pro-4k-browsing-240524",
+        "doubao-pro-32k-functioncall-240515",
+        "doubao-pro-4k-functioncall-240615",
+        "doubao-pro-32k-browsing-240615",
+        "doubao-pro-32k-240615",
+        "doubao-lite-32k-240628",
+        "doubao-pro-128k-240628",
+        "doubao-embedding-text-240715",
+        "doubao-pro-4k-character-240728",
+        "doubao-pro-32k-functioncall-240815",
+        "doubao-pro-32k-240828",
+        "doubao-lite-4k-character-240828",
+        "doubao-pro-32k-character-240828",
+        "doubao-lite-32k-240828",
+        "doubao-lite-128k-240828",
+        "doubao-pro-32k-browsing-240828",
+        "doubao-pro-32k-functioncall-preview",
+        "doubao-embedding-large-text-240915",
+        "doubao-lite-32k-character-241015",
+        "doubao-pro-32k-functioncall-241028",
+        "doubao-pro-32k-browsing-241115",
+        "doubao-vision-pro-32k-241028",
+        "doubao-vision-lite-32k-241015",
+        "doubao-seaweed-241128",
+        "doubao-pro-256k-241115",
+        "doubao-pro-32k-character-241215",
+        "doubao-pro-32k-241215",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115",
+        "doubao-1-5-vision-pro-32k-250115",
+        "doubao-embedding-vision-241215",
+        "doubao-1-5-pro-256k-250115",
+        "deepseek-v3-241226",
+        "deepseek-r1-distill-qwen-7b-250120",
+        "deepseek-r1-distill-qwen-32b-250120",
+        "deepseek-r1-250120",
+        "doubao-1-5-pro-32k-character-250228",
+        "doubao-1.5-vision-lite-250315",
+        "deepseek-v3-250324",
+        "doubao-1.5-vision-pro-250328",
+        "doubao-lite-32k-character-250228",
+        "doubao-1.5-ui-tars-250328",
+        "doubao-embedding-vision-250328",
+        "doubao-1-5-thinking-pro-250415",
+        "wan2-1-14b-i2v-250225",
+        "wan2-1-14b-t2v-250225",
+        "doubao-1-5-thinking-pro-m-250415",
+        "doubao-seedance-1-0-lite-i2v-250428",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedream-3-0-t2i-250415",
+        "wan2-1-14b-flf2v-250417",
+        "doubao-1-5-thinking-vision-pro-250428",
+        "doubao-1-5-thinking-pro-m-250428",
+        "doubao-embedding-large-text-250515",
+        "doubao-1-5-ui-tars-250428",
+        "deepseek-r1-250528",
+        "doubao-seed-1-6-flash-250615",
+        "doubao-seed-1-6-250615",
+        "doubao-seed-1-6-thinking-250615",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-embedding-vision-250615",
+        "doubao-seed-1-6-thinking-250715",
+        "doubao-1-5-pro-32k-character-250715",
+        "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-1-6-flash-250715",
+        "kimi-k2-250711",
+        "doubao-seed-1-6-vision-250815",
+        "deepseek-v3-1-250821",
+        "doubao-seed-1-6-flash-250828",
+        "glm-4-5-air-20250728",
+        "qwen3-8b-20250429",
+        "qwen3-32b-20250429",
+        "qwen2-5-72b-20240919",
+        "doubao-seedream-4-0-250828",
+        "kimi-k2-250905",
+        "doubao-seed-translation-250915",
+        "deepseek-v3-1-terminus",
+        "doubao-smart-router-250928",
+        "doubao-seed-1-6-251015",
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seed-1-6-lite-251015",
+        "doubao-seed3d-1-0-250928",
+        "kimi-k2-thinking-251104",
+        "doubao-seed-code-preview-251028",
+        "qwen3-0-6b-20250429",
+        "qwen3-14b-20250429",
+        "doubao-seedream-4-5-251128",
+        "doubao-embedding-vision-251215",
+        "deepseek-v3-2-251201",
+        "doubao-seedance-1-5-pro-251215",
+        "glm-4-7-251222",
+        "doubao-seed-1-8-251228",
+        "doubao-seed-character-251128",
+        "doubao-seed-2-0-lite-260215",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedream-5-0-260128",
+        "doubao-seed-2-0-mini-260215",
+        "doubao-seed-2-0-pro-260215",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seed-2-0-code-preview-260215",
+        "hyper3d-gen2-260112",
+        "hitem3d-2-0-251223",
+        "doubao-seed3d-2-0-260328",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-lite-260428",
+        "deepseek-v4-pro-260425",
+        "deepseek-v4-flash-260425",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2-1-turbo-260628",
+        "doubao-seed-character-260628",
+        "doubao-seed-evolving"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:57",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
+        "status_code": 200
+      }
+    },
+    "doubao-seed-evolving": {
+      "provider_id": "doubao-seed-evolving",
+      "type": "openai",
+      "model": "doubao-seed-evolving",
+      "tested_at": "2026-06-29 18:53:27",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "values": {
+            "minimal": {
+              "supported": true,
+              "status_code": 200
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: xhigh. Request id: 0217827304237185c53bb980d0b91addac92a88f9eb9598d04008\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "max": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: max. Request id: 0217827304239988b056a623bf426f62c797dc732369cf9492206\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: auto. Request id: 021782730424176ed9c07a18069cfb59ad66daf7e7bd921e30015\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": "OpenAI provider contract does not send thinking",
+        "reasoning_effort": {
+          "xhigh": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: xhigh. Request id: 0217827304237185c53bb980d0b91addac92a88f9eb9598d04008\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+          "max": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: max. Request id: 0217827304239988b056a623bf426f62c797dc732369cf9492206\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}",
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning.effort` specified in the request are not valid: unknown type: auto. Request id: 021782730424176ed9c07a18069cfb59ad66daf7e7bd921e30015\",\"param\":\"reasoning.effort\",\"type\":\"BadRequest\"}}"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "doubao-lite-128k-240428",
+        "doubao-pro-128k-240515",
+        "doubao-lite-4k-240328",
+        "doubao-lite-32k-240428",
+        "doubao-pro-4k-240515",
+        "doubao-lite-4k-character-240515",
+        "doubao-embedding-text-240515",
+        "mistral-7b-instruct-v0.2",
+        "doubao-pro-4k-character-240515",
+        "doubao-pro-4k-functioncall-240515",
+        "doubao-lite-4k-pretrain-character-240516",
+        "doubao-pro-32k-character-240528",
+        "doubao-pro-4k-browsing-240524",
+        "doubao-pro-32k-functioncall-240515",
+        "doubao-pro-4k-functioncall-240615",
+        "doubao-pro-32k-browsing-240615",
+        "doubao-pro-32k-240615",
+        "doubao-lite-32k-240628",
+        "doubao-pro-128k-240628",
+        "doubao-embedding-text-240715",
+        "doubao-pro-4k-character-240728",
+        "doubao-pro-32k-functioncall-240815",
+        "doubao-pro-32k-240828",
+        "doubao-lite-4k-character-240828",
+        "doubao-pro-32k-character-240828",
+        "doubao-lite-32k-240828",
+        "doubao-lite-128k-240828",
+        "doubao-pro-32k-browsing-240828",
+        "doubao-pro-32k-functioncall-preview",
+        "doubao-embedding-large-text-240915",
+        "doubao-lite-32k-character-241015",
+        "doubao-pro-32k-functioncall-241028",
+        "doubao-pro-32k-browsing-241115",
+        "doubao-vision-pro-32k-241028",
+        "doubao-vision-lite-32k-241015",
+        "doubao-seaweed-241128",
+        "doubao-pro-256k-241115",
+        "doubao-pro-32k-character-241215",
+        "doubao-pro-32k-241215",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115",
+        "doubao-1-5-vision-pro-32k-250115",
+        "doubao-embedding-vision-241215",
+        "doubao-1-5-pro-256k-250115",
+        "deepseek-v3-241226",
+        "deepseek-r1-distill-qwen-7b-250120",
+        "deepseek-r1-distill-qwen-32b-250120",
+        "deepseek-r1-250120",
+        "doubao-1-5-pro-32k-character-250228",
+        "doubao-1.5-vision-lite-250315",
+        "deepseek-v3-250324",
+        "doubao-1.5-vision-pro-250328",
+        "doubao-lite-32k-character-250228",
+        "doubao-1.5-ui-tars-250328",
+        "doubao-embedding-vision-250328",
+        "doubao-1-5-thinking-pro-250415",
+        "wan2-1-14b-i2v-250225",
+        "wan2-1-14b-t2v-250225",
+        "doubao-1-5-thinking-pro-m-250415",
+        "doubao-seedance-1-0-lite-i2v-250428",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedream-3-0-t2i-250415",
+        "wan2-1-14b-flf2v-250417",
+        "doubao-1-5-thinking-vision-pro-250428",
+        "doubao-1-5-thinking-pro-m-250428",
+        "doubao-embedding-large-text-250515",
+        "doubao-1-5-ui-tars-250428",
+        "deepseek-r1-250528",
+        "doubao-seed-1-6-flash-250615",
+        "doubao-seed-1-6-250615",
+        "doubao-seed-1-6-thinking-250615",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-embedding-vision-250615",
+        "doubao-seed-1-6-thinking-250715",
+        "doubao-1-5-pro-32k-character-250715",
+        "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-1-6-flash-250715",
+        "kimi-k2-250711",
+        "doubao-seed-1-6-vision-250815",
+        "deepseek-v3-1-250821",
+        "doubao-seed-1-6-flash-250828",
+        "glm-4-5-air-20250728",
+        "qwen3-8b-20250429",
+        "qwen3-32b-20250429",
+        "qwen2-5-72b-20240919",
+        "doubao-seedream-4-0-250828",
+        "kimi-k2-250905",
+        "doubao-seed-translation-250915",
+        "deepseek-v3-1-terminus",
+        "doubao-smart-router-250928",
+        "doubao-seed-1-6-251015",
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seed-1-6-lite-251015",
+        "doubao-seed3d-1-0-250928",
+        "kimi-k2-thinking-251104",
+        "doubao-seed-code-preview-251028",
+        "qwen3-0-6b-20250429",
+        "qwen3-14b-20250429",
+        "doubao-seedream-4-5-251128",
+        "doubao-embedding-vision-251215",
+        "deepseek-v3-2-251201",
+        "doubao-seedance-1-5-pro-251215",
+        "glm-4-7-251222",
+        "doubao-seed-1-8-251228",
+        "doubao-seed-character-251128",
+        "doubao-seed-2-0-lite-260215",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedream-5-0-260128",
+        "doubao-seed-2-0-mini-260215",
+        "doubao-seed-2-0-pro-260215",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seed-2-0-code-preview-260215",
+        "hyper3d-gen2-260112",
+        "hitem3d-2-0-251223",
+        "doubao-seed3d-2-0-260328",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-lite-260428",
+        "deepseek-v4-pro-260425",
+        "deepseek-v4-flash-260425",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2-1-turbo-260628",
+        "doubao-seed-character-260628",
+        "doubao-seed-evolving"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:57",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
+        "status_code": 200
+      }
+    },
+    "doubao-pro_HS": {
+      "provider_id": "doubao-pro_HS",
+      "type": "doubao",
+      "model": "doubao-seed-2-0-pro-260215",
+      "tested_at": "2026-06-29 18:53:43",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": true,
+          "supported_values": [
+            "enabled",
+            "disabled"
+          ],
+          "values": {
+            "enabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "disabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 02178273043487037079cdcc08b35ab782b1fd6e8da4cf07b50ef\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": {
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 02178273043487037079cdcc08b35ab782b1fd6e8da4cf07b50ef\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "doubao-lite-128k-240428",
+        "doubao-pro-128k-240515",
+        "doubao-lite-4k-240328",
+        "doubao-lite-32k-240428",
+        "doubao-pro-4k-240515",
+        "doubao-lite-4k-character-240515",
+        "doubao-embedding-text-240515",
+        "mistral-7b-instruct-v0.2",
+        "doubao-pro-4k-character-240515",
+        "doubao-pro-4k-functioncall-240515",
+        "doubao-lite-4k-pretrain-character-240516",
+        "doubao-pro-32k-character-240528",
+        "doubao-pro-4k-browsing-240524",
+        "doubao-pro-32k-functioncall-240515",
+        "doubao-pro-4k-functioncall-240615",
+        "doubao-pro-32k-browsing-240615",
+        "doubao-pro-32k-240615",
+        "doubao-lite-32k-240628",
+        "doubao-pro-128k-240628",
+        "doubao-embedding-text-240715",
+        "doubao-pro-4k-character-240728",
+        "doubao-pro-32k-functioncall-240815",
+        "doubao-pro-32k-240828",
+        "doubao-lite-4k-character-240828",
+        "doubao-pro-32k-character-240828",
+        "doubao-lite-32k-240828",
+        "doubao-lite-128k-240828",
+        "doubao-pro-32k-browsing-240828",
+        "doubao-pro-32k-functioncall-preview",
+        "doubao-embedding-large-text-240915",
+        "doubao-lite-32k-character-241015",
+        "doubao-pro-32k-functioncall-241028",
+        "doubao-pro-32k-browsing-241115",
+        "doubao-vision-pro-32k-241028",
+        "doubao-vision-lite-32k-241015",
+        "doubao-seaweed-241128",
+        "doubao-pro-256k-241115",
+        "doubao-pro-32k-character-241215",
+        "doubao-pro-32k-241215",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115",
+        "doubao-1-5-vision-pro-32k-250115",
+        "doubao-embedding-vision-241215",
+        "doubao-1-5-pro-256k-250115",
+        "deepseek-v3-241226",
+        "deepseek-r1-distill-qwen-7b-250120",
+        "deepseek-r1-distill-qwen-32b-250120",
+        "deepseek-r1-250120",
+        "doubao-1-5-pro-32k-character-250228",
+        "doubao-1.5-vision-lite-250315",
+        "deepseek-v3-250324",
+        "doubao-1.5-vision-pro-250328",
+        "doubao-lite-32k-character-250228",
+        "doubao-1.5-ui-tars-250328",
+        "doubao-embedding-vision-250328",
+        "doubao-1-5-thinking-pro-250415",
+        "wan2-1-14b-i2v-250225",
+        "wan2-1-14b-t2v-250225",
+        "doubao-1-5-thinking-pro-m-250415",
+        "doubao-seedance-1-0-lite-i2v-250428",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedream-3-0-t2i-250415",
+        "wan2-1-14b-flf2v-250417",
+        "doubao-1-5-thinking-vision-pro-250428",
+        "doubao-1-5-thinking-pro-m-250428",
+        "doubao-embedding-large-text-250515",
+        "doubao-1-5-ui-tars-250428",
+        "deepseek-r1-250528",
+        "doubao-seed-1-6-flash-250615",
+        "doubao-seed-1-6-250615",
+        "doubao-seed-1-6-thinking-250615",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-embedding-vision-250615",
+        "doubao-seed-1-6-thinking-250715",
+        "doubao-1-5-pro-32k-character-250715",
+        "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-1-6-flash-250715",
+        "kimi-k2-250711",
+        "doubao-seed-1-6-vision-250815",
+        "deepseek-v3-1-250821",
+        "doubao-seed-1-6-flash-250828",
+        "glm-4-5-air-20250728",
+        "qwen3-8b-20250429",
+        "qwen3-32b-20250429",
+        "qwen2-5-72b-20240919",
+        "doubao-seedream-4-0-250828",
+        "kimi-k2-250905",
+        "doubao-seed-translation-250915",
+        "deepseek-v3-1-terminus",
+        "doubao-smart-router-250928",
+        "doubao-seed-1-6-251015",
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seed-1-6-lite-251015",
+        "doubao-seed3d-1-0-250928",
+        "kimi-k2-thinking-251104",
+        "doubao-seed-code-preview-251028",
+        "qwen3-0-6b-20250429",
+        "qwen3-14b-20250429",
+        "doubao-seedream-4-5-251128",
+        "doubao-embedding-vision-251215",
+        "deepseek-v3-2-251201",
+        "doubao-seedance-1-5-pro-251215",
+        "glm-4-7-251222",
+        "doubao-seed-1-8-251228",
+        "doubao-seed-character-251128",
+        "doubao-seed-2-0-lite-260215",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedream-5-0-260128",
+        "doubao-seed-2-0-mini-260215",
+        "doubao-seed-2-0-pro-260215",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seed-2-0-code-preview-260215",
+        "hyper3d-gen2-260112",
+        "hitem3d-2-0-251223",
+        "doubao-seed3d-2-0-260328",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-lite-260428",
+        "deepseek-v4-pro-260425",
+        "deepseek-v4-flash-260425",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2-1-turbo-260628",
+        "doubao-seed-character-260628",
+        "doubao-seed-evolving"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:58",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
+        "status_code": 200
+      }
+    },
+    "doubao-seedream-4-5-251128": {
+      "provider_id": "doubao-seedream-4-5-251128",
+      "type": "doubao",
+      "model": "doubao-seedream-4-5-251128",
+      "tested_at": "2026-06-29 18:53:54",
+      "accessible": false,
+      "features": {
+        "access": {
+          "supported": false,
+          "reason": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}",
+          "status_code": 404
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/responses.\",\"param\":\"/api/v3/images/generations/responses\",\"type\":\"NotFound\"}}",
+          "status_code": 404
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/responses.\",\"param\":\"/api/v3/images/generations/responses\",\"type\":\"NotFound\"}}",
+          "status_code": 404
+        },
+        "thinking": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "enabled": {
+              "supported": false,
+              "reason": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}",
+              "status_code": 404
+            },
+            "disabled": {
+              "supported": false,
+              "reason": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}",
+              "status_code": 404
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}",
+              "status_code": 404
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "access": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}",
+        "responses_api": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/responses.\",\"param\":\"/api/v3/images/generations/responses\",\"type\":\"NotFound\"}}",
+        "web_search": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/responses.\",\"param\":\"/api/v3/images/generations/responses\",\"type\":\"NotFound\"}}",
+        "thinking": {
+          "enabled": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}",
+          "disabled": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}",
+          "auto": "HTTP 404: {\"error\":{\"code\":\"InvalidAction\",\"message\":\"The specified action is invalid: /api/v3/images/generations/chat/completions.\",\"param\":\"/api/v3/images/generations/chat/completions\",\"type\":\"NotFound\"}}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "unavailable",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-06-29 19:06:58",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021782731219030c57e78ec35a4c62cb30347d58d08558fb4330b\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "status_code": 404
+      }
+    },
+    "tavern_deepseek_v31": {
+      "provider_id": "tavern_deepseek_v31",
+      "type": "doubao",
+      "model": "deepseek-tavern-v2-pro-xhigh",
+      "tested_at": "2026-06-29 18:53:56",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "HTTP 404: {\"error\":{\"message\":\"openai_error\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+          "status_code": 404
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "HTTP 404: {\"error\":{\"message\":\"openai_error\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+          "status_code": 404
+        },
+        "thinking": {
+          "supported": true,
+          "supported_values": [
+            "enabled",
+            "disabled",
+            "auto"
+          ],
+          "values": {
+            "enabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "disabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": true,
+              "status_code": 200
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "responses_api": "HTTP 404: {\"error\":{\"message\":\"openai_error\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+        "web_search": "HTTP 404: {\"error\":{\"message\":\"openai_error\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}",
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-sonnet-4-6",
+        "deepseek-tavern-v2-pro",
+        "deepseek-tavern-v2-pro-low",
+        "deepseek-tavern-v2-pro-xhigh",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemini-2.5",
+        "gemini-3",
+        "gemini-3.5",
+        "grok-4.1",
+        "grok-4.2",
+        "tavern-v1-tts",
+        "tavern-v1-voiceclone",
+        "tavern-v1-voicedesign"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:58",
+        "endpoint": "https://deepseektavern.com/v1/models",
+        "status_code": 200
+      }
+    },
+    "doubao_vision": {
+      "provider_id": "doubao_vision",
+      "type": "doubao",
+      "model": "doubao-seed-1-6-vision-250815",
+      "tested_at": "2026-06-29 18:54:22",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": true,
+          "supported_values": [
+            "enabled",
+            "disabled"
+          ],
+          "values": {
+            "enabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "disabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021782730468589bd223177cc7b14585a4ccdb5490e493857fb11\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": {
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021782730468589bd223177cc7b14585a4ccdb5490e493857fb11\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "doubao-lite-128k-240428",
+        "doubao-pro-128k-240515",
+        "doubao-lite-4k-240328",
+        "doubao-lite-32k-240428",
+        "doubao-pro-4k-240515",
+        "doubao-lite-4k-character-240515",
+        "doubao-embedding-text-240515",
+        "mistral-7b-instruct-v0.2",
+        "doubao-pro-4k-character-240515",
+        "doubao-pro-4k-functioncall-240515",
+        "doubao-lite-4k-pretrain-character-240516",
+        "doubao-pro-32k-character-240528",
+        "doubao-pro-4k-browsing-240524",
+        "doubao-pro-32k-functioncall-240515",
+        "doubao-pro-4k-functioncall-240615",
+        "doubao-pro-32k-browsing-240615",
+        "doubao-pro-32k-240615",
+        "doubao-lite-32k-240628",
+        "doubao-pro-128k-240628",
+        "doubao-embedding-text-240715",
+        "doubao-pro-4k-character-240728",
+        "doubao-pro-32k-functioncall-240815",
+        "doubao-pro-32k-240828",
+        "doubao-lite-4k-character-240828",
+        "doubao-pro-32k-character-240828",
+        "doubao-lite-32k-240828",
+        "doubao-lite-128k-240828",
+        "doubao-pro-32k-browsing-240828",
+        "doubao-pro-32k-functioncall-preview",
+        "doubao-embedding-large-text-240915",
+        "doubao-lite-32k-character-241015",
+        "doubao-pro-32k-functioncall-241028",
+        "doubao-pro-32k-browsing-241115",
+        "doubao-vision-pro-32k-241028",
+        "doubao-vision-lite-32k-241015",
+        "doubao-seaweed-241128",
+        "doubao-pro-256k-241115",
+        "doubao-pro-32k-character-241215",
+        "doubao-pro-32k-241215",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115",
+        "doubao-1-5-vision-pro-32k-250115",
+        "doubao-embedding-vision-241215",
+        "doubao-1-5-pro-256k-250115",
+        "deepseek-v3-241226",
+        "deepseek-r1-distill-qwen-7b-250120",
+        "deepseek-r1-distill-qwen-32b-250120",
+        "deepseek-r1-250120",
+        "doubao-1-5-pro-32k-character-250228",
+        "doubao-1.5-vision-lite-250315",
+        "deepseek-v3-250324",
+        "doubao-1.5-vision-pro-250328",
+        "doubao-lite-32k-character-250228",
+        "doubao-1.5-ui-tars-250328",
+        "doubao-embedding-vision-250328",
+        "doubao-1-5-thinking-pro-250415",
+        "wan2-1-14b-i2v-250225",
+        "wan2-1-14b-t2v-250225",
+        "doubao-1-5-thinking-pro-m-250415",
+        "doubao-seedance-1-0-lite-i2v-250428",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedream-3-0-t2i-250415",
+        "wan2-1-14b-flf2v-250417",
+        "doubao-1-5-thinking-vision-pro-250428",
+        "doubao-1-5-thinking-pro-m-250428",
+        "doubao-embedding-large-text-250515",
+        "doubao-1-5-ui-tars-250428",
+        "deepseek-r1-250528",
+        "doubao-seed-1-6-flash-250615",
+        "doubao-seed-1-6-250615",
+        "doubao-seed-1-6-thinking-250615",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-embedding-vision-250615",
+        "doubao-seed-1-6-thinking-250715",
+        "doubao-1-5-pro-32k-character-250715",
+        "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-1-6-flash-250715",
+        "kimi-k2-250711",
+        "doubao-seed-1-6-vision-250815",
+        "deepseek-v3-1-250821",
+        "doubao-seed-1-6-flash-250828",
+        "glm-4-5-air-20250728",
+        "qwen3-8b-20250429",
+        "qwen3-32b-20250429",
+        "qwen2-5-72b-20240919",
+        "doubao-seedream-4-0-250828",
+        "kimi-k2-250905",
+        "doubao-seed-translation-250915",
+        "deepseek-v3-1-terminus",
+        "doubao-smart-router-250928",
+        "doubao-seed-1-6-251015",
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seed-1-6-lite-251015",
+        "doubao-seed3d-1-0-250928",
+        "kimi-k2-thinking-251104",
+        "doubao-seed-code-preview-251028",
+        "qwen3-0-6b-20250429",
+        "qwen3-14b-20250429",
+        "doubao-seedream-4-5-251128",
+        "doubao-embedding-vision-251215",
+        "deepseek-v3-2-251201",
+        "doubao-seedance-1-5-pro-251215",
+        "glm-4-7-251222",
+        "doubao-seed-1-8-251228",
+        "doubao-seed-character-251128",
+        "doubao-seed-2-0-lite-260215",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedream-5-0-260128",
+        "doubao-seed-2-0-mini-260215",
+        "doubao-seed-2-0-pro-260215",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seed-2-0-code-preview-260215",
+        "hyper3d-gen2-260112",
+        "hitem3d-2-0-251223",
+        "doubao-seed3d-2-0-260328",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-lite-260428",
+        "deepseek-v4-pro-260425",
+        "deepseek-v4-flash-260425",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2-1-turbo-260628",
+        "doubao-seed-character-260628",
+        "doubao-seed-evolving"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:59",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
+        "status_code": 200
+      }
+    },
+    "doubao-seedance-2-0-260128": {
+      "provider_id": "doubao-seedance-2-0-260128",
+      "type": "doubao",
+      "model": "doubao-seedance-2-0-260128",
+      "tested_at": "2026-06-29 18:54:28",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": false,
+          "reason": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 021782730468952d2ead8b3d4a98fc1d2171244f66732078298c4\",\"param\":\"\",\"type\":\"InternalServerError\"}}",
+          "status_code": 500
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021782730469355b060a07fba38d5479db0751ac158bec5588a8d\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "status_code": 403
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021782730469573d2ead8b3d4a98fc1d2171244f66732071d81dc\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "status_code": 403
+        },
+        "thinking": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "enabled": {
+              "supported": false,
+              "reason": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 0217827304698079dea1a5de2f6b6146a54635f535da4d34e0750\",\"param\":\"\",\"type\":\"InternalServerError\"}}",
+              "status_code": 500
+            },
+            "disabled": {
+              "supported": false,
+              "reason": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 021782730470119b924623d76074f65850d50039da6f8f5ecc1e2\",\"param\":\"\",\"type\":\"InternalServerError\"}}",
+              "status_code": 500
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 02178273047259300bcc3116dfc56b9203b01425516f61b377b26\",\"param\":\"\",\"type\":\"InternalServerError\"}}",
+              "status_code": 500
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "access": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 021782730468952d2ead8b3d4a98fc1d2171244f66732078298c4\",\"param\":\"\",\"type\":\"InternalServerError\"}}",
+        "responses_api": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021782730469355b060a07fba38d5479db0751ac158bec5588a8d\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+        "web_search": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021782730469573d2ead8b3d4a98fc1d2171244f66732071d81dc\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+        "thinking": {
+          "enabled": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 0217827304698079dea1a5de2f6b6146a54635f535da4d34e0750\",\"param\":\"\",\"type\":\"InternalServerError\"}}",
+          "disabled": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 021782730470119b924623d76074f65850d50039da6f8f5ecc1e2\",\"param\":\"\",\"type\":\"InternalServerError\"}}",
+          "auto": "HTTP 500: {\"error\":{\"code\":\"InternalServiceError\",\"message\":\" Request id: 02178273047259300bcc3116dfc56b9203b01425516f61b377b26\",\"param\":\"\",\"type\":\"InternalServerError\"}}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "doubao-lite-128k-240428",
+        "doubao-pro-128k-240515",
+        "doubao-lite-4k-240328",
+        "doubao-lite-32k-240428",
+        "doubao-pro-4k-240515",
+        "doubao-lite-4k-character-240515",
+        "doubao-embedding-text-240515",
+        "mistral-7b-instruct-v0.2",
+        "doubao-pro-4k-character-240515",
+        "doubao-pro-4k-functioncall-240515",
+        "doubao-lite-4k-pretrain-character-240516",
+        "doubao-pro-32k-character-240528",
+        "doubao-pro-4k-browsing-240524",
+        "doubao-pro-32k-functioncall-240515",
+        "doubao-pro-4k-functioncall-240615",
+        "doubao-pro-32k-browsing-240615",
+        "doubao-pro-32k-240615",
+        "doubao-lite-32k-240628",
+        "doubao-pro-128k-240628",
+        "doubao-embedding-text-240715",
+        "doubao-pro-4k-character-240728",
+        "doubao-pro-32k-functioncall-240815",
+        "doubao-pro-32k-240828",
+        "doubao-lite-4k-character-240828",
+        "doubao-pro-32k-character-240828",
+        "doubao-lite-32k-240828",
+        "doubao-lite-128k-240828",
+        "doubao-pro-32k-browsing-240828",
+        "doubao-pro-32k-functioncall-preview",
+        "doubao-embedding-large-text-240915",
+        "doubao-lite-32k-character-241015",
+        "doubao-pro-32k-functioncall-241028",
+        "doubao-pro-32k-browsing-241115",
+        "doubao-vision-pro-32k-241028",
+        "doubao-vision-lite-32k-241015",
+        "doubao-seaweed-241128",
+        "doubao-pro-256k-241115",
+        "doubao-pro-32k-character-241215",
+        "doubao-pro-32k-241215",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115",
+        "doubao-1-5-vision-pro-32k-250115",
+        "doubao-embedding-vision-241215",
+        "doubao-1-5-pro-256k-250115",
+        "deepseek-v3-241226",
+        "deepseek-r1-distill-qwen-7b-250120",
+        "deepseek-r1-distill-qwen-32b-250120",
+        "deepseek-r1-250120",
+        "doubao-1-5-pro-32k-character-250228",
+        "doubao-1.5-vision-lite-250315",
+        "deepseek-v3-250324",
+        "doubao-1.5-vision-pro-250328",
+        "doubao-lite-32k-character-250228",
+        "doubao-1.5-ui-tars-250328",
+        "doubao-embedding-vision-250328",
+        "doubao-1-5-thinking-pro-250415",
+        "wan2-1-14b-i2v-250225",
+        "wan2-1-14b-t2v-250225",
+        "doubao-1-5-thinking-pro-m-250415",
+        "doubao-seedance-1-0-lite-i2v-250428",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedream-3-0-t2i-250415",
+        "wan2-1-14b-flf2v-250417",
+        "doubao-1-5-thinking-vision-pro-250428",
+        "doubao-1-5-thinking-pro-m-250428",
+        "doubao-embedding-large-text-250515",
+        "doubao-1-5-ui-tars-250428",
+        "deepseek-r1-250528",
+        "doubao-seed-1-6-flash-250615",
+        "doubao-seed-1-6-250615",
+        "doubao-seed-1-6-thinking-250615",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-embedding-vision-250615",
+        "doubao-seed-1-6-thinking-250715",
+        "doubao-1-5-pro-32k-character-250715",
+        "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-1-6-flash-250715",
+        "kimi-k2-250711",
+        "doubao-seed-1-6-vision-250815",
+        "deepseek-v3-1-250821",
+        "doubao-seed-1-6-flash-250828",
+        "glm-4-5-air-20250728",
+        "qwen3-8b-20250429",
+        "qwen3-32b-20250429",
+        "qwen2-5-72b-20240919",
+        "doubao-seedream-4-0-250828",
+        "kimi-k2-250905",
+        "doubao-seed-translation-250915",
+        "deepseek-v3-1-terminus",
+        "doubao-smart-router-250928",
+        "doubao-seed-1-6-251015",
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seed-1-6-lite-251015",
+        "doubao-seed3d-1-0-250928",
+        "kimi-k2-thinking-251104",
+        "doubao-seed-code-preview-251028",
+        "qwen3-0-6b-20250429",
+        "qwen3-14b-20250429",
+        "doubao-seedream-4-5-251128",
+        "doubao-embedding-vision-251215",
+        "deepseek-v3-2-251201",
+        "doubao-seedance-1-5-pro-251215",
+        "glm-4-7-251222",
+        "doubao-seed-1-8-251228",
+        "doubao-seed-character-251128",
+        "doubao-seed-2-0-lite-260215",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedream-5-0-260128",
+        "doubao-seed-2-0-mini-260215",
+        "doubao-seed-2-0-pro-260215",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seed-2-0-code-preview-260215",
+        "hyper3d-gen2-260112",
+        "hitem3d-2-0-251223",
+        "doubao-seed3d-2-0-260328",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-lite-260428",
+        "deepseek-v4-pro-260425",
+        "deepseek-v4-flash-260425",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2-1-turbo-260628",
+        "doubao-seed-character-260628",
+        "doubao-seed-evolving"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:06:59",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
+        "status_code": 200
+      }
+    },
+    "wan2.2-animate-mix": {
+      "provider_id": "wan2.2-animate-mix",
+      "type": "doubao",
+      "model": "wan2.2-animate-mix",
+      "tested_at": "2026-06-29 18:54:32",
+      "accessible": false,
+      "features": {
+        "access": {
+          "supported": false,
+          "reason": "HTTP 400: {\"requestId\":\"0f405d4f-4684-9af6-b6e3-a64e928689a4\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}",
+          "status_code": 400
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "HTTP 400: {\"request_id\":\"c17223c3-b0db-96e7-b4d4-126d1d37bc03\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "status_code": 400
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "HTTP 400: {\"request_id\":\"309f888e-7361-9ff5-b107-5761693ed7b2\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "status_code": 400
+        },
+        "thinking": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "enabled": {
+              "supported": false,
+              "reason": "HTTP 400: {\"requestId\":\"b95057df-d6f1-96fa-aad1-427686aaaa05\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}",
+              "status_code": 400
+            },
+            "disabled": {
+              "supported": false,
+              "reason": "HTTP 400: {\"requestId\":\"0b63babb-a532-934c-a647-d2cb3f457476\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}",
+              "status_code": 400
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"requestId\":\"a5c5e300-3694-9ea9-b040-8649a9dacf42\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}",
+              "status_code": 400
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao provider contract does not send reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "access": "HTTP 400: {\"requestId\":\"0f405d4f-4684-9af6-b6e3-a64e928689a4\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}",
+        "responses_api": "HTTP 400: {\"request_id\":\"c17223c3-b0db-96e7-b4d4-126d1d37bc03\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+        "web_search": "HTTP 400: {\"request_id\":\"309f888e-7361-9ff5-b107-5761693ed7b2\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+        "thinking": {
+          "enabled": "HTTP 400: {\"requestId\":\"b95057df-d6f1-96fa-aad1-427686aaaa05\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}",
+          "disabled": "HTTP 400: {\"requestId\":\"0b63babb-a532-934c-a647-d2cb3f457476\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}",
+          "auto": "HTTP 400: {\"requestId\":\"a5c5e300-3694-9ea9-b040-8649a9dacf42\",\"code\":\"InvalidParameter\",\"message\":\"No static resource api/v1/aigc/image2video/video-synthesis/chat/completions.\"}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao provider contract does not send reasoning_effort",
+          "low": "Doubao provider contract does not send reasoning_effort",
+          "medium": "Doubao provider contract does not send reasoning_effort",
+          "high": "Doubao provider contract does not send reasoning_effort",
+          "xhigh": "Doubao provider contract does not send reasoning_effort",
+          "max": "Doubao provider contract does not send reasoning_effort",
+          "auto": "Doubao provider contract does not send reasoning_effort"
+        }
+      },
+      "status": "unavailable",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-06-29 19:07:00",
+        "endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis/models",
+        "reason": "HTTP 400: {\"requestId\":\"4807fe56-ae90-9216-913a-844a80f958cc\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
+        "status_code": 400
+      }
+    },
+    "hyper3d-rodin-gen2": {
+      "provider_id": "hyper3d-rodin-gen2",
+      "type": "hyper3d",
+      "model": "rodin",
+      "tested_at": "2026-06-29 18:54:33",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "reason": "Configuration is present; generation endpoints are not probed to avoid creating billable jobs"
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "Hyper3D provider is generation-only and has no Responses API"
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "Hyper3D provider is generation-only and has no web_search"
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "Hyper3D provider is generation-only and has no thinking"
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Hyper3D provider is generation-only and has no reasoning_effort"
+            },
+            "low": {
+              "supported": false,
+              "reason": "Hyper3D provider is generation-only and has no reasoning_effort"
+            },
+            "medium": {
+              "supported": false,
+              "reason": "Hyper3D provider is generation-only and has no reasoning_effort"
+            },
+            "high": {
+              "supported": false,
+              "reason": "Hyper3D provider is generation-only and has no reasoning_effort"
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Hyper3D provider is generation-only and has no reasoning_effort"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Hyper3D provider is generation-only and has no reasoning_effort"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Hyper3D provider is generation-only and has no reasoning_effort"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "responses_api": "Hyper3D provider is generation-only and has no Responses API",
+        "web_search": "Hyper3D provider is generation-only and has no web_search",
+        "thinking": "Hyper3D provider is generation-only and has no thinking",
+        "reasoning_effort": {
+          "minimal": "Hyper3D provider is generation-only and has no reasoning_effort",
+          "low": "Hyper3D provider is generation-only and has no reasoning_effort",
+          "medium": "Hyper3D provider is generation-only and has no reasoning_effort",
+          "high": "Hyper3D provider is generation-only and has no reasoning_effort",
+          "xhigh": "Hyper3D provider is generation-only and has no reasoning_effort",
+          "max": "Hyper3D provider is generation-only and has no reasoning_effort",
+          "auto": "Hyper3D provider is generation-only and has no reasoning_effort"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-06-29 19:07:00",
+        "reason": "provider type 'hyper3d' has no model discovery endpoint"
+      }
+    },
+    "GLM_5.2_HuoShan": {
+      "provider_id": "GLM_5.2_HuoShan",
+      "type": "zhipu",
+      "model": "glm-5.2",
+      "tested_at": "2026-06-29 18:54:33",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "Zhipu provider contract uses chat/completions, not Responses API"
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "Zhipu provider contract does not send web_search"
+        },
+        "thinking": {
+          "supported": true,
+          "supported_values": [
+            "enabled",
+            "disabled"
+          ],
+          "values": {
+            "enabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "disabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Zhipu thinking supports enabled/disabled only"
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "values": {
+            "minimal": {
+              "supported": true,
+              "status_code": 200
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": true,
+              "status_code": 200
+            },
+            "max": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 021782730524898165bc15045f54b6c23df9ed30a576e21ba0898\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "responses_api": "Zhipu provider contract uses chat/completions, not Responses API",
+        "web_search": "Zhipu provider contract does not send web_search",
+        "thinking": {
+          "auto": "Zhipu thinking supports enabled/disabled only"
+        },
+        "reasoning_effort": {
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 021782730524898165bc15045f54b6c23df9ed30a576e21ba0898\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+        }
+      },
+      "status": "ok",
+      "available_model_ids": [
+        "doubao-lite-128k-240428",
+        "doubao-pro-128k-240515",
+        "doubao-lite-4k-240328",
+        "doubao-lite-32k-240428",
+        "doubao-pro-4k-240515",
+        "doubao-lite-4k-character-240515",
+        "doubao-embedding-text-240515",
+        "mistral-7b-instruct-v0.2",
+        "doubao-pro-4k-character-240515",
+        "doubao-pro-4k-functioncall-240515",
+        "doubao-lite-4k-pretrain-character-240516",
+        "doubao-pro-32k-character-240528",
+        "doubao-pro-4k-browsing-240524",
+        "doubao-pro-32k-functioncall-240515",
+        "doubao-pro-4k-functioncall-240615",
+        "doubao-pro-32k-browsing-240615",
+        "doubao-pro-32k-240615",
+        "doubao-lite-32k-240628",
+        "doubao-pro-128k-240628",
+        "doubao-embedding-text-240715",
+        "doubao-pro-4k-character-240728",
+        "doubao-pro-32k-functioncall-240815",
+        "doubao-pro-32k-240828",
+        "doubao-lite-4k-character-240828",
+        "doubao-pro-32k-character-240828",
+        "doubao-lite-32k-240828",
+        "doubao-lite-128k-240828",
+        "doubao-pro-32k-browsing-240828",
+        "doubao-pro-32k-functioncall-preview",
+        "doubao-embedding-large-text-240915",
+        "doubao-lite-32k-character-241015",
+        "doubao-pro-32k-functioncall-241028",
+        "doubao-pro-32k-browsing-241115",
+        "doubao-vision-pro-32k-241028",
+        "doubao-vision-lite-32k-241015",
+        "doubao-seaweed-241128",
+        "doubao-pro-256k-241115",
+        "doubao-pro-32k-character-241215",
+        "doubao-pro-32k-241215",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115",
+        "doubao-1-5-vision-pro-32k-250115",
+        "doubao-embedding-vision-241215",
+        "doubao-1-5-pro-256k-250115",
+        "deepseek-v3-241226",
+        "deepseek-r1-distill-qwen-7b-250120",
+        "deepseek-r1-distill-qwen-32b-250120",
+        "deepseek-r1-250120",
+        "doubao-1-5-pro-32k-character-250228",
+        "doubao-1.5-vision-lite-250315",
+        "deepseek-v3-250324",
+        "doubao-1.5-vision-pro-250328",
+        "doubao-lite-32k-character-250228",
+        "doubao-1.5-ui-tars-250328",
+        "doubao-embedding-vision-250328",
+        "doubao-1-5-thinking-pro-250415",
+        "wan2-1-14b-i2v-250225",
+        "wan2-1-14b-t2v-250225",
+        "doubao-1-5-thinking-pro-m-250415",
+        "doubao-seedance-1-0-lite-i2v-250428",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedream-3-0-t2i-250415",
+        "wan2-1-14b-flf2v-250417",
+        "doubao-1-5-thinking-vision-pro-250428",
+        "doubao-1-5-thinking-pro-m-250428",
+        "doubao-embedding-large-text-250515",
+        "doubao-1-5-ui-tars-250428",
+        "deepseek-r1-250528",
+        "doubao-seed-1-6-flash-250615",
+        "doubao-seed-1-6-250615",
+        "doubao-seed-1-6-thinking-250615",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-embedding-vision-250615",
+        "doubao-seed-1-6-thinking-250715",
+        "doubao-1-5-pro-32k-character-250715",
+        "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-1-6-flash-250715",
+        "kimi-k2-250711",
+        "doubao-seed-1-6-vision-250815",
+        "deepseek-v3-1-250821",
+        "doubao-seed-1-6-flash-250828",
+        "glm-4-5-air-20250728",
+        "qwen3-8b-20250429",
+        "qwen3-32b-20250429",
+        "qwen2-5-72b-20240919",
+        "doubao-seedream-4-0-250828",
+        "kimi-k2-250905",
+        "doubao-seed-translation-250915",
+        "deepseek-v3-1-terminus",
+        "doubao-smart-router-250928",
+        "doubao-seed-1-6-251015",
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seed-1-6-lite-251015",
+        "doubao-seed3d-1-0-250928",
+        "kimi-k2-thinking-251104",
+        "doubao-seed-code-preview-251028",
+        "qwen3-0-6b-20250429",
+        "qwen3-14b-20250429",
+        "doubao-seedream-4-5-251128",
+        "doubao-embedding-vision-251215",
+        "deepseek-v3-2-251201",
+        "doubao-seedance-1-5-pro-251215",
+        "glm-4-7-251222",
+        "doubao-seed-1-8-251228",
+        "doubao-seed-character-251128",
+        "doubao-seed-2-0-lite-260215",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedream-5-0-260128",
+        "doubao-seed-2-0-mini-260215",
+        "doubao-seed-2-0-pro-260215",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seed-2-0-code-preview-260215",
+        "hyper3d-gen2-260112",
+        "hitem3d-2-0-251223",
+        "doubao-seed3d-2-0-260328",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-lite-260428",
+        "deepseek-v4-pro-260425",
+        "deepseek-v4-flash-260425",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2-1-turbo-260628",
+        "doubao-seed-character-260628",
+        "doubao-seed-evolving"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-06-29 19:07:00",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
+        "status_code": 200
+      }
+    }
+  },
+  "model_refresh_status": "finished",
+  "model_refresh_completed_providers": 17,
+  "model_refresh_total_providers": 17,
+  "model_refresh_current_provider_id": "",
+  "model_refresh_started_at": "2026-06-29 19:06:22",
+  "model_refresh_duration_ms": 38079,
+  "model_refresh_finished_at": "2026-06-29 19:07:00"
+}

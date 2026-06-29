@@ -24,6 +24,7 @@ def test_mcp_server_options_read_workspace_settings():
 
 def test_with_mcp_caller_context_adds_companion_headers():
     from nodes.agent_mcp_loader import with_mcp_caller_context
+    from src.mcp.caller_context_headers import decode_caller_header_value
 
     settings = {
         "mcpServers": {
@@ -40,9 +41,33 @@ def test_with_mcp_caller_context_adds_companion_headers():
 
     companion = updated["mcpServers"]["aitools-companion"]
     assert companion["headers"]["existing"] == "ok"
-    assert companion["headers"]["x-aitools-graph-id"] == "default"
-    assert companion["headers"]["x-aitools-node-id"] == "Agent1"
+    assert companion["headers"]["x-aitools-graph-id"].isascii()
+    assert companion["headers"]["x-aitools-node-id"].isascii()
+    assert decode_caller_header_value(companion["headers"]["x-aitools-graph-id"]) == "default"
+    assert decode_caller_header_value(companion["headers"]["x-aitools-node-id"]) == "Agent1"
     assert "headers" not in updated["mcpServers"]["docs"]
+
+
+def test_with_mcp_caller_context_supports_non_ascii_ids():
+    from nodes.agent_mcp_loader import with_mcp_caller_context
+    from src.mcp.caller_context_headers import decode_caller_header_value
+
+    settings = {
+        "mcpServers": {
+            "aitools-companion": {
+                "transport": "streamable-http",
+                "url": "http://127.0.0.1:8788/mcp/",
+            },
+        }
+    }
+
+    updated = with_mcp_caller_context(settings, graph_id="默认图", node_id="核对答案")
+
+    headers = updated["mcpServers"]["aitools-companion"]["headers"]
+    assert headers["x-aitools-graph-id"].isascii()
+    assert headers["x-aitools-node-id"].isascii()
+    assert decode_caller_header_value(headers["x-aitools-graph-id"]) == "默认图"
+    assert decode_caller_header_value(headers["x-aitools-node-id"]) == "核对答案"
 
 
 def test_missing_configured_mcp_server_fails():

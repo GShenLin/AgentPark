@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from src.name_lists import NameListContract
+from src.mcp.caller_context_headers import encode_caller_header_value
 from src.workspace_settings import load_workspace_settings
 
 
@@ -124,9 +125,9 @@ def with_mcp_caller_context(settings: dict | None, *, graph_id: object, node_id:
             headers = next_config.get("headers")
             next_headers = dict(headers) if isinstance(headers, dict) else {}
             if graph_text:
-                next_headers["x-aitools-graph-id"] = graph_text
+                next_headers["x-aitools-graph-id"] = encode_caller_header_value(graph_text)
             if node_text:
-                next_headers["x-aitools-node-id"] = node_text
+                next_headers["x-aitools-node-id"] = encode_caller_header_value(node_text)
             next_config["headers"] = next_headers
         next_servers[name] = next_config
     raw_settings["mcpServers"] = next_servers

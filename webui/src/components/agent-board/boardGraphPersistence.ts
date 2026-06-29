@@ -10,7 +10,7 @@ export function createBoardGraphPersistence(options: {
   currentGraphName: Ref<string | null>
   nodes: Ref<NodeCard[]>
   links: Ref<LinkItem[]>
-  saveGraph: (graphId: string, config: GraphConfig, options?: { saveReason?: string }) => Promise<unknown>
+  saveGraph: (graphId: string, config: GraphConfig, options?: { saveReason?: string; sourceGraphId?: string }) => Promise<unknown>
 }) {
   let saveRunning = false
   let savePending = false
@@ -46,7 +46,6 @@ export function createBoardGraphPersistence(options: {
         ...snapshot,
         id: graphId,
         name: options.currentGraphName.value || snapshot.name || graphId,
-        source_graph_id: graphId,
       }
       await options.saveGraph(graphId, payload, { saveReason })
       traceGraphSave({

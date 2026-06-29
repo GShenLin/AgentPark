@@ -6,13 +6,14 @@ from src.providers.responses_followup import build_responses_followup_items
 from src.providers.responses_item_runtime import ResponsesItemLevelToolRunner
 from src.providers.responses_runtime_mode import resolve_responses_runtime_mode
 from src.providers.responses_runtime_protocol import ResponsesStreamText, is_previous_response_missing_error
+from src.providers.tool_feedback import ToolFeedbackMixin
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.runtime_cancellation import CancellationRequested
 from src.service_host import HostBoundService
 from src.tool.tool_call_protocol import to_openai_tool_call
 
 
-class ResponsesRuntime(HostBoundService):
+class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
     def _send_via_responses(
         self,
         *,
@@ -105,6 +106,12 @@ class ResponsesRuntime(HostBoundService):
                     previous_response_id = ""
                     current_input = previous_response_fallback_input
                     previous_response_fallback_input = None
+                    continue
+                if self._replace_recent_tool_result_with_submission_error(str(exc)):
+                    current_input = self._build_responses_input(self._get_messages_with_memory())
+                    explicit_context_input = list(current_input)
+                    previous_response_fallback_input = None
+                    previous_response_id = ""
                     continue
                 raise
             except Exception as exc:

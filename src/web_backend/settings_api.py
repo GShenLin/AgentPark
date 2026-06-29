@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from src import workspace_settings
 from src.config_loader import ConfigLoader
 from src.file_transaction import atomic_write_text
+from src.provider_limit_schema import read_provider_limit_file
 
 from .domain_base import DomainBase
 from . import runtime_paths
@@ -151,6 +152,50 @@ class SettingsApiDomain(DomainBase):
             "content": content,
             "data": parsed,
         }
+
+    def get_provider_limits(self):
+        try:
+            return read_provider_limit_file()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to read ProviderLimit.json: {exc}") from exc
+
+    def start_provider_limit_tests(self, payload: dict | None = None):
+        running = self.core.provider_limit_jobs.latest_running()
+        if running is not None:
+            return {"ok": True, "job": running, "result": self.core.provider_limit_jobs.read_result()}
+        timeout_seconds = self._provider_limit_timeout(payload)
+        try:
+            job = self.core.provider_limit_jobs.start(timeout_seconds=timeout_seconds)
+            return {"ok": True, "job": job, "result": self.core.provider_limit_jobs.read_result()}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to start provider limit tests: {exc}") from exc
+
+    def start_provider_model_discovery(self, payload: dict | None = None):
+        running = self.core.provider_limit_jobs.latest_running()
+        if running is not None:
+            return {"ok": True, "job": running, "result": self.core.provider_limit_jobs.read_result()}
+        timeout_seconds = self._provider_limit_timeout(payload)
+        try:
+            job = self.core.provider_limit_jobs.start_model_discovery(timeout_seconds=timeout_seconds)
+            return {"ok": True, "job": job, "result": self.core.provider_limit_jobs.read_result()}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to start provider model discovery: {exc}") from exc
+
+    def get_provider_limit_test_job(self, job_id: str):
+        job = self.core.provider_limit_jobs.get(job_id)
+        if job.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail="provider limit test job not found")
+        return {"ok": True, "job": job, "result": self.core.provider_limit_jobs.read_result()}
+
+    def _provider_limit_timeout(self, payload: dict | None) -> float:
+        raw_timeout = (payload or {}).get("timeout_seconds")
+        try:
+            timeout_seconds = float(raw_timeout) if raw_timeout not in {None, ""} else 30.0
+        except Exception:
+            raise HTTPException(status_code=400, detail="timeout_seconds must be a number")
+        if timeout_seconds <= 0:
+            raise HTTPException(status_code=400, detail="timeout_seconds must be greater than 0")
+        return timeout_seconds
 
 
 __all__ = ["SettingsApiDomain"]

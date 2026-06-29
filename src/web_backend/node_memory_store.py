@@ -23,7 +23,10 @@ from .node_memory_paths import iter_archive_date_dirs as _iter_archive_date_dirs
 from .node_memory_paths import node_memory_dir as _node_memory_dir
 from .node_memory_records import append_jsonl_record as _append_jsonl_record
 from .node_memory_records import build_node_memory_record
+from .node_memory_records import read_jsonl_records as _read_jsonl_records
 from .node_memory_records import read_jsonl_records_reversed as _read_jsonl_records_reversed
+from .node_memory_records import write_jsonl_records as _write_jsonl_records
+from .node_memory_records import write_markdown_records as _write_markdown_records
 from .node_tool_history import build_tool_call_history_envelope
 from .shared import envelope_text
 
@@ -38,10 +41,12 @@ __all__ = [
     "build_node_memory_record",
     "clear_node_memory",
     "current_node_memory_paths",
+    "delete_node_memory_record",
     "ensure_node_memory_files",
     "load_recent_node_memory_records",
     "node_memory_paths_for_record",
     "read_node_memory_text",
+    "wait_for_node_memory_idle",
 ]
 
 
@@ -144,6 +149,76 @@ def _clear_node_memory_unlocked(memory_path: str, messages_path: str) -> int:
             )
     _raise_if_failures(failures)
     return cleared
+
+
+def delete_node_memory_record(memory_path: str, messages_path: str, message_id: str) -> dict[str, Any]:
+    target_id = str(message_id or "").strip()
+    if not target_id:
+        return {"deleted": 0}
+    return _run_node_memory_transaction(
+        memory_path,
+        messages_path,
+        lambda: _delete_node_memory_record_unlocked(memory_path, messages_path, target_id),
+    )
+
+
+def _delete_node_memory_record_unlocked(memory_path: str, messages_path: str, message_id: str) -> dict[str, Any]:
+    failures: list[NodeMemoryPersistenceFailure] = []
+    _migrate_legacy_node_memory(memory_path, messages_path, failures)
+    node_dir = _node_memory_dir(memory_path, messages_path)
+    if not node_dir:
+        failures.append(NodeMemoryPersistenceFailure(target="memory", path="", error="node memory dir is empty"))
+        _raise_if_failures(failures)
+        return {"deleted": 0}
+
+    deleted = 0
+    record_paths: list[dict[str, str]] = []
+    for date_dir in _iter_archive_date_dirs(node_dir, reverse=False):
+        record_paths.append(
+            {
+                "memory_path": os.path.join(date_dir, MEMORY_FILENAME),
+                "messages_path": os.path.join(date_dir, MESSAGES_FILENAME),
+            }
+        )
+    record_paths.append(current_node_memory_paths(memory_path, messages_path))
+
+    seen_messages_paths: set[str] = set()
+    for paths in record_paths:
+        messages_file = paths.get("messages_path") or ""
+        if not messages_file or messages_file in seen_messages_paths or not os.path.exists(messages_file):
+            continue
+        seen_messages_paths.add(messages_file)
+        try:
+            records = _read_jsonl_records(messages_file)
+        except Exception as exc:
+            failures.append(
+                NodeMemoryPersistenceFailure(
+                    target="messages",
+                    path=messages_file,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
+            continue
+
+        next_records = [record for record in records if str(record.get("id") or "").strip() != message_id]
+        removed = len(records) - len(next_records)
+        if removed <= 0:
+            continue
+        try:
+            _write_jsonl_records(messages_file, next_records)
+            _write_markdown_records(paths.get("memory_path") or "", next_records)
+            deleted += removed
+        except Exception as exc:
+            failures.append(
+                NodeMemoryPersistenceFailure(
+                    target="delete",
+                    path=messages_file,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
+
+    _raise_if_failures(failures)
+    return {"deleted": deleted}
 
 
 def current_node_memory_paths(memory_path: str, messages_path: str) -> dict[str, str]:
@@ -281,6 +356,12 @@ def _load_recent_node_memory_records_unlocked(
             )
     _raise_if_failures(failures)
     return list(reversed(output_reversed))
+
+
+def wait_for_node_memory_idle(memory_path: str, messages_path: str) -> None:
+    node_dir = _node_memory_dir(memory_path, messages_path)
+    if node_dir:
+        _NODE_MEMORY_QUEUE.wait_empty(node_dir)
 
 
 def _append_messages_record(

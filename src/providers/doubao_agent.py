@@ -6,7 +6,7 @@ from src.providers.doubao_image_generation import DoubaoImageGeneration
 from src.providers.doubao_responses_mapping import DoubaoResponsesMapping
 from src.providers.doubao_responses_runtime import DoubaoResponsesRuntime
 from src.providers.doubao_stream_runtime import DoubaoStreamRuntime
-from src.providers.doubao_tool_feedback import DoubaoToolFeedbackMixin
+from src.providers.tool_feedback import ToolFeedbackMixin
 from src.providers.doubao_tool_runtime import DoubaoToolRuntime
 from src.providers.doubao_video_generation import DoubaoVideoGeneration
 from src.providers.wan_animate_mix_runtime import WanAnimateMixRuntime
@@ -14,7 +14,7 @@ from src.service_host import ServiceHost
 from src.switch_utils import parse_switch_mode
 
 
-class DouBaoAgent(DoubaoToolFeedbackMixin, ServiceHost, BaseAgent):
+class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
     def __init__(self, provider_id="doubao", memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
         super().__init__(
             provider_id,

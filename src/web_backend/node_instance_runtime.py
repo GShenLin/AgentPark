@@ -24,6 +24,7 @@ from .shared import (
     normalize_envelope,
 )
 from .node_memory_store import current_node_memory_paths
+from .node_memory_store import delete_node_memory_record
 from .node_memory_store import load_recent_node_memory_records
 from .node_memory_store import read_node_memory_text
 
@@ -99,6 +100,8 @@ class NodeInstanceRuntime(HostBoundService):
                     node_config_path = self.graph_runtime._node_config_path(safe_node_instance_id, safe_graph_id)
                     if node_config_path and os.path.exists(node_config_path):
                         current = _read_json_dict(node_config_path)
+                        if bool((current or {}).get("_delete_requested")):
+                            raise HTTPException(status_code=409, detail="node is being deleted")
                         if isinstance(current, dict):
                             self.graph_runtime._inject_node_config_into_context(context, current)
                         _set_node_config_last_message(node_config_path, message_full or message_preview)
@@ -125,6 +128,8 @@ class NodeInstanceRuntime(HostBoundService):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
+        if bool(cfg.get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
         text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
         messages = [
             normalize_envelope(item, default_role="assistant")
@@ -141,6 +146,23 @@ class NodeInstanceRuntime(HostBoundService):
             "live_message": str((self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}).get("text") or ""),
         }
 
+    def delete_node_instance_memory_message(self, node_id: str, message_id: str, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_message_id = str(message_id or "").strip()
+        if not safe_message_id:
+            raise HTTPException(status_code=400, detail="message id is required")
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
+        if not isinstance(cfg, dict) or not cfg:
+            raise HTTPException(status_code=404, detail="node instance not found")
+        if bool(cfg.get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
+        memory_path = self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id)
+        messages_path = self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id)
+        result = delete_node_memory_record(memory_path, messages_path, safe_message_id)
+        return {"ok": True, "deleted": int((result or {}).get("deleted") or 0), "message_id": safe_message_id}
+
     def get_node_instance_live(self, node_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
@@ -148,6 +170,8 @@ class NodeInstanceRuntime(HostBoundService):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
+        if bool(cfg.get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
         return {
             "node_id": safe_node_id,
             "graph_id": safe_graph_id,
@@ -161,6 +185,8 @@ class NodeInstanceRuntime(HostBoundService):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
+        if bool(cfg.get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
 
         def encode_event(item: dict) -> str:
             payload = {
@@ -199,6 +225,9 @@ class NodeInstanceRuntime(HostBoundService):
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
+        current = _read_json_dict(config_path)
+        if bool((current or {}).get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
         mapped = parse_node_state((payload or {}).get("state"))
         _update_node_config_state(config_path, mapped)
         self.graph_runtime._log_graph_event(safe_graph_id, "node_state_set", node_id=safe_node_id, state=mapped)
@@ -216,6 +245,8 @@ class NodeInstanceRuntime(HostBoundService):
         cfg = _read_json_dict(config_path)
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
+        if bool(cfg.get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
 
         action = str((payload or {}).get("action") or "").strip().lower()
         type_id = str(cfg.get("type_id") or "").strip()

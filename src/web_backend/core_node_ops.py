@@ -1,6 +1,7 @@
 from .domain_base import DomainBase
 from .node_async_runs import NodeAsyncRuns
 from .node_catalog import NodeCatalog
+from .node_instance_deletion import NodeInstanceDeletion
 from .node_instance_queue import NodeInstanceQueue
 from .node_instance_registry import NodeInstanceRegistry
 from .node_instance_runtime import NodeInstanceRuntime
@@ -16,6 +17,7 @@ class NodeOpsDomain(DomainBase):
         if cached is None:
             cached = (
                 NodeCatalog(self),
+                NodeInstanceDeletion(self),
                 NodeInstanceRegistry(self),
                 NodeInstanceRuntime(self),
                 NodeInstanceQueue(self),

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getNodeTemplate, listProviders, listTools, type ProviderInfo } from '../api'
 import { getSchemaFieldOptions } from '../composables/nodeSchemaFields'
@@ -13,6 +13,7 @@ import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
 import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySelect.vue'
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
 import ModuleProviderSettingsForm from './settings/ModuleProviderSettingsForm.vue'
+import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
 
 const props = withDefaults(defineProps<{
   backLabel?: string
@@ -38,6 +39,19 @@ const providers = ref<ProviderInfo[]>([])
 const availableTools = ref<string[]>([])
 const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[]>>({})
 
+const displaySections = computed<SettingsSectionInfo[]>(() => {
+  const base = sections.value.slice()
+  if (!base.some((item) => item.id === 'provider-test')) {
+    base.push({
+      id: 'provider-test',
+      label: 'Test',
+      path: 'config/ProviderLimit.json',
+      filename: 'ProviderLimit.json',
+    })
+  }
+  return base
+})
+
 const currentSection = computed(() => {
   return sections.value.find((item) => item.id === activeSection.value) || null
 })
@@ -46,10 +60,12 @@ const activeLabel = computed(() => {
   if (activeSection.value === 'module-provider') return 'moduleProvider'
   if (activeSection.value === 'defaults') return 'Default settings'
   if (activeSection.value === 'companion') return 'Companion'
+  if (activeSection.value === 'provider-test') return 'Test'
   return currentSection.value?.label || activeSection.value
 })
 
-const dirty = computed(() => editorContent.value !== String(loadedDocument.value?.content || ''))
+const isProviderTest = computed(() => activeSection.value === 'provider-test')
+const dirty = computed(() => !isProviderTest.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 
 const formData = computed<Record<string, unknown> | null>(() => {
   try {
@@ -64,6 +80,7 @@ function labelFor(section: SettingsSectionInfo) {
   if (section.id === 'module-provider') return 'moduleProvider'
   if (section.id === 'defaults') return 'Default settings'
   if (section.id === 'companion') return 'Companion'
+  if (section.id === 'provider-test') return 'Test'
   return section.label
 }
 
@@ -104,12 +121,21 @@ async function loadCompanionCapabilityOptions() {
 
 async function loadSections() {
   sections.value = await listSettingsSections()
-  if (!sections.value.some((item) => item.id === activeSection.value)) {
+  if (!displaySections.value.some((item) => item.id === activeSection.value)) {
     activeSection.value = sections.value[0]?.id || 'module-provider'
   }
 }
 
 async function loadSection(sectionId = activeSection.value) {
+  if (sectionId === 'provider-test') {
+    activeSection.value = sectionId
+    loadedDocument.value = null
+    editorContent.value = ''
+    advancedMode.value = false
+    error.value = ''
+    status.value = ''
+    return
+  }
   loading.value = true
   error.value = ''
   status.value = ''
@@ -181,7 +207,7 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>Settings</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || '' }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : '') }}</div>
       </div>
       <div class="settings-head-actions">
         <button type="button" class="settings-btn" @click="emit('back')">{{ props.backLabel }}</button>
@@ -191,7 +217,7 @@ onMounted(async () => {
     <div class="settings-body">
       <nav class="settings-tabs" aria-label="Settings sections">
         <button
-          v-for="section in sections"
+          v-for="section in displaySections"
           :key="section.id"
           type="button"
           class="settings-tab"
@@ -210,19 +236,21 @@ onMounted(async () => {
             <span v-else-if="status" class="editor-state saved">{{ status }}</span>
           </div>
           <div class="editor-actions">
-            <button type="button" class="settings-btn" :disabled="loading || saving" @click="loadSection()">Reload</button>
-            <button type="button" class="settings-btn" :disabled="loading || saving" @click="advancedMode = !advancedMode">
+            <button v-if="!isProviderTest" type="button" class="settings-btn" :disabled="loading || saving" @click="loadSection()">Reload</button>
+            <button v-if="!isProviderTest" type="button" class="settings-btn" :disabled="loading || saving" @click="advancedMode = !advancedMode">
               {{ advancedMode ? 'Form' : 'Advanced JSON' }}
             </button>
-            <button v-if="advancedMode" type="button" class="settings-btn" :disabled="loading || saving" @click="formatJson">Format</button>
-            <button type="button" class="settings-btn primary" :disabled="loading || saving || !dirty" @click="saveSection">
+            <button v-if="!isProviderTest && advancedMode" type="button" class="settings-btn" :disabled="loading || saving" @click="formatJson">Format</button>
+            <button v-if="!isProviderTest" type="button" class="settings-btn primary" :disabled="loading || saving || !dirty" @click="saveSection">
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
           </div>
         </div>
 
+        <ProviderTestSettingsPanel v-if="isProviderTest" />
+
         <textarea
-          v-if="advancedMode"
+          v-else-if="advancedMode"
           v-model="editorContent"
           class="json-editor"
           spellcheck="false"
@@ -258,187 +286,5 @@ onMounted(async () => {
   </section>
 </template>
 
-<style scoped>
-.settings-page {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 14px;
-  gap: 12px;
-}
+<style scoped src="./settings/SettingsPage.css"></style>
 
-.settings-head {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.settings-title-wrap {
-  min-width: 0;
-}
-
-.settings-title-wrap h1 {
-  margin: 0;
-  font-size: 20px;
-  line-height: 1.2;
-}
-
-.settings-path {
-  margin-top: 6px;
-  color: rgba(148, 163, 184, 0.9);
-  font-family: Consolas, 'Cascadia Mono', monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: min(880px, 70vw);
-}
-
-.settings-head-actions,
-.editor-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.settings-body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 12px;
-}
-
-.settings-tabs {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
-}
-
-.settings-tab {
-  width: 100%;
-  min-height: 34px;
-  text-align: left;
-  border-color: rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.52);
-}
-
-.settings-tab.active {
-  border-color: rgba(56, 189, 248, 0.65);
-  background: rgba(14, 165, 233, 0.18);
-  color: rgba(224, 242, 254, 0.98);
-}
-
-.settings-editor {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.editor-toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.editor-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.editor-state {
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  border-radius: 999px;
-  padding: 2px 8px;
-  color: rgba(254, 240, 138, 0.98);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.editor-state.saved {
-  border-color: rgba(34, 197, 94, 0.4);
-  color: rgba(187, 247, 208, 0.98);
-}
-
-.json-editor {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  resize: none;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 14px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.72);
-  font: 12px/1.55 Consolas, 'Cascadia Mono', monospace;
-  tab-size: 2;
-}
-
-.settings-btn {
-  min-height: 32px;
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.settings-btn.primary {
-  border-color: rgba(56, 189, 248, 0.45);
-  color: rgba(186, 230, 253, 0.98);
-}
-
-.settings-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.settings-error {
-  flex: 0 0 auto;
-  border: 1px solid rgba(248, 113, 113, 0.5);
-  border-radius: 8px;
-  padding: 9px 11px;
-  color: rgba(254, 226, 226, 0.95);
-  background: rgba(127, 29, 29, 0.32);
-  font-size: 12px;
-}
-
-@media (max-width: 960px) {
-  .settings-body {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-tabs {
-    flex-direction: row;
-    overflow-x: auto;
-    border-right: 0;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-  }
-
-  .settings-tab {
-    width: auto;
-    white-space: nowrap;
-  }
-
-  .editor-toolbar,
-  .settings-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .editor-actions {
-    flex-wrap: wrap;
-  }
-}
-</style>

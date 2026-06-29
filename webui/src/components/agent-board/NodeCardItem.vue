@@ -153,7 +153,7 @@ function openNodeFolder(event: MouseEvent) {
           <button
             class="node-delete"
             @pointerdown.stop
-            @click.stop="ctx.deleteNodeCard(props.node.id)"
+            @click.stop="ctx.deleteNodeCard(props.node.id).catch(() => null)"
           >
             x
           </button>

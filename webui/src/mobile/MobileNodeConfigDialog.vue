@@ -154,6 +154,7 @@ watch(
           :fields="draftFields"
           :providers="providers"
           :available-tools="availableTools"
+          enable-prompt-library
           @update-field="setField"
           @field-error="showError"
         />

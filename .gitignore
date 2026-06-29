@@ -30,6 +30,8 @@ venv/
 .venv/
 env/
 .env
+.runtime/
+.cache/
 
 # IDE
 .idea/
@@ -43,8 +45,15 @@ config/*.local.json
 
 # Node (Legacy)
 node_modules/
-Scripts/
-memories/**/*.txt
-memories/**/*.jsonl
-memories/**/*.md
-memories/im_bridge/
+/Scripts/
+!/scripts/
+# Runtime memories: ignore everything except the Companion config.
+memories/**
+!memories/
+!memories/companion/
+!memories/companion/config.json
+resource/
+screenshots/
+external/
+logs/
+/config/channel_state
