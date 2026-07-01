@@ -1,16 +1,33 @@
 # AITools
 
-[English](./README.en.md) | [中文](./README.zh.md)
+[English](./README.md) | [中文](./README.zh.md)
 
-AITools is a local Agent workspace. The backend uses FastAPI to manage nodes, graph execution, providers, files, settings, and runtime state. The frontend uses Vue 3 + Vite to provide visual graph editing, node execution controls, memory browsing, file operations, desktop settings, and a mobile-first workspace for phone access.
+AITools is an Agent platform for building, running, and sharing Agents, tools, and Graph workflows. It starts from a local-first workspace, but its product direction is broader: make Agents reusable, make tools explicit, and make Graphs portable enough to become shared automation assets instead of one-off local experiments.
+
+The backend uses FastAPI to manage nodes, graph execution, providers, files, settings, and runtime state. The frontend uses Vue 3 + Vite to provide visual graph editing, node execution controls, memory browsing, file operations, desktop settings, and a mobile-first workspace for phone access.
+
+## Project Goal
+
+AITools aims to become a practical Agent creation and sharing platform:
+
+- Agents should be configurable runtime units with memory, provider settings, tools, skills, plugins, and clear execution history.
+- Tools should be structured capabilities that can be discovered, tested, reused, and shared across Agents and Graphs.
+- Graphs should describe complete workflows, including triggers, routing, generation nodes, external channels, and recoverable runtime state.
+- Local development should remain first-class, while the project moves toward cleaner packaging, portable assets, and shareable Agent/Tool/Graph libraries.
+- Platform boundaries should stay explicit: node contracts, provider capabilities, runtime state, tool-call protocols, and UI/API contracts should be visible instead of hidden behind fragile fallback behavior.
+
+## Outlook
+
+The long-term direction is an AgentPark-style ecosystem: users can design Agents visually, connect them into Graphs, attach reusable tools and skills, then publish or exchange those assets with other users. The current project already provides the local runtime, visual editor, provider integrations, mobile access, CLI recovery path, and node/tool/plugin foundations needed for that direction. Future work should continue to turn these foundations into stable sharing formats, stronger capability metadata, safer runtime recovery, and easier distribution.
 
 ## Key Features
 
-- Visual Graph/Node workflows: create nodes, connect ports, save graphs, and start the Graph Runner.
+- Visual Graph/Node workflows: create nodes, connect ports, save complete Graph workflows, and start the Graph Runner.
 - Agent execution: streaming output, tool calls, tool-call history, persistent node memory, and stop/cancel controls.
 - Provider integrations: Doubao, Gemini, OpenAI-compatible APIs, Zhipu, Hyper3D, and provider capability metadata.
 - Multimodal generation nodes: image generation, video generation, person-replacement video generation, 3D model generation, and 3D texture generation.
-- Local tool system: Python tools under `functions/` are loaded as callable tools for Agent nodes.
+- Local tool system: Python tools under `functions/` are loaded as structured, reusable capabilities for Agent nodes.
+- Sharing-oriented asset model: Agents, tools, skills, plugins, and Graphs are treated as project assets that can evolve toward portable exchange formats.
 - File and resource management: the WebUI can browse, read, write, upload, and expose generated resources through `/memories`.
 - Desktop settings entry: the top-right `Settings` button opens the settings UI directly, including providers, defaults, companion settings, and provider limit tests.
 - Mobile support: screens up to 760px automatically use the mobile workspace, with phone-friendly PC/graph/node navigation, chat, streaming responses, attachments, node config, restart, graph editing, and settings access.
