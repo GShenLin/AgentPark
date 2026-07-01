@@ -27,6 +27,7 @@ const showRemoteForm = ref(false)
 const remoteFormName = ref('')
 const remoteFormHost = ref('')
 const remoteFormPort = ref('8788')
+const remoteFormPrivate = ref(false)
 const isRestarting = ref(false)
 
 const selectedRemote = computed(() => {
@@ -66,12 +67,13 @@ async function submitRemote() {
     return
   }
   try {
-    const res = await addRemote({ name, host, port })
+    const res = await addRemote({ name, host, port, private: remoteFormPrivate.value })
     remoteEndpoints.value = res.remotes
     showRemoteForm.value = false
     remoteFormName.value = ''
     remoteFormHost.value = ''
     remoteFormPort.value = '8788'
+    remoteFormPrivate.value = false
   } catch (e: any) {
     emit('error', String(e?.message || e))
   }
@@ -117,7 +119,7 @@ onMounted(async () => {
       <span class="remote-label">Remote</span>
       <select v-model="selectedRemoteId" class="remote-select" @change="selectRemote">
         <option v-for="remote in remoteEndpoints" :key="remote.id" :value="remote.id">
-          {{ remote.name }} 路 {{ remote.host }}:{{ remote.port }}
+          {{ remote.name }} 路 {{ remote.host }}:{{ remote.port }}{{ remote.private ? ' Private' : '' }}
         </option>
       </select>
       <span class="remote-address">{{ selectedRemoteAddress }}</span>
@@ -128,6 +130,10 @@ onMounted(async () => {
       <input v-model="remoteFormName" class="remote-input" placeholder="Name" />
       <input v-model="remoteFormHost" class="remote-input" placeholder="IP / Host" />
       <input v-model="remoteFormPort" class="remote-input port" placeholder="Port" />
+      <label class="remote-private">
+        <input v-model="remoteFormPrivate" type="checkbox" />
+        <span>Private</span>
+      </label>
       <button class="topbar-btn primary" type="submit">Save</button>
     </form>
     <div class="topbar-actions">
@@ -200,6 +206,21 @@ onMounted(async () => {
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.remote-private {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.remote-private input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-blue);
 }
 
 .remote-select,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.companion_inbox import deliver_companion_notice
+from src.companion_notice_settings import companion_error_notice_enabled
 
 
 def notify_companion_about_node_error(
@@ -75,4 +76,4 @@ def _preview_text(value: object, limit: int) -> str:
     return text[: max(0, limit - 3)].rstrip() + "..."
 
 
-__all__ = ["build_node_error_notice", "notify_companion_about_node_error"]
+__all__ = ["build_node_error_notice", "companion_error_notice_enabled", "notify_companion_about_node_error"]

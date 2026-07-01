@@ -103,6 +103,7 @@ def test_record_operational_memory_upserts_and_summarizes(tmp_path):
 
 
 def test_record_operational_memory_notifies_companion_inbox(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
@@ -113,6 +114,11 @@ def test_record_operational_memory_notifies_companion_inbox(monkeypatch, tmp_pat
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"notifyCompanionOnError": True}},
+    )
 
     memory_path = graphs_dir / "default" / "Agent1" / "memory.md"
     memory_path.parent.mkdir(parents=True)
@@ -147,7 +153,8 @@ def test_record_operational_memory_notifies_companion_inbox(monkeypatch, tmp_pat
     assert not (companion_config.parent / "messages.jsonl").exists()
 
 
-def test_record_operational_memory_notice_identity_falls_back_to_memory_path(monkeypatch, tmp_path):
+def test_record_operational_memory_respects_disabled_companion_notice_switch(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
@@ -158,6 +165,57 @@ def test_record_operational_memory_notice_identity_falls_back_to_memory_path(mon
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"notifyCompanionOnError": False}},
+    )
+
+    memory_path = graphs_dir / "default" / "Agent1" / "memory.md"
+    memory_path.parent.mkdir(parents=True)
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyAgent(memory_path)
+    agent._aitools_graph_id = "default"
+    agent._aitools_node_id = "Agent1"
+    agent._aitools_node_type_id = "agent_node"
+
+    result = json.loads(
+        record_operational_memory(
+            action="upsert",
+            reason="The failure is reusable.",
+            kind="tool_limitation",
+            title="Use PowerShell commands",
+            lesson="Use PowerShell-compatible syntax in this workspace.",
+            evidence="Bash heredoc syntax failed in PowerShell.",
+            scope={"project": "D:\\Project\\AITools"},
+            tool_name="execute_console_command",
+            error="bash heredoc syntax failed",
+            confidence="high",
+            agent=agent,
+        )
+    )
+
+    assert result["ok"] is True
+    assert not (companion_config.parent / "inbox.jsonl").exists()
+
+
+def test_record_operational_memory_notice_identity_falls_back_to_memory_path(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
+    from src.web_backend import runtime_paths
+
+    graphs_dir = tmp_path / "memories"
+    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config.parent.mkdir(parents=True)
+    companion_config.write_text(
+        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"notifyCompanionOnError": True}},
+    )
 
     memory_path = graphs_dir / "default" / "Agent1" / "memory.md"
     memory_path.parent.mkdir(parents=True)

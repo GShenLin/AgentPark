@@ -63,6 +63,8 @@ class NodeInstanceQueue(HostBoundService):
             pending_count=pending_count,
             payload_preview=_preview_text(envelope_preview(message)),
         )
+        self.graph_runtime._ensure_graph_runner(safe_graph_id)
+        self.graph_runtime._wake_graph_runner(safe_graph_id)
         return {"ok": True, "pending_count": pending_count}
 
     def pop_node_instance_pending(self, node_id: str, payload: dict, graph_id: str = ""):

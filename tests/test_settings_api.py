@@ -87,6 +87,23 @@ def test_settings_api_rejects_invalid_defaults_section(monkeypatch, tmp_path):
     assert "server" in str(exc.value.detail)
 
 
+def test_settings_api_rejects_non_boolean_companion_error_notice_switch(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    domain = SettingsApiDomain(SimpleNamespace())
+
+    with pytest.raises(HTTPException) as exc:
+        domain.update_settings_section(
+            "defaults",
+            {"content": json.dumps({"agentNode": {"notifyCompanionOnError": "yes"}})},
+        )
+
+    assert exc.value.status_code == 400
+    assert "notifyCompanionOnError" in str(exc.value.detail)
+
+
 def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
     from src.web_backend import runtime_paths
 

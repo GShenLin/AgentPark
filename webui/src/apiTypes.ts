@@ -4,6 +4,7 @@ export type RemoteEndpoint = {
   name: string
   host: string
   port: number
+  private?: boolean
 }
 
 export type RunInfo = {

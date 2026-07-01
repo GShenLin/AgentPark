@@ -5,6 +5,7 @@ import os
 import uuid
 from typing import Any
 
+from src.companion_notice_settings import companion_error_notice_enabled
 from src.file_transaction import append_text
 from src.file_transaction import atomic_write_text
 from src.file_transaction import run_with_interprocess_lock
@@ -29,6 +30,8 @@ def companion_inbox_path(config_path: str = "") -> str:
 
 
 def deliver_companion_notice(notice: dict[str, Any], *, config_path: str = "") -> bool:
+    if not companion_error_notice_enabled():
+        return False
     path = str(config_path or "").strip() or companion_config_path()
     if not path or not os.path.isfile(path):
         return False

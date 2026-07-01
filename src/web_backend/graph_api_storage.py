@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import threading
+import time
 from datetime import datetime
 
 from src.file_transaction import atomic_write_text
@@ -243,26 +244,32 @@ class GraphApiStorage(HostBoundService):
     def _stop_graph_runner_for_delete(self, graph_id: str, wait_timeout_seconds: float) -> None:
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         with self.graph_runners_lock:
-            existing = self.graph_runners.pop(safe_id, None)
-            stop_event = existing.get("stop") if isinstance(existing, dict) else None
-            wake_event = existing.get("wake") if isinstance(existing, dict) else None
-            threads = existing.get("threads") if isinstance(existing, dict) else None
-            if not isinstance(threads, list):
-                legacy_thread = existing.get("thread") if isinstance(existing, dict) else None
-                threads = [legacy_thread] if isinstance(legacy_thread, threading.Thread) else []
+            existing = self.graph_runners.get(safe_id)
+            stop_event = self.graph_runtime._runner_stop_event(existing)
+            wake_event = self.graph_runtime._runner_wake_signal(existing)
 
         if isinstance(stop_event, threading.Event):
             stop_event.set()
-        if isinstance(wake_event, threading.Event):
+        if hasattr(wake_event, "set"):
             wake_event.set()
 
         deadline = max(0.0, float(wait_timeout_seconds or 0.0))
-        for thread in threads:
-            if not isinstance(thread, threading.Thread) or not thread.is_alive():
-                continue
-            thread.join(timeout=deadline)
-            if thread.is_alive():
+        stop_at = time.monotonic() + deadline
+        while True:
+            threads = self.graph_runtime._runner_threads(existing)
+            live_threads = [
+                thread for thread in threads if isinstance(thread, threading.Thread) and thread.is_alive()
+            ]
+            if not live_threads:
+                break
+            for thread in live_threads:
+                remaining = max(0.0, stop_at - time.monotonic()) if deadline > 0 else 0.0
+                thread.join(timeout=remaining)
+            if any(thread.is_alive() for thread in live_threads):
                 raise HTTPException(status_code=409, detail="graph deletion is blocked: graph runner did not stop")
+        with self.graph_runners_lock:
+            if self.graph_runners.get(safe_id) is existing:
+                self.graph_runners.pop(safe_id, None)
 
     def _delete_graph_node_directories(self, graph_id: str, graph_dir: str, wait_timeout_seconds: float) -> None:
         memory_root = os.path.join(runtime_paths._get_runtime_root(), "memories")

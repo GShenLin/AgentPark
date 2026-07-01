@@ -254,6 +254,50 @@ def test_delete_graph_reports_runner_stop_timeout():
         shutil.rmtree(graph_dir, ignore_errors=True)
 
 
+def test_delete_graph_reports_active_executor_task_timeout():
+    import src.web_backend as backend
+    from src.web_backend.graph_runner_state import GraphExecutor, GraphRunnerState
+
+    graph_id = f"ut_delete_active_{uuid.uuid4().hex[:8]}"
+    facade = backend.WebBackendFacade()
+    app = facade.build()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    release = threading.Event()
+    runner_state = GraphRunnerState(
+        scheduler_thread=None,
+        stop=threading.Event(),
+        wake=threading.Event(),
+        executor=GraphExecutor(graph_id),
+    )
+    task = runner_state.executor.submit(
+        task_id="trace-active:n1",
+        node_id="n1",
+        trace_id="trace-active",
+        func=lambda: release.wait(timeout=30),
+    )
+    runner_state.active_tasks[task.task_id] = task
+    graph_dir = os.path.join(_get_graphs_dir(), graph_id)
+    try:
+        client = TestClient(app)
+        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "links": []}})
+        assert saved.status_code == 200
+        facade.core.graph_runners[graph_id] = runner_state
+
+        deleted = client.delete(f"/api/graphs/{graph_id}?wait_timeout_seconds=0.01")
+
+        assert deleted.status_code == 409
+        assert "graph runner did not stop" in deleted.json().get("detail", "")
+        assert os.path.exists(graph_dir)
+    finally:
+        release.set()
+        task.thread.join(timeout=1)
+        with facade.core.graph_runners_lock:
+            facade.core.graph_runners.pop(graph_id, None)
+        shutil.rmtree(graph_dir, ignore_errors=True)
+
+
 def test_graph_list_rejects_corrupt_config():
     import src.web_backend as backend
 

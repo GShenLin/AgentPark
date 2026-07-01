@@ -97,6 +97,14 @@ class SettingsApiDomain(DomainBase):
                 value = payload.get(key)
                 if value is not None and not isinstance(value, dict):
                     raise HTTPException(status_code=400, detail=f"config.json field '{key}' must be an object")
+            agent_node = payload.get("agentNode")
+            if isinstance(agent_node, dict):
+                notify_on_error = agent_node.get("notifyCompanionOnError")
+                if notify_on_error is not None and not isinstance(notify_on_error, bool):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="config.json field 'agentNode.notifyCompanionOnError' must be a boolean",
+                    )
         elif section == "companion":
             type_id = str(payload.get("type_id") or "agent_node").strip() or "agent_node"
             if type_id != "agent_node":

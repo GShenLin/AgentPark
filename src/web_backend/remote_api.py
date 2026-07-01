@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 from urllib.parse import urlparse
+
+from fastapi import Request
 
 from src.file_transaction import atomic_write_text
 
@@ -13,6 +16,7 @@ DEFAULT_REMOTE = {
     "name": "Default",
     "host": "127.0.0.1",
     "port": 8788,
+    "private": False,
 }
 
 
@@ -71,7 +75,21 @@ class RemoteApiDomain(DomainBase):
         remote_id = str(payload.get("id") or "").strip() or self._build_remote_id(host, port)
         if remote_id == "default" and not allow_default:
             remote_id = self._build_remote_id(host, port)
-        return {"id": remote_id, "name": name, "host": host, "port": port}
+        return {
+            "id": remote_id,
+            "name": name,
+            "host": host,
+            "port": port,
+            "private": self._normalize_private(payload),
+        }
+
+    def _normalize_private(self, payload: dict) -> bool:
+        if "private" not in payload:
+            return False
+        value = payload.get("private")
+        if not isinstance(value, bool):
+            raise HTTPException(status_code=400, detail="private must be a boolean")
+        return value
 
     def _parse_address(self, address: str) -> tuple[str, object]:
         value = address.strip()
@@ -103,14 +121,39 @@ class RemoteApiDomain(DomainBase):
         safe_host = re.sub(r"[^A-Za-z0-9_.-]+", "-", host).strip("-._") or "remote"
         return f"{safe_host}-{port}"
 
-    def list_remotes(self):
+    def _is_local_request(self, request: Request = None) -> bool:
+        if request is None:
+            return True
+        client = getattr(request, "client", None)
+        host = str(getattr(client, "host", "") or "").strip()
+        if host.lower() == "localhost":
+            return True
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        if address.is_loopback:
+            return True
+        if address.version == 6 and address.ipv4_mapped is not None:
+            return address.ipv4_mapped.is_loopback
+        return False
+
+    def _filter_remotes_for_request(self, config: dict, request: Request = None) -> dict:
+        if self._is_local_request(request):
+            return config
+        remotes = [item for item in config.get("remotes", []) if isinstance(item, dict) and not item.get("private")]
+        return {"remotes": remotes}
+
+    def list_remotes(self, request: Request = None):
         config = self._load_remote_config()
         if not os.path.exists(self._remote_config_path()):
             self._write_remote_config(config)
-        return config
+        return self._filter_remotes_for_request(config, request)
 
-    def add_remote(self, payload: dict):
+    def add_remote(self, payload: dict, request: Request = None):
         remote = self._normalize_remote(payload or {})
+        if remote.get("private") and not self._is_local_request(request):
+            raise HTTPException(status_code=403, detail="private remotes can only be created from a local client")
         config = self._load_remote_config()
         remotes = config.get("remotes", [])
         if any(item.get("id") == remote["id"] for item in remotes if isinstance(item, dict)):
@@ -120,20 +163,25 @@ class RemoteApiDomain(DomainBase):
         remotes.append(remote)
         config = {"remotes": remotes}
         self._write_remote_config(config)
-        return {"ok": True, "remote": remote, "remotes": remotes}
+        visible_config = self._filter_remotes_for_request(config, request)
+        return {"ok": True, "remote": remote, "remotes": visible_config["remotes"]}
 
-    def delete_remote(self, remote_id: str):
+    def delete_remote(self, remote_id: str, request: Request = None):
         safe_id = str(remote_id or "").strip()
         if safe_id == "default":
             raise HTTPException(status_code=400, detail="default remote cannot be deleted")
         config = self._load_remote_config()
         remotes = [item for item in config.get("remotes", []) if isinstance(item, dict)]
+        target = next((item for item in remotes if item.get("id") == safe_id), None)
+        if target and target.get("private") and not self._is_local_request(request):
+            raise HTTPException(status_code=404, detail="remote not found")
         next_remotes = [item for item in remotes if item.get("id") != safe_id]
         if len(next_remotes) == len(remotes):
             raise HTTPException(status_code=404, detail="remote not found")
         config = {"remotes": next_remotes}
         self._write_remote_config(config)
-        return {"ok": True, "remotes": next_remotes}
+        visible_config = self._filter_remotes_for_request(config, request)
+        return {"ok": True, "remotes": visible_config["remotes"]}
 
 
 __all__ = ["RemoteApiDomain"]

@@ -28,10 +28,8 @@
   },
   "agentNode": {
     "minSendDelayMs": 200,
-    "historyMessageLimit": 40
-  },
-  "graphRunner": {
-    "workerCount": 30
+    "historyMessageLimit": 40,
+    "notifyCompanionOnError": false
   },
   "consoleCommand": {
     "timeoutSec": 300

@@ -46,6 +46,12 @@ function fieldText(sectionName: string, key: string) {
   return value === null || value === undefined ? '' : String(value)
 }
 
+function fieldBool(sectionName: string, key: string, defaultValue = false) {
+  const value = section(sectionName)[key]
+  if (value === null || value === undefined) return defaultValue
+  return value === true
+}
+
 function setNestedField(sectionName: string, key: string, value: unknown) {
   const next = cloneData()
   const target = {
@@ -65,6 +71,10 @@ function setNestedField(sectionName: string, key: string, value: unknown) {
 function setNestedNumber(sectionName: string, key: string, value: string) {
   const text = String(value || '').trim()
   setNestedField(sectionName, key, text ? Number(text) : '')
+}
+
+function setNestedBoolean(sectionName: string, key: string, value: boolean) {
+  setNestedField(sectionName, key, value)
 }
 
 function mcpFieldText(key: string) {
@@ -149,16 +159,16 @@ function deleteMcpServer() {
           <span>History Message Limit</span>
           <input :value="fieldText('agentNode', 'historyMessageLimit')" type="number" min="0" @input="setNestedNumber('agentNode', 'historyMessageLimit', ($event.target as HTMLInputElement).value)" />
         </label>
+        <label class="checkbox-label">
+          <span>Notify Companion On Error</span>
+          <input :checked="fieldBool('agentNode', 'notifyCompanionOnError', true)" type="checkbox" @change="setNestedBoolean('agentNode', 'notifyCompanionOnError', ($event.target as HTMLInputElement).checked)" />
+        </label>
       </div>
     </section>
 
     <section class="settings-group">
       <h2>Runtime Defaults</h2>
       <div class="form-grid">
-        <label>
-          <span>Graph Runner Workers</span>
-          <input :value="fieldText('graphRunner', 'workerCount')" type="number" min="1" @input="setNestedNumber('graphRunner', 'workerCount', ($event.target as HTMLInputElement).value)" />
-        </label>
         <label>
           <span>Console Timeout Sec</span>
           <input :value="fieldText('consoleCommand', 'timeoutSec')" type="number" min="1" @input="setNestedNumber('consoleCommand', 'timeoutSec', ($event.target as HTMLInputElement).value)" />
@@ -273,6 +283,10 @@ label {
   font-size: 12px;
 }
 
+.checkbox-label {
+  justify-content: flex-end;
+}
+
 input,
 select {
   width: 100%;
@@ -282,6 +296,11 @@ select {
   color: rgba(226, 232, 240, 0.96);
   background: rgba(2, 6, 23, 0.5);
   font: inherit;
+}
+
+.checkbox-label input {
+  width: auto;
+  align-self: flex-start;
 }
 
 .mcp-add {

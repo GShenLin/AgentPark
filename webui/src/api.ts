@@ -139,6 +139,7 @@ export async function addRemote(payload: {
   name: string
   host: string
   port: number | string
+  private?: boolean
 }): Promise<{ ok: boolean; remote: RemoteEndpoint; remotes: RemoteEndpoint[] }> {
   return remoteConfigFetch('/api/remotes', {
     method: 'POST',

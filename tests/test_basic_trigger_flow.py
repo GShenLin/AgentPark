@@ -87,6 +87,63 @@ def test_basic_trigger_node_click_emit_flows_to_next_node(tmp_path):
         backend._get_resource_root = original_get_resource_root
 
 
+def test_console_command_trigger_persists_config_command_as_user_message(tmp_path):
+    import src.web_backend as backend
+
+    runtime_root = str(tmp_path)
+    original_get_runtime_root = backend._get_runtime_root
+    original_get_resource_root = backend._get_resource_root
+    resource_root = original_get_runtime_root()
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+
+    try:
+        app = backend.create_app()
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+
+        graph = {
+            "id": "default",
+            "name": "default",
+            "nodes": [
+                {"id": "cmd1", "typeId": "console_command_node", "name": "cmd1", "ui": {"x": 0, "y": 0}},
+            ],
+            "links": [],
+        }
+        assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
+        assert (
+            client.post(
+                "/api/nodes/instances",
+                json={"node_id": "cmd1", "type_id": "console_command_node", "graph_id": "default"},
+            ).status_code
+            == 200
+        )
+        command = "echo hello-from-config"
+        assert (
+            client.post(
+                "/api/nodes/instances/cmd1/config?graph_id=default",
+                json={"fields": {"Command": command}},
+            ).status_code
+            == 200
+        )
+
+        assert client.post("/api/graphs/default/runner/start").status_code == 200
+        response = client.post("/api/graphs/default/emit", json={"from_id": "cmd1", "payload": ""})
+        assert response.status_code == 200
+
+        mem = client.get("/api/nodes/instances/cmd1/memory?graph_id=default&max_chars=20000")
+        assert mem.status_code == 200
+        messages = mem.json().get("messages") or []
+        user_messages = [item for item in messages if isinstance(item, dict) and item.get("role") == "user"]
+        assert user_messages
+        assert user_messages[0]["parts"] == [{"type": "text", "text": command}]
+    finally:
+        backend._get_runtime_root = original_get_runtime_root
+        backend._get_resource_root = original_get_resource_root
+
+
 def test_runner_recovers_working_node_without_inflight(tmp_path):
     import src.web_backend as backend
     import src.web_backend.runtime_paths as runtime_paths_module

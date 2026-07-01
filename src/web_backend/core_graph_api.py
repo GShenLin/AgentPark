@@ -11,6 +11,22 @@ from ..workspace_settings import (
 
 
 class GraphApiDomain(DomainBase):
+    def _resolve_config_trigger_message(self, type_id: str, cfg: dict, text_full: str) -> object | None:
+        safe_type_id = str(type_id or "").strip()
+        if text_full:
+            return None
+        if safe_type_id == "basic_trigger_node":
+            trigger_output = cfg.get("OutputText")
+            if trigger_output is None:
+                trigger_output = cfg.get("output_text")
+            if trigger_output is not None:
+                return str(trigger_output)
+        if safe_type_id == "console_command_node":
+            command = str(cfg.get("Command") or "").strip()
+            if command:
+                return command
+        return None
+
     def _iter_service_targets(self) -> tuple[object, ...]:
         try:
             cached = object.__getattribute__(self, "_service_targets_cache")
@@ -178,21 +194,7 @@ class GraphApiDomain(DomainBase):
 
     def get_graph_runner_status(self, graph_id: str):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        with self.graph_runners_lock:
-            existing = self.graph_runners.get(safe_id)
-            threads = existing.get("threads") if isinstance(existing, dict) else None
-            worker_count = existing.get("worker_count") if isinstance(existing, dict) else None
-            if not isinstance(threads, list):
-                legacy_thread = existing.get("thread") if isinstance(existing, dict) else None
-                threads = [legacy_thread] if isinstance(legacy_thread, threading.Thread) else []
-        alive_threads = [th for th in threads if isinstance(th, threading.Thread) and th.is_alive()]
-        running = len(alive_threads) > 0
-        return {
-            "graph_id": safe_id,
-            "running": running,
-            "workers": len(alive_threads),
-            "worker_count": int(worker_count) if isinstance(worker_count, int) else len(threads),
-        }
+        return self.graph_runtime._runner_status(safe_id)
 
     def stream_graph_events(self, graph_id: str):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -252,14 +254,11 @@ class GraphApiDomain(DomainBase):
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
         type_id = str(cfg.get("type_id") or "").strip()
-        if type_id == "basic_trigger_node" and not text_full:
-            trigger_output = cfg.get("OutputText")
-            if trigger_output is None:
-                trigger_output = cfg.get("output_text")
-            if trigger_output is not None:
-                message = build_text_envelope(str(trigger_output), role="user")
-                text_full = envelope_text(message).strip()
-                text_preview = envelope_preview(message)
+        config_trigger_message = self._resolve_config_trigger_message(type_id, cfg, text_full)
+        if config_trigger_message is not None:
+            message = build_text_envelope(str(config_trigger_message), role="user")
+            text_full = envelope_text(message).strip()
+            text_preview = envelope_preview(message)
 
         state = parse_node_state(cfg.get("state"))
         if state == "stop":

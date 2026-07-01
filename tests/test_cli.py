@@ -561,6 +561,7 @@ def test_cli_chat_plain_restart_launches_restart_and_exits(monkeypatch, tmp_path
 
 
 def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, capsys):
+    import src.companion_notice_settings as companion_notice_settings
     import src.cli_commands.chat as chat_command
     from src.companion_inbox import deliver_companion_notice
     from src.web_backend import runtime_paths
@@ -577,6 +578,11 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"notifyCompanionOnError": True}},
+    )
     seen_inputs = []
 
     class DummyAgentNode:
