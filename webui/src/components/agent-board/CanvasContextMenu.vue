@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { getNodeTemplate, type NodeInfo } from '../../api'
+import { getNodeTemplate, listAgentProfiles, type AgentProfile, type NodeInfo } from '../../api'
 import { useAgentNodeCreateSchema } from '../../composables/useAgentNodeCreateSchema'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
@@ -30,6 +30,9 @@ const selectedTypeId = ref('')
 const selectedNodeName = ref('')
 const selectedNodeSchema = ref<Record<string, any>>({})
 const selectedNodeFields = ref<Record<string, any>>({})
+const agentProfiles = ref<AgentProfile[]>([])
+const profileLoading = ref(false)
+const selectedProfileId = ref('')
 const {
   modeOptions,
   toolOptions,
@@ -96,6 +99,17 @@ function updateMenuPosition() {
   menuTop.value = Math.max(margin, Math.min(menuTop.value, maxTop))
 }
 
+async function refreshAgentProfiles() {
+  profileLoading.value = true
+  try {
+    agentProfiles.value = await listAgentProfiles()
+  } catch (e: any) {
+    ctx.lastError.value = String(e?.message || e)
+  } finally {
+    profileLoading.value = false
+  }
+}
+
 async function openNodeTemplate(node: NodeInfo) {
   nodeDialogLoading.value = true
   ctx.lastError.value = null
@@ -132,11 +146,34 @@ function openAt(screenPoint: { x: number; y: number }, boardPoint: { x: number; 
   menuTop.value = Number(screenPoint?.y ?? 0)
   showMenu.value = true
   menuQuery.value = ''
+  selectedProfileId.value = ''
+  void refreshAgentProfiles()
   void nextTick(() => {
     updateMenuPosition()
     searchInputRef.value?.focus()
     searchInputRef.value?.select()
   })
+}
+
+async function createFromProfile(profileId: string) {
+  const safeProfileId = String(profileId || '').trim()
+  if (!safeProfileId) return
+  const profile = agentProfiles.value.find((item) => item.id === safeProfileId)
+  if (!profile) return
+  ctx.lastError.value = null
+  try {
+    await ctx.createNodeAtPosition(
+      profile.node_type_id,
+      String(profile.node_name || profile.name || profile.id),
+      createPoint.value,
+      { ...(profile.fields || {}) },
+    )
+    closeMenu()
+  } catch (e: any) {
+    ctx.lastError.value = String(e?.message || e)
+  } finally {
+    selectedProfileId.value = ''
+  }
 }
 
 function setSelectedNodeField(key: string, value: any) {
@@ -168,11 +205,13 @@ async function confirmCreateNode() {
 onMounted(() => {
   window.addEventListener('keydown', onWindowKeyDown)
   window.addEventListener('resize', updateMenuPosition)
+  window.addEventListener('agent-profiles-changed', refreshAgentProfiles)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeyDown)
   window.removeEventListener('resize', updateMenuPosition)
+  window.removeEventListener('agent-profiles-changed', refreshAgentProfiles)
 })
 
 watch(
@@ -205,7 +244,20 @@ defineExpose({
         @contextmenu.prevent
       >
         <header class="context-menu-head">
-          <div class="context-menu-title">Create Node</div>
+          <div class="context-menu-title-row">
+            <div class="context-menu-title">Create Node</div>
+            <select
+              v-model="selectedProfileId"
+              class="profile-select"
+              :disabled="profileLoading || agentProfiles.length === 0"
+              @change="createFromProfile(selectedProfileId)"
+            >
+              <option value="">{{ profileLoading ? 'Loading...' : 'Profile' }}</option>
+              <option v-for="profile in agentProfiles" :key="profile.id" :value="profile.id">
+                {{ profile.name || profile.id }}
+              </option>
+            </select>
+          </div>
           <div class="context-menu-sub">Right-click position: {{ Math.round(createPoint.x) }}, {{ Math.round(createPoint.y) }}</div>
         </header>
 
@@ -293,7 +345,15 @@ defineExpose({
   gap: 2px;
 }
 
+.context-menu-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .context-menu-title {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 700;
   color: rgba(248, 250, 252, 0.96);
@@ -305,6 +365,7 @@ defineExpose({
 }
 
 .context-menu-search,
+.profile-select,
 .field-input {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.3);
@@ -317,8 +378,15 @@ defineExpose({
 }
 
 .context-menu-search:focus,
+.profile-select:focus,
 .field-input:focus {
   border-color: rgba(56, 189, 248, 0.7);
+}
+
+.profile-select {
+  width: 116px;
+  padding: 6px 8px;
+  font-size: 11px;
 }
 
 .context-menu-list {

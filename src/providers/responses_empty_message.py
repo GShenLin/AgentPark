@@ -37,6 +37,7 @@ class EmptyMessageFeedbackController:
         current_input: Any,
         explicit_context_input: list[Any],
         response_id: Any = "",
+        request_summary: Any = None,
     ) -> EmptyMessageAction:
         if not is_empty_responses_message(result, content, function_calls, stream_text):
             return EmptyMessageAction("none")
@@ -47,12 +48,14 @@ class EmptyMessageFeedbackController:
                     current_input=current_input,
                     result=result,
                     response_id=response_id,
+                    request_summary=request_summary,
                 ),
             )
         feedback_item = build_empty_message_feedback_item(
             current_input=current_input,
             result=result,
             response_id=response_id,
+            request_summary=request_summary,
         )
         self._feedback_count += 1
         return EmptyMessageAction(
@@ -78,7 +81,10 @@ def build_empty_message_feedback_item(
     current_input: Any,
     result: Any,
     response_id: Any = "",
+    request_summary: Any = None,
 ) -> dict[str, Any]:
+    from src.providers.responses_request_summary import empty_message_diagnostics_from_summary
+
     payload = {
         "error": "EmptyMessage",
         "message": (
@@ -90,11 +96,16 @@ def build_empty_message_feedback_item(
         "input": summarize_responses_items(current_input),
         "item": summarize_responses_items(result.get("output") if isinstance(result, dict) else None),
     }
+    diagnostics = empty_message_diagnostics_from_summary(request_summary)
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
     text = f"{EMPTY_MESSAGE_ERROR}\n{json.dumps(payload, ensure_ascii=False, sort_keys=True)}"
     return {"role": "user", "content": [{"type": "input_text", "text": text}]}
 
 
-def empty_message_final_error(*, current_input: Any, result: Any, response_id: Any = "") -> str:
+def empty_message_final_error(*, current_input: Any, result: Any, response_id: Any = "", request_summary: Any = None) -> str:
+    from src.providers.responses_request_summary import empty_message_diagnostics_from_summary
+
     payload = {
         "error": "EmptyMessage",
         "message": "Provider returned no output_text and no function_call after EmptyMessage feedback.",
@@ -102,6 +113,9 @@ def empty_message_final_error(*, current_input: Any, result: Any, response_id: A
         "input": summarize_responses_items(current_input),
         "item": summarize_responses_items(result.get("output") if isinstance(result, dict) else None),
     }
+    diagnostics = empty_message_diagnostics_from_summary(request_summary)
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
     return f"{EMPTY_MESSAGE_ERROR}: {json.dumps(payload, ensure_ascii=False, sort_keys=True)}"
 
 

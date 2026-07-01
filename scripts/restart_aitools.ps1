@@ -48,6 +48,16 @@ function Get-ConfiguredServerPort {
     return $port
 }
 
+function Clear-CompanionInbox {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $inboxPath = Join-Path $Root 'memories\companion\inbox.jsonl'
+    if (-not (Test-Path -LiteralPath $inboxPath -PathType Leaf)) {
+        return
+    }
+    [System.IO.File]::WriteAllText($inboxPath, '', [System.Text.UTF8Encoding]::new($false))
+    Write-Host "[INFO] Cleared companion inbox: $inboxPath"
+}
+
 function Test-ProjectProcess {
     param(
         [Parameter(Mandatory = $true)]$ProcessInfo,
@@ -169,7 +179,7 @@ function Add-ProcessCandidate {
         return
     }
     if (-not (Test-ProjectProcess -ProcessInfo $procInfo -Root $Root -TrustWorkspaceIdentity $TrustWorkspaceIdentity)) {
-        Write-Host "[WARN] Ignoring PID $ProcessId from $Reason because it is not an AgentPark server for this workspace."
+        Write-Host "[WARN] Ignoring PID $ProcessId from $Reason because it is not an AITools server for this workspace."
         Write-Host "       $($procInfo.CommandLine)"
         return
     }
@@ -232,34 +242,6 @@ function Get-ListeningPids {
     return @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
 }
 
-function Get-LocalClientHost {
-    param([Parameter(Mandatory = $true)][string]$HostText)
-    $cleanHost = $HostText.Trim()
-    if ($cleanHost -eq '0.0.0.0' -or $cleanHost -eq '::' -or $cleanHost -eq '[::]') {
-        return '127.0.0.1'
-    }
-    if ([string]::IsNullOrWhiteSpace($cleanHost)) {
-        return '127.0.0.1'
-    }
-    return $cleanHost
-}
-
-function Request-WebUiClose {
-    param(
-        [Parameter(Mandatory = $true)][string]$HostText,
-        [Parameter(Mandatory = $true)][int]$Port
-    )
-    $clientHost = Get-LocalClientHost -HostText $HostText
-    $uri = "http://${clientHost}:${Port}/api/system/webui-close"
-    try {
-        Invoke-RestMethod -Method Post -Uri $uri -Body '{"reason":"restart"}' -ContentType 'application/json' -TimeoutSec 2 | Out-Null
-        Write-Host "[INFO] Requested WebUI page close: $uri"
-        Start-Sleep -Milliseconds 1500
-    } catch {
-        Write-Host "[WARN] Failed to request WebUI page close before stopping server: $($_.Exception.Message)"
-    }
-}
-
 function Wait-ProcessesExited {
     param(
         [Parameter(Mandatory = $true)][int[]]$Pids,
@@ -294,7 +276,7 @@ Write-Host "[INFO] Configured server port: $configuredPort"
 $pidPayload = Read-JsonFile -Path $pidFile
 if ($null -ne $pidPayload) {
     $payloadRoot = Normalize-PathText -PathText ([string]$pidPayload.workspace_root)
-    if ($pidPayload.app -ne 'AgentPark' -or $pidPayload.kind -ne 'fast_api_server' -or $payloadRoot -ine $root) {
+    if ($pidPayload.app -ne 'AITools' -or $pidPayload.kind -ne 'fast_api_server' -or $payloadRoot -ine $root) {
         throw "Refusing to trust pid file with unexpected identity: $pidFile"
     }
     Add-ProcessCandidate -Map $candidates -ProcessId ([int]$pidPayload.pid) -Reason 'pid-file' -Root $root -TrustWorkspaceIdentity $true
@@ -321,23 +303,9 @@ foreach ($proc in $projectWrapperProcesses) {
 }
 
 if ($candidates.Count -eq 0 -and $wrapperProcessIds.Count -eq 0) {
-    Write-Host '[INFO] No running AgentPark process found for this workspace.'
+    Write-Host '[INFO] No running AITools process found for this workspace.'
 } else {
     $processIds = @($candidates.Keys | Sort-Object)
-    $hasServerCandidate = @($candidates.Values | Where-Object { $_.Kind -eq 'server' }).Count -gt 0
-    if ($hasServerCandidate) {
-        $webUiHost = '127.0.0.1'
-        $webUiPort = $configuredPort
-        if ($null -ne $pidPayload) {
-            if ($pidPayload.PSObject.Properties.Name -contains 'host') {
-                $webUiHost = [string]$pidPayload.host
-            }
-            if ($pidPayload.PSObject.Properties.Name -contains 'port') {
-                $webUiPort = [int]$pidPayload.port
-            }
-        }
-        Request-WebUiClose -HostText $webUiHost -Port $webUiPort
-    }
     foreach ($processId in $processIds) {
         $procInfo = Get-CimProcessById -ProcessId ([int]$processId)
         if ($null -eq $procInfo) {
@@ -364,7 +332,7 @@ if ($candidates.Count -eq 0 -and $wrapperProcessIds.Count -eq 0) {
                 Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
             }
             if (-not (Wait-ProcessesExited -Pids $remainingProcessIds -TimeoutSeconds 5)) {
-                throw 'Failed to stop one or more AgentPark processes.'
+                throw 'Failed to stop one or more AITools processes.'
             }
         }
     }
@@ -394,5 +362,7 @@ if (Test-Path -LiteralPath $pidFile -PathType Leaf) {
         Write-Host "[INFO] Removed stale pid file: $pidFile"
     }
 }
+
+Clear-CompanionInbox -Root $root
 
 Write-Host '[INFO] Stop phase complete.'

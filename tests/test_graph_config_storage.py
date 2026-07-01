@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import threading
 import uuid
 
 
@@ -85,6 +86,57 @@ def test_graph_copy_artifacts_retargets_node_configs_and_skips_runner_log():
         shutil.rmtree(target_dir, ignore_errors=True)
 
 
+def test_graph_save_without_source_does_not_recopy_default_artifacts_after_node_delete():
+    import src.web_backend as backend
+
+    target_graph_id = f"ut_xyj_{uuid.uuid4().hex[:8]}"
+    node_id = "GPT2"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    client = TestClient(app)
+    graphs_dir = _get_graphs_dir()
+    default_node_dir = os.path.join(graphs_dir, "default", node_id)
+    target_dir = os.path.join(graphs_dir, target_graph_id)
+    target_node_dir = os.path.join(target_dir, node_id)
+    default_existed = os.path.exists(default_node_dir)
+
+    try:
+        if not default_existed:
+            created = client.post(
+                "/api/nodes/instances",
+                json={"node_id": node_id, "type_id": "append_node", "graph_id": "default"},
+            )
+            assert created.status_code == 200
+
+        copied = client.post(
+            f"/api/graphs/{target_graph_id}",
+            json={
+                "graph": {"id": target_graph_id, "name": target_graph_id, "links": []},
+                "source_graph_id": "default",
+            },
+        )
+        assert copied.status_code == 200
+        assert os.path.isdir(target_node_dir)
+
+        deleted = client.delete(f"/api/nodes/instances/{node_id}?graph_id={target_graph_id}")
+        assert deleted.status_code == 200
+        assert not os.path.exists(target_node_dir)
+        assert os.path.isdir(default_node_dir)
+
+        saved = client.post(
+            f"/api/graphs/{target_graph_id}",
+            json={"graph": {"id": target_graph_id, "name": target_graph_id, "links": []}},
+        )
+        assert saved.status_code == 200
+        assert not os.path.exists(target_node_dir)
+    finally:
+        shutil.rmtree(target_dir, ignore_errors=True)
+        if not default_existed:
+            shutil.rmtree(default_node_dir, ignore_errors=True)
+
+
 def test_graph_load_supports_version_unchanged_response():
     import src.web_backend as backend
 
@@ -138,6 +190,67 @@ def test_graph_load_rejects_non_object_config():
         assert response.status_code == 500
         assert "JSON object" in response.json().get("detail", "")
     finally:
+        shutil.rmtree(graph_dir, ignore_errors=True)
+
+
+def test_delete_graph_stops_runner_before_removing_runner_log():
+    import src.web_backend as backend
+
+    graph_id = f"ut_delete_runner_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graph_dir = os.path.join(_get_graphs_dir(), graph_id)
+    try:
+        client = TestClient(app)
+        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "links": []}})
+        assert saved.status_code == 200
+        started = client.post(f"/api/graphs/{graph_id}/runner/start")
+        assert started.status_code == 200
+
+        deleted = client.delete(f"/api/graphs/{graph_id}?wait_timeout_seconds=2")
+
+        assert deleted.status_code == 200
+        assert deleted.json().get("deleted") is True
+        assert not os.path.exists(graph_dir)
+    finally:
+        shutil.rmtree(graph_dir, ignore_errors=True)
+
+
+def test_delete_graph_reports_runner_stop_timeout():
+    import src.web_backend as backend
+
+    graph_id = f"ut_delete_blocked_{uuid.uuid4().hex[:8]}"
+    facade = backend.WebBackendFacade()
+    app = facade.build()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    stop_event = threading.Event()
+    wake_event = threading.Event()
+    blocker = threading.Thread(target=lambda: stop_event.wait(timeout=30), daemon=True)
+    graph_dir = os.path.join(_get_graphs_dir(), graph_id)
+    try:
+        client = TestClient(app)
+        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "links": []}})
+        assert saved.status_code == 200
+        blocker.start()
+        facade.core.graph_runners[graph_id] = {
+            "threads": [blocker],
+            "stop": threading.Event(),
+            "wake": wake_event,
+            "worker_count": 1,
+        }
+
+        deleted = client.delete(f"/api/graphs/{graph_id}?wait_timeout_seconds=0.01")
+
+        assert deleted.status_code == 409
+        assert "graph runner did not stop" in deleted.json().get("detail", "")
+        assert os.path.exists(graph_dir)
+    finally:
+        stop_event.set()
+        blocker.join(timeout=1)
         shutil.rmtree(graph_dir, ignore_errors=True)
 
 

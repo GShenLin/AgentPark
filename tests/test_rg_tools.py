@@ -72,28 +72,56 @@ def test_rg_list_files_fallback_without_rg(monkeypatch, tmp_path):
     assert "dist/bundle.js" not in files
 
 
-def test_project_file_stats_skips_generated_dirs_and_counts_top_file_lines(tmp_path):
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "small.py").write_text("print('a')\n", encoding="utf-8")
-    (tmp_path / "src" / "large.py").write_text("one\ntwo\nthree", encoding="utf-8")
-    (tmp_path / "dist").mkdir()
-    (tmp_path / "dist" / "bundle.js").write_text("bundle\n", encoding="utf-8")
-
-    raw = rg_tools.project_file_stats(
+def test_rg_list_files_blocks_broad_inventory_scan(tmp_path):
+    raw = rg_tools.rg_list_files(
         project_root=str(tmp_path),
-        include_globs=["*.py", "*.js"],
-        top_n=1,
-        include_line_counts=True,
+        include_globs=["**/*"],
+        max_results=20000,
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "blocked"
+    assert payload["retryable"] is False
+    assert payload["policy"] == "rg_list_files_broad_scan_guard"
+    assert "whole-project inventory" in payload["reason"]
+    assert "Source/**/*.cpp" in payload["next_query_suggestions"]
+
+
+def test_rg_list_files_blocks_missing_include_globs(tmp_path):
+    raw = rg_tools.rg_list_files(project_root=str(tmp_path), max_results=20000)
+    payload = json.loads(raw)
+
+    assert payload["status"] == "blocked"
+    assert payload["retryable"] is False
+    assert payload["include_globs"] == []
+
+
+def test_rg_search_text_truncates_by_output_char_budget(monkeypatch, tmp_path):
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(rg_tools, "RG_SEARCH_OUTPUT_CHAR_LIMIT", 1800)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    for index in range(20):
+        (src / f"file_{index}.txt").write_text(
+            f"needle {'x' * 300}\n",
+            encoding="utf-8",
+        )
+
+    raw = rg_tools.rg_search_text(
+        query="needle",
+        project_root=str(tmp_path),
+        include_globs=["*.txt"],
+        max_results=100,
     )
     payload = json.loads(raw)
 
     assert payload["status"] == "success"
-    assert payload["scanned_files"] == 2
-    assert payload["by_extension"][".py"]["files"] == 2
-    assert ".js" not in payload["by_extension"]
-    assert payload["line_counts_scope"] == "top_files_by_size"
-    assert payload["top_files_by_size"][0]["relative_path"].replace("\\", "/") == "src/large.py"
-    assert payload["top_files_by_size"][0]["line_count"] == 3
+    assert payload["truncated"] is True
+    assert payload["truncation_reason"] == "output_char_limit"
+    assert payload["matches_returned"] < 20
+    assert payload["output_char_limit"] == 1800
+    assert len(raw) <= 1800
 
 
 def test_system_tools_exports_rg_tools():
@@ -101,11 +129,8 @@ def test_system_tools_exports_rg_tools():
     assert "rg_search_text_declaration" in system_tools.__all__
     assert "rg_list_files" in system_tools.__all__
     assert "rg_list_files_declaration" in system_tools.__all__
-    assert "project_file_stats" in system_tools.__all__
-    assert "project_file_stats_declaration" in system_tools.__all__
     assert callable(system_tools.rg_search_text)
     assert callable(system_tools.rg_list_files)
-    assert callable(system_tools.project_file_stats)
     assert "find_files_declaration" not in system_tools.__all__
     assert "search_text_in_files_declaration" not in system_tools.__all__
     assert "find_class_definition_declaration" not in system_tools.__all__

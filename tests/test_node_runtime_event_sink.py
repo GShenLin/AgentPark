@@ -17,6 +17,7 @@ def _build_sink(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps({"node_id": "agent1"}, ensure_ascii=False), encoding="utf-8")
     logs = []
+    runtime_logs = []
     tool_entries = []
     sink = NodeRuntimeEventSink(
         graph_id="default",
@@ -32,12 +33,15 @@ def _build_sink(tmp_path):
         append_tool_call_entry=lambda graph_id, node_id, event: tool_entries.append(
             {"graph_id": graph_id, "node_id": node_id, "event": dict(event)}
         ),
+        append_runtime_log=lambda graph_id, event, **fields: runtime_logs.append(
+            {"graph_id": graph_id, "event": event, **fields}
+        ),
     )
-    return sink, config_path, logs, tool_entries
+    return sink, config_path, logs, tool_entries, runtime_logs
 
 
 def test_node_runtime_event_sink_updates_stream_text_and_done_log(tmp_path):
-    sink, config_path, logs, tool_entries = _build_sink(tmp_path)
+    sink, config_path, logs, tool_entries, runtime_logs = _build_sink(tmp_path)
 
     sink.handle({"type": "node_message_delta", "text": "hello world"})
     sink.handle({"type": "node_message_done", "text": "hello world!"})
@@ -48,17 +52,20 @@ def test_node_runtime_event_sink_updates_stream_text_and_done_log(tmp_path):
     assert logs[-1]["event"] == "node_message_done"
     assert logs[-1]["output_preview"] == "hello world!"
     assert tool_entries == []
+    assert [item["event"] for item in runtime_logs] == ["node_message_done"]
+    assert runtime_logs[-1]["message"] == "hello world!"
+    assert runtime_logs[-1]["node_instance_id"] == "agent1"
 
 
 def test_node_runtime_event_sink_rejects_unknown_event_type(tmp_path):
-    sink, _config_path, _logs, _tool_entries = _build_sink(tmp_path)
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
 
     with pytest.raises(ValueError, match="unsupported node runtime event type"):
         sink.handle({"type": "delta", "text": "legacy"})
 
 
 def test_node_runtime_event_sink_records_runtime_notice(tmp_path):
-    sink, config_path, logs, _tool_entries = _build_sink(tmp_path)
+    sink, config_path, logs, _tool_entries, runtime_logs = _build_sink(tmp_path)
 
     sink.handle(
         {
@@ -78,10 +85,13 @@ def test_node_runtime_event_sink_records_runtime_notice(tmp_path):
     assert logs[-1]["event"] == "runtime_notice"
     assert logs[-1]["tool_name"] == "read_file"
     assert logs[-1]["call_id"] == "call-1"
+    assert runtime_logs[-1]["event"] == "runtime_notice"
+    assert runtime_logs[-1]["message"] == "Calling tool: read_file"
+    assert runtime_logs[-1]["tool_name"] == "read_file"
 
 
 def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
-    sink, config_path, logs, tool_entries = _build_sink(tmp_path)
+    sink, config_path, logs, tool_entries, runtime_logs = _build_sink(tmp_path)
 
     sink.handle(
         {
@@ -117,6 +127,9 @@ def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
     assert payload["runtime_tool_calls"][0]["status"] == "completed"
     assert [item["event"] for item in logs[-2:]] == ["tool_call_start", "tool_call_end"]
     assert logs[-1]["tool_name"] == "read_file"
+    assert [item["event"] for item in runtime_logs] == ["tool_call_start", "tool_call_end"]
+    assert runtime_logs[-1]["arguments"] == {"filePath": "README.md"}
+    assert runtime_logs[-1]["result_preview"] == "ok"
     assert tool_entries == [
         {
             "graph_id": "default",

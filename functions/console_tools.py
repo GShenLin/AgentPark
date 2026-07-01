@@ -1,5 +1,6 @@
 import json
 import locale
+import os
 import re
 import subprocess
 import threading
@@ -74,8 +75,7 @@ def _classify_console_command(command) -> _ConsoleCommandProfile:
             blocked=True,
             block_error="Broad recursive PowerShell file scans are blocked because they repeatedly time out in this workspace.",
             hint=(
-                "Use rg_search_text for text search, rg_list_files for inventories, or project_file_stats "
-                "for file counts and largest-file analysis."
+                "Use rg_search_text for text search or rg_list_files for focused inventories."
             ),
         )
 
@@ -370,7 +370,99 @@ def _analyze_console_completion(command, stdout: str, stderr: str, status: str, 
 
 
 def _terminate_process(proc: subprocess.Popen | None) -> None:
-    if proc is None or proc.poll() is not None:
+    if proc is None:
+        return
+    if os.name == "nt":
+        _terminate_windows_process_tree(proc)
+        return
+    if proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=0.5)
+    except Exception:
+        try:
+            proc.kill()
+            proc.wait(timeout=0.5)
+        except Exception:
+            pass
+
+
+def _terminate_windows_process_tree(proc: subprocess.Popen) -> None:
+    pid = int(getattr(proc, "pid", 0) or 0)
+    if pid <= 0:
+        _terminate_process_fallback(proc)
+        return
+
+    descendant_pids = _windows_descendant_process_ids(pid)
+    taskkill_pids = [pid, *descendant_pids]
+    for process_id in taskkill_pids:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process_id), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except Exception:
+            continue
+
+    try:
+        proc.wait(timeout=0.5)
+    except Exception:
+        _terminate_process_fallback(proc)
+
+
+def _windows_descendant_process_ids(root_pid: int) -> list[int]:
+    script = (
+        "$root = [int]$args[0]; "
+        "$items = Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId; "
+        "$known = @{}; "
+        "$known[$root] = $true; "
+        "$added = $true; "
+        "while ($added) { "
+        "  $added = $false; "
+        "  foreach ($item in $items) { "
+        "    $processId = [int]$item.ProcessId; "
+        "    $parent = [int]$item.ParentProcessId; "
+        "    if ($known.ContainsKey($parent) -and -not $known.ContainsKey($processId)) { "
+        "      $known[$processId] = $true; "
+        "      $added = $true; "
+        "    } "
+        "  } "
+        "} "
+        "$known.Keys | Where-Object { $_ -ne $root } | Sort-Object"
+    )
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script, str(root_pid)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except Exception:
+        return []
+    if completed.returncode != 0:
+        return []
+    process_ids: list[int] = []
+    for line in str(completed.stdout or "").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            process_id = int(text)
+        except ValueError:
+            continue
+        if process_id > 0 and process_id != root_pid:
+            process_ids.append(process_id)
+    return process_ids
+
+
+def _terminate_process_fallback(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
         return
     try:
         proc.terminate()
@@ -413,24 +505,58 @@ def _start_process_pipe_readers(proc: subprocess.Popen) -> tuple[_PipeReader | N
     return stdout_reader, stderr_reader
 
 
-def _collect_pipe_reader(reader: _PipeReader | None, *, stream_name: str) -> bytes:
+def _join_pipe_reader(reader: _PipeReader, *, total_timeout: float = 5.0, poll_interval: float = 0.05) -> bool:
+    """Wait for a pipe reader thread to finish. Returns True if the thread finished, False on timeout.
+
+    On Windows with shell=True, child cmd.exe processes can delay pipe EOF briefly after the target
+    process has exited (output flushing / handle inheritance). A single short join can race that flush,
+    so we poll with a generous budget instead of failing immediately.
+    """
+    deadline = time.monotonic() + total_timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        reader.thread.join(timeout=min(remaining, poll_interval))
+        if not reader.thread.is_alive():
+            return True
+    return not reader.thread.is_alive()
+
+
+def _collect_pipe_reader(reader: _PipeReader | None, *, stream_name: str, on_timeout=None) -> bytes:
     if reader is None:
         return b""
-    reader.thread.join(timeout=1.0)
-    if reader.thread.is_alive():
-        raise RuntimeError(f"{stream_name} reader did not finish after process exit.")
+    finished = _join_pipe_reader(reader, total_timeout=5.0)
+    if not finished and callable(on_timeout):
+        on_timeout()
+        finished = _join_pipe_reader(reader, total_timeout=1.0)
     if reader.errors:
         error = reader.errors[0]
         raise RuntimeError(f"{stream_name} reader failed: {type(error).__name__}: {error}") from error
+    if not finished:
+        # Reader thread is still draining. We cannot block indefinitely here, but we also must not
+        # discard data that was already captured. Return what we have; callers should treat this as
+        # partial output (truncation metadata is added elsewhere for large streams).
+        return b"".join(reader.chunks)
     return b"".join(reader.chunks)
 
 
 def _collect_process_output(
+    proc: subprocess.Popen,
     stdout_reader: _PipeReader | None,
     stderr_reader: _PipeReader | None,
 ) -> tuple[bytes, bytes]:
-    stdout_raw = _collect_pipe_reader(stdout_reader, stream_name="stdout")
-    stderr_raw = _collect_pipe_reader(stderr_reader, stream_name="stderr")
+    cleaned_process_tree = False
+
+    def cleanup_process_tree_once() -> None:
+        nonlocal cleaned_process_tree
+        if cleaned_process_tree:
+            return
+        cleaned_process_tree = True
+        _terminate_process(proc)
+
+    stdout_raw = _collect_pipe_reader(stdout_reader, stream_name="stdout", on_timeout=cleanup_process_tree_once)
+    stderr_raw = _collect_pipe_reader(stderr_reader, stream_name="stderr", on_timeout=cleanup_process_tree_once)
     return stdout_raw, stderr_raw
 
 
@@ -480,7 +606,7 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
                     raise_if_cancel_requested(cancel_source)
                 except CancellationRequested as e:
                     _terminate_process(proc)
-                    stdout_raw, stderr_raw = _collect_process_output(stdout_reader, stderr_reader)
+                    stdout_raw, stderr_raw = _collect_process_output(proc, stdout_reader, stderr_reader)
                     return _build_console_command_result(
                         command=command,
                         stdout=_decode_output(stdout_raw, command),
@@ -491,7 +617,7 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
                     )
                 if deadline is not None and time.monotonic() >= deadline:
                     _terminate_process(proc)
-                    stdout_raw, stderr_raw = _collect_process_output(stdout_reader, stderr_reader)
+                    stdout_raw, stderr_raw = _collect_process_output(proc, stdout_reader, stderr_reader)
                     stdout = _decode_output(stdout_raw, command)
                     stderr = _decode_output(stderr_raw, command)
                     timeout_label = f"{command_timeout} seconds" if command_timeout is not None else "disabled timeout"
@@ -513,7 +639,7 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
                     )
                 time.sleep(0.05)
 
-            stdout_raw, stderr_raw = _collect_process_output(stdout_reader, stderr_reader)
+            stdout_raw, stderr_raw = _collect_process_output(proc, stdout_reader, stderr_reader)
             stdout = _decode_output(stdout_raw, command)
             stderr = _decode_output(stderr_raw, command)
             status = "success" if proc.returncode == 0 else "error"

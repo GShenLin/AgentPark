@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import type { GraphInfo, MessageEnvelope } from '../api'
+import { computed, nextTick, ref } from 'vue'
+import type { GraphInfo, GraphProfile, MessageEnvelope } from '../api'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
+import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
 
 type MemoryMode = 'agent' | 'file' | 'graph'
+type InteractiveInputOptions = {
+  appendNewline?: boolean
+  sendEof?: boolean
+  sendCtrlC?: boolean
+}
 
 const props = defineProps<{
   mode: MemoryMode
@@ -19,13 +25,23 @@ const props = defineProps<{
   graphNameInput: string
   graphLoading: boolean
   graphs: GraphInfo[]
+  graphProfiles: GraphProfile[]
+  selectedGraphProfileId: string
+  interactiveSessionId: string
+  interactiveInputText: string
+  interactiveInputDisabled: boolean
+  interactiveSending: boolean
 }>()
 
 const emit = defineEmits<{
   (event: 'update:memoryText', value: string): void
   (event: 'update:graphNameInput', value: string): void
+  (event: 'update:selectedGraphProfileId', value: string): void
+  (event: 'update:interactiveInputText', value: string): void
   (event: 'saveCurrentFile'): void
   (event: 'saveGraphConfig'): void
+  (event: 'saveGraphProfile'): void
+  (event: 'createGraphFromProfile'): void
   (event: 'refreshGraphs'): void
   (event: 'loadGraphConfig', graph: GraphInfo): void
   (event: 'deleteGraphConfig', graph: GraphInfo): void
@@ -33,14 +49,20 @@ const emit = defineEmits<{
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
   (event: 'deleteMessage', message: MessageEnvelope): void
+  (event: 'sendInteractiveInput', options: InteractiveInputOptions): void
+  (event: 'interactiveSubmit'): void
+  (event: 'interactiveCtrlC'): void
+  (event: 'interactiveEof'): void
 }>()
 
 const memoryPanelRef = ref<HTMLElement | null>(null)
 const gutterRef = ref<HTMLElement | null>(null)
+const interactiveInputRef = ref<HTMLInputElement | null>(null)
 
 const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/) : []))
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
 const renderedLiveMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.liveMessage))
+const showInteractiveBar = computed(() => props.mode === 'agent' && !!props.interactiveSessionId)
 
 function updateMemoryText(event: Event) {
   emit('update:memoryText', String((event.target as HTMLTextAreaElement | null)?.value || ''))
@@ -48,6 +70,14 @@ function updateMemoryText(event: Event) {
 
 function updateGraphName(event: Event) {
   emit('update:graphNameInput', String((event.target as HTMLInputElement | null)?.value || ''))
+}
+
+function updateSelectedGraphProfile(event: Event) {
+  emit('update:selectedGraphProfileId', String((event.target as HTMLSelectElement | null)?.value || ''))
+}
+
+function updateInteractiveInput(event: Event) {
+  emit('update:interactiveInputText', String((event.target as HTMLInputElement | null)?.value || ''))
 }
 
 function syncScroll(event: Event) {
@@ -66,7 +96,19 @@ function scrollToBottom() {
   }
 }
 
-defineExpose({ scrollToBottom })
+async function focusInteractiveInput() {
+  await nextTick()
+  interactiveInputRef.value?.focus()
+}
+
+function onInteractiveKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    emit('interactiveSubmit')
+  }
+}
+
+defineExpose({ scrollToBottom, focusInteractiveInput })
 </script>
 
 <template>
@@ -88,7 +130,27 @@ defineExpose({ scrollToBottom })
           @input="updateGraphName"
         />
         <button class="graph-btn primary" @click="emit('saveGraphConfig')">Save</button>
+        <button class="graph-btn" @click="emit('saveGraphProfile')">SaveProfile</button>
         <button class="graph-btn" @click="emit('refreshGraphs')">Refresh</button>
+      </div>
+      <div class="graph-actions">
+        <select
+          class="graph-input profile-input"
+          :value="selectedGraphProfileId"
+          @change="updateSelectedGraphProfile"
+        >
+          <option value="">Profile</option>
+          <option v-for="profile in graphProfiles" :key="profile.id" :value="profile.id">
+            {{ profile.name || profile.id }}
+          </option>
+        </select>
+        <button
+          class="graph-btn primary"
+          :disabled="!selectedGraphProfileId"
+          @click="emit('createGraphFromProfile')"
+        >
+          CreateFromProfile
+        </button>
       </div>
 
       <div class="graph-list">
@@ -110,7 +172,7 @@ defineExpose({ scrollToBottom })
     </div>
 
     <div
-      v-else-if="mode === 'agent' && (messages.length > 0 || liveMessage)"
+      v-else-if="mode === 'agent' && (messages.length > 0 || liveMessage || showInteractiveBar)"
       ref="memoryPanelRef"
       class="panel-body message-feed"
       @scroll="syncScroll"
@@ -131,6 +193,7 @@ defineExpose({ scrollToBottom })
           v-if="markdownPreview"
           class="live-body live-markdown"
           v-html="renderedLiveMarkdown"
+          @click="handleMarkdownCodeCopyClick"
         ></div>
         <div v-else class="live-body">{{ liveMessage }}</div>
       </div>
@@ -141,6 +204,7 @@ defineExpose({ scrollToBottom })
       ref="memoryPanelRef"
       class="panel-body markdown-body"
       v-html="renderedMarkdown"
+      @click="handleMarkdownCodeCopyClick"
       @scroll="syncScroll"
     ></div>
 
@@ -175,6 +239,48 @@ defineExpose({ scrollToBottom })
         <div class="wrap-content">{{ line || ' ' }}</div>
       </div>
       <div v-if="lines.length === 0" class="wrap-empty">(empty)</div>
+    </div>
+  </div>
+
+  <div v-if="showInteractiveBar" class="interactive-bar">
+    <div class="interactive-bar-head">
+      <span class="interactive-label">Interactive Input</span>
+      <span class="interactive-hint">Enter to send, input is sent with newline appended</span>
+    </div>
+    <div class="interactive-input-row">
+      <input
+        ref="interactiveInputRef"
+        class="interactive-input"
+        :value="interactiveInputText"
+        :disabled="interactiveInputDisabled"
+        placeholder="Type response here (e.g. YES, NO, password)..."
+        spellcheck="false"
+        @input="updateInteractiveInput"
+        @keydown="onInteractiveKeydown"
+      />
+      <button
+        class="interactive-btn"
+        :disabled="interactiveInputDisabled"
+        @click="emit('interactiveSubmit')"
+      >
+        {{ interactiveSending ? '...' : 'Send' }}
+      </button>
+      <button
+        class="interactive-btn"
+        title="Send Ctrl+C (interrupt)"
+        :disabled="interactiveInputDisabled"
+        @click="emit('interactiveCtrlC')"
+      >
+        Ctrl+C
+      </button>
+      <button
+        class="interactive-btn"
+        title="Send EOF / Ctrl+D (close stdin)"
+        :disabled="interactiveInputDisabled"
+        @click="emit('interactiveEof')"
+      >
+        EOF
+      </button>
     </div>
   </div>
 </template>
@@ -258,6 +364,16 @@ defineExpose({ scrollToBottom })
   border-radius: 8px;
   font-size: 11px;
   padding: 4px 9px;
+  cursor: pointer;
+}
+
+.graph-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.profile-input {
+  min-width: 0;
 }
 
 .graph-btn.primary {
@@ -418,6 +534,12 @@ defineExpose({ scrollToBottom })
   overflow: auto;
 }
 
+:deep(.live-markdown .markdown-code-block pre) {
+  margin: 0;
+  padding: 10px 48px 34px 10px;
+  background: transparent;
+}
+
 :deep(.live-markdown code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 }
@@ -430,6 +552,84 @@ defineExpose({ scrollToBottom })
 
 :deep(.live-markdown li) {
   margin: 2px 0;
+}
+
+.interactive-bar {
+  flex: 0 0 auto;
+  border-top: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(8, 47, 73, 0.32);
+  padding: 8px 10px;
+}
+
+.interactive-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.interactive-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(103, 232, 249, 0.96);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.interactive-hint {
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.82);
+}
+
+.interactive-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.interactive-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  background: rgba(15, 23, 42, 0.82);
+  color: rgba(226, 232, 240, 0.96);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  padding: 7px 9px;
+  outline: none;
+}
+
+.interactive-input:focus {
+  border-color: rgba(34, 211, 238, 0.65);
+}
+
+.interactive-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.interactive-btn {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.82);
+  color: rgba(226, 232, 240, 0.94);
+  border-radius: 8px;
+  font-size: 11px;
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.interactive-btn:hover:not(:disabled) {
+  border-color: rgba(34, 211, 238, 0.5);
+  background: rgba(14, 116, 144, 0.28);
+}
+
+.interactive-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .wrap-container {
@@ -488,5 +688,22 @@ defineExpose({ scrollToBottom })
   padding: 10px 60px;
   opacity: 0.6;
   font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .interactive-bar-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .interactive-input-row {
+    flex-wrap: wrap;
+  }
+
+  .interactive-input {
+    min-width: 0;
+    width: 100%;
+  }
 }
 </style>

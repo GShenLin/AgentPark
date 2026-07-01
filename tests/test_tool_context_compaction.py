@@ -4,14 +4,13 @@ import pytest
 
 from src.base_agent import BaseAgent
 from src.tool.tool_call_protocol import ToolCallExecution
-from src.tool_context_compaction_gate import TOOL_CONTEXT_COMPACTION_REFUSED_ERROR
 from src.tool_context_compaction_gate import TOOL_CONTEXT_COMPACTION_REQUIRED_ERROR
+from src.tool_context_compaction_gate import TOOL_CONTEXT_COMPACTION_SKIPPED_MARKER
 
 
 class DummyCompactionAgent(BaseAgent):
     def __init__(self, memory_path):
         super().__init__("dummy", memory_file_path=str(memory_path), internal_memory_enabled=False)
-        self.tool_context_compaction_gate_enabled = True
         self.sent_tools = []
         self.last_gate_messages = []
         self.config = {
@@ -238,6 +237,34 @@ def test_tool_context_compaction_gate_replaces_eligible_window(tmp_path):
     assert "compact_tool_context" not in agent.tools.function_map
 
 
+def test_tool_context_compaction_gate_prompt_includes_latest_user_input(tmp_path):
+    memory_path = tmp_path / "agent.md"
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyCompactionAgent(memory_path)
+    agent.messages = [
+        {"role": "user", "content": "old request"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "current request: inspect files"},
+        _tool_call_message("call-1", "read_file"),
+        {"role": "tool", "content": "alpha raw file content", "tool_call_id": "call-1", "name": "read_file"},
+        _tool_call_message("call-2", "rg_search_text"),
+        {"role": "tool", "content": "beta raw search result", "tool_call_id": "call-2", "name": "rg_search_text"},
+    ]
+
+    ran = agent._run_tool_context_compaction_gate_if_needed(
+        [
+            ToolCallExecution("read_file", "call-1", "alpha raw file content"),
+            ToolCallExecution("rg_search_text", "call-2", "beta raw search result"),
+        ]
+    )
+
+    assert ran is True
+    prompt = agent.last_gate_messages[-1]["content"]
+    assert "latest_user_input" in prompt
+    assert "current request: inspect files" in prompt
+    assert '"message_id": "user_2"' in prompt
+
+
 def test_tool_context_compaction_patch_deletes_and_rewrites_only_eligible_messages(tmp_path):
     memory_path = tmp_path / "agent.md"
     memory_path.write_text("", encoding="utf-8")
@@ -312,16 +339,18 @@ def test_tool_context_compaction_gate_errors_when_compaction_tool_not_called(tmp
     ]
     original_messages = list(agent.messages)
 
-    with pytest.raises(RuntimeError, match=TOOL_CONTEXT_COMPACTION_REFUSED_ERROR):
-        agent._run_tool_context_compaction_gate_if_needed(
-            [
-                ToolCallExecution("read_file", "call-1", "alpha raw file content"),
-                ToolCallExecution("rg_search_text", "call-2", "beta raw search result"),
-            ]
-        )
+    ran = agent._run_tool_context_compaction_gate_if_needed(
+        [
+            ToolCallExecution("read_file", "call-1", "alpha raw file content"),
+            ToolCallExecution("rg_search_text", "call-2", "beta raw search result"),
+        ]
+    )
 
+    assert ran is False
     assert len(agent.sent_tools) == 2
-    assert agent.messages == original_messages
+    assert agent.messages == original_messages + [
+        {"role": "system", "content": TOOL_CONTEXT_COMPACTION_SKIPPED_MARKER}
+    ]
     assert agent._tool_context_compaction_changed_last_run() is False
     assert agent._tool_context_compaction_since_last == 0
     assert "compact_tool_context" not in agent.tools.function_map
@@ -345,12 +374,12 @@ def test_tool_context_compaction_gate_restores_existing_function_map_entry(tmp_p
         {"role": "tool", "content": "beta raw search result", "tool_call_id": "call-2", "name": "rg_search_text"},
     ]
 
-    with pytest.raises(RuntimeError, match=TOOL_CONTEXT_COMPACTION_REFUSED_ERROR):
-        agent._run_tool_context_compaction_gate_if_needed(
-            [
-                ToolCallExecution("read_file", "call-1", "alpha raw file content"),
-                ToolCallExecution("rg_search_text", "call-2", "beta raw search result"),
-            ]
-        )
+    ran = agent._run_tool_context_compaction_gate_if_needed(
+        [
+            ToolCallExecution("read_file", "call-1", "alpha raw file content"),
+            ToolCallExecution("rg_search_text", "call-2", "beta raw search result"),
+        ]
+    )
 
+    assert ran is False
     assert agent.tools.function_map["compact_tool_context"] is sentinel

@@ -6,6 +6,7 @@ import {
   nodeInstanceLiveStreamUrl,
   readFile,
   saveFile,
+  sendNodeInteractiveInput,
 } from '../api'
 import { useGlobalState } from './useGlobalState'
 
@@ -27,6 +28,8 @@ export function useMemory() {
     memoryText,
     memoryMessages,
     memoryLiveMessage,
+    memoryInteractiveSessionId,
+    memoryInteractiveSending,
     memoryTitle,
     memoryMeta,
     memoryMode,
@@ -52,6 +55,7 @@ export function useMemory() {
       memoryText.value = ''
       memoryMessages.value = []
       memoryLiveMessage.value = ''
+      memoryInteractiveSessionId.value = ''
       memoryTitle.value = ''
       memoryMeta.value = null
       agentImages.value = []
@@ -78,6 +82,7 @@ export function useMemory() {
       memoryText.value = ''
       memoryMessages.value = []
       memoryLiveMessage.value = ''
+      memoryInteractiveSessionId.value = ''
       memoryTitle.value = `Node ${nodeId}`
       memoryMeta.value = String(e?.message || e)
       agentImages.value = []
@@ -116,6 +121,7 @@ export function useMemory() {
       liveEventSource = null
     }
     liveStreamKey = ''
+    memoryInteractiveSessionId.value = ''
     stopAgentGraphEventStream()
     clearScheduledGraphMemoryRefresh()
   }
@@ -199,6 +205,7 @@ export function useMemory() {
     if (!nodeId) {
       stopAgentLiveStream()
       memoryLiveMessage.value = ''
+      memoryInteractiveSessionId.value = ''
       return
     }
     const streamKey = `${graphId}:${nodeId}`
@@ -221,12 +228,32 @@ export function useMemory() {
         const payload = JSON.parse(String(event.data || '{}'))
         memoryLiveMessage.value = String(payload?.live_message || '')
         const eventType = String(payload?.event_type || payload?.event?.type || '').trim()
+        const eventData = payload?.event && typeof payload.event === 'object'
+          ? (payload.event as Record<string, unknown>)
+          : null
+        // Persistent session_id (set by server on stdin_ready, survives text update races)
+        const persistentSessionId = String(payload?.interactive_session_id || '').trim()
+        if (persistentSessionId) {
+          memoryInteractiveSessionId.value = persistentSessionId
+        }
+        // Transient events also set/clear session_id
+        if (eventType === 'stdin_ready' && eventData) {
+          const sid = String(eventData?.session_id || '').trim()
+          if (sid) memoryInteractiveSessionId.value = sid
+        } else if (eventType === 'stdin_closed' || eventType === 'node_message_done') {
+          const closedSessionId = String(eventData?.session_id || '').trim()
+          if (!closedSessionId || closedSessionId === memoryInteractiveSessionId.value) {
+            memoryInteractiveSessionId.value = ''
+          }
+        }
         if (
           eventType === 'tool_call_start' ||
           eventType === 'tool_call_end' ||
           eventType === 'node_message_done' ||
           eventType === 'node_output' ||
-          eventType === 'node_input'
+          eventType === 'node_input' ||
+          eventType === 'stdin_ready' ||
+          eventType === 'stdin_closed'
         ) {
           memoryRefreshRequest.value += 1
         }
@@ -251,6 +278,7 @@ export function useMemory() {
     memoryText.value = 'Loading...'
     memoryMessages.value = []
     memoryLiveMessage.value = ''
+    memoryInteractiveSessionId.value = ''
     try {
       const res = await readFile(file.path)
       memoryText.value = res.content
@@ -282,7 +310,34 @@ export function useMemory() {
   function stopLoading() {
     agentLoadRequestId += 1
     liveLoadRequestId += 1
+    memoryInteractiveSessionId.value = ''
     stopAgentLiveStream()
+  }
+
+  async function sendInteractiveInput(
+    text: string,
+    options: { appendNewline?: boolean; sendEof?: boolean; sendCtrlC?: boolean } = {},
+  ) {
+    const nodeId = resolveSelectedTargetId()
+    const graphId = currentGraphId.value || 'default'
+    const sessionId = String(memoryInteractiveSessionId.value || '').trim()
+    if (!nodeId || !sessionId) return false
+    memoryInteractiveSending.value = true
+    try {
+      await sendNodeInteractiveInput(nodeId, graphId, {
+        session_id: sessionId,
+        text: String(text || ''),
+        append_newline: options.appendNewline !== false,
+        send_eof: !!options.sendEof,
+        send_ctrl_c: !!options.sendCtrlC,
+      })
+      return true
+    } catch (e: any) {
+      lastError.value = String(e?.message || e)
+      return false
+    } finally {
+      memoryInteractiveSending.value = false
+    }
   }
 
   return {
@@ -297,5 +352,6 @@ export function useMemory() {
     onFileSelected,
     saveCurrentFile,
     stopLoading,
+    sendInteractiveInput,
   }
 }

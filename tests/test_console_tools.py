@@ -10,13 +10,14 @@ from functions.console_tools import execute_console_command
 
 
 class _FakePopen:
-    def __init__(self, *, stdout=b"", stderr=b"", returncode=0, running=False):
+    def __init__(self, *, stdout=b"", stderr=b"", returncode=0, running=False, pid=0):
         self._stdout = stdout
         self._stderr = stderr
         self.stdout = io.BytesIO(stdout)
         self.stderr = io.BytesIO(stderr)
         self.returncode = returncode
         self._running = running
+        self.pid = pid
         self.terminated = False
         self.killed = False
 
@@ -80,6 +81,41 @@ def test_execute_console_command_timeout_uses_same_decoder(monkeypatch, capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_execute_console_command_timeout_kills_windows_process_tree(monkeypatch):
+    fake_proc = _FakePopen(stdout=b"", stderr=b"", running=True, pid=4242)
+    run_calls = []
+
+    class _Completed:
+        def __init__(self, stdout="", returncode=0):
+            self.stdout = stdout
+            self.stderr = ""
+            self.returncode = returncode
+
+    def _fake_popen(*args, **kwargs):
+        return fake_proc
+
+    def _fake_run(args, **kwargs):
+        run_calls.append(list(args))
+        if args[:3] == ["powershell", "-NoProfile", "-Command"]:
+            return _Completed(stdout="5252\n")
+        if args and args[0] == "taskkill":
+            return _Completed()
+        raise AssertionError(f"unexpected subprocess.run call: {args}")
+
+    times = iter([0, 2])
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    monkeypatch.setattr(console_tools.os, "name", "nt")
+    monkeypatch.setattr(console_tools.time, "monotonic", lambda: next(times, 2))
+    monkeypatch.setattr(console_tools.time, "sleep", lambda _seconds: None)
+
+    result = json.loads(execute_console_command("powershell -NoProfile -Command \"Start-Sleep 60\"", timeout_seconds=1))
+
+    assert result["status"] == "timeout"
+    assert ["taskkill", "/PID", "4242", "/T", "/F"] in run_calls
+    assert ["taskkill", "/PID", "5252", "/T", "/F"] in run_calls
+
+
 def test_execute_console_command_blocks_interactive_npx_skills_find(monkeypatch):
     def _fake_popen(*args, **kwargs):
         raise AssertionError("blocked command should not start a process")
@@ -129,7 +165,7 @@ def test_execute_console_command_blocks_broad_powershell_line_count(monkeypatch)
     )
 
     assert result["status"] == "blocked"
-    assert "project_file_stats" in result["hint"]
+    assert "rg_list_files" in result["hint"]
 
 
 def test_execute_console_command_blocks_rg_files_line_count_pipeline(monkeypatch):
@@ -145,7 +181,7 @@ def test_execute_console_command_blocks_rg_files_line_count_pipeline(monkeypatch
     )
 
     assert result["status"] == "blocked"
-    assert "project_file_stats" in result["hint"]
+    assert "rg_list_files" in result["hint"]
 
 
 def test_execute_console_command_webui_build_timeout_reports_partial_success(monkeypatch):

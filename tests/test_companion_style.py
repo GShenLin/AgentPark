@@ -39,9 +39,9 @@ def test_color_enabled_enables_windows_virtual_terminal(monkeypatch):
     monkeypatch.delenv("AITOOLS_COLOR", raising=False)
     companion_style._WINDOWS_VT_CACHE.clear()
 
-    styled = companion_style.style("AgentPark Companion", companion_style.CYAN, companion_style.BOLD, stream=_tty_stream())
+    styled = companion_style.style("AITools Companion", companion_style.CYAN, companion_style.BOLD, stream=_tty_stream())
 
-    assert styled == "\x1b[36m\x1b[1mAgentPark Companion\x1b[0m"
+    assert styled == "\x1b[36m\x1b[1mAITools Companion\x1b[0m"
     assert kernel32.set_mode_calls == [
         (companion_style.STD_OUTPUT_HANDLE, companion_style.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
     ]
@@ -55,7 +55,7 @@ def test_color_enabled_disables_ansi_when_windows_virtual_terminal_is_unavailabl
     monkeypatch.delenv("AITOOLS_COLOR", raising=False)
     companion_style._WINDOWS_VT_CACHE.clear()
 
-    styled = companion_style.style("AgentPark Companion", companion_style.CYAN, companion_style.BOLD, stream=_tty_stream())
+    styled = companion_style.style("AITools Companion", companion_style.CYAN, companion_style.BOLD, stream=_tty_stream())
 
-    assert styled == "AgentPark Companion"
+    assert styled == "AITools Companion"
     assert kernel32.set_mode_calls == []

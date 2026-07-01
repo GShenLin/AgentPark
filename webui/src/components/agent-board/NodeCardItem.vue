@@ -3,6 +3,7 @@ import { computed, inject, nextTick, ref, watch } from 'vue'
 import { AgentBoardKey, type AgentBoardContext, type NodeCard } from './context'
 import NodeAgentMeta from './NodeAgentMeta.vue'
 import NodePorts from './NodePorts.vue'
+import NodeRuntimeDiagnostics from './NodeRuntimeDiagnostics.vue'
 import ToolActivityBadge from './ToolActivityBadge.vue'
 
 const injectedCtx = inject(AgentBoardKey)
@@ -167,6 +168,12 @@ function openNodeFolder(event: MouseEvent) {
           :event="props.node.lastRuntimeEvent"
           :events="props.node.runtimeEvents"
           :calls="props.node.runtimeToolCalls"
+        />
+        <NodeRuntimeDiagnostics
+          v-if="isAgentNode"
+          :events="props.node.runtimeEvents"
+          :provider-summaries="props.node.providerRequestSummaries"
+          :runtime-tool-calls="props.node.runtimeToolCalls"
         />
         <div class="node-message" :class="{ empty: !hasPreview }">
           {{ previewText || ' ' }}
@@ -394,6 +401,9 @@ function openNodeFolder(event: MouseEvent) {
 .node-message {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;

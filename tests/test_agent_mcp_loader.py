@@ -146,6 +146,101 @@ def test_mcp_materialize_records_lifecycle_success(monkeypatch):
     assert snapshot["tool_count"] == 1
 
 
+def test_asset_to_json_mcp_uses_read_only_default_allowlist(monkeypatch):
+    import nodes.agent_mcp_runtime as runtime
+    from nodes.agent_mcp_loader import register_mcp_server_tools
+    from src.tool.base_tool import BaseTool
+
+    class Client:
+        def __init__(self, _server):
+            pass
+
+        def list_tools(self):
+            return [
+                {"name": "find_assets", "description": "Read", "inputSchema": {"type": "object", "properties": {}}},
+                {"name": "read_asset_json", "description": "Read", "inputSchema": {"type": "object", "properties": {}}},
+                {"name": "get_editor_context", "description": "Read", "inputSchema": {"type": "object", "properties": {}}},
+                {"name": "list_actors", "description": "Read", "inputSchema": {"type": "object", "properties": {}}},
+                {"name": "delete_asset", "description": "Mutate", "inputSchema": {"type": "object", "properties": {}}},
+            ]
+
+        def call_tool(self, tool_name, arguments):
+            return f"called:{tool_name}"
+
+    class DummyAgent:
+        config = {}
+
+        def __init__(self):
+            self.tools = BaseTool(self)
+
+    monkeypatch.setattr(runtime, "McpServerClient", Client)
+    agent = DummyAgent()
+    register_mcp_server_tools(
+        agent,
+        ["asset-to-json"],
+        settings={"mcpServers": {"asset-to-json": {"transport": "stdio", "command": "asset-mcp"}}},
+    )
+
+    declaration_names = [
+        item["function"]["name"]
+        for item in agent.tools.tool_declarations
+        if isinstance(item, dict) and isinstance(item.get("function"), dict)
+    ]
+    assert declaration_names == [
+        "mcp__asset-to-json__find_assets",
+        "mcp__asset-to-json__read_asset_json",
+        "mcp__asset-to-json__get_editor_context",
+        "mcp__asset-to-json__list_actors",
+    ]
+    assert "mcp__asset-to-json__delete_asset" not in agent.tools.function_map
+
+
+def test_mcp_tool_result_is_capped_before_model_output(monkeypatch):
+    import nodes.agent_mcp_runtime as runtime
+    from nodes.agent_mcp_loader import register_mcp_server_tools
+    from src.tool.base_tool import BaseTool
+
+    class Client:
+        def __init__(self, _server):
+            pass
+
+        def list_tools(self):
+            return [{"name": "read_big", "description": "Read", "inputSchema": {"type": "object", "properties": {}}}]
+
+        def call_tool(self, tool_name, arguments):
+            return "x" * 2000
+
+    class DummyAgent:
+        config = {}
+
+        def __init__(self):
+            self.tools = BaseTool(self)
+            self.events = []
+
+        def _emit_provider_runtime_notice(self, **kwargs):
+            self.events.append(kwargs)
+
+    monkeypatch.setattr(runtime, "McpServerClient", Client)
+    agent = DummyAgent()
+    settings = {
+        "mcpServers": {
+            "docs": {"transport": "stdio", "command": "docs", "toolResultMaxChars": 100},
+        }
+    }
+
+    register_mcp_server_tools(agent, ["docs"], settings=settings)
+    result = agent.tools.execute_tool_result("mcp__docs__read_big", {})
+
+    assert result.ok
+    payload = json.loads(result.result)
+    assert payload["status"] == "mcp_tool_result_truncated"
+    assert payload["server"] == "docs"
+    assert payload["tool"] == "read_big"
+    assert payload["original_result_chars"] == 2000
+    assert "x" * 100 not in result.result
+    assert agent.events[0]["stage"] == "mcp_tool_result_compacted"
+
+
 def test_mcp_tool_list_cache_reuses_success_until_invalidated(monkeypatch):
     import nodes.agent_mcp_runtime as runtime
     from nodes.agent_mcp_loader import McpServerDefinition

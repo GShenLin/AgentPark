@@ -1,7 +1,11 @@
 import type {
   FileListResponse,
+  AgentProfile,
+  AgentProfileListResponse,
   GraphConfig,
   GraphInfo,
+  GraphProfile,
+  GraphProfileListResponse,
   MessageEnvelope,
   MobileGraphInstance,
   MobileNode,
@@ -25,11 +29,16 @@ import type {
 export type {
   FileItem,
   FileListResponse,
+  AgentProfile,
+  AgentProfileListResponse,
   GraphConfig,
   GraphInfo,
   GraphLink,
   GraphLinkEndpoint,
   GraphNode,
+  GraphProfile,
+  GraphProfileListResponse,
+  GraphProfileNodeConfig,
   MessageEnvelope,
   MessagePart,
   MobileGraph,
@@ -47,6 +56,7 @@ export type {
   NodeTemplate,
   PasteAgentConfig,
   PendingNodeInput,
+  ProviderRequestSummary,
   ProviderInfo,
   RemoteEndpoint,
   ResourceKind,
@@ -118,10 +128,6 @@ async function remoteConfigFetch(path: string, init?: RequestInit) {
 
 export async function restartServer(): Promise<{ ok: boolean }> {
   return remoteConfigFetch('/api/system/restart', { method: 'POST' })
-}
-
-export async function getWebuiCloseSignal(): Promise<{ close: boolean; token: string; reason?: string }> {
-  return remoteConfigFetch('/api/system/webui-close')
 }
 
 export async function listRemotes(): Promise<RemoteEndpoint[]> {
@@ -320,13 +326,28 @@ export async function setNodeInstanceState(
 
 export async function controlNodeInstance(
   nodeId: string,
-  action: 'start' | 'stop',
+  action: 'start' | 'stop' | 'send_input',
   graphId: string,
+  extraPayload: Record<string, unknown> = {},
 ): Promise<{ ok: boolean; state: NodeInstanceState }> {
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/control?graph_id=${encodeURIComponent(graphId)}`, {
     method: 'POST',
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, ...extraPayload }),
   })
+}
+
+export async function sendNodeInteractiveInput(
+  nodeId: string,
+  graphId: string,
+  payload: {
+    session_id: string
+    text?: string
+    append_newline?: boolean
+    send_eof?: boolean
+    send_ctrl_c?: boolean
+  },
+): Promise<{ ok: boolean }> {
+  return controlNodeInstance(nodeId, 'send_input', graphId, payload) as Promise<{ ok: boolean }>
 }
 
 export type ChannelReceiverStatus = {
@@ -479,6 +500,49 @@ export async function saveGraph(
 
 export async function deleteGraph(graphId: string): Promise<{ ok: boolean; graph_id: string; deleted: boolean }> {
   return apiFetch(`/api/graphs/${encodeURIComponent(graphId)}`, { method: 'DELETE' })
+}
+
+export async function listAgentProfiles(): Promise<AgentProfile[]> {
+  const res = await apiFetch('/api/profiles/agents') as AgentProfileListResponse
+  return res.profiles || []
+}
+
+export async function saveAgentProfileFromNode(payload: {
+  graph_id: string
+  node_id: string
+  profile_id: string
+  profile_name?: string
+}): Promise<{ ok: boolean; profile: AgentProfile }> {
+  return apiFetch('/api/profiles/agents/from-node', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function listGraphProfiles(): Promise<GraphProfile[]> {
+  const res = await apiFetch('/api/profiles/graphs') as GraphProfileListResponse
+  return res.profiles || []
+}
+
+export async function saveGraphProfileFromGraph(payload: {
+  graph_id: string
+  profile_id: string
+  profile_name?: string
+}): Promise<{ ok: boolean; profile: GraphProfile }> {
+  return apiFetch('/api/profiles/graphs/from-graph', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function createGraphFromProfile(
+  profileId: string,
+  graphId: string,
+): Promise<{ ok: boolean; graph: GraphConfig; profile: GraphProfile }> {
+  return apiFetch(`/api/profiles/graphs/${encodeURIComponent(profileId)}/create`, {
+    method: 'POST',
+    body: JSON.stringify({ graph_id: graphId }),
+  })
 }
 
 export async function startGraphRunner(graphId: string): Promise<{ ok: boolean; graph_id: string }> {

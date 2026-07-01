@@ -131,9 +131,9 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 - 生成类或长上下文 Provider 可以使用 `180000` 或更高。
 - 不要把 `timeoutMs` 当成长任务总等待时间；轮询类任务应配置对应的 `maxWaitSec`。
 
-## OpenAI Responses 字段
+## Responses API 字段
 
-这些字段用于 `type: "openai"` 的 Provider。当前 OpenAI runtime 对这些字段采用显式合同，缺失会报错，不会读取全局默认。
+这些字段用于声明了 `responsesApi: true` 的 Provider。当前 runtime 对这些字段采用显式合同，缺失会报错，不会读取全局默认。
 
 ### `reasoningEffort`
 
@@ -163,7 +163,7 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 
 OpenAI Responses 工具调用后，下一轮请求如何延续上下文。
 
-必填于 `type: "openai"` Provider。
+必填于 `responsesApi: true` Provider。
 
 合法取值只有：
 
@@ -210,6 +210,34 @@ OpenAI Responses 工具调用后，下一轮请求如何延续上下文。
 - 必须写在 Provider 配置上。
 - 缺失或非布尔值会报错。
 - 不接受 `responses_replay_reasoning_items` 别名。
+
+### `toolResultSubmissionMaxChars`
+
+工具结果提交给 Responses 模型前的硬上限。
+
+要求：
+
+- 必填于 `responsesApi: true` Provider。
+- 必须是大于 0 的整数。
+- 超限工具结果会被替换为结构化压缩结果；原始结果只应作为运行时 artifact 保留。
+
+### `toolContextCompactionEnabled`
+
+是否启用工具上下文压缩门。
+
+要求：
+
+- 必填于 `responsesApi: true` Provider。
+- 必须是布尔值。
+
+### `toolContextCompactionEveryToolCalls`
+
+每累计多少次工具调用后尝试压缩工具上下文。
+
+要求：
+
+- 必填于 `responsesApi: true` Provider。
+- 必须是大于 0 的整数。
 
 ### `responsesApi`
 

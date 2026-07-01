@@ -1,20 +1,46 @@
-﻿:root {
-  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  line-height: 1.5;
+:root {
+  font-family: 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.6;
   font-weight: 400;
-  color: rgba(248, 250, 252, 0.95);
-  background-color: #020617;
+  color: #e2e8f0;
+  background-color: #0f172a;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --bg-main: #020617;
-  --bg-muted: rgba(15, 23, 42, 0.55);
-  --border-main: rgba(148, 163, 184, 0.2);
-  --text-main: rgba(248, 250, 252, 0.95);
-  --text-muted: rgba(148, 163, 184, 0.92);
-  --focus-main: rgba(56, 189, 248, 0.8);
+  /* 简约配色系统 - 柔和深色主题 */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-hover: rgba(51, 65, 85, 0.5);
+  --bg-active: rgba(59, 130, 246, 0.15);
+  
+  --border-subtle: rgba(148, 163, 184, 0.1);
+  --border-light: rgba(148, 163, 184, 0.15);
+  --border-medium: rgba(148, 163, 184, 0.25);
+  
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-accent: #60a5fa;
+  
+  --accent-blue: #3b82f6;
+  --accent-blue-soft: rgba(59, 130, 246, 0.12);
+  --accent-green: #22c55e;
+  --accent-amber: #f59e0b;
+  --accent-red: #ef4444;
+  
+  /* 阴影系统 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  
+  /* 过渡动画 */
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * {
@@ -31,37 +57,68 @@ body,
 }
 
 body {
-  color: var(--text-main);
-  background:
-    radial-gradient(900px 560px at 16% -8%, rgba(14, 165, 233, 0.2), transparent 62%),
-    radial-gradient(720px 460px at 88% 0%, rgba(56, 189, 248, 0.1), transparent 55%),
-    var(--bg-main);
+  color: var(--text-primary);
+  background: 
+    radial-gradient(800px 600px at 20% -10%, rgba(59, 130, 246, 0.08), transparent 60%),
+    radial-gradient(600px 500px at 80% 0%, rgba(129, 140, 248, 0.06), transparent 55%),
+    var(--bg-primary);
+  background-attachment: fixed;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 3px;
+  transition: background var(--transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
 }
 
 a {
-  color: #7dd3fc;
+  color: var(--text-accent);
   text-decoration: none;
+  transition: color var(--transition-fast);
 }
 
 a:hover {
-  color: #bae6fd;
+  color: #93c5fd;
 }
 
+/* 按钮基础样式 */
 button {
   border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  padding: 0.45em 0.9em;
-  font-size: 0.9rem;
+  border: 1px solid var(--border-light);
+  padding: 8px 14px;
+  font-size: 13px;
   font-weight: 500;
   font-family: inherit;
-  background: rgba(15, 23, 42, 0.6);
-  color: var(--text-main);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
+  transition: all var(--transition-normal);
+  backdrop-filter: blur(8px);
 }
 
 button:hover {
-  border-color: rgba(125, 211, 252, 0.8);
+  border-color: var(--border-medium);
+  background: var(--bg-tertiary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+button:active {
+  transform: translateY(0);
 }
 
 button:focus,
@@ -69,10 +126,99 @@ button:focus-visible,
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 2px solid var(--focus-main);
-  outline-offset: 1px;
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
 }
 
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 输入框基础样式 */
+input,
+textarea,
+select {
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  padding: 10px 14px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font: inherit;
+  font-size: 13px;
+  transition: all var(--transition-normal);
+}
+
+input:hover,
+textarea:hover,
+select:hover {
+  border-color: var(--border-medium);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 代码块样式 */
+.markdown-code-block {
+  position: relative;
+  margin: 12px 0;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.markdown-code-block pre {
+  margin: 0;
+  padding: 14px 50px 14px 14px;
+  border-radius: 10px;
+  background: transparent;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.markdown-code-copy {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  min-width: 48px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 26px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all var(--transition-normal);
+}
+
+.markdown-code-block:hover .markdown-code-copy,
+.markdown-code-copy:focus-visible,
+.markdown-code-copy.copied {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.markdown-code-copy:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.markdown-code-copy.copied {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+}
+
+/* 应用外壳 */
 .app-shell {
   height: 100%;
   width: 100%;
@@ -80,31 +226,35 @@ select:focus {
   flex-direction: column;
 }
 
+/* 顶部导航栏 */
 .topbar {
-  height: 56px;
+  height: 52px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border-main);
-  backdrop-filter: blur(8px);
-  background: rgba(2, 6, 23, 0.72);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(16px);
+  background: rgba(15, 23, 42, 0.75);
 }
 
 .brand {
-  font-size: 14px;
-  letter-spacing: 0.2px;
-  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+  font-weight: 600;
   white-space: nowrap;
+  color: var(--text-primary);
 }
 
+/* 主内容区 */
 .content {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 10px;
-  padding: 10px;
+  gap: 1px;
+  padding: 0;
   overflow: hidden;
+  background: var(--border-subtle);
 }
 
 .center {
@@ -113,33 +263,51 @@ select:focus {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
+  background: var(--bg-primary);
 }
 
+/* Agent 工作区 */
 .agent-stage {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
   position: relative;
 }
 
+/* 错误提示 */
 .error {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  padding: 10px 12px;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  padding: 12px 16px;
   border-radius: 10px;
-  border: 1px solid rgba(248, 113, 113, 0.5);
-  background: rgba(127, 29, 29, 0.35);
-  color: rgba(254, 226, 226, 0.95);
-  font-size: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(127, 29, 29, 0.4);
+  color: #fecaca;
+  font-size: 13px;
   white-space: pre-wrap;
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-lg);
+  animation: slideUp 0.3s ease;
 }
 
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 交互层 */
 .interaction-layer {
   position: absolute;
   inset: 0;
@@ -149,48 +317,66 @@ select:focus {
 
 .interaction-dialog {
   position: absolute;
-  max-width: calc(100% - 32px);
-  max-height: 620px;
+  max-width: calc(100% - 40px);
+  max-height: 650px;
   overflow: auto;
-  border: 1px solid rgba(125, 211, 252, 0.24);
-  border-radius: 18px;
-  padding: 16px;
-  background: rgba(15, 23, 42, 0.96);
-  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 20px;
+  background: rgba(30, 41, 59, 0.98);
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(20px);
   pointer-events: auto;
   user-select: text;
+  animation: dialogIn 0.25s ease;
+}
+
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .interaction-dialog.dragging {
   user-select: none;
+  transition: none;
 }
 
 .interaction-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
 .interaction-kicker,
 .interaction-agent,
 .interaction-count,
 .interaction-field small {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
 .interaction-header h2 {
-  margin: 4px 0 0;
-  font-size: 17px;
+  margin: 6px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .interaction-drag-handle {
   flex: 0 0 auto;
   cursor: grab;
-  border-color: rgba(125, 211, 252, 0.3);
-  padding: 6px 10px;
+  border-color: var(--border-light);
+  padding: 6px 12px;
   font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .interaction-dialog.dragging .interaction-drag-handle {
@@ -198,43 +384,54 @@ select:focus {
 }
 
 .interaction-description {
-  margin: 12px 0;
-  color: rgba(226, 232, 240, 0.92);
+  margin: 16px 0;
+  color: var(--text-primary);
   white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .interaction-fields {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 16px;
+  gap: 16px;
+  margin-top: 20px;
 }
 
 .interaction-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .interaction-label {
-  font-weight: 650;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-primary);
 }
 
 .interaction-label b {
   margin-left: 4px;
-  color: #fb7185;
+  color: var(--accent-red);
 }
 
 .interaction-field input:not([type='checkbox']),
 .interaction-field textarea,
 .interaction-field select {
   width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 10px;
-  padding: 10px 12px;
-  color: var(--text-main);
-  background: rgba(2, 6, 23, 0.5);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
   font: inherit;
+  font-size: 14px;
+}
+
+.interaction-field input:not([type='checkbox']):focus,
+.interaction-field textarea:focus,
+.interaction-field select:focus {
+  background: var(--bg-secondary);
 }
 
 .interaction-options {
@@ -243,42 +440,58 @@ select:focus {
   gap: 8px;
 }
 
+.interaction-options button {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
 .interaction-options button.selected {
-  border-color: rgba(56, 189, 248, 0.95);
-  background: rgba(14, 165, 233, 0.22);
+  border-color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  color: #93c5fd;
 }
 
 .interaction-custom-frame {
   width: 100%;
   min-height: 180px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 12px;
-  background: #020617;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-primary);
 }
 
 .interaction-error {
-  margin-top: 14px;
-  color: #fecaca;
+  margin-top: 16px;
+  color: #fca5a5;
   font-size: 13px;
+  padding: 10px 14px;
+  background: rgba(127, 29, 29, 0.3);
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .interaction-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 18px;
+  gap: 8px;
+  margin-top: 24px;
 }
 
+/* 响应式 */
 @media (max-width: 960px) {
   .topbar {
     height: auto;
-    min-height: 56px;
+    min-height: 52px;
     align-items: flex-start;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    padding-top: 10px;
+    padding-bottom: 10px;
   }
 
   .content {
-    padding: 8px;
-    gap: 8px;
+    padding: 0;
+    gap: 1px;
+  }
+  
+  .interaction-dialog {
+    padding: 16px;
   }
 }

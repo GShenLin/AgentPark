@@ -11,6 +11,8 @@ def _build_agent():
         "retryDelaySec": 0,
         "responsesApi": True,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.system_prompt = None

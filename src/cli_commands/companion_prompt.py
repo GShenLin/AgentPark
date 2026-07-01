@@ -212,13 +212,13 @@ class PromptCompanionTerminal:
         provider = str(self.target.config.get("provider_id") or "provider-unset")
         mode = str(self.target.config.get("mode") or "chat")
         reasoning = str(self.target.config.get("reasoning_effort") or "")
-        return f" AgentPark Companion | provider {provider} | mode {mode} | reasoning {reasoning} | turns {self.turn_count} "
+        return f" AITools Companion | provider {provider} | mode {mode} | reasoning {reasoning} | turns {self.turn_count} "
 
     def _print_banner(self) -> None:
         provider = str(self.target.config.get("provider_id") or "provider-unset")
         model_mode = str(self.target.config.get("mode") or "chat")
         print("")
-        print(accent("AgentPark Companion"))
+        print(accent("AITools Companion"))
         print(field_line("provider", provider))
         print(field_line("mode", model_mode))
         print(field_line("interface", "companion cli"))

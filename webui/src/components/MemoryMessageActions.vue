@@ -30,8 +30,8 @@ const emit = defineEmits<{
     <button
       class="message-action-btn"
       type="button"
-      title="复制文字"
-      aria-label="复制文字"
+      title="Copy text"
+      aria-label="Copy text"
       :disabled="disabled"
       @click.stop="emit('copy')"
     >

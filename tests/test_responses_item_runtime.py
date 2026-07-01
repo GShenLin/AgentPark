@@ -21,6 +21,9 @@ def _openai_agent():
         "responsesApi": True,
         "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -36,6 +39,19 @@ def _emit_item_events(handler, raw_events):
     for raw_event in raw_events:
         for event in normalizer.ingest_event(raw_event):
             handler(event)
+
+
+def _without_environment_context(items):
+    def is_environment_context(item):
+        if not isinstance(item, dict) or item.get("type") != "message" or item.get("role") != "system":
+            return False
+        content = item.get("content")
+        if not isinstance(content, list) or not content:
+            return False
+        first = content[0]
+        return isinstance(first, dict) and str(first.get("text") or "").startswith("[Agent Environment Context]\n")
+
+    return [item for item in items if not is_environment_context(item)]
 
 
 def test_item_level_runtime_starts_tool_when_function_call_item_done():
@@ -111,8 +127,9 @@ def test_item_level_runtime_starts_tool_when_function_call_item_done():
 
     assert payloads[0]["stream"] is True
     assert order.index("tool_started") < order.index("response_completed_returned")
-    assert payloads[1]["input"][1]["type"] == "function_call"
-    assert payloads[1]["input"][2] == {
+    continuation_input = _without_environment_context(payloads[1]["input"])
+    assert continuation_input[1]["type"] == "function_call"
+    assert continuation_input[2] == {
         "type": "function_call_output",
         "call_id": "call-1",
         "output": "echo:hello",

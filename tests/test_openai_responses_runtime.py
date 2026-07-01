@@ -127,6 +127,9 @@ def test_openai_responses_payload_includes_web_search_when_enabled():
         "responsesReplayReasoningItems": False,
         "webSearchContextSize": "high",
         "webSearchUserLocation": {"type": "approximate", "country": "US", "city": "Seattle"},
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -181,6 +184,9 @@ def test_openai_send_uses_web_search_switch():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.system_prompt = None
@@ -224,6 +230,9 @@ def test_openai_responses_requires_explicit_continuation_mode():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
 
     try:
@@ -274,6 +283,9 @@ def test_openai_responses_requires_explicit_reasoning_replay_policy():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "responsesContinuationMode": "explicit_context",
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
 
     try:
@@ -314,6 +326,9 @@ def test_stream_does_not_return_stale_tool_call_intro():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -390,6 +405,9 @@ def test_openai_responses_empty_output_feeds_back_error_before_returning_final_m
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -450,6 +468,9 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
         "retryDelaySec": 0,
         "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -511,11 +532,23 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
     assert out == "Recovered from compact feedback."
     assert len(payloads) == 3
     feedback_input = payloads[2]["input"]
-    assert len(feedback_input) == 1
-    feedback_text = feedback_input[0]["content"][0]["text"]
+    assert len(feedback_input) == 2
+    assert feedback_input[0]["content"][0]["text"].startswith("[Agent Environment Context]\n")
+    feedback_text = feedback_input[1]["content"][0]["text"]
     assert len(json.dumps(feedback_input, ensure_ascii=False)) < 10000
     assert "inspect DA_Action_Book" in feedback_text
-    assert "asset-row-" in feedback_text
+    assert "tool_result_submission_error" in feedback_text
+    assert "asset-row-" not in feedback_text
+    feedback_payload = json.loads(feedback_text.split("\n", 1)[1])
+    diagnostics = feedback_payload["diagnostics"]
+    assert diagnostics["likely_cause"] == "compacted_large_tool_result_context"
+    assert diagnostics["largest_tool_result_chars"] > 0
+    assert diagnostics["provider_request"]["input_item_count"] == 4
+    request_summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    assert len(request_summaries) == 3
+    assert request_summaries[1]["largest_tool_result"]["call_id"] == "call-1"
+    assert request_summaries[1]["largest_tool_result"]["name"] == "read_large_asset"
+    assert request_summaries[1]["largest_tool_result"]["output_status"] == "tool_result_submission_error"
 
 
 def test_openai_responses_empty_output_twice_returns_explicit_error():
@@ -531,6 +564,9 @@ def test_openai_responses_empty_output_twice_returns_explicit_error():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -583,6 +619,9 @@ def test_openai_responses_continuation_includes_tool_image_data():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -660,6 +699,9 @@ def test_explicit_context_continuation_replays_user_task_across_multi_tool_round
         "retryDelaySec": 0,
         "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -744,6 +786,9 @@ def test_explicit_context_continuation_omits_reasoning_items_by_default():
         "retryDelaySec": 0,
         "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -802,8 +847,8 @@ def test_explicit_context_continuation_omits_reasoning_items_by_default():
 
     assert "previous_response_id" not in payloads[1]
     assert all(item.get("type") != "reasoning" for item in payloads[1]["input"])
-    assert payloads[1]["input"][1]["type"] == "function_call"
-    assert payloads[1]["input"][2] == {
+    function_index = next(index for index, item in enumerate(payloads[1]["input"]) if item.get("type") == "function_call")
+    assert payloads[1]["input"][function_index + 1] == {
         "type": "function_call_output",
         "call_id": "call-1",
         "output": "echo:hello",
@@ -824,6 +869,9 @@ def test_responses_invalid_tool_arguments_return_tool_error_and_continue():
         "retryDelaySec": 0,
         "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -880,10 +928,10 @@ def test_responses_invalid_tool_arguments_return_tool_error_and_continue():
     tool_payload = json.loads(tool_message["content"])
     assert tool_payload["status"] == "invalid_arguments"
     assert "failed to parse tool arguments JSON" in tool_payload["error"]
-    assert payloads[1]["input"][1]["type"] == "function_call"
-    assert payloads[1]["input"][1]["call_id"] == "call-bad"
-    assert payloads[1]["input"][2]["type"] == "function_call_output"
-    output_payload = json.loads(payloads[1]["input"][2]["output"])
+    function_index = next(index for index, item in enumerate(payloads[1]["input"]) if item.get("type") == "function_call")
+    assert payloads[1]["input"][function_index]["call_id"] == "call-bad"
+    assert payloads[1]["input"][function_index + 1]["type"] == "function_call_output"
+    output_payload = json.loads(payloads[1]["input"][function_index + 1]["output"])
     assert output_payload["status"] == "invalid_arguments"
 
 
@@ -900,6 +948,9 @@ def test_explicit_context_continuation_can_replay_reasoning_items_when_enabled()
         "retryDelaySec": 0,
         "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": True,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -956,13 +1007,14 @@ def test_explicit_context_continuation_can_replay_reasoning_items_when_enabled()
         reasoning_effort="",
     ) == "done"
 
-    assert payloads[1]["input"][1] == {
+    reasoning_index = next(index for index, item in enumerate(payloads[1]["input"]) if item.get("type") == "reasoning")
+    assert payloads[1]["input"][reasoning_index] == {
         "type": "reasoning",
         "id": "rs-1",
         "summary": [{"type": "summary_text", "text": "Need one echo call."}],
     }
-    assert payloads[1]["input"][2]["type"] == "function_call"
-    assert payloads[1]["input"][3] == {
+    assert payloads[1]["input"][reasoning_index + 1]["type"] == "function_call"
+    assert payloads[1]["input"][reasoning_index + 2] == {
         "type": "function_call_output",
         "call_id": "call-1",
         "output": "echo:hello",
@@ -983,6 +1035,9 @@ def test_stream_continues_after_tool_call_without_response_id():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -1042,4 +1097,207 @@ def test_stream_continues_after_tool_call_without_response_id():
     assert payloads[1]["input"][-1]["type"] == "function_call_output"
     assert payloads[1]["input"][-1]["call_id"] == "call-1"
     assert "README.md" in payloads[1]["input"][-1]["output"]
+
+
+def test_responses_requests_include_fresh_environment_context_without_memory_persistence(monkeypatch, tmp_path):
+    from src.providers.openai_agent import OpenAIAgent
+    import src.providers.agent_environment_context as environment_context
+
+    request_times = iter(
+        [
+            "2026-06-30T09:00:00+08:00",
+            "2026-06-30T09:00:01+08:00",
+        ]
+    )
+
+    def fake_context(agent, *, current_input=None):
+        _ = current_input
+        return {
+            "workspace_root": str(tmp_path),
+            "working_path": str(tmp_path / "work"),
+            "shell": "powershell",
+            "request_time": next(request_times),
+        }
+
+    monkeypatch.setattr(environment_context, "build_agent_environment_context", fake_context)
+    monkeypatch.setattr("src.providers.responses_runtime.build_agent_environment_context", fake_context)
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+    agent.tools.function_map["echo_tool"] = lambda message=None: f"echo:{message}"
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                        "status": "completed",
+                    },
+                ],
+            },
+            {
+                "id": "resp-final",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "done"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    ) == "done"
+
+    assert len(payloads) == 2
+    first_env_text = payloads[0]["input"][0]["content"][0]["text"]
+    second_env_text = payloads[1]["input"][0]["content"][0]["text"]
+    assert first_env_text.startswith("[Agent Environment Context]\n")
+    assert second_env_text.startswith("[Agent Environment Context]\n")
+    assert "2026-06-30T09:00:00+08:00" in first_env_text
+    assert "2026-06-30T09:00:01+08:00" in second_env_text
+    assert "run echo" in json.dumps(payloads[1]["input"], ensure_ascii=False)
+    assert all("[Agent Environment Context]" not in str(message.get("content")) for message in agent.messages)
+
+    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    assert summaries[-1]["environment_context_chars"] > 0
+
+
+def test_explicit_context_continuation_preserves_assistant_content_with_function_call():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+    order = []
+    agent._aitools_persist_assistant_tool_call_note = lambda message: order.append(
+        ("persist", message.get("content"))
+    )
+
+    def echo_tool(message=None):
+        order.append(("tool", message))
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "I will inspect the first result."}],
+                    },
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                        "status": "completed",
+                    },
+                ],
+            },
+            {
+                "id": "resp-final",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "done"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    ) == "done"
+
+    assistant_messages = [message for message in agent.messages if message.get("role") == "assistant"]
+    assert assistant_messages[0]["content"] == "I will inspect the first result."
+    assert order == [
+        ("persist", "I will inspect the first result."),
+        ("tool", "hello"),
+    ]
+    continuation_text = json.dumps(payloads[1]["input"], ensure_ascii=False)
+    assert continuation_text.count("I will inspect the first result.") == 1
+    preserved = [
+        item
+        for item in payloads[1]["input"]
+        if item.get("type") == "message"
+        and item.get("role") == "assistant"
+        and item.get("content") == [{"type": "output_text", "text": "I will inspect the first result."}]
+    ]
+    assert len(preserved) == 1
+    assert any(item.get("type") == "function_call" and item.get("call_id") == "call-1" for item in payloads[1]["input"])
+    assert any(item.get("type") == "function_call_output" and item.get("call_id") == "call-1" for item in payloads[1]["input"])
 

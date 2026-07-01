@@ -111,6 +111,52 @@ export type GraphInfo = {
   updated_at?: string
 }
 
+export type AgentProfile = {
+  id: string
+  name: string
+  node_type_id: string
+  source_graph_id?: string
+  source_node_id?: string
+  node_name?: string
+  fields: Record<string, unknown>
+  created_at?: string
+  updated_at?: string
+}
+
+export type AgentProfileListResponse = {
+  version: number
+  profiles: AgentProfile[]
+}
+
+export type GraphProfileNodeConfig = {
+  node_id: string
+  graph_id: string
+  type_id: string
+  name?: string
+  fields: Record<string, unknown>
+  ui?: {
+    x?: number
+    y?: number
+  }
+  input_num?: number
+  output_num?: number
+}
+
+export type GraphProfile = {
+  id: string
+  name: string
+  source_graph_id?: string
+  graph: GraphConfig
+  node_configs: GraphProfileNodeConfig[]
+  created_at?: string
+  updated_at?: string
+}
+
+export type GraphProfileListResponse = {
+  version: number
+  profiles: GraphProfile[]
+}
+
 export type NodeRunStatus = 'running' | 'finished' | 'stopped' | 'error'
 
 export type NodeInstanceState = 'idle' | 'working' | 'stop'
@@ -201,6 +247,23 @@ export type RuntimeToolCall = {
   diagnostics?: string[] | null
 }
 
+export type ProviderRequestSummary = {
+  request_index?: number
+  continuation_mode?: string
+  responses_mode?: string
+  requested_responses_mode?: string
+  previous_response_id_present?: boolean
+  input_item_count?: number
+  approx_input_chars?: number
+  environment_context_chars?: number
+  largest_input_items?: Record<string, unknown>[]
+  tool_result_chars_by_call?: Record<string, unknown>[]
+  largest_tool_result?: Record<string, unknown>
+  tools_included?: string[]
+  tools_included_count?: number
+  stream?: boolean
+}
+
 export type NodeInstanceConfig = {
   node_id: string
   type_id: string
@@ -210,6 +273,7 @@ export type NodeInstanceConfig = {
   last_runtime_event?: RuntimeEvent | null
   runtime_events?: RuntimeEvent[]
   runtime_tool_calls?: RuntimeToolCall[]
+  provider_request_summaries?: ProviderRequestSummary[]
   ui?: {
     x?: number
     y?: number
@@ -321,6 +385,7 @@ export type MobileGraph = {
   instance_name: string
   instance_path: string
   updated_at?: string | null
+  readonly?: boolean
 }
 
 export type MobileGraphInstance = MobilePcInstance & {
@@ -340,6 +405,7 @@ export type MobileNode = {
   runtime_tool_calls?: RuntimeToolCall[]
   input_num?: number
   output_num?: number
+  readonly?: boolean
 }
 
 export type MobileNodeConversation = {

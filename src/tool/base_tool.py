@@ -29,8 +29,6 @@ class BaseTool:
     _TOOL_FUNCTION_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
     _PREFLIGHT_TOOL_NAMES = {
         "read_file",
-        "project_overview",
-        "project_file_stats",
         "rg_search_text",
         "rg_list_files",
         "multi_tool_use_parallel",
@@ -326,7 +324,7 @@ class BaseTool:
         base = (
             "Before you start executing the task, you must first enter an information-gathering phase.\n"
             "Requirements:\n"
-            "1) Use function tools to collect key information (prefer read-only tools: project_overview/read_file/rg_list_files/rg_search_text; use execute_console_command only when necessary).\n"
+            "1) Use function tools to collect key information (prefer read-only tools: read_file/rg_list_files/rg_search_text; use execute_console_command only when necessary).\n"
             "2) Parallelize tool calls whenever possible - especially for independent file reads/searches. Use multi_tool_use_parallel to parallelize tool calls and only this.\n"
             "3) After gathering, output exactly one JSON object (no code fences, no explanations) containing: facts/assumptions/open_questions/plan.\n"
             "4) Do not deliver the final result in this phase.\n\n"

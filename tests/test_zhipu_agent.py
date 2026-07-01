@@ -18,6 +18,8 @@ def _make_zhipu_agent():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "timeoutMs": 1000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "zhipu"
     agent.messages = []
@@ -166,7 +168,6 @@ def test_zhipu_tool_context_compaction_runs_between_tool_rounds():
         "toolContextCompactionEnabled": True,
         "toolContextCompactionEveryToolCalls": 1,
     })
-    agent.tool_context_compaction_gate_enabled = True
     agent._tool_context_compaction_since_last = 0
     agent.messages = [{"role": "user", "content": "run echo"}]
     requests = []

@@ -68,7 +68,7 @@ const promptActionMessage = ref('')
 const promptLibraryMode = ref<'' | 'save' | 'load'>('')
 const promptLibraryFiles = ref<string[]>([])
 const promptSaveFilename = ref('system_prompt.txt')
-const schemaKeys = computed(() => Object.keys(props.schema || {}))
+const schemaKeys = computed(() => Object.keys(props.schema || {}).filter((key) => shouldShowField(key)))
 const modeOptions = computed(() => {
   const discovered = props.providers.flatMap((provider) => providerModes(provider))
   const merged = dedupeStrings([...defaultModeOrder, ...discovered].map((mode) => normalizeMode(mode)))
@@ -106,15 +106,21 @@ function normalizePromptFilename(value: string) {
   return filename.toLowerCase().endsWith('.txt') ? filename : `${filename}.txt`
 }
 
-function promptLibraryOptionsId(key: string) {
-  return `prompt-library-options-${String(key || '').replace(/[^a-zA-Z0-9_-]/g, '-')}`
-}
-
 async function refreshPromptLibraryFiles() {
   promptLibraryFiles.value = (await listPrompts())
     .map((item) => String(item || '').trim())
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b))
+}
+
+function promptLibrarySelectValue() {
+  const filename = normalizePromptFilename(promptSaveFilename.value)
+  return promptLibraryFiles.value.includes(filename) ? filename : ''
+}
+
+function selectPromptLibraryFile(value: string) {
+  const filename = normalizePromptFilename(value)
+  if (filename) promptSaveFilename.value = filename
 }
 
 function promptActionError(error: unknown) {
@@ -218,6 +224,10 @@ function isReasoningEffortField(key: string) {
   return props.typeId === 'agent_node' && key === 'reasoning_effort'
 }
 
+function shouldShowField(_key: string) {
+  return true
+}
+
 function getSelectedProvider() {
   const providerId = String(props.fields.provider_id ?? '').trim()
   if (!providerId) return null
@@ -242,6 +252,10 @@ function getProviderFeatureHint(key: string) {
 
 function isToolsField(key: string) {
   return props.typeId === 'agent_node' && key === 'tools'
+}
+
+function isToolSelectionField(key: string) {
+  return isToolsField(key)
 }
 
 function getFieldType(key: string) {
@@ -275,7 +289,7 @@ function isSelectField(key: string) {
 }
 
 function getFieldOptions(key: string) {
-  if (isToolsField(key)) {
+  if (isToolSelectionField(key)) {
     const schemaOptions = getSchemaFieldOptions(props.schema, key)
     if (schemaOptions.length) return schemaOptions
     return toolOptions.value.map((value) => ({ value, label: value }))
@@ -296,9 +310,9 @@ function isWorkingPathField(key: string) {
 }
 
 function getMultiSelectValue(key: string) {
-  if (isToolsField(key)) {
+  if (isToolSelectionField(key)) {
     const allowedTools = getFieldOptions(key).map((option) => option.value)
-    return normalizeToolSelection(props.fields.tools, allowedTools)
+    return normalizeToolSelection(props.fields[key], allowedTools)
   }
   return normalizeSchemaFieldValue(props.schema, key, props.fields[key]) as string[]
 }
@@ -323,7 +337,7 @@ function getMultiSelectLabel(key: string) {
 
 function getMultiSelectEmptyText(key: string) {
   if (String(key || '').trim() === 'plugins') return 'No plugins found.'
-  if (isToolsField(key)) return 'No tools found.'
+  if (isToolSelectionField(key)) return 'No tools found.'
   if (String(key || '').trim() === 'mcp_servers') return 'No MCP servers found.'
   if (String(key || '').trim() === 'skills') return 'No skills found.'
   return 'No options found.'
@@ -533,11 +547,19 @@ watch(
 
       <div v-if="isSystemPromptField(key) && promptLibraryMode" class="field-prompt-library" @click.stop @keydown.stop>
         <template v-if="promptLibraryMode === 'save'">
+          <select
+            v-if="promptLibraryFiles.length"
+            class="field-input field-prompt-name field-prompt-select"
+            :value="promptLibrarySelectValue()"
+            @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="" disabled>Select saved prompt</option>
+            <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
+          </select>
           <input
             v-model="promptSaveFilename"
-            class="field-input field-prompt-name"
+            class="field-input field-prompt-name field-prompt-custom-name"
             type="text"
-            :list="promptLibraryOptionsId(key)"
             placeholder="system_prompt.txt"
           />
           <button
@@ -550,7 +572,12 @@ watch(
           </button>
         </template>
         <template v-else>
-          <select v-if="promptLibraryFiles.length" v-model="promptSaveFilename" class="field-input field-prompt-name">
+          <select
+            v-if="promptLibraryFiles.length"
+            class="field-input field-prompt-name"
+            :value="promptLibrarySelectValue()"
+            @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+          >
             <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
           </select>
           <span v-else class="field-prompt-empty">No saved prompts found.</span>
@@ -563,9 +590,6 @@ watch(
             {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
           </button>
         </template>
-        <datalist :id="promptLibraryOptionsId(key)">
-          <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename"></option>
-        </datalist>
       </div>
 
       <span v-if="getFieldHint(key)" class="field-hint">{{ getFieldHint(key) }}</span>
@@ -689,6 +713,7 @@ watch(
 .field-prompt-library {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
@@ -700,7 +725,13 @@ watch(
   font-size: 12px;
 }
 
+.field-prompt-select,
+.field-prompt-custom-name {
+  flex-basis: 160px;
+}
+
 .field-prompt-confirm {
+  flex: 0 0 auto;
   min-width: 54px;
   padding: 8px 10px;
 }

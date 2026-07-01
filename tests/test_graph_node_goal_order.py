@@ -45,6 +45,9 @@ class _FakeHost:
     def _log_graph_event(self, _graph_id, event, **_payload):
         self.order.append(f"log:{event}")
 
+    def _append_runtime_log(self, *_args, **_kwargs):
+        self.order.append("runtime_log")
+
     def _append_node_tool_call_entry(self, *_args, **_kwargs):
         self.order.append("tool_call_memory")
 

@@ -14,6 +14,8 @@ def _build_agent():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.Message = lambda *_args, **_kwargs: None

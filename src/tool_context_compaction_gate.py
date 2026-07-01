@@ -18,13 +18,17 @@ TOOL_CONTEXT_COMPACTION_REFUSED_ERROR = (
     "Tool context compaction gate failed: the model did not call compact_tool_context "
     "after being explicitly required to do so."
 )
+TOOL_CONTEXT_COMPACTION_SKIPPED_MARKER = (
+    "[Tool Context Summary]\nReason: compaction_gate_refused\n"
+    "The automatic tool-context compaction gate did not receive the required "
+    "compact_tool_context call. Compaction has been skipped for this turn; "
+    "the conversation continues without context compression."
+)
 
 
 class ToolContextCompactionGateMixin:
     def _run_tool_context_compaction_gate_if_needed(self, executions: object) -> bool:
         self._tool_context_compaction_last_changed = False
-        if not bool(getattr(self, "tool_context_compaction_gate_enabled", False)):
-            return False
         if not self._tool_context_compaction_enabled():
             return False
         if bool(getattr(self, "_tool_context_compaction_gate_active", False)):
@@ -103,9 +107,35 @@ class ToolContextCompactionGateMixin:
             self._tool_context_compaction_changed = previous_changed
 
         if not applied:
+            # Graceful degradation: if the model does not call compact_tool_context
+            # after the required prompts (e.g. due to an EmptyMessage feedback
+            # loop stripping the gate instruction), skip compaction for this turn
+            # instead of crashing the agent with a hard RuntimeError.  A short
+            # system note is appended to the original messages so future turns
+            # carry a trace of the skip without discarding the conversation.
             self._tool_context_compaction_since_last = 0
             self._tool_context_compaction_last_changed = False
-            raise RuntimeError(TOOL_CONTEXT_COMPACTION_REFUSED_ERROR)
+            try:
+                emitter = getattr(self, "_emit_provider_runtime_notice", None)
+                if callable(emitter):
+                    emitter(
+                        message=json.dumps(
+                            {
+                                "reason": "model_refused_compaction",
+                                "attempts": 2,
+                                "candidate_count": len(candidates) if isinstance(candidates, list) else 0,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        stage="tool_context_compaction_gate_refused",
+                    )
+            except Exception:
+                pass
+            if isinstance(original_messages, list):
+                original_messages.append(
+                    {"role": "system", "content": TOOL_CONTEXT_COMPACTION_SKIPPED_MARKER}
+                )
+            return False
         self._tool_context_compaction_since_last = 0
         self._tool_context_compaction_last_changed = changed
         return True
@@ -283,6 +313,7 @@ class ToolContextCompactionGateMixin:
     def _build_tool_context_compaction_gate_prompt(self, candidates: list[dict[str, Any]]) -> str:
         summaries = self._existing_tool_context_summaries()
         payload = {
+            "latest_user_input": self._latest_tool_context_compaction_user_input(),
             "existing_summaries": summaries,
             "eligible_messages": candidates,
         }
@@ -294,6 +325,7 @@ class ToolContextCompactionGateMixin:
             "Tool calls have accumulated in the current task. Before using any other tools, you must call "
             "compact_tool_context exactly once. This is a context maintenance gate.\n"
             "Review the eligible tool-call messages below and decide what should remain in the model context. "
+            "Use latest_user_input as the primary task anchor when deciding which tool facts are still relevant. "
             "Prefer action=replace when the raw tool-call window can be replaced by a concise but actionable summary. "
             "Use action=patch when only specific messages should be deleted or rewritten. Use action=skip only when "
             "the raw messages are still required.\n"
@@ -307,6 +339,31 @@ class ToolContextCompactionGateMixin:
             "and verification state. Do not send a final response solely because compaction completed.\n"
             f"Compaction input: {payload_text}"
         )
+
+    def _latest_tool_context_compaction_user_input(self) -> dict[str, Any] | None:
+        messages = getattr(self, "messages", []) or []
+        if not isinstance(messages, list):
+            return None
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
+            if not isinstance(message, dict):
+                continue
+            if str(message.get("role") or "").strip().lower() != "user":
+                continue
+            content = message.get("content")
+            if not isinstance(content, str):
+                content = json.dumps(content, ensure_ascii=False)
+            max_chars = self._tool_context_compaction_max_candidate_chars()
+            truncated = len(content) > max_chars
+            if truncated:
+                content = content[: max(0, max_chars - 3)].rstrip() + "..."
+            return {
+                "message_id": f"user_{index}",
+                "index": index,
+                "content": content,
+                "content_truncated": truncated,
+            }
+        return None
 
     def _existing_tool_context_summaries(self) -> list[str]:
         messages = getattr(self, "messages", []) or []

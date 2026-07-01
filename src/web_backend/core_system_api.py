@@ -2,7 +2,6 @@ import mimetypes
 import os
 import shutil
 import subprocess
-import time
 import uuid
 from urllib.parse import unquote
 
@@ -57,7 +56,6 @@ class SystemApiDomain(DomainBase):
         return f"{safe_stem}{safe_ext}"
 
     def restart_server(self):
-        self.request_webui_close({"reason": "restart"})
         runtime_root = _get_runtime_root()
         restart_path = os.path.join(runtime_root, "Restart.bat")
         if not os.path.isfile(restart_path):
@@ -65,7 +63,7 @@ class SystemApiDomain(DomainBase):
         try:
             if os.name == "nt":
                 subprocess.Popen(
-                    ["cmd.exe", "/c", "start", "AgentPark Restart", restart_path],
+                    ["cmd.exe", "/c", "start", "AITools Restart", restart_path],
                     cwd=runtime_root,
                     close_fds=True,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
@@ -75,31 +73,6 @@ class SystemApiDomain(DomainBase):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
         return {"ok": True}
-
-    def request_webui_close(self, payload: dict | None = None):
-        reason = str((payload or {}).get("reason") or "restart").strip() or "restart"
-        token = uuid.uuid4().hex
-        self.core.webui_close_signal = {
-            "token": token,
-            "requested_at": time.time(),
-            "reason": reason,
-        }
-        return {"ok": True, "token": token, "reason": reason}
-
-    def get_webui_close_signal(self):
-        signal = getattr(self.core, "webui_close_signal", None)
-        if not isinstance(signal, dict):
-            return {"close": False, "token": "", "reason": ""}
-        requested_at = float(signal.get("requested_at") or 0)
-        if requested_at <= 0:
-            return {"close": False, "token": "", "reason": ""}
-        if time.time() - requested_at > 30:
-            return {"close": False, "token": "", "reason": ""}
-        return {
-            "close": True,
-            "token": str(signal.get("token") or ""),
-            "reason": str(signal.get("reason") or "restart"),
-        }
 
     def upload_files(self, files: list[UploadFile] = File(...), trace_id: str = Form("")):
         upload_list = [item for item in (files or []) if item is not None]

@@ -309,7 +309,6 @@ def test_companion_mcp_send_waits_for_node_result(monkeypatch, tmp_path):
     import src.web_backend as backend
     from src.web_backend import runtime_paths
     from src.web_backend.companion_mcp import CompanionMcpTools
-    from src.web_backend.node_config_service import node_config_service
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
@@ -337,8 +336,8 @@ def test_companion_mcp_send_waits_for_node_result(monkeypatch, tmp_path):
     def fake_emit_graph(graph_id, payload):
         assert graph_id == "default"
         assert payload["from_id"] == "worker"
-        node_config_service.write(
-            str(config_path),
+        _write_json(
+            config_path,
             {
                 "schemaVersion": 1,
                 "node_id": "worker",
@@ -377,7 +376,6 @@ def test_companion_mcp_send_wait_matches_request_id_when_node_keeps_working(monk
     import src.web_backend as backend
     from src.web_backend import runtime_paths
     from src.web_backend.companion_mcp import CompanionMcpTools
-    from src.web_backend.node_config_service import node_config_service
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
@@ -404,8 +402,8 @@ def test_companion_mcp_send_wait_matches_request_id_when_node_keeps_working(monk
 
     def fake_emit_graph(graph_id, payload):
         request_id = payload["trace_id"]
-        node_config_service.write(
-            str(config_path),
+        _write_json(
+            config_path,
             {
                 "schemaVersion": 1,
                 "node_id": "worker",
@@ -537,7 +535,14 @@ def test_companion_mcp_list_graph_adds_agent_facing_metadata(monkeypatch, tmp_pa
     _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "description": "Demo"})
     _write_json(
         graph_dir / "n1" / "config.json",
-        {"schemaVersion": 1, "node_id": "n1", "graph_id": "default", "type_id": "echo_node", "state": "working"},
+        {
+            "schemaVersion": 1,
+            "node_id": "n1",
+            "graph_id": "default",
+            "type_id": "echo_node",
+            "state": "working",
+            "inflight": {"payload": "work"},
+        },
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
@@ -842,3 +847,35 @@ def test_graph_event_store_receives_logged_runtime_events(monkeypatch, tmp_path)
     assert payload["graph_id"] == "default"
     assert payload["node_id"] == "n1"
     assert int(payload["version"]) >= 1
+
+
+def test_runtime_log_appends_without_stream_publish(monkeypatch, tmp_path):
+    import json
+
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+
+    graphs_dir = tmp_path / "memories"
+    _write_json(graphs_dir / "default" / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    facade = backend.WebBackendFacade()
+    facade.build()
+    facade.core.graph_runtime._append_runtime_log(
+        "default",
+        "runtime_notice",
+        trace_id="trace-1",
+        node_instance_id="n1",
+        node_type_id="agent_node",
+        message="running",
+    )
+
+    events_path = graphs_dir / "default" / "runtime.events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    assert events[-1]["event"] == "runtime_notice"
+    assert events[-1]["graph_id"] == "default"
+    assert events[-1]["node_instance_id"] == "n1"
+    assert events[-1]["message"] == "running"
+    assert facade.core.graph_events.get("default") == {"graph_id": "default", "version": 0}

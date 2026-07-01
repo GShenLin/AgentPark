@@ -19,6 +19,7 @@ import {
   lastToolInstruction,
   useMemoryFeedEntries,
 } from './memoryFeedTools'
+import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownText } from './memoryMarkdown'
 
 const props = defineProps<{
@@ -64,9 +65,19 @@ function shouldRenderMarkdownForRole(role: string) {
   return roleKey !== 'user'
 }
 
-function renderFeedMarkdown(text: string) {
+// 命令输出类内容自动包裹为代码块，保留换行和等宽字体效果
+function isCommandOutputText(text: string) {
   const raw = String(text || '')
+  return raw.startsWith('returncode:') && raw.includes('--- stdout ---')
+}
+
+function renderFeedMarkdown(text: string) {
+  let raw = String(text || '')
   if (!raw) return ''
+  // 命令输出包裹为纯文本代码块，避免Markdown折叠换行
+  if (isCommandOutputText(raw)) {
+    raw = '```text\n' + raw + '\n```'
+  }
   try {
     return renderMarkdownText(raw)
   } catch {
@@ -98,6 +109,7 @@ function textForMessage(message: MessageEnvelope) {
               v-if="String((part as any)?.type || '') === 'text' && markdownPreview && shouldRenderMarkdownForRole(String((entry.message as any)?.role || 'assistant'))"
               class="feed-text markdown-part"
               v-html="renderFeedMarkdown(String((part as any)?.text || ''))"
+              @click="handleMarkdownCodeCopyClick"
             ></div>
             <div v-else-if="String((part as any)?.type || '') === 'text'" class="feed-text">{{ String((part as any)?.text || '') }}</div>
             <MemoryResourcePart v-else-if="String((part as any)?.type || '') === 'resource'" :part="part as Record<string, unknown>" />
@@ -234,6 +246,12 @@ function textForMessage(message: MessageEnvelope) {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.28);
   overflow: auto;
+}
+
+:deep(.feed-text.markdown-part .markdown-code-block pre) {
+  margin: 0;
+  padding: 10px 48px 34px 10px;
+  background: transparent;
 }
 
 :deep(.feed-text.markdown-part code) {

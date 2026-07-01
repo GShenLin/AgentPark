@@ -3,32 +3,39 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 14px;
-  gap: 12px;
+  padding: 0;
+  gap: 0;
+  background: var(--bg-primary);
 }
 
+/* 设置页面头部 */
 .settings-head {
   flex: 0 0 auto;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .settings-title-wrap {
   min-width: 0;
+  flex: 1;
 }
 
 .settings-title-wrap h1 {
   margin: 0;
-  font-size: 20px;
-  line-height: 1.2;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
 }
 
 .settings-path {
   margin-top: 6px;
-  color: rgba(148, 163, 184, 0.9);
-  font-family: Consolas, 'Cascadia Mono', monospace;
+  color: var(--text-tertiary);
+  font-family: 'Consolas', 'Menlo', monospace;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -43,51 +50,76 @@
   gap: 8px;
 }
 
+/* 设置页面主体 */
 .settings-body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 0;
+  background: var(--border-subtle);
 }
 
+/* 侧边标签栏 */
 .settings-tabs {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  gap: 4px;
+  padding: 16px 12px;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .settings-tab {
   width: 100%;
-  min-height: 34px;
+  min-height: 36px;
   text-align: left;
-  border-color: rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.52);
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  transition: all var(--transition-normal);
+}
+
+.settings-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: transparent;
+  transform: none;
+  box-shadow: none;
 }
 
 .settings-tab.active {
-  border-color: rgba(56, 189, 248, 0.65);
-  background: rgba(14, 165, 233, 0.18);
-  color: rgba(224, 242, 254, 0.98);
+  border-color: transparent;
+  background: var(--accent-blue-soft);
+  color: var(--text-accent);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.2);
 }
 
+/* 编辑器区域 */
 .settings-editor {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
+  background: var(--bg-primary);
 }
 
+/* 编辑器工具栏 */
 .editor-toolbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
 }
 
 .editor-title {
@@ -95,64 +127,86 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .editor-state {
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: 999px;
-  padding: 2px 8px;
-  color: rgba(254, 240, 138, 0.98);
+  padding: 4px 10px;
+  color: #fcd34d;
   font-size: 11px;
   font-weight: 500;
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .editor-state.saved {
-  border-color: rgba(34, 197, 94, 0.4);
-  color: rgba(187, 247, 208, 0.98);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.1);
 }
 
+/* JSON 编辑器 */
 .json-editor {
   flex: 1;
   min-height: 0;
   width: 100%;
   resize: none;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 14px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.72);
-  font: 12px/1.55 Consolas, 'Cascadia Mono', monospace;
+  border: none;
+  border-radius: 0;
+  padding: 20px 24px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font: 13px/1.7 'Consolas', 'Menlo', monospace;
   tab-size: 2;
 }
 
+.json-editor:focus {
+  outline: none;
+  background: var(--bg-secondary);
+}
+
+/* 按钮样式 */
 .settings-btn {
   min-height: 32px;
-  padding: 6px 10px;
+  padding: 7px 14px;
   font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
 }
 
 .settings-btn.primary {
-  border-color: rgba(56, 189, 248, 0.45);
-  color: rgba(186, 230, 253, 0.98);
+  border-color: var(--accent-blue);
+  background: var(--accent-blue-soft);
+  color: #93c5fd;
+}
+
+.settings-btn.primary:hover {
+  background: rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
 }
 
 .settings-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: 0.5;
+  transform: none;
 }
 
+/* 错误提示 */
 .settings-error {
   flex: 0 0 auto;
-  border: 1px solid rgba(248, 113, 113, 0.5);
+  margin: 16px 20px;
+  padding: 12px 16px;
   border-radius: 8px;
-  padding: 9px 11px;
-  color: rgba(254, 226, 226, 0.95);
-  background: rgba(127, 29, 29, 0.32);
-  font-size: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fca5a5;
+  font-size: 13px;
 }
 
+/* 响应式适配 */
 @media (max-width: 960px) {
   .settings-body {
     grid-template-columns: 1fr;
@@ -161,13 +215,15 @@
   .settings-tabs {
     flex-direction: row;
     overflow-x: auto;
-    border-right: 0;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 12px 16px;
   }
 
   .settings-tab {
     width: auto;
     white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .editor-toolbar,
@@ -178,5 +234,9 @@
 
   .editor-actions {
     flex-wrap: wrap;
+  }
+  
+  .json-editor {
+    padding: 16px;
   }
 }

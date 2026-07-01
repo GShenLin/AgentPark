@@ -21,6 +21,10 @@ def test_agent_node_tools_schema_is_multiselect_with_available_tools():
     assert isinstance(schema["plugins"]["options"], list)
     assert schema["mcp_servers"]["type"] == "multiselect"
     assert isinstance(schema["mcp_servers"]["options"], list)
+    assert "agentToolStagePolicyEnabled" not in schema
+    assert "agentToolStageGatheringAllowedTools" not in schema
+    assert "agentToolStageAnalyzingAllowedTools" not in schema
+    assert "agentToolStageFinalizingAllowedTools" not in schema
     assert list(schema.keys())[-4:] == ["tools", "mcp_servers", "skills", "plugins"]
 
 
@@ -647,13 +651,13 @@ def test_agent_node_injects_working_path_prompt_as_system(monkeypatch):
             "graph_id": "g_working_path_unit",
             "node_instance_id": "n_working_path_unit",
             "provider_id": "provider-stream",
-            "working_path": r"C:\Project\AgentPark\XYJ",
+            "working_path": r"C:\Project\AITools\XYJ",
         },
     )
 
     assert str(result.get("display") or "") == "ok"
     system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
-    assert any("节点工作路径: C:\\Project\\AgentPark\\XYJ" in str(item.get("content") or "") for item in system_messages)
+    assert any("节点工作路径: C:\\Project\\AITools\\XYJ" in str(item.get("content") or "") for item in system_messages)
     sent_user = next(item for item in created_agents[0].messages if item.get("role") == "user")
     assert sent_user.get("content") == "hello"
 
@@ -696,9 +700,9 @@ def test_agent_node_surfaces_configured_tool_load_failure(monkeypatch):
 def test_agent_node_builds_working_path_prompt():
     from nodes.agent_working_path_context import build_working_path_prompt
 
-    prompt = build_working_path_prompt(r"C:\Project\AgentPark")
+    prompt = build_working_path_prompt(r"C:\Project\AITools")
 
-    assert "节点工作路径: C:\\Project\\AgentPark" in prompt
+    assert "节点工作路径: C:\\Project\\AITools" in prompt
     assert "当前节点的工作目录上下文" in prompt
 
 
@@ -938,6 +942,72 @@ def test_agent_node_uses_configured_history_message_limit(monkeypatch):
         "old answer",
         "current question",
     ]
+
+
+def test_agent_node_persists_assistant_content_returned_with_tool_calls(monkeypatch, tmp_path):
+    import nodes.agent_node as agent_node_module
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            note_message = {
+                "role": "assistant",
+                "content": "I will inspect README before answering.",
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {"name": "read_file", "arguments": '{"path":"README.md"}'},
+                    }
+                ],
+            }
+            self.Message(
+                "assistant",
+                note_message["content"],
+                tool_calls=note_message["tool_calls"],
+            )
+            self._aitools_persist_assistant_tool_call_note(note_message)
+            assert messages_path.exists()
+            self.Message("tool", "README contents", tool_call_id="call-1", name="read_file")
+            self.Message("assistant", "Final answer.")
+            return "Final answer."
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_notes_unit",
+            "node_instance_id": "n_notes_unit",
+            "provider_id": "openai",
+            "memory_path": str(memory_path),
+            "messages_path": str(messages_path),
+        },
+    )
+
+    assert str(result.get("display") or "") == "Final answer."
+    records = [
+        json.loads(line)
+        for line in messages_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(records) == 1
+    assert records[0]["role"] == "assistant"
+    assert records[0]["parts"] == [
+        {"type": "text", "text": "I will inspect README before answering."}
+    ]
+    assert "I will inspect README before answering." in memory_path.read_text(encoding="utf-8")
+    assert "Final answer." not in memory_path.read_text(encoding="utf-8")
 
 
 def test_agent_node_injects_active_goal_context(monkeypatch):
@@ -1222,7 +1292,7 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
         assert client.post("/api/graphs/default/runner/start").status_code == 200
         assert client.post("/api/graphs/default/emit", json={"from_id": "agent1", "payload": "hello"}).status_code == 200
 
-        saw_partial = False
+        saw_partial_live_output = False
         saw_tool_event = False
         saw_tool_event_without_message_override = False
         saw_runtime_history = False
@@ -1239,12 +1309,15 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
                 continue
             state = str(cfg.get("state") or "idle")
             last_message = str(cfg.get("last_message") or "")
-            if state == "working" and last_message == "H":
-                saw_partial = True
+            live = client.get("/api/nodes/instances/agent1/live?graph_id=default")
+            assert live.status_code == 200
+            live_message = str((live.json() or {}).get("live_message") or "")
+            if state == "working" and live_message == "H":
+                saw_partial_live_output = True
             last_runtime_event = cfg.get("last_runtime_event")
             if isinstance(last_runtime_event, dict) and last_runtime_event.get("name") == "read_file":
                 saw_tool_event = True
-                if state == "working" and last_message == "H":
+                if state == "working" and last_message != str(last_runtime_event.get("message") or ""):
                     saw_tool_event_without_message_override = True
             runtime_events = cfg.get("runtime_events")
             if isinstance(runtime_events, list) and len(runtime_events) >= 2:
@@ -1271,7 +1344,7 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
                 break
             time.sleep(0.05)
 
-        assert saw_partial, "expected partial stream text in last_message while node is working"
+        assert saw_partial_live_output, "expected partial stream text in live output while node is working"
         assert saw_tool_event, "expected structured tool lifecycle event in node config"
         assert saw_tool_event_without_message_override, "expected tool lifecycle event to preserve streamed assistant text"
         assert saw_runtime_history, "expected bounded tool lifecycle history in node config"

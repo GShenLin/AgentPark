@@ -63,7 +63,7 @@ def _http_error_hint(status_code: int) -> str:
     if status_code == 409:
         return "Inspect node state; stop_node or wait before retrying."
     if status_code >= 500:
-        return "Check the AgentPark server log for the backend traceback."
+        return "Check the AITools server log for the backend traceback."
     return ""
 
 

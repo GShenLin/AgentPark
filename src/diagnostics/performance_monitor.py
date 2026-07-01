@@ -272,7 +272,7 @@ def summarize(samples: list[dict[str, Any]]) -> dict[str, Any]:
 def write_summary(summary: dict[str, Any], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "# AgentPark Performance Diagnostic Summary",
+        "# AITools Performance Diagnostic Summary",
         "",
         f"- Samples: {summary.get('sample_count', 0)}",
         f"- Avg process I/O read: {summary.get('avg_io_read_mbps', 0)} MB/s",
@@ -304,7 +304,7 @@ def write_summary(summary: dict[str, Any], output: Path) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Record AgentPark process and workspace performance diagnostics.")
+    parser = argparse.ArgumentParser(description="Record AITools process and workspace performance diagnostics.")
     parser.add_argument("--workspace-root", default=os.getcwd())
     parser.add_argument("--pid", type=int, default=0)
     parser.add_argument("--duration", type=float, default=30.0)

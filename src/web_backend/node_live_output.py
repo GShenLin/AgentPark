@@ -23,12 +23,16 @@ class NodeLiveOutputStore:
         with self._condition:
             version = int(self._versions.get(key) or 0) + 1
             self._versions[key] = version
+            current = self._items.get(key) if isinstance(self._items.get(key), dict) else {}
             self._items[key] = {
                 "text": str(text or ""),
                 "trace_id": str(trace_id or ""),
                 "updated_at": now,
                 "is_streaming": True,
                 "version": version,
+                # Persist interactive_session_id across text updates so it is
+                # not erased before the SSE client can observe stdin_ready.
+                "interactive_session_id": str((current or {}).get("interactive_session_id") or ""),
             }
             self._condition.notify_all()
 
@@ -49,6 +53,16 @@ class NodeLiveOutputStore:
             version = int(self._versions.get(key) or 0) + 1
             current = self._items.get(key) if isinstance(self._items.get(key), dict) else {}
             self._versions[key] = version
+            event_type_lower = str(event_type or "").strip().lower()
+            # Persist the session_id when stdin_ready fires; clear it on stdin_closed
+            # or node_message_done. This avoids a race where a subsequent update()
+            # overwrites the transient event before the SSE client sees it.
+            if event_type_lower == "stdin_ready":
+                persistent_session = str((event or {}).get("session_id") or "")
+            elif event_type_lower in {"stdin_closed", "node_message_done"}:
+                persistent_session = ""
+            else:
+                persistent_session = str((current or {}).get("interactive_session_id") or "")
             self._items[key] = {
                 "text": str((current or {}).get("text") or ""),
                 "trace_id": str(trace_id or (current or {}).get("trace_id") or ""),
@@ -57,6 +71,7 @@ class NodeLiveOutputStore:
                 "version": version,
                 "event_type": str(event_type or "").strip(),
                 "event": dict(event or {}),
+                "interactive_session_id": persistent_session,
             }
             self._condition.notify_all()
 

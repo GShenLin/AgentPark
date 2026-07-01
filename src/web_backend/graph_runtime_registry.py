@@ -20,6 +20,11 @@ class GraphRuntimeRegistry(HostBoundService):
         base_dir = self._graph_dir(safe_id)
         return os.path.join(base_dir, "runner.events.jsonl") if base_dir else ""
 
+    def _runtime_log_path(self, graph_id: str) -> str:
+        safe_id = self._sanitize_graph_id(graph_id)
+        base_dir = self._graph_dir(safe_id)
+        return os.path.join(base_dir, "runtime.events.jsonl") if base_dir else ""
+
     def _log_graph_event(self, graph_id: str, event: str, **fields) -> None:
         safe_id = self._sanitize_graph_id(graph_id)
         payload = {
@@ -35,6 +40,21 @@ class GraphRuntimeRegistry(HostBoundService):
             payload[k] = v
         state_store._append_jsonl_line(self._graph_event_log_path(safe_id), payload)
         self.core.graph_events.publish(safe_id, payload)
+
+    def _append_runtime_log(self, graph_id: str, event: str, **fields) -> None:
+        safe_id = self._sanitize_graph_id(graph_id)
+        payload = {
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "event": str(event or ""),
+            "graph_id": safe_id,
+            "pid": os.getpid(),
+            "thread": threading.get_ident(),
+        }
+        for k, v in (fields or {}).items():
+            if not isinstance(k, str) or not k.strip() or v is None:
+                continue
+            payload[k] = v
+        state_store._append_jsonl_line(self._runtime_log_path(safe_id), payload)
 
     def _sanitize_graph_id(self, graph_id: str | None) -> str:
         raw = str(graph_id or "").strip()

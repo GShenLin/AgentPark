@@ -14,6 +14,8 @@ const lastError = ref<string | null>(null)
 const memoryText = ref('')
 const memoryMessages = ref<MessageEnvelope[]>([])
 const memoryLiveMessage = ref('')
+const memoryInteractiveSessionId = ref('')
+const memoryInteractiveSending = ref(false)
 const memoryTitle = ref('')
 const memoryMeta = ref<string | null>(null)
 const memoryMode = ref<'agent' | 'file' | 'graph'>('graph')
@@ -38,6 +40,8 @@ export function useGlobalState() {
     memoryText,
     memoryMessages,
     memoryLiveMessage,
+    memoryInteractiveSessionId,
+    memoryInteractiveSending,
     memoryTitle,
     memoryMeta,
     memoryMode,

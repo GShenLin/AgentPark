@@ -102,6 +102,7 @@ class GraphNodeExecution(HostBoundService):
             update_live_output=self.core.node_live_outputs.update,
             clear_live_output=self.core.node_live_outputs.clear,
             publish_live_event=self.core.node_live_outputs.publish_event,
+            append_runtime_log=self._append_runtime_log,
         )
         cancel_event = self.core.node_cancellations.begin(config_path)
         if _is_node_stop_requested(config_path):

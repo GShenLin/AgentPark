@@ -1,6 +1,11 @@
 type SchemaRecord = Record<string, any>
 
-const capabilityFieldKeys = new Set(['plugins', 'tools', 'mcp_servers', 'skills'])
+const capabilityFieldKeys = new Set([
+  'plugins',
+  'tools',
+  'mcp_servers',
+  'skills',
+])
 
 export function withPersistedCapabilityState(rawSchema: SchemaRecord, cfg: Record<string, unknown> | null): SchemaRecord {
   if (!rawSchema || typeof rawSchema !== 'object' || Array.isArray(rawSchema)) return {}

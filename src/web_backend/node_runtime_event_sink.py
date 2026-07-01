@@ -15,6 +15,7 @@ from .state_store import _set_node_config_runtime_event
 
 
 LogGraphEvent = Callable[..., None]
+AppendRuntimeLog = Callable[..., None]
 AppendToolCallEntry = Callable[[str, str, dict], None]
 ClearLiveOutput = Callable[[str, str], None]
 
@@ -51,6 +52,7 @@ class NodeRuntimeEventSink:
     update_live_output: UpdateLiveOutput | None = None
     clear_live_output: ClearLiveOutput | None = None
     publish_live_event: PublishLiveEvent | None = None
+    append_runtime_log: AppendRuntimeLog | None = None
     active_tool_calls: dict[str, dict] | None = None
 
     def handle(self, event: object):
@@ -59,7 +61,9 @@ class NodeRuntimeEventSink:
 
         event_type = str(event.get("type") or "").strip().lower()
         if event_type == NODE_MESSAGE_DELTA:
-            return self._handle_delta(normalize_node_message_event(event))
+            normalized = normalize_node_message_event(event)
+            custom_event = event.get("event")
+            return self._handle_delta(normalized, custom_event=custom_event if isinstance(custom_event, dict) else None)
         if event_type == NODE_MESSAGE_DONE:
             return self._handle_done(normalize_node_message_event(event))
         if event_type == "runtime_notice":
@@ -69,14 +73,21 @@ class NodeRuntimeEventSink:
             return self._handle_tool_call_event(normalized, str(normalized.get("type") or event_type))
         raise ValueError(f"unsupported node runtime event type: {event_type or '<empty>'}")
 
-    def _handle_delta(self, event: dict) -> None:
+    def _handle_delta(self, event: dict, *, custom_event: dict | None = None) -> None:
         text = str(event.get("text") or "")
         if text == self.stream_last_text:
+            changed = False
+        else:
+            changed = True
+            self.stream_last_text = text
+            if callable(self.update_live_output):
+                self.update_live_output(self.graph_id, self.node_id, text, trace_id=self.trace_id)
+        if custom_event:
+            live_event_type = str(custom_event.get("type") or "").strip().lower()
+            if live_event_type and callable(self.publish_live_event):
+                self.publish_live_event(self.graph_id, self.node_id, live_event_type, custom_event, trace_id=self.trace_id)
+        if not changed and not custom_event:
             return
-        self.stream_last_text = text
-        _set_node_config_last_message(self.config_path, text)
-        if callable(self.update_live_output):
-            self.update_live_output(self.graph_id, self.node_id, text, trace_id=self.trace_id)
 
     def _handle_done(self, event: dict) -> None:
         text = str(event.get("text") or "")
@@ -87,6 +98,13 @@ class NodeRuntimeEventSink:
             self.clear_live_output(self.graph_id, self.node_id)
         if callable(self.publish_live_event):
             self.publish_live_event(self.graph_id, self.node_id, "node_message_done", event, trace_id=self.trace_id)
+        self._append_node_runtime_log(
+            "node_message_done",
+            phase="done",
+            message=_preview_text(text, 1000),
+            output_preview=_preview_text(text, 4000),
+            output_chars=len(text),
+        )
         self.log_graph_event(
             self.graph_id,
             "node_message_done",
@@ -99,6 +117,17 @@ class NodeRuntimeEventSink:
 
     def _handle_runtime_notice(self, event: dict) -> None:
         _set_node_config_runtime_event(self.config_path, event)
+        message = _preview_text(str(event.get("message") or ""), 1000)
+        self._append_node_runtime_log(
+            "runtime_notice",
+            phase=str(event.get("stage") or "").strip() or None,
+            message=message,
+            source=str(event.get("source") or "").strip() or None,
+            stage=str(event.get("stage") or "").strip() or None,
+            tool_name=str(event.get("name") or "").strip() or None,
+            call_id=str(event.get("call_id") or "").strip() or None,
+            provider=str(event.get("provider") or "").strip() or None,
+        )
         self.log_graph_event(
             self.graph_id,
             "runtime_notice",
@@ -119,6 +148,8 @@ class NodeRuntimeEventSink:
         self._remember_tool_call_event(event, event_type)
         error_text = str(event.get("error") or "").strip()
         result_preview = str(event.get("result_preview") or "").strip()
+        if event_type == "tool_call_start":
+            self._append_tool_runtime_log(event, event_type)
         self.log_graph_event(
             self.graph_id,
             event_type,
@@ -136,6 +167,7 @@ class NodeRuntimeEventSink:
         )
         if event_type == "tool_call_end":
             merged = self._merged_tool_call_event(event)
+            self._append_tool_runtime_log(merged, event_type)
             persistence_warning = ""
             try:
                 self.append_tool_call_entry(self.graph_id, self.node_id, merged)
@@ -152,6 +184,81 @@ class NodeRuntimeEventSink:
         elif callable(self.publish_live_event):
             self.publish_live_event(self.graph_id, self.node_id, event_type, event, trace_id=self.trace_id)
         return None
+
+    def _append_tool_runtime_log(self, event: dict, event_type: str) -> None:
+        tool_name = str(event.get("name") or "tool").strip() or "tool"
+        call_id = str(event.get("call_id") or "").strip() or None
+        provider = str(event.get("provider") or "").strip() or None
+        if event_type == "tool_call_start":
+            self._append_node_runtime_log(
+                event_type,
+                phase="start",
+                message=f"Tool started: {tool_name}",
+                tool_name=tool_name,
+                call_id=call_id,
+                provider=provider,
+                arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else None,
+                event_time=event.get("event_time"),
+                monotonic_ns=event.get("monotonic_ns"),
+            )
+            return
+
+        error_text = str(event.get("error") or "").strip()
+        result_preview = str(event.get("result_preview") or "").strip()
+        status = str(event.get("status") or "completed").strip() or "completed"
+        self._append_node_runtime_log(
+            event_type,
+            level="error" if error_text else "info",
+            phase="end",
+            message=f"Tool finished: {tool_name}",
+            tool_name=tool_name,
+            call_id=call_id,
+            provider=provider,
+            status=status,
+            duration_ms=event.get("duration_ms"),
+            error=_preview_text(error_text, 4000) if error_text else None,
+            result_preview=_preview_text(result_preview, 4000) if result_preview else None,
+            result_chars=event.get("result_chars"),
+            result_preview_truncated=event.get("result_preview_truncated"),
+            result_tail_preview=(
+                _preview_text(str(event.get("result_tail_preview") or ""), 4000)
+                if str(event.get("result_tail_preview") or "").strip()
+                else None
+            ),
+            result_tail_preview_truncated=event.get("result_tail_preview_truncated"),
+            diagnostics=event.get("diagnostics") if isinstance(event.get("diagnostics"), list) else None,
+            arguments=event.get("arguments") if isinstance(event.get("arguments"), dict) else None,
+            event_time=event.get("event_time"),
+            monotonic_ns=event.get("monotonic_ns"),
+        )
+
+    def _append_node_runtime_log(
+        self,
+        event_type: str,
+        *,
+        level: str = "info",
+        phase: str | None = None,
+        message: str = "",
+        **fields,
+    ) -> None:
+        if not callable(self.append_runtime_log):
+            return
+        payload = {
+            "trace_id": self.trace_id,
+            "node_instance_id": self.node_id,
+            "node_type_id": self.node_type_id,
+            "depth": self.depth,
+            "level": level,
+            "phase": phase,
+            "message": message,
+        }
+        for key, value in fields.items():
+            if value is not None:
+                payload[key] = value
+        try:
+            self.append_runtime_log(self.graph_id, event_type, **payload)
+        except Exception:
+            return
 
     def _remember_tool_call_event(self, event: dict, event_type: str) -> None:
         call_id = str(event.get("call_id") or "").strip()

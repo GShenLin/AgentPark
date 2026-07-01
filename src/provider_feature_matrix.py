@@ -43,7 +43,11 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "transport": "responses" if responses_api else "",
             },
             thinking={"supported": True, "values": ["enabled", "disabled", "auto"]},
-            reasoning_effort={"supported": False, "values": []},
+            # Doubao Responses API accepts reasoning.effort with the standard
+            # OpenAI values low/medium/high but not the AITools extensions
+            # "minimal" or "xhigh". Sending xhigh yields HTTP 400
+            # "unknown type: xhigh".
+            reasoning_effort={"supported": True, "values": ["low", "medium", "high"]},
         )
     if provider_type == "zhipu":
         return _payload(

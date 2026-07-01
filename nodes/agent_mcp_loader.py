@@ -12,6 +12,9 @@ from src.workspace_settings import load_workspace_settings
 
 
 MCP_SERVERS_CONFIG_KEYS = ("mcpServers", "mcp_servers")
+DEFAULT_MCP_SERVER_TOOL_RULES = {
+    "asset-to-json": ("find_assets", "read_asset_json", "get_editor_context", "list_actors"),
+}
 
 
 @dataclass(frozen=True)
@@ -96,18 +99,32 @@ def inject_mcp_server_context(agent: object, values: object, *, settings: dict |
     return servers
 
 
-def register_mcp_server_tools(agent: object, values: object, *, settings: dict | None = None) -> list[McpServerDefinition]:
+def register_mcp_server_tools(
+    agent: object,
+    values: object,
+    *,
+    settings: dict | None = None,
+) -> list[McpServerDefinition]:
     servers = load_mcp_server_definitions(values, settings=settings)
     if not servers:
         return []
     register = getattr(getattr(agent, "tools", None), "register_external_tool", None)
     if not callable(register):
         raise McpServerLoadError("agent does not support external MCP tool registration")
+    tool_filter = build_mcp_tool_filter(selected_servers=[server.name for server in servers])
     from nodes.agent_mcp_runtime import materialize_mcp_server_tools
 
-    for materialized_tool in materialize_mcp_server_tools(servers):
+    for materialized_tool in materialize_mcp_server_tools(servers, tool_filter=tool_filter):
         register(materialized_tool.declaration, materialized_tool.callable)
     return servers
+
+
+def build_mcp_tool_filter(*, selected_servers: object = None):
+    from nodes.agent_mcp_runtime import McpToolFilter
+
+    return McpToolFilter(
+        server_rules=_default_mcp_server_tool_rules(selected_servers),
+    )
 
 
 def with_mcp_caller_context(settings: dict | None, *, graph_id: object, node_id: object) -> dict:
@@ -162,6 +179,16 @@ def _read_mcp_server_config(settings: dict | None = None) -> dict[str, dict]:
     if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict):
         return {str(name): dict(config) for name, config in mcp["servers"].items() if isinstance(config, dict)}
     return {}
+
+
+def _default_mcp_server_tool_rules(selected_servers: object) -> dict[str, frozenset[str]]:
+    names = MCP_SERVER_NAME_LIST.parse(selected_servers)
+    output: dict[str, frozenset[str]] = {}
+    for server_name in names:
+        rules = DEFAULT_MCP_SERVER_TOOL_RULES.get(server_name, ())
+        if rules:
+            output[server_name] = frozenset(f"{server_name}:{tool_name}" for tool_name in rules)
+    return output
 
 
 def _is_valid_mcp_server_name(value: str) -> bool:

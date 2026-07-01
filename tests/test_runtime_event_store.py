@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from src.web_backend.runtime_event_store import append_runtime_event
@@ -124,6 +126,45 @@ def test_runtime_event_store_reset_clears_grouped_tool_calls():
     assert "last_runtime_event" not in payload
     assert "runtime_events" not in payload
     assert "runtime_tool_calls" not in payload
+
+
+def test_runtime_event_store_persists_bounded_provider_request_summaries():
+    payload = {}
+
+    for index in range(10):
+        append_runtime_event(
+            payload,
+            {
+                "type": "runtime_notice",
+                "stage": "openai_responses_request_summary",
+                "message": json.dumps(
+                    {
+                        "request_index": index,
+                        "continuation_mode": "explicit_context",
+                        "input_item_count": 3,
+                        "approx_input_chars": 1200 + index,
+                        "environment_context_chars": 320,
+                        "largest_input_items": [{"index": 0, "type": "message", "chars": 900}],
+                        "tool_result_chars_by_call": [{"call_id": "call-1", "chars": 500}],
+                        "tools_included": ["rg_search_text"],
+                        "secret": "must be dropped",
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        )
+
+    summaries = payload["provider_request_summaries"]
+    assert len(summaries) == 8
+    assert summaries[0]["request_index"] == 2
+    assert summaries[-1]["request_index"] == 9
+    assert summaries[-1]["environment_context_chars"] == 320
+    assert summaries[-1]["tool_result_chars_by_call"][0]["call_id"] == "call-1"
+    assert "secret" not in summaries[-1]
+
+    clear_runtime_event(payload, reset_history=True)
+
+    assert "provider_request_summaries" not in payload
 
 
 def test_runtime_event_store_normalizes_runtime_notice_boundary():

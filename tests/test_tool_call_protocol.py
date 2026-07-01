@@ -75,12 +75,12 @@ def test_doubao_responses_parser_returns_tool_call_envelopes():
 
 
 def test_gemini_function_call_converts_to_envelope():
-    call = from_gemini_function_call({"name": "project_overview", "args": {"filePath": "."}})
+    call = from_gemini_function_call({"name": "read_file", "args": {"filePath": "."}})
 
     assert call is not None
     assert call.provider == "gemini"
     assert call.call_id.startswith("gemini-")
-    assert call.name == "project_overview"
+    assert call.name == "read_file"
     assert call.arguments == {"filePath": "."}
 
 

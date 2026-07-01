@@ -5,6 +5,7 @@ import base64
 import mimetypes
 from typing import Callable
 
+from nodes.agent_assistant_memory import persist_assistant_tool_call_note
 from nodes.agent_stream_runtime import AgentStreamRuntime
 from nodes.agent_support.capability_setup import resolve_agent_capabilities
 from nodes.agent_mcp_loader import (
@@ -30,6 +31,7 @@ from src.operational_memory import build_operational_memory_summary
 from src.providers import create_agent
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.switch_utils import parse_switch_mode
+from src.workspace_settings import get_workspace_root
 from src.web_backend.node_config_service import read_node_config_optional
 from src.web_backend.node_memory_store import load_recent_node_memory_records
 from src.web_backend.node_goal_runtime import node_goal_context
@@ -461,14 +463,21 @@ class Node(BaseNode):
         agent._aitools_graph_id = graph_id
         agent._aitools_node_id = agent_id
         agent._aitools_node_type_id = "agent_node"
+        agent._aitools_workspace_root = get_workspace_root()
+        agent._aitools_working_path = working_path
+        agent._aitools_shell = "powershell" if os.name == "nt" else ""
         agent.operational_memory_gate_enabled = True
-        agent.tool_context_compaction_gate_enabled = True
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
         if cancel_source is not None:
             agent.cancel_event = cancel_source
             agent.cancel_check = ctx.get("cancel_check") or cancel_source
         if capability_plan.skill_resource_roots:
             agent._aitools_skill_resource_roots = capability_plan.skill_resource_roots
+        agent._aitools_persist_assistant_tool_call_note = lambda message: persist_assistant_tool_call_note(
+            message=message,
+            memory_path=memory_path,
+            messages_path=self._resolve_messages_path(ctx),
+        )
 
         load_configured_tools(agent, capability_plan.tool_names)
         if capability_plan.plugin_capabilities.tool_definitions:
@@ -479,7 +488,11 @@ class Node(BaseNode):
         ]
         register_skill_script_tools(agent, skill_definitions)
         if capability_plan.mcp_server_names:
-            register_mcp_server_tools(agent, list(capability_plan.mcp_server_names), settings=mcp_settings)
+            register_mcp_server_tools(
+                agent,
+                list(capability_plan.mcp_server_names),
+                settings=mcp_settings,
+            )
 
         if isinstance(system_prompt, str) and system_prompt.strip():
             has_system = any((msg or {}).get("role") == "system" for msg in getattr(agent, "messages", []) or [])

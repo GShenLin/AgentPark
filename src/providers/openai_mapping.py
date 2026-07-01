@@ -192,6 +192,11 @@ class OpenAIResponsesMapping(HostBoundService):
                 if self._responses_replay_reasoning_items():
                     items.append(dict(item))
                 continue
+            if item_type == "message":
+                message_item = self._responses_message_output_to_input_item(item)
+                if message_item is not None:
+                    items.append(message_item)
+                continue
             if item_type != "function_call":
                 continue
             call_id = str(item.get("call_id") or "").strip()
@@ -205,6 +210,14 @@ class OpenAIResponsesMapping(HostBoundService):
             if isinstance(call, (ToolCallEnvelope, ToolCallParseFailure)) and call.call_id not in seen_function_call_ids:
                 items.extend(self._build_responses_function_call_input_items([call]))
         return items
+
+    def _responses_message_output_to_input_item(self, item):
+        if not isinstance(item, dict):
+            return None
+        content = item.get("content")
+        if not isinstance(content, list):
+            return None
+        return self._message_content_to_responses_item("assistant", content)
 
     def _responses_replay_reasoning_items(self):
         if "responsesReplayReasoningItems" not in self.config:

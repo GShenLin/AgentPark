@@ -53,9 +53,3 @@ class DoubaoResponsesRuntime(ResponsesRuntime):
     def _responses_requires_response_id_for_tool_followup(self) -> bool:
         return True
 
-    def _responses_tool_output(self, execution):
-        return self._compact_tool_result_for_submission_if_needed(
-            tool_name=execution.func_name,
-            call_id=execution.call_id,
-            content=execution.cleaned_result,
-        )

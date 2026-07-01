@@ -49,7 +49,7 @@ function deleteNode(node: MobileNode) {
       <span v-if="node.pending_count" class="pending-pill">{{ node.pending_count }}</span>
       <span class="row-arrow">›</span>
     </button>
-    <button class="delete-btn" type="button" @click="deleteNode(node)">Delete</button>
+    <button v-if="!node.readonly" class="delete-btn" type="button" @click="deleteNode(node)">Delete</button>
   </div>
 </template>
 

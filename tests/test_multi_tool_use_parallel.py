@@ -113,6 +113,14 @@ def test_system_tools_registers_multi_tool_use_parallel():
     )
 
 
+def test_multi_tool_use_parallel_declaration_warns_about_slow_console_commands():
+    description = parallel_tools.multi_tool_use_parallel_declaration["function"]["description"]
+
+    assert "execute_console_command" in description
+    assert "timeout_seconds greater than 20" in description
+    assert "Run execute_console_command directly" in description
+
+
 def test_tool_declarations_are_provider_safe_and_unique():
     tool = BaseTool(_DummyAgent())
     for name in ["system_tools", "rg_tools", "file_read_tools"]:

@@ -14,6 +14,9 @@ from src.runtime_cancellation import CancellationRequested, cancel_source_from_a
 RG_LINE_RE = re.compile(r"^(.*?):(\d+):(.*)$")
 RG_TIMEOUT_SEC = 15
 RG_STOP_WAIT_SEC = 0.5
+RG_SEARCH_OUTPUT_CHAR_LIMIT = 50000
+RG_LIST_FILES_OUTPUT_CHAR_LIMIT = 50000
+RG_JSON_BUDGET_OVERHEAD = 1200
 
 DEFAULT_SKIP_DIRS = {
     ".git",
@@ -44,7 +47,7 @@ rg_search_text_declaration = {
     "type": "function",
     "function": {
         "name": "rg_search_text",
-        "description": "Search text in project files with ripgrep semantics (rg). Prefer this over shell grep/findstr.",
+        "description": "Search text in project files with ripgrep semantics (rg). Use specific queries and narrow include_globs when possible.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -59,7 +62,7 @@ rg_search_text_declaration = {
                 "include_globs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional include globs, e.g. ['*.py', 'src/**'].",
+                    "description": "Optional narrow include globs, e.g. ['src/**/*.py', 'tests/**/*.py']. Avoid broad project-wide globs.",
                 },
                 "exclude_globs": {
                     "type": "array",
@@ -91,7 +94,7 @@ rg_list_files_declaration = {
     "type": "function",
     "function": {
         "name": "rg_list_files",
-        "description": "List project files with ripgrep semantics (rg --files). Prefer this over shell dir/find.",
+        "description": "List project files with ripgrep semantics (rg --files). Use only with a target directory or filename/type pattern, not for whole-project inventories.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -102,7 +105,7 @@ rg_list_files_declaration = {
                 "include_globs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional include globs, e.g. ['*.ts', 'src/**'].",
+                    "description": "Required narrow include globs, e.g. ['src/**/*.ts', 'Config/**', '*Service.py']. Broad patterns are blocked.",
                 },
                 "exclude_globs": {
                     "type": "array",
@@ -118,52 +121,6 @@ rg_list_files_declaration = {
         },
     },
 }
-
-project_file_stats_declaration = {
-    "type": "function",
-    "function": {
-        "name": "project_file_stats",
-        "description": (
-            "Return structured project file counts and largest files while skipping generated/vendor folders. "
-            "Use this instead of recursive shell line-count or inventory scans."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "project_root": {
-                    "type": "string",
-                    "description": "Project root directory. Defaults to current working directory.",
-                },
-                "include_globs": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Optional include globs, e.g. ['*.py', 'src/**'].",
-                },
-                "exclude_globs": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Optional exclude globs, e.g. ['webui/dist/**'].",
-                },
-                "max_files": {
-                    "type": "integer",
-                    "description": "Maximum files to inspect (1-20000, default 20000).",
-                    "default": 20000,
-                },
-                "top_n": {
-                    "type": "integer",
-                    "description": "Largest files to return (1-100, default 20).",
-                    "default": 20,
-                },
-                "include_line_counts": {
-                    "type": "boolean",
-                    "description": "When true, count lines for returned largest files only.",
-                    "default": False,
-                },
-            },
-        },
-    },
-}
-
 
 def rg_search_text(
     query,
@@ -186,6 +143,7 @@ def rg_search_text(
         include_globs = normalize_globs(include_globs)
         exclude_globs = normalize_globs(exclude_globs)
         limit = resolve_limit(max_results, default_value=200, hard_max=5000)
+        char_limit = RG_SEARCH_OUTPUT_CHAR_LIMIT
         case_sensitive = bool(case_sensitive)
         fixed_strings = bool(fixed_strings)
         stripped_query = query.strip()
@@ -202,6 +160,7 @@ def rg_search_text(
                 case_sensitive=case_sensitive,
                 fixed_strings=fixed_strings,
                 limit=limit,
+                char_limit=char_limit,
                 cancel_source=cancel_source,
             )
 
@@ -213,6 +172,7 @@ def rg_search_text(
             case_sensitive=case_sensitive,
             fixed_strings=fixed_strings,
             limit=limit,
+            char_limit=char_limit,
             cancel_source=cancel_source,
         )
     except CancellationRequested as e:
@@ -236,6 +196,14 @@ def rg_list_files(
         include_globs = normalize_globs(include_globs)
         exclude_globs = normalize_globs(exclude_globs)
         limit = resolve_limit(max_results, default_value=2000, hard_max=20000)
+        block_payload = build_list_files_broad_scan_block(
+            root=root,
+            include_globs=include_globs,
+            max_results=limit,
+        )
+        if block_payload is not None:
+            return json.dumps(block_payload, ensure_ascii=False)
+        char_limit = RG_LIST_FILES_OUTPUT_CHAR_LIMIT
 
         rg_path = shutil.which("rg")
         cancel_source = cancel_source_from_agent(agent)
@@ -246,6 +214,7 @@ def rg_list_files(
                 include_globs=include_globs,
                 exclude_globs=exclude_globs,
                 limit=limit,
+                char_limit=char_limit,
                 cancel_source=cancel_source,
             )
 
@@ -254,98 +223,8 @@ def rg_list_files(
             include_globs=include_globs,
             exclude_globs=exclude_globs,
             limit=limit,
+            char_limit=char_limit,
             cancel_source=cancel_source,
-        )
-    except CancellationRequested as e:
-        return json.dumps({"status": "stopped", "error": str(e)}, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"status": "exception", "error": str(e)}, ensure_ascii=False)
-
-
-def project_file_stats(
-    project_root=None,
-    include_globs=None,
-    exclude_globs=None,
-    max_files=20000,
-    top_n=20,
-    include_line_counts=False,
-    agent=None,
-):
-    try:
-        root = resolve_root(project_root)
-        if not root:
-            return json.dumps({"status": "error", "error": f"project_root not found: {project_root}"}, ensure_ascii=False)
-
-        include_globs = normalize_globs(include_globs)
-        exclude_globs = normalize_globs(exclude_globs)
-        file_limit = resolve_limit(max_files, default_value=20000, hard_max=20000)
-        top_limit = resolve_limit(top_n, default_value=20, hard_max=100)
-        cancel_source = cancel_source_from_agent(agent)
-
-        scanned_files = 0
-        total_bytes = 0
-        skipped_errors = 0
-        by_extension: dict[str, dict] = {}
-        top_files: list[dict] = []
-
-        for file_path in iter_files_fallback(root):
-            raise_if_cancel_requested(cancel_source)
-            rel_path = safe_relpath(file_path, root)
-            if not path_allowed(rel_path, include_globs, exclude_globs):
-                continue
-
-            try:
-                stat = os.stat(file_path)
-            except OSError:
-                skipped_errors += 1
-                continue
-
-            scanned_files += 1
-            size_bytes = int(stat.st_size)
-            total_bytes += size_bytes
-            extension = file_extension(rel_path)
-            extension_bucket = by_extension.setdefault(
-                extension,
-                {"files": 0, "bytes": 0},
-            )
-            extension_bucket["files"] += 1
-            extension_bucket["bytes"] += size_bytes
-
-            top_files.append(
-                {
-                    "file_path": file_path,
-                    "relative_path": rel_path,
-                    "extension": extension,
-                    "size_bytes": size_bytes,
-                }
-            )
-            top_files.sort(key=lambda item: item["size_bytes"], reverse=True)
-            if len(top_files) > top_limit:
-                top_files.pop()
-
-            if scanned_files >= file_limit:
-                break
-
-        if include_line_counts:
-            for item in top_files:
-                raise_if_cancel_requested(cancel_source)
-                item["line_count"] = count_file_lines(item["file_path"])
-
-        return json.dumps(
-            {
-                "status": "success",
-                "project_root": root,
-                "scanned_files": scanned_files,
-                "total_bytes": total_bytes,
-                "by_extension": dict(sorted(by_extension.items())),
-                "top_files_by_size": top_files,
-                "truncated": scanned_files >= file_limit,
-                "max_files": file_limit,
-                "skipped_errors": skipped_errors,
-                "line_counts_scope": "top_files_by_size" if include_line_counts else "not_requested",
-                "skipped_dirs": sorted(DEFAULT_SKIP_DIRS),
-            },
-            ensure_ascii=False,
         )
     except CancellationRequested as e:
         return json.dumps({"status": "stopped", "error": str(e)}, ensure_ascii=False)
@@ -383,6 +262,73 @@ def normalize_globs(raw_globs):
     return out
 
 
+def canonical_glob(pattern):
+    text = normalize_rel_path(str(pattern or "").strip())
+    while text.startswith("./"):
+        text = text[2:]
+    return text.rstrip("/")
+
+
+def is_broad_glob(pattern):
+    text = canonical_glob(pattern)
+    return text in {"*", "**", "*.*", "**/*", "**/**", "**/*.*", "."}
+
+
+def is_broad_glob_set(globs):
+    if not globs:
+        return True
+    return all(is_broad_glob(pattern) for pattern in globs)
+
+
+def is_unreal_project_root(root):
+    try:
+        entries = os.listdir(root)
+    except Exception:
+        return False
+    if any(str(name).lower().endswith(".uproject") for name in entries):
+        return True
+    return os.path.isdir(os.path.join(root, "Content")) and os.path.isdir(os.path.join(root, "Source"))
+
+
+def is_broad_unreal_content_glob(pattern):
+    text = canonical_glob(pattern).lower()
+    return text in {"content", "content/*", "content/**", "content/**/*", "content/**/**"}
+
+
+def narrow_query_suggestions():
+    return [
+        "Source/**/*.cpp",
+        "Source/**/*.h",
+        "Config/**",
+        "*Target.cs",
+        "*Build.cs",
+        "src/**/*.py",
+        "tests/**/*.py",
+    ]
+
+
+def build_list_files_broad_scan_block(*, root, include_globs, max_results):
+    reason = ""
+    if is_broad_glob_set(include_globs):
+        reason = "rg_list_files requires a narrow include_globs pattern; whole-project inventory scans are blocked."
+    elif is_unreal_project_root(root) and any(is_broad_unreal_content_glob(pattern) for pattern in include_globs):
+        reason = "Unreal Content/** inventory scans are blocked because they can produce very large asset lists."
+    elif int(max_results or 0) > 5000 and any(is_broad_glob(pattern) for pattern in include_globs):
+        reason = "High-limit broad file listing is blocked."
+    if not reason:
+        return None
+    return {
+        "status": "blocked",
+        "retryable": False,
+        "policy": "rg_list_files_broad_scan_guard",
+        "reason": reason,
+        "project_root": root,
+        "include_globs": include_globs,
+        "max_results": int(max_results or 0),
+        "next_query_suggestions": narrow_query_suggestions(),
+    }
+
+
 def safe_relpath(path, root):
     try:
         return os.path.relpath(path, root)
@@ -413,29 +359,38 @@ def path_allowed(rel_path, include_globs, exclude_globs):
     return True
 
 
+def json_item_chars(item):
+    return len(json.dumps(item, ensure_ascii=False, sort_keys=True))
+
+
+def can_append_budgeted(items, item, *, char_limit, overhead=RG_JSON_BUDGET_OVERHEAD):
+    used = overhead
+    for existing in items:
+        used += json_item_chars(existing) + 1
+    return used + json_item_chars(item) + 1 <= int(char_limit)
+
+
+def bounded_json_dumps(payload, *, list_key, char_limit):
+    output = dict(payload)
+    items = list(output.get(list_key) or [])
+    truncated = bool(output.get("truncated"))
+    while True:
+        output[list_key] = items
+        output["truncated"] = truncated
+        text = json.dumps(output, ensure_ascii=False)
+        if len(text) <= int(char_limit) or not items:
+            output["result_chars"] = len(text)
+            return json.dumps(output, ensure_ascii=False)
+        items.pop()
+        truncated = True
+
+
 def iter_files_fallback(root):
     skip_dirs = {name.lower() for name in DEFAULT_SKIP_DIRS}
     for current_root, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d.lower() not in skip_dirs]
         for filename in files:
             yield os.path.join(current_root, filename)
-
-
-def file_extension(rel_path):
-    _, ext = os.path.splitext(str(rel_path or ""))
-    return ext.lower() if ext else "[no extension]"
-
-
-def count_file_lines(file_path):
-    line_count = 0
-    last_byte = b""
-    with open(file_path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            line_count += chunk.count(b"\n")
-            last_byte = chunk[-1:]
-    if last_byte and last_byte != b"\n":
-        line_count += 1
-    return line_count
 
 
 def append_rg_globs(cmd, include_globs, exclude_globs):
@@ -572,9 +527,11 @@ def _search_with_rg(
     case_sensitive,
     fixed_strings,
     limit,
+    char_limit,
     cancel_source=None,
 ):
     matches = []
+    stopped_by_char_limit = False
     cmd = [rg_path, "-n", "--color", "never", "--no-messages", "--max-columns", "400", "--max-columns-preview"]
     if fixed_strings:
         cmd.append("-F")
@@ -584,6 +541,7 @@ def _search_with_rg(
     cmd.extend([query, root])
 
     def _on_line(raw_line):
+        nonlocal stopped_by_char_limit
         parsed = parse_rg_line(raw_line)
         if not parsed:
             return False
@@ -591,14 +549,16 @@ def _search_with_rg(
         if not os.path.isabs(file_path):
             file_path = os.path.abspath(os.path.join(root, file_path))
 
-        matches.append(
-            {
-                "file_path": file_path,
-                "relative_path": safe_relpath(file_path, root),
-                "line": line_number,
-                "match": str(line_text or "").strip()[:400],
-            }
-        )
+        match = {
+            "file_path": file_path,
+            "relative_path": safe_relpath(file_path, root),
+            "line": line_number,
+            "match": str(line_text or "").strip()[:400],
+        }
+        if not can_append_budgeted(matches, match, char_limit=char_limit):
+            stopped_by_char_limit = True
+            return True
+        matches.append(match)
         return len(matches) >= limit
 
     meta = run_rg_stream_lines(cmd, _on_line, timeout_sec=RG_TIMEOUT_SEC, cancel_source=cancel_source)
@@ -628,7 +588,8 @@ def _search_with_rg(
             ensure_ascii=False,
         )
 
-    return json.dumps(
+    truncated = len(matches) >= limit or bool(meta.get("timed_out")) or stopped_by_char_limit
+    return bounded_json_dumps(
         {
             "status": "success",
             "engine": "rg",
@@ -637,10 +598,20 @@ def _search_with_rg(
             "fixed_strings": fixed_strings,
             "case_sensitive": case_sensitive,
             "matches": matches,
-            "truncated": len(matches) >= limit or bool(meta.get("timed_out")),
+            "matches_returned": len(matches),
+            "estimated_or_observed_total_matches": None if truncated else len(matches),
+            "truncated": truncated,
+            "truncation_reason": (
+                "output_char_limit"
+                if stopped_by_char_limit
+                else "max_results" if len(matches) >= limit else "timeout" if meta.get("timed_out") else ""
+            ),
+            "output_char_limit": int(char_limit),
+            "next_query_suggestions": narrow_query_suggestions() if truncated else [],
             "timed_out": bool(meta.get("timed_out")),
         },
-        ensure_ascii=False,
+        list_key="matches",
+        char_limit=char_limit,
     )
 
 
@@ -653,6 +624,7 @@ def _search_with_python(
     case_sensitive,
     fixed_strings,
     limit,
+    char_limit,
     cancel_source=None,
 ):
     flags = 0 if case_sensitive else re.IGNORECASE
@@ -670,6 +642,7 @@ def _search_with_python(
 
     matches = []
     searched_files = 0
+    stopped_by_char_limit = False
     for file_path in iter_files_fallback(root):
         raise_if_cancel_requested(cancel_source)
         rel_path = safe_relpath(file_path, root)
@@ -681,14 +654,27 @@ def _search_with_python(
                 for line_no, line in enumerate(f, start=1):
                     raise_if_cancel_requested(cancel_source)
                     if compiled.search(line):
-                        matches.append(
-                            {
-                                "file_path": file_path,
-                                "relative_path": rel_path,
-                                "line": line_no,
-                                "match": line.strip()[:400],
-                            }
-                        )
+                        match = {
+                            "file_path": file_path,
+                            "relative_path": rel_path,
+                            "line": line_no,
+                            "match": line.strip()[:400],
+                        }
+                        if not can_append_budgeted(matches, match, char_limit=char_limit):
+                            stopped_by_char_limit = True
+                            return _python_search_success(
+                                root=root,
+                                query=query,
+                                fixed_strings=fixed_strings,
+                                case_sensitive=case_sensitive,
+                                searched_files=searched_files,
+                                matches=matches,
+                                truncated=True,
+                                truncation_reason="output_char_limit",
+                                char_limit=char_limit,
+                                total_matches=None,
+                            )
+                        matches.append(match)
                         if len(matches) >= limit:
                             return _python_search_success(
                                 root=root,
@@ -698,6 +684,9 @@ def _search_with_python(
                                 searched_files=searched_files,
                                 matches=matches,
                                 truncated=True,
+                                truncation_reason="max_results",
+                                char_limit=char_limit,
+                                total_matches=None,
                             )
         except Exception:
             continue
@@ -710,6 +699,9 @@ def _search_with_python(
         searched_files=searched_files,
         matches=matches,
         truncated=False,
+        truncation_reason="",
+        char_limit=char_limit,
+        total_matches=len(matches),
     )
 
 
@@ -722,8 +714,11 @@ def _python_search_success(
     searched_files,
     matches,
     truncated,
+    truncation_reason,
+    char_limit,
+    total_matches,
 ):
-    return json.dumps(
+    return bounded_json_dumps(
         {
             "status": "success",
             "engine": "python",
@@ -733,33 +728,42 @@ def _python_search_success(
             "case_sensitive": case_sensitive,
             "searched_files": searched_files,
             "matches": matches,
+            "matches_returned": len(matches),
+            "estimated_or_observed_total_matches": total_matches,
             "truncated": truncated,
+            "truncation_reason": truncation_reason,
+            "output_char_limit": int(char_limit),
+            "next_query_suggestions": narrow_query_suggestions() if truncated else [],
         },
-        ensure_ascii=False,
+        list_key="matches",
+        char_limit=char_limit,
     )
 
 
-def _list_files_with_rg(*, rg_path, root, include_globs, exclude_globs, limit, cancel_source=None):
+def _list_files_with_rg(*, rg_path, root, include_globs, exclude_globs, limit, char_limit, cancel_source=None):
     matches = []
     scanned_files = 0
+    stopped_by_char_limit = False
     cmd = [rg_path, "--files", "--no-messages"]
     append_rg_globs(cmd, include_globs, exclude_globs)
     cmd.append(root)
 
     def _on_line(raw_line):
-        nonlocal scanned_files
+        nonlocal scanned_files, stopped_by_char_limit
         file_path = str(raw_line or "").strip()
         if not file_path:
             return False
         scanned_files += 1
         if not os.path.isabs(file_path):
             file_path = os.path.abspath(os.path.join(root, file_path))
-        matches.append(
-            {
-                "file_path": file_path,
-                "relative_path": safe_relpath(file_path, root),
-            }
-        )
+        match = {
+            "file_path": file_path,
+            "relative_path": safe_relpath(file_path, root),
+        }
+        if not can_append_budgeted(matches, match, char_limit=char_limit):
+            stopped_by_char_limit = True
+            return True
+        matches.append(match)
         return len(matches) >= limit
 
     meta = run_rg_stream_lines(cmd, _on_line, timeout_sec=RG_TIMEOUT_SEC, cancel_source=cancel_source)
@@ -787,21 +791,31 @@ def _list_files_with_rg(*, rg_path, root, include_globs, exclude_globs, limit, c
             ensure_ascii=False,
         )
 
-    return json.dumps(
+    truncated = len(matches) >= limit or bool(meta.get("timed_out")) or stopped_by_char_limit
+    return bounded_json_dumps(
         {
             "status": "success",
             "engine": "rg",
             "project_root": root,
             "scanned_files": scanned_files,
             "files": matches,
-            "truncated": len(matches) >= limit or bool(meta.get("timed_out")),
+            "files_returned": len(matches),
+            "truncated": truncated,
+            "truncation_reason": (
+                "output_char_limit"
+                if stopped_by_char_limit
+                else "max_results" if len(matches) >= limit else "timeout" if meta.get("timed_out") else ""
+            ),
+            "result_chars_limit": int(char_limit),
+            "next_query_suggestions": narrow_query_suggestions() if truncated else [],
             "timed_out": bool(meta.get("timed_out")),
         },
-        ensure_ascii=False,
+        list_key="files",
+        char_limit=char_limit,
     )
 
 
-def _list_files_with_python(*, root, include_globs, exclude_globs, limit, cancel_source=None):
+def _list_files_with_python(*, root, include_globs, exclude_globs, limit, char_limit, cancel_source=None):
     matches = []
     scanned_files = 0
     for file_path in iter_files_fallback(root):
@@ -810,27 +824,54 @@ def _list_files_with_python(*, root, include_globs, exclude_globs, limit, cancel
         if not path_allowed(rel_path, include_globs, exclude_globs):
             continue
         scanned_files += 1
-        matches.append(
-            {
-                "file_path": file_path,
-                "relative_path": rel_path,
-            }
-        )
+        match = {
+            "file_path": file_path,
+            "relative_path": rel_path,
+        }
+        if not can_append_budgeted(matches, match, char_limit=char_limit):
+            return _python_list_success(
+                root=root,
+                scanned_files=scanned_files,
+                matches=matches,
+                truncated=True,
+                truncation_reason="output_char_limit",
+                char_limit=char_limit,
+            )
+        matches.append(match)
         if len(matches) >= limit:
-            return _python_list_success(root=root, scanned_files=scanned_files, matches=matches, truncated=True)
+            return _python_list_success(
+                root=root,
+                scanned_files=scanned_files,
+                matches=matches,
+                truncated=True,
+                truncation_reason="max_results",
+                char_limit=char_limit,
+            )
 
-    return _python_list_success(root=root, scanned_files=scanned_files, matches=matches, truncated=False)
+    return _python_list_success(
+        root=root,
+        scanned_files=scanned_files,
+        matches=matches,
+        truncated=False,
+        truncation_reason="",
+        char_limit=char_limit,
+    )
 
 
-def _python_list_success(*, root, scanned_files, matches, truncated):
-    return json.dumps(
+def _python_list_success(*, root, scanned_files, matches, truncated, truncation_reason, char_limit):
+    return bounded_json_dumps(
         {
             "status": "success",
             "engine": "python",
             "project_root": root,
             "scanned_files": scanned_files,
             "files": matches,
+            "files_returned": len(matches),
             "truncated": truncated,
+            "truncation_reason": truncation_reason,
+            "result_chars_limit": int(char_limit),
+            "next_query_suggestions": narrow_query_suggestions() if truncated else [],
         },
-        ensure_ascii=False,
+        list_key="files",
+        char_limit=char_limit,
     )

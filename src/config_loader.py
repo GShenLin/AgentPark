@@ -116,6 +116,7 @@ class ConfigLoader:
             raise ValueError(
                 f"Provider '{provider_name}' has invalid responsesApi; expected a boolean."
             )
+        self._validate_responses_provider_config(provider_name, provider, provider_type)
 
         provider.pop("apiKeyEnv", None)
         provider["apiKey"] = str(provider.get("apiKey") or "").strip()
@@ -127,6 +128,56 @@ class ConfigLoader:
             )
 
         return provider
+
+    def _validate_responses_provider_config(self, provider_name, provider, provider_type):
+        if provider.get("responsesApi") is not True:
+            return
+        required = (
+            "toolResultSubmissionMaxChars",
+            "responsesContinuationMode",
+            "toolContextCompactionEnabled",
+            "toolContextCompactionEveryToolCalls",
+        )
+        for key in required:
+            if key not in provider:
+                raise ValueError(
+                    f"Provider '{provider_name}' has responsesApi=true but missing required field {key}."
+                )
+
+        continuation = str(provider.get("responsesContinuationMode") or "").strip()
+        if continuation not in {"previous_response_id", "explicit_context"}:
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid responsesContinuationMode; "
+                "expected 'previous_response_id' or 'explicit_context'."
+            )
+
+        if not isinstance(provider.get("toolContextCompactionEnabled"), bool):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid toolContextCompactionEnabled; expected a boolean."
+            )
+
+        for key in ("toolResultSubmissionMaxChars", "toolContextCompactionEveryToolCalls"):
+            try:
+                value = int(provider.get(key))
+            except Exception as exc:
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid {key}; expected a positive integer."
+                ) from exc
+            if value <= 0:
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid {key}; expected a positive integer."
+                )
+            provider[key] = value
+
+        if provider_type == "openai":
+            if "responsesReplayReasoningItems" not in provider:
+                raise ValueError(
+                    f"Provider '{provider_name}' has responsesApi=true but missing required field responsesReplayReasoningItems."
+                )
+            if not isinstance(provider.get("responsesReplayReasoningItems"), bool):
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid responsesReplayReasoningItems; expected a boolean."
+                )
 
     def _load_config(self):
         provider_config_path = self._resolve_provider_config_path()

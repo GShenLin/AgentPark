@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import timedelta
+from builtins import BaseExceptionGroup
 from typing import Any, Callable, Iterable
 
 import anyio
@@ -24,20 +25,45 @@ class McpMaterializedTool:
     callable: Callable[..., Any]
 
 
-def materialize_mcp_server_tools(servers: Iterable[McpServerDefinition]) -> list[McpMaterializedTool]:
+@dataclass(frozen=True)
+class McpToolFilter:
+    server_rules: dict[str, frozenset[str]] | None = None
+
+    def allows(self, *, server_name: str, remote_tool_name: str, function_name: str) -> bool:
+        keys = _tool_filter_keys(server_name, remote_tool_name, function_name)
+        server_rules = self.server_rules or {}
+        server_specific_rules = server_rules.get(server_name)
+        if server_specific_rules and not keys.intersection(server_specific_rules):
+            return False
+        return True
+
+
+def materialize_mcp_server_tools(
+    servers: Iterable[McpServerDefinition],
+    *,
+    tool_filter: McpToolFilter | None = None,
+) -> list[McpMaterializedTool]:
     materialized: list[McpMaterializedTool] = []
     used_names: dict[str, str] = {}
+    active_filter = tool_filter if isinstance(tool_filter, McpToolFilter) else McpToolFilter()
     for server in servers or []:
         client = McpServerClient(server)
         transport = _transport_name(server.config)
         mark_mcp_starting(server.name, transport=transport)
         try:
             remote_tools = client.list_tools()
+            materialized_count = 0
             for remote_tool in remote_tools:
                 remote_name = _tool_attr(remote_tool, "name")
                 if not remote_name:
                     raise McpServerLoadError(f"MCP server {server.name}: tool without a name")
                 function_name = _materialized_function_name(server.name, remote_name)
+                if not active_filter.allows(
+                    server_name=server.name,
+                    remote_tool_name=remote_name,
+                    function_name=function_name,
+                ):
+                    continue
                 previous = used_names.get(function_name)
                 identity = f"{server.name}:{remote_name}"
                 if previous and previous != identity:
@@ -51,13 +77,15 @@ def materialize_mcp_server_tools(servers: Iterable[McpServerDefinition]) -> list
                         remote_tool_name=remote_name,
                         function_name=function_name,
                         declaration=_build_tool_declaration(server, remote_tool, function_name),
-                        callable=_build_tool_callable(client, remote_name, function_name),
+                        callable=_build_tool_callable(client, server, remote_name, function_name),
                     )
                 )
-            mark_mcp_ready(server.name, transport=transport, tool_count=len(remote_tools))
+                materialized_count += 1
+            mark_mcp_ready(server.name, transport=transport, tool_count=materialized_count)
         except Exception as exc:
-            mark_mcp_failed(server.name, f"{type(exc).__name__}: {exc}", transport=transport)
-            raise
+            load_error = _as_mcp_server_load_error(server, exc)
+            mark_mcp_failed(server.name, f"{type(load_error).__name__}: {load_error}", transport=transport)
+            raise load_error from exc
     return materialized
 
 
@@ -143,9 +171,37 @@ class McpServerClient:
         raise McpServerLoadError(f"MCP server {self.server.name}: unsupported transport {transport!r}")
 
 
-def _build_tool_callable(client: McpServerClient, remote_tool_name: str, function_name: str) -> Callable[..., Any]:
+def _as_mcp_server_load_error(server: McpServerDefinition, exc: Exception) -> McpServerLoadError:
+    if isinstance(exc, McpServerLoadError):
+        return exc
+    summary = _exception_summary(exc)
+    detail = f": {summary}" if summary else ""
+    return McpServerLoadError(f"MCP server {server.name} failed to load tools{detail}")
+
+
+def _exception_summary(exc: BaseException) -> str:
+    if isinstance(exc, BaseExceptionGroup):
+        parts = [_exception_summary(item) for item in exc.exceptions]
+        return "; ".join(part for part in parts if part) or str(exc).strip()
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _build_tool_callable(
+    client: McpServerClient,
+    server: McpServerDefinition,
+    remote_tool_name: str,
+    function_name: str,
+) -> Callable[..., Any]:
     def call_mcp_tool(agent=None, **arguments):
-        return client.call_tool(remote_tool_name, dict(arguments or {}))
+        result = client.call_tool(remote_tool_name, dict(arguments or {}))
+        return _compact_mcp_tool_result_if_needed(
+            server=server,
+            remote_tool_name=remote_tool_name,
+            function_name=function_name,
+            result=result,
+            agent=agent,
+        )
 
     call_mcp_tool.__name__ = function_name
     call_mcp_tool.tool_timeout_seconds = 0
@@ -189,6 +245,101 @@ def _normalize_call_tool_result(result: Any) -> Any:
     return build_success_result(json.dumps(payload, ensure_ascii=False))
 
 
+def _compact_mcp_tool_result_if_needed(
+    *,
+    server: McpServerDefinition,
+    remote_tool_name: str,
+    function_name: str,
+    result: Any,
+    agent: Any,
+) -> Any:
+    text = _tool_result_text(result)
+    limit = _mcp_tool_result_max_chars(server.config)
+    if len(text) <= limit:
+        return result
+
+    payload = {
+        "status": "mcp_tool_result_truncated",
+        "retryable": False,
+        "server": server.name,
+        "tool": remote_tool_name,
+        "function_name": function_name,
+        "original_result_chars": len(text),
+        "result_chars_limit": limit,
+        "instruction": (
+            "The MCP tool returned more data than this node can safely submit to the model. "
+            "Use a narrower MCP query, request fewer items, or ask for a specific record."
+        ),
+    }
+    _emit_mcp_result_compacted_notice(
+        agent=agent,
+        server=server.name,
+        remote_tool_name=remote_tool_name,
+        function_name=function_name,
+        original_result_chars=len(text),
+        limit=limit,
+    )
+    return build_success_result(json.dumps(payload, ensure_ascii=False))
+
+
+def _tool_result_text(result: Any) -> str:
+    if hasattr(result, "model_output") and callable(result.model_output):
+        try:
+            value = result.model_output()
+        except Exception:
+            value = result
+    else:
+        value = result
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        return str(value or "")
+
+
+def _mcp_tool_result_max_chars(config: dict[str, Any]) -> int:
+    value = (config or {}).get("toolResultMaxChars", (config or {}).get("tool_result_max_chars", 50000))
+    if isinstance(value, bool):
+        raise McpServerLoadError("MCP field toolResultMaxChars must be a positive integer")
+    try:
+        parsed = int(value)
+    except Exception as exc:
+        raise McpServerLoadError("MCP field toolResultMaxChars must be a positive integer") from exc
+    if parsed <= 0:
+        raise McpServerLoadError("MCP field toolResultMaxChars must be a positive integer")
+    return parsed
+
+
+def _emit_mcp_result_compacted_notice(
+    *,
+    agent: Any,
+    server: str,
+    remote_tool_name: str,
+    function_name: str,
+    original_result_chars: int,
+    limit: int,
+) -> None:
+    emitter = getattr(agent, "_emit_provider_runtime_notice", None)
+    if not callable(emitter):
+        return
+    emitter(
+        message=json.dumps(
+            {
+                "policy": "mcp_tool_result_size_cap",
+                "server": server,
+                "tool": remote_tool_name,
+                "function_name": function_name,
+                "original_result_chars": int(original_result_chars),
+                "limit": int(limit),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        stage="mcp_tool_result_compacted",
+    )
+
+
 def _content_to_json(item: Any) -> Any:
     if hasattr(item, "model_dump"):
         return item.model_dump(by_alias=True, exclude_none=True)
@@ -222,6 +373,15 @@ def _safe_function_part(value: str) -> str:
     if not text:
         raise McpServerLoadError("MCP server/tool name cannot be converted to a provider-safe function name")
     return text
+
+
+def _tool_filter_keys(server_name: str, remote_tool_name: str, function_name: str) -> set[str]:
+    return {
+        str(remote_tool_name or "").strip(),
+        str(function_name or "").strip(),
+        f"{str(server_name or '').strip()}:{str(remote_tool_name or '').strip()}",
+        f"{str(server_name or '').strip()}.{str(remote_tool_name or '').strip()}",
+    }
 
 
 def _transport_name(config: dict[str, Any]) -> str:

@@ -268,7 +268,9 @@ multi_tool_use_parallel_declaration = {
         "name": _TOOL_NAME,
         "description": (
             "Run multiple function tools in parallel. "
-            "Each item must provide recipient_name='functions.<tool_name>' and parameters object."
+            "Each item must provide recipient_name='functions.<tool_name>' and parameters object. "
+            "Use this only for independent, quick tool calls. Run execute_console_command directly "
+            "when it is slow-looking, interactive, or needs timeout_seconds greater than 20."
         ),
         "parameters": {
             "type": "object",

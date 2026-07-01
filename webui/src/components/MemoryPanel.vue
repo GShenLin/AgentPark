@@ -1,6 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { clearNodeInstanceMemory, deleteGraph, deleteNodeInstanceMemoryMessage, listGraphs, loadGraph, saveGraph, setStartupGraphConfig, type GraphConfig, type GraphInfo, type MessageEnvelope } from '../api'
+import {
+  clearNodeInstanceMemory,
+  createGraphFromProfile,
+  deleteGraph,
+  deleteNodeInstanceMemoryMessage,
+  listGraphProfiles,
+  listGraphs,
+  loadGraph,
+  saveGraph,
+  saveGraphProfileFromGraph,
+  setStartupGraphConfig,
+  type GraphConfig,
+  type GraphInfo,
+  type GraphProfile,
+  type MessageEnvelope,
+} from '../api'
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
@@ -13,6 +28,8 @@ const {
   memoryText,
   memoryMessages,
   memoryLiveMessage,
+  memoryInteractiveSessionId,
+  memoryInteractiveSending,
   memoryTitle,
   memoryMeta,
   memoryMode,
@@ -35,6 +52,7 @@ const {
   startAgentLiveStream,
   saveCurrentFile,
   stopLoading,
+  sendInteractiveInput,
 } = useMemory()
 
 const {
@@ -53,14 +71,20 @@ const isWordWrap = ref(true)
 const showLineNumbers = ref(false)
 const isMarkdownPreview = ref(true)
 const contentViewRef = ref<InstanceType<typeof MemoryContentView> | null>(null)
+const interactiveInputText = ref('')
 
 const graphs = ref<GraphInfo[]>([])
+const graphProfiles = ref<GraphProfile[]>([])
+const selectedGraphProfileId = ref('')
 const graphNameInput = ref('')
 const graphStatus = ref<string | null>(null)
 const graphLoading = ref(false)
 
 const structuredMessages = computed(() => (Array.isArray(memoryMessages.value) ? memoryMessages.value : []))
-const canClearMemory = computed(() => hasSelectedNodeTarget())
+const canClearMemory = computed(() => memoryMode.value === 'agent' && hasSelectedNodeTarget())
+const canSendInteractiveInput = computed(
+  () => !!String(selectedNodeId.value || '').trim() && !!String(memoryInteractiveSessionId.value || '').trim() && !memoryInteractiveSending.value,
+)
 
 function hasSelectedNodeTarget() {
   return !!String(selectedNodeId.value || '').trim()
@@ -92,6 +116,29 @@ async function clearSelectedNodeMemory() {
   }
 }
 
+async function handleSendInteractiveInput(options: { appendNewline?: boolean; sendEof?: boolean; sendCtrlC?: boolean } = {}) {
+  const text = interactiveInputText.value
+  const ok = await sendInteractiveInput(text, options)
+  if (ok) {
+    interactiveInputText.value = ''
+  }
+}
+
+async function onInteractiveSubmit() {
+  if (!canSendInteractiveInput.value) return
+  await handleSendInteractiveInput({ appendNewline: true })
+}
+
+async function onInteractiveCtrlC() {
+  if (!canSendInteractiveInput.value) return
+  await handleSendInteractiveInput({ appendNewline: false, sendCtrlC: true })
+}
+
+async function onInteractiveEof() {
+  if (!canSendInteractiveInput.value) return
+  await handleSendInteractiveInput({ appendNewline: false, sendEof: true })
+}
+
 async function deleteMemoryMessage(message: MessageEnvelope) {
   const nodeId = String(selectedNodeId.value || '').trim()
   const messageId = String((message as any)?.id || '').trim()
@@ -116,11 +163,20 @@ async function refreshGraphs() {
   graphStatus.value = null
   try {
     graphs.value = await listGraphs()
+    graphProfiles.value = await listGraphProfiles()
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   } finally {
     graphLoading.value = false
   }
+}
+
+function promptProfileId(defaultValue: string) {
+  return String(window.prompt('Profile ID', defaultValue) || '').trim()
+}
+
+function promptProfileName(defaultValue: string) {
+  return String(window.prompt('Profile name', defaultValue) || '').trim()
 }
 
 function resolveGraphName(snapshot: GraphConfig | null) {
@@ -160,6 +216,62 @@ async function saveGraphConfig() {
     await setStartupGraphConfig(result.id, result.name).catch(() => null)
     await refreshGraphs()
     graphStatus.value = 'Graph saved.'
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  }
+}
+
+async function saveGraphProfile() {
+  const graphId = String(currentGraphId.value || graphSnapshot.value?.id || 'default').trim() || 'default'
+  const defaultName = String(currentGraphName.value || graphNameInput.value || graphId).trim() || graphId
+  const defaultProfileId = defaultName.replace(/[^A-Za-z0-9_-]/g, '_') || graphId
+  const profileId = promptProfileId(defaultProfileId)
+  if (!profileId) return
+  const profileName = promptProfileName(defaultName) || profileId
+
+  graphStatus.value = null
+  try {
+    if (graphSnapshot.value) {
+      await saveGraph(graphId, {
+        ...graphSnapshot.value,
+        id: graphId,
+        name: currentGraphName.value || graphNameInput.value || graphId,
+      }, { saveReason: 'graph_profile_save' })
+    }
+    const result = await saveGraphProfileFromGraph({
+      graph_id: graphId,
+      profile_id: profileId,
+      profile_name: profileName,
+    })
+    selectedGraphProfileId.value = result.profile.id
+    graphProfiles.value = await listGraphProfiles()
+    graphStatus.value = 'Graph profile saved.'
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  }
+}
+
+async function createGraphConfigFromProfile() {
+  const profileId = String(selectedGraphProfileId.value || '').trim()
+  if (!profileId) {
+    graphStatus.value = 'Select a graph profile first.'
+    return
+  }
+  const targetGraphId = String(window.prompt('GraphID', '') || '').trim()
+  if (!targetGraphId) return
+
+  graphStatus.value = null
+  try {
+    const result = await createGraphFromProfile(profileId, targetGraphId)
+    const graph = result.graph
+    currentGraphId.value = graph.id
+    currentGraphName.value = graph.name || graph.id
+    graphNameInput.value = currentGraphName.value || graph.id
+    graphLoadRequest.value = graph
+    memoryMode.value = 'graph'
+    await setStartupGraphConfig(graph.id, graph.name || graph.id).catch(() => null)
+    await refreshGraphs()
+    graphStatus.value = 'Graph created from profile.'
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -292,6 +404,18 @@ watch(memoryLiveMessage, async () => {
   contentViewRef.value?.scrollToBottom()
 })
 
+watch(
+  () => memoryInteractiveSessionId.value,
+  async (sessionId) => {
+    if (!sessionId) return
+    if (!memoryAutoScroll.value) return
+    if (memoryMode.value !== 'agent') return
+    await nextTick()
+    contentViewRef.value?.scrollToBottom()
+    contentViewRef.value?.focusInteractiveInput?.()
+  },
+)
+
 onBeforeUnmount(() => {
   stopLoading()
 })
@@ -327,15 +451,29 @@ onBeforeUnmount(() => {
       :rendered-markdown="renderedMarkdown"
       :graph-loading="graphLoading"
       :graphs="graphs"
+      :graph-profiles="graphProfiles"
+      :selected-graph-profile-id="selectedGraphProfileId"
+      :interactive-session-id="memoryInteractiveSessionId"
+      :interactive-input-disabled="!canSendInteractiveInput"
+      :interactive-sending="memoryInteractiveSending"
+      :interactive-input-text="interactiveInputText"
       @save-current-file="saveCurrentFile"
       @save-graph-config="saveGraphConfig"
+      @save-graph-profile="saveGraphProfile"
+      @create-graph-from-profile="createGraphConfigFromProfile"
       @refresh-graphs="refreshGraphs"
       @load-graph-config="loadGraphConfig"
       @delete-graph-config="deleteGraphConfig"
+      @update:selected-graph-profile-id="selectedGraphProfileId = $event"
       @auto-scroll-change="memoryAutoScroll = $event"
       @save-message="openSaveMessageDialog"
       @copy-message="copyMessageText"
       @delete-message="deleteMemoryMessage"
+      @update:interactive-input-text="interactiveInputText = $event"
+      @send-interactive-input="handleSendInteractiveInput($event)"
+      @interactive-submit="onInteractiveSubmit"
+      @interactive-ctrl-c="onInteractiveCtrlC"
+      @interactive-eof="onInteractiveEof"
     />
 
     <MemorySaveDialog
@@ -455,6 +593,12 @@ onBeforeUnmount(() => {
   padding: 12px;
   border-radius: 8px;
   overflow-x: auto;
+}
+
+:deep(.markdown-body .markdown-code-block pre) {
+  margin: 0;
+  padding: 10px 48px 34px 10px;
+  background: transparent;
 }
 
 </style>

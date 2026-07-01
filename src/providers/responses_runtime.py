@@ -1,9 +1,13 @@
 import json
 from typing import Any
 
+from src.providers.agent_environment_context import build_agent_environment_context
+from src.providers.agent_environment_context import format_agent_environment_context
 from src.providers.responses_empty_message import EmptyMessageFeedbackController
 from src.providers.responses_followup import build_responses_followup_items
+from src.providers.responses_input_items import build_responses_message_input_item
 from src.providers.responses_item_runtime import ResponsesItemLevelToolRunner
+from src.providers.responses_request_summary import build_responses_request_summary
 from src.providers.responses_runtime_mode import resolve_responses_runtime_mode
 from src.providers.responses_runtime_protocol import ResponsesStreamText, is_previous_response_missing_error
 from src.providers.tool_feedback import ToolFeedbackMixin
@@ -37,6 +41,10 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
         use_stream = callable(stream_handler) or use_item_level_mode
         empty_message_feedback = EmptyMessageFeedbackController()
         request_index = 0
+        reset_loop_guard = getattr(self, "_reset_tool_call_loop_guard", None)
+        if callable(reset_loop_guard):
+            reset_loop_guard()
+        last_request_summary: dict[str, Any] | None = None
 
         def _on_stream(delta_text, full_text):
             self._emit_stream_text(stream_handler, delta_text, stream_text.update(delta_text, full_text))
@@ -62,9 +70,10 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
 
             stream_text.reset()
             request_previous_response_id = previous_response_id
-            request_input_item_count = len(current_input) if isinstance(current_input, list) else 0
+            request_input = self._with_agent_environment_context(current_input)
+            request_input_item_count = len(request_input) if isinstance(request_input, list) else 0
             payload = self._build_responses_payload(
-                current_input=current_input,
+                current_input=request_input,
                 previous_response_id=previous_response_id,
                 tools_payload=tools_payload,
                 use_stream=use_stream,
@@ -72,6 +81,17 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
             )
             payload_json = json.dumps(payload, ensure_ascii=False)
             request_index += 1
+            last_request_summary = build_responses_request_summary(
+                request_index=request_index,
+                continuation_mode=continuation_mode,
+                previous_response_id=previous_response_id,
+                current_input=request_input,
+                tools_payload=tools_payload,
+                stream=use_stream,
+                responses_mode=mode_decision.mode,
+                requested_responses_mode=mode_decision.requested_mode,
+            )
+            self._emit_responses_request_summary(last_request_summary)
             self._emit_responses_request_start(
                 request_index=request_index,
                 previous_response_id=previous_response_id,
@@ -127,8 +147,10 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
                 current_input=current_input,
                 explicit_context_input=explicit_context_input,
                 response_id=response_id,
+                request_summary=last_request_summary,
             )
             if empty_message_action.kind != "none":
+                gate_active = bool(getattr(self, "_tool_context_compaction_gate_active", False))
                 if empty_message_action.kind == "error":
                     _emit_turn_debug(
                         response_id=response_id,
@@ -143,9 +165,31 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
                     self.Message("assistant", empty_message_action.error_text)
                     _close_item_tool_runner()
                     return empty_message_action.error_text
-                previous_response_id = ""
-                current_input = empty_message_action.next_input
-                previous_response_fallback_input = None
+                if gate_active and empty_message_action.feedback_item is not None:
+                    # Inside the compaction gate the model must still be forced
+                    # to call compact_tool_context.  Append the EmptyMessage
+                    # feedback as an extra user item on top of the existing
+                    # gate input (which still contains the mandatory gate
+                    # system prompt), instead of replacing current_input with
+                    # the lone feedback item (which would discard the gate
+                    # instruction and guarantee a second refusal).
+                    current_input = list(current_input) + [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": empty_message_action.feedback_item["content"][0]["text"],
+                                }
+                            ],
+                        }
+                    ]
+                    previous_response_fallback_input = None
+                    previous_response_id = ""
+                else:
+                    previous_response_id = ""
+                    current_input = empty_message_action.next_input
+                    previous_response_fallback_input = None
                 _emit_turn_debug(
                     response_id=response_id,
                     content=empty_message_action.feedback_item["content"][0]["text"],
@@ -163,6 +207,9 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
                 empty_message_feedback.reset()
                 display_tool_calls = [to_openai_tool_call(call) for call in function_calls]
                 self.Message("assistant", content, tool_calls=display_tool_calls)
+                self._persist_assistant_tool_call_note_if_available(
+                    {"role": "assistant", "content": content, "tool_calls": display_tool_calls}
+                )
                 if not run_tools:
                     _emit_turn_debug(
                         response_id=response_id,
@@ -333,6 +380,25 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
             payload["stream"] = True
         return payload
 
+    def _persist_assistant_tool_call_note_if_available(self, message: dict[str, Any]) -> None:
+        callback = getattr(self, "_aitools_persist_assistant_tool_call_note", None)
+        if callable(callback):
+            callback(message)
+
+    def _with_agent_environment_context(self, current_input: Any) -> list[Any]:
+        items = list(current_input) if isinstance(current_input, list) else []
+        context = build_agent_environment_context(self, current_input=current_input)
+        if not context:
+            return items
+        text = format_agent_environment_context(context)
+        return [
+            build_responses_message_input_item(
+                role="system",
+                content=[{"type": "input_text", "text": text}],
+            ),
+            *items,
+        ]
+
     def _send_responses_request(self, *, url, headers, payload_json, stream_handler, item_event_handler=None):
         if callable(stream_handler):
             return self._stream_responses_request(
@@ -431,7 +497,20 @@ class ResponsesRuntime(ToolFeedbackMixin, HostBoundService):
         return False
 
     def _responses_tool_output(self, execution):
-        return execution.cleaned_result
+        return self._compact_tool_result_for_submission_if_needed(
+            tool_name=execution.func_name,
+            call_id=execution.call_id,
+            content=execution.cleaned_result,
+        )
+
+    def _emit_responses_request_summary(self, summary: dict[str, Any]) -> None:
+        emitter = getattr(self, "_emit_provider_runtime_notice", None)
+        if not callable(emitter):
+            return
+        emitter(
+            message=json.dumps(summary, ensure_ascii=False, sort_keys=True),
+            stage="openai_responses_request_summary",
+        )
 
     def _validate_responses_followup_call_id(self, _call_id: str) -> None:
         return None

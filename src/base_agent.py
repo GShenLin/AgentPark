@@ -18,7 +18,6 @@ class BaseAgent(ToolContextCompactionGateMixin, OperationalMemoryGateMixin, ABC)
         self._config = {}
         self.messages = []
         self.operational_memory_gate_enabled = False
-        self.tool_context_compaction_gate_enabled = False
         self._tool_context_compaction_since_last = 0
         self.internal_memory_enabled = bool(internal_memory_enabled)
         self.memory = BaseMemory(provider_name, memory_file_path=memory_file_path)

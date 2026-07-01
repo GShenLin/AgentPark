@@ -2,6 +2,7 @@
 import { computed, inject, ref, watchEffect } from 'vue'
 import { AgentBoardKey } from './context'
 import CanvasContextMenu from './CanvasContextMenu.vue'
+import NodeContextMenu from './NodeContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
 import NodeSideEditor from './NodeSideEditor.vue'
 import UserInteractionDialog from '../UserInteractionDialog.vue'
@@ -16,6 +17,10 @@ const boardEl = ref<HTMLElement | null>(null)
 const canvasEl = ref<HTMLElement | null>(null)
 const contextMenuRef = ref<{
   openAt: (screenPoint: { x: number; y: number }, boardPoint: { x: number; y: number }) => void
+  closeMenu: () => void
+} | null>(null)
+const nodeContextMenuRef = ref<{
+  openAt: (screenPoint: { x: number; y: number }, nodeId: string) => void
   closeMenu: () => void
 } | null>(null)
 
@@ -37,9 +42,15 @@ function getBoardPoint(event: MouseEvent) {
 
 function onBoardContextMenu(event: MouseEvent) {
   const target = event.target as HTMLElement | null
-  const overItem = !!target?.closest('.node-card')
+  const nodeEl = target?.closest('.node-card') as HTMLElement | null
   event.preventDefault()
-  if (overItem) return
+  if (nodeEl) {
+    const nodeId = String(nodeEl.dataset.boardItemId || '').trim()
+    if (nodeId) {
+      nodeContextMenuRef.value?.openAt({ x: event.clientX, y: event.clientY }, nodeId)
+    }
+    return
+  }
   contextMenuRef.value?.openAt({ x: event.clientX, y: event.clientY }, getBoardPoint(event))
 }
 
@@ -128,6 +139,7 @@ watchEffect(() => {
       </div>
     </div>
     <CanvasContextMenu ref="contextMenuRef" />
+    <NodeContextMenu ref="nodeContextMenuRef" />
   </div>
 </template>
 

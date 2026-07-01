@@ -1,4 +1,4 @@
-import { Marked, marked } from 'marked'
+import { Marked, Renderer, marked, type Tokens } from 'marked'
 import markedKatex from 'marked-katex-extension'
 
 marked.use(markedKatex({ throwOnError: false }))
@@ -12,6 +12,27 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 }
+
+function languageClass(lang: string | undefined) {
+  const value = String(lang || '').trim().split(/\s+/)[0]
+  if (!value) return ''
+  return ` class="language-${escapeHtml(value)}"`
+}
+
+function renderCodeBlock({ text, lang, escaped }: Tokens.Code) {
+  const code = escaped ? text : escapeHtml(text)
+  const className = languageClass(lang)
+  return `<div class="markdown-code-block"><pre><code${className}>${code}</code></pre><button type="button" class="markdown-code-copy" aria-label="Copy code" title="Copy code">Copy</button></div>`
+}
+
+function createMarkdownRenderer() {
+  const renderer = new Renderer()
+  renderer.code = renderCodeBlock
+  return renderer
+}
+
+marked.use({ renderer: createMarkdownRenderer() })
+liveMarked.use({ renderer: createMarkdownRenderer() })
 
 function normalizeMemoryRole(role: string) {
   const value = String(role || '').trim().toLowerCase()

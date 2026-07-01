@@ -17,6 +17,13 @@
 - Define module boundaries and data contracts before implementing new capabilities.
 - Keep changes localized, verifiable, and maintainable; avoid boundaryless sprawl.
 
+## Workspace Operations
+
+- The primary shell environment is Windows. Do not use Bash-only command syntax such as heredocs (`python - <<'PY'`) with the default console; use `python -c`, a temporary script, or an explicit PowerShell-compatible form.
+- When passing multiple PowerShell paths that may contain spaces, build an explicit quoted array before calling commands such as `Get-ChildItem -Path`.
+- For very large or deeply nested JSON catalogs, prefer a quiet structured parser such as `node -e` with `JSON.parse` over PowerShell `ConvertFrom-Json`, which can fail noisily and dump large input to stderr.
+- Before running `git pull --rebase`, commit intended changes or stash work that should not be committed yet. Do not start a rebase from an unstaged working tree.
+
 ## File Size Policy
 
 - When a single file exceeds 400 lines, evaluate a split plan immediately.

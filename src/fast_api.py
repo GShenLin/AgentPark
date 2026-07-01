@@ -2,9 +2,6 @@ import argparse
 import logging
 import os
 import sys
-import threading
-import time
-import webbrowser
 from copy import deepcopy
 
 import uvicorn
@@ -14,7 +11,7 @@ from src.server_pid_file import install_server_pid_file
 from src.web_backend import create_app
 from src.windows_parent_monitor import start_env_parent_exit_monitor
 from src.windows_parent_monitor import start_frozen_parent_exit_monitor
-from src.workspace_settings import find_available_server_port, get_workspace_root, read_server_settings, resolve_local_client_host
+from src.workspace_settings import find_available_server_port, get_workspace_root, read_server_settings
 
 
 class Ignore200OKFilter(logging.Filter):
@@ -78,7 +75,7 @@ def main(argv=None):
     parser.add_argument("--host", type=str, default=server_settings["host"])
     parser.add_argument("--port", type=int, default=server_settings["port"])
     parser.add_argument("--workspace-root", type=str, default="")
-    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--no-browser", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.workspace_root:
         expected_root = os.path.abspath(get_workspace_root())
@@ -92,17 +89,6 @@ def main(argv=None):
     os.environ["AITOOLS_SERVER_PORT"] = str(actual_port)
     pid_path = install_server_pid_file(args.host, actual_port)
     print(f"[server] pid file: {pid_path}")
-    browser_host = resolve_local_client_host(args.host)
-
-    def _open_browser():
-        time.sleep(5)
-        try:
-            webbrowser.open(f"http://{browser_host}:{actual_port}/", new=1)
-        except Exception:
-            pass
-
-    if not args.no_browser:
-        threading.Thread(target=_open_browser, daemon=True).start()
     _run_server(
         create_app(),
         host=args.host,

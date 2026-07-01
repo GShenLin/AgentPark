@@ -295,7 +295,7 @@ class WeixinChannelDriver:
         return tokens
 
     def _base_info(self) -> dict:
-        return {"channel_version": PLUGIN_VERSION, "bot_agent": "AgentPark/0.1.0"}
+        return {"channel_version": PLUGIN_VERSION, "bot_agent": "AITools/0.1.0"}
 
     def _headers(self, token: str = "", *, auth: bool = True) -> dict:
         headers = {

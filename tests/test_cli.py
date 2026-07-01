@@ -247,7 +247,7 @@ def test_cli_chat_interactive_commands_render_shell(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "AgentPark Companion" in output
+    assert "AITools Companion" in output
     assert "provider: unit-provider" in output
     assert "status" in output
     assert "Commands:" in output
@@ -468,6 +468,65 @@ def test_stream_printer_tool_event_hides_result_preview(tmp_path, capsys):
     assert "tail-1" not in output
     assert "tail-4" not in output
     assert "tail-9" not in output
+
+
+def test_stream_printer_flushes_assistant_text_before_tool_events(tmp_path, capsys):
+    import src.cli_commands.chat as chat_command
+
+    printer = chat_command._StreamPrinter(
+        enabled=True,
+        memory_path=str(tmp_path / "memory.md"),
+        messages_path=str(tmp_path / "messages.jsonl"),
+    )
+
+    printer.handle(
+        {"type": "node_message_delta", "delta": "I will inspect first.", "text": "I will inspect first."}
+    )
+    printer.handle({"type": "tool_call_start", "name": "read_file"})
+    printer.handle({"type": "node_message_delta", "delta": "Done.", "text": "Done."})
+    printer.finish("Done.")
+
+    output = capsys.readouterr().out
+    first_note = output.index("I will inspect first.")
+    tool_line = output.index("tool read_file: running")
+    final_note = output.index("Done.")
+    assert first_note < tool_line < final_note
+
+
+def test_companion_tui_keeps_assistant_fragments_chronological():
+    from types import SimpleNamespace
+
+    from src.cli_commands.companion_tui import CompanionTui
+    from src.cli_commands.companion_tui import TranscriptItem
+
+    target = SimpleNamespace(
+        config={"provider_id": "unit", "mode": "chat"},
+        graph_id="companion",
+        config_path="config.json",
+        memory_path="memory.md",
+        messages_path="messages.jsonl",
+    )
+    tui = CompanionTui(target, debug_terminal=False, run_turn=lambda *_args, **_kwargs: {})
+    tui.state.transcript.append(TranscriptItem(role="user", text="ping"))
+    tui.state.transcript.append(TranscriptItem(role="assistant", text="", status="working"))
+    tui.state.active_assistant_index = 1
+
+    tui._handle_stream(
+        {"type": "node_message_delta", "delta": "I will inspect first.", "text": "I will inspect first."}
+    )
+    tui._handle_stream({"type": "tool_call_start", "name": "read_file"})
+    tui._handle_stream({"type": "tool_call_end", "name": "read_file", "status": "completed"})
+    tui._handle_stream({"type": "node_message_delta", "delta": "Done.", "text": "Done."})
+    tui._finish_turn({"response": "Done."})
+
+    rendered = [(item.role, item.text, item.status) for item in tui.state.transcript]
+    assert rendered == [
+        ("user", "ping", ""),
+        ("assistant", "I will inspect first.", "done"),
+        ("tool", "read_file: tool_call_start", ""),
+        ("tool", "read_file: completed", ""),
+        ("assistant", "Done.", "done"),
+    ]
 
 
 def test_cli_chat_plain_restart_launches_restart_and_exits(monkeypatch, tmp_path, capsys):

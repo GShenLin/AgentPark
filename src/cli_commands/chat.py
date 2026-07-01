@@ -226,9 +226,9 @@ class _StreamPrinter:
         self.stream_handler = stream_handler
         self.last_text = ""
         self.buffered_text = ""
+        self.printed_assistant_text = ""
         self.printed_any = False
         self.done = False
-        self.assistant_header_printed = False
 
     def handle(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload, dict):
@@ -248,15 +248,26 @@ class _StreamPrinter:
             try:
                 append_node_tool_call_entry(self.memory_path, self.messages_path, payload)
             except Exception as exc:
-                self._print_line(error(f"[tool-history-error] {type(exc).__name__}: {exc}", stream=sys.stderr), stream=sys.stderr)
+                self._print_line(
+                    error(f"[tool-history-error] {type(exc).__name__}: {exc}", stream=sys.stderr),
+                    stream=sys.stderr,
+                )
+            self._flush_buffered_assistant_text()
             self._print_tool_event(payload)
 
     def finish(self, final_text: str) -> None:
-        text = str(final_text or self.last_text or self.buffered_text or "")
+        text = self.buffered_text
+        if not text:
+            candidate = str(final_text or self.last_text or "")
+            if candidate and candidate != self.printed_assistant_text:
+                text = (
+                    candidate[len(self.printed_assistant_text) :]
+                    if self.printed_assistant_text and candidate.startswith(self.printed_assistant_text)
+                    else candidate
+                )
         if self.enabled and text:
-            self._print_assistant_header()
-            for line in render_markdown_lines(text, indent="  "):
-                print(line, flush=True)
+            self._print_assistant_block(text)
+            self.buffered_text = ""
             self.printed_any = True
             return
         if self.enabled and self.printed_any:
@@ -267,23 +278,28 @@ class _StreamPrinter:
             return
         self.buffered_text += delta
 
-    def _print_assistant_header(self) -> None:
-        if self.assistant_header_printed:
+    def _flush_buffered_assistant_text(self) -> None:
+        if not self.enabled or not self.buffered_text:
             return
+        self._print_assistant_block(self.buffered_text)
+        self.buffered_text = ""
+        self.printed_any = True
+
+    def _print_assistant_block(self, text: str) -> None:
         print("")
         print(role_label("assistant"))
-        print("  ", end="", flush=True)
-        self.assistant_header_printed = True
+        for line in render_markdown_lines(text, indent="  "):
+            print(line, flush=True)
+        self.printed_assistant_text += text
 
     def _print_tool_event(self, payload: dict[str, Any]) -> None:
         if not self.enabled:
             return
-        if self.printed_any or self.assistant_header_printed:
+        if self.printed_any:
             print("", flush=True)
         for line in render_tool_event_lines(payload):
             print(muted(line), flush=True)
         self.printed_any = False
-        self.assistant_header_printed = False
 
     def _print_line(self, text: str, *, stream=None) -> None:
         if not self.enabled:

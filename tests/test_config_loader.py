@@ -9,6 +9,18 @@ def _reset_loader_singleton():
     ConfigLoader._instance = None
 
 
+def _responses_contract(**overrides):
+    payload = {
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_get_config_returns_normalized_payload_and_supports_explicit_config_path(monkeypatch, tmp_path):
     config_path = tmp_path / "moduleProvider.json"
     config_path.write_text(
@@ -191,10 +203,14 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
                     "openai-responses": {
                         "type": "openai",
                         "apiKey": "openai-key",
-                        "responsesApi": True,
+                        **_responses_contract(responsesReplayReasoningItems=False),
                     },
                     "doubao-chat": {"type": "doubao", "apiKey": "doubao-key"},
-                    "doubao-responses": {"type": "doubao", "apiKey": "doubao-key", "responsesApi": True},
+                    "doubao-responses": {
+                        "type": "doubao",
+                        "apiKey": "doubao-key",
+                        **_responses_contract(),
+                    },
                     "zhipu": {"type": "zhipu", "apiKey": "zhipu-key"},
                     "gemini": {"type": "gemini", "apiKey": "gemini-key"},
                 }
@@ -254,6 +270,87 @@ def test_responses_api_config_requires_boolean(monkeypatch, tmp_path):
         assert "expected a boolean" in str(exc)
     else:
         raise AssertionError("string responsesApi should fail")
+
+
+def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openai": {
+                        "type": "openai",
+                        "apiKey": "openai-key",
+                        "responsesApi": True,
+                        "responsesContinuationMode": "explicit_context",
+                        "toolResultSubmissionMaxChars": 50000,
+                        "toolContextCompactionEnabled": True,
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="toolContextCompactionEveryToolCalls"):
+        ConfigLoader().get_all_providers()
+
+
+def test_openai_responses_api_provider_requires_reasoning_replay_contract(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openai": {
+                        "type": "openai",
+                        "apiKey": "openai-key",
+                        **_responses_contract(),
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="responsesReplayReasoningItems"):
+        ConfigLoader().get_all_providers()
+
+
+def test_responses_api_provider_validates_field_types(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openai": {
+                        "type": "openai",
+                        "apiKey": "openai-key",
+                        **_responses_contract(
+                            responsesReplayReasoningItems=False,
+                            toolContextCompactionEnabled="yes",
+                        ),
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="toolContextCompactionEnabled"):
+        ConfigLoader().get_all_providers()
 
 
 def test_agent_domain_lists_provider_features(monkeypatch):

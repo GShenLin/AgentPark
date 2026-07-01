@@ -1,4 +1,7 @@
+from datetime import datetime
 import json
+import os
+import uuid
 
 
 class ToolFeedbackMixin:
@@ -177,8 +180,9 @@ class ToolFeedbackMixin:
         call_id,
         provider_error,
         original_result_chars,
+        artifact_path="",
     ):
-        return {
+        payload = {
             "status": "tool_result_submission_error",
             "tool": str(tool_name or "").strip() or "tool",
             "call_id": str(call_id or "").strip(),
@@ -190,6 +194,9 @@ class ToolFeedbackMixin:
                 "Choose a narrower request, ask for a smaller output, or answer from the available context."
             ),
         }
+        if str(artifact_path or "").strip():
+            payload["artifact_path"] = str(artifact_path or "").strip()
+        return payload
 
     def _emit_tool_result_submission_compacted_notice(
         self,
@@ -204,13 +211,29 @@ class ToolFeedbackMixin:
         if not callable(emitter):
             return
         error_text = str(provider_error or "").strip()
-        reason = f" Provider error: {error_text}" if error_text else ""
+        summary_reason = f" Provider error: {error_text}" if error_text else ""
+        resolved_tool_name = str(tool_name or "").strip() or "tool"
+        resolved_call_id = str(call_id or "").strip()
+        summary = (
+            f"Tool result for {resolved_tool_name} "
+            f"({resolved_call_id}) was {int(original_result_chars or 0)} chars, "
+            f"exceeding provider.toolResultSubmissionMaxChars={int(limit)}; "
+            f"submitted tool_result_submission_error instead.{summary_reason}"
+        )
         emitter(
-            message=(
-                f"Tool result for {str(tool_name or '').strip() or 'tool'} "
-                f"({str(call_id or '').strip()}) was {int(original_result_chars or 0)} chars, "
-                f"exceeding provider.toolResultSubmissionMaxChars={int(limit)}; "
-                f"submitted tool_result_submission_error instead.{reason}"
+            message=json.dumps(
+                {
+                    "tool": resolved_tool_name,
+                    "call_id": resolved_call_id,
+                    "original_result_chars": int(original_result_chars or 0),
+                    "limit": int(limit),
+                    "reason": error_text or "tool_result_exceeded_configured_submission_limit",
+                    "provider": str(getattr(self, "provider_name", "") or "").strip(),
+                    "submitted_status": "tool_result_submission_error",
+                    "summary": summary,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
             ),
             stage="tool_result_submission_compacted",
         )
@@ -229,6 +252,12 @@ class ToolFeedbackMixin:
         if len(text) <= limit:
             return text
         resolved_provider_error = provider_error or f"Tool result exceeded local submission limit of {limit} characters."
+        artifact_path = self._store_tool_result_artifact_if_possible(
+            tool_name=tool_name,
+            call_id=call_id,
+            content=text,
+            reason=resolved_provider_error,
+        )
         self._emit_tool_result_submission_compacted_notice(
             tool_name=tool_name,
             call_id=call_id,
@@ -242,9 +271,54 @@ class ToolFeedbackMixin:
                 call_id=call_id,
                 provider_error=resolved_provider_error,
                 original_result_chars=len(text),
+                artifact_path=artifact_path,
             ),
             ensure_ascii=False,
         )
+
+    def _store_tool_result_artifact_if_possible(self, *, tool_name, call_id, content, reason="") -> str:
+        memory_path = str(getattr(self, "current_memory_path", "") or "").strip()
+        if not memory_path:
+            memory = getattr(self, "memory", None)
+            memory_path = str(getattr(memory, "current_memory_path", "") or "").strip()
+        if not memory_path:
+            return ""
+        try:
+            base_dir = os.path.dirname(os.path.abspath(memory_path))
+            artifact_dir = os.path.join(base_dir, "tool_artifacts")
+            os.makedirs(artifact_dir, exist_ok=True)
+            safe_tool = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(tool_name or "tool"))
+            safe_call = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(call_id or "call"))
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{stamp}_{safe_tool}_{safe_call}_{uuid.uuid4().hex[:8]}.json"
+            path = os.path.join(artifact_dir, filename)
+            payload = {
+                "tool": str(tool_name or "").strip() or "tool",
+                "call_id": str(call_id or "").strip(),
+                "reason": str(reason or "").strip(),
+                "content_chars": len(str(content or "")),
+                "content": str(content or ""),
+            }
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False)
+                handle.write("\n")
+            return path
+        except Exception as exc:
+            emitter = getattr(self, "_emit_provider_runtime_notice", None)
+            if callable(emitter):
+                emitter(
+                    message=json.dumps(
+                        {
+                            "tool": str(tool_name or "").strip() or "tool",
+                            "call_id": str(call_id or "").strip(),
+                            "error": f"{type(exc).__name__}: {exc}",
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    stage="tool_result_artifact_write_failed",
+                )
+            return ""
 
     def _compact_tool_result_message_for_submission(self, message):
         if not isinstance(message, dict):
@@ -298,11 +372,18 @@ class ToolFeedbackMixin:
             original_chars = len(str(content or ""))
             tool_name = str(message.get("name") or "").strip() or "tool"
             call_id = str(message.get("tool_call_id") or message.get("call_id") or "").strip()
+            artifact_path = self._store_tool_result_artifact_if_possible(
+                tool_name=tool_name,
+                call_id=call_id,
+                content=content,
+                reason=str(error_text or ""),
+            )
             replacement = self._tool_result_submission_error_payload(
                 tool_name=tool_name,
                 call_id=call_id,
                 provider_error=str(error_text or ""),
                 original_result_chars=original_chars,
+                artifact_path=artifact_path,
             )
             message["content"] = json.dumps(replacement, ensure_ascii=False)
             self._emit_tool_result_submission_compacted_notice(

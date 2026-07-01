@@ -9,7 +9,7 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
     import src.web_backend.runtime_paths as runtime_paths_module
     from src.web_backend.state_store import _set_node_config_runtime_event
 
-    runtime_root = str(tmp_path / "AgentPark")
+    runtime_root = str(tmp_path / "AITools")
     resource_root = backend._get_runtime_root()
     os.makedirs(runtime_root, exist_ok=True)
 
@@ -58,13 +58,13 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
         pcs = client.get("/api/mobile/pcs")
         assert pcs.status_code == 200
         assert pcs.json()["pcs"][0]["id"] == "local"
-        assert pcs.json()["pcs"][0]["instances"][0]["name"] == "AgentPark"
+        assert pcs.json()["pcs"][0]["instances"][0]["name"] == "AITools"
 
         graphs = client.get("/api/mobile/pcs/local/graphs")
         assert graphs.status_code == 200
         graph_item = graphs.json()["instances"][0]["graphs"][0]
         assert graph_item["id"] == "default"
-        assert graph_item["display_name"] == "AgentPark.Default"
+        assert graph_item["display_name"] == "AITools.Default"
 
         nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
         assert nodes.status_code == 200
@@ -123,3 +123,68 @@ def test_mobile_api_rejects_unknown_pc():
     response = client.get("/api/mobile/pcs/missing/graphs")
 
     assert response.status_code == 404
+
+
+def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    import src.web_backend.mobile_api as mobile_api_module
+    import src.web_backend.node_runtime as node_runtime_module
+    import src.web_backend.runtime_paths as runtime_paths_module
+
+    runtime_root = str(tmp_path / "AITools")
+    resource_root = backend._get_runtime_root()
+    companion_dir = os.path.join(runtime_root, "memories", "companion")
+    os.makedirs(companion_dir, exist_ok=True)
+    with open(os.path.join(companion_dir, "config.json"), "w", encoding="utf-8") as f:
+        f.write(
+            '{"graph_id":"companion","node_id":"companion","type_id":"agent_node","name":"Companion"}'
+        )
+
+    original_backend_runtime_root = backend._get_runtime_root
+    original_backend_resource_root = backend._get_resource_root
+    original_runtime_paths_runtime_root = runtime_paths_module._get_runtime_root
+    original_runtime_paths_resource_root = runtime_paths_module._get_resource_root
+    original_node_runtime_runtime_root = node_runtime_module._get_runtime_root
+    original_node_runtime_resource_root = node_runtime_module._get_resource_root
+    original_mobile_runtime_root = mobile_api_module._get_runtime_root
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+    runtime_paths_module._get_runtime_root = lambda: runtime_root
+    runtime_paths_module._get_resource_root = lambda: resource_root
+    node_runtime_module._get_runtime_root = lambda: runtime_root
+    node_runtime_module._get_resource_root = lambda: resource_root
+    mobile_api_module._get_runtime_root = lambda: runtime_root
+
+    try:
+        facade = backend.WebBackendFacade()
+        app = facade.build()
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+
+        graphs = client.get("/api/mobile/pcs/local/graphs")
+        assert graphs.status_code == 200
+        graph_items = graphs.json()["instances"][0]["graphs"]
+        companion_graph = next(item for item in graph_items if item["id"] == "companion")
+        assert companion_graph["readonly"] is True
+        assert companion_graph["display_name"] == "AITools.Companion"
+
+        nodes = client.get("/api/mobile/pcs/local/graphs/companion/nodes")
+        assert nodes.status_code == 200
+        companion_node = nodes.json()["nodes"][0]
+        assert companion_node["id"] == "companion"
+        assert companion_node["readonly"] is True
+
+        conversation = client.get("/api/mobile/pcs/local/graphs/companion/nodes/companion/conversation")
+        assert conversation.status_code == 200
+        assert conversation.json()["messages"] == []
+    finally:
+        backend._get_runtime_root = original_backend_runtime_root
+        backend._get_resource_root = original_backend_resource_root
+        runtime_paths_module._get_runtime_root = original_runtime_paths_runtime_root
+        runtime_paths_module._get_resource_root = original_runtime_paths_resource_root
+        node_runtime_module._get_runtime_root = original_node_runtime_runtime_root
+        node_runtime_module._get_resource_root = original_node_runtime_resource_root
+        mobile_api_module._get_runtime_root = original_mobile_runtime_root
+        shutil.rmtree(runtime_root, ignore_errors=True)

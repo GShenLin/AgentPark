@@ -16,6 +16,23 @@ def _runtime_notice_payloads(events, stage):
     ]
 
 
+def _without_environment_context(items):
+    def is_environment_context(item):
+        if not isinstance(item, dict) or item.get("type") != "message" or item.get("role") != "system":
+            return False
+        content = item.get("content")
+        if not isinstance(content, list) or not content:
+            return False
+        first = content[0]
+        return isinstance(first, dict) and str(first.get("text") or "").startswith("[Agent Environment Context]\n")
+
+    return [
+        item
+        for item in items
+        if not is_environment_context(item)
+    ]
+
+
 def test_gemini_runtime_executes_function_call_via_tool_call_envelope():
     from src.providers.gemini_agent import GeminiAgent
 
@@ -176,6 +193,130 @@ def test_provider_parallel_tool_worker_requires_envelope_list():
         )
 
 
+def test_provider_blocks_repeated_rg_tool_signature_before_execution():
+    from src.providers.openai_agent import OpenAIAgent
+    from src.tool.tool_call_protocol import ToolCallEnvelope
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {}
+    agent.provider_name = "openai"
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.tools = BaseTool(agent)
+    executed = []
+
+    def fake_rg_search(**kwargs):
+        executed.append(kwargs)
+        return '{"status":"success","matches":[]}'
+
+    agent.tools.function_map["rg_search_text"] = fake_rg_search
+    agent._reset_tool_call_loop_guard()
+    calls = [
+        ToolCallEnvelope(
+            name="rg_search_text",
+            call_id="call-1",
+            arguments={"query": "needle", "include_globs": ["src/**/*.py"], "max_results": 100},
+            arguments_json='{"query":"needle","include_globs":["src/**/*.py"],"max_results":100}',
+            provider="unit",
+        ),
+        ToolCallEnvelope(
+            name="rg_search_text",
+            call_id="call-2",
+            arguments={"query": "needle", "include_globs": ["src/**/*.py"], "max_results": 100},
+            arguments_json='{"query":"needle","include_globs":["src/**/*.py"],"max_results":100}',
+            provider="unit",
+        ),
+    ]
+
+    results = agent._execute_tool_call_envelopes_parallel(calls)
+
+    assert len(executed) == 1
+    assert results[0].status == "completed"
+    assert results[1].status == "blocked"
+    blocked_payload = json.loads(results[1].cleaned_result)
+    assert blocked_payload["policy"] == "repeated_tool_signature_guard"
+    assert blocked_payload["retryable"] is False
+    assert blocked_payload["previous_call_id"] == "call-1"
+    notices = [
+        event
+        for event in agent.events
+        if event.get("type") == "runtime_notice" and event.get("stage") == "tool_call_loop_blocked"
+    ]
+    assert len(notices) == 1
+
+
+def test_provider_blocks_rg_repeat_that_only_increases_max_results():
+    from src.providers.openai_agent import OpenAIAgent
+    from src.tool.tool_call_protocol import ToolCallEnvelope
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {}
+    agent.provider_name = "openai"
+    agent.tools = BaseTool(agent)
+    executed = []
+    agent.tools.function_map["rg_list_files"] = lambda **kwargs: executed.append(kwargs) or '{"status":"success"}'
+    agent._reset_tool_call_loop_guard()
+
+    results = agent._execute_tool_call_envelopes_parallel(
+        [
+            ToolCallEnvelope(
+                name="rg_list_files",
+                call_id="call-1",
+                arguments={"include_globs": ["src/**/*.py"], "max_results": 100},
+                arguments_json='{"include_globs":["src/**/*.py"],"max_results":100}',
+                provider="unit",
+            ),
+            ToolCallEnvelope(
+                name="rg_list_files",
+                call_id="call-2",
+                arguments={"include_globs": ["src/**/*.py"], "max_results": 1000},
+                arguments_json='{"include_globs":["src/**/*.py"],"max_results":1000}',
+                provider="unit",
+            ),
+        ]
+    )
+
+    assert len(executed) == 1
+    assert results[1].status == "blocked"
+    payload = json.loads(results[1].cleaned_result)
+    assert "max_results" in payload["reason"]
+
+
+def test_provider_ignores_legacy_stage_policy_config():
+    from src.providers.openai_agent import OpenAIAgent
+    from src.tool.tool_call_protocol import ToolCallEnvelope
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "agentToolStagePolicyEnabled": True,
+        "agentToolStageGatheringAllowedTools": ["rg_search_text"],
+    }
+    agent.provider_name = "openai"
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.tools = BaseTool(agent)
+    agent.tools.function_map["read_file"] = lambda **_kwargs: json.dumps(
+        {"status": "success", "content": "hello", "read_lines": "1-1"}
+    )
+    agent._reset_tool_call_loop_guard()
+
+    result = agent._execute_tool_call_envelopes_parallel(
+        [
+            ToolCallEnvelope(
+                name="read_file",
+                call_id="call-1",
+                arguments={"file_path": "src/app.py"},
+                arguments_json='{"file_path":"src/app.py"}',
+                provider="unit",
+            )
+        ]
+    )
+
+    assert result[0].status == "completed"
+    assert not _runtime_notice_payloads(agent.events, "tool_stage_policy_transition")
+    assert not _runtime_notice_payloads(agent.events, "tool_stage_policy_blocked")
+
+
 def test_provider_openai_tool_call_items_preserve_parse_failures_in_order():
     from src.providers.tool_call_execution import execute_tool_call_items_parallel
     from src.providers.tool_call_execution import parse_openai_tool_call_items
@@ -230,6 +371,8 @@ def test_doubao_responses_runtime_uses_envelopes_for_tool_continuation():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.messages = []
@@ -308,6 +451,8 @@ def test_doubao_responses_invalid_tool_arguments_return_tool_error_and_continue(
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.messages = []
@@ -364,9 +509,10 @@ def test_doubao_responses_invalid_tool_arguments_return_tool_error_and_continue(
     assert tool_payload["status"] == "invalid_arguments"
     assert "failed to parse tool arguments JSON" in tool_payload["error"]
     assert requests[1]["previous_response_id"] == "resp-1"
-    assert requests[1]["input"][0]["type"] == "function_call_output"
-    assert requests[1]["input"][0]["status"] == "completed"
-    output_payload = json.loads(requests[1]["input"][0]["output"])
+    continuation_input = _without_environment_context(requests[1]["input"])
+    assert continuation_input[0]["type"] == "function_call_output"
+    assert continuation_input[0]["status"] == "completed"
+    output_payload = json.loads(continuation_input[0]["output"])
     assert output_payload["status"] == "invalid_arguments"
 
 
@@ -382,6 +528,8 @@ def test_doubao_responses_compacts_oversized_tool_output_before_continuation():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 1000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.messages = []
@@ -441,7 +589,7 @@ def test_doubao_responses_compacts_oversized_tool_output_before_continuation():
 
     assert out == "narrowing"
     assert len(requests) == 2
-    output_text = requests[1]["input"][0]["output"]
+    output_text = _without_environment_context(requests[1]["input"])[0]["output"]
     assert len(output_text) < 1000
     assert "x" * 1000 not in output_text
     compact_payload = json.loads(output_text)
@@ -457,9 +605,102 @@ def test_doubao_responses_compacts_oversized_tool_output_before_continuation():
         and event.get("stage") == "tool_result_submission_compacted"
     ]
     assert len(notices) == 1
-    assert "huge_tool" in notices[0]["message"]
-    assert "call-big" in notices[0]["message"]
-    assert "provider.toolResultSubmissionMaxChars=1000" in notices[0]["message"]
+    notice_payload = json.loads(notices[0]["message"])
+    assert notice_payload["tool"] == "huge_tool"
+    assert notice_payload["call_id"] == "call-big"
+    assert notice_payload["limit"] == 1000
+    assert "provider.toolResultSubmissionMaxChars=1000" in notice_payload["summary"]
+
+
+def test_openai_responses_compacts_oversized_tool_output_before_continuation_and_history_replay():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 1000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.tools = BaseTool(agent)
+    requests = []
+
+    def huge_tool():
+        return "x" * 5000
+
+    agent.tools.function_map["huge_tool"] = huge_tool
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-big",
+                        "name": "huge_tool",
+                        "arguments": "{}",
+                    }
+                ],
+            },
+            {
+                "id": "resp-2",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "narrowing"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run huge"}],
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    )
+
+    assert out == "narrowing"
+    assert len(requests) == 2
+    second_payload_text = json.dumps(requests[1]["input"], ensure_ascii=False)
+    assert "x" * 1000 not in second_payload_text
+    output_item = next(item for item in requests[1]["input"] if item.get("type") == "function_call_output")
+    compact_payload = json.loads(output_item["output"])
+    assert compact_payload["status"] == "tool_result_submission_error"
+    assert compact_payload["tool"] == "huge_tool"
+    assert compact_payload["call_id"] == "call-big"
+    assert compact_payload["original_result_chars"] == 5000
+    tool_messages = [message for message in agent.messages if message.get("role") == "tool"]
+    assert len(tool_messages) == 1
+    assert json.loads(tool_messages[0]["content"]) == compact_payload
+    rebuilt_context = json.dumps(agent._build_responses_input(agent.messages), ensure_ascii=False)
+    assert "x" * 1000 not in rebuilt_context
+    assert "tool_result_submission_error" in rebuilt_context
 
 
 def test_doubao_responses_recovers_when_provider_rejects_tool_output_size():
@@ -474,6 +715,8 @@ def test_doubao_responses_recovers_when_provider_rejects_tool_output_size():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.messages = []
@@ -563,6 +806,8 @@ def test_openai_responses_recovers_when_provider_rejects_tool_output_size():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -662,6 +907,8 @@ def test_doubao_responses_continuation_includes_tool_image_data():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.messages = []
@@ -718,8 +965,9 @@ def test_doubao_responses_continuation_includes_tool_image_data():
     assert out == "screenshot visible"
     assert len(requests) == 2
     assert requests[1]["previous_response_id"] == "resp-1"
-    assert requests[1]["input"][0]["type"] == "function_call_output"
-    image_item = requests[1]["input"][1]
+    continuation_input = _without_environment_context(requests[1]["input"])
+    assert continuation_input[0]["type"] == "function_call_output"
+    image_item = continuation_input[1]
     assert image_item["type"] == "message"
     assert image_item["role"] == "user"
     assert image_item["status"] == "completed"
@@ -742,6 +990,8 @@ def test_doubao_responses_replays_context_when_previous_response_missing():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "doubao"
     agent.messages = []
@@ -806,10 +1056,11 @@ def test_doubao_responses_replays_context_when_previous_response_missing():
     assert len(requests) == 3
     assert requests[1]["previous_response_id"] == "resp-missing"
     assert "previous_response_id" not in requests[2]
-    assert requests[2]["input"][0]["type"] == "message"
-    assert requests[2]["input"][0]["role"] == "user"
-    assert requests[2]["input"][0]["status"] == "completed"
-    assert requests[2]["input"][1] == {
+    fallback_input = _without_environment_context(requests[2]["input"])
+    assert fallback_input[0]["type"] == "message"
+    assert fallback_input[0]["role"] == "user"
+    assert fallback_input[0]["status"] == "completed"
+    assert fallback_input[1] == {
         "type": "function_call",
         "call_id": "call-1",
         "name": "echo_tool",
@@ -817,9 +1068,9 @@ def test_doubao_responses_replays_context_when_previous_response_missing():
         "id": "fc-1",
         "status": "completed",
     }
-    assert requests[2]["input"][2]["type"] == "function_call_output"
-    assert requests[2]["input"][2]["call_id"] == "call-1"
-    assert "echo:hello" in requests[2]["input"][2]["output"]
+    assert fallback_input[2]["type"] == "function_call_output"
+    assert fallback_input[2]["call_id"] == "call-1"
+    assert "echo:hello" in fallback_input[2]["output"]
 
 
 def test_openai_responses_payload_includes_reasoning_effort():
@@ -835,6 +1086,9 @@ def test_openai_responses_payload_includes_reasoning_effort():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -1068,6 +1322,9 @@ def test_openai_responses_continuation_uses_previous_response_id():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -1130,7 +1387,7 @@ def test_openai_responses_continuation_uses_previous_response_id():
     assert out == "done"
     assert captured == ["hello"]
     assert len(requests) == 2
-    second_input = requests[1]["input"]
+    second_input = _without_environment_context(requests[1]["input"])
     assert requests[1]["previous_response_id"] == "resp-1"
     assert second_input[0] == {
         "type": "function_call",
@@ -1167,6 +1424,9 @@ def test_openai_responses_logs_explicit_context_when_response_id_missing():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -1246,6 +1506,9 @@ def test_openai_responses_replays_context_when_previous_response_missing():
         "retryDelaySec": 0,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -1308,13 +1571,14 @@ def test_openai_responses_replays_context_when_previous_response_missing():
     assert len(requests) == 3
     assert requests[1]["previous_response_id"] == "resp-missing"
     assert "previous_response_id" not in requests[2]
-    assert requests[2]["input"][0] == {
+    fallback_input = _without_environment_context(requests[2]["input"])
+    assert fallback_input[0] == {
         "type": "message",
         "role": "user",
         "content": [{"type": "input_text", "text": "run echo"}],
         "status": "completed",
     }
-    assert requests[2]["input"][1] == {
+    assert fallback_input[1] == {
         "type": "function_call",
         "call_id": "call_real_1",
         "name": "echo_tool",
@@ -1322,7 +1586,7 @@ def test_openai_responses_replays_context_when_previous_response_missing():
         "id": "fc_real_1",
         "status": "completed",
     }
-    assert requests[2]["input"][2] == {
+    assert fallback_input[2] == {
         "type": "function_call_output",
         "call_id": "call_real_1",
         "output": "echo:hello",
@@ -1354,11 +1618,11 @@ def test_openai_responses_rebuilds_input_after_tool_context_compaction():
         "toolContextCompactionEveryToolCalls": 1,
         "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
     }
     agent.provider_name = "openai"
     agent.messages = [{"role": "user", "content": "run echo"}]
     agent.tools = BaseTool(agent)
-    agent.tool_context_compaction_gate_enabled = True
     agent._tool_context_compaction_since_last = 0
     agent.internal_memory_enabled = False
     agent.system_prompt = None

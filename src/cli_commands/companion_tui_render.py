@@ -35,7 +35,7 @@ def _header_lines(target: Any, backend: str, started_at: float, log_path: str, w
     thinking = str(target.config.get("thinking") or "")
     elapsed = int(time.monotonic() - started_at)
     return [
-        " AgentPark Companion".ljust(width - 1)[: width - 1],
+        " AITools Companion".ljust(width - 1)[: width - 1],
         f" provider {provider} | mode {mode} | reasoning {reasoning} | thinking {thinking}",
         f" graph {target.graph_id} | backend {backend} | elapsed {elapsed}s | log {log_path or '-'}",
         "-" * width,

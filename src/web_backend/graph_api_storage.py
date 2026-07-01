@@ -10,6 +10,7 @@ from src.file_transaction import atomic_write_text
 
 from .graph_runtime_registry import GraphConfigReadError
 from . import runtime_paths
+from .node_deletion import NodeDeletionBlocked, delete_node_directory
 from .service_host import HostBoundService
 from .shared import HTTPException
 
@@ -138,10 +139,12 @@ class GraphApiStorage(HostBoundService):
             raise HTTPException(status_code=400, detail="graph is required")
 
         save_reason = str((payload or {}).get("save_reason") or "").strip()
-        source_graph_id = graph.get("source_graph_id")
-        if source_graph_id is None:
-            source_graph_id = (payload or {}).get("source_graph_id")
-        source_graph_id = self.graph_runtime._sanitize_graph_id(source_graph_id)
+        raw_source_graph_id = graph.get("source_graph_id")
+        if raw_source_graph_id is None:
+            raw_source_graph_id = (payload or {}).get("source_graph_id")
+        source_graph_id = ""
+        if str(raw_source_graph_id or "").strip():
+            source_graph_id = self.graph_runtime._sanitize_graph_id(raw_source_graph_id)
         self.graph_runtime._log_graph_event(
             safe_id,
             "graph_save_api",
@@ -176,7 +179,7 @@ class GraphApiStorage(HostBoundService):
         if not os.path.isdir(source_dir):
             return
         for entry in os.listdir(source_dir):
-            if entry in {"config.json", "runner.events.jsonl"}:
+            if entry in {"config.json", "runner.events.jsonl", "runtime.events.jsonl"}:
                 continue
             src_path = os.path.join(source_dir, entry)
             dst_path = os.path.join(graph_dir, entry)
@@ -206,7 +209,7 @@ class GraphApiStorage(HostBoundService):
         except Exception:
             pass
 
-    def delete_graph(self, graph_id: str):
+    def delete_graph(self, graph_id: str, wait_timeout_seconds: float = 10.0):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
@@ -220,26 +223,65 @@ class GraphApiStorage(HostBoundService):
         if common != graphs_dir or graph_dir == graphs_dir:
             raise HTTPException(status_code=400, detail="invalid graph path")
 
-        with self.graph_runners_lock:
-            existing = self.graph_runners.pop(safe_id, None)
-            stop_event = existing.get("stop") if isinstance(existing, dict) else None
-            wake_event = existing.get("wake") if isinstance(existing, dict) else None
-        if isinstance(stop_event, threading.Event):
-            stop_event.set()
-        if isinstance(wake_event, threading.Event):
-            wake_event.set()
+        self._stop_graph_runner_for_delete(safe_id, wait_timeout_seconds)
 
         deleted = False
         if os.path.exists(graph_dir):
             if not os.path.isdir(graph_dir):
                 raise HTTPException(status_code=400, detail="graph path is not a directory")
             try:
+                self._delete_graph_node_directories(safe_id, graph_dir, wait_timeout_seconds)
                 shutil.rmtree(graph_dir)
                 deleted = True
+            except NodeDeletionBlocked as exc:
+                raise HTTPException(status_code=409, detail=f"graph deletion is blocked: {str(exc)}")
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
 
         return {"ok": True, "graph_id": safe_id, "deleted": deleted}
+
+    def _stop_graph_runner_for_delete(self, graph_id: str, wait_timeout_seconds: float) -> None:
+        safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        with self.graph_runners_lock:
+            existing = self.graph_runners.pop(safe_id, None)
+            stop_event = existing.get("stop") if isinstance(existing, dict) else None
+            wake_event = existing.get("wake") if isinstance(existing, dict) else None
+            threads = existing.get("threads") if isinstance(existing, dict) else None
+            if not isinstance(threads, list):
+                legacy_thread = existing.get("thread") if isinstance(existing, dict) else None
+                threads = [legacy_thread] if isinstance(legacy_thread, threading.Thread) else []
+
+        if isinstance(stop_event, threading.Event):
+            stop_event.set()
+        if isinstance(wake_event, threading.Event):
+            wake_event.set()
+
+        deadline = max(0.0, float(wait_timeout_seconds or 0.0))
+        for thread in threads:
+            if not isinstance(thread, threading.Thread) or not thread.is_alive():
+                continue
+            thread.join(timeout=deadline)
+            if thread.is_alive():
+                raise HTTPException(status_code=409, detail="graph deletion is blocked: graph runner did not stop")
+
+    def _delete_graph_node_directories(self, graph_id: str, graph_dir: str, wait_timeout_seconds: float) -> None:
+        memory_root = os.path.join(runtime_paths._get_runtime_root(), "memories")
+        for entry in sorted(os.listdir(graph_dir)):
+            node_dir = os.path.join(graph_dir, entry)
+            if not os.path.isdir(node_dir):
+                continue
+            config_path = os.path.join(node_dir, "config.json")
+            if not os.path.exists(config_path):
+                continue
+            delete_node_directory(
+                core=self.core,
+                graph_runtime=self.graph_runtime,
+                graph_id=graph_id,
+                node_id=entry,
+                node_dir=node_dir,
+                memory_root=memory_root,
+                wait_timeout_seconds=wait_timeout_seconds,
+            )
 
 
 __all__ = ["GraphApiStorage"]

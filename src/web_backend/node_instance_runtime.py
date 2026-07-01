@@ -6,6 +6,7 @@ import time
 from fastapi.responses import StreamingResponse
 
 from src.clock_config import build_clock_interval_fields, parse_clock_interval_seconds
+from src.console_interactive_sessions import send_console_interactive_input
 
 from . import node_runtime, runtime_paths
 from .channel_api import call_channel_http
@@ -125,6 +126,24 @@ class NodeInstanceRuntime(HostBoundService):
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         memory_path = self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id)
         messages_path = self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id)
+        return self.get_node_instance_memory_from_paths(
+            config_path,
+            memory_path,
+            messages_path,
+            safe_graph_id,
+            safe_node_id,
+            max_chars=max_chars,
+        )
+
+    def get_node_instance_memory_from_paths(
+        self,
+        config_path: str,
+        memory_path: str,
+        messages_path: str,
+        graph_id: str,
+        node_id: str,
+        max_chars: int = 20000,
+    ):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
@@ -143,23 +162,40 @@ class NodeInstanceRuntime(HostBoundService):
             "messages": messages,
             "state": parse_node_state(cfg.get("state")) if isinstance(cfg, dict) else "idle",
             "last_message": str(cfg.get("last_message") or "") if isinstance(cfg, dict) else "",
-            "live_message": str((self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}).get("text") or ""),
+            "live_message": str((self.core.node_live_outputs.get(graph_id, node_id) or {}).get("text") or ""),
         }
 
     def delete_node_instance_memory_message(self, node_id: str, message_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        return self.delete_node_instance_memory_message_from_paths(
+            self.graph_runtime._node_config_path(safe_node_id, safe_graph_id),
+            self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id),
+            self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id),
+            safe_graph_id,
+            safe_node_id,
+            message_id,
+        )
+
+    def delete_node_instance_memory_message_from_paths(
+        self,
+        config_path: str,
+        memory_path: str,
+        messages_path: str,
+        graph_id: str,
+        node_id: str,
+        message_id: str,
+    ):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         safe_message_id = str(message_id or "").strip()
         if not safe_message_id:
             raise HTTPException(status_code=400, detail="message id is required")
-        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
         if bool(cfg.get("_delete_requested")):
             raise HTTPException(status_code=409, detail="node is being deleted")
-        memory_path = self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id)
-        messages_path = self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id)
         result = delete_node_memory_record(memory_path, messages_path, safe_message_id)
         return {"ok": True, "deleted": int((result or {}).get("deleted") or 0), "message_id": safe_message_id}
 
@@ -197,6 +233,7 @@ class NodeInstanceRuntime(HostBoundService):
                 "is_streaming": bool((item or {}).get("is_streaming")),
                 "event_type": str((item or {}).get("event_type") or ""),
                 "event": (item or {}).get("event") if isinstance((item or {}).get("event"), dict) else None,
+                "interactive_session_id": str((item or {}).get("interactive_session_id") or ""),
             }
             return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
@@ -243,6 +280,7 @@ class NodeInstanceRuntime(HostBoundService):
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
         cfg = _read_json_dict(config_path)
+        payload = payload if isinstance(payload, dict) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
         if bool(cfg.get("_delete_requested")):
@@ -252,6 +290,23 @@ class NodeInstanceRuntime(HostBoundService):
         type_id = str(cfg.get("type_id") or "").strip()
         if type_id == "channel_receiver_node":
             return call_channel_http(self.core.channel_service.control_receiver, safe_graph_id, safe_node_id, payload)
+        if type_id == "console_command_node" and action == "send_input":
+            # 处理控制台命令节点交互式输入
+            session_id = str((payload or {}).get("session_id") or "").strip()
+            text = str((payload or {}).get("text") or "")
+            send_eof = bool((payload or {}).get("send_eof"))
+            send_ctrl_c = bool((payload or {}).get("send_ctrl_c"))
+            append_newline = bool((payload or {}).get("append_newline"))
+            ok = send_console_interactive_input(
+                session_id,
+                text,
+                send_eof=send_eof,
+                send_ctrl_c=send_ctrl_c,
+                append_newline=append_newline,
+            )
+            if not ok:
+                raise HTTPException(status_code=404, detail="interactive session not found or process exited")
+            return {"ok": True}
         if type_id != "clock_node" and action == "stop":
             result = _cancel_node_work(config_path)
             active_cancelled = self.core.node_cancellations.request(config_path)

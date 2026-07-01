@@ -4,10 +4,11 @@ from src.providers.tool_feedback import ToolFeedbackMixin
 
 
 class DummyFeedback(ToolFeedbackMixin):
-    def __init__(self):
+    def __init__(self, memory_path=""):
         self.config = {"toolResultSubmissionMaxChars": 10}
         self.messages = []
         self.notices = []
+        self.current_memory_path = str(memory_path or "")
 
     def _emit_provider_runtime_notice(self, **kwargs):
         self.notices.append(kwargs)
@@ -47,3 +48,23 @@ def test_replace_recent_tool_result_skips_already_compacted_result():
     assert first_payload["status"] == "tool_result_submission_error"
     assert first_payload["call_id"] == "first"
     assert second_payload["call_id"] == "second"
+
+
+def test_compacted_tool_result_stores_raw_artifact(tmp_path):
+    memory_path = tmp_path / "agent.md"
+    memory_path.write_text("", encoding="utf-8")
+    feedback = DummyFeedback(memory_path)
+
+    compacted = feedback._compact_tool_result_for_submission_if_needed(
+        tool_name="huge_tool",
+        call_id="call-big",
+        content="x" * 100,
+    )
+
+    payload = json.loads(compacted)
+    assert payload["status"] == "tool_result_submission_error"
+    assert payload["artifact_path"]
+    artifact = json.loads(open(payload["artifact_path"], "r", encoding="utf-8").read())
+    assert artifact["tool"] == "huge_tool"
+    assert artifact["call_id"] == "call-big"
+    assert artifact["content"] == "x" * 100

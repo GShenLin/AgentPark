@@ -28,4 +28,4 @@ def decode_caller_header_value(value: object) -> str:
     try:
         return base64.urlsafe_b64decode(f"{payload}{padding}".encode("ascii")).decode("utf-8")
     except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
-        raise ValueError("invalid AgentPark caller context header encoding") from exc
+        raise ValueError("invalid AITools caller context header encoding") from exc

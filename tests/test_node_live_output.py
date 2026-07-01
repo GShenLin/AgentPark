@@ -6,7 +6,7 @@ from src.web_backend.node_config_service import node_runtime_state_path
 from src.web_backend.state_store import _write_json_dict
 
 
-def test_stream_delta_updates_live_output_and_config_last_message(tmp_path):
+def test_stream_delta_updates_live_output_and_done_persists_last_message(tmp_path):
     config_path = str(tmp_path / "config.json")
     _write_json_dict(config_path, {"node_id": "n1", "last_message": "input"})
     live_store = NodeLiveOutputStore()
@@ -30,7 +30,7 @@ def test_stream_delta_updates_live_output_and_config_last_message(tmp_path):
 
     with open(node_runtime_state_path(config_path), encoding="utf-8") as handle:
         payload = json.load(handle)
-    assert payload["last_message"] == "hello"
+    assert payload["last_message"] == "input"
     assert live_store.get("g1", "n1")["text"] == "hello"
 
     sink.handle({"type": "node_message_done", "text": "hello"})

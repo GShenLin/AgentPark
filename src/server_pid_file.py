@@ -9,7 +9,7 @@ from src.workspace_settings import get_workspace_root
 
 
 PID_FILE_SCHEMA_VERSION = 1
-PID_FILE_APP = "AgentPark"
+PID_FILE_APP = "AITools"
 PID_FILE_KIND = "fast_api_server"
 
 

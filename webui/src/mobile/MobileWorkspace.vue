@@ -87,6 +87,19 @@ const goalTitle = computed(() => {
   if (!isAgentNode.value) return 'Goal mode is available on Agent nodes'
   return goalActive.value ? 'Disable goal mode' : 'Enable goal mode'
 })
+const isStopRequested = computed(() => {
+  const id = String(workspace.selectedNode.value?.id || '').trim()
+  return !!(id && workspace.nodeConfigs.value[id]?._stop_requested)
+})
+const selectedNodeRunning = computed(() => {
+  const node = workspace.selectedNode.value
+  if (!node) return false
+  const id = String(node.id || '').trim()
+  const config = id ? workspace.nodeConfigs.value[id] : null
+  const state = String(config?.state || node.state || 'idle')
+  const pendingCount = Number(config?.pending_count ?? node.pending_count ?? 0)
+  return state === 'working' || pendingCount > 0 || !!config?.inflight || isStopRequested.value
+})
 
 function nodeStateLabel(node: MobileNode) {
   const state = String(node.state || 'idle')
@@ -249,6 +262,15 @@ async function toggleGoal() {
     } else {
       goalArmedByNode.value = { ...goalArmedByNode.value, [nodeId]: true }
     }
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
+async function stopSelectedNode() {
+  if (!selectedNodeRunning.value) return
+  try {
+    await workspace.stopSelectedNodeWork()
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
   }
@@ -420,8 +442,8 @@ onMounted(() => {
       <div class="header-title">{{ headerTitle }}</div>
       <div class="header-actions">
         <button v-if="!settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" aria-label="Open settings" @click="openSettings">Settings</button>
-        <button v-if="!settingsOpen && workspace.view.value === 'chat'" class="text-icon-btn danger" type="button" aria-label="Clear memory" @click="clearMemory">ClearMemory</button>
-        <button v-if="!settingsOpen && workspace.view.value === 'chat'" class="text-icon-btn" type="button" aria-label="打开节点配置" @click="openConfig">配置</button>
+        <button v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn danger" type="button" aria-label="Clear memory" @click="clearMemory">ClearMemory</button>
+        <button v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" aria-label="打开节点配置" @click="openConfig">配置</button>
         <button v-if="!settingsOpen" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" aria-label="Restart" @click="restartWorkspace">
           {{ isRestarting ? 'Restarting...' : 'Restart' }}
         </button>
@@ -461,7 +483,7 @@ onMounted(() => {
               </span>
               <span class="row-arrow">&gt;</span>
             </button>
-            <button class="mobile-delete-btn" type="button" @click="deleteMobileGraph(graph)">Delete</button>
+            <button v-if="!graph.readonly" class="mobile-delete-btn" type="button" @click="deleteMobileGraph(graph)">Delete</button>
           </div>
         </div>
         <form class="graph-save-panel" @submit.prevent="saveMobileGraph">
@@ -484,7 +506,7 @@ onMounted(() => {
           @select="workspace.selectNode"
           @delete="deleteMobileNode"
         />
-        <button class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
+        <button v-if="!workspace.selectedGraph.value?.readonly" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
       </section>
 
         <section v-else class="chat-view">
@@ -547,6 +569,7 @@ onMounted(() => {
             </button>
             <button v-if="attachments.length > 0" class="clear-attachments-btn" type="button" @click="clearAttachments">清空</button>
             <button
+              v-if="!workspace.selectedNode.value?.readonly"
               class="goal-toggle-btn"
               type="button"
               :class="{ active: goalActive }"
@@ -555,6 +578,16 @@ onMounted(() => {
               @click="toggleGoal"
             >
               Goal
+            </button>
+            <button
+              v-if="selectedNodeRunning"
+              class="stop-node-btn"
+              type="button"
+              :disabled="isStopRequested"
+              :title="isStopRequested ? 'Stop requested' : 'Stop current node work'"
+              @click="stopSelectedNode"
+            >
+              {{ isStopRequested ? 'Stopping' : 'Stop' }}
             </button>
             <input ref="fileInputRef" class="hidden-file-input" type="file" multiple @change="onFileSelected" />
           </div>
@@ -1132,6 +1165,7 @@ onMounted(() => {
 
 .attach-btn,
 .goal-toggle-btn,
+.stop-node-btn,
 .clear-attachments-btn {
   min-height: 34px;
   border-radius: 8px;
@@ -1156,13 +1190,21 @@ onMounted(() => {
   color: rgba(220, 252, 231, 0.98);
 }
 
-.goal-toggle-btn:disabled {
+.goal-toggle-btn:disabled,
+.stop-node-btn:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
-.clear-attachments-btn {
+.stop-node-btn {
   order: 3;
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(127, 29, 29, 0.34);
+  color: rgba(254, 226, 226, 0.98);
+}
+
+.clear-attachments-btn {
+  order: 4;
   border-color: rgba(248, 113, 113, 0.28);
   background: rgba(127, 29, 29, 0.28);
 }

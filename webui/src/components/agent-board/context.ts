@@ -8,6 +8,7 @@ import type {
   NodeInstanceState,
   RuntimeEvent,
   RuntimeToolCall,
+  ProviderRequestSummary,
 } from '../../api'
 
 export type LinkEndpoint = {
@@ -41,6 +42,7 @@ export type NodeCard = {
   lastRuntimeEvent?: RuntimeEvent | null
   runtimeEvents?: RuntimeEvent[]
   runtimeToolCalls?: RuntimeToolCall[]
+  providerRequestSummaries?: ProviderRequestSummary[]
   providerId?: string
   mode?: string
   webSearch?: 'enabled' | 'disabled'

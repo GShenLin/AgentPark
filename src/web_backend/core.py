@@ -12,6 +12,7 @@ from .mobile_api import MobileApiDomain
 from .node_cancellation import NodeCancellationRegistry
 from .node_live_output import NodeLiveOutputStore
 from .node_config_service import RUNTIME_STATE_FIELDS
+from .profile_api import ProfileApi
 from .remote_api import RemoteApiDomain
 from .settings_api import SettingsApiDomain
 from .user_interaction_api import UserInteractionApiDomain
@@ -36,7 +37,6 @@ class BackendCore:
         self.node_live_outputs = NodeLiveOutputStore()
         self.graph_events = GraphEventStreamStore()
         self.provider_limit_jobs = ProviderLimitJobStore()
-        self.webui_close_signal = {"token": "", "requested_at": 0.0}
         self.reserved_node_fields = {
             "node_id",
             "type_id",
@@ -54,6 +54,7 @@ class BackendCore:
         self.agent_domain = AgentDomain(self, self.graph_runtime)
         self.node_ops = NodeOpsDomain(self, self.graph_runtime)
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
+        self.profile_api = ProfileApi(self)
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
         self.remote_api = RemoteApiDomain(self)
         self.settings_api = SettingsApiDomain(self)

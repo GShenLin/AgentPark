@@ -134,7 +134,7 @@ class CompanionTui:
         self.state.transcript.append(
             TranscriptItem(
                 role="system",
-                text=f"AgentPark Companion started. provider={provider}, mode={mode}. Type /help for commands.",
+                text=f"AITools Companion started. provider={provider}, mode={mode}. Type /help for commands.",
             )
         )
         if self.debug_terminal:
@@ -142,7 +142,7 @@ class CompanionTui:
 
     def _terminal_title(self) -> str:
         provider = str(self.target.config.get("provider_id") or "provider-unset")
-        return f"AgentPark Companion - {provider}"
+        return f"AITools Companion - {provider}"
 
     def _terminal_debug_text(self) -> str:
         return build_terminal_debug_text(
@@ -387,6 +387,7 @@ class CompanionTui:
         elif event_type == "node_message_done":
             self._set_assistant_text(str(payload.get("text") or ""))
         elif event_type in {"tool_call_start", "tool_call_end"}:
+            self._close_active_assistant_fragment()
             name = str(payload.get("name") or "tool")
             status = str(payload.get("status") or event_type)
             self.state.transcript.append(TranscriptItem(role="tool", text=f"{name}: {status}"))
@@ -399,6 +400,8 @@ class CompanionTui:
             is_error = bool(result.get("error"))
         if response and not self._active_assistant_text():
             self._set_assistant_text(response)
+        if not response and not self._active_assistant_text():
+            self._remove_empty_active_assistant()
         self._set_assistant_status("error" if is_error else "done")
         self.state.running = False
         self.state.status = "ready" if not is_error else "error"
@@ -408,25 +411,66 @@ class CompanionTui:
             self._start_turn(next_text)
 
     def _append_assistant_text(self, text: str) -> None:
-        index = self.state.active_assistant_index
-        if index is not None:
-            self.state.transcript[index].text += text
+        if not text:
+            return
+        index = self._ensure_active_assistant()
+        self.state.transcript[index].text += text
 
     def _set_assistant_text(self, text: str) -> None:
-        index = self.state.active_assistant_index
-        if index is not None and text:
-            self.state.transcript[index].text = text
+        if not text:
+            return
+        index = self._ensure_active_assistant()
+        self.state.transcript[index].text = text
 
     def _active_assistant_text(self) -> str:
         index = self.state.active_assistant_index
         if index is None:
             return ""
+        if index < 0 or index >= len(self.state.transcript):
+            return ""
         return self.state.transcript[index].text
 
     def _set_assistant_status(self, status: str) -> None:
         index = self.state.active_assistant_index
-        if index is not None:
+        if index is not None and 0 <= index < len(self.state.transcript):
             self.state.transcript[index].status = status
+
+    def _ensure_active_assistant(self) -> int:
+        index = self.state.active_assistant_index
+        if (
+            index is not None
+            and 0 <= index < len(self.state.transcript)
+            and self.state.transcript[index].role == "assistant"
+        ):
+            return index
+        self.state.transcript.append(TranscriptItem(role="assistant", text="", status="working"))
+        self.state.active_assistant_index = len(self.state.transcript) - 1
+        return self.state.active_assistant_index
+
+    def _close_active_assistant_fragment(self) -> None:
+        index = self.state.active_assistant_index
+        if index is None or index < 0 or index >= len(self.state.transcript):
+            self.state.active_assistant_index = None
+            return
+        item = self.state.transcript[index]
+        if item.role != "assistant":
+            self.state.active_assistant_index = None
+            return
+        if not item.text.strip():
+            self._remove_empty_active_assistant()
+            return
+        item.status = "done"
+        self.state.active_assistant_index = None
+
+    def _remove_empty_active_assistant(self) -> None:
+        index = self.state.active_assistant_index
+        if index is None or index < 0 or index >= len(self.state.transcript):
+            self.state.active_assistant_index = None
+            return
+        item = self.state.transcript[index]
+        if item.role == "assistant" and not item.text.strip() and index == len(self.state.transcript) - 1:
+            self.state.transcript.pop()
+        self.state.active_assistant_index = None
 
     def _status_text(self) -> str:
         fields = [

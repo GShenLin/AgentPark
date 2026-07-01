@@ -245,12 +245,13 @@ watch(
   flex-direction: column;
 }
 
+/* 左侧文件浏览器 */
 .left-sidebar {
   width: 280px;
   display: flex;
   flex-direction: column;
-  background: rgba(11, 15, 23, 0.62);
-  border-right: 1px solid rgba(148, 163, 184, 0.15);
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-subtle);
   overflow: hidden;
 }
 
@@ -265,42 +266,68 @@ watch(
   transform: rotate(180deg);
   letter-spacing: 2px;
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.85);
+  font-weight: 500;
+  color: var(--text-tertiary);
   text-transform: uppercase;
+  user-select: none;
 }
 
+/* 调整分隔条 - 视觉细但拖拽区域大 */
 .sidebar-resizer {
-  width: 6px;
+  width: 3px;
   cursor: col-resize;
-  background: rgba(148, 163, 184, 0.08);
-  transition: background 0.2s;
+  background: var(--border-subtle);
+  transition: background 0.15s ease;
   flex-shrink: 0;
+  position: relative;
+}
+
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  right: -8px;
+  background: transparent;
 }
 
 .sidebar-resizer:hover,
 .sidebar-resizer:active {
-  background: rgba(125, 211, 252, 0.5);
+  background: var(--accent-blue);
 }
 
 .memory-resizer {
-  width: 6px;
+  width: 3px;
   cursor: col-resize;
-  background: rgba(148, 163, 184, 0.08);
-  border-left: 1px solid rgba(148, 163, 184, 0.1);
-  transition: background-color 0.2s;
+  background: var(--border-subtle);
+  transition: background 0.15s ease;
   flex-shrink: 0;
   z-index: 10;
+  position: relative;
+}
+
+.memory-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  right: -8px;
+  background: transparent;
 }
 
 .memory-resizer:hover,
 .memory-resizer:active {
-  background: rgba(125, 211, 252, 0.3);
+  background: var(--accent-blue);
 }
 
+/* 右侧记忆面板 */
 .right {
   width: 560px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--bg-primary);
 }
 </style>

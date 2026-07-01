@@ -93,6 +93,10 @@ export function nodeConfigRunDelta(prev: NodeInstanceConfig | undefined, next: N
   }
 }
 
+export function normalizeProviderRequestSummaries(value: unknown) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : []
+}
+
 export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: number; y: number }): NodeCard {
   const nodeId = String(cfg.node_id || '').trim()
   const typeId = String((cfg as any)?.type_id || '').trim()
@@ -107,6 +111,7 @@ export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: numbe
     lastRuntimeEvent: normalizeRuntimeEvent((cfg as any)?.last_runtime_event),
     runtimeEvents: normalizeRuntimeEvents((cfg as any)?.runtime_events),
     runtimeToolCalls: normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls),
+    providerRequestSummaries: normalizeProviderRequestSummaries((cfg as any)?.provider_request_summaries),
     providerId: String((cfg as any)?.provider_id ?? '').trim(),
     mode: String((cfg as any)?.mode ?? '').trim(),
     webSearch: normalizeSwitch((cfg as any)?.web_search, 'disabled'),
@@ -144,6 +149,7 @@ export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, u
   node.lastRuntimeEvent = normalizeRuntimeEvent((cfg as any)?.last_runtime_event)
   node.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
   node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
+  node.providerRequestSummaries = normalizeProviderRequestSummaries((cfg as any)?.provider_request_summaries)
 }
 
 export function applyNodeConfigOutputToCard(node: NodeCard, cfg: NodeInstanceConfig, out: string) {
@@ -151,6 +157,7 @@ export function applyNodeConfigOutputToCard(node: NodeCard, cfg: NodeInstanceCon
   node.lastRuntimeEvent = normalizeRuntimeEvent((cfg as any)?.last_runtime_event)
   node.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
   node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
+  node.providerRequestSummaries = normalizeProviderRequestSummaries((cfg as any)?.provider_request_summaries)
 }
 
 export function mergeNodeConfigFields(options: {

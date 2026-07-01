@@ -410,24 +410,48 @@ watch(
   pointer-events: auto;
 }
 
-.resize-handle::after {
+/* 视觉层 - 细的视觉效果 */
+.resize-handle::before {
   content: '';
   position: absolute;
-  inset: 0;
   background: transparent;
   transition: background 0.12s ease;
 }
 
-.resize-handle:hover::after,
-.resize-handle:active::after {
-  background: rgba(125, 211, 252, 0.16);
+/* 拖拽层 - 宽的触发区域 */
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  background: transparent;
 }
 
+.resize-handle:hover::before,
+.resize-handle:active::before {
+  background: var(--accent-blue);
+}
+
+/* 水平调整手柄 (左右边缘) */
 .resize-handle-x {
   top: 10px;
   bottom: 18px;
-  width: 8px;
+  width: 3px;
   cursor: ew-resize;
+}
+
+/* 视觉层 - 细 */
+.resize-handle-x::before {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+/* 拖拽层 - 宽 */
+.resize-handle-x::after {
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  right: -8px;
 }
 
 .resize-handle-right {
@@ -438,19 +462,51 @@ watch(
   left: 0;
 }
 
+/* 底部调整手柄 */
 .resize-handle-bottom {
   left: 18px;
   right: 18px;
   bottom: 0;
-  height: 8px;
+  height: 3px;
   cursor: ns-resize;
 }
 
+/* 视觉层 - 细 */
+.resize-handle-bottom::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+
+/* 拖拽层 - 宽 */
+.resize-handle-bottom::after {
+  left: 0;
+  right: 0;
+  top: -8px;
+  bottom: -8px;
+}
+
+/* 角落调整手柄 */
 .resize-handle-corner {
   bottom: 0;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   cursor: nwse-resize;
+}
+
+/* 角落手柄视觉层 - 细边框效果 */
+.resize-handle-corner::before {
+  inset: 2px;
+  border-radius: 2px;
+}
+
+/* 角落手柄拖拽层 - 大区域 */
+.resize-handle-corner::after {
+  top: -8px;
+  bottom: -8px;
+  left: -8px;
+  right: -8px;
 }
 
 .resize-handle-bottom-right {

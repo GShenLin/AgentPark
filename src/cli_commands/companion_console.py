@@ -308,7 +308,7 @@ class MsvcrtConsole:
 
 
 class TerminalScreen:
-    def __init__(self, *, title: str = "AgentPark Companion") -> None:
+    def __init__(self, *, title: str = "AITools Companion") -> None:
         self.stdout = sys.stdout
         self.title = title
         self._output_mode: int | None = None

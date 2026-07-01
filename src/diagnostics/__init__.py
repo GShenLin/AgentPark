@@ -1,2 +1,2 @@
-"""Local diagnostics helpers for AgentPark."""
+"""Local diagnostics helpers for AITools."""
 

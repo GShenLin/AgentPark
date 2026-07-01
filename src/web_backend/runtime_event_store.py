@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
 MAX_RUNTIME_EVENTS = 20
 MAX_RUNTIME_TOOL_CALLS = 20
+MAX_PROVIDER_REQUEST_SUMMARIES = 8
 RUNTIME_EVENT_TYPES = {"runtime_notice", "tool_call_start", "tool_call_end"}
 
 
@@ -108,6 +110,7 @@ def append_runtime_event(payload: dict[str, Any], event: dict[str, Any]) -> None
     history.append(normalized)
     payload["runtime_events"] = history[-MAX_RUNTIME_EVENTS:]
     upsert_runtime_tool_call(payload, normalized)
+    append_provider_request_summary(payload, normalized)
 
 
 def upsert_runtime_tool_call(payload: dict[str, Any], event: dict[str, Any]) -> None:
@@ -189,6 +192,27 @@ def upsert_runtime_tool_call(payload: dict[str, Any], event: dict[str, Any]) -> 
     payload["runtime_tool_calls"] = calls[-MAX_RUNTIME_TOOL_CALLS:]
 
 
+def append_provider_request_summary(payload: dict[str, Any], event: dict[str, Any]) -> None:
+    if str(event.get("type") or "").strip() != "runtime_notice":
+        return
+    if str(event.get("stage") or "").strip() != "openai_responses_request_summary":
+        return
+    message = str(event.get("message") or "").strip()
+    if not message:
+        return
+    try:
+        summary = json.loads(message)
+    except Exception:
+        return
+    if not isinstance(summary, dict):
+        return
+    summaries = payload.get("provider_request_summaries")
+    if not isinstance(summaries, list):
+        summaries = []
+    summaries.append(_sanitize_provider_request_summary(summary))
+    payload["provider_request_summaries"] = summaries[-MAX_PROVIDER_REQUEST_SUMMARIES:]
+
+
 def _copy_event_timestamps(normalized: dict[str, Any], event: dict[str, Any]) -> None:
     event_time = str(event.get("event_time") or "").strip()
     if event_time:
@@ -212,3 +236,29 @@ def clear_runtime_event(payload: dict[str, Any], *, reset_history: bool = False)
     if reset_history:
         payload.pop("runtime_events", None)
         payload.pop("runtime_tool_calls", None)
+        payload.pop("provider_request_summaries", None)
+
+
+def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "request_index",
+        "continuation_mode",
+        "responses_mode",
+        "requested_responses_mode",
+        "previous_response_id_present",
+        "input_item_count",
+        "approx_input_chars",
+        "environment_context_chars",
+        "largest_input_items",
+        "tool_result_chars_by_call",
+        "largest_tool_result",
+        "tools_included",
+        "tools_included_count",
+        "stream",
+    }
+    sanitized = {key: summary.get(key) for key in allowed if key in summary}
+    for key in ("largest_input_items", "tool_result_chars_by_call", "tools_included"):
+        value = sanitized.get(key)
+        if isinstance(value, list):
+            sanitized[key] = value[:20]
+    return sanitized

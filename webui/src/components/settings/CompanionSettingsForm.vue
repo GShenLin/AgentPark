@@ -80,6 +80,16 @@ async function refreshPromptLibraryFiles() {
     .sort((a, b) => a.localeCompare(b))
 }
 
+function promptLibrarySelectValue() {
+  const filename = normalizePromptFilename(promptSaveFilename.value)
+  return promptLibraryFiles.value.includes(filename) ? filename : ''
+}
+
+function selectPromptLibraryFile(value: string) {
+  const filename = normalizePromptFilename(value)
+  if (filename) promptSaveFilename.value = filename
+}
+
 function promptActionError(error: unknown) {
   promptActionMessage.value = String((error as { message?: unknown })?.message || error || '').trim()
 }
@@ -217,11 +227,19 @@ async function loadSystemPrompt() {
         <textarea :value="stringValue('system_prompt')" rows="5" @input="setField('system_prompt', ($event.target as HTMLTextAreaElement).value)"></textarea>
         <div v-if="promptLibraryMode" class="field-prompt-library" @click.stop @keydown.stop>
           <template v-if="promptLibraryMode === 'save'">
+            <select
+              v-if="promptLibraryFiles.length"
+              class="field-prompt-name field-prompt-select"
+              :value="promptLibrarySelectValue()"
+              @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="" disabled>Select saved prompt</option>
+              <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
+            </select>
             <input
               v-model="promptSaveFilename"
-              class="field-prompt-name"
+              class="field-prompt-name field-prompt-custom-name"
               type="text"
-              list="companion-prompt-library-options"
               placeholder="system_prompt.txt"
             />
             <button
@@ -234,7 +252,12 @@ async function loadSystemPrompt() {
             </button>
           </template>
           <template v-else>
-            <select v-if="promptLibraryFiles.length" v-model="promptSaveFilename" class="field-prompt-name">
+            <select
+              v-if="promptLibraryFiles.length"
+              class="field-prompt-name"
+              :value="promptLibrarySelectValue()"
+              @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+            >
               <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
             </select>
             <span v-else class="field-prompt-empty">No saved prompts found.</span>
@@ -247,9 +270,6 @@ async function loadSystemPrompt() {
               {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
             </button>
           </template>
-          <datalist id="companion-prompt-library-options">
-            <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename"></option>
-          </datalist>
         </div>
         <span v-if="promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
       </label>
@@ -394,6 +414,7 @@ label {
 .field-prompt-library {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
@@ -403,7 +424,13 @@ label {
   min-width: 0;
 }
 
+.field-prompt-select,
+.field-prompt-custom-name {
+  flex-basis: 160px;
+}
+
 .field-prompt-confirm {
+  flex: 0 0 auto;
   min-width: 54px;
   padding: 8px 10px;
 }

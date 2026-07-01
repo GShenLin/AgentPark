@@ -11,7 +11,7 @@ def test_write_server_pid_file_records_runtime_contract(tmp_path):
     payload = json.loads((tmp_path / ".runtime" / "aitools-server.pid").read_text(encoding="utf-8"))
 
     assert payload["schema_version"] == server_pid_file.PID_FILE_SCHEMA_VERSION
-    assert payload["app"] == "AgentPark"
+    assert payload["app"] == "AITools"
     assert payload["kind"] == "fast_api_server"
     assert payload["pid"] == os.getpid()
     assert payload["host"] == "127.0.0.1"
