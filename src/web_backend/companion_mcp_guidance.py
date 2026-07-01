@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 COMPANION_MCP_INSTRUCTIONS = """
-AITools companion is a graph/node coordination MCP.
+AgentPark companion is a graph/node coordination MCP.
 
 Typical workflow:
 1. Call get_companion_meta first. Use it to confirm your graph_id/node_id, working_path, version, and capabilities before any conclusion.

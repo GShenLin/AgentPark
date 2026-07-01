@@ -5,11 +5,11 @@ rem Switch to the script directory to ensure relative paths work.
 cd /d "%~dp0"
 set "WORKSPACE_ROOT=%CD%"
 
-echo [INFO] Restarting AITools...
+echo [INFO] Restarting AgentPark...
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%WORKSPACE_ROOT%\scripts\restart_aitools.ps1" -WorkspaceRoot "%WORKSPACE_ROOT%"
 if errorlevel 1 (
-    echo [ERROR] Failed to stop the previous AITools server instance.
+    echo [ERROR] Failed to stop the previous AgentPark server instance.
     pause
     exit /b 1
 )
@@ -21,7 +21,7 @@ if errorlevel 1 (
     echo [WARN] Continuing startup with the current local workspace.
 )
 
-echo [INFO] Starting AITools through build_and_run.bat...
+echo [INFO] Starting AgentPark through build_and_run.bat...
 set "AITOOLS_NO_PAUSE=1"
 call "%WORKSPACE_ROOT%\build_and_run.bat" %*
 set "EXIT_CODE=%errorlevel%"

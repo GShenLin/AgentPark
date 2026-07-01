@@ -17,7 +17,7 @@ class WebBackendFacade:
         self.companion_mcp = None
         self.companion_mcp_app = None
         self.app = FastAPI(
-            title="AITools Mission2 Web",
+            title="AgentPark Mission2 Web",
             lifespan=self._lifespan,
         )
         self.app.add_middleware(

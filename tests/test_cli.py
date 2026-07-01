@@ -247,7 +247,7 @@ def test_cli_chat_interactive_commands_render_shell(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "AITools Companion" in output
+    assert "AgentPark Companion" in output
     assert "provider: unit-provider" in output
     assert "status" in output
     assert "Commands:" in output

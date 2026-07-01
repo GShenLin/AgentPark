@@ -20,7 +20,7 @@
       "url": "http://127.0.0.1:37657/mcp"
     },
     "aitools-companion": {
-      "label": "AITools Companion Control",
+      "label": "AgentPark Companion Control",
       "transport": "streamable-http",
       "url": "http://127.0.0.1:8788/mcp/",
       "readTimeoutSeconds": 180

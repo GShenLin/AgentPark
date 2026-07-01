@@ -101,9 +101,9 @@ Plugins can contribute:
 
 Plugin contributions are surfaced through `CapabilityRegistry`, including dependencies and diagnostics. Plugin-local skill paths must stay inside the plugin directory.
 
-## AITools Plugin Manifest
+## AgentPark Plugin Manifest
 
-Use `aitools.plugin.json` for native AITools plugins:
+Use `aitools.plugin.json` for native AgentPark plugins:
 
 ```json
 {
@@ -139,4 +139,4 @@ Stable fields:
 - `mcpServers`: array, inline config object, or relative JSON config file
 - `configSchema`: object reserved for future node UI mapping
 
-`openclaw.plugin.json` remains supported through an explicit adapter. Native AITools code should not mix OpenClaw-specific `contracts` fields into the stable schema.
+`openclaw.plugin.json` remains supported through an explicit adapter. Native AgentPark code should not mix OpenClaw-specific `contracts` fields into the stable schema.

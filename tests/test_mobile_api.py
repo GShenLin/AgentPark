@@ -9,7 +9,7 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
     import src.web_backend.runtime_paths as runtime_paths_module
     from src.web_backend.state_store import _set_node_config_runtime_event
 
-    runtime_root = str(tmp_path / "AITools")
+    runtime_root = str(tmp_path / "AgentPark")
     resource_root = backend._get_runtime_root()
     os.makedirs(runtime_root, exist_ok=True)
 
@@ -58,13 +58,13 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
         pcs = client.get("/api/mobile/pcs")
         assert pcs.status_code == 200
         assert pcs.json()["pcs"][0]["id"] == "local"
-        assert pcs.json()["pcs"][0]["instances"][0]["name"] == "AITools"
+        assert pcs.json()["pcs"][0]["instances"][0]["name"] == "AgentPark"
 
         graphs = client.get("/api/mobile/pcs/local/graphs")
         assert graphs.status_code == 200
         graph_item = graphs.json()["instances"][0]["graphs"][0]
         assert graph_item["id"] == "default"
-        assert graph_item["display_name"] == "AITools.Default"
+        assert graph_item["display_name"] == "AgentPark.Default"
 
         nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
         assert nodes.status_code == 200

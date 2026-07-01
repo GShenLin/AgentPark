@@ -1,14 +1,14 @@
-# AITools
+# AgentPark
 
 [English](./README.md) | [中文](./README.zh.md)
 
-AITools is an Agent platform for building, running, and sharing Agents, tools, and Graph workflows. It starts from a local-first workspace, but its product direction is broader: make Agents reusable, make tools explicit, and make Graphs portable enough to become shared automation assets instead of one-off local experiments.
+AgentPark is an Agent platform for building, running, and sharing Agents, tools, and Graph workflows. It starts from a local-first workspace, but its product direction is broader: make Agents reusable, make tools explicit, and make Graphs portable enough to become shared automation assets instead of one-off local experiments.
 
 The backend uses FastAPI to manage nodes, graph execution, providers, files, settings, and runtime state. The frontend uses Vue 3 + Vite to provide visual graph editing, node execution controls, memory browsing, file operations, desktop settings, and a mobile-first workspace for phone access.
 
 ## Project Goal
 
-AITools aims to become a practical Agent creation and sharing platform:
+AgentPark aims to become a practical Agent creation and sharing platform:
 
 - Agents should be configurable runtime units with memory, provider settings, tools, skills, plugins, and clear execution history.
 - Tools should be structured capabilities that can be discovered, tested, reused, and shared across Agents and Graphs.
@@ -99,7 +99,7 @@ All nodes inherit these common configuration fields:
 ## Project Layout
 
 ```text
-AITools/
+AgentPark/
   config/              # Service config, provider config, prompt text, remote endpoints
   functions/           # Tools callable by Agent nodes
   memories/            # Graph/node memory; current memory at root, overflow archived by date
@@ -256,7 +256,7 @@ On Windows, run:
 Restart.bat
 ```
 
-The script attempts to stop the current AITools service, run `git pull --rebase`, and restart through `build_and_run.bat`.
+The script attempts to stop the current AgentPark service, run `git pull --rebase`, and restart through `build_and_run.bat`.
 
 The WebUI can also call `/api/system/restart` to trigger the restart flow.
 
@@ -271,7 +271,7 @@ package.bat
 The script builds the frontend and packages the backend entry `src/fast_api.py` with PyInstaller. Output:
 
 ```text
-dist/AITools.exe
+dist/AgentPark.exe
 ```
 
 After packaging, `config/`, `functions/`, and `nodes/` are copied into `dist/` as runtime resources.
@@ -327,7 +327,7 @@ python -m pytest tests/test_node_stop_cancellation.py
 
 ## CLI and Recovery
 
-AITools also has an offline CLI for cases where FastAPI or WebUI is unavailable:
+AgentPark also has an offline CLI for cases where FastAPI or WebUI is unavailable:
 
 ```bat
 python -m src.cli chat
@@ -358,8 +358,8 @@ Node config reads and writes are documented in `docs/config-contract.md`. Runtim
 Packaged builds expose the same offline recovery commands through the executable:
 
 ```bat
-dist\AITools.exe doctor --json
-dist\AITools.exe capabilities list --graph <graph_id> --node <node_id> --json
+dist\AgentPark.exe doctor --json
+dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
 ```
 
 `package.bat` copies `docs/`, `skills/`, and `plugins/` into `dist/` so packaged doctor checks and default capability discovery use the same bundled resources as source checkout runs.

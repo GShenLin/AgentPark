@@ -112,7 +112,7 @@ onMounted(async () => {
 
 <template>
   <header class="topbar">
-    <div class="brand">AITools Board</div>
+    <div class="brand">AgentPark Board</div>
     <div class="remote-switcher">
       <span class="remote-label">Remote</span>
       <select v-model="selectedRemoteId" class="remote-select" @change="selectRemote">

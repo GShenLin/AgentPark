@@ -80,7 +80,7 @@ def build_companion_mcp(core: object) -> FastMCP:
 
     @mcp.tool(name="list_graph")
     async def list_graph() -> dict[str, Any]:
-        """List available AITools graphs."""
+        """List available AgentPark graphs."""
         return await _run_blocking_tool(tools.list_graph)
 
     @mcp.tool(name="list_node")

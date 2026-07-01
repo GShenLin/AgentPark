@@ -134,7 +134,7 @@ class CompanionTui:
         self.state.transcript.append(
             TranscriptItem(
                 role="system",
-                text=f"AITools Companion started. provider={provider}, mode={mode}. Type /help for commands.",
+                text=f"AgentPark Companion started. provider={provider}, mode={mode}. Type /help for commands.",
             )
         )
         if self.debug_terminal:
@@ -142,7 +142,7 @@ class CompanionTui:
 
     def _terminal_title(self) -> str:
         provider = str(self.target.config.get("provider_id") or "provider-unset")
-        return f"AITools Companion - {provider}"
+        return f"AgentPark Companion - {provider}"
 
     def _terminal_debug_text(self) -> str:
         return build_terminal_debug_text(

@@ -99,8 +99,8 @@ Current states include `starting`, `ready`, `failed`, and `stopped`. A failed st
 Packaged artifacts include the offline CLI in the same executable:
 
 ```bat
-dist\AITools.exe doctor --json
-dist\AITools.exe capabilities list --graph <graph_id> --node <node_id> --json
+dist\AgentPark.exe doctor --json
+dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
 ```
 
 The package also includes `docs/`, `skills/`, and `plugins/` beside the executable so doctor checks and default capability discovery use the same runtime resources as source checkout runs.

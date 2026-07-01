@@ -1,6 +1,6 @@
 # Capability System
 
-AITools exposes four node-scoped capability kinds:
+AgentPark exposes four node-scoped capability kinds:
 
 - `tool`
 - `mcp`

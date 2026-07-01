@@ -128,7 +128,7 @@ if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
 
 if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
     if not defined AITOOLS_CLI_ARGS set "AITOOLS_CLI_ARGS=chat"
-    echo [INFO] Starting AITools CLI: python -m src.cli !AITOOLS_CLI_ARGS!
+    echo [INFO] Starting AgentPark CLI: python -m src.cli !AITOOLS_CLI_ARGS!
     "%PYTHON_EXE%" -m src.cli !AITOOLS_CLI_ARGS!
     set "AITOOLS_CLI_EXIT=!errorlevel!"
     if "!AITOOLS_CLI_EXIT!"=="%AITOOLS_RESTART_EXIT_CODE%" (
@@ -141,7 +141,7 @@ if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
 
 if /I "%AITOOLS_LAUNCH_MODE%"=="cli_only" (
     if not defined AITOOLS_CLI_ARGS set "AITOOLS_CLI_ARGS=chat"
-    echo [INFO] Starting AITools CLI: python -m src.cli !AITOOLS_CLI_ARGS!
+    echo [INFO] Starting AgentPark CLI: python -m src.cli !AITOOLS_CLI_ARGS!
     "%PYTHON_EXE%" -m src.cli !AITOOLS_CLI_ARGS!
     set "AITOOLS_CLI_EXIT=!errorlevel!"
     if "!AITOOLS_CLI_EXIT!"=="%AITOOLS_RESTART_EXIT_CODE%" (
@@ -152,7 +152,7 @@ if /I "%AITOOLS_LAUNCH_MODE%"=="cli_only" (
     exit /b !AITOOLS_CLI_EXIT!
 )
 
-echo [INFO] Starting AITools server...
+echo [INFO] Starting AgentPark server...
 
 "%PYTHON_EXE%" -m src.fast_api --workspace-root "%cd%"
 
@@ -172,12 +172,12 @@ set "AITOOLS_WEB_STDOUT=%cd%\.runtime\aitools-server.log"
 set "AITOOLS_WEB_STDERR=%cd%\.runtime\aitools-server.err.log"
 set "AITOOLS_WORKSPACE_ROOT=%cd%"
 set "AITOOLS_PYTHON_EXE=%PYTHON_EXE%"
-echo [INFO] Starting AITools web server in background. Logs:
+echo [INFO] Starting AgentPark web server in background. Logs:
 echo [INFO]   %AITOOLS_WEB_STDOUT%
 echo [INFO]   %AITOOLS_WEB_STDERR%
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AITOOLS_PYTHON_EXE; $root=$env:AITOOLS_WORKSPACE_ROOT; $stdout=$env:AITOOLS_WEB_STDOUT; $stderr=$env:AITOOLS_WEB_STDERR; $launcher=(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId; $env:AITOOLS_EXIT_WHEN_PID_EXITS=[string]$launcher; $arguments=@('-m','src.fast_api','--workspace-root',$root); Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr"
 if errorlevel 1 (
-    echo [ERROR] Failed to start AITools web server in background.
+    echo [ERROR] Failed to start AgentPark web server in background.
     exit /b %errorlevel%
 )
 echo [INFO] Web server process launched; browser will open after the server is ready.
@@ -185,10 +185,10 @@ exit /b 0
 
 :stop_existing_workspace_processes
 if not exist "scripts\restart_aitools.ps1" exit /b 0
-echo [INFO] Stopping existing AITools processes for this workspace...
+echo [INFO] Stopping existing AgentPark processes for this workspace...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%cd%\scripts\restart_aitools.ps1" -WorkspaceRoot "%cd%"
 if errorlevel 1 (
-    echo [ERROR] Failed to stop existing AITools processes.
+    echo [ERROR] Failed to stop existing AgentPark processes.
     exit /b %errorlevel%
 )
 exit /b 0

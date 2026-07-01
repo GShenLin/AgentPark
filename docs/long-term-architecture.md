@@ -4,7 +4,7 @@ This document records the P3 boundary decisions from `TODO.md`. These are not co
 
 ## Rust Sidecar Evaluation
 
-Do not start with a full rewrite. A Rust sidecar is only justified where AITools needs process supervision, file watching, or high-frequency indexing with a stable protocol boundary.
+Do not start with a full rewrite. A Rust sidecar is only justified where AgentPark needs process supervision, file watching, or high-frequency indexing with a stable protocol boundary.
 
 Candidate sidecar modules:
 
@@ -24,7 +24,7 @@ Initial protocol shape:
   "id": "request-id",
   "method": "capability.index.refresh",
   "params": {
-    "workspace": "C:/Project/AITools",
+    "workspace": "C:/Project/AgentPark",
     "roots": ["functions", "skills", "plugins", "config"]
   }
 }
@@ -66,7 +66,7 @@ Structured runtime payloads must carry schema versions at their contract boundar
 - PID/runtime files: `schema_version`
 - node config migrations: `schemaVersion`
 
-Native AITools plugins support `version` in `aitools.plugin.json`, and skills support optional `version` in `SKILL.md` frontmatter. Capability descriptors expose declared versions when present.
+Native AgentPark plugins support `version` in `aitools.plugin.json`, and skills support optional `version` in `SKILL.md` frontmatter. Capability descriptors expose declared versions when present.
 
 Future package artifacts should include:
 

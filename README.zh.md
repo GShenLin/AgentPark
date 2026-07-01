@@ -1,14 +1,14 @@
-# AITools
+# AgentPark
 
 [English](./README.md) | [中文](./README.zh.md)
 
-AITools 是一个用于构建、运行和分享 Agent、工具与 Graph 工作流的 Agent 平台。它从本地优先的工作区出发，但产品方向不止于本地执行：让 Agent 可以复用，让工具能力显式化，让 Graph 成为可以沉淀和分享的自动化资产，而不是一次性的本地实验。
+AgentPark 是一个用于构建、运行和分享 Agent、工具与 Graph 工作流的 Agent 平台。它从本地优先的工作区出发，但产品方向不止于本地执行：让 Agent 可以复用，让工具能力显式化，让 Graph 成为可以沉淀和分享的自动化资产，而不是一次性的本地实验。
 
 后端使用 FastAPI 管理节点、图执行、模型服务商、文件、设置和运行时状态。前端使用 Vue 3 + Vite，提供可视化图编辑、节点执行控制、记忆浏览、文件操作、桌面端设置，以及适合手机访问的移动端工作区。
 
 ## 项目目标
 
-AITools 的目标是成为一个实用的 Agent 创建与分享平台：
+AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 
 - Agent 应该是可配置的运行单元，包含记忆、服务商设置、工具、技能、插件和清晰的执行历史。
 - 工具应该是结构化能力，可以被发现、测试、复用，并在 Agent 和 Graph 之间共享。
@@ -99,7 +99,7 @@ AITools 的目标是成为一个实用的 Agent 创建与分享平台：
 ## 项目结构
 
 ```text
-AITools/
+AgentPark/
   config/              # 服务配置、服务商配置、prompt 文本、远程端点
   functions/           # Agent 节点可调用的工具
   memories/            # 图/节点记忆；当前记忆在根目录，溢出内容按日期归档
@@ -256,7 +256,7 @@ Windows 下运行：
 Restart.bat
 ```
 
-脚本会尝试停止当前 AITools 服务，执行 `git pull --rebase`，并通过 `build_and_run.bat` 重启。
+脚本会尝试停止当前 AgentPark 服务，执行 `git pull --rebase`，并通过 `build_and_run.bat` 重启。
 
 WebUI 也可以调用 `/api/system/restart` 触发重启流程。
 
@@ -271,7 +271,7 @@ package.bat
 脚本会构建前端，并使用 PyInstaller 打包后端入口 `src/fast_api.py`。输出文件：
 
 ```text
-dist/AITools.exe
+dist/AgentPark.exe
 ```
 
 打包后，`config/`、`functions/` 和 `nodes/` 会复制到 `dist/` 作为运行时资源。
@@ -327,7 +327,7 @@ python -m pytest tests/test_node_stop_cancellation.py
 
 ## CLI 和恢复
 
-AITools 也提供离线 CLI，用于 FastAPI 或 WebUI 不可用的情况：
+AgentPark 也提供离线 CLI，用于 FastAPI 或 WebUI 不可用的情况：
 
 ```bat
 python -m src.cli chat
@@ -358,8 +358,8 @@ companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存
 打包版本通过可执行文件暴露相同的离线恢复命令：
 
 ```bat
-dist\AITools.exe doctor --json
-dist\AITools.exe capabilities list --graph <graph_id> --node <node_id> --json
+dist\AgentPark.exe doctor --json
+dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
 ```
 
 `package.bat` 会把 `docs/`、`skills/` 和 `plugins/` 复制到 `dist/`，因此打包后的 doctor 检查和默认能力发现会使用与源码 checkout 相同的资源。

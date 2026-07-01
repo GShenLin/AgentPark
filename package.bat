@@ -17,10 +17,10 @@ if errorlevel 1 goto :fail_webui
 popd
 
 echo [INFO] Packaging server executable...
-if exist "dist\AITools.exe" del /f /q "dist\AITools.exe" >nul 2>nul
-"%PYTHON_EXE%" -m PyInstaller --noconfirm --onefile --name AITools --add-data "webui\dist;webui\dist" --collect-submodules src --collect-submodules fastapi --collect-submodules uvicorn --exclude-module flask src\fast_api.py
+if exist "dist\AgentPark.exe" del /f /q "dist\AgentPark.exe" >nul 2>nul
+"%PYTHON_EXE%" -m PyInstaller --noconfirm --onefile --name AgentPark --add-data "webui\dist;webui\dist" --collect-submodules src --collect-submodules fastapi --collect-submodules uvicorn --exclude-module flask src\fast_api.py
 if errorlevel 1 goto :fail
-if not exist "dist\AITools.exe" goto :fail
+if not exist "dist\AgentPark.exe" goto :fail
 
 call :mirror_dir "config" "dist\config"
 if errorlevel 1 goto :fail
@@ -35,8 +35,8 @@ if errorlevel 1 goto :fail
 call :mirror_dir "docs" "dist\docs"
 if errorlevel 1 goto :fail
 
-echo [INFO] Package complete: dist\AITools.exe
-echo [INFO] Offline doctor: dist\AITools.exe doctor --json
+echo [INFO] Package complete: dist\AgentPark.exe
+echo [INFO] Offline doctor: dist\AgentPark.exe doctor --json
 endlocal
 exit /b 0
 

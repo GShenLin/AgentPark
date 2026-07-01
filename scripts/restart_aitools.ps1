@@ -169,7 +169,7 @@ function Add-ProcessCandidate {
         return
     }
     if (-not (Test-ProjectProcess -ProcessInfo $procInfo -Root $Root -TrustWorkspaceIdentity $TrustWorkspaceIdentity)) {
-        Write-Host "[WARN] Ignoring PID $ProcessId from $Reason because it is not an AITools server for this workspace."
+        Write-Host "[WARN] Ignoring PID $ProcessId from $Reason because it is not an AgentPark server for this workspace."
         Write-Host "       $($procInfo.CommandLine)"
         return
     }
@@ -294,7 +294,7 @@ Write-Host "[INFO] Configured server port: $configuredPort"
 $pidPayload = Read-JsonFile -Path $pidFile
 if ($null -ne $pidPayload) {
     $payloadRoot = Normalize-PathText -PathText ([string]$pidPayload.workspace_root)
-    if ($pidPayload.app -ne 'AITools' -or $pidPayload.kind -ne 'fast_api_server' -or $payloadRoot -ine $root) {
+    if ($pidPayload.app -ne 'AgentPark' -or $pidPayload.kind -ne 'fast_api_server' -or $payloadRoot -ine $root) {
         throw "Refusing to trust pid file with unexpected identity: $pidFile"
     }
     Add-ProcessCandidate -Map $candidates -ProcessId ([int]$pidPayload.pid) -Reason 'pid-file' -Root $root -TrustWorkspaceIdentity $true
@@ -321,7 +321,7 @@ foreach ($proc in $projectWrapperProcesses) {
 }
 
 if ($candidates.Count -eq 0 -and $wrapperProcessIds.Count -eq 0) {
-    Write-Host '[INFO] No running AITools process found for this workspace.'
+    Write-Host '[INFO] No running AgentPark process found for this workspace.'
 } else {
     $processIds = @($candidates.Keys | Sort-Object)
     $hasServerCandidate = @($candidates.Values | Where-Object { $_.Kind -eq 'server' }).Count -gt 0
@@ -364,7 +364,7 @@ if ($candidates.Count -eq 0 -and $wrapperProcessIds.Count -eq 0) {
                 Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
             }
             if (-not (Wait-ProcessesExited -Pids $remainingProcessIds -TimeoutSeconds 5)) {
-                throw 'Failed to stop one or more AITools processes.'
+                throw 'Failed to stop one or more AgentPark processes.'
             }
         }
     }

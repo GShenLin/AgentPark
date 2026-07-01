@@ -48,7 +48,7 @@ def download_bytes(url, *, timeout_sec=60):
 
 
 def build_multipart_body(fields, files):
-    boundary = f"----AIToolsHyper3D{uuid.uuid4().hex}"
+    boundary = f"----AgentParkHyper3D{uuid.uuid4().hex}"
     chunks: list[bytes] = []
 
     for name, value in fields:

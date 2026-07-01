@@ -647,13 +647,13 @@ def test_agent_node_injects_working_path_prompt_as_system(monkeypatch):
             "graph_id": "g_working_path_unit",
             "node_instance_id": "n_working_path_unit",
             "provider_id": "provider-stream",
-            "working_path": r"C:\Project\AITools\XYJ",
+            "working_path": r"C:\Project\AgentPark\XYJ",
         },
     )
 
     assert str(result.get("display") or "") == "ok"
     system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
-    assert any("节点工作路径: C:\\Project\\AITools\\XYJ" in str(item.get("content") or "") for item in system_messages)
+    assert any("节点工作路径: C:\\Project\\AgentPark\\XYJ" in str(item.get("content") or "") for item in system_messages)
     sent_user = next(item for item in created_agents[0].messages if item.get("role") == "user")
     assert sent_user.get("content") == "hello"
 
@@ -696,9 +696,9 @@ def test_agent_node_surfaces_configured_tool_load_failure(monkeypatch):
 def test_agent_node_builds_working_path_prompt():
     from nodes.agent_working_path_context import build_working_path_prompt
 
-    prompt = build_working_path_prompt(r"C:\Project\AITools")
+    prompt = build_working_path_prompt(r"C:\Project\AgentPark")
 
-    assert "节点工作路径: C:\\Project\\AITools" in prompt
+    assert "节点工作路径: C:\\Project\\AgentPark" in prompt
     assert "当前节点的工作目录上下文" in prompt
 
 
