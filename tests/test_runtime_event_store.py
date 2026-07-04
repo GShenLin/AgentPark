@@ -144,6 +144,11 @@ def test_runtime_event_store_persists_bounded_provider_request_summaries():
                         "input_item_count": 3,
                         "approx_input_chars": 1200 + index,
                         "environment_context_chars": 320,
+                        "permissions_context_chars": 120,
+                        "collaboration_context_chars": 180,
+                        "internal_context_chars": 90,
+                        "payload_log_path": "C:/Project/AgentPark/memories/default/node/responses_payloads.jsonl",
+                        "input_items": [{"index": 0, "type": "message", "role": "user", "context_kind": "environment"}],
                         "largest_input_items": [{"index": 0, "type": "message", "chars": 900}],
                         "tool_result_chars_by_call": [{"call_id": "call-1", "chars": 500}],
                         "tools_included": ["rg_search_text"],
@@ -159,6 +164,11 @@ def test_runtime_event_store_persists_bounded_provider_request_summaries():
     assert summaries[0]["request_index"] == 2
     assert summaries[-1]["request_index"] == 9
     assert summaries[-1]["environment_context_chars"] == 320
+    assert summaries[-1]["permissions_context_chars"] == 120
+    assert summaries[-1]["collaboration_context_chars"] == 180
+    assert summaries[-1]["internal_context_chars"] == 90
+    assert summaries[-1]["payload_log_path"].endswith("responses_payloads.jsonl")
+    assert summaries[-1]["input_items"][0]["context_kind"] == "environment"
     assert summaries[-1]["tool_result_chars_by_call"][0]["call_id"] == "call-1"
     assert "secret" not in summaries[-1]
 

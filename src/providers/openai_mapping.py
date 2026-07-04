@@ -72,7 +72,7 @@ class OpenAIResponsesMapping(HostBoundService):
             return None
         role = str(message.get("role") or "").strip().lower()
         content = message.get("content")
-        if role in {"system", "user", "assistant"}:
+        if role in {"system", "developer", "user", "assistant"}:
             if role == "assistant" and isinstance(message.get("tool_calls"), list) and message.get("tool_calls"):
                 items = []
                 content_item = self._message_content_to_responses_item(role, content)
@@ -89,7 +89,7 @@ class OpenAIResponsesMapping(HostBoundService):
         return None
 
     def _message_content_to_responses_item(self, role, content):
-        if role in {"system", "user", "assistant"}:
+        if role in {"system", "developer", "user", "assistant"}:
             text_part_type = "output_text" if role == "assistant" else "input_text"
             parts = []
             if isinstance(content, str):

@@ -10,6 +10,7 @@ from datetime import datetime
 from src.file_transaction import atomic_write_text
 
 from .graph_runtime_registry import GraphConfigReadError
+from .graph_output_routes import normalize_output_routes
 from . import runtime_paths
 from .node_deletion import NodeDeletionBlocked, delete_node_directory
 from .service_host import HostBoundService
@@ -51,8 +52,35 @@ class GraphApiStorage(HostBoundService):
         if not isinstance(payload, dict):
             return {}
         graph = dict(payload)
+        valid_node_ids = self._graph_node_ids_for_route_validation(graph)
+        try:
+            graph["output_routes"] = normalize_output_routes(graph.get("output_routes"), valid_node_ids=valid_node_ids)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        graph["working_path"] = str(graph.get("working_path") or "").strip()
         graph.pop("nodes", None)
+        graph.pop("links", None)
         return graph
+
+    def _graph_node_ids_for_route_validation(self, graph: dict) -> set[str] | None:
+        node_ids: set[str] = set()
+        nodes = graph.get("nodes")
+        if isinstance(nodes, list):
+            for item in nodes:
+                if isinstance(item, dict):
+                    node_id = str(item.get("id") or item.get("node_id") or "").strip()
+                    if node_id:
+                        node_ids.add(node_id)
+        graph_id = self.graph_runtime._sanitize_graph_id(graph.get("id") or self.default_graph_id)
+        graph_dir = self.graph_runtime._graph_dir(graph_id)
+        if graph_dir and os.path.isdir(graph_dir):
+            for entry in os.listdir(graph_dir):
+                if entry == "agents":
+                    continue
+                config_path = os.path.join(graph_dir, entry, "config.json")
+                if os.path.exists(config_path):
+                    node_ids.add(entry)
+        return node_ids or None
 
     def list_graphs(self):
         graphs_dir = runtime_paths._get_graphs_dir()
@@ -111,7 +139,7 @@ class GraphApiStorage(HostBoundService):
         config_path = os.path.join(graphs_dir, safe_id, "config.json")
         if not os.path.exists(config_path):
             if safe_id == "default":
-                return {"graph": {"id": "default", "name": "default", "links": [], "version": 0}}
+                return {"graph": {"id": "default", "name": "default", "output_routes": {}, "version": 0}}
             raise HTTPException(status_code=404, detail="graph not found")
         try:
             version = _graph_config_version(config_path)
@@ -152,7 +180,7 @@ class GraphApiStorage(HostBoundService):
             source_graph_id=source_graph_id,
             save_reason=save_reason,
             nodes_count=len(graph.get("nodes") or []) if isinstance(graph.get("nodes"), list) else None,
-            links_count=len(graph.get("links") or []) if isinstance(graph.get("links"), list) else None,
+            output_routes_count=len(graph.get("output_routes") or {}) if isinstance(graph.get("output_routes"), dict) else None,
         )
 
         graphs_dir = runtime_paths._get_graphs_dir()
@@ -170,6 +198,8 @@ class GraphApiStorage(HostBoundService):
             self._copy_graph_artifacts(source_graph_id, graph_dir, safe_id)
         try:
             _write_graph_config(config_path, graph)
+            if source_graph_id and source_graph_id != safe_id:
+                self.graph_runtime._register_all_scheduled_nodes(force_rebuild=True)
             updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
             return {"graph": {"id": safe_id, "name": graph.get("name"), "updated_at": updated_at}}
         except Exception as exc:
@@ -214,6 +244,7 @@ class GraphApiStorage(HostBoundService):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
+        self.graph_runtime._unregister_scheduled_graph(safe_id)
 
         graphs_dir = os.path.abspath(runtime_paths._get_graphs_dir())
         graph_dir = os.path.abspath(os.path.join(graphs_dir, safe_id))

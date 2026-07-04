@@ -27,13 +27,9 @@ def test_basic_trigger_node_click_emit_flows_to_next_node(tmp_path):
                 {"id": "t1", "typeId": "basic_trigger_node", "name": "t1", "ui": {"x": 0, "y": 0}},
                 {"id": "a1", "typeId": "append_node", "name": "a1", "ui": {"x": 120, "y": 0}},
             ],
-            "links": [
-                {
-                    "id": "l1",
-                    "from": {"node": "t1", "index": 0},
-                    "to": {"node": "a1", "index": 0},
-                }
-            ],
+            "output_routes": {
+                "t1": [{"output_index": 0, "targets": [{"node_id": "a1", "input_index": 0}]}],
+            },
         }
 
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
@@ -110,7 +106,7 @@ def test_console_command_trigger_persists_config_command_as_user_message(tmp_pat
             "nodes": [
                 {"id": "cmd1", "typeId": "console_command_node", "name": "cmd1", "ui": {"x": 0, "y": 0}},
             ],
-            "links": [],
+            "output_routes": {},
         }
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
         assert (
@@ -144,6 +140,146 @@ def test_console_command_trigger_persists_config_command_as_user_message(tmp_pat
         backend._get_resource_root = original_get_resource_root
 
 
+def test_output_routes_fan_out_to_multiple_targets(tmp_path):
+    import src.web_backend as backend
+
+    runtime_root = str(tmp_path)
+    original_get_runtime_root = backend._get_runtime_root
+    original_get_resource_root = backend._get_resource_root
+    resource_root = original_get_runtime_root()
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+
+    try:
+        app = backend.create_app()
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        graph = {
+            "id": "default",
+            "name": "default",
+            "nodes": [
+                {"id": "t1", "typeId": "basic_trigger_node", "name": "t1", "ui": {"x": 0, "y": 0}},
+                {"id": "a1", "typeId": "append_node", "name": "a1", "ui": {"x": 120, "y": 0}},
+                {"id": "a2", "typeId": "append_node", "name": "a2", "ui": {"x": 120, "y": 120}},
+            ],
+            "output_routes": {
+                "t1": [
+                    {
+                        "output_index": 0,
+                        "targets": [
+                            {"node_id": "a1", "input_index": 0},
+                            {"node_id": "a2", "input_index": 0},
+                        ],
+                    }
+                ]
+            },
+        }
+        assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
+        for node_id, type_id in (("t1", "basic_trigger_node"), ("a1", "append_node"), ("a2", "append_node")):
+            assert client.post(
+                "/api/nodes/instances",
+                json={"node_id": node_id, "type_id": type_id, "graph_id": "default"},
+            ).status_code == 200
+        assert client.post(
+            "/api/nodes/instances/t1/config?graph_id=default",
+            json={"fields": {"OutputText": "fanout"}},
+        ).status_code == 200
+        assert client.post(
+            "/api/nodes/instances/a1/config?graph_id=default",
+            json={"fields": {"AppendText": "-one"}},
+        ).status_code == 200
+        assert client.post(
+            "/api/nodes/instances/a2/config?graph_id=default",
+            json={"fields": {"AppendText": "-two"}},
+        ).status_code == 200
+
+        assert client.post("/api/graphs/default/runner/start").status_code == 200
+        assert client.post("/api/graphs/default/emit", json={"from_id": "t1", "payload": ""}).status_code == 200
+
+        seen = set()
+        for _ in range(40):
+            cfgs = client.get("/api/nodes/instances/configs?graph_id=default")
+            nodes = cfgs.json().get("nodes") if cfgs.status_code == 200 else []
+            for item in nodes or []:
+                if item.get("node_id") == "a1" and item.get("last_message") == "fanout-one":
+                    seen.add("a1")
+                if item.get("node_id") == "a2" and item.get("last_message") == "fanout-two":
+                    seen.add("a2")
+            if seen == {"a1", "a2"}:
+                break
+            time.sleep(0.1)
+        assert seen == {"a1", "a2"}
+    finally:
+        backend._get_runtime_root = original_get_runtime_root
+        backend._get_resource_root = original_get_resource_root
+
+
+def test_output_routes_preserve_target_input_index_for_multi_input_node(tmp_path):
+    import src.web_backend as backend
+
+    runtime_root = str(tmp_path)
+    original_get_runtime_root = backend._get_runtime_root
+    original_get_resource_root = backend._get_resource_root
+    resource_root = original_get_runtime_root()
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+
+    try:
+        app = backend.create_app()
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        graph = {
+            "id": "default",
+            "name": "default",
+            "nodes": [
+                {"id": "t0", "typeId": "basic_trigger_node", "name": "t0", "ui": {"x": 0, "y": 0}},
+                {"id": "t1", "typeId": "basic_trigger_node", "name": "t1", "ui": {"x": 0, "y": 120}},
+                {"id": "m1", "typeId": "multi_input_node", "name": "m1", "ui": {"x": 120, "y": 0}},
+                {"id": "a1", "typeId": "append_node", "name": "a1", "ui": {"x": 260, "y": 0}},
+            ],
+            "output_routes": {
+                "t0": [{"output_index": 0, "targets": [{"node_id": "m1", "input_index": 0}]}],
+                "t1": [{"output_index": 0, "targets": [{"node_id": "m1", "input_index": 1}]}],
+                "m1": [{"output_index": 0, "targets": [{"node_id": "a1", "input_index": 0}]}],
+            },
+        }
+        assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
+        for node_id, type_id in (
+            ("t0", "basic_trigger_node"),
+            ("t1", "basic_trigger_node"),
+            ("m1", "multi_input_node"),
+            ("a1", "append_node"),
+        ):
+            assert client.post(
+                "/api/nodes/instances",
+                json={"node_id": node_id, "type_id": type_id, "graph_id": "default"},
+            ).status_code == 200
+        assert client.post("/api/nodes/instances/t0/config?graph_id=default", json={"fields": {"OutputText": "A"}}).status_code == 200
+        assert client.post("/api/nodes/instances/t1/config?graph_id=default", json={"fields": {"OutputText": "B"}}).status_code == 200
+        assert client.post("/api/nodes/instances/a1/config?graph_id=default", json={"fields": {"AppendText": "-done"}}).status_code == 200
+        assert client.post("/api/graphs/default/runner/start").status_code == 200
+        assert client.post("/api/graphs/default/emit", json={"from_id": "t1", "payload": ""}).status_code == 200
+        assert client.post("/api/graphs/default/emit", json={"from_id": "t0", "payload": ""}).status_code == 200
+
+        ok = False
+        for _ in range(50):
+            cfgs = client.get("/api/nodes/instances/configs?graph_id=default")
+            nodes = cfgs.json().get("nodes") if cfgs.status_code == 200 else []
+            a1_cfg = next((item for item in nodes or [] if item.get("node_id") == "a1"), None)
+            if isinstance(a1_cfg, dict) and a1_cfg.get("last_message") == "AB-done":
+                ok = True
+                break
+            time.sleep(0.1)
+        assert ok
+    finally:
+        backend._get_runtime_root = original_get_runtime_root
+        backend._get_resource_root = original_get_resource_root
+
+
 def test_runner_recovers_working_node_without_inflight(tmp_path):
     import src.web_backend as backend
     import src.web_backend.runtime_paths as runtime_paths_module
@@ -166,7 +302,7 @@ def test_runner_recovers_working_node_without_inflight(tmp_path):
 
         client = TestClient(app)
 
-        graph = {"id": "default", "name": "default", "nodes": [], "links": []}
+        graph = {"id": "default", "name": "default", "nodes": [], "output_routes": {}}
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
         assert (
             client.post(
@@ -250,33 +386,19 @@ def test_startup_recovery_requeues_inflight_and_logs_reason(tmp_path):
         facade = backend.WebBackendFacade()
         recovery = facade.core.graph_runtime._recover_node_runtime_state_on_startup()
 
-        from src.web_backend.node_config_service import node_runtime_state_path
+        from src.web_backend.state_store import _read_json_dict
 
-        cfg = json.loads(config_path.read_text(encoding="utf-8"))
-        runtime_cfg = json.loads(open(node_runtime_state_path(str(config_path)), "r", encoding="utf-8").read())
-        assert recovery["inflight_requeued"] == 1
-        assert recovery["nodes_reset_to_idle"] == 1
-        assert recovery["graphs_woken"] == 1
-        for key in ("state", "pending", "pending_count", "inflight", "_stop_requested"):
-            assert key not in cfg
-        assert runtime_cfg["state"] == "idle"
-        assert runtime_cfg["pending"] == [{"payload": "running"}, {"payload": "queued"}]
-        assert runtime_cfg["pending_count"] == 2
-        assert "inflight" not in runtime_cfg
-        assert "_stop_requested" not in runtime_cfg
+        cfg = _read_json_dict(str(config_path))
+        assert recovery["inflight_requeued"] == 0
+        assert recovery["nodes_reset_to_idle"] == 0
+        assert recovery["graphs_woken"] == 0
+        assert cfg["state"] == "idle"
+        assert cfg["pending_count"] == 0
+        assert "inflight" not in cfg
+        assert "_stop_requested" not in cfg
 
         events_path = graph_dir / "runner.events.jsonl"
-        events = [
-            json.loads(line)
-            for line in events_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
-        recovered_event = next(item for item in events if item.get("event") == "startup_node_state_recovered")
-        assert recovered_event["before_state"] == "working"
-        assert recovered_event["after_state"] == "idle"
-        assert recovered_event["reason"] == "startup_inflight_requeued"
-        assert recovered_event["inflight_requeued"] is True
-        assert recovered_event["pending_count"] == 2
+        assert not events_path.exists()
     finally:
         backend._get_runtime_root = original_get_runtime_root
         backend._get_resource_root = original_get_resource_root
@@ -305,13 +427,13 @@ def test_startup_recovery_preserves_stop_state(tmp_path):
     cfg = _read_json_dict(str(config_path))
 
     assert recovery["recovered"] is False
-    assert recovery["reason"] == "stop_state_preserved"
-    assert recovery["before_state"] == "stop"
-    assert recovery["after_state"] == "stop"
-    assert cfg["state"] == "stop"
-    assert cfg["pending"] == [{"payload": "queued"}]
-    assert cfg["inflight"] == {"payload": "running"}
-    assert cfg["_stop_requested"] is True
+    assert recovery["reason"] == "runtime_state_memory_reset"
+    assert recovery["before_state"] == "idle"
+    assert recovery["after_state"] == "idle"
+    assert cfg["state"] == "idle"
+    assert cfg["pending_count"] == 0
+    assert "inflight" not in cfg
+    assert "_stop_requested" not in cfg
 
 
 def test_stale_working_node_with_inflight_is_not_requeued_by_timeout(tmp_path):

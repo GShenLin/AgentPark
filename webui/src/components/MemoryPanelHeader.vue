@@ -33,7 +33,7 @@ function readChecked(event: Event) {
 
     <div class="mode-tabs">
       <button v-if="memoryMode === 'agent'" class="mode-tab clear-memory" :disabled="!canClearMemory" @click="emit('clearMemory')">ClearMemory</button>
-      <button class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('toggleFileMode')">File</button>
+      <button v-if="memoryMode !== 'graph'" class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('toggleFileMode')">File</button>
     </div>
 
     <div v-if="memoryMode !== 'graph'" class="view-controls">

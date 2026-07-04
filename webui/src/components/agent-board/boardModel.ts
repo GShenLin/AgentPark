@@ -1,4 +1,4 @@
-import type { GraphConfig, MessageEnvelope, NodeInstanceConfig, NodeInstanceState, PasteAgentConfig } from '../../api'
+import type { GraphConfig, GraphOutputRoutes, MessageEnvelope, NodeInstanceConfig, NodeInstanceState, PasteAgentConfig } from '../../api'
 import type { LinkEndpoint, LinkItem, NodeCard } from './context'
 import { normalizeRuntimeEvent, normalizeRuntimeEvents, normalizeRuntimeToolCalls } from './toolRuntimeEvents'
 
@@ -271,12 +271,14 @@ export function dedupeLinks<T extends Pick<LinkItem, 'id' | 'from' | 'to'>>(item
 export function buildBoardGraphConfig(options: {
   graphId: string
   graphName: string
+  workingPath?: string
   nodes: NodeCard[]
   links: LinkItem[]
 }): GraphConfig {
   return {
     id: options.graphId || 'default',
     name: options.graphName || 'default',
+    working_path: String(options.workingPath || '').trim(),
     nodes: options.nodes.map((node) => ({
       id: node.id,
       typeId: node.typeId,
@@ -295,50 +297,71 @@ export function buildBoardGraphConfig(options: {
       mcpServers: node.mcpServers,
       workingPath: node.workingPath,
     })),
-    links: dedupeLinks(
-      options.links.map((link) => ({
-        id: link.id,
-        from: { node: link.from.node, index: normalizePortIndex(link.from.index, 0) },
-        to: { node: link.to.node, index: normalizePortIndex(link.to.index, 0) },
-      })),
-    ),
+    output_routes: buildOutputRoutesFromLinks(options.links),
   }
 }
 
-export function normalizeGraphLinks(rawLinks: unknown): LinkItem[] {
-  if (!Array.isArray(rawLinks)) return []
+export function buildOutputRoutesFromLinks(links: LinkItem[]): GraphOutputRoutes {
+  const routeMap = new Map<string, { output_index: number; targets: Array<{ node_id: string; input_index: number }> }>()
+  for (const link of dedupeLinks(links)) {
+    const sourceId = String(link.from.node || '').trim()
+    const targetId = String(link.to.node || '').trim()
+    if (!sourceId || !targetId) continue
+    const outputIndex = normalizePortIndex(link.from.index, 0)
+    const inputIndex = normalizePortIndex(link.to.index, 0)
+    const key = `${sourceId}:${outputIndex}`
+    const route = routeMap.get(key) || { output_index: outputIndex, targets: [] }
+    if (!route.targets.some((target) => target.node_id === targetId && target.input_index === inputIndex)) {
+      route.targets.push({ node_id: targetId, input_index: inputIndex })
+    }
+    routeMap.set(key, route)
+  }
+
+  const outputRoutes: GraphOutputRoutes = {}
+  for (const [key, route] of routeMap.entries()) {
+    const sourceId = key.split(':')[0] || ''
+    if (!sourceId) continue
+    const items = outputRoutes[sourceId] || []
+    items.push(route)
+    outputRoutes[sourceId] = items
+  }
+  for (const sourceId of Object.keys(outputRoutes)) {
+    const items = outputRoutes[sourceId]
+    if (!items) continue
+    items.sort(
+      (a: { output_index: number }, b: { output_index: number }) => a.output_index - b.output_index,
+    )
+  }
+  return outputRoutes
+}
+
+export function normalizeGraphLinks(rawRoutes: unknown): LinkItem[] {
+  if (!rawRoutes || typeof rawRoutes !== 'object' || Array.isArray(rawRoutes)) return []
+  const routeRecord = rawRoutes as Record<string, unknown>
+  const projectedLinks: LinkItem[] = []
+  for (const [sourceIdRaw, routesRaw] of Object.entries(routeRecord)) {
+    const sourceId = String(sourceIdRaw || '').trim()
+    if (!sourceId || !Array.isArray(routesRaw)) continue
+    for (const route of routesRaw) {
+      if (!route || typeof route !== 'object') continue
+      const outputIndex = normalizePortIndex((route as any).output_index, 0)
+      const targets = (route as any).targets
+      if (!Array.isArray(targets)) continue
+      for (const target of targets) {
+        if (!target || typeof target !== 'object') continue
+        const targetId = String((target as any).node_id || '').trim()
+        if (!targetId) continue
+        const inputIndex = normalizePortIndex((target as any).input_index, 0)
+        projectedLinks.push({
+          id: `route-${sourceId}-${outputIndex}-${targetId}-${inputIndex}`,
+          from: { node: sourceId, index: outputIndex },
+          to: { node: targetId, index: inputIndex },
+        })
+      }
+    }
+  }
   return dedupeLinks(
-    rawLinks
-      .map((link) => {
-        const item = (link || {}) as any
-        const fromRaw = item.from
-        const toRaw = item.to
-        let fromNode = ''
-        let toNode = ''
-        let fromIndex = 0
-        let toIndex = 0
-
-        if (fromRaw && typeof fromRaw === 'object') {
-          fromNode = String(fromRaw.node || '').trim()
-          fromIndex = normalizePortIndex(fromRaw.index, 0)
-        } else {
-          fromNode = String(fromRaw || '').trim()
-        }
-
-        if (toRaw && typeof toRaw === 'object') {
-          toNode = String(toRaw.node || '').trim()
-          toIndex = normalizePortIndex(toRaw.index, 0)
-        } else {
-          toNode = String(toRaw || '').trim()
-        }
-
-        return {
-          id: item.id,
-          from: { node: fromNode, index: fromIndex },
-          to: { node: toNode, index: toIndex },
-        }
-      })
-      .filter((link) => link.from.node && link.to.node),
+    projectedLinks.filter((link) => link.from.node && link.to.node),
   )
 }
 

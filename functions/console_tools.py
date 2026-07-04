@@ -7,6 +7,7 @@ import threading
 import time
 from dataclasses import dataclass
 
+from src.providers.agent_environment_context import resolve_agent_working_directory
 from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 from src.workspace_settings import load_workspace_settings
 
@@ -335,6 +336,10 @@ def _build_console_command_result(
     return json.dumps(result, ensure_ascii=False)
 
 
+def _resolve_command_cwd(agent) -> str | None:
+    return resolve_agent_working_directory(agent)
+
+
 def _analyze_console_completion(command, stdout: str, stderr: str, status: str, profile: _ConsoleCommandProfile):
     extra: dict = {}
     final_status = status
@@ -593,11 +598,13 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
         try:
             cancel_source = cancel_source_from_agent(agent)
             command_timeout = _resolve_command_timeout_seconds(timeout_seconds, agent, profile=profile)
+            cwd = _resolve_command_cwd(agent)
             proc = subprocess.Popen(
                 command,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                cwd=cwd,
             )
             stdout_reader, stderr_reader = _start_process_pipe_readers(proc)
             deadline = time.monotonic() + command_timeout if command_timeout is not None else None
@@ -614,6 +621,7 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
                         status="stopped",
                         agent=agent,
                         error=str(e),
+                        extra={"cwd": cwd} if cwd else None,
                     )
                 if deadline is not None and time.monotonic() >= deadline:
                     _terminate_process(proc)
@@ -635,7 +643,7 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
                         status=status,
                         agent=agent,
                         error=completion_error or f"Command execution timed out after {timeout_label}.",
-                        extra=extra,
+                        extra={**extra, **({"cwd": cwd} if cwd else {})},
                     )
                 time.sleep(0.05)
 
@@ -653,7 +661,7 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
                 status=status,
                 agent=agent,
                 error=completion_error,
-                extra=extra,
+                extra={**extra, **({"cwd": cwd} if cwd else {})},
             )
 
         except CancellationRequested as e:

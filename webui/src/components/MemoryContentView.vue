@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import type { GraphInfo, GraphProfile, MessageEnvelope } from '../api'
+import { selectFolder, type GraphInfo, type GraphProfile, type MessageEnvelope } from '../api'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
@@ -23,6 +23,7 @@ const props = defineProps<{
   agentImages: string[]
   renderedMarkdown: string
   graphNameInput: string
+  graphWorkingPathInput: string
   graphLoading: boolean
   graphs: GraphInfo[]
   graphProfiles: GraphProfile[]
@@ -36,12 +37,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'update:memoryText', value: string): void
   (event: 'update:graphNameInput', value: string): void
+  (event: 'update:graphWorkingPathInput', value: string): void
+  (event: 'graphPathError', message: string): void
   (event: 'update:selectedGraphProfileId', value: string): void
   (event: 'update:interactiveInputText', value: string): void
   (event: 'saveCurrentFile'): void
   (event: 'saveGraphConfig'): void
   (event: 'saveGraphProfile'): void
   (event: 'createGraphFromProfile'): void
+  (event: 'deleteGraphProfile'): void
   (event: 'refreshGraphs'): void
   (event: 'loadGraphConfig', graph: GraphInfo): void
   (event: 'deleteGraphConfig', graph: GraphInfo): void
@@ -70,6 +74,24 @@ function updateMemoryText(event: Event) {
 
 function updateGraphName(event: Event) {
   emit('update:graphNameInput', String((event.target as HTMLInputElement | null)?.value || ''))
+}
+
+function updateGraphWorkingPath(event: Event) {
+  emit('update:graphWorkingPathInput', String((event.target as HTMLInputElement | null)?.value || ''))
+}
+
+async function chooseGraphWorkingPath() {
+  try {
+    const res = await selectFolder(String(props.graphWorkingPathInput || ''))
+    const selectedPath = String(res?.path || '').trim()
+    if (selectedPath) {
+      emit('update:graphWorkingPathInput', selectedPath)
+      await nextTick()
+      emit('saveGraphConfig')
+    }
+  } catch (e: any) {
+    emit('graphPathError', String(e?.message || e))
+  }
 }
 
 function updateSelectedGraphProfile(event: Event) {
@@ -133,6 +155,16 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         <button class="graph-btn" @click="emit('saveGraphProfile')">SaveProfile</button>
         <button class="graph-btn" @click="emit('refreshGraphs')">Refresh</button>
       </div>
+      <div class="graph-path-row">
+        <input
+          class="graph-input graph-path-input"
+          placeholder="Graph working path"
+          :value="graphWorkingPathInput"
+          @input="updateGraphWorkingPath"
+          @blur="emit('saveGraphConfig')"
+        />
+        <button class="graph-btn" type="button" @click="chooseGraphWorkingPath">ChangeFolder</button>
+      </div>
       <div class="graph-actions">
         <select
           class="graph-input profile-input"
@@ -150,6 +182,13 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
           @click="emit('createGraphFromProfile')"
         >
           CreateFromProfile
+        </button>
+        <button
+          class="graph-btn danger"
+          :disabled="!selectedGraphProfileId"
+          @click="emit('deleteGraphProfile')"
+        >
+          DeleteProfile
         </button>
       </div>
 
@@ -340,6 +379,17 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.graph-path-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.graph-path-input {
+  min-width: 0;
 }
 
 .graph-input {

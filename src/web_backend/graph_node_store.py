@@ -106,6 +106,31 @@ class GraphNodeStore(HostBoundService):
         safe_id = self._sanitize_node_id(node_id)
         return os.path.join(self._graph_dir(graph_id), safe_id)
 
+    def _resolve_existing_node_id(self, graph_id: str, node_id: str) -> str:
+        safe_graph_id = self._sanitize_graph_id(graph_id)
+        safe_node_id = self._sanitize_node_id(node_id)
+        if not safe_node_id:
+            return safe_node_id
+        base_dir = self._graph_dir(safe_graph_id)
+        if not base_dir or not os.path.isdir(base_dir):
+            return safe_node_id
+        try:
+            entries = [entry for entry in os.listdir(base_dir) if entry != "agents"]
+        except OSError:
+            return safe_node_id
+
+        def has_config(entry: str) -> bool:
+            return os.path.exists(os.path.join(base_dir, entry, "config.json"))
+
+        for entry in entries:
+            if entry == safe_node_id and has_config(entry):
+                return entry
+        wanted = os.path.normcase(safe_node_id).casefold()
+        for entry in entries:
+            if os.path.normcase(entry).casefold() == wanted and has_config(entry):
+                return entry
+        return safe_node_id
+
     def _node_config_path(self, node_id: str, graph_id: str) -> str:
         node_dir = self._node_dir(graph_id, node_id)
         return os.path.join(node_dir, "config.json") if node_dir else ""

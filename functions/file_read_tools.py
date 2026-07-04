@@ -1,6 +1,7 @@
 import json
 import os
 
+from src.providers.agent_environment_context import resolve_agent_relative_path
 from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 
 
@@ -14,7 +15,7 @@ def read_file(file_path, start_line=1, end_line=None, agent=None):
     try:
         if not isinstance(file_path, str) or not file_path.strip():
             return json.dumps({"file_path": file_path, "error": "Invalid file_path", "status": "error"})
-        target = os.path.abspath(file_path)
+        target = resolve_agent_relative_path(file_path, agent=agent)
         if not os.path.exists(target):
             return json.dumps({"file_path": target, "error": "File not found", "status": "error"})
 

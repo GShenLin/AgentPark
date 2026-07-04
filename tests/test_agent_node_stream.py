@@ -5,6 +5,17 @@ import os
 import pytest
 
 
+def _write_agent_node_test_skill(root, name="ue5-cpp-gameplay"):
+    skill_dir = root / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_path = skill_dir / "SKILL.md"
+    skill_path.write_text(
+        f"---\nname: {name}\ndescription: Test skill\n---\n\nUse the test skill.\n",
+        encoding="utf-8",
+    )
+    return skill_path
+
+
 def test_agent_node_tools_schema_is_multiselect_with_available_tools():
     from nodes.agent_node import Node
 
@@ -21,6 +32,8 @@ def test_agent_node_tools_schema_is_multiselect_with_available_tools():
     assert isinstance(schema["plugins"]["options"], list)
     assert schema["mcp_servers"]["type"] == "multiselect"
     assert isinstance(schema["mcp_servers"]["options"], list)
+    assert schema["collaboration_mode"]["type"] == "select"
+    assert [item["value"] for item in schema["collaboration_mode"]["options"]] == ["default", "plan"]
     assert "agentToolStagePolicyEnabled" not in schema
     assert "agentToolStageGatheringAllowedTools" not in schema
     assert "agentToolStageAnalyzingAllowedTools" not in schema
@@ -237,11 +250,12 @@ def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
     monkeypatch.setattr(agent_node_module, "register_mcp_server_tools", fake_register_mcp)
     monkeypatch.setattr(agent_node_module, "inject_mcp_server_context", lambda *_args, **_kwargs: [])
 
-    def fake_inject_skills(self, agent, values, *, node_id="", extra_skills=None):
+    def fake_inject_skills(self, agent, values, *, node_id="", extra_skills=None, role="system"):
         captured["skills"] = {
             "values": list(values.get("skills") or []),
             "extra": list(extra_skills or []),
             "node_id": node_id,
+            "role": role,
         }
         return []
 
@@ -316,11 +330,12 @@ def test_agent_node_registers_selected_skill_mcp_dependencies_before_send(monkey
         captured["settings"] = settings
         return []
 
-    def fake_inject_skills(self, _agent, values, *, node_id="", extra_skills=None):
+    def fake_inject_skills(self, _agent, values, *, node_id="", extra_skills=None, role="system"):
         captured["skills"] = {
             "values": list(values.get("skills") or []),
             "extra": list(extra_skills or []),
             "node_id": node_id,
+            "role": role,
         }
         return []
 
@@ -562,6 +577,126 @@ def test_agent_node_forwards_reasoning_effort(monkeypatch):
     assert captured["reasoning_effort"] == "high"
 
 
+def test_agent_node_sets_collaboration_mode_runtime_attribute(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_collaboration_unit",
+            "node_instance_id": "n_collaboration_unit",
+            "provider_id": "openai",
+            "collaboration_mode": "plan",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    assert created_agents[0]._aitools_collaboration_mode == "plan"
+
+
+def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "openai", "responsesApi": True}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(
+        agent_node_module,
+        "build_operational_memory_summary",
+        lambda *_args, **_kwargs: "Operational memory for this node:\n- keep context developer-scoped",
+    )
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_codex_context_role_unit",
+            "node_instance_id": "n_codex_context_role_unit",
+            "provider_id": "openai",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    assert created_agents[0]._aitools_responses_system_prompt_as_instructions is True
+    memory_message = next(
+        item for item in created_agents[0].messages if "Operational memory" in str(item.get("content") or "")
+    )
+    assert memory_message["role"] == "developer"
+
+
+def test_agent_node_injects_codex_base_instructions_for_openai_responses(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "openai", "responsesApi": True}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(
+        agent_node_module,
+        "resolve_agent_codex_base_instructions",
+        lambda *_args, **_kwargs: "Codex base instructions",
+    )
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_codex_base_unit",
+            "node_instance_id": "n_codex_base_unit",
+            "provider_id": "openai",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
+    assert system_messages[0]["content"] == "Codex base instructions"
+
+
 def test_agent_node_forwards_tool_lifecycle_events(monkeypatch):
     import nodes.agent_node as agent_node_module
 
@@ -623,7 +758,7 @@ def test_agent_node_forwards_tool_lifecycle_events(monkeypatch):
     assert events[event_types.index("tool_call_end")]["status"] == "completed"
 
 
-def test_agent_node_injects_working_path_prompt_as_system(monkeypatch):
+def test_agent_node_keeps_working_path_runtime_only(monkeypatch):
     import nodes.agent_node as agent_node_module
 
     created_agents = []
@@ -657,7 +792,8 @@ def test_agent_node_injects_working_path_prompt_as_system(monkeypatch):
 
     assert str(result.get("display") or "") == "ok"
     system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
-    assert any("节点工作路径: C:\\Project\\AITools\\XYJ" in str(item.get("content") or "") for item in system_messages)
+    assert not any("C:\\Project\\AITools\\XYJ" in str(item.get("content") or "") for item in system_messages)
+    assert created_agents[0]._aitools_working_path == r"C:\Project\AITools\XYJ"
     sent_user = next(item for item in created_agents[0].messages if item.get("role") == "user")
     assert sent_user.get("content") == "hello"
 
@@ -697,17 +833,9 @@ def test_agent_node_surfaces_configured_tool_load_failure(monkeypatch):
     assert "bad tool: missing_tool" in str(exc.value)
 
 
-def test_agent_node_builds_working_path_prompt():
-    from nodes.agent_working_path_context import build_working_path_prompt
-
-    prompt = build_working_path_prompt(r"C:\Project\AITools")
-
-    assert "节点工作路径: C:\\Project\\AITools" in prompt
-    assert "当前节点的工作目录上下文" in prompt
-
-
-def test_agent_node_injects_configured_skill_without_affecting_unconfigured_nodes(monkeypatch):
+def test_agent_node_injects_configured_skill_without_affecting_unconfigured_nodes(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_skill_loader as skill_loader
 
     created_agents = []
 
@@ -726,6 +854,17 @@ def test_agent_node_injects_configured_skill_without_affecting_unconfigured_node
             return "ok"
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    _write_agent_node_test_skill(tmp_path)
+    monkeypatch.setattr(
+        agent_node_module,
+        "load_node_skills",
+        lambda values, *args, **kwargs: skill_loader.load_node_skills(
+            values,
+            *args,
+            skill_root=str(tmp_path),
+            **kwargs,
+        ),
+    )
 
     node = agent_node_module.Node()
     first = node.on_input(
@@ -749,16 +888,17 @@ def test_agent_node_injects_configured_skill_without_affecting_unconfigured_node
     assert str(first.get("display") or "") == "ok"
     assert str(second.get("display") or "") == "ok"
     skill_system = next(
-        item for item in created_agents[0].messages if "<skills>" in str(item.get("content") or "")
+        item for item in created_agents[0].messages if "<skills_instructions>" in str(item.get("content") or "")
     )
     assert skill_system["role"] == "system"
     assert skill_system["persist"] is False
     assert "<name>ue5-cpp-gameplay</name>" in skill_system["content"]
-    assert not any("<skills>" in str(item.get("content") or "") for item in created_agents[1].messages)
+    assert not any("<skills_instructions>" in str(item.get("content") or "") for item in created_agents[1].messages)
 
 
-def test_agent_node_preserves_system_prompt_when_injecting_skill(monkeypatch):
+def test_agent_node_preserves_system_prompt_when_injecting_skill(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_skill_loader as skill_loader
 
     created_agents = []
 
@@ -777,6 +917,17 @@ def test_agent_node_preserves_system_prompt_when_injecting_skill(monkeypatch):
             return "ok"
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    _write_agent_node_test_skill(tmp_path)
+    monkeypatch.setattr(
+        agent_node_module,
+        "load_node_skills",
+        lambda values, *args, **kwargs: skill_loader.load_node_skills(
+            values,
+            *args,
+            skill_root=str(tmp_path),
+            **kwargs,
+        ),
+    )
 
     result = agent_node_module.Node().on_input(
         "hello",
@@ -792,7 +943,7 @@ def test_agent_node_preserves_system_prompt_when_injecting_skill(monkeypatch):
     assert str(result.get("display") or "") == "ok"
     system_messages = [msg for msg in created_agents[0].messages if msg.get("role") == "system"]
     assert "You are the node system prompt." in str(system_messages[0].get("content") or "")
-    assert "<skills>" in str(system_messages[1].get("content") or "")
+    assert "<skills_instructions>" in str(system_messages[1].get("content") or "")
 
 
 def test_agent_node_disables_provider_internal_memory(monkeypatch):
@@ -1043,10 +1194,14 @@ def test_agent_node_injects_active_goal_context(monkeypatch):
         },
     )
 
-    system_messages = [item for item in created_agents[0].messages if item["role"] == "system"]
-    assert any("Active node goal context" in item["content"] for item in system_messages)
-    assert any("finish the node goal" in item["content"] for item in system_messages)
-    assert any("Goal completion audit:" in item["content"] for item in system_messages)
+    goal_messages = [
+        item
+        for item in created_agents[0].messages
+        if item["role"] == "user" and str(item.get("content") or "").startswith('<codex_internal_context source="goal">')
+    ]
+    assert len(goal_messages) == 1
+    assert "<objective>\nfinish the node goal\n</objective>" in goal_messages[0]["content"]
+    assert "Goal completion audit:" in goal_messages[0]["content"]
 
 
 def test_agent_node_omits_history_image_payloads(monkeypatch, tmp_path):
@@ -1151,8 +1306,9 @@ def test_agent_node_surfaces_missing_configured_skill(monkeypatch):
     assert "SKILL.md does not exist" in message
 
 
-def test_agent_node_loads_skills_from_persisted_node_config(monkeypatch):
+def test_agent_node_loads_skills_from_persisted_node_config(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_skill_loader as skill_loader
 
     created_agents = []
 
@@ -1171,6 +1327,17 @@ def test_agent_node_loads_skills_from_persisted_node_config(monkeypatch):
             return "ok"
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    _write_agent_node_test_skill(tmp_path)
+    monkeypatch.setattr(
+        agent_node_module,
+        "load_node_skills",
+        lambda values, *args, **kwargs: skill_loader.load_node_skills(
+            values,
+            *args,
+            skill_root=str(tmp_path),
+            **kwargs,
+        ),
+    )
 
     graph_id = "g_skill_config_unit"
     node_id = "n_skill_config_unit"
@@ -1196,7 +1363,7 @@ def test_agent_node_loads_skills_from_persisted_node_config(monkeypatch):
             pass
 
     assert str(result.get("display") or "") == "ok"
-    assert any("<skills>" in str(item.get("content") or "") for item in created_agents[0].messages)
+    assert any("<skills_instructions>" in str(item.get("content") or "") for item in created_agents[0].messages)
 
 
 def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
@@ -1273,7 +1440,7 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
 
         client = TestClient(app)
 
-        graph = {"id": "default", "name": "default", "links": []}
+        graph = {"id": "default", "name": "default", "output_routes": {}}
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
         assert (
             client.post(

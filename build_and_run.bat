@@ -52,6 +52,15 @@ if /I "%~1"=="chat" (
     set "AITOOLS_LAUNCH_MODE=cli_web"
     set "AITOOLS_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
 )
+if /I "%~1"=="pet" (
+    set "AITOOLS_LAUNCH_MODE=pet"
+    set "AITOOLS_PET_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+)
+if /I "%~1"=="ask-here" (
+    set "AITOOLS_LAUNCH_MODE=ask_here"
+    set "AITOOLS_ASK_HERE_PATH=%~2"
+    set "AITOOLS_NO_PAUSE=1"
+)
 set "PYTHON_EXE="
 call :select_python "%LocalAppData%\Programs\Python\Python314\python.exe"
 if not defined PYTHON_EXE call :select_python "%UserProfile%\Miniconda3\python.exe"
@@ -67,7 +76,16 @@ if not defined PYTHON_EXE (
 )
 
 echo [INFO] Using Python: %PYTHON_EXE%
+
+if /I "%AITOOLS_LAUNCH_MODE%"=="ask_here" (
+    call :handle_ask_here
+    set "AITOOLS_ASK_HERE_EXIT=!errorlevel!"
+    call :maybe_pause
+    exit /b !AITOOLS_ASK_HERE_EXIT!
+)
+
 call :ensure_rg
+call :register_folder_context_menu
 
 echo [INFO] Starting WebUI Build Process...
 
@@ -118,6 +136,30 @@ if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
         call :maybe_pause
         exit /b %errorlevel%
     )
+)
+
+if /I "%AITOOLS_LAUNCH_MODE%"=="pet" (
+    call :start_background_server
+    if errorlevel 1 (
+        call :maybe_pause
+        exit /b %errorlevel%
+    )
+)
+
+if /I "%AITOOLS_LAUNCH_MODE%"=="pet" (
+    echo [INFO] Starting AgentPark desktop pet: npm start -- !AITOOLS_PET_ARGS!
+    cd desktop\pet
+    call npm install
+    if %errorlevel% neq 0 (
+        echo [ERROR] Desktop pet dependency install failed with error code %errorlevel%
+        call :maybe_pause
+        exit /b %errorlevel%
+    )
+    call npm start -- !AITOOLS_PET_ARGS!
+    set "AITOOLS_PET_EXIT=!errorlevel!"
+    cd ..\..
+    call :maybe_pause
+    exit /b !AITOOLS_PET_EXIT!
 )
 
 if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
@@ -185,6 +227,36 @@ if errorlevel 1 (
     echo [ERROR] Failed to stop existing AITools processes.
     exit /b %errorlevel%
 )
+exit /b 0
+
+:handle_ask_here
+if not defined AITOOLS_ASK_HERE_PATH (
+    echo [ERROR] Ask Here requires a folder path.
+    exit /b 1
+)
+if not exist "%AITOOLS_ASK_HERE_PATH%\." (
+    echo [ERROR] Ask Here folder path does not exist: "%AITOOLS_ASK_HERE_PATH%"
+    exit /b 1
+)
+"%PYTHON_EXE%" -m src.ask_here_launcher ping >nul 2>nul
+if errorlevel 1 (
+    echo [INFO] AgentPark server is not running; starting it now...
+    call :start_background_server
+    if errorlevel 1 exit /b %errorlevel%
+    "%PYTHON_EXE%" -m src.ask_here_launcher wait --timeout 35
+    if errorlevel 1 exit /b %errorlevel%
+)
+"%PYTHON_EXE%" -m src.ask_here_launcher dispatch --path "%AITOOLS_ASK_HERE_PATH%"
+exit /b %errorlevel%
+
+:register_folder_context_menu
+if not exist "scripts\register_folder_context_menu.ps1" exit /b 0
+powershell -NoProfile -ExecutionPolicy Bypass -File "%cd%\scripts\register_folder_context_menu.ps1" -WorkspaceRoot "%cd%"
+if errorlevel 1 (
+    echo [WARN] Failed to register AgentPark folder context menu.
+    exit /b 0
+)
+echo [INFO] AgentPark folder context menu registered.
 exit /b 0
 
 :ensure_rg

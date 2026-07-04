@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import functions.system_tools as patch_tools
 import functions.system_tools as system_tools
@@ -89,6 +90,40 @@ def test_apply_patch_rejects_missing_context(tmp_path):
     assert payload["status"] == "error"
     assert "Could not locate update hunk" in payload["error"]
     assert file_path.read_text(encoding="utf-8") == "actual\n"
+
+
+def test_apply_patch_resolves_relative_paths_from_agent_working_path(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "source.txt").write_text("alpha\nbeta\n", encoding="utf-8")
+    agent = SimpleNamespace(_aitools_working_path=str(work))
+
+    raw = patch_tools.apply_patch(
+        """*** Begin Patch
+*** Add File: added.txt
++created
+*** Update File: source.txt
+*** Move to: nested/target.txt
+@@
+ alpha
+-beta
++gamma
+*** End Patch""",
+        agent=agent,
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert not (work / "source.txt").exists()
+    assert (work / "added.txt").read_text(encoding="utf-8") == "created\n"
+    assert (work / "nested" / "target.txt").read_text(encoding="utf-8") == "alpha\ngamma\n"
+    assert payload["files_changed"] == sorted(
+        [
+            str(work / "added.txt"),
+            str(work / "nested" / "target.txt"),
+            str(work / "source.txt"),
+        ]
+    )
 
 
 def test_system_tools_registers_apply_patch():

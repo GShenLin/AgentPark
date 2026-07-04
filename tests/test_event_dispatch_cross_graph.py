@@ -31,7 +31,7 @@ def test_event_dispatch_cross_graph(tmp_path):
             "nodes": [
                 {"id": "ev_src", "typeId": "event_node", "name": "ev_src", "ui": {"x": 0, "y": 0}},
             ],
-            "links": [],
+            "output_routes": {},
         }
         g2 = {
             "id": "g2",
@@ -40,13 +40,9 @@ def test_event_dispatch_cross_graph(tmp_path):
                 {"id": "ev_dst", "typeId": "event_node", "name": "ev_dst", "ui": {"x": 0, "y": 0}},
                 {"id": "echo_dst", "typeId": "echo_node", "name": "echo_dst", "ui": {"x": 100, "y": 0}},
             ],
-            "links": [
-                {
-                    "id": "l1",
-                    "from": {"node": "ev_dst", "index": 0},
-                    "to": {"node": "echo_dst", "index": 0},
-                }
-            ],
+            "output_routes": {
+                "ev_dst": [{"output_index": 0, "targets": [{"node_id": "echo_dst", "input_index": 0}]}],
+            },
         }
 
         r = client.post("/api/graphs/g1", json={"graph": g1})

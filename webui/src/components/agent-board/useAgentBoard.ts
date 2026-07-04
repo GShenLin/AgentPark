@@ -93,6 +93,7 @@ export function useAgentBoard(): AgentBoardContext {
     graphLoadRequest,
     currentGraphId,
     currentGraphName,
+    currentGraphWorkingPath,
     nodeSettingsRequest,
     nodeEditorAttachments,
     nodeTriggerInputs,
@@ -194,13 +195,14 @@ export function useAgentBoard(): AgentBoardContext {
     })
   }
 
-  async function clonePastePlanNodes(snapshot: BoardClipboardSnapshot, plan: BoardPastePlan, graphId: string) {
+  async function clonePastePlanNodes(snapshot: BoardClipboardSnapshot, plan: BoardPastePlan, targetGraphId: string) {
+    const sourceGraphId = String(snapshot.graphId || 'default').trim() || 'default'
     const targetNodesById = new Map(plan.nodes.map((node) => [node.id, node]))
     for (const sourceNode of snapshot.nodes) {
       const targetId = plan.idMap.get(sourceNode.id)
       const targetNode = targetId ? targetNodesById.get(targetId) : null
       if (!targetNode) throw new Error(`Missing pasted node for ${sourceNode.id}`)
-      await cloneNodeInstance(sourceNode.id, graphId, targetNode.id, targetNode.name, targetNode.ui)
+      await cloneNodeInstance(sourceNode.id, sourceGraphId, targetNode.id, targetNode.name, targetNode.ui, targetGraphId)
     }
   }
 
@@ -413,7 +415,7 @@ export function useAgentBoard(): AgentBoardContext {
     refreshNodeConfigsAndMemory().catch(() => null)
   }
 
-  const CARD_WIDTH = 200
+  const CARD_WIDTH = 230
   const CARD_HEIGHT = 250
   const BOARD_PADDING = 40
   const BOARD_GAP = 70
@@ -444,6 +446,7 @@ export function useAgentBoard(): AgentBoardContext {
     lastError,
     currentGraphId,
     currentGraphName,
+    currentGraphWorkingPath,
     nodes,
     links,
     saveGraph,
@@ -492,7 +495,7 @@ export function useAgentBoard(): AgentBoardContext {
     const config = await loadGraph(graphId)
     if ((currentGraphId.value || 'default') !== graphId) return
     if (!config || config.unchanged) return
-    links.value = normalizeGraphLinks(config.links || [])
+    links.value = normalizeGraphLinks(config.output_routes || {})
     syncGraphSnapshot()
     if (graphSnapshot.value && Number(config.version || 0) > 0) {
       graphSnapshot.value = { ...graphSnapshot.value, version: Number(config.version || 0) }
@@ -501,6 +504,7 @@ export function useAgentBoard(): AgentBoardContext {
 
   function applyGraphConfig(config: GraphConfig) {
     const graphId = currentGraphId.value || config.id || 'default'
+    currentGraphWorkingPath.value = String((config as any)?.working_path || '').trim()
     activeDragItemIds.clear()
     pendingUiPositions.clear()
     selectedNodeId.value = null
@@ -513,7 +517,7 @@ export function useAgentBoard(): AgentBoardContext {
 
     void startGraphRunner(graphId).catch(() => null)
 
-    links.value = normalizeGraphLinks(config.links || [])
+    links.value = normalizeGraphLinks(config.output_routes || {})
 
     updateCanvasSize()
     syncGraphSnapshot()
@@ -1173,7 +1177,7 @@ export function useAgentBoard(): AgentBoardContext {
   function onBoardMouseDownCapture(event: MouseEvent) {
     if (event.button === 0) {
       const target = event.target as HTMLElement | null
-      const overItem = !!target?.closest('.node-card, .node-side-editor, .modal, .context-menu')
+      const overItem = !!target?.closest('.node-card, .node-side-editor, .node-output-routes-panel, .modal, .context-menu')
       if (!overItem) {
         if (!(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) {
           openEmptyBoardPanel()
@@ -1199,7 +1203,7 @@ export function useAgentBoard(): AgentBoardContext {
 
     if (event.button === 2) {
       const target = event.target as HTMLElement | null
-      const overItem = !!target?.closest('.node-card, .node-side-editor, .modal, .context-menu')
+      const overItem = !!target?.closest('.node-card, .node-side-editor, .node-output-routes-panel, .modal, .context-menu')
       if (!overItem) {
         event.preventDefault()
       }
@@ -1332,6 +1336,7 @@ export function useAgentBoard(): AgentBoardContext {
 
   function makeCopySnapshot() {
     return makeBoardCopySnapshot({
+      graphId: currentGraphId.value || 'default',
       nodes: nodes.value,
       links: links.value,
       selectedItemIds: selectedItemIds.value,
@@ -1340,9 +1345,9 @@ export function useAgentBoard(): AgentBoardContext {
 
   async function pasteSnapshot() {
     if (!hasClipboardSnapshot() || !clipboardSnapshot) return
-    const graphId = currentGraphId.value || 'default'
+    const targetGraphId = currentGraphId.value || 'default'
     const plan = buildPastePlanFromSnapshot(clipboardSnapshot)
-    await clonePastePlanNodes(clipboardSnapshot, plan, graphId)
+    await clonePastePlanNodes(clipboardSnapshot, plan, targetGraphId)
     await applyPastePlanToBoard(plan, 'paste_snapshot')
   }
 
@@ -1500,6 +1505,75 @@ export function useAgentBoard(): AgentBoardContext {
     clearLinkSession(event)
   }
 
+  async function addOutputRoute(sourceId: string) {
+    const sourceNode = nodes.value.find((node) => node.id === sourceId)
+    if (!sourceNode) return
+    const targetNodes = nodes.value.filter((node) => node.id !== sourceId)
+    if (!targetNodes.length) {
+      lastError.value = 'Create another node before adding an output route.'
+      return
+    }
+
+    const outputCount = normalizePortCount(sourceNode.outputNum, 1)
+    for (let outputIndex = 0; outputIndex < outputCount; outputIndex += 1) {
+      const from = { node: sourceId, index: outputIndex }
+      for (const targetNode of targetNodes) {
+        const inputCount = normalizePortCount(targetNode.inputNum, 1)
+        for (let inputIndex = 0; inputIndex < inputCount; inputIndex += 1) {
+          const to = { node: targetNode.id, index: inputIndex }
+          if (boardLinkExists(links.value, from, to)) continue
+          links.value.push(createBoardLink(from, to))
+          syncGraphSnapshot()
+          await persistGraphConfig('add_output_route')
+          return
+        }
+      }
+    }
+
+    lastError.value = 'All available output routes already exist.'
+  }
+
+  async function updateOutputRoute(
+    routeId: string,
+    patch: { outputIndex?: number; targetNodeId?: string; inputIndex?: number },
+  ) {
+    const index = links.value.findIndex((link) => link.id === routeId)
+    const existing = links.value[index]
+    if (index < 0 || !existing) return
+    const next = {
+      ...existing,
+      from: {
+        ...existing.from,
+        index: patch.outputIndex == null ? existing.from.index : Math.max(0, Math.floor(Number(patch.outputIndex) || 0)),
+      },
+      to: {
+        node: patch.targetNodeId == null ? existing.to.node : String(patch.targetNodeId || '').trim(),
+        index: patch.inputIndex == null ? existing.to.index : Math.max(0, Math.floor(Number(patch.inputIndex) || 0)),
+      },
+    }
+    if (!next.to.node || next.to.node === next.from.node) return
+    const duplicate = links.value.some(
+      (link) =>
+        link.id !== routeId &&
+        link.from.node === next.from.node &&
+        link.from.index === next.from.index &&
+        link.to.node === next.to.node &&
+        link.to.index === next.to.index,
+    )
+    if (duplicate) return
+    links.value.splice(index, 1, next)
+    syncGraphSnapshot()
+    await persistGraphConfig('update_output_route')
+  }
+
+  async function removeOutputRoute(routeId: string) {
+    const before = links.value.length
+    links.value = links.value.filter((link) => link.id !== routeId)
+    if (links.value.length === before) return
+    syncGraphSnapshot()
+    await persistGraphConfig('remove_output_route')
+  }
+
   function buildPath(start: { x: number; y: number }, end: { x: number; y: number }) {
     return buildLinkPath(start, end)
   }
@@ -1587,6 +1661,13 @@ export function useAgentBoard(): AgentBoardContext {
     },
   )
 
+  watch(
+    () => currentGraphWorkingPath.value,
+    () => {
+      syncGraphSnapshot()
+    },
+  )
+
   return {
     selectedNodeId,
     lastError,
@@ -1595,6 +1676,7 @@ export function useAgentBoard(): AgentBoardContext {
     graphLoadRequest,
     currentGraphId,
     currentGraphName,
+    currentGraphWorkingPath,
 
     availableNodes,
     nodes,
@@ -1658,6 +1740,9 @@ export function useAgentBoard(): AgentBoardContext {
     linkPath,
     activeLinkPath,
     detachLinks,
+    addOutputRoute,
+    updateOutputRoute,
+    removeOutputRoute,
 
     linkFlows,
     LINK_FLOW_DURATION_MS,

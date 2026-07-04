@@ -252,6 +252,41 @@ def test_execute_console_command_uses_a_relaxed_default_output_limit(monkeypatch
     assert result["output_max_chars_per_stream"] == 131072
 
 
+def test_execute_console_command_uses_agent_working_path_as_cwd(monkeypatch, tmp_path):
+    popen_kwargs = {}
+
+    def _fake_popen(*args, **kwargs):
+        popen_kwargs.update(kwargs)
+        return _FakePopen(stdout=b"ok\n", stderr=b"", returncode=0)
+
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+
+    result = json.loads(
+        execute_console_command(
+            "cmd.exe /c echo ok",
+            agent=_Agent({"working_path": str(tmp_path)}),
+        )
+    )
+
+    assert result["status"] == "success"
+    assert result["cwd"] == str(tmp_path)
+    assert popen_kwargs["cwd"] == str(tmp_path)
+
+
+def test_execute_console_command_errors_when_agent_working_path_is_missing(tmp_path):
+    missing = tmp_path / "missing"
+
+    result = json.loads(
+        execute_console_command(
+            "cmd.exe /c echo ok",
+            agent=_Agent({"working_path": str(missing)}),
+        )
+    )
+
+    assert result["status"] == "exception"
+    assert "WorkingPath directory does not exist" in result["error"]
+
+
 def test_execute_console_command_drains_large_stdout_without_pipe_deadlock():
     command = f'"{sys.executable}" -c "import sys; sys.stdout.write(\'x\' * 200000)"'
 

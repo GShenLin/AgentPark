@@ -236,6 +236,7 @@ class MobileApiDomain(DomainBase):
                 safe_node_id,
                 max_chars=max_chars,
             )
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
         return self.core.node_ops.get_node_instance_memory(safe_node_id, max_chars=max_chars, graph_id=safe_graph_id)
 
     def delete_mobile_node_message(self, pc_id: str, graph_id: str, node_id: str, message_id: str):
@@ -256,6 +257,7 @@ class MobileApiDomain(DomainBase):
                 safe_node_id,
                 message_id,
             )
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
         return self.core.node_ops.delete_node_instance_memory_message(
             safe_node_id,
             message_id,
@@ -299,6 +301,7 @@ class MobileApiDomain(DomainBase):
             )
             th.start()
             return {"ok": True, "queued": True, "trace_id": trace_id, "pending_count": 0}
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
         result = self.core.node_ops.enqueue_node_instance_pending(
             safe_node_id,
             {
@@ -323,7 +326,6 @@ class MobileApiDomain(DomainBase):
                 from_id=safe_node_id,
                 error=f"{type(exc).__name__}: {exc}",
             )
-        self.graph_runtime._ensure_graph_runner(safe_graph_id)
         self.core.node_live_outputs.publish_event(
             safe_graph_id,
             safe_node_id,
@@ -331,7 +333,6 @@ class MobileApiDomain(DomainBase):
             {"type": "node_input", "text": text_full or text_preview},
             trace_id=trace_id,
         )
-        self.graph_runtime._wake_graph_runner(safe_graph_id)
         return {"ok": True, "queued": True, "trace_id": trace_id, "pending_count": result.get("pending_count")}
 
     def _run_companion_turn_background(self, config_path: str, prompt: str, trace_id: str) -> None:

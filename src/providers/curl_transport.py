@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Iterable
 
+from src.providers.provider_errors import ProviderTransportError
 from src.runtime_cancellation import CancellationRequested, raise_if_cancel_requested
 
 
@@ -16,7 +17,7 @@ class CurlResponse:
     status_code: int
 
 
-class CurlTransportError(RuntimeError):
+class CurlTransportError(ProviderTransportError):
     pass
 
 

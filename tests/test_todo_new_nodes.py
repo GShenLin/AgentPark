@@ -3,12 +3,11 @@ import time
 from datetime import datetime
 
 from src.message_protocol import envelope_text
-from src.web_backend.node_config_service import node_runtime_state_path
+from src.web_backend.state_store import _read_json_dict, _write_json_dict
 
 
 def _read_runtime_state(config_path):
-    with open(node_runtime_state_path(str(config_path)), "r", encoding="utf-8") as handle:
-        return json.load(handle)
+    return _read_json_dict(str(config_path))
 
 
 def test_basic_trigger_node_outputs_config_text():
@@ -164,7 +163,7 @@ def test_timer_trigger_scan_enqueues_once_per_minute(monkeypatch, tmp_path):
         "ScheduleAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "OutputText": "timer-fire",
     }
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), config)
 
     first = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert first == 1
@@ -210,13 +209,13 @@ def test_clock_control_start_sets_working_state(monkeypatch, tmp_path):
         "_clock_remaining_seconds": None,
         "_clock_trigger_count": 0,
     }
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), config)
 
     result = core.node_ops.control_node_instance(node_id, {"action": "start"}, graph_id)
     assert result["ok"] is True
     assert result["state"] == "working"
 
-    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    updated = _read_json_dict(str(config_path))
     runtime_updated = _read_runtime_state(config_path)
     assert updated.get("_clock_running") is True
     assert runtime_updated.get("state") == "working"
@@ -256,27 +255,27 @@ def test_clock_trigger_scan_requires_start_and_enqueues_after_interval(monkeypat
         "_clock_remaining_seconds": None,
         "_clock_trigger_count": 0,
     }
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), config)
 
     first = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert first == 0
 
-    idle_cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    idle_cfg = _read_json_dict(str(config_path))
     assert idle_cfg.get("pending") is None
     assert idle_cfg.get("_clock_running") is False
 
     started = core.node_ops.control_node_instance(node_id, {"action": "start"}, graph_id)
     assert started["state"] == "working"
 
-    started_cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    started_cfg = _read_json_dict(str(config_path))
     started_cfg["_clock_next_fire_at"] = time.time() - 0.1
-    config_path.write_text(json.dumps(started_cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), started_cfg)
 
     second = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert second == 1
 
     updated_runtime = _read_runtime_state(config_path)
-    updated_config = json.loads(config_path.read_text(encoding="utf-8"))
+    updated_config = _read_json_dict(str(config_path))
     pending = updated_runtime.get("pending")
     assert isinstance(pending, list)
     assert len(pending) == 1
@@ -323,7 +322,7 @@ def test_running_clock_scan_does_not_persist_countdown_before_due(monkeypatch, t
         "_clock_trigger_count": 0,
         "last_message": "Working: 60s",
     }
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), config)
     before = config_path.read_text(encoding="utf-8")
 
     enqueued = graph_runtime._scan_and_emit_scheduled_nodes_once()
@@ -332,7 +331,7 @@ def test_running_clock_scan_does_not_persist_countdown_before_due(monkeypatch, t
     assert config_path.read_text(encoding="utf-8") == before
 
 
-def test_stop_timer_scheduler_persists_running_clock_snapshot(monkeypatch, tmp_path):
+def test_stop_timer_scheduler_does_not_persist_running_clock_snapshot(monkeypatch, tmp_path):
     import src.web_backend.graph_timer_scheduler as timer_module
     from src.web_backend.core import BackendCore
 
@@ -363,14 +362,14 @@ def test_stop_timer_scheduler_persists_running_clock_snapshot(monkeypatch, tmp_p
         "_clock_trigger_count": 0,
         "last_message": "Working: 120s",
     }
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), config)
 
     graph_runtime._stop_timer_trigger_scheduler()
 
-    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    updated = _read_json_dict(str(config_path))
     runtime_updated = _read_runtime_state(config_path)
     remaining = int(updated.get("_clock_remaining_seconds"))
-    assert 0 < remaining <= 90
+    assert remaining == 120
     assert runtime_updated.get("state") == "working"
     assert runtime_updated.get("last_message") == f"Working: {remaining}s"
 
@@ -407,12 +406,12 @@ def test_clock_trigger_respects_loop_count_and_stops_after_limit(monkeypatch, tm
         "_clock_remaining_seconds": 0,
         "_clock_trigger_count": 0,
     }
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), config)
 
     first = graph_runtime._scan_and_emit_scheduled_nodes_once()
     assert first == 1
 
-    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    updated = _read_json_dict(str(config_path))
     runtime_updated = _read_runtime_state(config_path)
     assert updated.get("_clock_running") is False
     assert updated.get("_clock_trigger_count") == 1
@@ -449,12 +448,12 @@ def test_clock_control_supports_legacy_interval_seconds(monkeypatch, tmp_path):
         "_clock_remaining_seconds": None,
         "_clock_trigger_count": 0,
     }
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_dict(str(config_path), config)
 
     result = core.node_ops.control_node_instance(node_id, {"action": "start"}, graph_id)
     assert result["ok"] is True
 
-    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    updated = _read_json_dict(str(config_path))
     assert updated.get("IntervalDays") == "0"
     assert updated.get("IntervalHours") == "0"
     assert updated.get("IntervalMinutes") == "1"

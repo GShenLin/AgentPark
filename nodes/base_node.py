@@ -108,11 +108,18 @@ class BaseNode:
         *,
         node_id: object = "",
         extra_skills: list | tuple | None = None,
+        role: str = "system",
     ) -> list:
         from nodes.agent_skill_loader import inject_node_skills
 
         ctx = context if isinstance(context, dict) else {}
-        return inject_node_skills(agent, ctx.get("skills"), node_id=node_id, extra_skills=extra_skills)
+        return inject_node_skills(
+            agent,
+            ctx.get("skills"),
+            node_id=node_id,
+            extra_skills=extra_skills,
+            role=role,
+        )
 
     def _persist_input_default(self, message: object, context: dict | None = None) -> None:
         ctx = context if isinstance(context, dict) else {}

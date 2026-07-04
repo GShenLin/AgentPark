@@ -10,6 +10,7 @@ from .node_state_machine import parse_node_state
 
 EDITABLE_NODE_CONFIG_FIELDS = {
     "allowed_tools",
+    "collaboration_mode",
     "mcp_servers",
     "mode",
     "plugins",

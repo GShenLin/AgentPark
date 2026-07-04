@@ -14,8 +14,8 @@ from src.skills.script_manifest import SkillScriptDefinition, SkillScriptManifes
 
 SKILL_ROOT_DIRNAME = "skills"
 SKILL_FILENAME = "SKILL.md"
-SKILL_OPEN_TAG = "<skills>"
-SKILL_CLOSE_TAG = "</skills>"
+SKILL_OPEN_TAG = "<skills_instructions>"
+SKILL_CLOSE_TAG = "</skills_instructions>"
 
 
 @dataclass(frozen=True)
@@ -164,21 +164,27 @@ def inject_node_skills(
     node_id: object = "",
     skill_root: str | None = None,
     extra_skills: Iterable[SkillDefinition] | None = None,
+    role: str = "system",
 ) -> list[SkillDefinition]:
     skills = load_node_skills(values, node_id=node_id, skill_root=skill_root)
     if extra_skills:
         skills.extend(list(extra_skills))
     instructions = render_skill_instructions(skills)
     if instructions:
-        agent.Message("system", instructions, persist=False)
+        agent.Message(_context_role(role), instructions, persist=False)
     return skills
 
 
-def inject_skill_definitions(agent: object, skills: Iterable[SkillDefinition]) -> list[SkillDefinition]:
+def inject_skill_definitions(
+    agent: object,
+    skills: Iterable[SkillDefinition],
+    *,
+    role: str = "system",
+) -> list[SkillDefinition]:
     skill_list = list(skills or [])
     instructions = render_skill_instructions(skill_list)
     if instructions:
-        agent.Message("system", instructions, persist=False)
+        agent.Message(_context_role(role), instructions, persist=False)
     return skill_list
 
 
@@ -348,6 +354,13 @@ def _unquote_yaml_scalar(value: str) -> str:
 
 def _escape_tag_text(value: object) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _context_role(value: object) -> str:
+    role = str(value or "").strip().lower()
+    if role in {"developer", "system"}:
+        return role
+    return "system"
 
 
 def _format_skill_error(node_id: object, skill_name: str, path: str, message: str) -> str:

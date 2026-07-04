@@ -6,6 +6,7 @@ import os
 from src.file_transaction import atomic_write_text
 
 from . import runtime_paths
+from .graph_output_routes import normalize_output_routes, prune_output_routes_for_removed_node, rename_output_route_node
 from .graph_runtime_registry import GraphConfigReadError
 from .shared import HTTPException
 
@@ -53,7 +54,9 @@ def rename_node_references_in_graph(
     graph_changed = False
     if isinstance(graph_cfg, dict) and graph_cfg:
         graph_changed = _rename_node_items(graph_cfg, old_node_id, new_node_id, new_name_raw)
-        graph_changed = _rename_link_endpoints(graph_cfg, old_node_id, new_node_id) or graph_changed
+        graph_changed = _rename_output_route_references(graph_cfg, old_node_id, new_node_id) or graph_changed
+        if graph_cfg.pop("links", None) is not None:
+            graph_changed = True
 
     if not graph_changed:
         return
@@ -85,21 +88,40 @@ def _rename_node_items(graph_cfg: dict, old_node_id: str, new_node_id: str, new_
     return changed
 
 
-def _rename_link_endpoints(graph_cfg: dict, old_node_id: str, new_node_id: str) -> bool:
-    links = graph_cfg.get("links")
-    if not isinstance(links, list):
-        return False
+def prune_node_references_in_graph(graph_runtime: object, graph_id: str, node_id: str) -> None:
+    try:
+        graph_cfg = graph_runtime._read_graph_config(graph_id)
+    except GraphConfigReadError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    if not isinstance(graph_cfg, dict) or not graph_cfg:
+        return
+
     changed = False
-    for link in links:
-        if not isinstance(link, dict):
-            continue
-        for side in ("from", "to"):
-            endpoint = link.get(side)
-            if isinstance(endpoint, dict):
-                if str(endpoint.get("node") or "").strip() == old_node_id:
-                    endpoint["node"] = new_node_id
-                    changed = True
-            elif isinstance(endpoint, str) and endpoint.strip() == old_node_id:
-                link[side] = new_node_id
-                changed = True
+    output_routes = normalize_output_routes(graph_cfg.get("output_routes"))
+    next_routes, routes_changed = prune_output_routes_for_removed_node(output_routes, node_id)
+    if routes_changed:
+        graph_cfg["output_routes"] = next_routes
+        changed = True
+    if graph_cfg.pop("links", None) is not None:
+        changed = True
+    if not changed:
+        return
+
+    graph_dir = os.path.join(runtime_paths._get_graphs_dir(), graph_id)
+    os.makedirs(graph_dir, exist_ok=True)
+    graph_cfg["id"] = graph_id
+    try:
+        atomic_write_text(
+            os.path.join(graph_dir, "config.json"),
+            json.dumps(graph_cfg, ensure_ascii=False, indent=2) + "\n",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"failed to update graph config: {str(exc)}")
+
+
+def _rename_output_route_references(graph_cfg: dict, old_node_id: str, new_node_id: str) -> bool:
+    output_routes = normalize_output_routes(graph_cfg.get("output_routes"))
+    next_routes, changed = rename_output_route_node(output_routes, old_node_id, new_node_id)
+    if changed:
+        graph_cfg["output_routes"] = next_routes
     return changed

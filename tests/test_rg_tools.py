@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import functions.rg_tools as rg_tools
 import functions.system_tools as system_tools
@@ -122,6 +123,46 @@ def test_rg_search_text_truncates_by_output_char_budget(monkeypatch, tmp_path):
     assert payload["matches_returned"] < 20
     assert payload["output_char_limit"] == 1800
     assert len(raw) <= 1800
+
+
+def test_rg_search_text_defaults_to_agent_working_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: None)
+
+    work = tmp_path / "work"
+    other = tmp_path / "other"
+    work.mkdir()
+    other.mkdir()
+    (work / "target.txt").write_text("needle in work\n", encoding="utf-8")
+    (other / "target.txt").write_text("needle elsewhere\n", encoding="utf-8")
+
+    raw = rg_tools.rg_search_text(
+        query="needle",
+        include_globs=["*.txt"],
+        agent=SimpleNamespace(_aitools_working_path=str(work)),
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert payload["project_root"] == str(work)
+    assert [item["relative_path"] for item in payload["matches"]] == ["target.txt"]
+
+
+def test_rg_list_files_defaults_to_agent_working_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: None)
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "target.py").write_text("print('ok')\n", encoding="utf-8")
+
+    raw = rg_tools.rg_list_files(
+        include_globs=["*.py"],
+        agent=SimpleNamespace(config={"working_path": str(work)}),
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert payload["project_root"] == str(work)
+    assert [item["relative_path"] for item in payload["files"]] == ["target.py"]
 
 
 def test_system_tools_exports_rg_tools():

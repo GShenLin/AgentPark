@@ -1,4 +1,3 @@
-import os
 import threading
 import time
 import uuid
@@ -11,16 +10,16 @@ from .clock_runtime import CLOCK_NEXT_FIRE_AT_KEY
 from .clock_runtime import CLOCK_REMAINING_KEY
 from .clock_runtime import CLOCK_RUNNING_KEY
 from .clock_runtime import CLOCK_TRIGGER_COUNT_KEY
-from .clock_runtime import build_running_clock_snapshot
 from .clock_runtime import format_clock_countdown
-from .clock_runtime import read_clock_next_fire_at
 from . import runtime_paths, state_store
+from .graph_schedule_registration import ScheduleRegistrationMixin
 from .node_state_machine import parse_node_state
+from .runtime_state_memory_store import runtime_state_memory_store
+from .scheduled_node_registry import ScheduledNodeRegistration
 from .service_host import HostBoundService
 from .shared import _append_node_pending, build_text_envelope
 
-
-class GraphTimerScheduler(HostBoundService):
+class GraphTimerScheduler(ScheduleRegistrationMixin, HostBoundService):
     _OUTPUT_KEYS = ("OutputText", "output_text")
     _CLOCK_LOOP_KEYS = ("IsLoop", "is_loop")
     _CLOCK_LOOP_COUNT_KEYS = ("LoopCount", "loop_count")
@@ -28,34 +27,6 @@ class GraphTimerScheduler(HostBoundService):
     _CLOCK_NEXT_FIRE_AT_KEY = CLOCK_NEXT_FIRE_AT_KEY
     _CLOCK_REMAINING_KEY = CLOCK_REMAINING_KEY
     _CLOCK_TRIGGER_COUNT_KEY = CLOCK_TRIGGER_COUNT_KEY
-
-    def _iter_node_configs(self):
-        graphs_dir = runtime_paths._get_graphs_dir()
-        if not graphs_dir or not os.path.isdir(graphs_dir):
-            return
-
-        for graph_entry in os.listdir(graphs_dir):
-            graph_dir = os.path.join(graphs_dir, graph_entry)
-            if not os.path.isdir(graph_dir):
-                continue
-            safe_graph_id = self._sanitize_graph_id(graph_entry)
-            if not safe_graph_id:
-                continue
-
-            for node_entry in os.listdir(graph_dir):
-                if node_entry == "agents":
-                    continue
-                node_dir = os.path.join(graph_dir, node_entry)
-                if not os.path.isdir(node_dir):
-                    continue
-                config_path = os.path.join(node_dir, "config.json")
-                if not os.path.exists(config_path):
-                    continue
-                cfg = state_store._read_json_dict(config_path)
-                if not isinstance(cfg, dict) or not cfg:
-                    continue
-                safe_node_id = self._sanitize_node_id(str(cfg.get("node_id") or node_entry))
-                yield safe_graph_id, safe_node_id, config_path, cfg
 
     def _read_output_text(self, cfg: dict) -> str:
         for key in self._OUTPUT_KEYS:
@@ -96,44 +67,6 @@ class GraphTimerScheduler(HostBoundService):
             fields.update(log_fields)
         self._log_graph_event(graph_id, event_name, **fields)
 
-    def _is_timer_trigger_due(self, cfg: dict, now_dt: datetime) -> bool:
-        if not isinstance(cfg, dict):
-            return False
-
-        schedule_raw = cfg.get("ScheduleAt")
-        if schedule_raw is None:
-            schedule_raw = cfg.get("schedule_at")
-        schedule_text = str(schedule_raw or "").strip()
-        if not schedule_text:
-            return False
-
-        parsed: datetime | None = None
-        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
-            try:
-                parsed = datetime.strptime(schedule_text, fmt)
-                break
-            except Exception:
-                continue
-        if parsed is None:
-            try:
-                normalized = schedule_text.replace("T", " ")
-                if len(normalized) == 16:
-                    normalized += ":00"
-                parsed = datetime.fromisoformat(normalized)
-            except Exception:
-                return False
-
-        if parsed.year < 1900:
-            return False
-
-        return (
-            parsed.year == now_dt.year
-            and parsed.month == now_dt.month
-            and parsed.day == now_dt.day
-            and parsed.hour == now_dt.hour
-            and parsed.minute == now_dt.minute
-        )
-
     def _parse_clock_loop_enabled(self, cfg: dict) -> bool:
         if not isinstance(cfg, dict):
             return True
@@ -161,20 +94,14 @@ class GraphTimerScheduler(HostBoundService):
                 break
         return parse_int_value(raw_value, default=0, minimum=0)
 
-    def _read_clock_next_fire_at(self, cfg: dict) -> float | None:
-        return read_clock_next_fire_at(cfg) if isinstance(cfg, dict) else None
-
     def _merge_clock_fields(self, config_path: str, cfg: dict, fields: dict[str, object]) -> None:
-        next_cfg = state_store._read_json_dict(config_path)
-        if not isinstance(next_cfg, dict) or not next_cfg:
-            next_cfg = dict(cfg) if isinstance(cfg, dict) else {}
-        next_cfg.update(fields)
+        def mutate(payload: dict) -> None:
+            payload.update(fields)
+
+        runtime_state_memory_store.update(config_path, mutate)
         if isinstance(cfg, dict):
             cfg.update(fields)
-        try:
-            state_store._write_json_dict(config_path, next_cfg)
-        except Exception:
-            pass
+        self._scheduled_node_config_cache().invalidate(config_path)
 
     def _format_clock_countdown(self, remaining_seconds: int) -> str:
         return format_clock_countdown(remaining_seconds)
@@ -288,32 +215,7 @@ class GraphTimerScheduler(HostBoundService):
         return 1
 
     def _persist_running_clock_snapshots(self) -> dict[str, int]:
-        result = {"saved": 0, "failed": 0}
-        now_ts = time.time()
-        for graph_id, _node_id, config_path, cfg in self._iter_node_configs():
-            if str(cfg.get("type_id") or "").strip() != "clock_node":
-                continue
-            fields = build_running_clock_snapshot(cfg, now_ts=now_ts)
-            if not fields:
-                continue
-            next_cfg = state_store._read_json_dict(config_path)
-            if not isinstance(next_cfg, dict) or not next_cfg:
-                next_cfg = dict(cfg)
-            next_cfg.update(fields)
-            try:
-                if state_store._write_json_dict(config_path, next_cfg):
-                    result["saved"] += 1
-                else:
-                    result["failed"] += 1
-            except Exception as exc:
-                result["failed"] += 1
-                self._log_graph_event(
-                    graph_id,
-                    "clock_shutdown_snapshot_failed",
-                    config_path=config_path,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-        return result
+        return {"saved": 0, "failed": 0}
 
     def _scan_and_emit_scheduled_nodes_once(self) -> int:
         now_ts = time.time()
@@ -321,7 +223,11 @@ class GraphTimerScheduler(HostBoundService):
         minute_key = now_dt.strftime("%Y-%m-%d %H:%M")
         enqueued = 0
 
-        for graph_id, node_id, config_path, cfg in self._iter_node_configs():
+        for snapshot in self._iter_node_configs():
+            graph_id = snapshot.graph_id
+            node_id = snapshot.node_id
+            config_path = snapshot.config_path
+            cfg = snapshot.config
             if parse_node_state(cfg.get("state")) == "stop":
                 continue
 
@@ -353,14 +259,86 @@ class GraphTimerScheduler(HostBoundService):
             }
 
         return enqueued
+    def _handle_registered_schedule(self, entry: ScheduledNodeRegistration) -> int:
+        snapshot = self._scheduled_node_config_cache().get_scheduled_config(
+            entry.config_path,
+            graph_id=entry.graph_id,
+            fallback_node_id=entry.node_id,
+            sanitize_node_id=self._sanitize_node_id,
+        )
+        cfg = snapshot.config if snapshot is not None else {}
+        if not isinstance(cfg, dict) or not cfg:
+            self._unregister_scheduled_node(entry.graph_id, entry.node_id)
+            return 0
+        if parse_node_state(cfg.get("state")) == "stop":
+            self._unregister_scheduled_node(entry.graph_id, entry.node_id)
+            return 0
 
+        type_id = str(cfg.get("type_id") or "").strip()
+        enqueued = 0
+        if type_id == "timer_trigger_node":
+            enqueued = self._handle_timer_trigger(
+                graph_id=entry.graph_id,
+                node_id=entry.node_id,
+                config_path=entry.config_path,
+                cfg=cfg,
+                now_dt=datetime.fromtimestamp(time.time()),
+                minute_key=datetime.fromtimestamp(entry.due_at).strftime("%Y-%m-%d %H:%M"),
+            )
+        elif type_id == "clock_node":
+            enqueued = self._handle_clock_trigger(
+                graph_id=entry.graph_id,
+                node_id=entry.node_id,
+                config_path=entry.config_path,
+                cfg=cfg,
+                now_ts=time.time(),
+            )
+            self._refresh_scheduled_node(entry.graph_id, entry.node_id, persist=False)
+            return enqueued
+
+        self._refresh_scheduled_node(entry.graph_id, entry.node_id, persist=False)
+        return enqueued
     def _timer_trigger_scheduler_loop(self, stop_event: threading.Event) -> None:
+        try:
+            registered = self._register_all_scheduled_nodes()
+            self._log_graph_event(self.default_graph_id, "timer_scheduler_registry_loaded", registered=registered)
+        except Exception as exc:
+            self._log_graph_event(
+                self.default_graph_id,
+                "timer_scheduler_registry_load_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
         while not stop_event.is_set():
-            try:
-                self._scan_and_emit_scheduled_nodes_once()
-            except Exception:
-                pass
-            stop_event.wait(timeout=1.0)
+            due_entries = self._scheduled_node_registry().wait_for_due(stop_event)
+            handled = False
+            for entry in due_entries:
+                if stop_event.is_set():
+                    break
+                try:
+                    self._handle_registered_schedule(entry)
+                    handled = True
+                except Exception as exc:
+                    self._log_graph_event(
+                        entry.graph_id,
+                        "scheduled_node_fire_failed",
+                        node_id=entry.node_id,
+                        node_type_id=entry.type_id,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                    try:
+                        self._refresh_scheduled_node(entry.graph_id, entry.node_id, persist=False)
+                        handled = True
+                    except Exception:
+                        pass
+            if handled:
+                try:
+                    self._persist_scheduled_registry()
+                except Exception as exc:
+                    self._log_graph_event(
+                        self.default_graph_id,
+                        "timer_scheduler_index_write_failed",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
 
     def _ensure_timer_trigger_scheduler(self) -> None:
         with self.timer_scheduler_lock:
@@ -387,6 +365,7 @@ class GraphTimerScheduler(HostBoundService):
             self.timer_scheduler_thread = None
         if isinstance(stop_event, threading.Event):
             stop_event.set()
+        self._scheduled_node_registry().wake()
         if isinstance(thread, threading.Thread) and thread.is_alive():
             try:
                 thread.join(timeout=1.0)

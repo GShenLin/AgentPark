@@ -17,19 +17,24 @@ def _runtime_notice_payloads(events, stage):
 
 
 def _without_environment_context(items):
-    def is_environment_context(item):
-        if not isinstance(item, dict) or item.get("type") != "message" or item.get("role") != "system":
+    def is_runtime_context(item):
+        if not isinstance(item, dict) or item.get("type") != "message":
             return False
         content = item.get("content")
         if not isinstance(content, list) or not content:
             return False
         first = content[0]
-        return isinstance(first, dict) and str(first.get("text") or "").startswith("[Agent Environment Context]\n")
+        text = str(first.get("text") or "") if isinstance(first, dict) else ""
+        return (
+            text.startswith("<environment_context>")
+            or text.startswith("[Agent Environment Context]\n")
+            or text.startswith("<permissions instructions>")
+        )
 
     return [
         item
         for item in items
-        if not is_environment_context(item)
+        if not is_runtime_context(item)
     ]
 
 
@@ -1595,10 +1600,10 @@ def test_openai_responses_replays_context_when_previous_response_missing():
     fallback_events = _runtime_notice_payloads(agent.events, "openai_responses_previous_response_missing")
     assert fallback_events == [
         {
-            "fallback": "explicit_context",
-            "fallback_input_item_count": 3,
-            "previous_response_id": "resp-missing",
-            "stream": True,
+                "fallback": "explicit_context",
+                "fallback_input_item_count": 5,
+                "previous_response_id": "resp-missing",
+                "stream": True,
         }
     ]
 

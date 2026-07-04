@@ -72,7 +72,7 @@ class GraphRuntimeRegistry(HostBoundService):
         config_path = os.path.join(graphs_dir, safe_id, "config.json")
         if not os.path.exists(config_path):
             if safe_id == "default":
-                return {"id": "default", "name": "default", "nodes": [], "links": []}
+                return {"id": "default", "name": "default", "nodes": [], "output_routes": {}}
             return {}
         try:
             with open(config_path, "r", encoding="utf-8") as f:

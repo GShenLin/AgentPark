@@ -68,14 +68,23 @@ function Test-ProjectProcess {
     if ([string]::IsNullOrWhiteSpace($commandLine)) {
         return $false
     }
+    $processName = [string]$ProcessInfo.Name
+    $isPythonProcess = (
+        $processName -ieq 'python.exe' -or
+        $processName -ieq 'pythonw.exe'
+    )
+    $isDesktopPetProcess = (
+        $processName -ieq 'electron.exe'
+    )
     $rootText = (Normalize-PathText -PathText $Root)
-    $hasServerEntry = Test-ServerCommandLine -CommandLine $commandLine
-    $hasCompanionCliEntry = Test-CompanionCliCommandLine -CommandLine $commandLine
+    $hasServerEntry = $isPythonProcess -and (Test-ServerCommandLine -CommandLine $commandLine)
+    $hasCompanionCliEntry = $isPythonProcess -and (Test-CompanionCliCommandLine -CommandLine $commandLine)
+    $hasDesktopPetEntry = $isDesktopPetProcess -and (Test-DesktopPetCommandLine -CommandLine $commandLine)
     $hasWorkspaceRoot = $commandLine.IndexOf($rootText, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
     if ($TrustWorkspaceIdentity) {
         return $hasServerEntry
     }
-    if (-not $hasServerEntry -and -not $hasCompanionCliEntry) {
+    if (-not $hasServerEntry -and -not $hasCompanionCliEntry -and -not $hasDesktopPetEntry) {
         return $false
     }
     return ($hasWorkspaceRoot -or (Test-ProcessTreeHasWorkspaceRoot -ProcessInfo $ProcessInfo -Root $Root))
@@ -99,6 +108,14 @@ function Test-CompanionCliCommandLine {
     )
 }
 
+function Test-DesktopPetCommandLine {
+    param([Parameter(Mandatory = $true)][string]$CommandLine)
+    return (
+        $CommandLine -like '*desktop\pet*' -or
+        $CommandLine -like '*desktop/pet*'
+    )
+}
+
 function Get-ProjectProcessKind {
     param([Parameter(Mandatory = $true)][string]$CommandLine)
     if (Test-ServerCommandLine -CommandLine $CommandLine) {
@@ -106,6 +123,9 @@ function Get-ProjectProcessKind {
     }
     if (Test-CompanionCliCommandLine -CommandLine $CommandLine) {
         return 'companion-cli'
+    }
+    if (Test-DesktopPetCommandLine -CommandLine $CommandLine) {
+        return 'desktop-pet'
     }
     return 'unknown'
 }

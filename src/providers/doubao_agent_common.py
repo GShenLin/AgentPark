@@ -1,15 +1,16 @@
 import json
 import re
 
+from src.providers.provider_errors import ProviderHttpError
+from src.providers.provider_errors import ProviderTransportError
 
-class _CurlHTTPError(RuntimeError):
+
+class _CurlHTTPError(ProviderHttpError):
     def __init__(self, status_code, response_body):
-        self.status_code = int(status_code or 0)
-        self.response_body = str(response_body or "")
-        super().__init__(f"HTTP Error {self.status_code}: {self.response_body}")
+        super().__init__(status_code, response_body, message_prefix="HTTP Error")
 
 
-class _CurlTransportError(RuntimeError):
+class _CurlTransportError(ProviderTransportError):
     pass
 
 

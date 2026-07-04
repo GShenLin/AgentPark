@@ -6,49 +6,13 @@ from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
 from .shared import _append_node_pending, envelope_preview, normalize_envelope
 from .route_parser import NodeRouteParser
+from .graph_output_routes import normalize_output_routes, output_routes_to_outgoing
 
 
 class GraphMessageDispatch(HostBoundService):
-    def _build_outgoing_links_map(self, graph_cfg: dict) -> dict[str, list[dict]]:
-        links_raw = graph_cfg.get("links") if isinstance(graph_cfg, dict) else None
-        outgoing: dict[str, list[dict]] = {}
-        if not isinstance(links_raw, list):
-            return outgoing
-
-        for link in links_raw:
-            if not isinstance(link, dict):
-                continue
-            frm_raw = link.get("from")
-            to_raw = link.get("to")
-            frm = ""
-            to = ""
-            from_output_index = 0
-            to_input_index = 0
-            if isinstance(frm_raw, dict):
-                frm = str(frm_raw.get("node") or "").strip()
-                parsed = NodeRouteParser.parse_port_index(frm_raw.get("index"))
-                if parsed is not None:
-                    from_output_index = parsed
-            else:
-                frm = str(frm_raw or "").strip()
-            if isinstance(to_raw, dict):
-                to = str(to_raw.get("node") or "").strip()
-                parsed = NodeRouteParser.parse_port_index(to_raw.get("index"))
-                if parsed is not None:
-                    to_input_index = parsed
-            else:
-                to = str(to_raw or "").strip()
-            lid = str(link.get("id") or "").strip()
-            if frm and to:
-                outgoing.setdefault(frm, []).append(
-                    {
-                        "id": lid,
-                        "to": to,
-                        "from_output_index": from_output_index,
-                        "to_input_index": to_input_index,
-                    }
-                )
-        return outgoing
+    def _build_outgoing_routes_map(self, graph_cfg: dict) -> dict[str, list[dict]]:
+        raw_routes = graph_cfg.get("output_routes") if isinstance(graph_cfg, dict) else None
+        return output_routes_to_outgoing(normalize_output_routes(raw_routes))
 
     def _collect_event_dispatch_tasks(
         self,
@@ -81,7 +45,7 @@ class GraphMessageDispatch(HostBoundService):
         tasks: list[dict] = []
         for target_graph_id in graph_ids:
             target_graph_cfg = self._read_graph_config(target_graph_id)
-            target_outgoing = self._build_outgoing_links_map(target_graph_cfg)
+            target_outgoing = self._build_outgoing_routes_map(target_graph_cfg)
             if not target_outgoing:
                 continue
 

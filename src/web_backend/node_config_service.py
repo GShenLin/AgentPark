@@ -9,12 +9,14 @@ from typing import Any, Callable
 
 from src.file_transaction import KeyedTransactionQueue, atomic_write_text
 
+from .node_runtime_fields import RUNTIME_STATE_FIELDS, RUNTIME_STATE_FILENAME
 from .node_config_errors import (
     NodeConfigFormatError,
     NodeConfigNotFoundError,
     NodeConfigReadError,
     NodeConfigWriteError,
 )
+from .runtime_state_memory_store import runtime_state_memory_store
 
 
 CAPABILITY_FIELDS = {
@@ -24,27 +26,6 @@ CAPABILITY_FIELDS = {
     "plugins": "plugin",
 }
 NODE_CONFIG_SCHEMA_VERSION = 1
-RUNTIME_STATE_FILENAME = "runtime_state.json"
-RUNTIME_STATE_FIELDS = {
-    "state",
-    "pending",
-    "pending_count",
-    "inflight",
-    "inflight_at",
-    "_stop_requested",
-    "_delete_requested",
-    "node_event_seq",
-    "last_message",
-    "last_run_at",
-    "last_runtime_event",
-    "runtime_events",
-    "runtime_tool_calls",
-    "provider_request_summaries",
-    "completed_requests",
-    "last_completed_request",
-    "goal",
-    "goal_state",
-}
 
 RESERVED_NODE_CONFIG_FIELDS = {
     "schemaVersion",
@@ -119,8 +100,7 @@ class NodeConfigService:
         if not isinstance(payload, dict):
             raise NodeConfigFormatError(f"node config must be a JSON object: {path}")
         config_payload = self._migrate_config(payload, path)
-        runtime_payload = self._read_runtime_state(path)
-        return self._merge_config_and_runtime(config_payload, runtime_payload)
+        return runtime_state_memory_store.merge(path, config_payload)
 
     def read_optional_object(self, config_path: str) -> dict[str, Any]:
         path = str(config_path or "").strip()
@@ -133,15 +113,16 @@ class NodeConfigService:
         if not isinstance(payload, dict):
             raise NodeConfigWriteError(f"node config payload must be an object: {path}")
         normalized = self._migrate_config(payload, path)
-        config_payload, runtime_payload = self._split_config_and_runtime(normalized)
+        config_payload, runtime_payload = runtime_state_memory_store.split_payload(normalized)
+        if "schemaVersion" not in config_payload:
+            config_payload["schemaVersion"] = NODE_CONFIG_SCHEMA_VERSION
 
         def do_write() -> None:
             try:
-                atomic_write_text(path, json.dumps(config_payload, ensure_ascii=False, indent=2) + "\n")
-                atomic_write_text(
-                    self.runtime_state_path(path),
-                    json.dumps(runtime_payload, ensure_ascii=False, indent=2) + "\n",
-                )
+                current = self._read_config_payload_optional(path)
+                if current != config_payload:
+                    atomic_write_text(path, json.dumps(config_payload, ensure_ascii=False, indent=2) + "\n")
+                runtime_state_memory_store.replace(path, runtime_payload)
             except Exception as exc:
                 raise NodeConfigWriteError(
                     f"failed to write node config {path}: {type(exc).__name__}: {exc}"
@@ -273,21 +254,20 @@ class NodeConfigService:
             raise last_error
         raise NodeConfigReadError(f"failed to read node config {path}: no read attempt was made")
 
-    def _read_runtime_state(self, config_path: str) -> dict[str, Any]:
-        path = self.runtime_state_path(config_path)
+    def _read_config_payload_optional(self, path: str) -> dict[str, Any] | None:
         if not os.path.exists(path):
-            return {}
+            return None
         try:
             payload = self._read_json_payload(path)
-        except json.JSONDecodeError as exc:
-            raise NodeConfigFormatError(
-                f"node runtime state contains invalid JSON: {path}: line {exc.lineno} column {exc.colno}: {exc.msg}"
-            ) from exc
-        except OSError as exc:
-            raise NodeConfigReadError(f"failed to read node runtime state {path}: {type(exc).__name__}: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise NodeConfigFormatError(f"node runtime state must be a JSON object: {path}")
-        return dict(payload)
+            if not isinstance(payload, dict):
+                return None
+            migrated = self._migrate_config(payload, path)
+            config_payload, _runtime_payload = runtime_state_memory_store.split_payload(migrated)
+            if "schemaVersion" not in config_payload:
+                config_payload["schemaVersion"] = NODE_CONFIG_SCHEMA_VERSION
+            return config_payload
+        except Exception:
+            return None
 
     def _migrate_config(self, payload: dict[str, Any], config_path: str) -> dict[str, Any]:
         version = payload.get("schemaVersion")
@@ -304,29 +284,6 @@ class NodeConfigService:
                 f"unsupported node config schemaVersion {version}; runtime supports {NODE_CONFIG_SCHEMA_VERSION}: {config_path}"
             )
         return dict(payload)
-
-    def _merge_config_and_runtime(
-        self,
-        config_payload: dict[str, Any],
-        runtime_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        merged = dict(config_payload)
-        for key in RUNTIME_STATE_FIELDS:
-            if key in runtime_payload:
-                merged[key] = runtime_payload[key]
-        return merged
-
-    def _split_config_and_runtime(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-        config_payload: dict[str, Any] = {}
-        runtime_payload: dict[str, Any] = {}
-        for key, value in payload.items():
-            if key in RUNTIME_STATE_FIELDS:
-                runtime_payload[key] = value
-            else:
-                config_payload[key] = value
-        if "schemaVersion" not in config_payload:
-            config_payload["schemaVersion"] = NODE_CONFIG_SCHEMA_VERSION
-        return config_payload, runtime_payload
 
     def _validate_capability_fields(self, config: dict[str, Any], config_path: str) -> None:
         for field in CAPABILITY_FIELDS:
@@ -375,3 +332,7 @@ def write_node_config(config_path: str, payload: dict[str, Any]) -> None:
 
 def node_runtime_state_path(config_path: str) -> str:
     return node_config_service.runtime_state_path(config_path)
+
+
+def node_runtime_state_version(config_path: str) -> int:
+    return runtime_state_memory_store.version(config_path)

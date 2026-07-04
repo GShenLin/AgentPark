@@ -18,7 +18,7 @@ from .state_store import NodeDeletingError
 class NodeInstanceQueue(HostBoundService):
     def enqueue_node_instance_pending(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
@@ -69,7 +69,7 @@ class NodeInstanceQueue(HostBoundService):
 
     def pop_node_instance_pending(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")

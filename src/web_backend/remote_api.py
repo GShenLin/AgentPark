@@ -150,6 +150,9 @@ class RemoteApiDomain(DomainBase):
             self._write_remote_config(config)
         return self._filter_remotes_for_request(config, request)
 
+    def get_remote_status(self, request: Request = None):
+        return {"is_local_client": self._is_local_request(request)}
+
     def add_remote(self, payload: dict, request: Request = None):
         remote = self._normalize_remote(payload or {})
         if remote.get("private") and not self._is_local_request(request):

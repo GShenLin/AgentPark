@@ -12,16 +12,22 @@ import type {
   MobileNodeConversation,
   MobilePc,
   NodeConfigChangeResponse,
+  NodeDesktopView,
+  NodeDesktopViewListResponse,
+  NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
   NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
+  PetAvatarFrame,
+  PetAvatarSummary,
   NodeTemplate,
   PasteAgentConfig,
   PendingNodeInput,
   ProviderInfo,
   RemoteEndpoint,
+  RemoteStatus,
   RunInfo,
   UserInteractionRequest,
 } from './apiTypes'
@@ -36,6 +42,9 @@ export type {
   GraphLink,
   GraphLinkEndpoint,
   GraphNode,
+  GraphOutputRoute,
+  GraphOutputRouteTarget,
+  GraphOutputRoutes,
   GraphProfile,
   GraphProfileListResponse,
   GraphProfileNodeConfig,
@@ -48,17 +57,31 @@ export type {
   MobilePc,
   MobilePcInstance,
   NodeConfigChangeResponse,
+  NodeDesktopView,
+  NodeDesktopViewListResponse,
+  NodeDesktopViewLive,
+  NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
   NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
+  PetAvatarFrame,
+  PetAvatarAnimationTracks,
+  PetAvatarColorKeyframe,
+  PetAvatarGifState,
+  PetAvatarSequenceFrame,
+  PetAvatarSequenceState,
+  PetAvatarState,
+  PetAvatarTransformKeyframe,
+  PetAvatarSummary,
   NodeTemplate,
   PasteAgentConfig,
   PendingNodeInput,
   ProviderRequestSummary,
   ProviderInfo,
   RemoteEndpoint,
+  RemoteStatus,
   ResourceKind,
   RuntimeEvent,
   RuntimeNoticeEvent,
@@ -130,9 +153,17 @@ export async function restartServer(): Promise<{ ok: boolean }> {
   return remoteConfigFetch('/api/system/restart', { method: 'POST' })
 }
 
+export async function exitServer(): Promise<{ ok: boolean }> {
+  return remoteConfigFetch('/api/system/exit', { method: 'POST' })
+}
+
 export async function listRemotes(): Promise<RemoteEndpoint[]> {
   const res = await remoteConfigFetch('/api/remotes')
   return (res.remotes || []) as RemoteEndpoint[]
+}
+
+export async function getRemoteStatus(): Promise<RemoteStatus> {
+  return remoteConfigFetch('/api/remotes/status') as Promise<RemoteStatus>
 }
 
 export async function addRemote(payload: {
@@ -253,17 +284,19 @@ export async function renameNodeInstance(
 
 export async function cloneNodeInstance(
   nodeId: string,
-  graphId: string,
+  sourceGraphId: string,
   newNodeId: string,
   newName?: string,
   ui?: { x: number; y: number },
+  targetGraphId?: string,
 ): Promise<{ ok: boolean; source_node_id: string; node_id: string; graph_id: string; type_id: string; config_path: string }> {
-  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/clone?graph_id=${encodeURIComponent(graphId)}`, {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/clone?graph_id=${encodeURIComponent(sourceGraphId)}`, {
     method: 'POST',
     body: JSON.stringify({
       new_node_id: newNodeId,
       new_name: newName,
       ui,
+      target_graph_id: targetGraphId,
     }),
   })
 }
@@ -520,6 +553,10 @@ export async function saveAgentProfileFromNode(payload: {
   })
 }
 
+export async function deleteAgentProfile(profileId: string): Promise<{ ok: boolean; profile_id: string; deleted: boolean }> {
+  return apiFetch(`/api/profiles/agents/${encodeURIComponent(profileId)}`, { method: 'DELETE' })
+}
+
 export async function listGraphProfiles(): Promise<GraphProfile[]> {
   const res = await apiFetch('/api/profiles/graphs') as GraphProfileListResponse
   return res.profiles || []
@@ -534,6 +571,10 @@ export async function saveGraphProfileFromGraph(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export async function deleteGraphProfile(profileId: string): Promise<{ ok: boolean; profile_id: string; deleted: boolean }> {
+  return apiFetch(`/api/profiles/graphs/${encodeURIComponent(profileId)}`, { method: 'DELETE' })
 }
 
 export async function createGraphFromProfile(
@@ -731,6 +772,136 @@ export async function sendMobileNodeMessage(
   return apiFetch(`/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages`, {
     method: 'POST',
     body: JSON.stringify({ message }),
+  })
+}
+
+export async function listNodeDesktopViews(): Promise<NodeDesktopView[]> {
+  const res = await apiFetch('/api/node-desktop-views') as NodeDesktopViewListResponse
+  return res.views || []
+}
+
+export async function getNodeDesktopView(viewId: string): Promise<NodeDesktopView> {
+  const res = await apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}`)
+  return res.view as NodeDesktopView
+}
+
+export async function upsertNodeDesktopView(payload: {
+  graph_id: string
+  node_id: string
+  visible?: boolean
+  pinned?: boolean
+  position?: NodeDesktopViewPosition
+  avatar_style?: string
+}): Promise<NodeDesktopView> {
+  const res = await apiFetch('/api/node-desktop-views', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res.view as NodeDesktopView
+}
+
+export async function summonNodeDesktopView(payload: {
+  graph_id: string
+  node_id: string
+  working_path?: string
+  visible?: boolean
+  pinned?: boolean
+  position?: NodeDesktopViewPosition
+  avatar_style?: string
+}): Promise<NodeDesktopView> {
+  const res = await apiFetch('/api/node-desktop-views/summon', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res.view as NodeDesktopView
+}
+
+export async function launchNodeDesktopPet(payload: {
+  graph_id: string
+  node_id: string
+  working_path?: string
+  visible?: boolean
+  pinned?: boolean
+  position?: NodeDesktopViewPosition
+  avatar_style?: string
+  open_chat?: boolean
+  draft_prefix?: string
+}): Promise<{ ok: boolean; view: NodeDesktopView; pid: number }> {
+  return apiFetch('/api/node-desktop-views/launch', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateNodeDesktopView(
+  viewId: string,
+  payload: {
+    visible?: boolean
+    pinned?: boolean
+    position?: NodeDesktopViewPosition | null
+    avatar_style?: string
+  },
+): Promise<NodeDesktopView> {
+  const res = await apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return res.view as NodeDesktopView
+}
+
+export async function sendNodeDesktopViewMessage(
+  viewId: string,
+  message: string | MessageEnvelope,
+): Promise<{ ok: boolean; queued: boolean; trace_id?: string; view_id: string }> {
+  return apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  })
+}
+
+export async function deleteNodeDesktopView(
+  viewId: string,
+): Promise<{ ok: boolean; view_id: string; graph_id: string; node_id: string }> {
+  return apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}`, { method: 'DELETE' })
+}
+
+export async function listPetAvatars(): Promise<{ root: string; avatars: PetAvatarSummary[] }> {
+  const res = await apiFetch('/api/pet-avatars')
+  return { root: String(res.root || ''), avatars: (res.avatars || []) as PetAvatarSummary[] }
+}
+
+export async function getPetAvatar(avatarId: string): Promise<{ avatar: PetAvatarFrame; path: string }> {
+  const res = await apiFetch(`/api/pet-avatars/${encodeURIComponent(avatarId)}`)
+  return { avatar: res.avatar as PetAvatarFrame, path: String(res.path || '') }
+}
+
+export async function createPetAvatar(payload: { id: string; name?: string }): Promise<{ ok: boolean; avatar: PetAvatarFrame; path: string }> {
+  return apiFetch('/api/pet-avatars', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function savePetAvatarFrame(avatarId: string, frame: PetAvatarFrame): Promise<{ ok: boolean; avatar: PetAvatarFrame; path: string }> {
+  return apiFetch(`/api/pet-avatars/${encodeURIComponent(avatarId)}/frame`, {
+    method: 'POST',
+    body: JSON.stringify({ frame }),
+  })
+}
+
+export async function uploadPetAvatarAsset(payload: {
+  avatar_id: string
+  state: string
+  filename: string
+  content_base64: string
+}): Promise<{ ok: boolean; src: string; url: string; extension: string }> {
+  return apiFetch(`/api/pet-avatars/${encodeURIComponent(payload.avatar_id)}/assets`, {
+    method: 'POST',
+    body: JSON.stringify({
+      state: payload.state,
+      filename: payload.filename,
+      content_base64: payload.content_base64,
+    }),
   })
 }
 

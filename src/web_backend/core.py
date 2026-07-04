@@ -9,9 +9,11 @@ from .core_node_ops import NodeOpsDomain
 from .core_system_api import SystemApiDomain
 from .graph_event_stream import GraphEventStreamStore
 from .mobile_api import MobileApiDomain
+from .node_desktop_view import NodeDesktopViewDomain
 from .node_cancellation import NodeCancellationRegistry
 from .node_live_output import NodeLiveOutputStore
 from .node_config_service import RUNTIME_STATE_FIELDS
+from .pet_avatar import PetAvatarDomain
 from .profile_api import ProfileApi
 from .remote_api import RemoteApiDomain
 from .settings_api import SettingsApiDomain
@@ -56,6 +58,8 @@ class BackendCore:
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
+        self.node_desktop_views = NodeDesktopViewDomain(self, self.graph_runtime)
+        self.pet_avatars = PetAvatarDomain(self)
         self.remote_api = RemoteApiDomain(self)
         self.settings_api = SettingsApiDomain(self)
         self.user_interaction_api = UserInteractionApiDomain(self)

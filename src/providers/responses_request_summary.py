@@ -5,9 +5,14 @@ from functools import lru_cache
 from typing import Any
 
 from src.providers.agent_environment_context import is_agent_environment_context_text
+from src.providers.agent_collaboration_mode import is_collaboration_mode_text
+from src.providers.agent_permissions_context import is_agent_permissions_context_text
+from src.providers.agent_project_instructions import is_agent_project_instructions_text
+from src.providers.agent_turn_context import is_agent_turn_context_text
 
 
 MAX_LARGEST_INPUT_ITEMS = 8
+MAX_INPUT_ITEMS_INCLUDED = 80
 MAX_TOOLS_INCLUDED = 64
 
 
@@ -21,28 +26,56 @@ def build_responses_request_summary(
     stream: bool,
     responses_mode: str,
     requested_responses_mode: str,
+    context_update: Any = None,
+    instructions: str = "",
+    tool_choice: str = "",
+    parallel_tool_calls: bool | None = None,
+    include: Any = None,
 ) -> dict[str, Any]:
     items = current_input if isinstance(current_input, list) else []
     item_summaries = [_summarize_input_item(index, item) for index, item in enumerate(items)]
     _attach_tool_result_names(item_summaries)
+    _attach_context_kinds(item_summaries, items)
     tool_results = [item for item in item_summaries if item.get("type") == "function_call_output"]
     largest_tool_result = max(tool_results, key=lambda item: int(item.get("chars") or 0), default=None)
     tools_included = _tools_included(tools_payload)
-    environment_context_chars = sum(
-        int(item.get("chars") or 0)
-        for item, raw in zip(item_summaries, items)
-        if _is_environment_context_item(raw)
+    environment_context_chars = sum(_context_text_chars(raw, is_agent_environment_context_text) for raw in items)
+    turn_context_chars = sum(_context_text_chars(raw, is_agent_turn_context_text) for raw in items)
+    collaboration_context_chars = sum(_context_text_chars(raw, is_collaboration_mode_text) for raw in items)
+    permissions_context_chars = sum(_context_text_chars(raw, is_agent_permissions_context_text) for raw in items)
+    internal_context_chars = sum(_context_text_chars(raw, _is_internal_context_text) for raw in items)
+    skills_context_chars = sum(_context_text_chars(raw, _is_skills_context_text) for raw in items)
+    mcp_servers_context_chars = sum(_context_text_chars(raw, _is_mcp_servers_context_text) for raw in items)
+    operational_memory_context_chars = sum(
+        _context_text_chars(raw, _is_operational_memory_context_text) for raw in items
     )
-    return {
+    project_instructions_context_chars = sum(
+        _context_text_chars(raw, is_agent_project_instructions_text) for raw in items
+    )
+    summary = {
         "request_index": int(request_index or 0),
         "continuation_mode": str(continuation_mode or "").strip(),
         "responses_mode": str(responses_mode or "").strip(),
         "requested_responses_mode": str(requested_responses_mode or "").strip(),
         "previous_response_id_present": bool(str(previous_response_id or "").strip()),
+        "instructions_present": bool(str(instructions or "").strip()),
+        "instructions_chars": len(str(instructions or "")),
+        "tool_choice": str(tool_choice or "").strip(),
+        "parallel_tool_calls": parallel_tool_calls if isinstance(parallel_tool_calls, bool) else None,
+        "include": [str(item) for item in include] if isinstance(include, list) else [],
         "input_item_count": len(items),
         "approx_input_chars": sum(int(item.get("chars") or 0) for item in item_summaries),
         "approx_input_tokens": _approx_input_tokens(current_input),
         "environment_context_chars": environment_context_chars,
+        "turn_context_chars": turn_context_chars,
+        "permissions_context_chars": permissions_context_chars,
+        "collaboration_context_chars": collaboration_context_chars,
+        "internal_context_chars": internal_context_chars,
+        "skills_context_chars": skills_context_chars,
+        "mcp_servers_context_chars": mcp_servers_context_chars,
+        "operational_memory_context_chars": operational_memory_context_chars,
+        "project_instructions_context_chars": project_instructions_context_chars,
+        "input_items": item_summaries[:MAX_INPUT_ITEMS_INCLUDED],
         "largest_input_items": sorted(
             item_summaries,
             key=lambda item: int(item.get("chars") or 0),
@@ -62,6 +95,24 @@ def build_responses_request_summary(
         "tools_included_count": len(tools_included),
         "stream": bool(stream),
     }
+    if isinstance(context_update, dict):
+        if context_update.get("context_item_hash"):
+            summary["context_item_hash"] = str(context_update.get("context_item_hash") or "")
+        if context_update.get("context_update_mode"):
+            summary["context_update_mode"] = str(context_update.get("context_update_mode") or "")
+        if context_update.get("persistent_context_update_mode"):
+            summary["persistent_context_update_mode"] = str(context_update.get("persistent_context_update_mode") or "")
+        if context_update.get("persistent_context_item_hash"):
+            summary["persistent_context_item_hash"] = str(context_update.get("persistent_context_item_hash") or "")
+        diff = context_update.get("context_diff")
+        if isinstance(diff, dict):
+            paths = []
+            for key in ("changed_paths", "added_paths", "removed_paths"):
+                value = diff.get(key)
+                if isinstance(value, list):
+                    paths.extend(str(item) for item in value if str(item or "").strip())
+            summary["context_diff_paths"] = sorted(dict.fromkeys(paths))
+    return summary
 
 
 def empty_message_diagnostics_from_summary(summary: Any) -> dict[str, Any]:
@@ -139,7 +190,7 @@ def _is_environment_context_item(item: Any) -> bool:
         return False
     if str(item.get("type") or "").strip().lower() != "message":
         return False
-    if str(item.get("role") or "").strip().lower() != "system":
+    if str(item.get("role") or "").strip().lower() not in {"system", "user"}:
         return False
     content = item.get("content")
     if not isinstance(content, list):
@@ -150,6 +201,93 @@ def _is_environment_context_item(item: Any) -> bool:
         if is_agent_environment_context_text(part.get("text")):
             return True
     return False
+
+
+def _is_turn_context_item(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if item.get("type") != "message" or item.get("role") != "system":
+        return False
+    content = item.get("content")
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if is_agent_turn_context_text(part.get("text")):
+            return True
+    return False
+
+
+def _is_collaboration_context_item(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("type") or "").strip().lower() != "message":
+        return False
+    if str(item.get("role") or "").strip().lower() != "developer":
+        return False
+    content = item.get("content")
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if is_collaboration_mode_text(part.get("text")):
+            return True
+    return False
+
+
+def _is_permissions_context_item(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("type") or "").strip().lower() != "message":
+        return False
+    if str(item.get("role") or "").strip().lower() != "developer":
+        return False
+    content = item.get("content")
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if is_agent_permissions_context_text(part.get("text")):
+            return True
+    return False
+
+
+def _is_internal_context_item(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("type") or "").strip().lower() != "message":
+        return False
+    if str(item.get("role") or "").strip().lower() != "user":
+        return False
+    content = item.get("content")
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        text = str(part.get("text") or "").strip()
+        if _is_internal_context_text(text):
+            return True
+    return False
+
+
+def _is_skills_context_item(item: Any) -> bool:
+    return _is_message_with_context_text(item, _is_skills_context_text)
+
+
+def _is_mcp_servers_context_item(item: Any) -> bool:
+    return _is_message_with_context_text(item, _is_mcp_servers_context_text)
+
+
+def _is_operational_memory_context_item(item: Any) -> bool:
+    return _is_message_with_context_text(item, _is_operational_memory_context_text)
+
+
+def _is_project_instructions_context_item(item: Any) -> bool:
+    return _is_message_with_context_text(item, is_agent_project_instructions_text)
 
 
 def _attach_tool_result_names(item_summaries: list[dict[str, Any]]) -> None:
@@ -172,6 +310,84 @@ def _attach_tool_result_names(item_summaries: list[dict[str, Any]]) -> None:
         name = names_by_call_id.get(call_id)
         if name:
             item["name"] = name
+
+
+def _attach_context_kinds(item_summaries: list[dict[str, Any]], raw_items: list[Any]) -> None:
+    for summary, raw in zip(item_summaries, raw_items):
+        kinds = []
+        if _is_environment_context_item(raw):
+            kinds.append("environment")
+        if _is_turn_context_item(raw):
+            kinds.append("turn_context")
+        if _is_permissions_context_item(raw):
+            kinds.append("permissions")
+        if _is_collaboration_context_item(raw):
+            kinds.append("collaboration_mode")
+        if _is_internal_context_item(raw):
+            kinds.append("internal_context")
+        if _is_skills_context_item(raw):
+            kinds.append("skills")
+        if _is_mcp_servers_context_item(raw):
+            kinds.append("mcp_servers")
+        if _is_operational_memory_context_item(raw):
+            kinds.append("operational_memory")
+        if _is_project_instructions_context_item(raw):
+            kinds.append("project_instructions")
+        if kinds:
+            summary["context_kind"] = kinds[0] if len(kinds) == 1 else "runtime_context"
+            summary["context_kinds"] = kinds
+
+
+def _is_message_with_context_text(item: Any, predicate) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("type") or "").strip().lower() != "message":
+        return False
+    content = item.get("content")
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if isinstance(part, dict) and predicate(part.get("text")):
+            return True
+    return False
+
+
+def _context_text_chars(item: Any, predicate) -> int:
+    if not isinstance(item, dict):
+        return 0
+    content = item.get("content")
+    if not isinstance(content, list):
+        return 0
+    total = 0
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        text = part.get("text")
+        if predicate(text):
+            total += len(str(text or ""))
+    return total
+
+
+def _is_internal_context_text(value: object) -> bool:
+    text = str(value or "").strip()
+    return text.startswith("<codex_internal_context") and text.endswith("</codex_internal_context>")
+
+
+def _is_skills_context_text(value: object) -> bool:
+    text = str(value or "").strip()
+    return (
+        text.startswith("<skills_instructions>")
+        and text.endswith("</skills_instructions>")
+    ) or (text.startswith("<skills>") and text.endswith("</skills>"))
+
+
+def _is_mcp_servers_context_text(value: object) -> bool:
+    text = str(value or "").strip()
+    return text.startswith("<mcp_servers>") and text.endswith("</mcp_servers>")
+
+
+def _is_operational_memory_context_text(value: object) -> bool:
+    return str(value or "").strip().startswith("Operational memory for this node:")
 
 
 def _tools_included(tools_payload: Any) -> list[str]:

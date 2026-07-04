@@ -10,7 +10,7 @@ from src.web_backend.node_goal_runtime import has_structured_completion_audit
 from src.web_backend.node_goal_runtime import is_internal_control_output
 from src.web_backend.node_goal_runtime import node_goal_context
 from src.web_backend.node_goal_runtime import parse_goal_evaluation
-from src.web_backend.node_config_service import node_runtime_state_path
+from src.web_backend.state_store import _read_json_dict, _write_json_dict
 
 
 def test_parse_goal_evaluation_accepts_structured_result():
@@ -54,7 +54,10 @@ def test_node_goal_context_only_renders_active_goal():
     )
 
     assert "ship the workflow" in active
+    assert active.startswith('<codex_internal_context source="goal">\n')
+    assert "<objective>\nship the workflow\n</objective>" in active
     assert "Goal completion audit:" in active
+    assert active.endswith("</codex_internal_context>")
     assert complete == ""
 
 
@@ -111,34 +114,28 @@ class _FailingGoalRuntime(NodeGoalRuntime):
 
 def _write_goal_config(tmp_path, *, status="active"):
     config_path = tmp_path / "node.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "node_id": "n1",
-                "graph_id": "g1",
-                "type_id": "agent_node",
-                "provider_id": "fake-provider",
-                "goal": "finish the workflow",
-                "goal_state": {
-                    "status": status,
-                    "reason": "started",
-                    "turn_count": 1,
-                },
-                "pending": [],
+    _write_json_dict(
+        str(config_path),
+        {
+            "schemaVersion": 1,
+            "node_id": "n1",
+            "graph_id": "g1",
+            "type_id": "agent_node",
+            "provider_id": "fake-provider",
+            "goal": "finish the workflow",
+            "goal_state": {
+                "status": status,
+                "reason": "started",
+                "turn_count": 1,
             },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+            "pending": [],
+        },
     )
     return config_path
 
 
 def _read_runtime_state(config_path):
-    with open(node_runtime_state_path(str(config_path)), "r", encoding="utf-8") as handle:
-        return json.load(handle)
+    return _read_json_dict(str(config_path))
 
 
 def _structured_completion_audit() -> str:
@@ -267,7 +264,7 @@ def test_node_goal_runtime_skips_internal_control_output(tmp_path):
         wake_event=wake_event,
     )
 
-    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    saved = _read_json_dict(str(config_path))
     assert result == {
         "active": True,
         "should_continue": False,

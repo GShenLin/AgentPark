@@ -219,12 +219,12 @@ def test_driver_saves_inbound_message_as_default_channel_target(monkeypatch, tmp
 
 
 def test_agent_builds_multimodal_content_from_recent_channel_image(tmp_path):
-    from nodes.agent_node import Node
+    from nodes.agent_message_adapter import build_agent_user_content
 
     image_path = tmp_path / "inbound.jpg"
     image_path.write_bytes(b"\xff\xd8\xffpayload")
 
-    content = Node()._build_user_content(
+    content = build_agent_user_content(
         "openai-test-provider",
         "chat",
         {

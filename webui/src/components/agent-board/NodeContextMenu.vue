@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { saveAgentProfileFromNode } from '../../api'
+import { launchNodeDesktopPet, saveAgentProfileFromNode } from '../../api'
 import { AgentBoardKey } from './context'
 
 const injected = inject(AgentBoardKey, null)
@@ -14,6 +14,7 @@ const showMenu = ref(false)
 const menuLeft = ref(0)
 const menuTop = ref(0)
 const targetNodeId = ref('')
+const launchingPet = ref(false)
 
 function closeMenu() {
   showMenu.value = false
@@ -28,6 +29,28 @@ function updateMenuPosition() {
   const margin = 12
   menuLeft.value = Math.max(margin, Math.min(menuLeft.value, window.innerWidth - width - margin))
   menuTop.value = Math.max(margin, Math.min(menuTop.value, window.innerHeight - height - margin))
+}
+
+async function showPet() {
+  const nodeId = String(targetNodeId.value || '').trim()
+  if (!nodeId || launchingPet.value) return
+  const node = ctx.nodes.value.find((item) => item.id === nodeId)
+  launchingPet.value = true
+  ctx.lastError.value = null
+  try {
+    await launchNodeDesktopPet({
+      graph_id: ctx.currentGraphId.value || 'default',
+      node_id: nodeId,
+      working_path: String(node?.workingPath || '').trim() || undefined,
+      visible: true,
+      pinned: true,
+    })
+    closeMenu()
+  } catch (error: any) {
+    ctx.lastError.value = String(error?.message || error)
+  } finally {
+    launchingPet.value = false
+  }
 }
 
 function openAt(screenPoint: { x: number; y: number }, nodeId: string) {
@@ -93,7 +116,10 @@ defineExpose({
         @pointerdown.stop
         @contextmenu.prevent
       >
-        <button class="node-menu-item" @click="saveToProfile">SaveToProfile</button>
+        <button class="node-menu-item" :disabled="launchingPet" @click="showPet">
+          {{ launchingPet ? 'ShowingPet...' : 'ShowPet' }}
+        </button>
+        <button class="node-menu-item" :disabled="launchingPet" @click="saveToProfile">SaveToProfile</button>
       </section>
     </div>
   </Teleport>
@@ -126,6 +152,11 @@ defineExpose({
   font-size: 12px;
   padding: 8px 10px;
   cursor: pointer;
+}
+
+.node-menu-item:disabled {
+  cursor: progress;
+  opacity: 0.58;
 }
 
 .node-menu-item:hover {

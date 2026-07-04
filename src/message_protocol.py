@@ -4,12 +4,93 @@ import json
 import os
 import re
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse
 
 
 RESOURCE_KINDS = {"image", "video", "audio", "doc", "file", "url"}
 PART_TYPES = {"text", "resource", "structured", "tool_call", "meta"}
+
+
+@dataclass(frozen=True)
+class TextPart:
+    text: str
+
+    def to_dict(self) -> dict:
+        return {"type": "text", "text": self.text}
+
+
+@dataclass(frozen=True)
+class ResourcePart:
+    resource: dict[str, Any]
+
+    def to_dict(self) -> dict:
+        return {"type": "resource", "resource": dict(self.resource)}
+
+
+@dataclass(frozen=True)
+class StructuredPart:
+    data: Any
+
+    def to_dict(self) -> dict:
+        return {"type": "structured", "data": self.data}
+
+
+@dataclass(frozen=True)
+class ToolCallPart:
+    payload: dict[str, Any]
+
+    def to_dict(self) -> dict:
+        return dict(self.payload)
+
+
+@dataclass(frozen=True)
+class MetaPart:
+    meta: dict[str, Any]
+
+    def to_dict(self) -> dict:
+        return {"type": "meta", "meta": dict(self.meta)}
+
+
+MessagePart = TextPart | ResourcePart | StructuredPart | ToolCallPart | MetaPart
+
+
+@dataclass(frozen=True)
+class MessageEnvelope:
+    id: str
+    role: str
+    parts: tuple[MessagePart, ...]
+    created_at: str
+    trace_id: str = ""
+
+    @classmethod
+    def from_value(cls, value: object, default_role: str = "user") -> "MessageEnvelope":
+        return cls.from_dict(normalize_envelope(value, default_role=default_role))
+
+    @classmethod
+    def from_dict(cls, envelope: dict) -> "MessageEnvelope":
+        raw_parts = envelope.get("parts") if isinstance(envelope, dict) else []
+        parts = tuple(_message_part_from_dict(part) for part in raw_parts if isinstance(part, dict))
+        return cls(
+            id=str(envelope.get("id") or uuid.uuid4().hex),
+            role=str(envelope.get("role") or "user").strip().lower() or "user",
+            parts=parts,
+            created_at=str(envelope.get("created_at") or now_text()),
+            trace_id=str(envelope.get("trace_id") or "").strip(),
+        )
+
+    def to_dict(self) -> dict:
+        payload = {
+            "id": self.id,
+            "role": self.role,
+            "parts": [part.to_dict() for part in self.parts],
+            "created_at": self.created_at,
+        }
+        if self.trace_id:
+            payload["trace_id"] = self.trace_id
+        return payload
 
 
 def now_text() -> str:
@@ -185,6 +266,22 @@ def _normalize_part(item: object) -> dict:
     return payload
 
 
+def _message_part_from_dict(part: dict) -> MessagePart:
+    normalized = _normalize_part(part)
+    part_type = str(normalized.get("type") or "").strip().lower()
+    if part_type == "text":
+        return TextPart(text=str(normalized.get("text") or ""))
+    if part_type == "resource":
+        resource = normalized.get("resource")
+        return ResourcePart(resource=dict(resource) if isinstance(resource, dict) else {})
+    if part_type == "structured":
+        return StructuredPart(data=normalized.get("data"))
+    if part_type == "tool_call":
+        return ToolCallPart(payload=dict(normalized))
+    meta = normalized.get("meta")
+    return MetaPart(meta=dict(meta) if isinstance(meta, dict) else {})
+
+
 def normalize_envelope(value: object, default_role: str = "user") -> dict:
     role = str(default_role or "user").strip().lower() or "user"
     if not isinstance(value, dict):
@@ -225,29 +322,27 @@ def normalize_envelope(value: object, default_role: str = "user") -> dict:
     return envelope
 
 
+def normalize_message_envelope(value: object, default_role: str = "user") -> MessageEnvelope:
+    return MessageEnvelope.from_value(value, default_role=default_role)
+
+
 def envelope_text(value: object) -> str:
-    envelope = normalize_envelope(value, default_role="assistant")
+    envelope = normalize_message_envelope(value, default_role="assistant")
     output: list[str] = []
-    for part in envelope.get("parts") or []:
-        if not isinstance(part, dict):
-            continue
-        typ = str(part.get("type") or "").strip().lower()
-        if typ == "text":
-            text = str(part.get("text") or "")
+    for part in envelope.parts:
+        if isinstance(part, TextPart):
+            text = part.text
             if text:
                 output.append(text)
             continue
-        if typ == "resource":
-            res = part.get("resource")
-            if not isinstance(res, dict):
-                continue
-            kind = str(res.get("kind") or "file")
-            uri = str(res.get("uri") or "").strip()
+        if isinstance(part, ResourcePart):
+            kind = str(part.resource.get("kind") or "file")
+            uri = str(part.resource.get("uri") or "").strip()
             if uri:
                 output.append(f"[{kind}] {uri}")
             continue
-        if typ == "structured":
-            data = part.get("data")
+        if isinstance(part, StructuredPart):
+            data = part.data
             if data is None:
                 continue
             if isinstance(data, (dict, list, tuple)):
@@ -258,8 +353,8 @@ def envelope_text(value: object) -> str:
             else:
                 output.append(str(data))
             continue
-        if typ == "tool_call":
-            text = _tool_call_part_text(part)
+        if isinstance(part, ToolCallPart):
+            text = _tool_call_part_text(part.payload)
             if text:
                 output.append(text)
     return "\n".join([line for line in output if line]).strip()

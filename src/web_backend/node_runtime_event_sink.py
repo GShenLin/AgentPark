@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable
 from typing import Protocol
 
@@ -10,6 +13,7 @@ from src.node_stream_protocol import normalize_node_message_event
 
 from .runtime_event_store import normalize_runtime_event
 from .state_store import _preview_text
+from .state_store import _append_jsonl_line
 from .state_store import _set_node_config_last_message
 from .state_store import _set_node_config_runtime_event
 
@@ -18,6 +22,7 @@ LogGraphEvent = Callable[..., None]
 AppendRuntimeLog = Callable[..., None]
 AppendToolCallEntry = Callable[[str, str, dict], None]
 ClearLiveOutput = Callable[[str, str], None]
+NODE_RUNTIME_EVENTS_FILENAME = "runtime_events.jsonl"
 
 
 class UpdateLiveOutput(Protocol):
@@ -94,6 +99,7 @@ class NodeRuntimeEventSink:
         if text:
             _set_node_config_last_message(self.config_path, text)
             self.stream_last_text = text
+        self._append_node_runtime_event_record("node_message_done", event)
         if callable(self.clear_live_output):
             self.clear_live_output(self.graph_id, self.node_id)
         if callable(self.publish_live_event):
@@ -117,6 +123,7 @@ class NodeRuntimeEventSink:
 
     def _handle_runtime_notice(self, event: dict) -> None:
         _set_node_config_runtime_event(self.config_path, event)
+        self._append_node_runtime_event_record("runtime_notice", event)
         message = _preview_text(str(event.get("message") or ""), 1000)
         self._append_node_runtime_log(
             "runtime_notice",
@@ -176,14 +183,55 @@ class NodeRuntimeEventSink:
                 merged = dict(merged)
                 merged["memory_persistence_warning"] = persistence_warning
                 _set_node_config_runtime_event(self.config_path, merged)
+            self._append_node_runtime_event_record(event_type, merged)
             if callable(self.publish_live_event):
                 self.publish_live_event(self.graph_id, self.node_id, event_type, merged, trace_id=self.trace_id)
             if persistence_warning:
                 return {"memory_persistence_warning": persistence_warning}
             return None
-        elif callable(self.publish_live_event):
+        self._append_node_runtime_event_record(event_type, event)
+        if callable(self.publish_live_event):
             self.publish_live_event(self.graph_id, self.node_id, event_type, event, trace_id=self.trace_id)
         return None
+
+    def _append_node_runtime_event_record(self, event_type: str, event: dict) -> None:
+        payload = {
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"),
+            "event": str(event_type or "").strip(),
+            "graph_id": self.graph_id,
+            "node_instance_id": self.node_id,
+            "node_type_id": self.node_type_id,
+            "trace_id": self.trace_id,
+            "depth": self.depth,
+        }
+        if isinstance(event, dict):
+            payload["runtime_event"] = dict(event)
+            if (
+                str(event.get("type") or "").strip() == "runtime_notice"
+                and str(event.get("stage") or "").strip() == "openai_responses_request_summary"
+            ):
+                summary = self._parse_provider_request_summary(event.get("message"))
+                if summary is not None:
+                    payload["provider_request_summary"] = summary
+        _append_jsonl_line(self._node_runtime_events_path(), payload)
+
+    def _node_runtime_events_path(self) -> str:
+        if not self.config_path:
+            return ""
+        node_dir = os.path.dirname(os.path.abspath(self.config_path))
+        if not node_dir:
+            return ""
+        return os.path.join(node_dir, NODE_RUNTIME_EVENTS_FILENAME)
+
+    @staticmethod
+    def _parse_provider_request_summary(value: object) -> dict | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            payload = json.loads(value)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def _append_tool_runtime_log(self, event: dict, event_type: str) -> None:
         tool_name = str(event.get("name") or "tool").strip() or "tool"

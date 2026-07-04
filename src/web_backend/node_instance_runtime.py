@@ -122,7 +122,7 @@ class NodeInstanceRuntime(HostBoundService):
 
     def get_node_instance_memory(self, node_id: str, max_chars: int = 20000, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         memory_path = self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id)
         messages_path = self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id)
@@ -167,7 +167,7 @@ class NodeInstanceRuntime(HostBoundService):
 
     def delete_node_instance_memory_message(self, node_id: str, message_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         return self.delete_node_instance_memory_message_from_paths(
             self.graph_runtime._node_config_path(safe_node_id, safe_graph_id),
             self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id),
@@ -201,7 +201,7 @@ class NodeInstanceRuntime(HostBoundService):
 
     def get_node_instance_live(self, node_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
@@ -216,7 +216,7 @@ class NodeInstanceRuntime(HostBoundService):
 
     def stream_node_instance_live(self, node_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
@@ -258,7 +258,7 @@ class NodeInstanceRuntime(HostBoundService):
 
     def set_node_instance_state(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
@@ -275,7 +275,7 @@ class NodeInstanceRuntime(HostBoundService):
 
     def control_node_instance(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
@@ -340,4 +340,7 @@ class NodeInstanceRuntime(HostBoundService):
         if action == "start":
             self.graph_runtime._ensure_graph_runner(safe_graph_id)
             self.graph_runtime._wake_graph_runner(safe_graph_id)
+            self.graph_runtime._refresh_scheduled_node(safe_graph_id, safe_node_id)
+        elif action == "stop":
+            self.graph_runtime._unregister_scheduled_node(safe_graph_id, safe_node_id)
         return {"ok": True, "state": result.get("state")}

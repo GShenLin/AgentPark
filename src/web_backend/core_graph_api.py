@@ -245,7 +245,7 @@ class GraphApiDomain(DomainBase):
         text_full = envelope_text(message).strip()
         text_preview = envelope_preview(message)
 
-        safe_from_id = self.graph_runtime._sanitize_node_id(from_id)
+        safe_from_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, from_id)
         config_path = self.graph_runtime._node_config_path(safe_from_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")

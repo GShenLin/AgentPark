@@ -65,11 +65,8 @@ def test_agent_profile_from_node_upserts_and_strips_runtime_fields(tmp_path, mon
         )
         assert second.status_code == 200
 
-        profile_path = tmp_path / "config" / "agentProfile.json"
-        payload = json.loads(profile_path.read_text(encoding="utf-8"))
-        profiles = payload["profiles"]
-        assert len([item for item in profiles if item["id"] == profile_id]) == 1
-        saved = next(item for item in profiles if item["id"] == profile_id)
+        profile_path = tmp_path / "agent" / f"{profile_id}.json"
+        saved = json.loads(profile_path.read_text(encoding="utf-8"))
         assert saved["name"] == "Agent Default Updated"
         assert saved["node_type_id"] == "append_node"
         assert saved["fields"]["prefix"] == "hello"
@@ -81,12 +78,58 @@ def test_agent_profile_from_node_upserts_and_strips_runtime_fields(tmp_path, mon
         shutil.rmtree(graph_dir, ignore_errors=True)
 
 
+def test_agent_profile_delete_removes_profile_file(tmp_path, monkeypatch):
+    _patch_profile_root(monkeypatch, tmp_path)
+
+    import src.web_backend as backend
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graph_id = f"ut_profile_agent_delete_{uuid.uuid4().hex[:8]}"
+    node_id = "agent_profile_delete_node"
+    profile_id = "delete-agent-target"
+    graph_dir = os.path.join(_get_graphs_dir(), graph_id)
+
+    try:
+        client = TestClient(backend.create_app())
+        assert client.post(
+            "/api/nodes/instances",
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id},
+        ).status_code == 200
+        assert client.post(
+            "/api/profiles/agents/from-node",
+            json={
+                "graph_id": graph_id,
+                "node_id": node_id,
+                "profile_id": profile_id,
+                "profile_name": "Delete Agent Target",
+            },
+        ).status_code == 200
+
+        profile_path = tmp_path / "agent" / f"{profile_id}.json"
+        assert profile_path.exists()
+
+        deleted = client.delete(f"/api/profiles/agents/{profile_id}")
+
+        assert deleted.status_code == 200
+        assert deleted.json() == {"ok": True, "profile_id": profile_id, "deleted": True}
+        assert not profile_path.exists()
+        listed = client.get("/api/profiles/agents")
+        assert listed.status_code == 200
+        assert all(item["id"] != profile_id for item in listed.json().get("profiles", []))
+
+        deleted_again = client.delete(f"/api/profiles/agents/{profile_id}")
+        assert deleted_again.status_code == 404
+    finally:
+        shutil.rmtree(graph_dir, ignore_errors=True)
+
+
 def test_graph_profile_create_retargets_graph_and_node_config_ids(tmp_path, monkeypatch):
     _patch_profile_root(monkeypatch, tmp_path)
 
     import src.web_backend as backend
     from fastapi.testclient import TestClient
-    from src.web_backend.node_config_service import node_config_service, node_runtime_state_path
+    from src.web_backend.node_config_service import node_config_service
     from src.web_backend.runtime_paths import _get_graphs_dir
 
     source_graph_id = f"ut_profile_src_{uuid.uuid4().hex[:8]}"
@@ -111,7 +154,9 @@ def test_graph_profile_create_retargets_graph_and_node_config_ids(tmp_path, monk
                     "id": source_graph_id,
                     "name": source_graph_id,
                     "nodes": [],
-                    "links": [{"id": "l1", "from": {"node": node_id, "index": 0}, "to": {"node": node_id, "index": 0}}],
+                    "output_routes": {
+                        node_id: [{"output_index": 0, "targets": [{"node_id": node_id, "input_index": 0}]}],
+                    },
                 }
             },
         )
@@ -151,14 +196,11 @@ def test_graph_profile_create_retargets_graph_and_node_config_ids(tmp_path, monk
         assert target_cfg["suffix"] == "world"
         for runtime_key in ("state", "pending", "last_message", "runtime_tool_calls"):
             assert runtime_key not in target_cfg
-        runtime_state_path = node_runtime_state_path(node_config_path)
-        if os.path.exists(runtime_state_path):
-            assert json.loads(open(runtime_state_path, "r", encoding="utf-8").read()) == {}
+        assert not os.path.exists(os.path.join(target_dir, node_id, "runtime_state.json"))
         assert not os.path.exists(os.path.join(target_dir, node_id, "memory.md"))
         assert not os.path.exists(os.path.join(target_dir, node_id, "messages.jsonl"))
 
-        profile_file = json.loads((tmp_path / "config" / "graphProfile.json").read_text(encoding="utf-8"))
-        profile = next(item for item in profile_file["profiles"] if item["id"] == profile_id)
+        profile = json.loads((tmp_path / "graph" / f"{profile_id}.json").read_text(encoding="utf-8"))
         assert profile["graph"]["id"] == source_graph_id
         assert profile["node_configs"][0]["graph_id"] == source_graph_id
         assert profile["node_configs"][0]["fields"]["suffix"] == "world"
@@ -199,3 +241,42 @@ def test_graph_profile_create_rejects_existing_graph_id(tmp_path, monkeypatch):
         shutil.rmtree(source_dir, ignore_errors=True)
         shutil.rmtree(target_dir, ignore_errors=True)
 
+
+def test_graph_profile_delete_removes_profile_file(tmp_path, monkeypatch):
+    _patch_profile_root(monkeypatch, tmp_path)
+
+    import src.web_backend as backend
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    source_graph_id = f"ut_profile_delete_src_{uuid.uuid4().hex[:8]}"
+    profile_id = "delete-target"
+    source_dir = os.path.join(_get_graphs_dir(), source_graph_id)
+
+    try:
+        client = TestClient(backend.create_app())
+        assert client.post(
+            "/api/nodes/instances",
+            json={"node_id": "n1", "type_id": "append_node", "graph_id": source_graph_id},
+        ).status_code == 200
+        assert client.post(
+            "/api/profiles/graphs/from-graph",
+            json={"graph_id": source_graph_id, "profile_id": profile_id, "profile_name": "Delete Target"},
+        ).status_code == 200
+
+        profile_path = tmp_path / "graph" / f"{profile_id}.json"
+        assert profile_path.exists()
+
+        deleted = client.delete(f"/api/profiles/graphs/{profile_id}")
+
+        assert deleted.status_code == 200
+        assert deleted.json() == {"ok": True, "profile_id": profile_id, "deleted": True}
+        assert not profile_path.exists()
+        listed = client.get("/api/profiles/graphs")
+        assert listed.status_code == 200
+        assert all(item["id"] != profile_id for item in listed.json().get("profiles", []))
+
+        deleted_again = client.delete(f"/api/profiles/graphs/{profile_id}")
+        assert deleted_again.status_code == 404
+    finally:
+        shutil.rmtree(source_dir, ignore_errors=True)

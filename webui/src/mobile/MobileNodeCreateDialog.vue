@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getNodeTemplate, type NodeInfo, type ProviderInfo } from '../api'
+import { getNodeTemplate, type AgentProfile, type NodeInfo, type ProviderInfo } from '../api'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
 import { useAgentNodeCreateSchema } from '../composables/useAgentNodeCreateSchema'
@@ -8,6 +8,7 @@ import { useAgentNodeCreateSchema } from '../composables/useAgentNodeCreateSchem
 const props = defineProps<{
   open: boolean
   nodeTypes: NodeInfo[]
+  agentProfiles: AgentProfile[]
   providers: ProviderInfo[]
   availableTools: string[]
 }>()
@@ -15,11 +16,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   create: [payload: { typeId: string; nodeName: string; fields: Record<string, unknown> }]
+  createProfile: [profileId: string]
   error: [message: string]
 }>()
 
 const loading = ref(false)
 const creating = ref(false)
+const creatingProfile = ref(false)
+const selectedProfileId = ref('')
 const selectedTypeId = ref('')
 const selectedNodeName = ref('')
 const selectedNodeSchema = ref<Record<string, any>>({})
@@ -51,10 +55,22 @@ function setSelectedNodeField(key: string, value: any) {
 }
 
 function resetSelection() {
+  selectedProfileId.value = ''
   selectedTypeId.value = ''
   selectedNodeName.value = ''
   selectedNodeSchema.value = {}
   selectedNodeFields.value = {}
+}
+
+async function createFromProfile() {
+  const profileId = String(selectedProfileId.value || '').trim()
+  if (!profileId) return
+  creatingProfile.value = true
+  try {
+    emit('createProfile', profileId)
+  } finally {
+    creatingProfile.value = false
+  }
 }
 
 async function selectNodeType(node: NodeInfo) {
@@ -130,6 +146,21 @@ watch(
       </header>
 
       <div class="create-body">
+        <section v-if="agentProfiles.length" class="preset-panel">
+          <div class="preset-title">Node preset</div>
+          <div class="preset-row">
+            <select v-model="selectedProfileId" class="field-input" :disabled="creatingProfile || creating">
+              <option value="">Choose preset</option>
+              <option v-for="profile in agentProfiles" :key="profile.id" :value="profile.id">
+                {{ profile.name || profile.id }}
+              </option>
+            </select>
+            <button class="primary-btn preset-btn" type="button" :disabled="!selectedProfileId || creatingProfile" @click="createFromProfile">
+              {{ creatingProfile ? 'Creating...' : 'Create' }}
+            </button>
+          </div>
+        </section>
+
         <div class="node-type-list">
           <button
             v-for="node in nodeTypes"
@@ -137,7 +168,7 @@ watch(
             class="node-type-btn"
             type="button"
             :class="{ selected: selectedTypeId === node.id }"
-            :disabled="loading || creating"
+            :disabled="loading || creating || creatingProfile"
             @click="selectNodeType(node)"
           >
             <span class="node-type-name">{{ node.name || node.id }}</span>
@@ -242,6 +273,33 @@ watch(
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
   gap: 8px;
+}
+
+.preset-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.preset-title {
+  color: rgba(203, 213, 225, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.preset-btn {
+  min-width: 84px;
 }
 
 .node-type-btn {

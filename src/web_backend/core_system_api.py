@@ -2,10 +2,11 @@ import mimetypes
 import os
 import shutil
 import subprocess
+import threading
 import uuid
 from urllib.parse import unquote
 
-from fastapi import File, Form, HTTPException, UploadFile
+from fastapi import File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from src.file_transaction import atomic_write_text
@@ -72,6 +73,19 @@ class SystemApiDomain(DomainBase):
                 subprocess.Popen([restart_path], cwd=runtime_root, start_new_session=True)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+        return {"ok": True}
+
+    def exit_server(self, request: Request):
+        exit_func = getattr(request.app.state, "request_workspace_exit", None)
+        if not callable(exit_func):
+            raise HTTPException(status_code=500, detail="workspace exit hook is not available")
+
+        def request_exit() -> None:
+            exit_func("exit requested by Settings")
+
+        timer = threading.Timer(0.2, request_exit)
+        timer.daemon = True
+        timer.start()
         return {"ok": True}
 
     def upload_files(self, files: list[UploadFile] = File(...), trace_id: str = Form("")):

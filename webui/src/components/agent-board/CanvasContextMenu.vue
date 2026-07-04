@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { getNodeTemplate, listAgentProfiles, type AgentProfile, type NodeInfo } from '../../api'
+import { deleteAgentProfile, getNodeTemplate, listAgentProfiles, type AgentProfile, type NodeInfo } from '../../api'
 import { useAgentNodeCreateSchema } from '../../composables/useAgentNodeCreateSchema'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
 import { AgentBoardKey } from './context'
+import AgentProfileDropdown from './AgentProfileDropdown.vue'
 import NodeConfigFields from './NodeConfigFields.vue'
 
 const injected = inject(AgentBoardKey, null)
@@ -32,7 +33,7 @@ const selectedNodeSchema = ref<Record<string, any>>({})
 const selectedNodeFields = ref<Record<string, any>>({})
 const agentProfiles = ref<AgentProfile[]>([])
 const profileLoading = ref(false)
-const selectedProfileId = ref('')
+const deletingProfileId = ref('')
 const {
   modeOptions,
   toolOptions,
@@ -146,7 +147,6 @@ function openAt(screenPoint: { x: number; y: number }, boardPoint: { x: number; 
   menuTop.value = Number(screenPoint?.y ?? 0)
   showMenu.value = true
   menuQuery.value = ''
-  selectedProfileId.value = ''
   void refreshAgentProfiles()
   void nextTick(() => {
     updateMenuPosition()
@@ -171,8 +171,25 @@ async function createFromProfile(profileId: string) {
     closeMenu()
   } catch (e: any) {
     ctx.lastError.value = String(e?.message || e)
+  }
+}
+
+async function deleteProfile(profileId: string) {
+  const safeProfileId = String(profileId || '').trim()
+  if (!safeProfileId || deletingProfileId.value) return
+  const profile = agentProfiles.value.find((item) => item.id === safeProfileId)
+  const profileName = String(profile?.name || profile?.id || safeProfileId)
+  if (!window.confirm(`Delete profile "${profileName}"?`)) return
+  deletingProfileId.value = safeProfileId
+  ctx.lastError.value = null
+  try {
+    await deleteAgentProfile(safeProfileId)
+    await refreshAgentProfiles()
+    window.dispatchEvent(new CustomEvent('agent-profiles-changed'))
+  } catch (e: any) {
+    ctx.lastError.value = String(e?.message || e)
   } finally {
-    selectedProfileId.value = ''
+    deletingProfileId.value = ''
   }
 }
 
@@ -246,17 +263,13 @@ defineExpose({
         <header class="context-menu-head">
           <div class="context-menu-title-row">
             <div class="context-menu-title">Create Node</div>
-            <select
-              v-model="selectedProfileId"
-              class="profile-select"
-              :disabled="profileLoading || agentProfiles.length === 0"
-              @change="createFromProfile(selectedProfileId)"
-            >
-              <option value="">{{ profileLoading ? 'Loading...' : 'Profile' }}</option>
-              <option v-for="profile in agentProfiles" :key="profile.id" :value="profile.id">
-                {{ profile.name || profile.id }}
-              </option>
-            </select>
+            <AgentProfileDropdown
+              :profiles="agentProfiles"
+              :loading="profileLoading"
+              :deleting-profile-id="deletingProfileId"
+              @select="createFromProfile"
+              @delete="deleteProfile"
+            />
           </div>
           <div class="context-menu-sub">Right-click position: {{ Math.round(createPoint.x) }}, {{ Math.round(createPoint.y) }}</div>
         </header>
@@ -365,7 +378,6 @@ defineExpose({
 }
 
 .context-menu-search,
-.profile-select,
 .field-input {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.3);
@@ -378,15 +390,8 @@ defineExpose({
 }
 
 .context-menu-search:focus,
-.profile-select:focus,
 .field-input:focus {
   border-color: rgba(56, 189, 248, 0.7);
-}
-
-.profile-select {
-  width: 116px;
-  padding: 6px 8px;
-  font-size: 11px;
 }
 
 .context-menu-list {

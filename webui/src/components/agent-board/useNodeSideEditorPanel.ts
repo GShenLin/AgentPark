@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch, type ComputedRef } from 'vue'
 import type { AgentBoardContext, NodeCard } from './context'
 
-const CARD_WIDTH = 200
+const CARD_WIDTH = 230
 const PANEL_DEFAULT_WIDTH = 360
 const PANEL_DEFAULT_HEIGHT = 620
 const PANEL_MIN_WIDTH = 320

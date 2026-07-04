@@ -2,6 +2,7 @@ import json
 import os
 
 from src.web_backend.node_config_service import read_node_config_optional
+from src.web_backend.node_config_service import RUNTIME_STATE_FIELDS
 
 
 def load_node_config_file(node_dir: str, *, filename: str = "config.json") -> dict:
@@ -16,6 +17,8 @@ def load_node_config_file(node_dir: str, *, filename: str = "config.json") -> di
                 raise ValueError(f"Node config '{config_path}' must contain a JSON object.") from exc
             raise ValueError(f"Failed to read node config '{config_path}': {exc}") from exc
         payload.pop("schemaVersion", None)
+        for key in RUNTIME_STATE_FIELDS:
+            payload.pop(key, None)
         return payload
     try:
         with open(config_path, "r", encoding="utf-8") as file_obj:

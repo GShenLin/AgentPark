@@ -4,20 +4,18 @@ import time
 from typing import Any, Callable
 
 from src.providers.curl_transport import CurlHttpTransport, CurlResponse, CurlTransportError
+from src.providers.provider_errors import ProviderHttpError, ProviderProtocolError, ProviderTransportError
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import sleep_with_cancel
 from src.service_host import HostBoundService
 
 
-class ZhipuHttpError(RuntimeError):
-    def __init__(self, status_code: int, response_body: str):
-        self.status_code = int(status_code or 0)
-        self.response_body = str(response_body or "")
-        super().__init__(f"HTTP {self.status_code}: {self.response_body}")
+class ZhipuHttpError(ProviderHttpError):
+    pass
 
 
-class ZhipuTransportError(RuntimeError):
+class ZhipuTransportError(ProviderTransportError):
     pass
 
 
@@ -103,7 +101,7 @@ class ZhipuHttpTransport(CurlHttpTransport, ProviderRuntimeEventMixin, HostBound
         try:
             return json.loads(response.body)
         except Exception as exc:
-            raise RuntimeError(f"Invalid JSON response: {exc}; body={response.body[:500]}") from exc
+            raise ProviderProtocolError(f"Invalid JSON response: {exc}; body={response.body[:500]}") from exc
 
     def _post_json_with_retry(self, *, endpoint: str, url: str, headers: dict, payload_json: str) -> dict:
         max_retries, retry_delay = self._resolve_retry_policy()

@@ -19,7 +19,7 @@ def test_graph_config_strips_nodes_field():
             "id": graph_id,
             "name": graph_id,
             "nodes": [{"id": "x", "typeId": "append_node", "name": "x", "ui": {"x": 1, "y": 2}}],
-            "links": [],
+            "output_routes": {},
         }
         r = client.post(f"/api/graphs/{graph_id}", json={"graph": graph})
         assert r.status_code == 200
@@ -27,10 +27,41 @@ def test_graph_config_strips_nodes_field():
         config_path = os.path.join(_get_graphs_dir(), graph_id, "config.json")
         saved = json.loads(open(config_path, "r", encoding="utf-8").read())
         assert "nodes" not in saved
-        assert saved.get("links") == []
+        assert "links" not in saved
+        assert saved.get("output_routes") == {}
 
         loaded = client.get(f"/api/graphs/{graph_id}").json().get("graph") or {}
         assert "nodes" not in loaded
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_graph_config_persists_working_path():
+    import src.web_backend as backend
+
+    graph_id = f"ut_graph_working_path_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    try:
+        client = TestClient(app)
+        graph = {
+            "id": graph_id,
+            "name": graph_id,
+            "working_path": r"C:\Project\GraphRoot",
+            "nodes": [],
+            "output_routes": {},
+        }
+        r = client.post(f"/api/graphs/{graph_id}", json={"graph": graph})
+        assert r.status_code == 200
+
+        config_path = os.path.join(_get_graphs_dir(), graph_id, "config.json")
+        saved = json.loads(open(config_path, "r", encoding="utf-8").read())
+        assert saved.get("working_path") == r"C:\Project\GraphRoot"
+
+        loaded = client.get(f"/api/graphs/{graph_id}").json().get("graph") or {}
+        assert loaded.get("working_path") == r"C:\Project\GraphRoot"
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
@@ -51,7 +82,7 @@ def test_graph_copy_artifacts_retargets_node_configs_and_skips_runner_log():
     try:
         os.makedirs(os.path.join(source_dir, node_id), exist_ok=True)
         with open(os.path.join(source_dir, "config.json"), "w", encoding="utf-8") as handle:
-            json.dump({"id": source_graph_id, "name": source_graph_id, "links": []}, handle)
+            json.dump({"id": source_graph_id, "name": source_graph_id, "output_routes": {}}, handle)
         with open(os.path.join(source_dir, "runner.events.jsonl"), "w", encoding="utf-8") as handle:
             handle.write('{"event":"old"}\n')
         with open(os.path.join(source_dir, node_id, "config.json"), "w", encoding="utf-8") as handle:
@@ -68,7 +99,7 @@ def test_graph_copy_artifacts_retargets_node_configs_and_skips_runner_log():
         response = TestClient(app).post(
             f"/api/graphs/{target_graph_id}",
             json={
-                "graph": {"id": target_graph_id, "name": target_graph_id, "links": []},
+                "graph": {"id": target_graph_id, "name": target_graph_id, "output_routes": {}},
                 "source_graph_id": source_graph_id,
             },
         )
@@ -113,7 +144,7 @@ def test_graph_save_without_source_does_not_recopy_default_artifacts_after_node_
         copied = client.post(
             f"/api/graphs/{target_graph_id}",
             json={
-                "graph": {"id": target_graph_id, "name": target_graph_id, "links": []},
+                "graph": {"id": target_graph_id, "name": target_graph_id, "output_routes": {}},
                 "source_graph_id": "default",
             },
         )
@@ -127,7 +158,7 @@ def test_graph_save_without_source_does_not_recopy_default_artifacts_after_node_
 
         saved = client.post(
             f"/api/graphs/{target_graph_id}",
-            json={"graph": {"id": target_graph_id, "name": target_graph_id, "links": []}},
+            json={"graph": {"id": target_graph_id, "name": target_graph_id, "output_routes": {}}},
         )
         assert saved.status_code == 200
         assert not os.path.exists(target_node_dir)
@@ -151,7 +182,7 @@ def test_graph_load_supports_version_unchanged_response():
             "id": graph_id,
             "name": graph_id,
             "nodes": [],
-            "links": [{"id": "l1", "from": {"node": "a", "index": 0}, "to": {"node": "b", "index": 0}}],
+            "output_routes": {"a": [{"output_index": 0, "targets": [{"node_id": "b", "input_index": 0}]}]},
         }
         r = client.post(f"/api/graphs/{graph_id}", json={"graph": graph})
         assert r.status_code == 200
@@ -161,7 +192,7 @@ def test_graph_load_supports_version_unchanged_response():
         payload = loaded.json().get("graph") or {}
         version = int(payload.get("version") or 0)
         assert version > 0
-        assert payload.get("links")
+        assert payload.get("output_routes")
 
         unchanged = client.get(f"/api/graphs/{graph_id}?if_version={version}")
         assert unchanged.status_code == 200
@@ -169,6 +200,91 @@ def test_graph_load_supports_version_unchanged_response():
         assert unchanged_payload == {"id": graph_id, "version": version, "unchanged": True}
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_graph_config_drops_legacy_links_without_conversion():
+    import src.web_backend as backend
+
+    graph_id = f"ut_drop_links_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    try:
+        client = TestClient(app)
+        graph = {
+            "id": graph_id,
+            "name": graph_id,
+            "nodes": [
+                {"id": "source", "typeId": "append_node", "name": "source", "ui": {"x": 0, "y": 0}},
+                {"id": "target", "typeId": "append_node", "name": "target", "ui": {"x": 100, "y": 0}},
+            ],
+            "links": [{"id": "old", "from": {"node": "source", "index": 0}, "to": {"node": "target", "index": 0}}],
+        }
+        response = client.post(f"/api/graphs/{graph_id}", json={"graph": graph})
+        assert response.status_code == 200
+
+        config_path = os.path.join(_get_graphs_dir(), graph_id, "config.json")
+        saved = json.loads(open(config_path, "r", encoding="utf-8").read())
+        assert "links" not in saved
+        assert saved.get("output_routes") == {}
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_node_rename_and_delete_keep_output_routes_consistent():
+    import src.web_backend as backend
+
+    graph_id = f"ut_routes_consistency_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graph_dir = os.path.join(_get_graphs_dir(), graph_id)
+    client = TestClient(app)
+    try:
+        for node_id in ("source", "target"):
+            created = client.post(
+                "/api/nodes/instances",
+                json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id},
+            )
+            assert created.status_code == 200
+
+        saved = client.post(
+            f"/api/graphs/{graph_id}",
+            json={
+                "graph": {
+                    "id": graph_id,
+                    "name": graph_id,
+                    "output_routes": {
+                        "source": [
+                            {
+                                "output_index": 0,
+                                "targets": [{"node_id": "target", "input_index": 0}],
+                            }
+                        ]
+                    },
+                }
+            },
+        )
+        assert saved.status_code == 200
+
+        renamed = client.post(
+            f"/api/nodes/instances/source/rename?graph_id={graph_id}",
+            json={"new_node_id": "renamed", "new_name": "renamed"},
+        )
+        assert renamed.status_code == 200
+        after_rename = json.loads(open(os.path.join(graph_dir, "config.json"), "r", encoding="utf-8").read())
+        assert "source" not in after_rename["output_routes"]
+        assert after_rename["output_routes"]["renamed"][0]["targets"][0]["node_id"] == "target"
+
+        deleted = client.delete(f"/api/nodes/instances/target?graph_id={graph_id}")
+        assert deleted.status_code == 200
+        after_delete = json.loads(open(os.path.join(graph_dir, "config.json"), "r", encoding="utf-8").read())
+        assert after_delete["output_routes"]["renamed"][0]["targets"] == []
+        assert "links" not in after_delete
+    finally:
+        shutil.rmtree(graph_dir, ignore_errors=True)
 
 
 def test_graph_load_rejects_non_object_config():
@@ -204,7 +320,7 @@ def test_delete_graph_stops_runner_before_removing_runner_log():
     graph_dir = os.path.join(_get_graphs_dir(), graph_id)
     try:
         client = TestClient(app)
-        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "links": []}})
+        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "output_routes": {}}})
         assert saved.status_code == 200
         started = client.post(f"/api/graphs/{graph_id}/runner/start")
         assert started.status_code == 200
@@ -233,7 +349,7 @@ def test_delete_graph_reports_runner_stop_timeout():
     graph_dir = os.path.join(_get_graphs_dir(), graph_id)
     try:
         client = TestClient(app)
-        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "links": []}})
+        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "output_routes": {}}})
         assert saved.status_code == 200
         blocker.start()
         facade.core.graph_runners[graph_id] = {
@@ -281,7 +397,7 @@ def test_delete_graph_reports_active_executor_task_timeout():
     graph_dir = os.path.join(_get_graphs_dir(), graph_id)
     try:
         client = TestClient(app)
-        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "links": []}})
+        saved = client.post(f"/api/graphs/{graph_id}", json={"graph": {"id": graph_id, "name": graph_id, "output_routes": {}}})
         assert saved.status_code == 200
         facade.core.graph_runners[graph_id] = runner_state
 

@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 
+from src.providers.agent_environment_context import resolve_agent_working_directory
 from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 
 
@@ -136,9 +137,9 @@ def rg_search_text(
         if not isinstance(query, str) or not query.strip():
             return json.dumps({"status": "error", "error": "query is required"}, ensure_ascii=False)
 
-        root = resolve_root(project_root)
+        root = resolve_root(project_root, agent=agent)
         if not root:
-            return json.dumps({"status": "error", "error": f"project_root not found: {project_root}"}, ensure_ascii=False)
+            return json.dumps({"status": "error", "error": f"project_root not found: {resolve_root_label(project_root, agent)}"}, ensure_ascii=False)
 
         include_globs = normalize_globs(include_globs)
         exclude_globs = normalize_globs(exclude_globs)
@@ -189,9 +190,9 @@ def rg_list_files(
     agent=None,
 ):
     try:
-        root = resolve_root(project_root)
+        root = resolve_root(project_root, agent=agent)
         if not root:
-            return json.dumps({"status": "error", "error": f"project_root not found: {project_root}"}, ensure_ascii=False)
+            return json.dumps({"status": "error", "error": f"project_root not found: {resolve_root_label(project_root, agent)}"}, ensure_ascii=False)
 
         include_globs = normalize_globs(include_globs)
         exclude_globs = normalize_globs(exclude_globs)
@@ -232,12 +233,18 @@ def rg_list_files(
         return json.dumps({"status": "exception", "error": str(e)}, ensure_ascii=False)
 
 
-def resolve_root(project_root):
-    root = project_root if isinstance(project_root, str) and project_root.strip() else os.getcwd()
+def resolve_root(project_root, *, agent=None):
+    root = resolve_root_label(project_root, agent)
     root = os.path.abspath(root)
     if not os.path.isdir(root):
         return None
     return root
+
+
+def resolve_root_label(project_root, agent=None):
+    if isinstance(project_root, str) and project_root.strip():
+        return project_root.strip()
+    return resolve_agent_working_directory(agent)
 
 
 def resolve_limit(raw_value, default_value, hard_max):

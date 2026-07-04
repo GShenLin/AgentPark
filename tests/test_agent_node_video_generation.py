@@ -1,7 +1,6 @@
 def test_agent_node_builds_doubao_video_generation_content():
-    import nodes.agent_node as agent_node_module
+    from nodes.agent_message_adapter import build_agent_user_content
 
-    node = agent_node_module.Node()
     message = {
         "role": "user",
         "parts": [
@@ -12,7 +11,7 @@ def test_agent_node_builds_doubao_video_generation_content():
         ],
     }
 
-    content = node._build_user_content("doubao-seedance-2-0-260128", "video_generation", message, "")
+    content = build_agent_user_content("doubao-seedance-2-0-260128", "video_generation", message, "")
 
     assert content == [
         {"type": "text", "text": "做一个广告视频"},
@@ -23,9 +22,8 @@ def test_agent_node_builds_doubao_video_generation_content():
 
 
 def test_agent_node_accepts_local_image_for_video_generation_without_public_base_url(tmp_path):
-    import nodes.agent_node as agent_node_module
+    from nodes.agent_message_adapter import build_agent_user_content
 
-    node = agent_node_module.Node()
     image_path = tmp_path / "local.png"
     image_path.write_bytes(b"png")
     message = {
@@ -36,7 +34,7 @@ def test_agent_node_accepts_local_image_for_video_generation_without_public_base
         ],
     }
 
-    content = node._build_user_content(
+    content = build_agent_user_content(
         "doubao-seedance-2-0-260128",
         "video_generation",
         message,

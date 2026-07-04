@@ -89,6 +89,7 @@ export type AgentBoardContext = {
   graphLoadRequest: Ref<GraphConfig | null>
   currentGraphId: Ref<string | null>
   currentGraphName: Ref<string | null>
+  currentGraphWorkingPath: Ref<string>
 
   availableNodes: Ref<NodeInfo[]>
   nodes: Ref<NodeCard[]>
@@ -157,6 +158,12 @@ export type AgentBoardContext = {
   linkPath: (link: LinkItem) => string
   activeLinkPath: () => string
   detachLinks: (id: string) => void
+  addOutputRoute: (sourceId: string) => Promise<void>
+  updateOutputRoute: (
+    routeId: string,
+    patch: { outputIndex?: number; targetNodeId?: string; inputIndex?: number },
+  ) => Promise<void>
+  removeOutputRoute: (routeId: string) => Promise<void>
 
   linkFlows: Ref<{ id: string; linkId: string }[]>
   LINK_FLOW_DURATION_MS: number

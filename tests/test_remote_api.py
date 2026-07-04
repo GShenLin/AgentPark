@@ -61,6 +61,16 @@ def test_remote_api_route_uses_request_client_address(monkeypatch, tmp_path):
     assert [item["id"] for item in response.json()["remotes"]] == ["default"]
 
 
+def test_remote_status_reports_whether_client_is_local(monkeypatch, tmp_path):
+    import src.web_backend.remote_api as remote_api_module
+
+    monkeypatch.setattr(remote_api_module, "_get_runtime_root", lambda: str(tmp_path))
+    domain = RemoteApiDomain(SimpleNamespace())
+
+    assert domain.get_remote_status(_request_from("127.0.0.1")) == {"is_local_client": True}
+    assert domain.get_remote_status(_request_from("10.0.0.9")) == {"is_local_client": False}
+
+
 def test_remote_api_rejects_private_remote_created_from_nonlocal_client(monkeypatch, tmp_path):
     import src.web_backend.remote_api as remote_api_module
 

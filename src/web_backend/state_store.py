@@ -4,12 +4,12 @@ import threading
 from datetime import datetime
 
 from .node_config_service import read_node_config_optional, write_node_config
+from .runtime_state_memory_store import runtime_state_memory_store
 from .node_event_sequence import bump_node_event_seq
 from .node_state_machine import (
     apply_recovery_plan,
     parse_node_state,
     plan_stale_working_recovery,
-    plan_startup_recovery,
 )
 from .runtime_event_store import append_runtime_event
 from .runtime_event_store import clear_runtime_event
@@ -84,13 +84,7 @@ class NodeConfigStore:
             return self._write_unlocked(file_path, data)
 
     def update_state(self, config_path: str, state: str) -> None:
-        if not config_path:
-            return
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return
+        def mutate(payload: dict) -> None:
             if bool(payload.get("_delete_requested")):
                 return
             next_state = parse_node_state(state)
@@ -99,26 +93,26 @@ class NodeConfigStore:
             payload["state"] = next_state
             if next_state != "working":
                 payload.pop("_stop_requested", None)
-            self._write_unlocked(config_path, payload)
+
+        if config_path:
+            runtime_state_memory_store.update(config_path, mutate)
 
     def transition_to_idle(self, config_path: str) -> None:
         if not config_path:
             return
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return
+        cfg = self._read_unlocked(config_path)
+        type_id = str((cfg or {}).get("type_id") or "").strip()
+
+        def mutate(payload: dict) -> None:
             if bool(payload.get("_delete_requested")):
                 if parse_node_state(payload.get("state")) != "stop":
                     bump_node_event_seq(payload)
                 payload["state"] = "stop"
                 payload.pop("_stop_requested", None)
-                self._write_unlocked(config_path, payload)
                 return
             if parse_node_state(payload.get("state")) == "stop":
                 return
-            if str(payload.get("type_id") or "").strip() == "clock_node" and bool(payload.get("_clock_running")):
+            if type_id == "clock_node" and bool(payload.get("_clock_running")):
                 if parse_node_state(payload.get("state")) != "working":
                     bump_node_event_seq(payload)
                 payload["state"] = "working"
@@ -127,16 +121,13 @@ class NodeConfigStore:
                     bump_node_event_seq(payload)
                 payload["state"] = "idle"
                 payload.pop("_stop_requested", None)
-            self._write_unlocked(config_path, payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
 
     def append_pending(self, config_path: str, item: dict) -> None:
         if not config_path:
             return
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict):
-                payload = {}
+        def mutate(payload: dict) -> None:
             if bool(payload.get("_delete_requested")):
                 raise NodeDeletingError("node is being deleted")
             pending = payload.get("pending")
@@ -146,43 +137,40 @@ class NodeConfigStore:
             payload["pending"] = pending
             payload["pending_count"] = len(pending)
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
 
     def pop_pending(self, config_path: str) -> dict | None:
         if not config_path:
             return None
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return None
+        popped: dict | None = None
+
+        def mutate(payload: dict) -> None:
+            nonlocal popped
             pending = payload.get("pending")
             if not isinstance(pending, list) or not pending:
                 pending_count_raw = payload.get("pending_count")
                 pending_count = int(pending_count_raw) if isinstance(pending_count_raw, (int, float)) else 0
                 if pending_count != 0:
                     payload["pending_count"] = 0
-                    self._write_unlocked(config_path, payload)
-                return None
+                return
             item = pending.pop(0)
             payload["pending"] = pending
             payload["pending_count"] = len(pending)
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
-            return item if isinstance(item, dict) else None
+            popped = item if isinstance(item, dict) else None
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return popped
 
     def cancel_work(self, config_path: str) -> dict:
         result = {"cleared_pending": 0, "cleared_inflight": False, "state": "idle"}
         if not config_path:
             return result
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return result
+        def mutate(payload: dict) -> None:
             if bool(payload.get("_delete_requested")):
                 result["state"] = parse_node_state(payload.get("state"))
-                return result
+                return
             pending = payload.get("pending")
             if isinstance(pending, list):
                 result["cleared_pending"] = len(pending)
@@ -204,29 +192,24 @@ class NodeConfigStore:
                 payload["last_message"] = "Stopped. Pending work cleared."
                 result["state"] = "idle"
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
-            return result
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return result
 
     def is_stop_requested(self, config_path: str) -> bool:
         if not config_path:
             return False
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return False
-            return bool(payload.get("_stop_requested"))
+        return bool(runtime_state_memory_store.snapshot(config_path).get("_stop_requested"))
 
     def finish_stop_requested(self, config_path: str, message: str = "Stopped.") -> bool:
         if not config_path:
             return False
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return False
+        finished = False
+
+        def mutate(payload: dict) -> None:
+            nonlocal finished
             if not bool(payload.get("_stop_requested")):
-                return False
+                return
             pending = payload.get("pending")
             payload["pending_count"] = len(pending) if isinstance(pending, list) else 0
             payload.pop("inflight", None)
@@ -237,37 +220,39 @@ class NodeConfigStore:
             payload["last_run_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             clear_runtime_event(payload)
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
-            return True
+            finished = True
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return finished
 
     def dequeue_pending_to_working(self, config_path: str, runtime_owner_id: str | None = None) -> dict | None:
         if not config_path:
             return None
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return None
+        cfg = self._read_unlocked(config_path)
+        type_id = str((cfg or {}).get("type_id") or "").strip()
+        picked: dict | None = None
+
+        def mutate(payload: dict) -> None:
+            nonlocal picked
             if bool(payload.get("_delete_requested")):
-                return None
+                return
             current_state = parse_node_state(payload.get("state"))
             if current_state != "idle":
                 is_clock_waiting = (
                     current_state == "working"
-                    and str(payload.get("type_id") or "").strip() == "clock_node"
+                    and type_id == "clock_node"
                     and bool(payload.get("_clock_running"))
                     and not isinstance(payload.get("inflight"), dict)
                 )
                 if not is_clock_waiting:
-                    return None
+                    return
             pending = payload.get("pending")
             if not isinstance(pending, list) or not pending:
                 pending_count_raw = payload.get("pending_count")
                 pending_count = int(pending_count_raw) if isinstance(pending_count_raw, (int, float)) else 0
                 if pending_count != 0:
                     payload["pending_count"] = 0
-                    self._write_unlocked(config_path, payload)
-                return None
+                return
             owner = str(runtime_owner_id or "").strip()
             picked_index = None
             for index, candidate in enumerate(pending):
@@ -279,32 +264,29 @@ class NodeConfigStore:
                     picked_index = index
                     break
             if picked_index is None:
-                return None
+                return
             item = pending.pop(picked_index)
-            picked = item if isinstance(item, dict) else None
-            if picked is None:
+            next_picked = item if isinstance(item, dict) else None
+            if next_picked is None:
                 payload["pending"] = pending
                 payload["pending_count"] = len(pending)
-                self._write_unlocked(config_path, payload)
-                return None
+                return
             payload["pending"] = pending
             payload["pending_count"] = len(pending)
-            payload["inflight"] = picked
+            payload["inflight"] = next_picked
             payload["inflight_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             payload["state"] = "working"
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
-            return picked
+            picked = next_picked
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return picked
 
     def mark_delete_requested(self, config_path: str) -> dict:
         result = {"cleared_pending": 0, "cleared_inflight": False, "state": "stop"}
         if not config_path:
             return result
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return result
+        def mutate(payload: dict) -> None:
             pending = payload.get("pending")
             if isinstance(pending, list):
                 result["cleared_pending"] = len(pending)
@@ -323,29 +305,23 @@ class NodeConfigStore:
                 payload["state"] = "stop"
                 result["state"] = "stop"
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
-            return result
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return result
 
     def set_last_message(self, config_path: str, output: str) -> None:
         if not config_path:
             return
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return
+        def mutate(payload: dict) -> None:
             payload["last_message"] = str(output or "")
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
 
     def set_runtime_event(self, config_path: str, event: dict | None, *, reset_history: bool = False) -> None:
         if not config_path:
             return
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return
+        def mutate(payload: dict) -> None:
             if isinstance(event, dict) and event:
                 if reset_history:
                     clear_runtime_event(payload, reset_history=True)
@@ -353,28 +329,22 @@ class NodeConfigStore:
             else:
                 clear_runtime_event(payload, reset_history=reset_history)
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
 
     def touch_last_run_at(self, config_path: str, run_at: str | None = None) -> None:
         if not config_path:
             return
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return
+        def mutate(payload: dict) -> None:
             timestamp = str(run_at or "").strip() or datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             payload["last_run_at"] = timestamp
-            self._write_unlocked(config_path, payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
 
     def set_inflight(self, config_path: str, item: dict | None) -> None:
         if not config_path:
             return
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return
+        def mutate(payload: dict) -> None:
             if isinstance(item, dict):
                 payload["inflight"] = item
                 payload["inflight_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -382,21 +352,20 @@ class NodeConfigStore:
                 payload.pop("inflight", None)
                 payload.pop("inflight_at", None)
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
 
     def recover_inflight_to_pending(self, config_path: str) -> bool:
         if not config_path:
             return False
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return False
+        recovered = False
+
+        def mutate(payload: dict) -> None:
+            nonlocal recovered
             inflight = payload.get("inflight")
             if not isinstance(inflight, dict):
                 payload.pop("inflight", None)
-                self._write_unlocked(config_path, payload)
-                return False
+                return
             pending = payload.get("pending")
             if not isinstance(pending, list):
                 pending = []
@@ -406,55 +375,47 @@ class NodeConfigStore:
             payload.pop("inflight", None)
             payload.pop("inflight_at", None)
             bump_node_event_seq(payload)
-            self._write_unlocked(config_path, payload)
-            return True
+            recovered = True
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return recovered
 
     def recover_startup_runtime_state(self, config_path: str) -> dict:
-        result = {
+        runtime_state_memory_store.clear(config_path)
+        return {
             "recovered": False,
-            "reason": "",
+            "reason": "runtime_state_memory_reset",
             "before_state": "idle",
             "after_state": "idle",
             "inflight_requeued": False,
             "pending_count": 0,
         }
-        if not config_path:
-            return result
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return result
-            before_state = parse_node_state(payload.get("state"))
-            plan = plan_startup_recovery(payload)
-            apply_recovery_plan(payload, plan)
-            if plan.changed:
-                bump_node_event_seq(payload)
-                self._write_unlocked(config_path, payload)
-            next_result = plan.to_result()
-            next_result["before_state"] = before_state
-            next_result["after_state"] = parse_node_state(payload.get("state"))
-            return next_result
 
     def recover_stale_working(self, config_path: str, stale_seconds: int = 120) -> dict:
         result = {"recovered": False, "reason": "", "pending_count": 0}
         if not config_path:
             return result
-        lock = self._get_lock(config_path)
-        with lock:
-            payload = self._read_unlocked(config_path)
-            if not isinstance(payload, dict) or not payload:
-                return result
+        cfg = self._read_unlocked(config_path)
+        type_id = str((cfg or {}).get("type_id") or "").strip()
+
+        def mutate(payload: dict) -> None:
+            if type_id and "type_id" not in payload:
+                payload["type_id"] = type_id
             plan = plan_stale_working_recovery(payload)
             if plan.changed:
                 apply_recovery_plan(payload, plan)
                 bump_node_event_seq(payload)
-                self._write_unlocked(config_path, payload)
-            return {
-                "recovered": plan.changed,
-                "reason": plan.reason if plan.changed else "",
-                "pending_count": plan.pending_count,
-            }
+            result.update(
+                {
+                    "recovered": plan.changed,
+                    "reason": plan.reason if plan.changed else "",
+                    "pending_count": plan.pending_count,
+                }
+            )
+            payload.pop("type_id", None)
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return result
 
 
 _NODE_CONFIG_STORE = NodeConfigStore()

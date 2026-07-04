@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "id": "test",
+  "name": "123",
+  "renderer": "sprite2d",
+  "fps": 12,
+  "states": {
+    "idle": {
+      "type": "sequence",
+      "loop": true,
+      "frames": [
+        {
+          "src": "idle/squid (3)_2.png",
+          "holdFrames": 22
+        }
+      ],
+      "tracks": {
+        "transform": [
+          {
+            "frame": 11,
+            "x": 0.0,
+            "y": 0.0,
+            "rotation": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0
+          }
+        ],
+        "color": [
+          {
+            "frame": 0,
+            "color": "#ffffff",
+            "opacity": 1.0
+          },
+          {
+            "frame": 6,
+            "color": "#ffffff",
+            "opacity": 0.0
+          },
+          {
+            "frame": 21,
+            "color": "#ffffff",
+            "opacity": 1.0
+          }
+        ]
+      }
+    },
+    "working": {
+      "type": "sequence",
+      "loop": true,
+      "frames": [
+        {
+          "src": "working/squid (1).png",
+          "holdFrames": 30
+        }
+      ],
+      "tracks": {
+        "transform": [
+          {
+            "frame": 0,
+            "x": 0.0,
+            "y": 0.0,
+            "rotation": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0
+          },
+          {
+            "frame": 12,
+            "x": 0.0,
+            "y": 0.0,
+            "rotation": 0.0,
+            "scaleX": 2.0,
+            "scaleY": 1.0
+          },
+          {
+            "frame": 24,
+            "x": 0.0,
+            "y": 0.0,
+            "rotation": 0.0,
+            "scaleX": 1.0,
+            "scaleY": 1.0
+          }
+        ]
+      }
+    },
+    "speaking": {
+      "type": "sequence",
+      "loop": true,
+      "frames": [
+        {
+          "src": "speaking/squid (2).png",
+          "holdFrames": 12
+        }
+      ]
+    }
+  },
+  "created_at": "2026-07-04 12:21:52",
+  "updated_at": "2026-07-04 17:40:20"
+}

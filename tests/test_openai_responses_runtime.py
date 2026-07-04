@@ -45,6 +45,27 @@ def test_responses_input_uses_output_text_for_assistant_history():
     ]
 
 
+def test_responses_input_preserves_developer_messages():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {}
+    agent.provider_name = "openai"
+
+    payload = agent._build_responses_input(
+        [
+            {"role": "developer", "content": "<collaboration_mode>\nPlan\n</collaboration_mode>"},
+            {"role": "user", "content": "hello"},
+        ]
+    )
+
+    assert payload[0]["type"] == "message"
+    assert payload[0]["role"] == "developer"
+    assert payload[0]["content"] == [
+        {"type": "input_text", "text": "<collaboration_mode>\nPlan\n</collaboration_mode>"}
+    ]
+
+
 def test_responses_input_tool_history_items_include_completed_status():
     from src.providers.openai_agent import OpenAIAgent
 
@@ -169,6 +190,63 @@ def test_openai_responses_payload_includes_web_search_when_enabled():
             "search_context_size": "high",
         }
     ]
+    assert payloads[0]["tool_choice"] == "auto"
+    assert payloads[0]["parallel_tool_calls"] is True
+
+
+def test_openai_responses_payload_includes_codex_like_tool_and_reasoning_fields():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run"}],
+        active_tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "echo_tool",
+                    "description": "Echo text.",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+        run_tools=False,
+        reasoning_effort="medium",
+    )
+
+    assert out == "ok"
+    assert payloads[0]["tool_choice"] == "auto"
+    assert payloads[0]["parallel_tool_calls"] is True
+    assert payloads[0]["reasoning"] == {"effort": "medium"}
+    assert payloads[0]["include"] == ["reasoning.encrypted_content"]
 
 
 def test_openai_send_uses_web_search_switch():
@@ -387,6 +465,16 @@ def test_stream_does_not_return_stale_tool_call_intro():
 
     assert out == "rg returned README.md."
     assert len(payloads) == 2
+    assert all(
+        not (
+            item.get("type") == "message"
+            and item.get("role") == "user"
+            and item.get("content")
+            and item["content"][0].get("text", "").startswith("<environment_context>")
+        )
+        for item in payloads[1]["input"]
+        if isinstance(item, dict)
+    )
     assert payloads[1]["input"][-1]["type"] == "function_call_output"
     assert payloads[1]["input"][-1]["call_id"] == "call-1"
     assert "README.md" in payloads[1]["input"][-1]["output"]
@@ -532,9 +620,12 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
     assert out == "Recovered from compact feedback."
     assert len(payloads) == 3
     feedback_input = payloads[2]["input"]
-    assert len(feedback_input) == 2
-    assert feedback_input[0]["content"][0]["text"].startswith("[Agent Environment Context]\n")
-    feedback_text = feedback_input[1]["content"][0]["text"]
+    assert len(feedback_input) == 3
+    assert feedback_input[0]["role"] == "developer"
+    assert feedback_input[0]["content"][0]["text"].startswith("<permissions instructions>")
+    assert feedback_input[1]["role"] == "user"
+    assert feedback_input[1]["content"][0]["text"].startswith("<environment_context>")
+    feedback_text = feedback_input[2]["content"][0]["text"]
     assert len(json.dumps(feedback_input, ensure_ascii=False)) < 10000
     assert "inspect DA_Action_Book" in feedback_text
     assert "tool_result_submission_error" in feedback_text
@@ -543,7 +634,7 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
     diagnostics = feedback_payload["diagnostics"]
     assert diagnostics["likely_cause"] == "compacted_large_tool_result_context"
     assert diagnostics["largest_tool_result_chars"] > 0
-    assert diagnostics["provider_request"]["input_item_count"] == 4
+    assert diagnostics["provider_request"]["input_item_count"] == 5
     request_summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
     assert len(request_summaries) == 3
     assert request_summaries[1]["largest_tool_result"]["call_id"] == "call-1"
@@ -1113,9 +1204,11 @@ def test_responses_requests_include_fresh_environment_context_without_memory_per
     def fake_context(agent, *, current_input=None):
         _ = current_input
         return {
-            "workspace_root": str(tmp_path),
+            "workspace_path": str(tmp_path),
             "working_path": str(tmp_path / "work"),
             "shell": "powershell",
+            "current_date": "2026-06-30",
+            "timezone": "Asia/Shanghai",
             "request_time": next(request_times),
         }
 
@@ -1189,17 +1282,841 @@ def test_responses_requests_include_fresh_environment_context_without_memory_per
     ) == "done"
 
     assert len(payloads) == 2
-    first_env_text = payloads[0]["input"][0]["content"][0]["text"]
-    second_env_text = payloads[1]["input"][0]["content"][0]["text"]
-    assert first_env_text.startswith("[Agent Environment Context]\n")
-    assert second_env_text.startswith("[Agent Environment Context]\n")
-    assert "2026-06-30T09:00:00+08:00" in first_env_text
-    assert "2026-06-30T09:00:01+08:00" in second_env_text
+    first_permissions_text = payloads[0]["input"][0]["content"][0]["text"]
+    first_env_text = payloads[0]["input"][1]["content"][0]["text"]
+    second_permissions_text = payloads[1]["input"][0]["content"][0]["text"]
+    second_env_text = payloads[1]["input"][1]["content"][0]["text"]
+    assert payloads[0]["input"][0]["role"] == "developer"
+    assert first_permissions_text.startswith("<permissions instructions>")
+    assert second_permissions_text.startswith("<permissions instructions>")
+    assert payloads[0]["input"][1]["role"] == "user"
+    assert first_env_text.startswith("<environment_context>")
+    assert second_env_text.startswith("<environment_context>")
+    assert "<current_date>2026-06-30</current_date>" in first_env_text
+    assert "<timezone>Asia/Shanghai</timezone>" in first_env_text
+    assert "2026-06-30T09:00:00+08:00" not in first_env_text
+    assert "2026-06-30T09:00:01+08:00" not in second_env_text
+    assert "working_path" not in first_env_text
+    assert str(tmp_path / "work") not in first_env_text
     assert "run echo" in json.dumps(payloads[1]["input"], ensure_ascii=False)
-    assert all("[Agent Environment Context]" not in str(message.get("content")) for message in agent.messages)
+    assert all("<environment_context>" not in str(message.get("content")) for message in agent.messages)
+    assert all("<permissions instructions>" not in str(message.get("content")) for message in agent.messages)
+    assert all("[Agent Turn Context]" not in str(message.get("content")) for message in agent.messages)
 
     summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
     assert summaries[-1]["environment_context_chars"] > 0
+    assert summaries[-1]["permissions_context_chars"] > 0
+    assert summaries[0]["turn_context_chars"] == 0
+    assert summaries[1]["turn_context_chars"] == 0
+    assert summaries[0]["context_update_mode"] == "full"
+    assert summaries[1]["context_update_mode"] == "unchanged"
+    assert summaries[0]["context_item_hash"] == summaries[1]["context_item_hash"]
+    context_updates = _runtime_notice_payloads(agent.events, "openai_responses_context_update")
+    assert [item["context_update_mode"] for item in context_updates] == ["full", "unchanged"]
+    assert "volatile" not in context_updates[0]["context_item"]
+
+
+def test_responses_turn_context_persists_reference_between_sends(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+    import src.providers.agent_environment_context as environment_context
+
+    def fake_context(agent, *, current_input=None):
+        _ = agent, current_input
+        return {
+            "workspace_path": str(tmp_path),
+            "shell": "powershell",
+            "request_time": "2026-07-02T10:00:00+08:00",
+        }
+
+    monkeypatch.setattr(environment_context, "build_agent_environment_context", fake_context)
+    monkeypatch.setattr("src.providers.responses_runtime.build_agent_environment_context", fake_context)
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    payloads = []
+    responses = iter(
+        [
+            {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "one"}]}]},
+            {"id": "resp-2", "output": [{"type": "message", "content": [{"type": "output_text", "text": "two"}]}]},
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "first"}], active_tools=[], run_tools=True) == "one"
+    agent.events.clear()
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "second"}], active_tools=[], run_tools=True) == "two"
+
+    assert (tmp_path / "agent_turn_context.json").is_file()
+    assert (tmp_path / "agent_context_history.json").is_file()
+    second_updates = _runtime_notice_payloads(agent.events, "openai_responses_context_update")
+    assert second_updates[0]["context_update_mode"] == "unchanged"
+    assert second_updates[0]["model_context_update_mode"] == "full"
+    assert second_updates[0]["persistent_context_update_mode"] == "unchanged"
+    assert payloads[1]["input"][0]["role"] == "developer"
+    assert payloads[1]["input"][1]["role"] == "user"
+    assert payloads[1]["input"][1]["content"][0]["text"].startswith("<environment_context>")
+    assert all("[Agent Turn Context]" not in json.dumps(payload.get("input"), ensure_ascii=False) for payload in payloads)
+
+
+def test_responses_context_history_replaces_stale_context_on_change(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+    import src.providers.agent_environment_context as environment_context
+
+    workspace = {"path": str(tmp_path / "first")}
+
+    def fake_context(agent, *, current_input=None):
+        _ = agent, current_input
+        return {
+            "workspace_path": workspace["path"],
+            "shell": "powershell",
+            "request_time": "2026-07-02T10:00:00+08:00",
+        }
+
+    monkeypatch.setattr(environment_context, "build_agent_environment_context", fake_context)
+    monkeypatch.setattr("src.providers.responses_runtime.build_agent_environment_context", fake_context)
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    payloads = []
+    responses = iter(
+        [
+            {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "one"}]}]},
+            {"id": "resp-2", "output": [{"type": "message", "content": [{"type": "output_text", "text": "two"}]}]},
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "first"}], active_tools=[], run_tools=True) == "one"
+    workspace["path"] = str(tmp_path / "second")
+    agent.events.clear()
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "second"}], active_tools=[], run_tools=True) == "two"
+
+    environment_items = [
+        item
+        for item in payloads[1]["input"]
+        if item.get("type") == "message"
+        and item.get("role") == "user"
+        and item.get("content")
+        and str(item["content"][0].get("text") or "").startswith("<environment_context>")
+    ]
+    assert len(environment_items) == 1
+    environment_text = environment_items[0]["content"][0]["text"]
+    assert "second" in environment_text
+    assert "first" not in environment_text
+    second_updates = _runtime_notice_payloads(agent.events, "openai_responses_context_update")
+    assert second_updates[0]["context_update_mode"] == "diff"
+    assert second_updates[0]["persistent_context_update_mode"] == "diff"
+
+
+def test_responses_context_history_does_not_duplicate_tool_followup_context(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    agent._execute_tool_call_envelopes_parallel = lambda _calls: [
+        ToolCallExecution(
+            func_name="echo_tool",
+            call_id="call-1",
+            cleaned_result='{"status":"success","text":"hello"}',
+            image_data=None,
+        )
+    ]
+    payloads = []
+    first_responses = iter(
+        [
+            {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "one"}]}]},
+        ]
+    )
+
+    def fake_first_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(first_responses)
+
+    agent._post_json_with_retry = fake_first_post
+    agent._stream_responses_with_retry = fake_first_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "first"}], active_tools=[], run_tools=True) == "one"
+
+    second_responses = iter(
+        [
+            {
+                "id": "resp-tool",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": "{}",
+                        "status": "completed",
+                    }
+                ],
+            },
+            {"id": "resp-final", "output": [{"type": "message", "content": [{"type": "output_text", "text": "two"}]}]},
+        ]
+    )
+
+    def fake_second_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(second_responses)
+
+    agent._post_json_with_retry = fake_second_post
+    agent._stream_responses_with_retry = fake_second_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "second"}], active_tools=[], run_tools=True) == "two"
+
+    tool_followup_input = payloads[-1]["input"]
+
+    def context_count(prefix):
+        return sum(
+            1
+            for item in tool_followup_input
+            if item.get("type") == "message"
+            and item.get("content")
+            and str(item["content"][0].get("text") or "").startswith(prefix)
+        )
+
+    assert context_count("<permissions instructions>") == 1
+    assert context_count("<environment_context>") == 1
+    assert context_count("# AGENTS.md instructions") <= 1
+
+
+def test_responses_dedupes_persisted_runtime_context_history(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.agent_context_history import save_agent_context_history
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    context_item = {
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "input_text", "text": "<environment_context>\n  <cwd>C:\\Project</cwd>\n</environment_context>"}],
+        "status": "completed",
+    }
+    save_agent_context_history(agent, [context_item, dict(context_item)])
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "hello"}], active_tools=[], run_tools=True) == "ok"
+
+    environment_count = sum(
+        1
+        for item in payloads[0]["input"]
+        if item.get("type") == "message"
+        and item.get("content")
+        and str(item["content"][0].get("text") or "").startswith("<environment_context>")
+    )
+    assert environment_count == 1
+    saved_history = json.loads((tmp_path / "agent_context_history.json").read_text(encoding="utf-8"))
+    assert len(saved_history["items"]) == 2
+
+
+def test_responses_merges_developer_context_after_persisted_runtime_user_context(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.agent_context_history import save_agent_context_history
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    save_agent_context_history(
+        agent,
+        [
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": "<permissions instructions>\nExisting.\n</permissions instructions>"}],
+                "status": "completed",
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "<environment_context>\n  <cwd>C:\\Project</cwd>\n</environment_context>"}],
+                "status": "completed",
+            },
+        ],
+    )
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[
+            {"role": "system", "content": "Base instructions."},
+            {"role": "developer", "content": "Operational memory for this node:\n- Use current evidence."},
+            {"role": "user", "content": "hello"},
+        ],
+        active_tools=[],
+        run_tools=True,
+    ) == "ok"
+
+    first = payloads[0]["input"][0]
+    assert first["role"] == "developer"
+    first_texts = [part["text"] for part in first["content"]]
+    assert first_texts[0].startswith("<permissions instructions>")
+    assert any(text.startswith("Operational memory for this node:") for text in first_texts)
+    assert all(
+        not (
+            item.get("role") == "developer"
+            and item.get("content")
+            and item["content"][0].get("text", "").startswith("Operational memory for this node:")
+        )
+        for item in payloads[0]["input"][1:]
+    )
+
+
+def test_responses_context_history_strips_operational_memory_from_persisted_developer_context(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.agent_context_history import save_agent_context_history
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    save_agent_context_history(
+        agent,
+        [
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [
+                    {"type": "input_text", "text": "<permissions instructions>\nExisting.\n</permissions instructions>"},
+                    {"type": "input_text", "text": "Operational memory for this node:\n- stale memory."},
+                ],
+                "status": "completed",
+            }
+        ],
+    )
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[
+            {"role": "developer", "content": "Operational memory for this node:\n- fresh memory."},
+            {"role": "user", "content": "hello"},
+        ],
+        active_tools=[],
+        run_tools=True,
+    ) == "ok"
+
+    developer_texts = [part["text"] for part in payloads[0]["input"][0]["content"]]
+    operational_texts = [text for text in developer_texts if text.startswith("Operational memory for this node:")]
+    assert operational_texts == ["Operational memory for this node:\n- fresh memory."]
+    saved_history = json.loads((tmp_path / "agent_context_history.json").read_text(encoding="utf-8"))
+    assert "Operational memory for this node:" not in json.dumps(saved_history, ensure_ascii=False)
+
+
+def test_responses_plan_collaboration_mode_injects_developer_context(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_collaboration_mode = "plan"
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "plan it"}], active_tools=[], run_tools=True) == "ok"
+
+    assert payloads[0]["input"][0]["role"] == "developer"
+    assert payloads[0]["input"][0]["content"][0]["text"].startswith("<permissions instructions>")
+    assert payloads[0]["input"][0]["content"][1]["text"].startswith("<collaboration_mode>")
+    assert payloads[0]["input"][1]["role"] == "user"
+    assert payloads[0]["input"][1]["content"][0]["text"].startswith("<environment_context>")
+    developer_item = payloads[0]["input"][0]
+    developer_text = developer_item["content"][1]["text"]
+    assert developer_text.startswith("<collaboration_mode>\n")
+    assert "You are in Plan Mode" in developer_text
+    assert "<proposed_plan>" in developer_text
+    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    assert summaries[0]["permissions_context_chars"] > 0
+    assert summaries[0]["collaboration_context_chars"] > 0
+    assert summaries[0]["input_items"][0]["context_kind"] == "runtime_context"
+    assert summaries[0]["input_items"][0]["context_kinds"] == ["permissions", "collaboration_mode"]
+    context_updates = _runtime_notice_payloads(agent.events, "openai_responses_context_update")
+    assert context_updates[0]["context_item"]["collaboration_mode"] == {"mode": "plan"}
+
+
+def test_responses_writes_sanitized_request_payload_log(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "secret-key",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+
+    def fake_post(**kwargs):
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "log me"}], active_tools=[], run_tools=True) == "ok"
+
+    payload_log = tmp_path / "responses_payloads.jsonl"
+    assert payload_log.is_file()
+    records = [json.loads(line) for line in payload_log.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1
+    record = records[0]
+    assert record["stage"] == "openai_responses_request_payload"
+    assert record["payload"]["model"] == "gpt-test"
+    assert "apiKey" not in json.dumps(record["payload"], ensure_ascii=False)
+    assert record["payload"]["input"][0]["role"] == "developer"
+    assert record["payload"]["input"][1]["role"] == "user"
+    assert record["payload"]["input"][2]["content"][0]["text"] == "log me"
+    assert record["request_summary"]["input_item_count"] == 3
+
+    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    assert summaries[0]["payload_log_path"] == str(payload_log)
+    payload_log_events = _runtime_notice_payloads(agent.events, "openai_responses_request_payload_log")
+    assert payload_log_events[0]["path"] == str(payload_log)
+
+
+def test_responses_can_send_system_prompt_as_instructions_parameter(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    agent._aitools_responses_system_prompt_as_instructions = True
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[
+            {"role": "system", "content": "You are the node system prompt."},
+            {"role": "user", "content": "hello"},
+        ],
+        active_tools=[],
+        run_tools=True,
+    ) == "ok"
+
+    assert payloads[0]["instructions"] == "You are the node system prompt."
+    assert all(item.get("role") != "system" for item in payloads[0]["input"])
+    assert payloads[0]["input"][-1]["role"] == "user"
+    assert payloads[0]["input"][-1]["content"][0]["text"] == "hello"
+    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    assert summaries[0]["instructions_present"] is True
+    assert summaries[0]["instructions_chars"] == len("You are the node system prompt.")
+
+
+def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    agent._aitools_responses_system_prompt_as_instructions = True
+    agent._execute_tool_call_envelopes_parallel = lambda _calls: [
+        ToolCallExecution(
+            func_name="echo_tool",
+            call_id="call-1",
+            cleaned_result='{"status":"success","text":"hello"}',
+            image_data=None,
+        )
+    ]
+    payloads = []
+    responses = iter(
+        [
+            {
+                "id": "resp-tool",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": "{}",
+                        "status": "completed",
+                    }
+                ],
+            },
+            {"id": "resp-final", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]},
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[
+            {"role": "system", "content": "You are the node system prompt."},
+            {"role": "user", "content": "run echo"},
+        ],
+        active_tools=[],
+        run_tools=True,
+    ) == "ok"
+
+    assert len(payloads) == 2
+    assert payloads[0]["instructions"] == "You are the node system prompt."
+    assert payloads[1]["instructions"] == "You are the node system prompt."
+    assert all(item.get("role") != "system" for payload in payloads for item in payload["input"])
+    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    assert [summary["instructions_present"] for summary in summaries] == [True, True]
+
+
+def test_responses_merges_initial_developer_context_before_user_context(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    agent._aitools_responses_system_prompt_as_instructions = True
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(
+        messages=[
+            {"role": "system", "content": "Base instructions."},
+            {"role": "developer", "content": "Operational memory for this node:\n- Keep it short."},
+            {"role": "user", "content": "hello"},
+        ],
+        active_tools=[],
+        run_tools=True,
+    ) == "ok"
+
+    assert payloads[0]["instructions"] == "Base instructions."
+    first = payloads[0]["input"][0]
+    assert first["role"] == "developer"
+    assert first["content"][0]["text"].startswith("<permissions instructions>")
+    assert first["content"][1]["text"].startswith("Operational memory for this node:")
+    assert payloads[0]["input"][1]["role"] == "user"
+    assert payloads[0]["input"][1]["content"][0]["text"].startswith("<environment_context>")
+    assert all(item.get("role") != "developer" for item in payloads[0]["input"][1:])
+
+
+def test_responses_injects_codex_like_agents_md_context(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    (tmp_path / "AGENTS.md").write_text("Use rg before broad file scans.\n", encoding="utf-8")
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._aitools_workspace_root = str(tmp_path)
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent._send_via_responses(messages=[{"role": "user", "content": "read instructions"}], active_tools=[], run_tools=True) == "ok"
+
+    assert payloads[0]["input"][0]["role"] == "developer"
+    contextual_user_item = payloads[0]["input"][1]
+    assert contextual_user_item["role"] == "user"
+    assert contextual_user_item["content"][0]["text"].startswith("<environment_context>")
+    assert contextual_user_item["content"][1]["text"].startswith("# AGENTS.md instructions")
+    assert "Use rg before broad file scans." in contextual_user_item["content"][1]["text"]
+
+    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    assert summaries[0]["project_instructions_context_chars"] > 0
+    assert summaries[0]["input_items"][1]["context_kinds"] == ["environment", "project_instructions"]
+    context_updates = _runtime_notice_payloads(agent.events, "openai_responses_context_update")
+    assert context_updates[0]["context_item"]["project_instructions"]["chars"] > 0
 
 
 def test_explicit_context_continuation_preserves_assistant_content_with_function_call():

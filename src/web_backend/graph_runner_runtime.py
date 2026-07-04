@@ -47,7 +47,7 @@ class GraphRunnerRuntime(HostBoundService):
             self._set_ready_pending_count(state, 0)
             self._log_graph_event(safe_graph_id, "graph_config_read_failed", error=str(exc))
             return
-        outgoing = self._build_outgoing_links_map(graph_cfg)
+        outgoing = self._build_outgoing_routes_map(graph_cfg)
 
         ready_pending_count = 0
         for entry, config_path, cfg in self._iter_node_config_entries(safe_graph_id):

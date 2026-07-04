@@ -10,13 +10,6 @@ from .workspace_settings import get_workspace_root
 class ConfigLoader:
     CONFIG_PATH_ENV = "AITOOLS_CONFIG_PATH"
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def _resolve_provider_config_path(self):
         explicit_path = str(os.environ.get(self.CONFIG_PATH_ENV) or "").strip()
         if explicit_path:

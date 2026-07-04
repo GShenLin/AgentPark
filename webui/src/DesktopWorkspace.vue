@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import {
   getStartupGraphConfig,
+  getRemoteStatus,
   listProviders,
   listTools,
   loadGraph,
@@ -21,6 +22,7 @@ const {
   graphLoadRequest,
   currentGraphId,
   currentGraphName,
+  currentGraphWorkingPath,
   selectedNodeId,
   memoryMode,
   providers,
@@ -64,6 +66,7 @@ const leftSidebarWidth = ref(280)
 const isResizingLeft = ref(false)
 const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
+const canAccessLocalFiles = ref(true)
 const fileExplorerRootPath = ref('')
 const activeView = ref<'board' | 'settings'>('board')
 
@@ -92,6 +95,7 @@ function handleMemoryResize(event: MouseEvent) {
 }
 
 function startLeftResize(event: MouseEvent) {
+  if (!canAccessLocalFiles.value) return
   if (leftCollapsed.value) return
   if (event.button !== 0) return
   isResizingLeft.value = true
@@ -109,6 +113,7 @@ function handleLeftResize(event: MouseEvent) {
 }
 
 function toggleLeftSidebar() {
+  if (!canAccessLocalFiles.value) return
   leftCollapsed.value = !leftCollapsed.value
 }
 
@@ -135,6 +140,8 @@ onMounted(async () => {
   window.addEventListener('mouseup', stopLeftResize)
 
   try {
+    const remoteStatus = await getRemoteStatus()
+    canAccessLocalFiles.value = remoteStatus.is_local_client === true
     await refreshProviders()
     availableTools.value = await listTools()
   } catch (e: any) {
@@ -148,6 +155,7 @@ onMounted(async () => {
     const resolvedId = String(targetGraph?.id || 'default')
     currentGraphId.value = resolvedId
     currentGraphName.value = String(targetGraph?.name || resolvedId)
+    currentGraphWorkingPath.value = String((targetGraph as any)?.working_path || '').trim()
     graphLoadRequest.value = targetGraph
   } catch (e: any) {
     lastError.value = String(e?.message || e)
@@ -194,9 +202,9 @@ watch(rightCollapsed, (value) => {
 })
 
 watch(
-  () => agentBoard.selectedNodeWorkingPathRevision.value,
+  () => [agentBoard.selectedNodeWorkingPathRevision.value, currentGraphWorkingPath.value],
   () => {
-    fileExplorerRootPath.value = String(agentBoard.selectedNodeWorkingPath.value || '').trim()
+    fileExplorerRootPath.value = String(agentBoard.selectedNodeWorkingPath.value || currentGraphWorkingPath.value || '').trim()
   },
 )
 </script>
@@ -207,6 +215,7 @@ watch(
       v-model:active-view="activeView"
       :left-collapsed="leftCollapsed"
       :right-collapsed="rightCollapsed"
+      :can-access-local-files="canAccessLocalFiles"
       @toggle-left="toggleLeftSidebar"
       @toggle-right="toggleRightPanel"
       @error="lastError = $event || null"
@@ -215,11 +224,11 @@ watch(
     <SettingsPage v-if="activeView === 'settings'" @back="activeView = 'board'" @providers-updated="refreshProviders" />
 
     <div v-else class="content">
-      <aside class="left-sidebar" :class="{ collapsed: leftCollapsed }" :style="{ width: `${leftWidth}px` }">
+      <aside v-if="canAccessLocalFiles" class="left-sidebar" :class="{ collapsed: leftCollapsed }" :style="{ width: `${leftWidth}px` }">
         <FileExplorer v-if="!leftCollapsed" :root-path="fileExplorerRootPath" @file-selected="onFileSelected" />
         <div v-else class="collapsed-mark">Files</div>
       </aside>
-      <div class="sidebar-resizer" @mousedown="startLeftResize"></div>
+      <div v-if="canAccessLocalFiles" class="sidebar-resizer" @mousedown="startLeftResize"></div>
 
       <div class="center">
         <main class="agent-stage">

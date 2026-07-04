@@ -12,6 +12,7 @@ const props = defineProps<{
   activeView: 'board' | 'settings'
   leftCollapsed: boolean
   rightCollapsed: boolean
+  canAccessLocalFiles: boolean
 }>()
 
 const emit = defineEmits<{
@@ -137,7 +138,7 @@ onMounted(async () => {
       <button class="topbar-btn primary" type="submit">Save</button>
     </form>
     <div class="topbar-actions">
-      <button v-if="props.activeView === 'board'" class="topbar-btn" type="button" @click="emit('toggleLeft')">
+      <button v-if="props.activeView === 'board' && props.canAccessLocalFiles" class="topbar-btn" type="button" @click="emit('toggleLeft')">
         {{ props.leftCollapsed ? 'Show Files' : 'Hide Files' }}
       </button>
       <button v-if="props.activeView === 'board'" class="topbar-btn" type="button" @click="emit('toggleRight')">

@@ -8,6 +8,7 @@ export function createBoardGraphPersistence(options: {
   lastError: Ref<string | null>
   currentGraphId: Ref<string | null>
   currentGraphName: Ref<string | null>
+  currentGraphWorkingPath: Ref<string>
   nodes: Ref<NodeCard[]>
   links: Ref<LinkItem[]>
   saveGraph: (graphId: string, config: GraphConfig, options?: { saveReason?: string; sourceGraphId?: string }) => Promise<unknown>
@@ -20,6 +21,7 @@ export function createBoardGraphPersistence(options: {
     return buildBoardGraphConfig({
       graphId: options.currentGraphId.value || 'default',
       graphName: options.currentGraphName.value || 'default',
+      workingPath: options.currentGraphWorkingPath.value,
       nodes: options.nodes.value,
       links: options.links.value,
     })
@@ -52,7 +54,7 @@ export function createBoardGraphPersistence(options: {
         reason: saveReason,
         graphId,
         nodesCount: Array.isArray(snapshot.nodes) ? snapshot.nodes.length : 0,
-        linksCount: Array.isArray(snapshot.links) ? snapshot.links.length : 0,
+        outputRoutesCount: snapshot.output_routes ? Object.keys(snapshot.output_routes).length : 0,
       })
     } catch (e: any) {
       options.lastError.value = String(e?.message || e)
@@ -77,7 +79,7 @@ function traceGraphSave(payload: {
   reason: string
   graphId: string
   nodesCount: number
-  linksCount: number
+  outputRoutesCount: number
 }) {
   if (typeof window === 'undefined') return
   const event = {

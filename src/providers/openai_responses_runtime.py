@@ -17,7 +17,10 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
     def _responses_payload_extra(self, **provider_options):
         reasoning_effort = provider_options.get("reasoning_effort")
         if reasoning_effort:
-            return {"reasoning": {"effort": reasoning_effort}}
+            return {
+                "reasoning": {"effort": reasoning_effort},
+                "include": ["reasoning.encrypted_content"],
+            }
         return {}
 
     def _supports_responses_api(self) -> bool:

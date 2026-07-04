@@ -5,17 +5,16 @@ import pytest
 from src.web_backend.node_memory_store import NodeMemoryPersistenceError
 from src.web_backend.node_memory_store import NodeMemoryPersistenceFailure
 from src.web_backend.node_runtime_event_sink import NodeRuntimeEventSink
-from src.web_backend.node_config_service import node_runtime_state_path
+from src.web_backend.state_store import _read_json_dict, _write_json_dict
 
 
 def _read_config(path):
-    with open(node_runtime_state_path(str(path)), "r", encoding="utf-8") as handle:
-        return json.load(handle)
+    return _read_json_dict(str(path))
 
 
 def _build_sink(tmp_path):
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"node_id": "agent1"}, ensure_ascii=False), encoding="utf-8")
+    _write_json_dict(str(config_path), {"node_id": "agent1"})
     logs = []
     runtime_logs = []
     tool_entries = []
@@ -38,6 +37,11 @@ def _build_sink(tmp_path):
         ),
     )
     return sink, config_path, logs, tool_entries, runtime_logs
+
+
+def _read_node_runtime_events(config_path):
+    path = config_path.with_name("runtime_events.jsonl")
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def test_node_runtime_event_sink_updates_stream_text_and_done_log(tmp_path):
@@ -88,6 +92,39 @@ def test_node_runtime_event_sink_records_runtime_notice(tmp_path):
     assert runtime_logs[-1]["event"] == "runtime_notice"
     assert runtime_logs[-1]["message"] == "Calling tool: read_file"
     assert runtime_logs[-1]["tool_name"] == "read_file"
+
+
+def test_node_runtime_event_sink_persists_provider_request_summary_to_node_log(tmp_path):
+    sink, config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    summary = {
+        "request_index": 2,
+        "continuation_mode": "explicit_context",
+        "responses_mode": "item_level",
+        "input_item_count": 7,
+        "approx_input_chars": 45678,
+        "approx_input_tokens": 11111,
+        "largest_input_items": [{"index": 4, "type": "function_call_output", "chars": 28784}],
+        "tools_included": ["execute_console_command", "rg_list_files"],
+        "tools_included_count": 2,
+        "stream": True,
+    }
+
+    sink.handle(
+        {
+            "type": "runtime_notice",
+            "message": json.dumps(summary, ensure_ascii=False),
+            "source": "openai",
+            "stage": "openai_responses_request_summary",
+            "provider": "krill_gpt55",
+        }
+    )
+
+    records = _read_node_runtime_events(config_path)
+    assert records[-1]["event"] == "runtime_notice"
+    assert records[-1]["runtime_event"]["stage"] == "openai_responses_request_summary"
+    assert records[-1]["provider_request_summary"]["request_index"] == 2
+    assert records[-1]["provider_request_summary"]["approx_input_tokens"] == 11111
+    assert records[-1]["provider_request_summary"]["largest_input_items"][0]["chars"] == 28784
 
 
 def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
@@ -152,11 +189,14 @@ def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
         }
     ]
     assert "unexpected" not in tool_entries[0]["event"]
+    runtime_event_records = _read_node_runtime_events(config_path)
+    assert [item["event"] for item in runtime_event_records[-2:]] == ["tool_call_start", "tool_call_end"]
+    assert runtime_event_records[-1]["runtime_event"]["result_tail_preview"] == "ok"
 
 
 def test_node_runtime_event_sink_keeps_tool_end_nonfatal_when_history_persist_fails(tmp_path):
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"node_id": "agent1"}, ensure_ascii=False), encoding="utf-8")
+    _write_json_dict(str(config_path), {"node_id": "agent1"})
     logs = []
     live_events = []
 

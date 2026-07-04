@@ -12,10 +12,13 @@ from .graph_runtime_registry import GraphConfigReadError
 from .node_config_errors import NodeConfigReadError, NodeConfigWriteError
 from .node_config_service import RESERVED_NODE_CONFIG_FIELDS, RUNTIME_STATE_FIELDS, node_config_service
 from .profile_storage import (
+    AGENT_PROFILE_DIR,
+    GRAPH_PROFILE_DIR,
     ProfileStorageError,
     ProfileValidationError,
+    delete_profile,
     get_profile,
-    profile_config_path,
+    profile_category_dir,
     read_profile_document,
     sanitize_existing_graph_id,
     sanitize_existing_node_id,
@@ -25,10 +28,6 @@ from .profile_storage import (
 )
 from .service_host import HostBoundService
 from .shared import HTTPException
-
-
-AGENT_PROFILE_FILE = "agentProfile.json"
-GRAPH_PROFILE_FILE = "graphProfile.json"
 
 
 PROFILE_EXCLUDED_NODE_FIELDS = {
@@ -122,17 +121,27 @@ def _node_config_from_profile(profile_node: dict[str, Any], *, target_graph_id: 
 
 
 class ProfileApi(HostBoundService):
-    def _agent_profile_path(self) -> str:
-        return profile_config_path(AGENT_PROFILE_FILE)
+    def _agent_profile_dir(self) -> str:
+        return profile_category_dir(AGENT_PROFILE_DIR)
 
-    def _graph_profile_path(self) -> str:
-        return profile_config_path(GRAPH_PROFILE_FILE)
+    def _graph_profile_dir(self) -> str:
+        return profile_category_dir(GRAPH_PROFILE_DIR)
 
     def list_agent_profiles(self):
         try:
-            return read_profile_document(self._agent_profile_path())
+            return read_profile_document(self._agent_profile_dir())
         except Exception as exc:
             raise _profile_error(exc)
+
+    def delete_agent_profile(self, profile_id: str):
+        try:
+            safe_profile_id = validate_profile_id(profile_id)
+            deleted = delete_profile(self._agent_profile_dir(), safe_profile_id)
+        except Exception as exc:
+            raise _profile_error(exc)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="agent profile not found")
+        return {"ok": True, "profile_id": safe_profile_id, "deleted": True}
 
     def save_agent_profile_from_node(self, payload: dict):
         if not isinstance(payload, dict):
@@ -163,16 +172,26 @@ class ProfileApi(HostBoundService):
                 "node_name": node_name,
                 "fields": _node_fields_from_config(cfg),
             }
-            saved = upsert_profile(self._agent_profile_path(), profile)
+            saved = upsert_profile(self._agent_profile_dir(), profile)
             return {"ok": True, "profile": saved}
         except Exception as exc:
             raise _profile_error(exc)
 
     def list_graph_profiles(self):
         try:
-            return read_profile_document(self._graph_profile_path())
+            return read_profile_document(self._graph_profile_dir())
         except Exception as exc:
             raise _profile_error(exc)
+
+    def delete_graph_profile(self, profile_id: str):
+        try:
+            safe_profile_id = validate_profile_id(profile_id)
+            deleted = delete_profile(self._graph_profile_dir(), safe_profile_id)
+        except Exception as exc:
+            raise _profile_error(exc)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="graph profile not found")
+        return {"ok": True, "profile_id": safe_profile_id, "deleted": True}
 
     def save_graph_profile_from_graph(self, payload: dict):
         if not isinstance(payload, dict):
@@ -223,7 +242,7 @@ class ProfileApi(HostBoundService):
         profile_name = str(payload.get("profile_name") or graph_profile.get("name") or profile_id).strip() or profile_id
         try:
             saved = upsert_profile(
-                self._graph_profile_path(),
+                self._graph_profile_dir(),
                 {
                     "id": profile_id,
                     "name": profile_name,
@@ -242,7 +261,7 @@ class ProfileApi(HostBoundService):
         try:
             safe_profile_id = validate_profile_id(profile_id)
             target_graph_id = validate_explicit_graph_id(self.graph_runtime, payload.get("graph_id"))
-            profile = get_profile(self._graph_profile_path(), safe_profile_id)
+            profile = get_profile(self._graph_profile_dir(), safe_profile_id)
         except Exception as exc:
             raise _profile_error(exc)
         if profile is None:
@@ -290,6 +309,7 @@ class ProfileApi(HostBoundService):
                 profile_id=safe_profile_id,
                 node_count=len(raw_node_configs),
             )
+            self.graph_runtime._register_all_scheduled_nodes(force_rebuild=True)
             return {"ok": True, "graph": graph, "profile": profile}
         except HTTPException:
             shutil.rmtree(graph_dir, ignore_errors=True)
@@ -303,4 +323,3 @@ class ProfileApi(HostBoundService):
 
 
 __all__ = ["ProfileApi"]
-

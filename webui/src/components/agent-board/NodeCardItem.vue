@@ -2,7 +2,6 @@
 import { computed, inject, nextTick, ref, watch } from 'vue'
 import { AgentBoardKey, type AgentBoardContext, type NodeCard } from './context'
 import NodeAgentMeta from './NodeAgentMeta.vue'
-import NodePorts from './NodePorts.vue'
 import NodeRuntimeDiagnostics from './NodeRuntimeDiagnostics.vue'
 import ToolActivityBadge from './ToolActivityBadge.vue'
 
@@ -103,14 +102,6 @@ function openNodeFolder(event: MouseEvent) {
     @dragover.prevent.stop="ctx.onNodeCardDragOver(endpointId, $event)"
     @drop.prevent.stop="ctx.onNodeCardDrop(endpointId, $event)"
   >
-    <NodePorts
-      :endpoint-id="endpointId"
-      :input-num="props.node.inputNum"
-      :output-num="props.node.outputNum"
-      @complete-link="ctx.completeLink"
-      @start-link="ctx.startLink"
-    />
-
     <div class="node-card-inner" :key="donePulse" :class="{ done: isDone }">
       <div class="node-header">
         <input
@@ -179,6 +170,15 @@ function openNodeFolder(event: MouseEvent) {
           {{ previewText || ' ' }}
         </div>
       </div>
+      <button
+        type="button"
+        class="node-add-output"
+        title="Add output route"
+        @pointerdown.stop
+        @click.stop="ctx.addOutputRoute(props.node.id).catch(() => null)"
+      >
+        +
+      </button>
     </div>
   </div>
 </template>
@@ -186,7 +186,7 @@ function openNodeFolder(event: MouseEvent) {
 <style scoped>
 .node-card {
   position: absolute;
-  width: 200px;
+  width: 230px;
   height: 250px;
   background: rgba(15, 23, 42, 0.75);
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -223,11 +223,6 @@ function openNodeFolder(event: MouseEvent) {
 .node-card.multi-selected:not(.selected) {
   border: 1px solid rgba(125, 211, 252, 0.7);
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
-}
-
-.node-card.working:not(.dragging) {
-  animation: node-working 0.9s ease-in-out infinite;
-  transform-origin: 50% 50%;
 }
 
 .node-card.stopped {
@@ -385,7 +380,7 @@ function openNodeFolder(event: MouseEvent) {
 }
 
 .node-body {
-  padding: 0 12px 12px;
+  padding: 0 46px 42px 12px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -415,22 +410,30 @@ function openNodeFolder(event: MouseEvent) {
   color: rgba(148, 163, 184, 0.45);
 }
 
-@keyframes node-working {
-  0% {
-    transform: translateX(0) rotate(0deg);
-  }
-  25% {
-    transform: translateX(-1.1px) rotate(-0.9deg);
-  }
-  50% {
-    transform: translateX(1.1px) rotate(0.9deg);
-  }
-  75% {
-    transform: translateX(-0.8px) rotate(-0.65deg);
-  }
-  100% {
-    transform: translateX(0) rotate(0deg);
-  }
+.node-add-output {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(125, 211, 252, 0.36);
+  border-radius: 8px;
+  background: rgba(14, 165, 233, 0.16);
+  color: rgba(224, 242, 254, 0.98);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(2, 132, 199, 0.16);
+}
+
+.node-add-output:hover {
+  border-color: rgba(125, 211, 252, 0.58);
+  background: rgba(14, 165, 233, 0.28);
 }
 
 @keyframes node-done {

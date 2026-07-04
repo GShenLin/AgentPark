@@ -2,6 +2,7 @@ import json
 import threading
 import time
 
+from src.web_backend import state_store
 from src.web_backend.graph_runner_runtime import _GraphRunnerWakeSignal
 from src.web_backend.graph_runner_state import GraphExecutor, GraphRunnerState
 from src.web_backend.graph_runner_settings import find_deprecated_graph_runner_worker_count
@@ -68,14 +69,17 @@ def test_graph_scheduler_submits_one_task_per_ready_pending_node(monkeypatch, tm
     for node_id in node_ids:
         node_dir = graph_dir / node_id
         node_dir.mkdir()
-        (node_dir / "config.json").write_text(
-            (
-                '{"node_id":"%s","type_id":"echo_node","state":"idle",'
-                '"input_num":1,"output_num":1,'
-                '"pending":[{"payload":"go","trace_id":"trace-%s"}],"pending_count":1}'
-            )
-            % (node_id, node_id),
-            encoding="utf-8",
+        state_store._write_json_dict(
+            str(node_dir / "config.json"),
+            {
+                "node_id": node_id,
+                "type_id": "echo_node",
+                "state": "idle",
+                "input_num": 1,
+                "output_num": 1,
+                "pending": [{"payload": "go", "trace_id": f"trace-{node_id}"}],
+                "pending_count": 1,
+            },
         )
 
     started = threading.Event()
@@ -91,8 +95,8 @@ def test_graph_scheduler_submits_one_task_per_ready_pending_node(monkeypatch, tm
         release.wait(timeout=2)
 
     monkeypatch.setattr(graph_runtime, "_graph_dir", lambda _graph_id: str(graph_dir))
-    monkeypatch.setattr(graph_runtime, "_read_graph_config", lambda _graph_id: {"nodes": [], "links": []})
-    monkeypatch.setattr(graph_runtime, "_build_outgoing_links_map", lambda _graph_cfg: {})
+    monkeypatch.setattr(graph_runtime, "_read_graph_config", lambda _graph_id: {"nodes": [], "output_routes": {}})
+    monkeypatch.setattr(graph_runtime, "_build_outgoing_routes_map", lambda _graph_cfg: {})
     monkeypatch.setattr(graph_runtime, "_run_single_node_iteration", fake_run_single_node_iteration)
 
     state = GraphRunnerState(
@@ -125,22 +129,20 @@ def test_graph_scheduler_releases_finished_task_and_schedules_next_pending(monke
     node_dir = graph_dir / "n1"
     node_dir.mkdir()
     config_path = node_dir / "config.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "node_id": "n1",
-                "type_id": "echo_node",
-                "state": "idle",
-                "input_num": 1,
-                "output_num": 1,
-                "pending": [
-                    {"payload": "first", "trace_id": "trace-1"},
-                    {"payload": "second", "trace_id": "trace-2"},
-                ],
-                "pending_count": 2,
-            }
-        ),
-        encoding="utf-8",
+    state_store._write_json_dict(
+        str(config_path),
+        {
+            "node_id": "n1",
+            "type_id": "echo_node",
+            "state": "idle",
+            "input_num": 1,
+            "output_num": 1,
+            "pending": [
+                {"payload": "first", "trace_id": "trace-1"},
+                {"payload": "second", "trace_id": "trace-2"},
+            ],
+            "pending_count": 2,
+        },
     )
 
     calls = []
@@ -156,8 +158,8 @@ def test_graph_scheduler_releases_finished_task_and_schedules_next_pending(monke
         state_store._write_json_dict(kwargs["config_path"], cfg)
 
     monkeypatch.setattr(graph_runtime, "_graph_dir", lambda _graph_id: str(graph_dir))
-    monkeypatch.setattr(graph_runtime, "_read_graph_config", lambda _graph_id: {"nodes": [], "links": []})
-    monkeypatch.setattr(graph_runtime, "_build_outgoing_links_map", lambda _graph_cfg: {})
+    monkeypatch.setattr(graph_runtime, "_read_graph_config", lambda _graph_id: {"nodes": [], "output_routes": {}})
+    monkeypatch.setattr(graph_runtime, "_build_outgoing_routes_map", lambda _graph_cfg: {})
     monkeypatch.setattr(graph_runtime, "_run_single_node_iteration", fake_run_single_node_iteration)
 
     state = GraphRunnerState(
@@ -202,12 +204,12 @@ def test_graph_scheduler_skips_stop_and_delete_requested_nodes(monkeypatch, tmp_
             "pending_count": 1,
             **extra,
         }
-        (node_dir / "config.json").write_text(json.dumps(payload), encoding="utf-8")
+        state_store._write_json_dict(str(node_dir / "config.json"), payload)
 
     calls = []
     monkeypatch.setattr(graph_runtime, "_graph_dir", lambda _graph_id: str(graph_dir))
-    monkeypatch.setattr(graph_runtime, "_read_graph_config", lambda _graph_id: {"nodes": [], "links": []})
-    monkeypatch.setattr(graph_runtime, "_build_outgoing_links_map", lambda _graph_cfg: {})
+    monkeypatch.setattr(graph_runtime, "_read_graph_config", lambda _graph_id: {"nodes": [], "output_routes": {}})
+    monkeypatch.setattr(graph_runtime, "_build_outgoing_routes_map", lambda _graph_cfg: {})
     monkeypatch.setattr(graph_runtime, "_run_single_node_iteration", lambda **kwargs: calls.append(kwargs["entry"]))
 
     state = GraphRunnerState(

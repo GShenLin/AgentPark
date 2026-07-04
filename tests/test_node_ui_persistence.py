@@ -4,7 +4,7 @@ import shutil
 import threading
 import uuid
 
-from src.web_backend.node_config_service import node_runtime_state_path
+from src.web_backend.state_store import _read_json_dict, _write_json_dict
 
 
 def test_clone_node_instance_copies_artifacts_and_resets_runtime_state():
@@ -43,8 +43,7 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state():
                 "ui": {"x": 9, "y": 10},
             }
         )
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        _write_json_dict(config_path, payload)
         with open(os.path.join(source_dir, f"{node_id}.md"), "w", encoding="utf-8") as f:
             f.write("copied memory")
         with open(os.path.join(source_dir, f"{node_id}_artifact.txt"), "w", encoding="utf-8") as f:
@@ -83,13 +82,75 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state():
             "last_message",
         ):
             assert key not in clone_cfg
-        clone_runtime = json.loads(open(node_runtime_state_path(os.path.join(clone_dir, "config.json")), "r", encoding="utf-8").read())
-        assert clone_runtime == {"state": "idle"}
+        clone_runtime = _read_json_dict(os.path.join(clone_dir, "config.json"))
+        assert clone_runtime["state"] == "idle"
+        assert clone_runtime["pending_count"] == 0
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
 
-def test_rename_node_instance_preserves_runtime_state_in_runtime_file():
+def test_clone_node_instance_can_target_another_graph():
+    import src.web_backend as backend
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    source_graph_id = f"ut_clone_source_{uuid.uuid4().hex[:8]}"
+    target_graph_id = f"ut_clone_target_{uuid.uuid4().hex[:8]}"
+    node_id = "source_node"
+    clone_id = "clone1"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+
+    try:
+        client = TestClient(app)
+        created_source = client.post(
+            "/api/nodes/instances",
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": source_graph_id, "ui": {"x": 1, "y": 2}},
+        )
+        assert created_source.status_code == 200
+        created_target = client.post(
+            "/api/nodes/instances",
+            json={"node_id": "target_existing", "type_id": "append_node", "graph_id": target_graph_id},
+        )
+        assert created_target.status_code == 200
+
+        source_dir = os.path.join(_get_graphs_dir(), source_graph_id, node_id)
+        with open(os.path.join(source_dir, f"{node_id}.md"), "w", encoding="utf-8") as f:
+            f.write("copied memory")
+
+        cloned = client.post(
+            f"/api/nodes/instances/{node_id}/clone?graph_id={source_graph_id}",
+            json={
+                "new_node_id": clone_id,
+                "new_name": "Cross Graph Clone",
+                "target_graph_id": target_graph_id,
+                "ui": {"x": 44, "y": 55},
+            },
+        )
+        assert cloned.status_code == 200
+        cloned_payload = cloned.json()
+        assert cloned_payload.get("source_graph_id") == source_graph_id
+        assert cloned_payload.get("source_node_id") == node_id
+        assert cloned_payload.get("graph_id") == target_graph_id
+        assert cloned_payload.get("node_id") == clone_id
+
+        source_config_path = os.path.join(source_dir, "config.json")
+        target_dir = os.path.join(_get_graphs_dir(), target_graph_id, clone_id)
+        target_config_path = os.path.join(target_dir, "config.json")
+        assert os.path.exists(source_config_path)
+        assert os.path.isdir(target_dir)
+        assert open(os.path.join(target_dir, f"{clone_id}.md"), "r", encoding="utf-8").read() == "copied memory"
+
+        clone_cfg = json.loads(open(target_config_path, "r", encoding="utf-8").read())
+        assert clone_cfg.get("node_id") == clone_id
+        assert clone_cfg.get("graph_id") == target_graph_id
+        assert clone_cfg.get("name") == "Cross Graph Clone"
+        assert clone_cfg.get("ui") == {"x": 44, "y": 55}
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), source_graph_id), ignore_errors=True)
+        shutil.rmtree(os.path.join(_get_graphs_dir(), target_graph_id), ignore_errors=True)
+
+
+def test_rename_node_instance_preserves_memory_runtime_state():
     import src.web_backend as backend
     from src.web_backend.node_config_service import node_config_service
     from src.web_backend.runtime_paths import _get_graphs_dir
@@ -131,10 +192,8 @@ def test_rename_node_instance_preserves_runtime_state_in_runtime_file():
         renamed_dir = os.path.join(_get_graphs_dir(), graph_id, renamed_id)
         renamed_config_path = os.path.join(renamed_dir, "config.json")
         assert not os.path.exists(source_dir)
-        assert os.path.exists(node_runtime_state_path(renamed_config_path))
-
         raw_config = json.loads(open(renamed_config_path, "r", encoding="utf-8").read())
-        runtime_state = json.loads(open(node_runtime_state_path(renamed_config_path), "r", encoding="utf-8").read())
+        runtime_state = _read_json_dict(renamed_config_path)
         merged_after = node_config_service.read_strict(renamed_config_path)
         for key in ("state", "pending", "pending_count", "last_message", "node_event_seq"):
             assert key not in raw_config
@@ -448,8 +507,7 @@ def test_clear_node_instance_memory_resets_visible_runtime_summary():
                 "node_event_seq": 4,
             }
         )
-        with open(config_path, "w", encoding="utf-8") as handle:
-            json.dump(cfg, handle, ensure_ascii=False, indent=2)
+        _write_json_dict(config_path, cfg)
 
         memory_path = facade.core.graph_runtime._node_memory_path(node_id, graph_id)
         messages_path = facade.core.graph_runtime._node_messages_path(node_id, graph_id)
@@ -472,8 +530,7 @@ def test_clear_node_instance_memory_resets_visible_runtime_summary():
             cleared = json.load(handle)
         for key in ("last_message", "node_event_seq", "last_run_at", "last_runtime_event", "runtime_events", "runtime_tool_calls"):
             assert key not in cleared
-        with open(node_runtime_state_path(config_path), "r", encoding="utf-8") as handle:
-            cleared_runtime = json.load(handle)
+        cleared_runtime = _read_json_dict(config_path)
         assert cleared_runtime["last_message"] == ""
         assert cleared_runtime["node_event_seq"] > 4
         for key in ("last_run_at", "last_runtime_event", "runtime_events", "runtime_tool_calls"):

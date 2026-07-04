@@ -1,11 +1,16 @@
-import json
 import os
 import time
-import base64
-import mimetypes
 from typing import Callable
 
 from nodes.agent_assistant_memory import persist_assistant_tool_call_note
+from nodes.agent_message_adapter import (
+    append_channel_meta,
+    build_agent_output_message,
+    build_agent_user_content,
+    extract_channel_meta,
+    history_envelope_to_agent_message,
+)
+from nodes.agent_node_config import load_agent_node_run_request
 from nodes.agent_stream_runtime import AgentStreamRuntime
 from nodes.agent_support.capability_setup import resolve_agent_capabilities
 from nodes.agent_mcp_loader import (
@@ -22,20 +27,19 @@ from nodes.agent_skill_scripts import register_skill_script_tools
 from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
-from nodes.agent_working_path_context import build_working_path_prompt
 from src.capabilities.registry import CapabilityRegistry
 from src.config_loader import ConfigLoader
 from src.media_resource_utils import resolve_public_base_url
-from src.message_protocol import build_resource_part, build_text_envelope, envelope_text, normalize_envelope
+from src.message_protocol import envelope_text, normalize_envelope
 from src.operational_memory import build_operational_memory_summary
 from src.providers import create_agent
+from src.providers.agent_codex_base_instructions import resolve_agent_codex_base_instructions
+from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.switch_utils import parse_switch_mode
 from src.workspace_settings import get_workspace_root
-from src.web_backend.node_config_service import read_node_config_optional
 from src.web_backend.node_memory_store import load_recent_node_memory_records
 from src.web_backend.node_goal_runtime import node_goal_context
-from src.video_generation_content import build_doubao_video_generation_content
 
 
 class Node(BaseNode):
@@ -65,6 +69,7 @@ class Node(BaseNode):
         "provider_id": "",
         "system_prompt": "",
         "mode": "chat",
+        "collaboration_mode": "default",
         "plugins": [],
         "tools": [],
         "mcp_servers": [],
@@ -76,6 +81,14 @@ class Node(BaseNode):
         "provider_id": {"type": "text", "label": "provider_id"},
         "system_prompt": {"type": "text", "label": "system_prompt"},
         "mode": {"type": "text", "label": "mode"},
+        "collaboration_mode": {
+            "type": "select",
+            "label": "collaboration_mode",
+            "options": [
+                {"value": "default", "label": "default"},
+                {"value": "plan", "label": "plan"},
+            ],
+        },
         "plugins": {
             "type": "multiselect",
             "label": "plugins",
@@ -161,193 +174,6 @@ class Node(BaseNode):
             return f"{field} is not available for this provider until {requires}."
         return f"{field} is not supported by the selected provider."
 
-    @staticmethod
-    def _to_local_path(uri: object) -> str:
-        raw = str(uri or "").strip()
-        if not raw:
-            return ""
-        if raw.startswith("file://"):
-            return raw[7:]
-        return raw
-
-    def _build_user_content(
-        self,
-        provider_id: str,
-        mode: str,
-        message: object,
-        public_base_url: object = "",
-        *,
-        include_images: bool = True,
-    ):
-        envelope = normalize_envelope(message, default_role="user")
-        parts = envelope.get("parts") if isinstance(envelope, dict) else []
-        text_parts: list[str] = []
-        image_resources: list[dict] = []
-        other_resources: list[dict] = []
-
-        for part in parts if isinstance(parts, list) else []:
-            if not isinstance(part, dict):
-                continue
-            part_type = str(part.get("type") or "").strip().lower()
-            if part_type == "text":
-                text = str(part.get("text") or "").strip()
-                if text:
-                    text_parts.append(text)
-                continue
-            if part_type == "structured":
-                data = part.get("data")
-                if data is not None:
-                    text_parts.append(json.dumps(data, ensure_ascii=False) if isinstance(data, (dict, list)) else str(data))
-                continue
-            if part_type == "meta":
-                meta = part.get("meta")
-                if meta:
-                    text_parts.append(json.dumps({"meta": meta}, ensure_ascii=False))
-                continue
-            if part_type != "resource":
-                continue
-            res = part.get("resource")
-            if not isinstance(res, dict):
-                continue
-            uri = str(res.get("uri") or "").strip()
-            kind = str(res.get("kind") or "").strip().lower()
-            if include_images and kind == "image" and uri:
-                image_resources.append(res)
-            else:
-                other_resources.append(res)
-
-        if str(mode or "").strip().lower() == "video_generation" and "doubao" in str(provider_id or "").strip().lower():
-            return build_doubao_video_generation_content(
-                envelope,
-                public_base_url=public_base_url,
-            )
-
-        if other_resources:
-            text_parts.extend(
-                [f"[{str(item.get('kind') or 'file')}] {str(item.get('uri') or '').strip()}" for item in other_resources]
-            )
-        merged_text = "\n".join([item for item in text_parts if item]).strip()
-        provider = str(provider_id or "").strip().lower()
-
-        if not image_resources:
-            return merged_text
-
-        # Gemini supports image via {"type":"image","path":...,"text":...}
-        if "gemini" in provider:
-            local_path = self._to_local_path(image_resources[0].get("uri"))
-            if local_path and os.path.exists(local_path):
-                return {"type": "image", "path": local_path, "text": merged_text}
-            return merged_text + f"\n[image] {image_resources[0].get('uri')}"
-
-        # Doubao/OpenAI-compatible payload with image_url parts.
-        content_parts = []
-        if merged_text:
-            content_parts.append({"type": "text", "text": merged_text})
-        for resource in image_resources:
-            uri = str(resource.get("uri") or "").strip()
-            image_url = uri
-            local_path = self._to_local_path(uri)
-            if local_path and os.path.exists(local_path):
-                try:
-                    with open(local_path, "rb") as f:
-                        encoded = base64.b64encode(f.read()).decode("utf-8")
-                    mime = self._image_mime(resource, local_path)
-                    image_url = f"data:{mime};base64,{encoded}"
-                except Exception:
-                    image_url = uri
-            content_parts.append({"type": "image_url", "image_url": {"url": image_url}})
-        return content_parts
-
-    @staticmethod
-    def _image_mime(resource: dict, local_path: str) -> str:
-        mime = str(resource.get("mime") or "").split(";")[0].strip().lower()
-        if mime.startswith("image/"):
-            return mime
-        guessed = mimetypes.guess_type(local_path)[0]
-        if guessed and guessed.startswith("image/"):
-            return guessed
-        return "image/png"
-
-    def _build_output_message(self, response: object) -> dict:
-        if isinstance(response, dict):
-            parts: list[dict] = []
-            response_text = str(response.get("response") or response.get("text") or "").strip()
-            if response_text:
-                parts.append({"type": "text", "text": response_text})
-
-            image_path = response.get("image_path")
-            if isinstance(image_path, str) and image_path.strip():
-                parts.append(build_resource_part(uri=image_path.strip(), kind="image", source="agent"))
-            elif isinstance(image_path, list):
-                for item in image_path:
-                    uri = str(item or "").strip()
-                    if uri:
-                        parts.append(build_resource_part(uri=uri, kind="image", source="agent"))
-
-            video_path = response.get("video_path")
-            if isinstance(video_path, str) and video_path.strip():
-                parts.append(build_resource_part(uri=video_path.strip(), kind="video", source="agent"))
-            elif isinstance(video_path, list):
-                for item in video_path:
-                    uri = str(item or "").strip()
-                    if uri:
-                        parts.append(build_resource_part(uri=uri, kind="video", source="agent"))
-
-            if not parts:
-                parts.append({"type": "text", "text": json.dumps(response, ensure_ascii=False)})
-            return normalize_envelope({"role": "assistant", "parts": parts}, default_role="assistant")
-
-        text = "" if response is None else str(response)
-        return build_text_envelope(text, role="assistant")
-
-    @staticmethod
-    def _extract_channel_meta(message: object) -> list[dict]:
-        envelope = normalize_envelope(message, default_role="user")
-        output: list[dict] = []
-        for part in envelope.get("parts") or []:
-            if not isinstance(part, dict):
-                continue
-            if str(part.get("type") or "").strip().lower() != "meta":
-                continue
-            meta = part.get("meta")
-            if isinstance(meta, dict) and str(meta.get("channel") or "").strip():
-                output.append({"type": "meta", "meta": dict(meta)})
-        return output
-
-    @staticmethod
-    def _append_channel_meta(output_message: dict, meta_parts: list[dict]) -> dict:
-        if not meta_parts:
-            return output_message
-        envelope = normalize_envelope(output_message, default_role="assistant")
-        parts = envelope.get("parts")
-        if not isinstance(parts, list):
-            parts = []
-        existing_keys = set()
-        for part in parts:
-            if not isinstance(part, dict) or str(part.get("type") or "").strip().lower() != "meta":
-                continue
-            meta = part.get("meta")
-            if isinstance(meta, dict):
-                existing_keys.add(
-                    (
-                        str(meta.get("channel") or ""),
-                        str(meta.get("accountId") or ""),
-                        str(meta.get("from") or ""),
-                    )
-                )
-        for part in meta_parts:
-            meta = part.get("meta") if isinstance(part, dict) else None
-            key = (
-                str((meta or {}).get("channel") or ""),
-                str((meta or {}).get("accountId") or ""),
-                str((meta or {}).get("from") or ""),
-            )
-            if key not in existing_keys:
-                parts.append(part)
-                existing_keys.add(key)
-        envelope["parts"] = parts
-        return envelope
-
     def _load_node_history_messages(
         self,
         context: dict,
@@ -374,27 +200,10 @@ class Node(BaseNode):
             envelope = normalize_envelope(item, default_role="assistant")
             if current_id and str(envelope.get("id") or "").strip() == current_id:
                 continue
-            message = self._history_envelope_to_agent_message(envelope, provider_id, public_base_url)
+            message = history_envelope_to_agent_message(envelope, provider_id, public_base_url)
             if message is not None:
                 history.append(message)
         return history[-history_message_limit:]
-
-    def _history_envelope_to_agent_message(self, envelope: dict, provider_id: str, public_base_url: object = "") -> dict | None:
-        role = str((envelope or {}).get("role") or "").strip().lower()
-        if role not in {"user", "assistant"}:
-            return None
-        if role == "user":
-            content = self._build_user_content(provider_id, "chat", envelope, public_base_url, include_images=False)
-        else:
-            content = envelope_text(envelope).strip()
-
-        if isinstance(content, str) and not content.strip():
-            return None
-        if isinstance(content, list) and not content:
-            return None
-        if content is None:
-            return None
-        return {"role": role, "content": content}
 
     @staticmethod
     def _resolve_stream_callback(context: dict | None) -> Callable[[dict], None] | None:
@@ -407,76 +216,62 @@ class Node(BaseNode):
 
     def on_input(self, message: object, context: dict | None = None) -> dict:
         ctx = context or {}
-        agent_id = str(ctx.get("node_instance_id") or ctx.get("agent_id") or "").strip() or "agent"
-        graph_id = str(ctx.get("graph_id") or "default").strip() or "default"
         memory_path_for_config = self._resolve_memory_path(ctx)
         agent_dir = os.path.dirname(memory_path_for_config) if memory_path_for_config else ""
         config_path = os.path.join(agent_dir, "config.json")
-
-        config_data = None
-        if os.path.exists(config_path):
-            try:
-                data = read_node_config_optional(config_path)
-            except Exception as exc:
-                raise ValueError(f"failed to read agent config: {exc}") from exc
-            if not isinstance(data, dict):
-                raise ValueError("agent config must be a JSON object")
-            config_data = data
-
-        def setting(name: str, default=None):
-            if config_data is not None and name in config_data:
-                return config_data.get(name, default)
-            return ctx.get(name, default)
-
-        provider_id = str(setting("provider_id", "") or "").strip()
-        system_prompt = setting("system_prompt")
-        mode = str(setting("mode", "chat") or "chat").strip() or "chat"
-        web_search = setting("web_search")
-        thinking = setting("thinking")
-        reasoning_effort = setting("reasoning_effort")
-        public_base_url = setting("public_base_url")
-        working_path = str(setting("working_path", "") or "").strip()
+        run_request = load_agent_node_run_request(ctx, config_path=config_path)
         capability_plan = resolve_agent_capabilities(
-            setting,
-            node_id=agent_id,
+            run_request.setting,
+            node_id=run_request.agent_id,
             load_skills=load_node_skills,
             resolve_plugins=resolve_plugin_capabilities,
         )
         mcp_settings = with_mcp_caller_context(
             capability_plan.mcp_settings,
-            graph_id=graph_id,
-            node_id=agent_id,
+            graph_id=run_request.graph_id,
+            node_id=run_request.agent_id,
         )
 
-        if not provider_id:
-            raise ValueError("provider_id is required")
         input_message = normalize_envelope(message, default_role="user")
-        channel_meta_parts = self._extract_channel_meta(input_message)
+        channel_meta_parts = extract_channel_meta(input_message)
 
         memory_path = self._resolve_memory_path(ctx)
         agent = create_agent(
-            provider_id,
+            run_request.provider_id,
             memory_file_path=memory_path,
-            system_prompt=system_prompt if isinstance(system_prompt, str) else None,
+            system_prompt=run_request.system_prompt if isinstance(run_request.system_prompt, str) else None,
             internal_memory_enabled=False,
         )
-        agent._aitools_graph_id = graph_id
-        agent._aitools_node_id = agent_id
-        agent._aitools_node_type_id = "agent_node"
-        agent._aitools_workspace_root = get_workspace_root()
-        agent._aitools_working_path = working_path
-        agent._aitools_shell = "powershell" if os.name == "nt" else ""
         agent.operational_memory_gate_enabled = True
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
         if cancel_source is not None:
             agent.cancel_event = cancel_source
             agent.cancel_check = ctx.get("cancel_check") or cancel_source
-        if capability_plan.skill_resource_roots:
-            agent._aitools_skill_resource_roots = capability_plan.skill_resource_roots
-        agent._aitools_persist_assistant_tool_call_note = lambda message: persist_assistant_tool_call_note(
+        persist_tool_call_note = lambda message: persist_assistant_tool_call_note(
             message=message,
             memory_path=memory_path,
             messages_path=self._resolve_messages_path(ctx),
+        )
+        bind_agent_runtime_context(
+            agent,
+            AgentRuntimeContext(
+                graph_id=run_request.graph_id,
+                node_id=run_request.agent_id,
+                node_type_id="agent_node",
+                workspace_root=get_workspace_root(),
+                working_path=run_request.working_path,
+                collaboration_mode=run_request.collaboration_mode,
+                shell="powershell" if os.name == "nt" else "",
+                responses_system_prompt_as_instructions=_uses_openai_responses(agent),
+                skill_resource_roots=capability_plan.skill_resource_roots,
+                persist_assistant_tool_call_note=persist_tool_call_note,
+            ),
+        )
+        codex_context_role = _codex_like_context_role(agent)
+        effective_system_prompt = (
+            resolve_agent_codex_base_instructions(agent, explicit_system_prompt=run_request.system_prompt)
+            if _uses_openai_responses(agent)
+            else str(run_request.system_prompt or "").strip()
         )
 
         load_configured_tools(agent, capability_plan.tool_names)
@@ -494,38 +289,42 @@ class Node(BaseNode):
                 settings=mcp_settings,
             )
 
-        if isinstance(system_prompt, str) and system_prompt.strip():
+        if effective_system_prompt:
             has_system = any((msg or {}).get("role") == "system" for msg in getattr(agent, "messages", []) or [])
             if not has_system:
-                agent.Message("system", system_prompt.strip())
-        working_path_prompt = build_working_path_prompt(working_path)
-        if working_path_prompt:
-            agent.Message("system", working_path_prompt, persist=False)
+                agent.Message("system", effective_system_prompt)
         operational_memory_summary = build_operational_memory_summary(
             os.path.join(os.path.dirname(memory_path), "operational_memory.json") if memory_path else ""
         )
         if operational_memory_summary:
-            agent.Message("system", operational_memory_summary, persist=False)
-        goal_context = node_goal_context(config_data or ctx)
-        if goal_context:
-            agent.Message("system", goal_context, persist=False)
+            agent.Message(codex_context_role, operational_memory_summary, persist=False)
         if capability_plan.mcp_server_names:
-            inject_mcp_server_context(agent, list(capability_plan.mcp_server_names), settings=mcp_settings)
+            inject_mcp_server_context(
+                agent,
+                list(capability_plan.mcp_server_names),
+                settings=mcp_settings,
+                role=codex_context_role,
+            )
         self._inject_configured_skills(
             agent,
             {"skills": list(capability_plan.skill_names)},
-            node_id=agent_id,
+            node_id=run_request.agent_id,
             extra_skills=skill_definitions,
+            role=codex_context_role,
         )
+        goal_context = node_goal_context(run_request.config_data or ctx)
+        if goal_context:
+            agent.Message("user", goal_context, persist=False)
 
-        resolved_public_base_url = resolve_public_base_url(public_base_url, provider_id)
-        for history_message in self._load_node_history_messages(ctx, input_message, provider_id, resolved_public_base_url):
+        resolved_public_base_url = resolve_public_base_url(run_request.public_base_url, run_request.provider_id)
+        for history_message in self._load_node_history_messages(ctx, input_message, run_request.provider_id, resolved_public_base_url):
             agent.Message(history_message["role"], history_message["content"], persist=False)
 
-        user_content = self._build_user_content(provider_id, mode, input_message, resolved_public_base_url)
+        user_content = build_agent_user_content(run_request.provider_id, run_request.mode, input_message, resolved_public_base_url)
         agent.Message("user", user_content, persist=False)
-        web_search_mode = parse_switch_mode(web_search, default="disabled", allow_auto=False)
-        thinking_mode = parse_switch_mode(thinking, default="disabled", allow_auto=False)
+        web_search_mode = parse_switch_mode(run_request.web_search, default="disabled", allow_auto=False)
+        thinking_mode = parse_switch_mode(run_request.thinking, default="disabled", allow_auto=False)
+        reasoning_effort = run_request.reasoning_effort
         if reasoning_effort is None:
             reasoning_effort = self.config_defaults["reasoning_effort"]
         stream_runtime = AgentStreamRuntime(self._resolve_stream_callback(ctx))
@@ -536,7 +335,7 @@ class Node(BaseNode):
             agent,
             {
                 "run_tools": True,
-                "mode": mode,
+                "mode": run_request.mode,
                 "web_search": web_search_mode,
                 "thinking": thinking_mode,
                 "reasoning_effort": reasoning_effort,
@@ -557,11 +356,25 @@ class Node(BaseNode):
                         break
                     time.sleep(min(0.05, remaining))
         raise_if_cancel_requested(cancel_source)
-        output_message = self._build_output_message(response)
-        output_message = self._append_channel_meta(output_message, channel_meta_parts)
+        output_message = build_agent_output_message(response)
+        output_message = append_channel_meta(output_message, channel_meta_parts)
         final_text = envelope_text(output_message).strip()
         stream_runtime.emit_done(final_text)
         return {
             "display": envelope_text(output_message),
             "routes": [{"output_index": 0, "payload": output_message}],
         }
+
+
+def _codex_like_context_role(agent: object) -> str:
+    if _uses_openai_responses(agent):
+        return "developer"
+    return "system"
+
+
+def _uses_openai_responses(agent: object) -> bool:
+    config = getattr(agent, "config", None)
+    if not isinstance(config, dict):
+        return False
+    provider_type = str(config.get("type") or "").strip().lower()
+    return provider_type == "openai" and config.get("responsesApi") is True

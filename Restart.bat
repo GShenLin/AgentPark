@@ -14,11 +14,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO] Updating repository with git pull --rebase...
-git pull --rebase
+echo [INFO] Syncing repository before startup...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%WORKSPACE_ROOT%\scripts\sync_before_restart.ps1" -WorkspaceRoot "%WORKSPACE_ROOT%"
 if errorlevel 1 (
-    echo [WARN] Failed to update repository with git pull --rebase.
-    echo [WARN] Continuing startup with the current local workspace.
+    echo [ERROR] Failed to sync repository. Startup stopped to avoid running a dirty or stale workspace.
+    pause
+    exit /b 1
 )
 
 echo [INFO] Starting AgentPark through build_and_run.bat...

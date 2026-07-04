@@ -1,5 +1,6 @@
 import json
 import subprocess
+from types import SimpleNamespace
 
 from functions.curl_tools import execute_curl_command
 from functions.file_read_tools import read_file
@@ -16,6 +17,21 @@ def test_file_tools_do_not_emit_progress_to_stdout(tmp_path, capsys):
     assert read_result["status"] == "success"
     assert read_result["content"] == "hello"
     assert capsys.readouterr().out == ""
+
+
+def test_file_tools_resolve_relative_paths_from_agent_working_path(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    agent = SimpleNamespace(_aitools_working_path=str(work))
+
+    write_result = json.loads(write_file("nested/demo.txt", "hello", agent=agent))
+    read_result = json.loads(read_file("nested/demo.txt", agent=agent))
+
+    assert write_result["status"] == "success"
+    assert write_result["file_path"] == str(work / "nested" / "demo.txt")
+    assert read_result["status"] == "success"
+    assert read_result["file_path"] == str(work / "nested" / "demo.txt")
+    assert read_result["content"] == "hello"
 
 
 def test_curl_tool_does_not_emit_progress_to_stdout(monkeypatch, capsys):

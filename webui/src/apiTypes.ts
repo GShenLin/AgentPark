@@ -7,6 +7,10 @@ export type RemoteEndpoint = {
   private?: boolean
 }
 
+export type RemoteStatus = {
+  is_local_client: boolean
+}
+
 export type RunInfo = {
   task_id: number
   pid: number | null
@@ -74,6 +78,18 @@ export type GraphLink = {
   to: GraphLinkEndpoint
 }
 
+export type GraphOutputRouteTarget = {
+  node_id: string
+  input_index: number
+}
+
+export type GraphOutputRoute = {
+  output_index: number
+  targets: GraphOutputRouteTarget[]
+}
+
+export type GraphOutputRoutes = Record<string, GraphOutputRoute[]>
+
 export type GraphNode = {
   id: string
   typeId: string
@@ -99,8 +115,9 @@ export type GraphNode = {
 export type GraphConfig = {
   id: string
   name: string
+  working_path?: string
   nodes: GraphNode[]
-  links: GraphLink[]
+  output_routes: GraphOutputRoutes
   source_graph_id?: string
   version?: number
   unchanged?: boolean
@@ -407,6 +424,110 @@ export type MobileNode = {
   input_num?: number
   output_num?: number
   readonly?: boolean
+}
+
+export type NodeDesktopViewPosition = {
+  display_id?: string
+  x: number
+  y: number
+}
+
+export type NodeDesktopViewLive = {
+  text?: string
+  trace_id?: string
+  updated_at?: number
+  is_streaming?: boolean
+  version?: number
+  event_type?: string
+  event?: Record<string, unknown>
+  interactive_session_id?: string
+}
+
+export type NodeDesktopView = {
+  view_id: string
+  graph_id: string
+  node_id: string
+  visible: boolean
+  pinned: boolean
+  position?: NodeDesktopViewPosition
+  avatar_style?: string
+  created_at?: string
+  updated_at?: string
+  last_invoked_at?: string
+  node: MobileNode & {
+    working_path?: string
+  }
+  live?: NodeDesktopViewLive
+}
+
+export type NodeDesktopViewListResponse = {
+  schema_version: number
+  views: NodeDesktopView[]
+}
+
+export type PetAvatarSequenceFrame = {
+  src: string
+  url?: string
+  holdFrames: number
+}
+
+export type PetAvatarTransformKeyframe = {
+  frame: number
+  x: number
+  y: number
+  rotation: number
+  scaleX: number
+  scaleY: number
+}
+
+export type PetAvatarColorKeyframe = {
+  frame: number
+  color: string
+  opacity: number
+}
+
+export type PetAvatarAnimationTracks = {
+  transform?: PetAvatarTransformKeyframe[]
+  color?: PetAvatarColorKeyframe[]
+}
+
+export type PetAvatarGifState = {
+  type: 'gif'
+  src: string
+  url?: string
+  loop: boolean
+}
+
+export type PetAvatarSequenceState = {
+  type: 'sequence'
+  loop: boolean
+  frames: PetAvatarSequenceFrame[]
+  tracks?: PetAvatarAnimationTracks
+}
+
+export type PetAvatarState = PetAvatarGifState | PetAvatarSequenceState
+
+export type PetAvatarFrame = {
+  version: 1
+  id: string
+  name: string
+  renderer: 'sprite2d'
+  fps: number
+  states: Record<string, PetAvatarState>
+  created_at?: string
+  updated_at?: string
+}
+
+export type PetAvatarSummary = {
+  id: string
+  name: string
+  renderer: 'sprite2d'
+  fps: number
+  states: string[]
+  path: string
+  valid: boolean
+  asset_validation?: 'deferred'
+  error?: string
 }
 
 export type MobileNodeConversation = {

@@ -7,6 +7,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 from .companion_mcp_errors import CompanionError, companion_error_from_exception
+from .graph_output_routes import endpoint_links_to_output_routes, normalize_output_routes, output_routes_to_outgoing
 from .route_parser import NodeRouteParser
 
 
@@ -167,7 +168,8 @@ class CompanionMcpLinkTools:
         next_graph.pop("nodes", None)
         next_graph["id"] = graph_id
         next_graph["name"] = str(next_graph.get("name") or graph_id)
-        next_graph["links"] = links
+        next_graph.pop("links", None)
+        next_graph["output_routes"] = endpoint_links_to_output_routes(links)
         self.core.graph_api.save_graph(graph_id, {"graph": next_graph, "save_reason": save_reason})
 
     def _node_map(self, graph_id: str) -> dict[str, dict[str, Any]]:
@@ -204,23 +206,27 @@ class CompanionMcpLinkTools:
             )
 
     def _normalize_links(self, graph: dict[str, Any]) -> list[dict[str, Any]]:
-        raw_links = graph.get("links")
-        if raw_links is None:
-            return []
-        if not isinstance(raw_links, list):
-            raise CompanionError("invalid_graph", "graph links must be an array")
-        result: list[dict[str, Any]] = []
-        seen: set[tuple[str, int, str, int]] = set()
-        for index, item in enumerate(raw_links):
-            if not isinstance(item, dict):
-                raise CompanionError("invalid_graph", f"graph link at index {index} must be an object")
-            link = self._normalize_link(item, index=index)
-            key = self._endpoint_key(link)
-            if key in seen:
-                continue
-            seen.add(key)
-            result.append(link)
-        return result
+        try:
+            outgoing = output_routes_to_outgoing(normalize_output_routes(graph.get("output_routes")))
+        except ValueError as exc:
+            raise CompanionError("invalid_graph", str(exc)) from exc
+        links: list[dict[str, Any]] = []
+        for source_id, items in outgoing.items():
+            for item in items:
+                links.append(
+                    {
+                        "id": str(item.get("id") or ""),
+                        "from": {
+                            "node": source_id,
+                            "index": self._port_index(item.get("from_output_index"), field="from_output_index"),
+                        },
+                        "to": {
+                            "node": str(item.get("to") or ""),
+                            "index": self._port_index(item.get("to_input_index"), field="to_input_index"),
+                        },
+                    }
+                )
+        return links
 
     def _normalize_link(self, item: dict[str, Any], *, index: int) -> dict[str, Any]:
         from_endpoint = self._normalize_endpoint(item.get("from"), field=f"links[{index}].from")

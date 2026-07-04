@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import {
+  createGraphFromProfile,
   clearNodeInstanceMemory,
   controlNodeInstance,
   createNodeInstance,
@@ -8,6 +9,8 @@ import {
   deleteNodeInstance,
   getMobileNodeConversation,
   graphEventsStreamUrl,
+  listAgentProfiles,
+  listGraphProfiles,
   listNodes,
   listNodeInstanceConfigs,
   listMobileGraphs,
@@ -22,6 +25,9 @@ import {
   setStartupGraphConfig,
   updateNodeInstanceConfig,
   type GraphConfig,
+  type GraphOutputRoutes,
+  type AgentProfile,
+  type GraphProfile,
   type MessageEnvelope,
   type MobileGraph,
   type MobileGraphInstance,
@@ -34,6 +40,30 @@ import {
 } from '../api'
 
 export type MobileView = 'pcs' | 'graphs' | 'nodes' | 'chat'
+
+export type MobileOutputRouteRow = {
+  id: string
+  outputIndex: number
+  targetNodeId: string
+  inputIndex: number
+}
+
+type MobileOutputRouteKeyInput = {
+  outputIndex: number
+  targetNodeId: string
+  inputIndex: number
+}
+
+type MobileGraphSelection = {
+  pcId: string
+  graphId: string
+}
+
+type MobileChatSelection = MobileGraphSelection & {
+  nodeId: string
+}
+
+const POST_SEND_SYNC_ERROR_PREFIX = 'Message sent, but latest state sync failed: '
 
 const chatConversationRefreshEvents = new Set([
   'tool_call_start',
@@ -82,13 +112,155 @@ const chatConversationGraphEvents = new Set([
   'node_memory_cleared',
 ])
 
+function portIndex(value: unknown, fallback: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(0, Math.floor(parsed))
+}
+
+function portCount(value: unknown, fallback: number) {
+  return Math.max(1, portIndex(value, fallback))
+}
+
+function routeKey(row: MobileOutputRouteKeyInput) {
+  return `${portIndex(row.outputIndex, 0)}:${String(row.targetNodeId || '').trim()}:${portIndex(row.inputIndex, 0)}`
+}
+
+function normalizeOutputRoutes(rawRoutes: unknown): GraphOutputRoutes {
+  if (!rawRoutes || typeof rawRoutes !== 'object' || Array.isArray(rawRoutes)) return {}
+  const next: GraphOutputRoutes = {}
+  for (const [sourceIdRaw, routesRaw] of Object.entries(rawRoutes as Record<string, unknown>)) {
+    const sourceId = String(sourceIdRaw || '').trim()
+    if (!sourceId || !Array.isArray(routesRaw)) continue
+    const routes = []
+    for (const route of routesRaw) {
+      if (!route || typeof route !== 'object') continue
+      const outputIndex = portIndex((route as any).output_index, 0)
+      const targetsRaw = (route as any).targets
+      if (!Array.isArray(targetsRaw)) continue
+      const targets = []
+      const seenTargets = new Set<string>()
+      for (const target of targetsRaw) {
+        if (!target || typeof target !== 'object') continue
+        const nodeId = String((target as any).node_id || '').trim()
+        if (!nodeId || nodeId === sourceId) continue
+        const inputIndex = portIndex((target as any).input_index, 0)
+        const key = `${nodeId}:${inputIndex}`
+        if (seenTargets.has(key)) continue
+        seenTargets.add(key)
+        targets.push({ node_id: nodeId, input_index: inputIndex })
+      }
+      if (targets.length) routes.push({ output_index: outputIndex, targets })
+    }
+    if (routes.length) {
+      routes.sort((a, b) => a.output_index - b.output_index)
+      next[sourceId] = routes
+    }
+  }
+  return next
+}
+
+function normalizeGraphConfig(graph: GraphConfig): GraphConfig {
+  return {
+    ...graph,
+    nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
+    output_routes: normalizeOutputRoutes(graph.output_routes),
+  }
+}
+
+function flattenOutputRoutes(routes: GraphOutputRoutes, sourceNodeId: string): MobileOutputRouteRow[] {
+  const sourceId = String(sourceNodeId || '').trim()
+  if (!sourceId) return []
+  const normalized = normalizeOutputRoutes(routes)
+  const rows: MobileOutputRouteRow[] = []
+  for (const route of normalized[sourceId] || []) {
+    const outputIndex = portIndex(route.output_index, 0)
+    for (const target of route.targets || []) {
+      const targetNodeId = String(target.node_id || '').trim()
+      if (!targetNodeId || targetNodeId === sourceId) continue
+      const inputIndex = portIndex(target.input_index, 0)
+      rows.push({
+        id: `route-${sourceId}-${outputIndex}-${targetNodeId}-${inputIndex}`,
+        outputIndex,
+        targetNodeId,
+        inputIndex,
+      })
+    }
+  }
+  return rows.sort((a, b) => {
+    if (a.outputIndex !== b.outputIndex) return a.outputIndex - b.outputIndex
+    if (a.targetNodeId !== b.targetNodeId) return a.targetNodeId.localeCompare(b.targetNodeId)
+    return a.inputIndex - b.inputIndex
+  })
+}
+
+function buildOutputRoutes(
+  sourceNodeId: string,
+  rows: MobileOutputRouteRow[],
+  existingRoutes: GraphOutputRoutes,
+): GraphOutputRoutes {
+  const sourceId = String(sourceNodeId || '').trim()
+  if (!sourceId) return normalizeOutputRoutes(existingRoutes)
+  const next: GraphOutputRoutes = { ...normalizeOutputRoutes(existingRoutes) }
+  const byOutput = new Map<number, Array<{ node_id: string; input_index: number }>>()
+  const seenRows = new Set<string>()
+  for (const row of rows) {
+    const targetNodeId = String(row.targetNodeId || '').trim()
+    if (!targetNodeId || targetNodeId === sourceId) continue
+    const outputIndex = portIndex(row.outputIndex, 0)
+    const inputIndex = portIndex(row.inputIndex, 0)
+    const key = `${outputIndex}:${targetNodeId}:${inputIndex}`
+    if (seenRows.has(key)) continue
+    seenRows.add(key)
+    const targets = byOutput.get(outputIndex) || []
+    targets.push({ node_id: targetNodeId, input_index: inputIndex })
+    byOutput.set(outputIndex, targets)
+  }
+
+  if (byOutput.size === 0) {
+    delete next[sourceId]
+    return next
+  }
+
+  next[sourceId] = Array.from(byOutput.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([outputIndex, targets]) => ({
+      output_index: outputIndex,
+      targets: targets.sort((a, b) => {
+        if (a.node_id !== b.node_id) return a.node_id.localeCompare(b.node_id)
+        return a.input_index - b.input_index
+      }),
+    }))
+  return next
+}
+
+function pruneOutputRoutesForNode(routes: GraphOutputRoutes, nodeId: string): GraphOutputRoutes {
+  const removedNodeId = String(nodeId || '').trim()
+  const normalized = normalizeOutputRoutes(routes)
+  if (!removedNodeId) return normalized
+  const next: GraphOutputRoutes = {}
+  for (const [sourceId, sourceRoutes] of Object.entries(normalized)) {
+    if (sourceId === removedNodeId) continue
+    const prunedRoutes = []
+    for (const route of sourceRoutes) {
+      const targets = route.targets.filter((target) => target.node_id !== removedNodeId)
+      if (targets.length) prunedRoutes.push({ ...route, targets })
+    }
+    if (prunedRoutes.length) next[sourceId] = prunedRoutes
+  }
+  return next
+}
+
 export function useMobileWorkspace() {
   const view = ref<MobileView>('pcs')
   const pcs = ref<MobilePc[]>([])
   const graphInstances = ref<MobileGraphInstance[]>([])
   const nodes = ref<MobileNode[]>([])
+  const graphConfig = ref<GraphConfig | null>(null)
   const nodeConfigs = ref<Record<string, NodeInstanceConfig>>({})
   const availableNodeTypes = ref<NodeInfo[]>([])
+  const agentProfiles = ref<AgentProfile[]>([])
+  const graphProfiles = ref<GraphProfile[]>([])
   const providers = ref<ProviderInfo[]>([])
   const availableTools = ref<string[]>([])
   const conversation = ref<MobileNodeConversation | null>(null)
@@ -112,11 +284,93 @@ export function useMobileWorkspace() {
     if (!nodeId) return null
     return nodeConfigs.value[nodeId] || null
   })
+  const selectedNodeOutputRoutes = computed<MobileOutputRouteRow[]>(() => {
+    const sourceNodeId = String(selectedNode.value?.id || '').trim()
+    if (!sourceNodeId) return []
+    return flattenOutputRoutes(graphConfig.value?.output_routes || {}, sourceNodeId)
+  })
 
   let loadRequestId = 0
 
+  function errorText(value: unknown) {
+    return String((value as { message?: unknown })?.message || value || '')
+  }
+
   function setError(value: unknown) {
-    error.value = String((value as { message?: unknown })?.message || value || '')
+    error.value = errorText(value)
+  }
+
+  function setPostSendSyncError(value: unknown) {
+    error.value = `${POST_SEND_SYNC_ERROR_PREFIX}${errorText(value)}`
+  }
+
+  function clearPostSendSyncError() {
+    if (error.value.startsWith(POST_SEND_SYNC_ERROR_PREFIX)) error.value = ''
+  }
+
+  function currentGraphSelection(): MobileGraphSelection | null {
+    const pcId = String(selectedPc.value?.id || '').trim()
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    if (!pcId || !graphId) return null
+    return { pcId, graphId }
+  }
+
+  function requireGraphSelection(): MobileGraphSelection {
+    const selection = currentGraphSelection()
+    if (!selection) throw new Error('PC and Graph selection are required')
+    return selection
+  }
+
+  function requireChatSelection(): MobileChatSelection {
+    const graphSelection = requireGraphSelection()
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    if (!nodeId) throw new Error('PC, Graph, and Node selection are required')
+    return { ...graphSelection, nodeId }
+  }
+
+  function isCurrentGraphSelection(selection: MobileGraphSelection) {
+    return (
+      String(selectedPc.value?.id || '').trim() === selection.pcId &&
+      String(selectedGraph.value?.id || '').trim() === selection.graphId
+    )
+  }
+
+  function isCurrentChatSelection(selection: MobileChatSelection) {
+    return isCurrentGraphSelection(selection) && String(selectedNode.value?.id || '').trim() === selection.nodeId
+  }
+
+  function applyNodes(nextNodes: MobileNode[]) {
+    nodes.value = nextNodes
+    if (selectedNode.value) {
+      const current = nodes.value.find((item) => item.id === selectedNode.value?.id)
+      if (current) selectedNode.value = current
+    }
+  }
+
+  async function refreshNodesForSelection(selection: MobileGraphSelection) {
+    const nextNodes = await listMobileNodes(selection.pcId, selection.graphId)
+    if (!isCurrentGraphSelection(selection)) return
+    applyNodes(nextNodes)
+  }
+
+  async function refreshConversationForSelection(selection: MobileChatSelection) {
+    const nextConversation = await getMobileNodeConversation(selection.pcId, selection.graphId, selection.nodeId)
+    if (!isCurrentChatSelection(selection)) return
+    conversation.value = nextConversation
+  }
+
+  async function syncChatAfterSend(selection: MobileChatSelection) {
+    const results = await Promise.allSettled([
+      refreshNodesForSelection(selection),
+      refreshConversationForSelection(selection),
+    ])
+    if (!isCurrentChatSelection(selection)) return
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failed) {
+      setPostSendSyncError(failed.reason)
+      return
+    }
+    clearPostSendSyncError()
   }
 
   async function loadPcs() {
@@ -128,6 +382,7 @@ export function useMobileWorkspace() {
     selectedNode.value = null
     graphInstances.value = []
     nodes.value = []
+    graphConfig.value = null
     conversation.value = null
     error.value = ''
     loading.value = true
@@ -159,6 +414,14 @@ export function useMobileWorkspace() {
     availableNodeTypes.value = nextNodeTypes
   }
 
+  async function refreshAgentProfiles() {
+    agentProfiles.value = await listAgentProfiles()
+  }
+
+  async function refreshGraphProfiles() {
+    graphProfiles.value = await listGraphProfiles()
+  }
+
   async function selectPc(pc: MobilePc) {
     const requestId = ++loadRequestId
     const pcId = String(pc.id || '').trim()
@@ -168,14 +431,19 @@ export function useMobileWorkspace() {
     selectedGraph.value = null
     selectedNode.value = null
     nodes.value = []
+    graphConfig.value = null
     conversation.value = null
     view.value = 'graphs'
     error.value = ''
     loading.value = true
     try {
-      const nextGraphInstances = await listMobileGraphs(pcId)
+      const [nextGraphInstances, nextGraphProfiles] = await Promise.all([
+        listMobileGraphs(pcId),
+        listGraphProfiles(),
+      ])
       if (requestId !== loadRequestId) return
       graphInstances.value = nextGraphInstances
+      graphProfiles.value = nextGraphProfiles
     } catch (e) {
       if (requestId !== loadRequestId) return
       setError(e)
@@ -185,14 +453,7 @@ export function useMobileWorkspace() {
   }
 
   async function refreshNodes() {
-    const pcId = String(selectedPc.value?.id || '').trim()
-    const graphId = String(selectedGraph.value?.id || '').trim()
-    if (!pcId || !graphId) throw new Error('PC and Graph selection are required')
-    nodes.value = await listMobileNodes(pcId, graphId)
-    if (selectedNode.value) {
-      const current = nodes.value.find((item) => item.id === selectedNode.value?.id)
-      if (current) selectedNode.value = current
-    }
+    await refreshNodesForSelection(requireGraphSelection())
   }
 
   async function refreshNodeConfigs() {
@@ -208,6 +469,13 @@ export function useMobileWorkspace() {
     nodeConfigs.value = next
   }
 
+  async function refreshGraphConfig() {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    if (!graphId) throw new Error('Graph selection is required')
+    const graph = await loadGraph(graphId)
+    graphConfig.value = normalizeGraphConfig(graph)
+  }
+
   async function saveGraphByName(name: string) {
     const graphName = String(name || '').trim()
     if (!graphName) throw new Error('GraphName is required')
@@ -218,9 +486,10 @@ export function useMobileWorkspace() {
         id: graphName,
         name: graphName,
         nodes: [],
-        links: [],
+        output_routes: {},
       }
       const result = await saveGraph(graphName, payload, { saveReason: 'mobile_save_graph' })
+      graphConfig.value = normalizeGraphConfig(payload)
       await setStartupGraphConfig(result.id, result.name).catch(() => null)
       const pc = selectedPc.value
       if (pc) {
@@ -246,6 +515,7 @@ export function useMobileWorkspace() {
         selectedGraph.value = null
         selectedNode.value = null
         nodes.value = []
+        graphConfig.value = null
         conversation.value = null
         view.value = 'graphs'
         await setStartupGraphConfig('default', 'default').catch(() => null)
@@ -254,6 +524,33 @@ export function useMobileWorkspace() {
       if (pc) {
         graphInstances.value = await listMobileGraphs(pc.id)
       }
+    } catch (e) {
+      setError(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function createGraphFromPreset(profileId: string, graphId: string) {
+    const safeProfileId = String(profileId || '').trim()
+    const safeGraphId = String(graphId || '').trim()
+    if (!safeProfileId || !safeGraphId) throw new Error('Graph preset and GraphID are required')
+    error.value = ''
+    loading.value = true
+    try {
+      const result = await createGraphFromProfile(safeProfileId, safeGraphId)
+      const graph = normalizeGraphConfig(result.graph)
+      await setStartupGraphConfig(graph.id, graph.name || graph.id).catch(() => null)
+      const pc = selectedPc.value
+      if (pc) {
+        graphInstances.value = await listMobileGraphs(pc.id)
+      }
+      const createdGraph = graphInstances.value.flatMap((item) => item.graphs).find((item) => item.id === graph.id)
+      if (createdGraph) {
+        await selectGraph(createdGraph)
+      }
+      return { graph, selected: Boolean(createdGraph) }
     } catch (e) {
       setError(e)
       throw e
@@ -287,9 +584,10 @@ export function useMobileWorkspace() {
     const next = mutate({
       ...graph,
       nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
-      links: Array.isArray(graph.links) ? graph.links : [],
+      output_routes: graph.output_routes && typeof graph.output_routes === 'object' ? graph.output_routes : {},
     })
     await saveGraph(graphId, next, { saveReason: 'mobile_node_list_change' })
+    graphConfig.value = normalizeGraphConfig(next)
   }
 
   async function createNode(typeId: string, nodeName: string, fields: Record<string, unknown>) {
@@ -347,6 +645,17 @@ export function useMobileWorkspace() {
     }
   }
 
+  async function createNodeFromProfile(profileId: string) {
+    const safeProfileId = String(profileId || '').trim()
+    if (!safeProfileId) throw new Error('Node preset is required')
+    const profile = agentProfiles.value.find((item) => item.id === safeProfileId)
+    if (!profile) throw new Error(`Node preset not found: ${safeProfileId}`)
+    const nodeTypeId = String(profile.node_type_id || '').trim()
+    if (!nodeTypeId) throw new Error(`Node preset "${safeProfileId}" is missing node_type_id`)
+    const nodeName = String(profile.node_name || profile.name || profile.id || nodeTypeId).trim() || nodeTypeId
+    return createNode(nodeTypeId, nodeName, { ...(profile.fields || {}) })
+  }
+
   async function deleteNode(node: MobileNode) {
     const graphId = String(selectedGraph.value?.id || '').trim()
     const nodeId = String(node?.id || '').trim()
@@ -358,7 +667,7 @@ export function useMobileWorkspace() {
       await persistGraphNodeList(graphId, (graph) => ({
         ...graph,
         nodes: (graph.nodes || []).filter((item) => item.id !== nodeId),
-        links: (graph.links || []).filter((link) => link.from?.node !== nodeId && link.to?.node !== nodeId),
+        output_routes: pruneOutputRoutesForNode(graph.output_routes || {}, nodeId),
       }))
       logMobileGraphEvent('node_deleted', {
         node_id: nodeId,
@@ -414,7 +723,7 @@ export function useMobileWorkspace() {
     error.value = ''
     loading.value = true
     try {
-      await Promise.all([loadEditorCatalog(), refreshNodes(), refreshNodeConfigs()])
+      await Promise.all([loadEditorCatalog(), refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()])
       startGraphEventStream()
     } catch (e) {
       setError(e)
@@ -424,11 +733,7 @@ export function useMobileWorkspace() {
   }
 
   async function refreshConversation() {
-    const pcId = String(selectedPc.value?.id || '').trim()
-    const graphId = String(selectedGraph.value?.id || '').trim()
-    const nodeId = String(selectedNode.value?.id || '').trim()
-    if (!pcId || !graphId || !nodeId) throw new Error('PC, Graph, and Node selection are required')
-    conversation.value = await getMobileNodeConversation(pcId, graphId, nodeId)
+    await refreshConversationForSelection(requireChatSelection())
   }
 
   function setConversationLiveMessage(text: string) {
@@ -457,17 +762,16 @@ export function useMobileWorkspace() {
   }
 
   async function sendMessage(message: string | MessageEnvelope) {
-    const pcId = String(selectedPc.value?.id || '').trim()
-    const graphId = String(selectedGraph.value?.id || '').trim()
-    const nodeId = String(selectedNode.value?.id || '').trim()
-    if (!pcId || !graphId || !nodeId) throw new Error('PC, Graph, and Node selection are required')
+    const selection = requireChatSelection()
     sending.value = true
     error.value = ''
     try {
-      await sendMobileNodeMessage(pcId, graphId, nodeId, message)
-      await Promise.all([refreshNodes(), refreshConversation()])
+      const response = await sendMobileNodeMessage(selection.pcId, selection.graphId, selection.nodeId, message)
+      void syncChatAfterSend(selection).catch(setPostSendSyncError)
+      return response
     } catch (e) {
       setError(e)
+      throw e
     } finally {
       sending.value = false
     }
@@ -568,6 +872,90 @@ export function useMobileWorkspace() {
     }
   }
 
+  function outputRoutesForNode(sourceNodeId: string) {
+    return flattenOutputRoutes(graphConfig.value?.output_routes || {}, sourceNodeId)
+  }
+
+  async function persistOutputRoutes(nextRoutes: GraphOutputRoutes, saveReason: string) {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    if (!graphId) throw new Error('Graph selection is required')
+    const graph = graphConfig.value || normalizeGraphConfig(await loadGraph(graphId))
+    const next = normalizeGraphConfig({
+      ...graph,
+      output_routes: nextRoutes,
+    })
+    await saveGraph(graphId, next, { saveReason })
+    graphConfig.value = next
+    logMobileGraphEvent('graph_save_api', {
+      reason: saveReason,
+      output_routes_count: Object.keys(next.output_routes || {}).length,
+    })
+  }
+
+  async function addSelectedNodeOutputRoute() {
+    const sourceNodeId = String(selectedNode.value?.id || '').trim()
+    if (!sourceNodeId) throw new Error('Node selection is required')
+    if (!graphConfig.value) await refreshGraphConfig()
+    const targetNodes = nodes.value.filter((node) => node.id !== sourceNodeId)
+    if (!targetNodes.length) throw new Error('Create another node before adding an output route.')
+
+    const outputCount = portCount(selectedNode.value?.output_num, 1)
+    const existing = outputRoutesForNode(sourceNodeId)
+    const existingKeys = new Set(existing.map(routeKey))
+    for (let outputIndex = 0; outputIndex < outputCount; outputIndex += 1) {
+      for (const targetNode of targetNodes) {
+        const targetNodeId = String(targetNode.id || '').trim()
+        if (!targetNodeId) continue
+        const inputCount = portCount(targetNode.input_num, 1)
+        for (let inputIndex = 0; inputIndex < inputCount; inputIndex += 1) {
+          const candidate = { outputIndex, targetNodeId, inputIndex }
+          if (existingKeys.has(routeKey(candidate))) continue
+          const nextRoutes = buildOutputRoutes(sourceNodeId, [
+            ...existing,
+            { id: '', ...candidate },
+          ], graphConfig.value?.output_routes || {})
+          await persistOutputRoutes(nextRoutes, 'mobile_add_output_route')
+          return
+        }
+      }
+    }
+    throw new Error('All available output routes already exist.')
+  }
+
+  async function updateSelectedNodeOutputRoute(
+    routeId: string,
+    patch: { outputIndex?: number; targetNodeId?: string; inputIndex?: number },
+  ) {
+    const sourceNodeId = String(selectedNode.value?.id || '').trim()
+    if (!sourceNodeId) throw new Error('Node selection is required')
+    if (!graphConfig.value) await refreshGraphConfig()
+    const rows = outputRoutesForNode(sourceNodeId)
+    const index = rows.findIndex((row) => row.id === routeId)
+    const existing = rows[index]
+    if (index < 0 || !existing) return
+    const nextRow: MobileOutputRouteRow = {
+      ...existing,
+      outputIndex: patch.outputIndex == null ? existing.outputIndex : portIndex(patch.outputIndex, 0),
+      targetNodeId: patch.targetNodeId == null ? existing.targetNodeId : String(patch.targetNodeId || '').trim(),
+      inputIndex: patch.inputIndex == null ? existing.inputIndex : portIndex(patch.inputIndex, 0),
+    }
+    if (!nextRow.targetNodeId || nextRow.targetNodeId === sourceNodeId) return
+    const duplicate = rows.some((row) => row.id !== routeId && routeKey(row) === routeKey(nextRow))
+    if (duplicate) throw new Error('Output route already exists.')
+    rows.splice(index, 1, nextRow)
+    const nextRoutes = buildOutputRoutes(sourceNodeId, rows, graphConfig.value?.output_routes || {})
+    await persistOutputRoutes(nextRoutes, 'mobile_update_output_route')
+  }
+
+  async function removeSelectedNodeOutputRoute(routeId: string) {
+    const sourceNodeId = String(selectedNode.value?.id || '').trim()
+    if (!sourceNodeId) throw new Error('Node selection is required')
+    if (!graphConfig.value) await refreshGraphConfig()
+    const rows = outputRoutesForNode(sourceNodeId).filter((row) => row.id !== routeId)
+    const nextRoutes = buildOutputRoutes(sourceNodeId, rows, graphConfig.value?.output_routes || {})
+    await persistOutputRoutes(nextRoutes, 'mobile_remove_output_route')
+  }
+
   async function refreshCurrent() {
     if (view.value === 'pcs') {
       await loadPcs()
@@ -580,10 +968,10 @@ export function useMobileWorkspace() {
       return
     }
     if (view.value === 'nodes') {
-      await Promise.all([refreshNodes(), refreshNodeConfigs()])
+      await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()])
       return
     }
-    await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshConversation()])
+    await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshGraphConfig(), refreshConversation()])
   }
 
   function backToPcs() {
@@ -595,6 +983,7 @@ export function useMobileWorkspace() {
     selectedGraph.value = null
     selectedNode.value = null
     nodes.value = []
+    graphConfig.value = null
     conversation.value = null
     view.value = 'graphs'
   }
@@ -620,7 +1009,9 @@ export function useMobileWorkspace() {
       payload.new_node_id,
       payload.old_node_id,
     ]
-    return candidates.some((item) => String(item || '').trim() === target)
+    if (candidates.some((item) => String(item || '').trim() === target)) return true
+    const foldedTarget = target.toLowerCase()
+    return candidates.some((item) => String(item || '').trim().toLowerCase() === foldedTarget)
   }
 
   function logMobileGraphEvent(event: string, payload: Record<string, unknown> = {}) {
@@ -658,7 +1049,7 @@ export function useMobileWorkspace() {
       const shouldRefreshConversation = graphRefreshNeedsConversation && view.value === 'chat'
       graphRefreshNeedsConversation = false
       try {
-        const tasks: Promise<unknown>[] = [refreshNodes(), refreshNodeConfigs()]
+        const tasks: Promise<unknown>[] = [refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()]
         if (shouldRefreshConversation) tasks.push(refreshConversation())
         await Promise.all(tasks)
       } catch (e) {
@@ -801,8 +1192,11 @@ export function useMobileWorkspace() {
     graphInstances,
     flatGraphs,
     nodes,
+    graphConfig,
     nodeConfigs,
     availableNodeTypes,
+    agentProfiles,
+    graphProfiles,
     providers,
     availableTools,
     conversation,
@@ -810,6 +1204,7 @@ export function useMobileWorkspace() {
     selectedGraph,
     selectedNode,
     selectedConfig,
+    selectedNodeOutputRoutes,
     loading,
     sending,
     error,
@@ -823,13 +1218,21 @@ export function useMobileWorkspace() {
     clearSelectedNodeFields,
     clearSelectedNodeMemory,
     deleteSelectedNodeMessage,
+    refreshGraphConfig,
+    addSelectedNodeOutputRoute,
+    updateSelectedNodeOutputRoute,
+    removeSelectedNodeOutputRoute,
     saveGraphByName,
     deleteGraphById,
+    createGraphFromPreset,
     createNode,
+    createNodeFromProfile,
     deleteNode,
     refreshCurrent,
     refreshNodeConfigs,
     refreshEditorCatalog,
+    refreshAgentProfiles,
+    refreshGraphProfiles,
     backToPcs,
     backToGraphs,
     backToNodes,

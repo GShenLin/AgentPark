@@ -4,6 +4,7 @@ import {
   clearNodeInstanceMemory,
   createGraphFromProfile,
   deleteGraph,
+  deleteGraphProfile,
   deleteNodeInstanceMemoryMessage,
   listGraphProfiles,
   listGraphs,
@@ -41,6 +42,7 @@ const {
   graphLoadRequest,
   currentGraphId,
   currentGraphName,
+  currentGraphWorkingPath,
   lastError,
 } = useGlobalState()
 
@@ -77,6 +79,7 @@ const graphs = ref<GraphInfo[]>([])
 const graphProfiles = ref<GraphProfile[]>([])
 const selectedGraphProfileId = ref('')
 const graphNameInput = ref('')
+const graphWorkingPathInput = ref('')
 const graphStatus = ref<string | null>(null)
 const graphLoading = ref(false)
 
@@ -185,6 +188,12 @@ function resolveGraphName(snapshot: GraphConfig | null) {
   return `graph-${Date.now()}`
 }
 
+function updateGraphWorkingPath(value: string) {
+  const path = String(value || '').trim()
+  graphWorkingPathInput.value = path
+  currentGraphWorkingPath.value = path
+}
+
 async function saveGraphConfig() {
   const snapshot = graphSnapshot.value
   if (!snapshot) {
@@ -199,6 +208,7 @@ async function saveGraphConfig() {
     ...snapshot,
     id: currentGraphId.value || snapshot.id || name,
     name,
+    working_path: graphWorkingPathInput.value.trim(),
   }
 
   try {
@@ -209,6 +219,7 @@ async function saveGraphConfig() {
     const savedAsNewGraph = !!sourceGraphId && sourceGraphId !== result.id
     currentGraphId.value = result.id
     currentGraphName.value = result.name
+    currentGraphWorkingPath.value = payload.working_path || ''
     graphNameInput.value = result.name
     if (savedAsNewGraph) {
       graphLoadRequest.value = await loadGraph(result.id)
@@ -236,6 +247,7 @@ async function saveGraphProfile() {
         ...graphSnapshot.value,
         id: graphId,
         name: currentGraphName.value || graphNameInput.value || graphId,
+        working_path: graphWorkingPathInput.value.trim(),
       }, { saveReason: 'graph_profile_save' })
     }
     const result = await saveGraphProfileFromGraph({
@@ -266,12 +278,36 @@ async function createGraphConfigFromProfile() {
     const graph = result.graph
     currentGraphId.value = graph.id
     currentGraphName.value = graph.name || graph.id
+    currentGraphWorkingPath.value = String((graph as any)?.working_path || '').trim()
     graphNameInput.value = currentGraphName.value || graph.id
+    graphWorkingPathInput.value = currentGraphWorkingPath.value
     graphLoadRequest.value = graph
     memoryMode.value = 'graph'
     await setStartupGraphConfig(graph.id, graph.name || graph.id).catch(() => null)
     await refreshGraphs()
     graphStatus.value = 'Graph created from profile.'
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  }
+}
+
+async function deleteSelectedGraphProfile() {
+  const profileId = String(selectedGraphProfileId.value || '').trim()
+  if (!profileId) {
+    graphStatus.value = 'Select a graph profile first.'
+    return
+  }
+  const profile = graphProfiles.value.find((item) => item.id === profileId)
+  const profileName = String(profile?.name || profileId)
+  const ok = window.confirm(`Delete profile "${profileName}"? This cannot be undone.`)
+  if (!ok) return
+
+  graphStatus.value = null
+  try {
+    await deleteGraphProfile(profileId)
+    selectedGraphProfileId.value = ''
+    graphProfiles.value = await listGraphProfiles()
+    graphStatus.value = 'Graph profile deleted.'
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -293,7 +329,9 @@ async function loadGraphConfig(item: GraphInfo) {
     }
     currentGraphId.value = res.id
     currentGraphName.value = res.name
+    currentGraphWorkingPath.value = String((res as any)?.working_path || '').trim()
     graphNameInput.value = res.name
+    graphWorkingPathInput.value = currentGraphWorkingPath.value
     graphLoadRequest.value = res
     await setStartupGraphConfig(res.id, res.name).catch(() => null)
     memoryMode.value = 'graph'
@@ -313,8 +351,10 @@ async function deleteGraphConfig(item: GraphInfo) {
     if (currentGraphId.value === item.id) {
       currentGraphId.value = 'default'
       currentGraphName.value = 'default'
+      currentGraphWorkingPath.value = ''
       graphNameInput.value = 'default'
-      graphLoadRequest.value = { id: 'default', name: 'default', nodes: [], links: [] }
+      graphWorkingPathInput.value = ''
+      graphLoadRequest.value = { id: 'default', name: 'default', nodes: [], output_routes: {} }
       await setStartupGraphConfig('default', 'default').catch(() => null)
     }
     await refreshGraphs()
@@ -349,6 +389,7 @@ watch(
 
     if (mode === 'graph') {
       memoryTitle.value = currentGraphName.value || 'Graph'
+      graphWorkingPathInput.value = currentGraphWorkingPath.value
       await refreshGraphs()
     }
   },
@@ -381,6 +422,14 @@ watch(
       graphNameInput.value = name
     }
   },
+)
+
+watch(
+  () => currentGraphWorkingPath.value,
+  (path) => {
+    graphWorkingPathInput.value = String(path || '').trim()
+  },
+  { immediate: true },
 )
 
 watch(memoryText, async () => {
@@ -441,6 +490,7 @@ onBeforeUnmount(() => {
       ref="contentViewRef"
       v-model:memory-text="memoryText"
       v-model:graph-name-input="graphNameInput"
+      :graph-working-path-input="graphWorkingPathInput"
       :mode="memoryMode"
       :messages="structuredMessages"
       :live-message="memoryLiveMessage"
@@ -461,10 +511,13 @@ onBeforeUnmount(() => {
       @save-graph-config="saveGraphConfig"
       @save-graph-profile="saveGraphProfile"
       @create-graph-from-profile="createGraphConfigFromProfile"
+      @delete-graph-profile="deleteSelectedGraphProfile"
       @refresh-graphs="refreshGraphs"
       @load-graph-config="loadGraphConfig"
       @delete-graph-config="deleteGraphConfig"
+      @graph-path-error="graphStatus = $event"
       @update:selected-graph-profile-id="selectedGraphProfileId = $event"
+      @update:graph-working-path-input="updateGraphWorkingPath"
       @auto-scroll-change="memoryAutoScroll = $event"
       @save-message="openSaveMessageDialog"
       @copy-message="copyMessageText"

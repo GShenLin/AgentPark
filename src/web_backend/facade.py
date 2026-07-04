@@ -1,4 +1,5 @@
 import os
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
+from .node_desktop_pet_launcher import terminate_registered_desktop_pet_processes
 from .runtime_paths import _get_resource_root, _get_runtime_root
 from .route_registry import ApiRouteRegistry
 
@@ -27,6 +29,7 @@ class WebBackendFacade:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+        self._desktop_pet_restore_timer = None
 
     def register_routes(self) -> None:
         ApiRouteRegistry.register(self.app, self.core)
@@ -62,10 +65,58 @@ class WebBackendFacade:
             channels = self.core.channel_service.start_autostart_receivers()
             if isinstance(channels, dict):
                 print(f"[ChannelService] autostart receivers={int(channels.get('started', 0))}")
+            if str(os.environ.get("AGENTPARK_RESTORE_DESKTOP_PETS") or "").strip() == "1":
+                self._schedule_desktop_pet_restore()
+            else:
+                result = self.core.node_desktop_views.mark_all_desktop_pets_hidden()
+                if isinstance(result, dict) and int(result.get("updated", 0)) > 0:
+                    print(f"[DesktopPet] skipped restore; hidden stale views={int(result.get('updated', 0))}")
         except Exception as e:
             print(f"[GraphRuntime] startup failed: {e}")
 
+    def _schedule_desktop_pet_restore(self) -> None:
+        if self._desktop_pet_restore_timer is not None:
+            return
+
+        def restore() -> None:
+            try:
+                result = self.core.node_desktop_views.restore_visible_desktop_pets()
+                failed = result.get("failed") if isinstance(result, dict) else []
+                print(
+                    "[DesktopPet] restore "
+                    f"requested={int(result.get('requested', 0))} "
+                    f"restored={int(result.get('restored', 0))} "
+                    f"failed={len(failed) if isinstance(failed, list) else 0}"
+                )
+                if failed:
+                    print(f"[DesktopPet] restore failures={failed}")
+            except Exception as e:
+                print(f"[DesktopPet] restore failed: {e}")
+
+        timer = threading.Timer(1.0, restore)
+        timer.daemon = True
+        self._desktop_pet_restore_timer = timer
+        timer.start()
+
     def _shutdown_services(self) -> None:
+        timer = self._desktop_pet_restore_timer
+        if timer is not None:
+            timer.cancel()
+            self._desktop_pet_restore_timer = None
+        try:
+            result = terminate_registered_desktop_pet_processes()
+            if isinstance(result, dict) and int(result.get("requested") or 0) > 0:
+                failed = result.get("failed") if isinstance(result.get("failed"), list) else []
+                print(
+                    "[DesktopPet] shutdown "
+                    f"requested={int(result.get('requested') or 0)} "
+                    f"terminated={len(result.get('terminated') or [])} "
+                    f"failed={len(failed)}"
+                )
+                if failed:
+                    print(f"[DesktopPet] shutdown failures={failed}")
+        except Exception as e:
+            print(f"[DesktopPet] shutdown failed: {e}")
         try:
             self.core.graph_runtime._stop_timer_trigger_scheduler()
         except Exception:

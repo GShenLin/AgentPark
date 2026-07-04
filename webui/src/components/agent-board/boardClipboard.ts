@@ -2,6 +2,7 @@ import type { LinkItem, NodeCard } from './context'
 import { clampX } from './boardModel'
 
 export type BoardClipboardSnapshot = {
+  graphId: string
   nodes: NodeCard[]
   links: LinkItem[]
 }
@@ -17,6 +18,7 @@ export function hasBoardClipboardSnapshot(value: BoardClipboardSnapshot | null) 
 }
 
 export function makeBoardCopySnapshot(options: {
+  graphId: string
   nodes: NodeCard[]
   links: LinkItem[]
   selectedItemIds: string[]
@@ -36,7 +38,7 @@ export function makeBoardCopySnapshot(options: {
       from: { node: link.from.node, index: link.from.index },
       to: { node: link.to.node, index: link.to.index },
     }))
-  return { nodes: copiedNodes, links: copiedLinks }
+  return { graphId: options.graphId, nodes: copiedNodes, links: copiedLinks }
 }
 
 export function buildBoardPastePlan(options: {

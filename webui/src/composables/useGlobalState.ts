@@ -26,6 +26,7 @@ const graphSnapshot = ref<GraphConfig | null>(null)
 const graphLoadRequest = ref<GraphConfig | null>(null)
 const currentGraphId = ref<string | null>('default')
 const currentGraphName = ref<string | null>('default')
+const currentGraphWorkingPath = ref('')
 const nodeSettingsRequest = ref<{ id: string; nonce: number } | null>(null)
 const nodeEditorInputText = ref('')
 const nodeEditorAttachments = ref<NodeEditorAttachment[]>([])
@@ -52,6 +53,7 @@ export function useGlobalState() {
     graphLoadRequest,
     currentGraphId,
     currentGraphName,
+    currentGraphWorkingPath,
     nodeSettingsRequest,
     nodeEditorInputText,
     nodeEditorAttachments,

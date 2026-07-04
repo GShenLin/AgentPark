@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 
@@ -39,7 +40,7 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
 
         client = TestClient(app)
 
-        graph = {"id": "default", "name": "Default", "links": []}
+        graph = {"id": "default", "name": "Default", "output_routes": {}}
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
         create_node = client.post(
             "/api/nodes/instances",
@@ -123,6 +124,82 @@ def test_mobile_api_rejects_unknown_pc():
     response = client.get("/api/mobile/pcs/missing/graphs")
 
     assert response.status_code == 404
+
+
+def test_mobile_live_uses_directory_node_id_when_config_node_id_case_differs(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    import src.web_backend.mobile_api as mobile_api_module
+    import src.web_backend.node_runtime as node_runtime_module
+    import src.web_backend.runtime_paths as runtime_paths_module
+
+    runtime_root = str(tmp_path / "AITools")
+    resource_root = backend._get_runtime_root()
+    os.makedirs(runtime_root, exist_ok=True)
+
+    original_backend_runtime_root = backend._get_runtime_root
+    original_backend_resource_root = backend._get_resource_root
+    original_runtime_paths_runtime_root = runtime_paths_module._get_runtime_root
+    original_runtime_paths_resource_root = runtime_paths_module._get_resource_root
+    original_node_runtime_runtime_root = node_runtime_module._get_runtime_root
+    original_node_runtime_resource_root = node_runtime_module._get_resource_root
+    original_mobile_runtime_root = mobile_api_module._get_runtime_root
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+    runtime_paths_module._get_runtime_root = lambda: runtime_root
+    runtime_paths_module._get_resource_root = lambda: resource_root
+    node_runtime_module._get_runtime_root = lambda: runtime_root
+    node_runtime_module._get_resource_root = lambda: resource_root
+    mobile_api_module._get_runtime_root = lambda: runtime_root
+
+    try:
+        facade = backend.WebBackendFacade()
+        app = facade.build()
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+
+        graph = {"id": "default", "name": "Default", "output_routes": {}}
+        assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
+        created = client.post(
+            "/api/nodes/instances",
+            json={"node_id": "agent1", "type_id": "agent_node", "name": "agent1", "graph_id": "default"},
+        )
+        assert created.status_code == 200
+
+        config_path = facade.core.graph_runtime._node_config_path("agent1", "default")
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        cfg["node_id"] = "Agent1"
+        cfg["name"] = "Agent1"
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+        facade.core.node_live_outputs.update("default", "agent1", "partial stream")
+
+        nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
+        assert nodes.status_code == 200
+        mobile_node = nodes.json()["nodes"][0]
+        assert mobile_node["id"] == "agent1"
+        assert mobile_node["name"] == "Agent1"
+
+        live = client.get("/api/nodes/instances/Agent1/live?graph_id=default")
+        assert live.status_code == 200
+        assert live.json()["node_id"] == "agent1"
+        assert live.json()["live_message"] == "partial stream"
+
+        conversation = client.get("/api/mobile/pcs/local/graphs/default/nodes/Agent1/conversation")
+        assert conversation.status_code == 200
+        assert conversation.json()["live_message"] == "partial stream"
+    finally:
+        backend._get_runtime_root = original_backend_runtime_root
+        backend._get_resource_root = original_backend_resource_root
+        runtime_paths_module._get_runtime_root = original_runtime_paths_runtime_root
+        runtime_paths_module._get_resource_root = original_runtime_paths_resource_root
+        node_runtime_module._get_runtime_root = original_node_runtime_runtime_root
+        node_runtime_module._get_resource_root = original_node_runtime_resource_root
+        mobile_api_module._get_runtime_root = original_mobile_runtime_root
+        shutil.rmtree(runtime_root, ignore_errors=True)
 
 
 def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_path):

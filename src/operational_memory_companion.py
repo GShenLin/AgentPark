@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from src.companion_inbox import deliver_companion_notice
+from src.providers.agent_runtime_context import get_agent_runtime_context
 
 
 def notify_companion_about_operational_memory(
@@ -19,7 +20,7 @@ def notify_companion_about_operational_memory(
         return False
     if not _has_node_identity(notice):
         return False
-    notifier = getattr(agent, "_aitools_companion_notifier", None)
+    notifier = get_agent_runtime_context(agent).companion_notifier
     try:
         if callable(notifier):
             notifier(notice)
@@ -39,13 +40,13 @@ def build_operational_memory_notice(
     payload = dict(result if isinstance(result, dict) else {})
     memory_path = str(getattr(agent, "current_memory_path", "") or "").strip()
     fallback_graph_id, fallback_node_id = _identity_from_memory_path(memory_path)
+    runtime_context = get_agent_runtime_context(agent)
     return {
         "type": "operational_memory_notice",
         "source": {
-            "graph_id": _agent_attr(agent, "_aitools_graph_id", "graph_id") or fallback_graph_id,
-            "node_id": _agent_attr(agent, "_aitools_node_id", "node_instance_id", "agent_id", "node_id")
-            or fallback_node_id,
-            "node_type_id": _agent_attr(agent, "_aitools_node_type_id", "node_type_id"),
+            "graph_id": runtime_context.graph_id or fallback_graph_id,
+            "node_id": runtime_context.node_id or fallback_node_id,
+            "node_type_id": runtime_context.node_type_id,
             "provider": str(getattr(agent, "provider_name", "") or "").strip(),
             "memory_path": memory_path,
         },
@@ -101,14 +102,6 @@ def _is_companion_self_notice(notice: dict[str, Any]) -> bool:
     graph_id = str(source.get("graph_id") or "").strip()
     node_id = str(source.get("node_id") or "").strip()
     return graph_id == "companion" and node_id == "companion"
-
-
-def _agent_attr(agent: object, *names: str) -> str:
-    for name in names:
-        text = str(getattr(agent, name, "") or "").strip()
-        if text:
-            return text
-    return ""
 
 
 def _identity_from_memory_path(memory_path: str) -> tuple[str, str]:

@@ -9,6 +9,7 @@ import {
 } from '../api'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
+import type { MobileOutputRouteRow } from './useMobileWorkspace'
 
 const props = defineProps<{
   open: boolean
@@ -17,6 +18,14 @@ const props = defineProps<{
   config: NodeInstanceConfig | null
   providers: ProviderInfo[]
   availableTools: string[]
+  nodes: MobileNode[]
+  outputRoutes: MobileOutputRouteRow[]
+  addOutputRoute: () => Promise<void>
+  updateOutputRoute: (
+    routeId: string,
+    patch: { outputIndex?: number; targetNodeId?: string; inputIndex?: number },
+  ) => Promise<void>
+  removeOutputRoute: (routeId: string) => Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -31,6 +40,7 @@ const templateSchema = ref<Record<string, any>>({})
 const templateFields = ref<Record<string, any>>({})
 const draftFields = ref<Record<string, any>>({})
 const dirtyKeys = ref<Record<string, true>>({})
+const routing = ref(false)
 let templateRequestId = 0
 
 const schema = computed(() => templateSchema.value)
@@ -42,6 +52,11 @@ const templateKey = computed(() => {
   const typeId = String(props.node?.type_id || '').trim()
   return `${nodeId}:${typeId}`
 })
+const targetNodes = computed(() => {
+  const sourceNodeId = String(props.node?.id || '').trim()
+  return (props.nodes || []).filter((item) => String(item.id || '').trim() && item.id !== sourceNodeId)
+})
+const canAddRoute = computed(() => !!props.node && targetNodes.value.length > 0 && !routing.value)
 
 function showError(value: unknown) {
   emit('error', String((value as { message?: unknown })?.message || value || '').trim())
@@ -52,6 +67,53 @@ function setField(key: string, value: any) {
   if (!dirtyKeys.value[key]) {
     dirtyKeys.value = { ...dirtyKeys.value, [key]: true }
   }
+}
+
+function portOptions(count: unknown) {
+  const parsed = Number(count)
+  const safeCount = Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : 1
+  return Array.from({ length: safeCount }, (_, index) => index)
+}
+
+function inputOptions(nodeId: string) {
+  const target = targetNodes.value.find((item) => item.id === nodeId)
+  return portOptions(target?.input_num || 1)
+}
+
+function targetName(nodeId: string) {
+  const target = targetNodes.value.find((item) => item.id === nodeId)
+  return String(target?.name || nodeId)
+}
+
+async function runRouteChange(task: () => Promise<void>) {
+  routing.value = true
+  try {
+    await task()
+  } catch (e) {
+    showError(e)
+  } finally {
+    routing.value = false
+  }
+}
+
+function addRoute() {
+  void runRouteChange(props.addOutputRoute)
+}
+
+function setRouteOutput(routeId: string, value: string) {
+  void runRouteChange(() => props.updateOutputRoute(routeId, { outputIndex: Number(value) }))
+}
+
+function setRouteTarget(routeId: string, value: string) {
+  void runRouteChange(() => props.updateOutputRoute(routeId, { targetNodeId: value, inputIndex: 0 }))
+}
+
+function setRouteInput(routeId: string, value: string) {
+  void runRouteChange(() => props.updateOutputRoute(routeId, { inputIndex: Number(value) }))
+}
+
+function removeRoute(routeId: string) {
+  void runRouteChange(() => props.removeOutputRoute(routeId))
 }
 
 function resetDraftFromConfig() {
@@ -145,19 +207,66 @@ watch(
       </header>
 
       <div class="config-body">
-        <div v-if="loading" class="config-empty">Loading node config...</div>
-        <div v-else-if="fieldKeys.length === 0" class="config-empty">This node has no editable fields.</div>
-        <NodeConfigFields
-          v-else
-          :type-id="node?.type_id || ''"
-          :schema="schema"
-          :fields="draftFields"
-          :providers="providers"
-          :available-tools="availableTools"
-          enable-prompt-library
-          @update-field="setField"
-          @field-error="showError"
-        />
+        <section class="config-fields-section">
+          <div v-if="loading" class="config-empty">Loading node config...</div>
+          <div v-else-if="fieldKeys.length === 0" class="config-empty">This node has no editable fields.</div>
+          <NodeConfigFields
+            v-else
+            :type-id="node?.type_id || ''"
+            :schema="schema"
+            :fields="draftFields"
+            :providers="providers"
+            :available-tools="availableTools"
+            enable-prompt-library
+            @update-field="setField"
+            @field-error="showError"
+          />
+        </section>
+
+        <section class="output-routes-section">
+          <div class="route-head">
+            <div>
+              <div class="route-title">输出</div>
+              <div class="route-subtitle">配置此节点的输出目标</div>
+            </div>
+            <button class="secondary-btn route-add-btn" type="button" :disabled="!canAddRoute" @click="addRoute">
+              {{ routing ? '保存中...' : '添加' }}
+            </button>
+          </div>
+
+          <div v-if="targetNodes.length === 0" class="route-empty">Create another node before adding an output route.</div>
+          <div v-else-if="outputRoutes.length === 0" class="route-empty">No output routes configured.</div>
+          <div v-else class="route-list">
+            <div v-for="route in outputRoutes" :key="route.id" class="route-row">
+              <label>
+                <span>输出口</span>
+                <select :value="route.outputIndex" :disabled="routing" @change="setRouteOutput(route.id, ($event.target as HTMLSelectElement).value)">
+                  <option v-for="index in portOptions(node?.output_num || 1)" :key="index" :value="index">{{ index }}</option>
+                </select>
+              </label>
+              <label>
+                <span>目标节点</span>
+                <select
+                  :value="route.targetNodeId"
+                  :title="targetName(route.targetNodeId)"
+                  :disabled="routing"
+                  @change="setRouteTarget(route.id, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option v-for="target in targetNodes" :key="target.id" :value="target.id">
+                    {{ target.name || target.id }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                <span>输入口</span>
+                <select :value="route.inputIndex" :disabled="routing" @change="setRouteInput(route.id, ($event.target as HTMLSelectElement).value)">
+                  <option v-for="index in inputOptions(route.targetNodeId)" :key="index" :value="index">{{ index }}</option>
+                </select>
+              </label>
+              <button class="route-remove-btn" type="button" :disabled="routing" aria-label="删除输出路由" @click="removeRoute(route.id)">x</button>
+            </div>
+          </div>
+        </section>
       </div>
 
       <footer class="config-actions">
@@ -237,10 +346,99 @@ watch(
   padding: 12px;
 }
 
+.config-fields-section,
+.output-routes-section {
+  min-width: 0;
+}
+
+.output-routes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
 .config-empty {
   padding: 12px;
   color: rgba(148, 163, 184, 0.95);
   font-size: 13px;
+}
+
+.route-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.route-title {
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.route-subtitle,
+.route-empty {
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 12px;
+}
+
+.route-empty {
+  padding: 10px 0;
+}
+
+.route-add-btn {
+  min-width: 64px;
+}
+
+.route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.route-row {
+  display: grid;
+  grid-template-columns: minmax(58px, 0.65fr) minmax(0, 1.6fr) minmax(58px, 0.65fr) 34px;
+  gap: 8px;
+  align-items: end;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.route-row label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-row span {
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 11px;
+}
+
+.route-row select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.88);
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.route-remove-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.24);
+  color: #fecaca;
 }
 
 .config-actions {
@@ -263,5 +461,16 @@ watch(
 .primary-btn {
   border-color: rgba(56, 189, 248, 0.48);
   background: rgba(14, 165, 233, 0.3);
+}
+
+@media (max-width: 420px) {
+  .route-row {
+    grid-template-columns: 1fr 1fr 34px;
+  }
+
+  .route-row label:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
 }
 </style>

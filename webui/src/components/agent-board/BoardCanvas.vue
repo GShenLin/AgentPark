@@ -4,6 +4,7 @@ import { AgentBoardKey } from './context'
 import CanvasContextMenu from './CanvasContextMenu.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
+import NodeOutputRoutesPanel from './NodeOutputRoutesPanel.vue'
 import NodeSideEditor from './NodeSideEditor.vue'
 import UserInteractionDialog from '../UserInteractionDialog.vue'
 
@@ -25,6 +26,10 @@ const nodeContextMenuRef = ref<{
 } | null>(null)
 
 const items = computed(() => ctx.nodes.value)
+const nodesWithOutputRoutes = computed(() => {
+  const sourceIds = new Set(ctx.links.value.map((link) => link.from.node))
+  return ctx.nodes.value.filter((node) => sourceIds.has(node.id))
+})
 
 function getBoardPoint(event: MouseEvent) {
   const canvas = canvasEl.value
@@ -77,43 +82,6 @@ watchEffect(() => {
       :style="{ width: `${ctx.canvasWidth.value * ctx.canvasScale.value}px`, height: `${ctx.canvasHeight.value * ctx.canvasScale.value}px` }"
     >
       <div class="canvas-content" :style="{ width: `${ctx.canvasWidth.value}px`, height: `${ctx.canvasHeight.value}px`, transform: `scale(${ctx.canvasScale.value})` }">
-        <svg
-          class="agent-links"
-          :width="ctx.canvasWidth.value"
-          :height="ctx.canvasHeight.value"
-          xmlns:xlink="http://www.w3.org/1999/xlink"
-        >
-        <path
-          v-for="link in ctx.links.value"
-          :key="link.id"
-          class="agent-link"
-          :id="`link-path-${link.id}`"
-          :d="ctx.linkPath(link)"
-        />
-        <path v-if="ctx.linkSession.value" class="agent-link active" :d="ctx.activeLinkPath()" />
-        <g v-for="flow in ctx.linkFlows.value" :key="flow.id">
-          <circle
-            v-for="(delay, index) in ctx.LINK_FLOW_BUBBLES"
-            :key="`${flow.id}-${index}`"
-            class="agent-link-bubble"
-            :r="index % 2 === 0 ? 3.2 : 2.6"
-            fill="#7dd3fc"
-            opacity="0.85"
-          >
-            <animateMotion
-              :dur="`${ctx.LINK_FLOW_DURATION_MS / 1000}s`"
-              :begin="`${delay}s`"
-              repeatCount="1"
-              keySplines="0.4 0 0.2 1"
-              calcMode="spline"
-              keyTimes="0;1"
-            >
-              <mpath :href="`#link-path-${flow.linkId}`" :xlink:href="`#link-path-${flow.linkId}`" />
-            </animateMotion>
-          </circle>
-        </g>
-        </svg>
-
         <div
           v-if="ctx.selectionRect.value"
           class="selection-rect"
@@ -128,6 +96,11 @@ watchEffect(() => {
         <NodeCardItem
           v-for="node in items"
           :key="`node:${node.id}`"
+          :node="node"
+        />
+        <NodeOutputRoutesPanel
+          v-for="node in nodesWithOutputRoutes"
+          :key="`routes:${node.id}`"
           :node="node"
         />
         <UserInteractionDialog
@@ -172,25 +145,4 @@ watchEffect(() => {
   pointer-events: none;
 }
 
-.agent-links {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-}
-
-.agent-link {
-  fill: none;
-  stroke: rgba(125, 211, 252, 0.6);
-  stroke-width: 2;
-}
-
-.agent-link.active {
-  stroke: rgba(99, 102, 241, 0.8);
-  stroke-dasharray: 4 4;
-}
-
-.agent-link-bubble {
-  filter: drop-shadow(0 0 6px rgba(125, 211, 252, 0.5));
-}
 </style>

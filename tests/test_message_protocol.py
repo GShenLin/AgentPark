@@ -1,5 +1,9 @@
 from src.message_protocol import envelope_text
 from src.message_protocol import normalize_envelope
+from src.message_protocol import normalize_message_envelope
+from src.message_protocol import ResourcePart
+from src.message_protocol import TextPart
+from src.message_protocol import ToolCallPart
 
 
 def test_tool_call_part_preserves_lifecycle_fields():
@@ -42,6 +46,28 @@ def test_tool_call_part_preserves_lifecycle_fields():
     assert part["result_tail_preview"] == "ok"
     assert part["result_tail_preview_truncated"] is False
     assert part["diagnostics"] == ["image skipped"]
+
+
+def test_typed_message_envelope_round_trips_normalized_parts():
+    envelope = normalize_message_envelope(
+        {
+            "role": "assistant",
+            "parts": [
+                {"type": "text", "text": "hello"},
+                {"type": "resource", "resource": {"kind": "image", "uri": "file://image.png"}},
+                {"type": "tool_call", "name": "read_file", "status": "completed"},
+            ],
+            "trace_id": "trace-1",
+        },
+        default_role="assistant",
+    )
+
+    assert envelope.role == "assistant"
+    assert envelope.trace_id == "trace-1"
+    assert isinstance(envelope.parts[0], TextPart)
+    assert isinstance(envelope.parts[1], ResourcePart)
+    assert isinstance(envelope.parts[2], ToolCallPart)
+    assert envelope.to_dict()["parts"][1]["resource"]["kind"] == "image"
 
 
 def test_envelope_text_renders_tool_call_parts():

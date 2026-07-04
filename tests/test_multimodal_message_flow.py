@@ -21,7 +21,7 @@ def test_emit_graph_accepts_message_envelope_and_persists_messages(tmp_path):
         graph = {
             "id": "default",
             "name": "default",
-            "links": [],
+            "output_routes": {},
         }
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
         assert (

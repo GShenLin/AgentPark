@@ -4,6 +4,7 @@ import pytest
 
 from src.web_backend.node_config_errors import NodeConfigFormatError, NodeConfigWriteError
 from src.web_backend.node_config_service import NODE_CONFIG_SCHEMA_VERSION, node_config_service
+from src.web_backend.state_store import _read_json_dict
 
 
 def test_read_strict_rejects_corrupt_json(tmp_path):
@@ -71,12 +72,12 @@ def test_write_retries_transient_replace_failure(monkeypatch, tmp_path):
 
     node_config_service.write(str(config_path), {"node_id": "n1"})
 
-    assert attempts["count"] == 4
+    assert attempts["count"] == 3
     assert json.loads(config_path.read_text(encoding="utf-8")) == {
         "node_id": "n1",
         "schemaVersion": NODE_CONFIG_SCHEMA_VERSION,
     }
-    assert json.loads(config_path.with_name("runtime_state.json").read_text(encoding="utf-8")) == {}
+    assert not config_path.with_name("runtime_state.json").exists()
 
 
 def test_write_preserves_replace_error_after_retries(monkeypatch, tmp_path):
@@ -118,7 +119,7 @@ def test_apply_webui_payload_clears_named_fields(tmp_path):
         "type_id": "agent_node",
         "schemaVersion": NODE_CONFIG_SCHEMA_VERSION,
     }
-    assert json.loads(config_path.with_name("runtime_state.json").read_text(encoding="utf-8")) == {}
+    assert not config_path.with_name("runtime_state.json").exists()
 
 
 def test_write_splits_runtime_fields_from_config_json(tmp_path):
@@ -136,11 +137,12 @@ def test_write_splits_runtime_fields_from_config_json(tmp_path):
     )
 
     saved_config = json.loads(config_path.read_text(encoding="utf-8"))
-    saved_runtime = json.loads(config_path.with_name("runtime_state.json").read_text(encoding="utf-8"))
 
     assert "state" not in saved_config
     assert "last_message" not in saved_config
     assert "runtime_events" not in saved_config
+    assert not config_path.with_name("runtime_state.json").exists()
+    saved_runtime = _read_json_dict(str(config_path))
     assert saved_runtime["state"] == "working"
     assert saved_runtime["last_message"] == "large runtime output"
     assert saved_runtime["runtime_events"] == [{"type": "runtime_notice", "message": "running"}]
@@ -167,15 +169,13 @@ def test_legacy_config_runtime_fields_are_migrated_on_write(tmp_path):
     )
 
     merged = node_config_service.read_strict(str(config_path))
-    assert merged["state"] == "working"
-    assert merged["last_message"] == "legacy"
+    assert merged["state"] == "idle"
+    assert "last_message" not in merged
 
     result = node_config_service.update(str(config_path), lambda cfg: cfg.update({"working_path": "C:/work"}))
 
     saved_config = json.loads(config_path.read_text(encoding="utf-8"))
-    saved_runtime = json.loads(config_path.with_name("runtime_state.json").read_text(encoding="utf-8"))
     assert result.after["working_path"] == "C:/work"
     for key in ("state", "pending", "last_message", "goal_state"):
         assert key not in saved_config
-        assert key in saved_runtime
-    assert saved_runtime["last_message"] == "legacy"
+    assert not config_path.with_name("runtime_state.json").exists()

@@ -3,6 +3,7 @@ import os
 from . import runtime_paths
 from .node_deletion import NodeDeletionBlocked
 from .node_deletion import delete_node_directory
+from .node_instance_artifacts import prune_node_references_in_graph
 from .service_host import HostBoundService
 from .shared import HTTPException
 
@@ -13,6 +14,7 @@ class NodeInstanceDeletion(HostBoundService):
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
         memory_root = os.path.join(runtime_paths._get_runtime_root(), "memories")
+        self.graph_runtime._unregister_scheduled_node(safe_graph_id, safe_node_id)
         try:
             result = delete_node_directory(
                 core=self.core,
@@ -29,6 +31,7 @@ class NodeInstanceDeletion(HostBoundService):
             raise HTTPException(status_code=409, detail=f"node deletion is blocked: {str(exc)}")
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to delete node instance: {str(exc)}")
+        prune_node_references_in_graph(self.graph_runtime, safe_graph_id, safe_node_id)
         self.graph_runtime._log_graph_event(
             safe_graph_id,
             "node_deleted",

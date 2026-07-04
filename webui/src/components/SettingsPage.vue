@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { getNodeTemplate, listProviders, listTools, type ProviderInfo } from '../api'
 import { getSchemaFieldOptions } from '../composables/nodeSchemaFields'
 import {
@@ -14,6 +14,29 @@ import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySe
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
 import ModuleProviderSettingsForm from './settings/ModuleProviderSettingsForm.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
+import SystemExitPanel from './settings/SystemExitPanel.vue'
+
+const AnimEditor = defineAsyncComponent(() => import('./settings/AnimEditor.vue'))
+const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
+  {
+    id: 'module-provider',
+    label: 'moduleProvider',
+    path: 'config/moduleProvider.json',
+    filename: 'moduleProvider.json',
+  },
+  {
+    id: 'defaults',
+    label: 'Default settings',
+    path: 'config/config.json',
+    filename: 'config.json',
+  },
+  {
+    id: 'companion',
+    label: 'Companion',
+    path: 'memories/companion/config.json',
+    filename: 'config.json',
+  },
+]
 
 const props = withDefaults(defineProps<{
   backLabel?: string
@@ -26,7 +49,7 @@ const emit = defineEmits<{
   providersUpdated: []
 }>()
 
-const sections = ref<SettingsSectionInfo[]>([])
+const sections = ref<SettingsSectionInfo[]>(DEFAULT_SETTINGS_SECTIONS.slice())
 const activeSection = ref('module-provider')
 const loadedDocument = ref<SettingsDocument | null>(null)
 const editorContent = ref('')
@@ -49,6 +72,22 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
       filename: 'ProviderLimit.json',
     })
   }
+  if (!base.some((item) => item.id === 'anim-editor')) {
+    base.push({
+      id: 'anim-editor',
+      label: 'AnimEditor',
+      path: 'petAvatars',
+      filename: 'frame.json',
+    })
+  }
+  if (!base.some((item) => item.id === 'exit')) {
+    base.push({
+      id: 'exit',
+      label: 'Exit',
+      path: 'AgentPark backend',
+      filename: '',
+    })
+  }
   return base
 })
 
@@ -61,11 +100,16 @@ const activeLabel = computed(() => {
   if (activeSection.value === 'defaults') return 'Default settings'
   if (activeSection.value === 'companion') return 'Companion'
   if (activeSection.value === 'provider-test') return 'Test'
+  if (activeSection.value === 'anim-editor') return 'AnimEditor'
+  if (activeSection.value === 'exit') return 'Exit'
   return currentSection.value?.label || activeSection.value
 })
 
 const isProviderTest = computed(() => activeSection.value === 'provider-test')
-const dirty = computed(() => !isProviderTest.value && editorContent.value !== String(loadedDocument.value?.content || ''))
+const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
+const isExitSection = computed(() => activeSection.value === 'exit')
+const isVirtualSection = computed(() => isProviderTest.value || isAnimEditor.value || isExitSection.value)
+const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 
 const formData = computed<Record<string, unknown> | null>(() => {
   try {
@@ -81,6 +125,8 @@ function labelFor(section: SettingsSectionInfo) {
   if (section.id === 'defaults') return 'Default settings'
   if (section.id === 'companion') return 'Companion'
   if (section.id === 'provider-test') return 'Test'
+  if (section.id === 'anim-editor') return 'AnimEditor'
+  if (section.id === 'exit') return 'Exit'
   return section.label
 }
 
@@ -120,14 +166,15 @@ async function loadCompanionCapabilityOptions() {
 }
 
 async function loadSections() {
-  sections.value = await listSettingsSections()
+  const nextSections = await listSettingsSections()
+  sections.value = nextSections.length ? nextSections : DEFAULT_SETTINGS_SECTIONS.slice()
   if (!displaySections.value.some((item) => item.id === activeSection.value)) {
     activeSection.value = sections.value[0]?.id || 'module-provider'
   }
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'provider-test') {
+  if (sectionId === 'provider-test' || sectionId === 'anim-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -207,7 +254,7 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>Settings</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isAnimEditor ? 'petAvatars/*/frame.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
         <button type="button" class="settings-btn" @click="emit('back')">{{ props.backLabel }}</button>
@@ -236,18 +283,20 @@ onMounted(async () => {
             <span v-else-if="status" class="editor-state saved">{{ status }}</span>
           </div>
           <div class="editor-actions">
-            <button v-if="!isProviderTest" type="button" class="settings-btn" :disabled="loading || saving" @click="loadSection()">Reload</button>
-            <button v-if="!isProviderTest" type="button" class="settings-btn" :disabled="loading || saving" @click="advancedMode = !advancedMode">
+            <button v-if="!isVirtualSection" type="button" class="settings-btn" :disabled="loading || saving" @click="loadSection()">Reload</button>
+            <button v-if="!isVirtualSection" type="button" class="settings-btn" :disabled="loading || saving" @click="advancedMode = !advancedMode">
               {{ advancedMode ? 'Form' : 'Advanced JSON' }}
             </button>
-            <button v-if="!isProviderTest && advancedMode" type="button" class="settings-btn" :disabled="loading || saving" @click="formatJson">Format</button>
-            <button v-if="!isProviderTest" type="button" class="settings-btn primary" :disabled="loading || saving || !dirty" @click="saveSection">
+            <button v-if="!isVirtualSection && advancedMode" type="button" class="settings-btn" :disabled="loading || saving" @click="formatJson">Format</button>
+            <button v-if="!isVirtualSection" type="button" class="settings-btn primary" :disabled="loading || saving || !dirty" @click="saveSection">
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
           </div>
         </div>
 
         <ProviderTestSettingsPanel v-if="isProviderTest" />
+        <AnimEditor v-else-if="isAnimEditor" @error="error = $event" @status="status = $event" />
+        <SystemExitPanel v-else-if="isExitSection" />
 
         <textarea
           v-else-if="advancedMode"

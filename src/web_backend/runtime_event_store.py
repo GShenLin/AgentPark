@@ -246,18 +246,37 @@ def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any
         "responses_mode",
         "requested_responses_mode",
         "previous_response_id_present",
+        "instructions_present",
+        "instructions_chars",
         "input_item_count",
         "approx_input_chars",
+        "approx_input_tokens",
         "environment_context_chars",
+        "turn_context_chars",
+        "permissions_context_chars",
+        "collaboration_context_chars",
+        "internal_context_chars",
+        "skills_context_chars",
+        "mcp_servers_context_chars",
+        "operational_memory_context_chars",
+        "project_instructions_context_chars",
+        "input_items",
         "largest_input_items",
         "tool_result_chars_by_call",
         "largest_tool_result",
         "tools_included",
         "tools_included_count",
         "stream",
+        "context_item_hash",
+        "context_update_mode",
+        "context_diff_paths",
+        "persistent_context_item_hash",
+        "persistent_context_update_mode",
+        "payload_log_path",
+        "payload_log_error",
     }
     sanitized = {key: summary.get(key) for key in allowed if key in summary}
-    for key in ("largest_input_items", "tool_result_chars_by_call", "tools_included"):
+    for key in ("input_items", "largest_input_items", "tool_result_chars_by_call", "tools_included"):
         value = sanitized.get(key)
         if isinstance(value, list):
             sanitized[key] = value[:20]

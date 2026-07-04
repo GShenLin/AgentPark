@@ -28,6 +28,7 @@ from functions.rg_tools import (
     rg_search_text,
     rg_search_text_declaration,
 )
+from src.providers.agent_environment_context import resolve_agent_relative_path
 from src.tool.tool_json_response import tool_json_error
 
 _SECTION_PREFIX = "*** "
@@ -45,10 +46,10 @@ class PatchApplyError(Exception):
     pass
 
 
-def _resolve_path(file_path):
+def _resolve_path(file_path, agent=None):
     if not isinstance(file_path, str) or not file_path.strip():
         raise PatchApplyError("Patch file path must be a non-empty string.")
-    return os.path.abspath(file_path.strip())
+    return resolve_agent_relative_path(file_path.strip(), agent=agent)
 
 
 def _is_section_line(line):
@@ -218,14 +219,14 @@ def _apply_hunks(file_path, original_text, hunks):
     return _lines_to_text(lines, trailing_newline=trailing_newline)
 
 
-def _simulate_operations(operations, encoding):
+def _simulate_operations(operations, encoding, *, agent=None):
     state = {}
     changed_paths = set()
     summaries = []
 
     for operation in operations:
         op_type = operation["type"]
-        source_path = _resolve_path(operation["path"])
+        source_path = _resolve_path(operation["path"], agent=agent)
 
         if op_type == "add":
             if _file_exists_in_state(source_path, state):
@@ -254,7 +255,7 @@ def _simulate_operations(operations, encoding):
             new_text = _apply_hunks(source_path, text, operation["hunks"]) if operation["hunks"] else text
             destination = operation.get("move_to")
             if destination:
-                destination_path = _resolve_path(destination)
+                destination_path = _resolve_path(destination, agent=agent)
                 if destination_path != source_path and _file_exists_in_state(destination_path, state):
                     raise PatchApplyError(f"Move target already exists: {destination_path}")
                 state[source_path] = None
@@ -311,7 +312,7 @@ def _commit_state(state, encoding):
             _atomic_write(file_path, content, encoding)
 
 
-def apply_patch(patch, encoding="utf-8"):
+def apply_patch(patch, encoding="utf-8", agent=None):
     """
     Apply a Codex-style file patch to the local filesystem.
     """
@@ -319,7 +320,7 @@ def apply_patch(patch, encoding="utf-8"):
         if not isinstance(encoding, str) or not encoding.strip():
             encoding = "utf-8"
         operations = _parse_patch(patch)
-        state, changed_paths, summaries = _simulate_operations(operations, encoding.strip())
+        state, changed_paths, summaries = _simulate_operations(operations, encoding.strip(), agent=agent)
         _commit_state(state, encoding.strip())
         return json.dumps(
             {

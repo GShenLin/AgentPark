@@ -7,6 +7,11 @@ def _write_json(path, payload):
     import json
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(payload, dict) and payload.get("node_id"):
+        from src.web_backend.state_store import _write_json_dict
+
+        _write_json_dict(str(path), payload)
+        return
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -41,7 +46,7 @@ def test_companion_mcp_tools_operate_on_backend_domains(monkeypatch, tmp_path):
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     _write_json(
         graph_dir / "n1" / "config.json",
         {
@@ -100,13 +105,9 @@ def test_companion_mcp_link_tools_manage_graph_links(monkeypatch, tmp_path):
         {
             "id": "default",
             "name": "Default Graph",
-            "links": [
-                {
-                    "id": "existing",
-                    "from": {"node": "source", "index": 0},
-                    "to": {"node": "target", "index": 0},
-                }
-            ],
+            "output_routes": {
+                "source": [{"output_index": 0, "targets": [{"node_id": "target", "input_index": 0}]}],
+            },
         },
     )
     _write_json(
@@ -140,7 +141,8 @@ def test_companion_mcp_link_tools_manage_graph_links(monkeypatch, tmp_path):
     listed = tools.list_link(graph_id="default")
     assert listed["ok"] is True
     assert listed["count"] == 1
-    assert listed["links"][0]["id"] == "existing"
+    existing_link_id = listed["links"][0]["id"]
+    assert existing_link_id == "route-source-0-target-0"
 
     created = tools.connect_node(
         graph_id="default",
@@ -181,12 +183,13 @@ def test_companion_mcp_link_tools_manage_graph_links(monkeypatch, tmp_path):
     assert removed_by_endpoint["ok"] is True
     assert removed_by_endpoint["removed_count"] == 1
 
-    removed_by_id = tools.disconnect_node(graph_id="default", link_id="existing")
+    removed_by_id = tools.disconnect_node(graph_id="default", link_id=existing_link_id)
 
     assert removed_by_id["ok"] is True
-    assert removed_by_id["removed"][0]["id"] == "existing"
+    assert removed_by_id["removed"][0]["id"] == existing_link_id
     saved = json.loads((graph_dir / "config.json").read_text(encoding="utf-8"))
-    assert saved["links"] == []
+    assert "links" not in saved
+    assert saved["output_routes"] == {}
 
 
 def test_companion_mcp_connect_node_validates_ports(monkeypatch, tmp_path):
@@ -196,7 +199,7 @@ def test_companion_mcp_connect_node_validates_ports(monkeypatch, tmp_path):
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     _write_json(
         graph_dir / "source" / "config.json",
         {"schemaVersion": 1, "node_id": "source", "graph_id": "default", "type_id": "echo_node", "output_num": 1},
@@ -254,7 +257,7 @@ def test_companion_mcp_marks_self_and_blocks_unintentional_self_send(monkeypatch
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     _write_json(
         graph_dir / "self-node" / "config.json",
         {
@@ -312,7 +315,7 @@ def test_companion_mcp_send_waits_for_node_result(monkeypatch, tmp_path):
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     config_path = graph_dir / "worker" / "config.json"
     _write_json(
         config_path,
@@ -379,7 +382,7 @@ def test_companion_mcp_send_wait_matches_request_id_when_node_keeps_working(monk
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     config_path = graph_dir / "worker" / "config.json"
     _write_json(
         config_path,
@@ -454,7 +457,7 @@ def test_companion_mcp_real_worker_records_completed_request(monkeypatch, tmp_pa
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     config_path = graph_dir / "echo1" / "config.json"
     _write_json(
         config_path,
@@ -495,7 +498,7 @@ def test_companion_mcp_returns_structured_timeout_next_action(monkeypatch, tmp_p
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     _write_json(
         graph_dir / "worker" / "config.json",
         {
@@ -597,6 +600,7 @@ def test_companion_mcp_rejects_non_editable_config_fields(monkeypatch, tmp_path)
     import src.web_backend as backend
     from src.web_backend import runtime_paths
     from src.web_backend.companion_mcp import CompanionMcpTools
+    from src.web_backend.companion_mcp_payloads import EDITABLE_NODE_CONFIG_FIELDS
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
@@ -616,6 +620,7 @@ def test_companion_mcp_rejects_non_editable_config_fields(monkeypatch, tmp_path)
 
     assert result["ok"] is False
     assert result["error"]["code"] == "field_not_editable"
+    assert "collaboration_mode" in EDITABLE_NODE_CONFIG_FIELDS
 
 
 def test_companion_mcp_wait_timeout_has_no_artificial_170_second_cap():
@@ -632,7 +637,7 @@ def test_companion_mcp_reports_truncated_last_message_hint(monkeypatch, tmp_path
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     _write_json(
         graph_dir / "long" / "config.json",
         {
@@ -664,7 +669,7 @@ def test_companion_mcp_reports_last_error(monkeypatch, tmp_path):
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     _write_json(
         graph_dir / "bad" / "config.json",
         {
@@ -745,7 +750,7 @@ def test_companion_mcp_stop_node_clears_pending(monkeypatch, tmp_path):
 
     graphs_dir = tmp_path / "memories"
     graph_dir = graphs_dir / "default"
-    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graph_dir / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     _write_json(
         graph_dir / "stuck" / "config.json",
         {
@@ -793,7 +798,7 @@ def test_companion_mcp_endpoint_exposes_requested_tools(monkeypatch, tmp_path):
     from src.web_backend.companion_mcp import build_companion_mcp
 
     graphs_dir = tmp_path / "memories"
-    _write_json(graphs_dir / "default" / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graphs_dir / "default" / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
 
@@ -833,7 +838,7 @@ def test_graph_event_store_receives_logged_runtime_events(monkeypatch, tmp_path)
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    _write_json(graphs_dir / "default" / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graphs_dir / "default" / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
 
@@ -856,7 +861,7 @@ def test_runtime_log_appends_without_stream_publish(monkeypatch, tmp_path):
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    _write_json(graphs_dir / "default" / "config.json", {"id": "default", "name": "Default Graph", "links": []})
+    _write_json(graphs_dir / "default" / "config.json", {"id": "default", "name": "Default Graph", "output_routes": {}})
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
 

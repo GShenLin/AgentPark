@@ -91,11 +91,17 @@ def render_mcp_server_context(servers: Iterable[McpServerDefinition]) -> str:
     return "\n".join(lines)
 
 
-def inject_mcp_server_context(agent: object, values: object, *, settings: dict | None = None) -> list[McpServerDefinition]:
+def inject_mcp_server_context(
+    agent: object,
+    values: object,
+    *,
+    settings: dict | None = None,
+    role: str = "system",
+) -> list[McpServerDefinition]:
     servers = load_mcp_server_definitions(values, settings=settings)
     context = render_mcp_server_context(servers)
     if context:
-        agent.Message("system", context, persist=False)
+        agent.Message(_context_role(role), context, persist=False)
     return servers
 
 
@@ -197,6 +203,13 @@ def _is_valid_mcp_server_name(value: str) -> bool:
 
 def _escape_tag_text(value: object) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _context_role(value: object) -> str:
+    role = str(value or "").strip().lower()
+    if role in {"developer", "system"}:
+        return role
+    return "system"
 
 
 def _stable_json(value: object) -> str:

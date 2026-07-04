@@ -55,7 +55,7 @@ def test_load_node_skills_reads_frontmatter_and_renders_bounded_context(tmp_path
     assert skills[0].resources[0].path == "references/guide.md"
 
     rendered = render_skill_instructions(skills)
-    assert rendered.startswith("<skills>")
+    assert rendered.startswith("<skills_instructions>")
     assert "<name>demo</name>" in rendered
     assert "<version>1.2.3</version>" in rendered
     assert "<path>" in rendered
@@ -64,7 +64,7 @@ def test_load_node_skills_reads_frontmatter_and_renders_bounded_context(tmp_path
     assert "<path>references/guide.md</path>" in rendered
     assert "Reference body summary is allowed." in rendered
     assert hidden_tail not in rendered
-    assert rendered.endswith("</skills>")
+    assert rendered.endswith("</skills_instructions>")
 
 
 def test_load_node_skills_reads_agent_yaml_mcp_dependencies(tmp_path):
@@ -200,4 +200,22 @@ def test_inject_node_skills_adds_non_persistent_system_context(tmp_path):
     assert len(agent.messages) == 1
     assert agent.messages[0]["role"] == "system"
     assert agent.messages[0]["persist"] is False
-    assert "<skills>" in agent.messages[0]["content"]
+    assert "<skills_instructions>" in agent.messages[0]["content"]
+
+
+def test_inject_node_skills_can_use_developer_context_role(tmp_path):
+    _write_skill(tmp_path, "demo", "Demo skill", "Use the demo skill.")
+
+    class Agent:
+        def __init__(self):
+            self.messages = []
+
+        def Message(self, role, content, persist=True):
+            self.messages.append({"role": role, "content": content, "persist": persist})
+
+    agent = Agent()
+    inject_node_skills(agent, ["demo"], node_id="node-a", skill_root=str(tmp_path), role="developer")
+
+    assert agent.messages[0]["role"] == "developer"
+    assert agent.messages[0]["persist"] is False
+    assert "<skills_instructions>" in agent.messages[0]["content"]

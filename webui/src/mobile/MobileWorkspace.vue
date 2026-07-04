@@ -43,13 +43,16 @@ const feedRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<UploadedFileItem[]>([])
 const uploadingFiles = ref(false)
+const submittingDraft = ref(false)
 const configOpen = ref(false)
 const createNodeOpen = ref(false)
 const settingsOpen = ref(false)
 const isRestarting = ref(false)
 const graphNameInput = ref('')
+const selectedGraphProfileId = ref('')
 const graphStatus = ref('')
 const graphSaving = ref(false)
+const graphProfileCreating = ref(false)
 const goalArmedByNode = ref<Record<string, boolean>>({})
 const expandedToolGroups = ref<Set<string>>(new Set())
 const SCROLL_STICK_THRESHOLD = 48
@@ -100,6 +103,13 @@ const selectedNodeRunning = computed(() => {
   const pendingCount = Number(config?.pending_count ?? node.pending_count ?? 0)
   return state === 'working' || pendingCount > 0 || !!config?.inflight || isStopRequested.value
 })
+const composerLocked = computed(() => submittingDraft.value || workspace.sending.value)
+const canSendDraft = computed(() => !composerLocked.value && (!!draft.value.trim() || attachments.value.length > 0))
+
+type DraftSnapshot = {
+  text: string
+  attachments: UploadedFileItem[]
+}
 
 function nodeStateLabel(node: MobileNode) {
   const state = String(node.state || 'idle')
@@ -130,19 +140,43 @@ function toggleToolGroup(key: string) {
 }
 
 async function sendDraft() {
+  if (composerLocked.value) return
   const text = draft.value.trim()
   if (!text && attachments.value.length === 0) return
-  const payload = composeDraftPayload(text)
+  const snapshot = takeDraftSnapshot()
+  const payload = composeDraftPayload(text, snapshot.attachments)
+  submittingDraft.value = true
+  let sent = false
   try {
     await persistGoalForSend(payload)
-    draft.value = ''
-    attachments.value = []
     await workspace.sendMessage(payload)
+    sent = true
+    clearDraftComposer()
     await nextTick()
     scrollFeedToBottom()
   } catch (e: any) {
+    if (!sent) restoreDraftSnapshot(snapshot)
     workspace.error.value = String(e?.message || e)
+  } finally {
+    submittingDraft.value = false
   }
+}
+
+function takeDraftSnapshot(): DraftSnapshot {
+  return {
+    text: draft.value,
+    attachments: [...attachments.value],
+  }
+}
+
+function restoreDraftSnapshot(snapshot: DraftSnapshot) {
+  draft.value = snapshot.text
+  attachments.value = [...snapshot.attachments]
+}
+
+function clearDraftComposer() {
+  draft.value = ''
+  attachments.value = []
 }
 
 function openFilePicker() {
@@ -193,11 +227,11 @@ function guessResourceKind(item: UploadedFileItem): ResourceKind | 'file' {
   return 'file'
 }
 
-function composeDraftPayload(text: string): string | MessageEnvelope {
-  if (!attachments.value.length) return text
+function composeDraftPayload(text: string, files: UploadedFileItem[]): string | MessageEnvelope {
+  if (!files.length) return text
   const parts: MessageEnvelope['parts'] = []
   if (text) parts.push({ type: 'text', text })
-  for (const file of attachments.value) {
+  for (const file of files) {
     const uri = String(file.path || '').trim()
     if (!uri) continue
     parts.push({
@@ -312,6 +346,31 @@ async function saveMobileGraph() {
   }
 }
 
+async function createMobileGraphFromProfile() {
+  const profileId = String(selectedGraphProfileId.value || '').trim()
+  if (!profileId) {
+    graphStatus.value = 'Select a graph preset first.'
+    return
+  }
+  const profile = workspace.graphProfiles.value.find((item) => item.id === profileId)
+  const defaultGraphId = String(profile?.graph?.id || profile?.id || '').trim()
+  const targetGraphId = String(window.prompt('GraphID', defaultGraphId) || '').trim()
+  if (!targetGraphId) return
+  graphProfileCreating.value = true
+  graphStatus.value = ''
+  try {
+    const result = await workspace.createGraphFromPreset(profileId, targetGraphId)
+    graphNameInput.value = result.graph.name || result.graph.id
+    graphStatus.value = result.selected
+      ? `Graph created: ${result.graph.name || result.graph.id}`
+      : `Graph created: ${result.graph.name || result.graph.id}. Pull to refresh if it is not listed.`
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  } finally {
+    graphProfileCreating.value = false
+  }
+}
+
 async function deleteMobileGraph(graph: { id: string; name?: string; display_name?: string }) {
   const graphId = String(graph.id || '').trim()
   if (!graphId) return
@@ -330,7 +389,7 @@ async function deleteMobileGraph(graph: { id: string; name?: string; display_nam
 async function openCreateNode() {
   if (workspace.view.value !== 'nodes' || !workspace.selectedGraph.value) return
   try {
-    await workspace.refreshEditorCatalog()
+    await Promise.all([workspace.refreshEditorCatalog(), workspace.refreshAgentProfiles()])
     createNodeOpen.value = true
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
@@ -340,6 +399,15 @@ async function openCreateNode() {
 async function createMobileNode(payload: { typeId: string; nodeName: string; fields: Record<string, unknown> }) {
   try {
     await workspace.createNode(payload.typeId, payload.nodeName, payload.fields)
+    createNodeOpen.value = false
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
+async function createMobileNodeFromProfile(profileId: string) {
+  try {
+    await workspace.createNodeFromProfile(profileId)
     createNodeOpen.value = false
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
@@ -496,6 +564,25 @@ onMounted(() => {
           </button>
           <div v-if="graphStatus" class="graph-status">{{ graphStatus }}</div>
         </form>
+        <section v-if="workspace.graphProfiles.value.length" class="graph-preset-panel">
+          <label class="graph-name-field">
+            <span>GraphPreset</span>
+            <select v-model="selectedGraphProfileId" class="graph-profile-select">
+              <option value="">Profile</option>
+              <option v-for="profile in workspace.graphProfiles.value" :key="profile.id" :value="profile.id">
+                {{ profile.name || profile.id }}
+              </option>
+            </select>
+          </label>
+          <button
+            class="primary-action-btn"
+            type="button"
+            :disabled="!selectedGraphProfileId || graphProfileCreating"
+            @click="createMobileGraphFromProfile"
+          >
+            {{ graphProfileCreating ? 'Creating...' : 'CreateFromProfile' }}
+          </button>
+        </section>
       </section>
 
       <section v-else-if="workspace.view.value === 'nodes'" class="mobile-list node-list">
@@ -564,17 +651,17 @@ onMounted(() => {
 
         <form class="composer" @submit.prevent="sendDraft">
           <div class="composer-tools">
-            <button class="attach-btn" type="button" :disabled="uploadingFiles || workspace.sending.value" @click="openFilePicker">
+            <button class="attach-btn" type="button" :disabled="uploadingFiles || composerLocked" @click="openFilePicker">
               {{ uploadingFiles ? '上传中...' : '添加图片或附件' }}
             </button>
-            <button v-if="attachments.length > 0" class="clear-attachments-btn" type="button" @click="clearAttachments">清空</button>
+            <button v-if="attachments.length > 0" class="clear-attachments-btn" type="button" :disabled="composerLocked" @click="clearAttachments">清空</button>
             <button
               v-if="!workspace.selectedNode.value?.readonly"
               class="goal-toggle-btn"
               type="button"
               :class="{ active: goalActive }"
               :title="goalTitle"
-              :disabled="!goalEnabled || workspace.sending.value"
+              :disabled="!goalEnabled || composerLocked"
               @click="toggleGoal"
             >
               Goal
@@ -594,12 +681,12 @@ onMounted(() => {
           <div v-if="attachments.length > 0" class="mobile-attachments">
             <span v-for="(file, index) in attachments" :key="file.path" class="mobile-attachment-chip">
               <span class="attachment-label">{{ file.name || file.path }}</span>
-              <button type="button" aria-label="移除附件" @click="removeAttachment(index)">x</button>
+              <button type="button" :disabled="composerLocked" aria-label="移除附件" @click="removeAttachment(index)">x</button>
             </span>
           </div>
           <div class="composer-row">
-            <textarea v-model="draft" rows="2" placeholder="输入消息" :disabled="workspace.sending.value"></textarea>
-            <button type="submit" :disabled="workspace.sending.value || (!draft.trim() && attachments.length === 0)">发送</button>
+            <textarea v-model="draft" rows="2" placeholder="输入消息" :disabled="composerLocked"></textarea>
+            <button type="submit" :disabled="!canSendDraft">{{ composerLocked ? '发送中...' : '发送' }}</button>
           </div>
         </form>
         </section>
@@ -613,6 +700,11 @@ onMounted(() => {
       :config="workspace.selectedConfig.value"
       :providers="workspace.providers.value"
       :available-tools="workspace.availableTools.value"
+      :nodes="workspace.nodes.value"
+      :output-routes="workspace.selectedNodeOutputRoutes.value"
+      :add-output-route="workspace.addSelectedNodeOutputRoute"
+      :update-output-route="workspace.updateSelectedNodeOutputRoute"
+      :remove-output-route="workspace.removeSelectedNodeOutputRoute"
       @close="configOpen = false"
       @saved="onConfigSaved"
       @error="workspace.error.value = $event"
@@ -620,10 +712,12 @@ onMounted(() => {
     <MobileNodeCreateDialog
       :open="createNodeOpen"
       :node-types="workspace.availableNodeTypes.value"
+      :agent-profiles="workspace.agentProfiles.value"
       :providers="workspace.providers.value"
       :available-tools="workspace.availableTools.value"
       @close="createNodeOpen = false"
       @create="createMobileNode"
+      @create-profile="createMobileNodeFromProfile"
       @error="workspace.error.value = $event"
     />
     <MemorySaveDialog
@@ -813,6 +907,17 @@ onMounted(() => {
   background: rgba(15, 23, 42, 0.58);
 }
 
+.graph-preset-panel {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
 .graph-name-field {
   min-width: 0;
   display: flex;
@@ -823,6 +928,15 @@ onMounted(() => {
 }
 
 .graph-name-field input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: rgba(248, 250, 252, 0.96);
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.graph-profile-select {
   min-height: 38px;
   padding: 8px 10px;
   border-radius: 8px;

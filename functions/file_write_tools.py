@@ -2,6 +2,8 @@ import json
 import os
 import tempfile
 
+from src.providers.agent_environment_context import resolve_agent_relative_path
+
 
 _NO_CHANGE_COMPARE_MAX_BYTES = 4 * 1024 * 1024
 _KNOWN_PARENT_DIRS = set()
@@ -85,6 +87,7 @@ def write_file(
     ensure_dir=True,
     atomic=True,
     skip_if_unchanged=True,
+    agent=None,
 ):
     """
     Writes text content to a file on the local filesystem.
@@ -99,7 +102,7 @@ def write_file(
         elif not isinstance(content, str):
             content = str(content)
 
-        target = os.path.abspath(file_path)
+        target = resolve_agent_relative_path(file_path, agent=agent)
         append = bool(append)
         atomic = bool(atomic)
         skip_if_unchanged = bool(skip_if_unchanged)

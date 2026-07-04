@@ -42,16 +42,21 @@ def _emit_item_events(handler, raw_events):
 
 
 def _without_environment_context(items):
-    def is_environment_context(item):
-        if not isinstance(item, dict) or item.get("type") != "message" or item.get("role") != "system":
+    def is_runtime_context(item):
+        if not isinstance(item, dict) or item.get("type") != "message":
             return False
         content = item.get("content")
         if not isinstance(content, list) or not content:
             return False
         first = content[0]
-        return isinstance(first, dict) and str(first.get("text") or "").startswith("[Agent Environment Context]\n")
+        text = str(first.get("text") or "") if isinstance(first, dict) else ""
+        return (
+            text.startswith("<environment_context>")
+            or text.startswith("[Agent Environment Context]\n")
+            or text.startswith("<permissions instructions>")
+        )
 
-    return [item for item in items if not is_environment_context(item)]
+    return [item for item in items if not is_runtime_context(item)]
 
 
 def test_item_level_runtime_starts_tool_when_function_call_item_done():
