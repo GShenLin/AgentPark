@@ -6,6 +6,23 @@ from src.service_host import HostBoundService
 
 
 class ResponsesRuntime(ResponsesRuntimeMethods, ToolFeedbackMixin, HostBoundService):
+    def _supports_responses_api(self) -> bool:
+        value = self.config.get("responsesApi")
+        if value is None:
+            return False
+        if not isinstance(value, bool):
+            raise ValueError("provider.responsesApi must be a boolean.")
+        return value
+
+    def _require_responses_api(self, feature_name: str) -> None:
+        if self._supports_responses_api():
+            return
+        provider = str(getattr(self, "provider_name", "") or "").strip() or "provider"
+        raise ValueError(
+            f"{feature_name} requires Responses API support, but provider '{provider}' does not declare "
+            "responsesApi=true. Disable this feature or select a provider configured for Responses API."
+        )
+
     def _send_via_responses(
         self,
         *,

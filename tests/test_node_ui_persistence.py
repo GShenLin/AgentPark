@@ -198,6 +198,7 @@ def test_rename_node_instance_preserves_memory_runtime_state():
         for key in ("state", "pending", "pending_count", "last_message", "node_event_seq"):
             assert key not in raw_config
         assert raw_config["node_id"] == renamed_id
+        assert raw_config["name"] == "Renamed"
         assert runtime_state["state"] == "working"
         assert runtime_state["pending_count"] == 1
         assert runtime_state["last_message"] == "runtime preview"

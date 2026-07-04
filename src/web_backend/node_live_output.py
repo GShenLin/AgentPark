@@ -75,6 +75,35 @@ class NodeLiveOutputStore:
             }
             self._condition.notify_all()
 
+    def publish_completion_event(
+        self,
+        graph_id: str,
+        node_id: str,
+        event_type: str,
+        event: dict | None = None,
+        *,
+        trace_id: str = "",
+    ) -> None:
+        key = self._key(graph_id, node_id)
+        if not key[1]:
+            return
+        now = time.time()
+        with self._condition:
+            version = int(self._versions.get(key) or 0) + 1
+            current = self._items.get(key) if isinstance(self._items.get(key), dict) else {}
+            self._versions[key] = version
+            self._items[key] = {
+                "text": "",
+                "trace_id": str(trace_id or (current or {}).get("trace_id") or ""),
+                "updated_at": now,
+                "is_streaming": False,
+                "version": version,
+                "event_type": str(event_type or "").strip(),
+                "event": dict(event or {}),
+                "interactive_session_id": "",
+            }
+            self._condition.notify_all()
+
     def clear(self, graph_id: str, node_id: str) -> None:
         key = self._key(graph_id, node_id)
         with self._condition:

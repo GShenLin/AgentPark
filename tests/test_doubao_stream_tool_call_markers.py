@@ -178,6 +178,7 @@ def test_normalize_message_tool_calls_emits_parser_diagnostic_notice():
 
 def test_send_stream_runs_tool_when_marker_only_response():
     agent = _build_agent()
+    agent.config["responsesApi"] = False
     send_rounds = []
     executed = []
 
@@ -217,6 +218,7 @@ def test_send_stream_returns_tool_submission_size_error_to_model():
     import json
 
     agent = _build_agent()
+    agent.config["responsesApi"] = False
     send_payloads = []
     executed = []
 
@@ -296,6 +298,7 @@ def test_send_stream_returns_timeout_tool_error_when_tool_messages_are_filtered(
     from src.tool.tool_call_protocol import ToolCallExecution
 
     agent = _build_agent()
+    agent.config["responsesApi"] = False
     agent.internal_memory_enabled = False
 
     class Memory:
@@ -368,6 +371,7 @@ def test_send_stream_returns_completed_tool_result_when_tool_messages_are_filter
     from src.tool.tool_call_protocol import ToolCallExecution
 
     agent = _build_agent()
+    agent.config["responsesApi"] = False
     agent.internal_memory_enabled = False
 
     class Memory:

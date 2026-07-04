@@ -1078,6 +1078,91 @@ def test_doubao_responses_replays_context_when_previous_response_missing():
     assert "echo:hello" in fallback_input[2]["output"]
 
 
+def test_doubao_responses_continuation_mode_honors_explicit_context_config():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://example.test/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "doubao"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    requests = []
+    captured = []
+
+    def echo_tool(message=None):
+        captured.append(message)
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+
+    responses = iter(
+        [
+            {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                        "status": "completed",
+                    }
+                ],
+            },
+            {
+                "id": "resp-2",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "done"}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+        thinking_mode="disabled",
+        web_search_mode="disabled",
+    )
+
+    assert out == "done"
+    assert captured == ["hello"]
+    assert len(requests) == 2
+    assert "previous_response_id" not in requests[1]
+    fallback_input = _without_environment_context(requests[1]["input"])
+    assert fallback_input[0]["role"] == "user"
+    assert fallback_input[1]["type"] == "function_call"
+    assert fallback_input[2]["type"] == "function_call_output"
+    assert fallback_input[2]["call_id"] == "call-1"
+
+
 def test_openai_responses_payload_includes_reasoning_effort():
     from src.providers.openai_agent import OpenAIAgent
 

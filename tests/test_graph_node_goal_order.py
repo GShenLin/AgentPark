@@ -19,6 +19,9 @@ class _FakeLiveOutputs:
     def publish_event(self, _graph_id, _node_id, event, *_args, **_kwargs):
         self.order.append(f"live:{event}")
 
+    def publish_completion_event(self, _graph_id, _node_id, event, *_args, **_kwargs):
+        self.order.append(f"live:{event}")
+
 
 class _FakeCancellations:
     def begin(self, _config_path):
@@ -103,5 +106,6 @@ def test_node_output_is_recorded_before_goal_evaluation(monkeypatch, tmp_path):
     assert "log:node_output" in host.order
     assert "goal_eval" in host.order
     assert host.order.index("assistant_memory") < host.order.index("live:node_output")
+    assert "live_clear" not in host.order
     assert host.order.index("live:node_output") < host.order.index("goal_eval")
     assert host.order.index("log:node_output") < host.order.index("goal_eval")

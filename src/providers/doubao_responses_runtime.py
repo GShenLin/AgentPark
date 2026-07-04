@@ -21,9 +21,24 @@ class DoubaoResponsesRuntime(ResponsesRuntime):
 
     def _responses_payload_extra(self, **provider_options):
         thinking_mode = provider_options.get("thinking_mode")
+        payload = {}
         if thinking_mode in {"enabled", "disabled", "auto"}:
-            return {"thinking": {"type": thinking_mode}}
-        return {}
+            payload["thinking"] = {"type": thinking_mode}
+        reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
+        if reasoning_effort:
+            payload["reasoning"] = {"effort": reasoning_effort}
+        return payload
+
+    def _responses_continuation_mode(self):
+        value = self.config.get("responsesContinuationMode", "previous_response_id")
+        text = str(value or "").strip()
+        if text == "previous_response_id":
+            return "previous_response_id"
+        if text == "explicit_context":
+            return "explicit_context"
+        raise ValueError(
+            "provider.responsesContinuationMode must be 'previous_response_id' or 'explicit_context'."
+        )
 
     def _post_responses_request(self, *, url, headers, payload_json):
         return self._post_json_with_retry(

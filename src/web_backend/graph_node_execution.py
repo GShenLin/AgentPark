@@ -100,8 +100,8 @@ class GraphNodeExecution(HostBoundService):
             log_graph_event=self._log_graph_event,
             append_tool_call_entry=self._append_node_tool_call_entry,
             update_live_output=self.core.node_live_outputs.update,
-            clear_live_output=self.core.node_live_outputs.clear,
             publish_live_event=self.core.node_live_outputs.publish_event,
+            publish_completion_event=self.core.node_live_outputs.publish_completion_event,
             append_runtime_log=self._append_runtime_log,
         )
         cancel_event = self.core.node_cancellations.begin(config_path)
@@ -148,10 +148,14 @@ class GraphNodeExecution(HostBoundService):
             if not isinstance(routed_items, list):
                 routed_items = []
         except CancellationRequested:
-            finish_stop_requested()
+            try:
+                finish_stop_requested()
+            finally:
+                self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
         except Exception as e:
             if finish_stop_requested():
+                self.core.node_live_outputs.clear(safe_graph_id, entry)
                 return
             _set_node_config_inflight(config_path, None)
             _transition_node_config_to_idle(config_path)
@@ -235,12 +239,13 @@ class GraphNodeExecution(HostBoundService):
                     delivered=False,
                     error=str(companion_error),
                 )
+            self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
         finally:
-            self.core.node_live_outputs.clear(safe_graph_id, entry)
             self.core.node_cancellations.end(config_path, cancel_event)
 
         if finish_stop_requested():
+            self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
 
         _set_node_config_inflight(config_path, None)
@@ -273,9 +278,10 @@ class GraphNodeExecution(HostBoundService):
                 depth,
                 memory_error,
             )
+            self.core.node_live_outputs.clear(safe_graph_id, entry)
             raise
         duration_ms = int((time.monotonic() - started) * 1000)
-        self.core.node_live_outputs.publish_event(
+        self.core.node_live_outputs.publish_completion_event(
             safe_graph_id,
             entry,
             "node_output",

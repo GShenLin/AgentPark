@@ -20,6 +20,7 @@ const props = defineProps<{
   availableTools: string[]
   nodes: MobileNode[]
   outputRoutes: MobileOutputRouteRow[]
+  renameNode: (name: string) => Promise<void>
   addOutputRoute: () => Promise<void>
   updateOutputRoute: (
     routeId: string,
@@ -40,12 +41,17 @@ const templateSchema = ref<Record<string, any>>({})
 const templateFields = ref<Record<string, any>>({})
 const draftFields = ref<Record<string, any>>({})
 const dirtyKeys = ref<Record<string, true>>({})
+const nodeNameDraft = ref('')
+const nodeNameTouched = ref(false)
 const routing = ref(false)
 let templateRequestId = 0
 
 const schema = computed(() => templateSchema.value)
 const fieldKeys = computed(() => Object.keys(schema.value || {}))
-const dirtyCount = computed(() => Object.keys(dirtyKeys.value || {}).length)
+const currentNodeName = computed(() => String(props.node?.name || props.node?.id || '').trim())
+const nodeNameDirty = computed(() => nodeNameTouched.value && nodeNameDraft.value.trim() !== currentNodeName.value)
+const dirtyCount = computed(() => Object.keys(dirtyKeys.value || {}).length + (nodeNameDirty.value ? 1 : 0))
+const canSave = computed(() => dirtyCount.value > 0 && !saving.value && (!nodeNameDirty.value || !!nodeNameDraft.value.trim()))
 const templateKey = computed(() => {
   if (!props.open) return 'closed'
   const nodeId = String(props.node?.id || '').trim()
@@ -67,6 +73,11 @@ function setField(key: string, value: any) {
   if (!dirtyKeys.value[key]) {
     dirtyKeys.value = { ...dirtyKeys.value, [key]: true }
   }
+}
+
+function setNodeName(value: string) {
+  nodeNameDraft.value = value
+  nodeNameTouched.value = true
 }
 
 function portOptions(count: unknown) {
@@ -126,6 +137,11 @@ function resetDraftFromConfig() {
   dirtyKeys.value = {}
 }
 
+function resetNodeNameDraft() {
+  nodeNameDraft.value = currentNodeName.value
+  nodeNameTouched.value = false
+}
+
 async function loadTemplate() {
   const typeId = String(props.node?.type_id || '').trim()
   templateRequestId += 1
@@ -159,7 +175,13 @@ async function applyChanges() {
   const graphId = String(props.graphId || '').trim() || 'default'
   if (!nodeId) return
   const keys = Object.keys(dirtyKeys.value || {})
-  if (!keys.length) return
+  const shouldRename = nodeNameDirty.value
+  const nextNodeName = nodeNameDraft.value.trim()
+  if (!keys.length && !shouldRename) return
+  if (shouldRename && !nextNodeName) {
+    showError('Node name is required')
+    return
+  }
 
   const fields: Record<string, unknown> = {}
   for (const key of keys) {
@@ -168,8 +190,15 @@ async function applyChanges() {
 
   saving.value = true
   try {
-    await updateNodeInstanceConfig(nodeId, { fields }, graphId)
-    dirtyKeys.value = {}
+    if (shouldRename) {
+      await props.renameNode(nextNodeName)
+      nodeNameTouched.value = false
+      nodeNameDraft.value = nextNodeName
+    }
+    if (keys.length) {
+      await updateNodeInstanceConfig(nodeId, { fields }, graphId)
+      dirtyKeys.value = {}
+    }
     emit('saved')
   } catch (e) {
     showError(e)
@@ -193,6 +222,15 @@ watch(
     resetDraftFromConfig()
   },
 )
+
+watch(
+  () => [props.open, props.node?.id, props.node?.name],
+  () => {
+    if (saving.value || nodeNameTouched.value) return
+    resetNodeNameDraft()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -200,7 +238,14 @@ watch(
     <section class="config-sheet" role="dialog" aria-modal="true" aria-label="节点配置">
       <header class="config-sheet-head">
         <div class="config-title-wrap">
-          <div class="config-title">{{ node?.name || node?.id || '节点配置' }}</div>
+          <input
+            class="config-title-input"
+            type="text"
+            :value="nodeNameDraft"
+            aria-label="节点名称"
+            :disabled="saving"
+            @input="setNodeName(($event.target as HTMLInputElement).value)"
+          />
           <div class="config-subtitle">{{ node?.type_id || '' }}</div>
         </div>
         <button class="sheet-icon-btn" type="button" aria-label="关闭配置" @click="emit('close')">x</button>
@@ -271,7 +316,7 @@ watch(
 
       <footer class="config-actions">
         <button class="secondary-btn" type="button" @click="emit('close')">关闭</button>
-        <button class="primary-btn" type="button" :disabled="dirtyCount === 0 || saving" @click="applyChanges">
+        <button class="primary-btn" type="button" :disabled="!canSave" @click="applyChanges">
           {{ saving ? '保存中...' : `保存${dirtyCount > 0 ? ` (${dirtyCount})` : ''}` }}
         </button>
       </footer>
@@ -317,13 +362,25 @@ watch(
   min-width: 0;
 }
 
-.config-title {
+.config-title-input {
+  width: min(100%, 280px);
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
   color: rgba(248, 250, 252, 0.96);
   font-size: 15px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.config-title-input:focus {
+  border-color: rgba(56, 189, 248, 0.72);
+  outline: none;
 }
 
 .config-subtitle {

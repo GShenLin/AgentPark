@@ -656,6 +656,50 @@ def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch
     assert memory_message["role"] == "developer"
 
 
+def test_agent_node_uses_developer_context_role_for_doubao_responses(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "doubao", "responsesApi": True}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(
+        agent_node_module,
+        "build_operational_memory_summary",
+        lambda *_args, **_kwargs: "Operational memory for this node:\n- keep context developer-scoped",
+    )
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_doubao_context_role_unit",
+            "node_instance_id": "n_doubao_context_role_unit",
+            "provider_id": "doubao-seed-evolving",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    assert created_agents[0]._aitools_responses_system_prompt_as_instructions is True
+    memory_message = next(
+        item for item in created_agents[0].messages if "Operational memory" in str(item.get("content") or "")
+    )
+    assert memory_message["role"] == "developer"
+
+
 def test_agent_node_injects_codex_base_instructions_for_openai_responses(monkeypatch):
     import nodes.agent_node as agent_node_module
 
@@ -689,6 +733,47 @@ def test_agent_node_injects_codex_base_instructions_for_openai_responses(monkeyp
             "graph_id": "g_codex_base_unit",
             "node_instance_id": "n_codex_base_unit",
             "provider_id": "openai",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
+    assert system_messages[0]["content"] == "Codex base instructions"
+
+
+def test_agent_node_injects_codex_base_instructions_for_doubao_responses(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "doubao", "responsesApi": True}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(
+        agent_node_module,
+        "resolve_agent_codex_base_instructions",
+        lambda *_args, **_kwargs: "Codex base instructions",
+    )
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_doubao_codex_base_unit",
+            "node_instance_id": "n_doubao_codex_base_unit",
+            "provider_id": "doubao-seed-evolving",
         },
     )
 

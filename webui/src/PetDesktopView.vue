@@ -9,27 +9,39 @@ import {
   sendNodeDesktopViewMessage,
   updateNodeDesktopView,
   exitServer,
+  type MessageEnvelope,
   type NodeDesktopView,
+  type NodeDesktopViewPanelSize,
   type PetAvatarFrame,
   type PetAvatarSummary,
+  type ResourceKind,
 } from './api'
 import PetContextMenu from './components/pet-avatar/PetContextMenu.vue'
 import PetAvatarRenderer from './components/pet-avatar/PetAvatarRenderer.vue'
+import { handleMarkdownCodeCopyClick } from './components/markdownCodeCopy'
+import { renderMarkdownTextWithoutKatex } from './components/memoryMarkdown'
 import { usePetAvatarWindow } from './composables/usePetAvatarWindow'
+import { normalizePetPanelSize, usePetPanelResize } from './composables/usePetPanelResize'
+import { uploadFiles, type UploadedFileItem } from './uploadApi'
 import './PetDesktopView.css'
 
 const params = new URLSearchParams(window.location.search)
 const viewId = String(params.get('view_id') || '').trim()
 const initialOpenChat = params.get('open_chat') === '1'
 const initialDraftPrefix = String(params.get('draft_prefix') || '')
+const DEFAULT_PANEL_SIZE: NodeDesktopViewPanelSize = { width: 340, height: 360 }
 
 const view = ref<NodeDesktopView | null>(null)
 const avatar = ref<PetAvatarFrame | null>(null)
 const loadedAvatarId = ref('')
 const message = ref('')
 const messageInput = ref<HTMLTextAreaElement | null>(null)
+const panelElement = ref<HTMLElement | null>(null)
+const panelSize = ref<NodeDesktopViewPanelSize | null>({ ...DEFAULT_PANEL_SIZE })
+const attachedFiles = ref<UploadedFileItem[]>([])
 const loading = ref(false)
 const sending = ref(false)
+const uploadingFiles = ref(false)
 const error = ref('')
 const showPetMenu = ref(false)
 const petMenuLayoutPrepared = ref(false)
@@ -58,6 +70,7 @@ type AskHerePayload = {
 type PetDesktopBridge = {
   onAskHere?: (callback: (payload: AskHerePayload) => void) => () => void
   openMainPage?: () => Promise<unknown>
+  log?: (event: string, payload: Record<string, unknown>) => Promise<unknown>
 }
 
 type PetWindowBounds = {
@@ -95,15 +108,36 @@ const node = computed(() => view.value?.node || null)
 const state = computed(() => String(node.value?.state || 'idle'))
 const liveText = computed(() => String(view.value?.live?.text || '').trim())
 const panelMessageText = computed(() => truncatePetMessage(liveText.value || String(node.value?.last_message || '').trim(), 600))
+const panelMessageHtml = computed(() => renderMarkdownTextWithoutKatex(panelMessageText.value))
+const notificationBubblePreview = computed(() => truncatePetMessage(notificationBubbleText.value, 180))
 const bubbleOpen = computed(() => !!notificationBubbleText.value)
 const petMenuLayoutOpen = computed(() => petMenuLayoutPrepared.value || showPetMenu.value)
 const {
   chatOpen,
+  collapsePetPanel,
   hidePetWindow,
   onAvatarPointerDown,
   openChatPanel,
   syncPetWindowLayout,
-} = usePetAvatarWindow({ viewId, menuOpen: showPetMenu, bubbleOpen, bubbleHeight: notificationBubbleHeight })
+} = usePetAvatarWindow({
+  viewId,
+  menuOpen: showPetMenu,
+  menuLayoutOpen: petMenuLayoutOpen,
+  bubbleOpen,
+  bubbleHeight: notificationBubbleHeight,
+  panelSize,
+})
+const {
+  isResizingPanel,
+  panelStyle,
+  startPanelResize,
+} = usePetPanelResize({
+  viewId,
+  panelElement,
+  panelSize,
+  syncPetWindowLayout,
+  persistPanelSize: persistPanelSizePreference,
+})
 const statusLabel = computed(() => {
   if (error.value) return 'Error'
   if (state.value === 'working') return 'Running'
@@ -126,6 +160,11 @@ const avatarState = computed(() => {
 })
 const validAvatars = computed(() => avatarCatalog.value.filter((item) => item.valid))
 const selectedAvatarId = computed(() => String(view.value?.avatar_style || loadedAvatarId.value || '').trim())
+const canSendMessage = computed(() => (
+  !sending.value
+  && !uploadingFiles.value
+  && (!!message.value.trim() || attachedFiles.value.length > 0)
+))
 
 function isAvatarCatalogFresh() {
   return avatarCatalog.value.length > 0 && Date.now() - avatarCatalogLoadedAt < AVATAR_CATALOG_TTL_MS
@@ -142,14 +181,50 @@ function getPetDesktopBridge(): PetDesktopBridge | null {
   return bridge && typeof bridge === 'object' ? bridge : null
 }
 
+function serializeError(exc: unknown) {
+  if (exc instanceof Error) {
+    return {
+      name: exc.name,
+      message: exc.message,
+      stack: exc.stack,
+    }
+  }
+  return { message: String(exc || '') }
+}
+
+function logPetDiagnostic(event: string, payload: Record<string, unknown> = {}) {
+  const bridge = getPetDesktopBridge()
+  if (bridge && typeof bridge.log === 'function') {
+    void bridge.log(event, payload).catch((exc) => {
+      console.warn('[AgentParkPetRenderer] failed to write diagnostic log', exc)
+    })
+  }
+  console.debug('[AgentParkPetRenderer]', event, payload)
+}
+
+function onPetWindowError(event: ErrorEvent) {
+  logPetDiagnostic('window-error', {
+    message: event.message,
+    filename: event.filename,
+    line: event.lineno,
+    column: event.colno,
+    error: serializeError(event.error),
+  })
+}
+
+function onPetUnhandledRejection(event: PromiseRejectionEvent) {
+  logPetDiagnostic('unhandled-rejection', {
+    reason: serializeError(event.reason),
+  })
+}
+
 function applyAskHereDraft(payload: AskHerePayload) {
   const draftPrefix = String(payload?.draft_prefix || '')
   if (draftPrefix && !message.value.startsWith(draftPrefix)) {
     message.value = `${draftPrefix}${message.value}`
   }
   if (payload?.open_chat || draftPrefix) {
-    openChatPanel()
-    void nextTick(() => {
+    void openChatPanel().then(() => nextTick()).then(() => {
       const input = messageInput.value
       if (!input) return
       input.focus()
@@ -157,6 +232,17 @@ function applyAskHereDraft(payload: AskHerePayload) {
       input.setSelectionRange(end, end)
     })
   }
+}
+
+async function persistPanelSizePreference(size: NodeDesktopViewPanelSize) {
+  if (!view.value) return
+  view.value = { ...view.value, panel_size: { ...size } }
+  await updateNodeDesktopView(view.value.view_id, { panel_size: size })
+}
+
+function applyPanelSizeFromView(nextView: NodeDesktopView) {
+  if (isResizingPanel.value) return
+  panelSize.value = normalizePetPanelSize(nextView.panel_size) || { ...DEFAULT_PANEL_SIZE }
 }
 
 function showNotificationBubble(text: string) {
@@ -209,6 +295,7 @@ async function refreshView() {
       return
     }
     view.value = nextView
+    applyPanelSizeFromView(nextView)
     const nextLastMessage = String(nextView.node?.last_message || '').trim()
     if (hadView && nextLastMessage && nextLastMessage !== previousLastMessage && !String(nextView.live?.text || '').trim()) {
       showNotificationBubble(nextLastMessage)
@@ -341,11 +428,14 @@ function syncStreams() {
 
 async function sendMessage() {
   const text = message.value.trim()
-  if (!text || !view.value) return
+  if ((!text && attachedFiles.value.length === 0) || !view.value || sending.value || uploadingFiles.value) return
+  const files = [...attachedFiles.value]
+  const payload = composePetPayload(text, files)
   sending.value = true
   try {
-    await sendNodeDesktopViewMessage(view.value.view_id, text)
+    await sendNodeDesktopViewMessage(view.value.view_id, payload)
     message.value = ''
+    attachedFiles.value = []
     error.value = ''
     await refreshView()
   } catch (exc) {
@@ -368,12 +458,141 @@ async function hideView() {
   }
 }
 
+function guessResourceKind(item: UploadedFileItem): ResourceKind | 'file' {
+  const kind = String(item.kind || '').trim().toLowerCase()
+  if (kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'doc' || kind === 'url') return kind
+  const mime = String(item.mime || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  const lower = String(item.path || item.name || '').toLowerCase()
+  if (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/.test(lower)) return 'image'
+  if (/\.(mp4|mov|mkv|webm|avi|flv|m4v)$/.test(lower)) return 'video'
+  if (/\.(mp3|wav|ogg|flac|m4a)$/.test(lower)) return 'audio'
+  if (/\.(pdf|doc|docx|ppt|pptx|xls|xlsx|txt|md)$/.test(lower)) return 'doc'
+  return 'file'
+}
+
+function composePetPayload(text: string, files: UploadedFileItem[]): string | MessageEnvelope {
+  if (!files.length) return text
+  const parts: MessageEnvelope['parts'] = []
+  if (text) parts.push({ type: 'text', text })
+  for (const file of files) {
+    const uri = String(file.path || '').trim()
+    if (!uri) continue
+    parts.push({
+      type: 'resource',
+      resource: {
+        uri,
+        name: String(file.name || ''),
+        kind: guessResourceKind(file),
+        mime: String(file.mime || ''),
+        source: 'pet_chat',
+        metadata: {
+          size: Number(file.size || 0),
+        },
+      },
+    })
+  }
+  return parts.length ? { role: 'user', parts } : text
+}
+
+function clipboardImageFiles(event: ClipboardEvent): File[] {
+  const items = Array.from(event.clipboardData?.items || [])
+  return items
+    .filter((item) => item.kind === 'file' && item.type.toLowerCase().startsWith('image/'))
+    .map((item, index) => {
+      const file = item.getAsFile()
+      if (!(file instanceof File)) return null
+      if (String(file.name || '').trim()) return file
+      const mime = String(file.type || item.type || 'image/png')
+      const ext = mime.split('/')[1]?.split('+')[0] || 'png'
+      return new File([file], `pasted-image-${Date.now()}-${index + 1}.${ext}`, { type: mime })
+    })
+    .filter((file): file is File => file instanceof File)
+}
+
+async function onPasteMessage(event: ClipboardEvent) {
+  const files = clipboardImageFiles(event)
+  if (!files.length) return
+  event.preventDefault()
+  uploadingFiles.value = true
+  error.value = ''
+  try {
+    const uploaded = await uploadFiles(files, 'pet-chat-paste')
+    for (const item of uploaded.files || []) {
+      if (!attachedFiles.value.some((existing) => existing.path === item.path)) {
+        attachedFiles.value.push(item)
+      }
+    }
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : String(exc || 'Failed to paste image')
+  } finally {
+    uploadingFiles.value = false
+  }
+}
+
+function removeAttachedFile(index: number) {
+  attachedFiles.value.splice(index, 1)
+}
+
+function attachmentExtension(file: UploadedFileItem) {
+  const value = String(file.path || file.name || '').split('?')[0]?.split('#')[0] || ''
+  const idx = value.lastIndexOf('.')
+  if (idx < 0 || idx === value.length - 1) return ''
+  return value.slice(idx + 1).toLowerCase()
+}
+
+function isImageAttachment(file: UploadedFileItem) {
+  const mime = String(file.mime || '').toLowerCase()
+  return mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg'].includes(attachmentExtension(file))
+}
+
+function normalizeAttachmentUrlPath(value: string) {
+  const normalized = String(value || '').replace(/\\/g, '/')
+  const lower = normalized.toLowerCase()
+  if (lower.startsWith('/memories/')) return normalized
+  if (lower.startsWith('memories/')) return `/${normalized}`
+  if (lower.startsWith('./memories/')) return `/${normalized.slice(2)}`
+  const marker = '/memories/'
+  const markerIdx = lower.indexOf(marker)
+  if (markerIdx >= 0) return normalized.slice(markerIdx)
+  return ''
+}
+
+function isWebUrl(value: string) {
+  return /^(https?|ftp):\/\//i.test(String(value || '').trim())
+}
+
+function isSpecialInlineUrl(value: string) {
+  const text = String(value || '').trim().toLowerCase()
+  return text.startsWith('data:') || text.startsWith('blob:')
+}
+
+function attachmentPreviewHref(file: UploadedFileItem) {
+  const raw = String(file.path || '').trim()
+  if (!raw) return ''
+  if (isSpecialInlineUrl(raw) || isWebUrl(raw)) return raw
+  if (raw.startsWith('/api/files/raw')) return raw
+  const staticPath = normalizeAttachmentUrlPath(raw)
+  if (staticPath) return staticPath
+  return `/api/files/raw?path=${encodeURIComponent(raw)}`
+}
+
 function closePetMenu() {
+  if (showPetMenu.value || petMenuLayoutPrepared.value) {
+    logPetDiagnostic('pet-menu-close', {
+      showPetMenu: showPetMenu.value,
+      petMenuLayoutPrepared: petMenuLayoutPrepared.value,
+      chatOpen: chatOpen.value,
+    })
+  }
   showPetMenu.value = false
   petMenuLayoutPrepared.value = false
 }
 
 function updatePetMenuPosition() {
+  const before = { left: petMenuLeft.value, top: petMenuTop.value }
   const width = 190
   const height = Math.min(260, 136 + Math.max(1, validAvatars.value.length) * 32)
   const margin = 8
@@ -387,17 +606,47 @@ function updatePetMenuPosition() {
   }
   petMenuLeft.value = Math.max(margin, Math.min(petMenuLeft.value, window.innerWidth - width - margin))
   petMenuTop.value = Math.max(margin, Math.min(petMenuTop.value, maxTop))
+  logPetDiagnostic('pet-menu-position', {
+    before,
+    after: { left: petMenuLeft.value, top: petMenuTop.value },
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    menu: { width, height, maxTop },
+    avatars: validAvatars.value.length,
+  })
 }
 
 async function openPetMenu(event: MouseEvent) {
+  logPetDiagnostic('pet-menu-open-start', {
+    button: event.button,
+    client: { x: event.clientX, y: event.clientY },
+    screen: { x: event.screenX, y: event.screenY },
+    chatOpen: chatOpen.value,
+    showPetMenu: showPetMenu.value,
+    petMenuLayoutPrepared: petMenuLayoutPrepared.value,
+    window: { width: window.innerWidth, height: window.innerHeight },
+  })
+  if (chatOpen.value) {
+    collapsePetPanel()
+    logPetDiagnostic('pet-menu-open-collapsed-chat')
+  }
   const clickScreenX = event.screenX
   const clickScreenY = event.screenY
   petMenuLeft.value = event.clientX
   petMenuTop.value = event.clientY
   petMenuLayoutPrepared.value = true
   await nextTick()
+  logPetDiagnostic('pet-menu-layout-request', {
+    left: petMenuLeft.value,
+    top: petMenuTop.value,
+    petMenuLayoutPrepared: petMenuLayoutPrepared.value,
+  })
   try {
-    const layoutResult = await syncPetWindowLayout({ menu: true })
+    const layoutResult = await syncPetWindowLayout({ expanded: false, menu: true, bubble: false })
+    logPetDiagnostic('pet-menu-layout-result', {
+      layoutResult: layoutResult && typeof layoutResult === 'object' ? layoutResult as Record<string, unknown> : { value: layoutResult },
+      clickScreen: { x: clickScreenX, y: clickScreenY },
+      window: { width: window.innerWidth, height: window.innerHeight },
+    })
     const layoutBounds = readPetWindowLayoutBounds(layoutResult)
     if (layoutBounds) {
       petMenuLeft.value = clickScreenX - layoutBounds.x
@@ -406,26 +655,57 @@ async function openPetMenu(event: MouseEvent) {
   } catch (exc) {
     petMenuLayoutPrepared.value = false
     error.value = exc instanceof Error ? exc.message : String(exc || 'Failed to open pet menu')
+    logPetDiagnostic('pet-menu-layout-error', {
+      error: serializeError(exc),
+      displayedError: error.value,
+    })
     return
   }
   showPetMenu.value = true
   await nextTick()
+  logPetDiagnostic('pet-menu-visible', {
+    left: petMenuLeft.value,
+    top: petMenuTop.value,
+    window: { width: window.innerWidth, height: window.innerHeight },
+  })
   updatePetMenuPosition()
   const hasCachedCatalog = avatarCatalog.value.length > 0
   const catalogRequest = loadAvatarCatalog({ force: hasCachedCatalog })
+  logPetDiagnostic('pet-menu-avatar-catalog-request', {
+    hasCachedCatalog,
+    cachedCount: avatarCatalog.value.length,
+  })
   if (hasCachedCatalog) {
     catalogRequest
-      .then(() => updatePetMenuPosition())
+      .then(() => {
+        logPetDiagnostic('pet-menu-avatar-catalog-loaded', {
+          count: avatarCatalog.value.length,
+          validCount: validAvatars.value.length,
+        })
+        updatePetMenuPosition()
+      })
       .catch((exc) => {
         error.value = exc instanceof Error ? exc.message : String(exc || 'Failed to load pet avatars')
+        logPetDiagnostic('pet-menu-avatar-catalog-error', {
+          error: serializeError(exc),
+          displayedError: error.value,
+        })
       })
     return
   }
   try {
     await catalogRequest
+    logPetDiagnostic('pet-menu-avatar-catalog-loaded', {
+      count: avatarCatalog.value.length,
+      validCount: validAvatars.value.length,
+    })
     updatePetMenuPosition()
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : String(exc || 'Failed to load pet avatars')
+    logPetDiagnostic('pet-menu-avatar-catalog-error', {
+      error: serializeError(exc),
+      displayedError: error.value,
+    })
   }
 }
 
@@ -475,6 +755,14 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   document.documentElement.classList.add('pet-transparent-root')
   document.body.classList.add('pet-transparent-root')
+  window.addEventListener('error', onPetWindowError)
+  window.addEventListener('unhandledrejection', onPetUnhandledRejection)
+  logPetDiagnostic('mounted', {
+    viewId,
+    initialOpenChat,
+    hasInitialDraftPrefix: !!initialDraftPrefix,
+    window: { width: window.innerWidth, height: window.innerHeight },
+  })
   if (initialOpenChat || initialDraftPrefix) {
     applyAskHereDraft({ open_chat: initialOpenChat, draft_prefix: initialDraftPrefix })
   }
@@ -498,6 +786,8 @@ watch([notificationBubbleText, chatOpen, showPetMenu, petMenuLayoutPrepared], sy
 onBeforeUnmount(() => {
   document.documentElement.classList.remove('pet-transparent-root')
   document.body.classList.remove('pet-transparent-root')
+  window.removeEventListener('error', onPetWindowError)
+  window.removeEventListener('unhandledrejection', onPetUnhandledRejection)
   if (stopAskHereListener) {
     stopAskHereListener()
     stopAskHereListener = null
@@ -508,14 +798,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="pet-shell" :class="[statusClass, { 'chat-open': chatOpen, 'menu-open': petMenuLayoutOpen, 'has-bubble': bubbleOpen && !chatOpen && !petMenuLayoutOpen }]" @contextmenu.prevent.stop="openPetMenu" @pointerdown="closePetMenu">
+  <main class="pet-shell" :class="[statusClass, { 'chat-open': chatOpen, 'menu-open': petMenuLayoutOpen, 'has-bubble': bubbleOpen && !chatOpen && !petMenuLayoutOpen }]" @pointerdown="closePetMenu">
     <section v-if="notificationBubbleText && !chatOpen && !petMenuLayoutOpen" ref="notificationBubbleElement" class="pet-bubble" :class="{ live: !!liveText }">
-      {{ notificationBubbleText }}
+      <span class="pet-bubble-text">{{ notificationBubblePreview }}</span>
     </section>
 
     <section
       class="pet-avatar"
       :class="[statusClass, { 'with-avatar-pack': avatar }]"
+      @contextmenu.prevent.stop="openPetMenu"
       @pointerdown.stop="onAvatarPointerDown"
       @dragstart.prevent
     >
@@ -527,9 +818,17 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-if="chatOpen" class="pet-panel">
-      <header class="pet-drag-region pet-header">
-        <div>
+    <section v-if="chatOpen" ref="panelElement" class="pet-panel" :style="panelStyle">
+      <div class="pet-panel-resize pet-panel-resize-top" @pointerdown="startPanelResize('top', $event)"></div>
+      <div class="pet-panel-resize pet-panel-resize-right" @pointerdown="startPanelResize('right', $event)"></div>
+      <div class="pet-panel-resize pet-panel-resize-bottom" @pointerdown="startPanelResize('bottom', $event)"></div>
+      <div class="pet-panel-resize pet-panel-resize-left" @pointerdown="startPanelResize('left', $event)"></div>
+      <div class="pet-panel-resize pet-panel-resize-top-left" @pointerdown="startPanelResize('top-left', $event)"></div>
+      <div class="pet-panel-resize pet-panel-resize-top-right" @pointerdown="startPanelResize('top-right', $event)"></div>
+      <div class="pet-panel-resize pet-panel-resize-bottom-right" @pointerdown="startPanelResize('bottom-right', $event)"></div>
+      <div class="pet-panel-resize pet-panel-resize-bottom-left" @pointerdown="startPanelResize('bottom-left', $event)"></div>
+      <header class="pet-header">
+        <div class="pet-header-drag-region">
           <div class="pet-title">{{ node?.name || view?.node_id || 'Node' }}</div>
           <div class="pet-meta">{{ view?.graph_id || 'graph' }} / {{ view?.node_id || 'node' }}</div>
         </div>
@@ -540,7 +839,12 @@ onBeforeUnmount(() => {
         <span>{{ statusLabel }}</span>
         <span v-if="node?.pending_count" class="pet-count">{{ node.pending_count }}</span>
       </div>
-      <div v-if="panelMessageText" class="pet-output">{{ panelMessageText }}</div>
+      <div
+        v-if="panelMessageText"
+        class="pet-output markdown-body"
+        v-html="panelMessageHtml"
+        @click="handleMarkdownCodeCopyClick"
+      ></div>
       <form class="pet-compose" @submit.prevent="sendMessage">
         <textarea
           ref="messageInput"
@@ -549,11 +853,34 @@ onBeforeUnmount(() => {
           placeholder="Message this node"
           rows="4"
           @keydown="onKeydown"
+          @paste="onPasteMessage"
         ></textarea>
+        <div v-if="attachedFiles.length || uploadingFiles" class="pet-attachments">
+          <div
+            v-for="(file, index) in attachedFiles"
+            :key="file.path"
+            class="pet-attachment"
+            :class="{ image: isImageAttachment(file) }"
+          >
+            <a
+              v-if="isImageAttachment(file) && attachmentPreviewHref(file)"
+              class="pet-attachment-thumb"
+              :href="attachmentPreviewHref(file)"
+              target="_blank"
+              rel="noreferrer"
+              :title="file.path"
+            >
+              <img :src="attachmentPreviewHref(file)" :alt="file.name" loading="lazy" />
+            </a>
+            <span class="pet-attachment-name" :title="file.path">{{ file.name || file.path }}</span>
+            <button type="button" class="pet-attachment-remove" :disabled="sending" @click="removeAttachedFile(index)">x</button>
+          </div>
+          <span v-if="uploadingFiles" class="pet-uploading">Uploading...</span>
+        </div>
         <div class="pet-actions">
           <button type="button" @click="refreshView">Refresh</button>
-          <button class="primary" type="submit" :disabled="sending || !message.trim()">
-            {{ sending ? 'Sending' : 'Send' }}
+          <button class="primary" type="submit" :disabled="!canSendMessage">
+            {{ sending ? 'Sending' : uploadingFiles ? 'Uploading' : 'Send' }}
           </button>
         </div>
       </form>

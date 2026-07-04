@@ -432,6 +432,11 @@ export type NodeDesktopViewPosition = {
   y: number
 }
 
+export type NodeDesktopViewPanelSize = {
+  width: number
+  height: number
+}
+
 export type NodeDesktopViewLive = {
   text?: string
   trace_id?: string
@@ -450,6 +455,7 @@ export type NodeDesktopView = {
   visible: boolean
   pinned: boolean
   position?: NodeDesktopViewPosition
+  panel_size?: NodeDesktopViewPanelSize
   avatar_style?: string
   created_at?: string
   updated_at?: string

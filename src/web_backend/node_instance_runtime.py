@@ -230,6 +230,8 @@ class NodeInstanceRuntime(HostBoundService):
                 "graph_id": safe_graph_id,
                 "live_message": str((item or {}).get("text") or ""),
                 "version": int((item or {}).get("version") or 0),
+                "trace_id": str((item or {}).get("trace_id") or ""),
+                "updated_at": float((item or {}).get("updated_at") or 0),
                 "is_streaming": bool((item or {}).get("is_streaming")),
                 "event_type": str((item or {}).get("event_type") or ""),
                 "event": (item or {}).get("event") if isinstance((item or {}).get("event"), dict) else None,

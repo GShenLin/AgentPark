@@ -131,7 +131,11 @@ class NodeInstanceRegistry(HostBoundService):
             raise HTTPException(status_code=500, detail=str(exc))
         next_cfg["node_id"] = safe_new_node_id
         next_cfg["graph_id"] = safe_graph_id
-        next_cfg["name"] = safe_new_node_id
+        next_cfg["name"] = (
+            new_name_raw.strip()
+            if isinstance(new_name_raw, str) and new_name_raw.strip()
+            else safe_new_node_id
+        )
         if not _write_json_dict(config_path, next_cfg):
             raise HTTPException(status_code=500, detail="failed to update node config")
 

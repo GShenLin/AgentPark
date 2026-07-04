@@ -14,6 +14,7 @@ import type {
   NodeConfigChangeResponse,
   NodeDesktopView,
   NodeDesktopViewListResponse,
+  NodeDesktopViewPanelSize,
   NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
@@ -60,6 +61,7 @@ export type {
   NodeDesktopView,
   NodeDesktopViewListResponse,
   NodeDesktopViewLive,
+  NodeDesktopViewPanelSize,
   NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
@@ -791,6 +793,7 @@ export async function upsertNodeDesktopView(payload: {
   visible?: boolean
   pinned?: boolean
   position?: NodeDesktopViewPosition
+  panel_size?: NodeDesktopViewPanelSize
   avatar_style?: string
 }): Promise<NodeDesktopView> {
   const res = await apiFetch('/api/node-desktop-views', {
@@ -807,6 +810,7 @@ export async function summonNodeDesktopView(payload: {
   visible?: boolean
   pinned?: boolean
   position?: NodeDesktopViewPosition
+  panel_size?: NodeDesktopViewPanelSize
   avatar_style?: string
 }): Promise<NodeDesktopView> {
   const res = await apiFetch('/api/node-desktop-views/summon', {
@@ -823,6 +827,7 @@ export async function launchNodeDesktopPet(payload: {
   visible?: boolean
   pinned?: boolean
   position?: NodeDesktopViewPosition
+  panel_size?: NodeDesktopViewPanelSize
   avatar_style?: string
   open_chat?: boolean
   draft_prefix?: string
@@ -839,6 +844,7 @@ export async function updateNodeDesktopView(
     visible?: boolean
     pinned?: boolean
     position?: NodeDesktopViewPosition | null
+    panel_size?: NodeDesktopViewPanelSize | null
     avatar_style?: string
   },
 ): Promise<NodeDesktopView> {

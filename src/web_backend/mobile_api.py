@@ -356,7 +356,7 @@ class MobileApiDomain(DomainBase):
             response = str((result or {}).get("response") or "")
             _set_node_config_last_message(config_path, response or prompt)
             _touch_node_config_last_run_at(config_path)
-            self.core.node_live_outputs.publish_event(
+            self.core.node_live_outputs.publish_completion_event(
                 graph_id,
                 node_id,
                 "node_message_done",

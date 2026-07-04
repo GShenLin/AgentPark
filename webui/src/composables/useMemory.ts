@@ -7,6 +7,7 @@ import {
   readFile,
   saveFile,
   sendNodeInteractiveInput,
+  type MessageEnvelope,
 } from '../api'
 import { useGlobalState } from './useGlobalState'
 
@@ -19,8 +20,42 @@ let liveStreamKey = ''
 let graphEventSource: EventSource | null = null
 let graphEventStreamKey = ''
 let graphMemoryRefreshTimer: number | null = null
+let pendingCommittedLiveText = ''
+let pendingCommittedLiveTraceId = ''
 
 const memoryRefreshGraphEvents = new Set(['tool_call_end', 'node_message_done', 'node_output'])
+
+function messageText(message: MessageEnvelope): string {
+  const parts = Array.isArray(message?.parts) ? message.parts : []
+  return parts
+    .filter((part) => part && part.type === 'text')
+    .map((part) => String((part as { text?: unknown }).text || ''))
+    .join('\n')
+    .trim()
+}
+
+function messagesContainCommittedLive(messages: MessageEnvelope[], text: string, traceId: string): boolean {
+  const safeTraceId = String(traceId || '').trim()
+  if (safeTraceId && messages.some((message) => String(message?.trace_id || '').trim() === safeTraceId)) return true
+  const safeText = String(text || '').trim()
+  if (!safeText) return false
+  return messages.some((message) => {
+    const role = String(message?.role || '').trim().toLowerCase()
+    return role !== 'user' && messageText(message) === safeText
+  })
+}
+
+function rememberCommittedLiveText(text: string, traceId: string) {
+  const safeText = String(text || '').trim()
+  if (!safeText) return
+  pendingCommittedLiveText = safeText
+  pendingCommittedLiveTraceId = String(traceId || '').trim()
+}
+
+function clearPendingCommittedLive() {
+  pendingCommittedLiveText = ''
+  pendingCommittedLiveTraceId = ''
+}
 
 export function useMemory() {
   const {
@@ -55,6 +90,7 @@ export function useMemory() {
       memoryText.value = ''
       memoryMessages.value = []
       memoryLiveMessage.value = ''
+      clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       memoryTitle.value = ''
       memoryMeta.value = null
@@ -69,8 +105,14 @@ export function useMemory() {
       if ((currentGraphId.value || 'default') !== graphId) return
       memoryText.value = res.text || ''
       const baseMessages = Array.isArray((res as any)?.messages) ? ([...(res as any).messages] as any[]) : []
-      memoryLiveMessage.value = String((res as any)?.live_message || '')
       memoryMessages.value = baseMessages
+      if (messagesContainCommittedLive(baseMessages, pendingCommittedLiveText, pendingCommittedLiveTraceId)) {
+        clearPendingCommittedLive()
+        memoryLiveMessage.value = ''
+      } else {
+        const nextLiveMessage = String((res as any)?.live_message || '')
+        memoryLiveMessage.value = nextLiveMessage || pendingCommittedLiveText
+      }
       memoryTitle.value = `Node ${nodeId}`
       memoryMeta.value = res.memory_path || null
       agentImages.value = []
@@ -82,6 +124,7 @@ export function useMemory() {
       memoryText.value = ''
       memoryMessages.value = []
       memoryLiveMessage.value = ''
+      clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       memoryTitle.value = `Node ${nodeId}`
       memoryMeta.value = String(e?.message || e)
@@ -97,6 +140,7 @@ export function useMemory() {
     if (!nodeId) {
       if (requestId !== liveLoadRequestId || memoryMode.value !== 'agent') return
       memoryLiveMessage.value = ''
+      clearPendingCommittedLive()
       return
     }
     try {
@@ -105,13 +149,15 @@ export function useMemory() {
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
-      memoryLiveMessage.value = String((res as any)?.live_message || '')
+      const nextLiveMessage = String((res as any)?.live_message || '')
+      memoryLiveMessage.value = nextLiveMessage || pendingCommittedLiveText
     } catch {
       if (requestId !== liveLoadRequestId) return
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
       memoryLiveMessage.value = ''
+      clearPendingCommittedLive()
     }
   }
 
@@ -122,6 +168,7 @@ export function useMemory() {
     }
     liveStreamKey = ''
     memoryInteractiveSessionId.value = ''
+    clearPendingCommittedLive()
     stopAgentGraphEventStream()
     clearScheduledGraphMemoryRefresh()
   }
@@ -205,6 +252,7 @@ export function useMemory() {
     if (!nodeId) {
       stopAgentLiveStream()
       memoryLiveMessage.value = ''
+      clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       return
     }
@@ -226,11 +274,20 @@ export function useMemory() {
       if ((currentGraphId.value || 'default') !== graphId) return
       try {
         const payload = JSON.parse(String(event.data || '{}'))
-        memoryLiveMessage.value = String(payload?.live_message || '')
         const eventType = String(payload?.event_type || payload?.event?.type || '').trim()
         const eventData = payload?.event && typeof payload.event === 'object'
           ? (payload.event as Record<string, unknown>)
           : null
+        const nextLiveMessage = String(payload?.live_message || '')
+        if (eventType === 'node_message_done' || eventType === 'node_output') {
+          rememberCommittedLiveText(
+            String(eventData?.text || nextLiveMessage || memoryLiveMessage.value || ''),
+            String(payload?.trace_id || eventData?.trace_id || ''),
+          )
+          if (pendingCommittedLiveText) memoryLiveMessage.value = pendingCommittedLiveText
+        } else if (nextLiveMessage || !pendingCommittedLiveText) {
+          memoryLiveMessage.value = nextLiveMessage
+        }
         // Persistent session_id (set by server on stdin_ready, survives text update races)
         const persistentSessionId = String(payload?.interactive_session_id || '').trim()
         if (persistentSessionId) {
@@ -278,6 +335,7 @@ export function useMemory() {
     memoryText.value = 'Loading...'
     memoryMessages.value = []
     memoryLiveMessage.value = ''
+    clearPendingCommittedLive()
     memoryInteractiveSessionId.value = ''
     try {
       const res = await readFile(file.path)

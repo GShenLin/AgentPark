@@ -12,6 +12,9 @@ class _FakeLiveOutputs:
     def publish_event(self, *_args, **_kwargs):
         return None
 
+    def publish_completion_event(self, *_args, **_kwargs):
+        return None
+
     def update(self, *_args, **_kwargs):
         return None
 

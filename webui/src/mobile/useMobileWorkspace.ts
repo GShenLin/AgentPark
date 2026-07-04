@@ -20,6 +20,7 @@ import {
   listTools,
   loadGraph,
   nodeInstanceLiveStreamUrl,
+  renameNodeInstance,
   saveGraph,
   sendMobileNodeMessage,
   setStartupGraphConfig,
@@ -38,6 +39,7 @@ import {
   type NodeInstanceConfig,
   type ProviderInfo,
 } from '../api'
+import { messageText } from './mobileMessageRender'
 
 export type MobileView = 'pcs' | 'graphs' | 'nodes' | 'chat'
 
@@ -111,6 +113,17 @@ const chatConversationGraphEvents = new Set([
   'node_error',
   'node_memory_cleared',
 ])
+
+function messagesContainCommittedLive(messages: MessageEnvelope[], text: string, traceId: string): boolean {
+  const safeTraceId = String(traceId || '').trim()
+  if (safeTraceId && messages.some((message) => String(message?.trace_id || '').trim() === safeTraceId)) return true
+  const safeText = String(text || '').trim()
+  if (!safeText) return false
+  return messages.some((message) => {
+    const role = String(message?.role || '').trim().toLowerCase()
+    return role !== 'user' && messageText(message) === safeText
+  })
+}
 
 function portIndex(value: unknown, fallback: number) {
   const parsed = Number(value)
@@ -277,6 +290,8 @@ export function useMobileWorkspace() {
   let graphRefreshTimer: number | null = null
   let graphRefreshInFlight = false
   let graphRefreshNeedsConversation = false
+  let pendingConversationLiveText = ''
+  let pendingConversationLiveTraceId = ''
 
   const flatGraphs = computed(() => graphInstances.value.flatMap((item) => item.graphs))
   const selectedConfig = computed(() => {
@@ -353,10 +368,34 @@ export function useMobileWorkspace() {
     applyNodes(nextNodes)
   }
 
+  function rememberConversationCommit(text: string, traceId: string) {
+    const safeText = String(text || '').trim()
+    if (!safeText) return
+    pendingConversationLiveText = safeText
+    pendingConversationLiveTraceId = String(traceId || '').trim()
+  }
+
+  function clearConversationCommit() {
+    pendingConversationLiveText = ''
+    pendingConversationLiveTraceId = ''
+  }
+
+  function normalizeConversationAfterRefresh(nextConversation: MobileNodeConversation) {
+    const messages = Array.isArray(nextConversation.messages) ? nextConversation.messages : []
+    if (messagesContainCommittedLive(messages, pendingConversationLiveText, pendingConversationLiveTraceId)) {
+      clearConversationCommit()
+      return { ...nextConversation, live_message: '' }
+    }
+    if (pendingConversationLiveText && !String(nextConversation.live_message || '').trim()) {
+      return { ...nextConversation, live_message: pendingConversationLiveText }
+    }
+    return nextConversation
+  }
+
   async function refreshConversationForSelection(selection: MobileChatSelection) {
     const nextConversation = await getMobileNodeConversation(selection.pcId, selection.graphId, selection.nodeId)
     if (!isCurrentChatSelection(selection)) return
-    conversation.value = nextConversation
+    conversation.value = normalizeConversationAfterRefresh(nextConversation)
   }
 
   async function syncChatAfterSend(selection: MobileChatSelection) {
@@ -713,6 +752,18 @@ export function useMobileWorkspace() {
     await refreshNodeConfigs()
   }
 
+  async function renameSelectedNode(name: string) {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    const nextName = String(name || '').trim()
+    if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
+    if (!nextName) throw new Error('Node name is required')
+    const currentName = String(selectedNode.value?.name || nodeId).trim()
+    if (nextName === currentName) return
+    await renameNodeInstance(nodeId, graphId, nodeId, nextName)
+    await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()])
+  }
+
   async function selectGraph(graph: MobileGraph) {
     const graphId = String(graph.id || '').trim()
     if (!graphId) throw new Error('Graph id is required')
@@ -750,6 +801,7 @@ export function useMobileWorkspace() {
     selectedNode.value = node
     view.value = 'chat'
     error.value = ''
+    clearConversationCommit()
     loading.value = true
     try {
       await refreshConversation()
@@ -1083,8 +1135,20 @@ export function useMobileWorkspace() {
       if (String(selectedNode.value?.id || '').trim() !== nodeId) return
       try {
         const payload = JSON.parse(String(event.data || '{}'))
-        setConversationLiveMessage(String(payload?.live_message || ''))
         const eventType = String(payload?.event_type || payload?.event?.type || '').trim()
+        const eventData = payload?.event && typeof payload.event === 'object'
+          ? (payload.event as Record<string, unknown>)
+          : null
+        const nextLiveMessage = String(payload?.live_message || '')
+        if (eventType === 'node_message_done' || eventType === 'node_output') {
+          rememberConversationCommit(
+            String(eventData?.text || nextLiveMessage || conversation.value?.live_message || ''),
+            String(payload?.trace_id || eventData?.trace_id || ''),
+          )
+          if (pendingConversationLiveText) setConversationLiveMessage(pendingConversationLiveText)
+        } else if (nextLiveMessage || !pendingConversationLiveText) {
+          setConversationLiveMessage(nextLiveMessage)
+        }
         if (chatConversationRefreshEvents.has(eventType)) {
           scheduleGraphRefresh(true)
         }
@@ -1216,6 +1280,7 @@ export function useMobileWorkspace() {
     stopSelectedNodeWork,
     setSelectedNodeFields,
     clearSelectedNodeFields,
+    renameSelectedNode,
     clearSelectedNodeMemory,
     deleteSelectedNodeMessage,
     refreshGraphConfig,

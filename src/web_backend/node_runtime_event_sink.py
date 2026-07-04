@@ -21,7 +21,6 @@ from .state_store import _set_node_config_runtime_event
 LogGraphEvent = Callable[..., None]
 AppendRuntimeLog = Callable[..., None]
 AppendToolCallEntry = Callable[[str, str, dict], None]
-ClearLiveOutput = Callable[[str, str], None]
 NODE_RUNTIME_EVENTS_FILENAME = "runtime_events.jsonl"
 
 
@@ -43,6 +42,10 @@ class PublishLiveEvent(Protocol):
         ...
 
 
+class PublishCompletionEvent(PublishLiveEvent, Protocol):
+    pass
+
+
 @dataclass
 class NodeRuntimeEventSink:
     graph_id: str
@@ -55,8 +58,8 @@ class NodeRuntimeEventSink:
     log_graph_event: LogGraphEvent
     append_tool_call_entry: AppendToolCallEntry
     update_live_output: UpdateLiveOutput | None = None
-    clear_live_output: ClearLiveOutput | None = None
     publish_live_event: PublishLiveEvent | None = None
+    publish_completion_event: PublishCompletionEvent | None = None
     append_runtime_log: AppendRuntimeLog | None = None
     active_tool_calls: dict[str, dict] | None = None
 
@@ -100,9 +103,9 @@ class NodeRuntimeEventSink:
             _set_node_config_last_message(self.config_path, text)
             self.stream_last_text = text
         self._append_node_runtime_event_record("node_message_done", event)
-        if callable(self.clear_live_output):
-            self.clear_live_output(self.graph_id, self.node_id)
-        if callable(self.publish_live_event):
+        if callable(self.publish_completion_event):
+            self.publish_completion_event(self.graph_id, self.node_id, "node_message_done", event, trace_id=self.trace_id)
+        elif callable(self.publish_live_event):
             self.publish_live_event(self.graph_id, self.node_id, "node_message_done", event, trace_id=self.trace_id)
         self._append_node_runtime_log(
             "node_message_done",

@@ -17,6 +17,15 @@ contextBridge.exposeInMainWorld('agentParkPet', {
       menu: !!(payload && payload.menu),
       bubble: !!(payload && payload.bubble),
       bubble_height: Number((payload && payload.bubbleHeight) || 0),
+      panel_width: Number((payload && payload.panelSize && payload.panelSize.width) || 0),
+      panel_height: Number((payload && payload.panelSize && payload.panelSize.height) || 0),
+      resize_anchor: String((payload && payload.resizeAnchor) || ''),
+    })
+  },
+  log(event, payload) {
+    return ipcRenderer.invoke('agentpark-pet:log', {
+      event: String(event || ''),
+      payload: payload || {},
     })
   },
   openMainPage() {

@@ -45,23 +45,6 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             object.__setattr__(self, "_service_targets_cache", cached)
         return cached
 
-    def _supports_responses_api(self) -> bool:
-        value = self.config.get("responsesApi")
-        if value is None:
-            return False
-        if not isinstance(value, bool):
-            raise ValueError("provider.responsesApi must be a boolean.")
-        return value
-
-    def _require_responses_api(self, feature_name: str) -> None:
-        if self._supports_responses_api():
-            return
-        provider = str(getattr(self, "provider_name", "") or "").strip() or "provider"
-        raise ValueError(
-            f"{feature_name} requires Responses API support, but provider '{provider}' does not declare "
-            "responsesApi=true. Disable this feature or select a provider configured for Responses API."
-        )
-
     @staticmethod
     def _extract_latest_user_text_prompt(messages) -> str:
         if not isinstance(messages, list):
@@ -104,6 +87,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         mode="chat",
         web_search=None,
         thinking=None,
+        reasoning_effort=None,
         stream=False,
         stream_handler=None,
         _tool_submission_error_recovered=False,
@@ -152,17 +136,19 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
         web_search_mode = parse_switch_mode(web_search, default="disabled")
         thinking_mode = parse_switch_mode(thinking, default=None)
-        if web_search_mode == "enabled":
-            self._require_responses_api("web_search")
+        if self._supports_responses_api():
             response_text = self._send_via_responses(
                 messages=messages,
                 active_tools=active_tools,
                 run_tools=run_tools,
                 thinking_mode=thinking_mode,
+                reasoning_effort=reasoning_effort,
                 web_search_mode=web_search_mode,
                 stream_handler=stream_handler if stream and callable(stream_handler) else None,
             )
             return response_text
+        if web_search_mode == "enabled":
+            self._require_responses_api("web_search")
 
         payload = {
             "model": self.config["model"],
@@ -217,6 +203,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                     mode=mode,
                     web_search=web_search_mode,
                     thinking=thinking_mode,
+                    reasoning_effort=reasoning_effort,
                     stream=stream,
                     stream_handler=stream_handler,
                     _tool_submission_error_recovered=True,
@@ -268,6 +255,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                         mode=mode,
                         web_search=web_search_mode,
                         thinking=thinking_mode,
+                        reasoning_effort=reasoning_effort,
                         stream=stream,
                         stream_handler=stream_handler,
                     )

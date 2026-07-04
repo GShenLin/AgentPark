@@ -262,7 +262,7 @@ class Node(BaseNode):
                 working_path=run_request.working_path,
                 collaboration_mode=run_request.collaboration_mode,
                 shell="powershell" if os.name == "nt" else "",
-                responses_system_prompt_as_instructions=_uses_openai_responses(agent),
+                responses_system_prompt_as_instructions=_uses_responses_api_context(agent),
                 skill_resource_roots=capability_plan.skill_resource_roots,
                 persist_assistant_tool_call_note=persist_tool_call_note,
             ),
@@ -270,7 +270,7 @@ class Node(BaseNode):
         codex_context_role = _codex_like_context_role(agent)
         effective_system_prompt = (
             resolve_agent_codex_base_instructions(agent, explicit_system_prompt=run_request.system_prompt)
-            if _uses_openai_responses(agent)
+            if _uses_responses_api_context(agent)
             else str(run_request.system_prompt or "").strip()
         )
 
@@ -367,14 +367,14 @@ class Node(BaseNode):
 
 
 def _codex_like_context_role(agent: object) -> str:
-    if _uses_openai_responses(agent):
+    if _uses_responses_api_context(agent):
         return "developer"
     return "system"
 
 
-def _uses_openai_responses(agent: object) -> bool:
+def _uses_responses_api_context(agent: object) -> bool:
     config = getattr(agent, "config", None)
     if not isinstance(config, dict):
         return False
     provider_type = str(config.get("type") or "").strip().lower()
-    return provider_type == "openai" and config.get("responsesApi") is True
+    return provider_type in {"openai", "doubao"} and config.get("responsesApi") is True

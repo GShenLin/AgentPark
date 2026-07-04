@@ -23,14 +23,6 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
             }
         return {}
 
-    def _supports_responses_api(self) -> bool:
-        if "responsesApi" not in self.config:
-            return False
-        value = self.config.get("responsesApi")
-        if not isinstance(value, bool):
-            raise ValueError("provider.responsesApi must be a boolean.")
-        return value
-
     def _responses_continuation_mode(self):
         if "responsesContinuationMode" not in self.config:
             raise ValueError(

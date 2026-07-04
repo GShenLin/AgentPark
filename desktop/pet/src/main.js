@@ -9,6 +9,9 @@ const BUBBLE_WINDOW_AVATAR_HEIGHT = 118
 const BUBBLE_WINDOW_GAP = 8
 const BUBBLE_WINDOW_PADDING_Y = 24
 const EXPANDED_WINDOW_BOUNDS = { width: 380, height: 520 }
+const EXPANDED_PANEL_WINDOW_PADDING_X = 40
+const EXPANDED_PANEL_WINDOW_PADDING_Y = 160
+const EXPANDED_PANEL_MIN_SIZE = { width: 280, height: 220 }
 const MENU_WINDOW_BOUNDS = { width: 260, height: 430 }
 const windowsByViewId = new Map()
 const ownerPidByViewId = new Map()
@@ -37,6 +40,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('agentpark-pet:set-window-position', (_event, payload) => setWindowPosition(payload))
   ipcMain.handle('agentpark-pet:move-window-by', (event, payload) => moveWindowBy(event, payload))
   ipcMain.handle('agentpark-pet:set-window-layout', (event, payload) => setWindowLayout(event, payload))
+  ipcMain.handle('agentpark-pet:log', (event, payload) => logRendererEvent(event, payload))
   ipcMain.handle('agentpark-pet:open-main-page', () => openMainPageInBrowser())
   ipcMain.handle('agentpark-pet:hide-window', async (event, payload) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -78,6 +82,25 @@ function logPetError(message, error, payload = {}) {
     ...payload,
     error: error && error.stack ? String(error.stack) : String(error || ''),
   })}`)
+}
+
+function logRendererEvent(event, payload) {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const viewId = win ? findViewIdForWindow(win) : ''
+  const name = String((payload && payload.event) || '').trim() || 'renderer'
+  logPet(`renderer-${name}`, {
+    viewId,
+    payload: payload && typeof payload.payload === 'object' ? payload.payload : {},
+    bounds: win && !win.isDestroyed() ? win.getBounds() : null,
+  })
+  return { ok: true }
+}
+
+function findViewIdForWindow(win) {
+  for (const [viewId, candidate] of windowsByViewId.entries()) {
+    if (candidate === win) return viewId
+  }
+  return ''
 }
 
 function parseLaunchArgs(argv, source) {
@@ -231,6 +254,9 @@ function showPetWindow(view, ownerPid, request = {}) {
   win.on('moved', () => schedulePositionSave(viewId))
   win.on('show', () => enforcePetAlwaysOnTop(win))
   win.on('blur', () => enforcePetAlwaysOnTop(win))
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    logPet('renderer-console', { viewId, level, message: String(message || ''), line, sourceId })
+  })
   applyViewPosition(win, view)
   const url = buildPetUrl(viewId, request)
   logPet('show-window-load-url', { viewId, url })
@@ -354,22 +380,26 @@ async function openMainPageInBrowser() {
 function setWindowLayout(event, payload) {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (!win || win.isDestroyed()) throw new Error('window not found')
+  const viewId = findViewIdForWindow(win) || String((payload && payload.view_id) || '').trim()
   const target = resolveWindowLayoutBounds(payload)
   const bounds = win.getBounds()
+  const resizeAnchor = sanitizeResizeAnchor(payload && payload.resize_anchor)
+  const anchored = anchoredWindowBounds(bounds, target, resizeAnchor)
   const nextBounds = clampWindowBounds(
-    bounds.x + bounds.width / 2 - target.width / 2,
-    bounds.y + bounds.height - target.height,
+    anchored.x,
+    anchored.y,
     target.width,
     target.height,
-    { preserveBottom: true },
+    { preserveBottom: anchored.preserveBottom },
   )
+  logPet('set-window-layout', { viewId, payload, beforeBounds: bounds, target, resizeAnchor, anchored, nextBounds })
   win.setBounds(nextBounds, false)
   enforcePetAlwaysOnTop(win)
-  return { ok: true, bounds: nextBounds }
+  return { ok: true, bounds: win.getBounds() }
 }
 
 function resolveWindowLayoutBounds(payload) {
-  if (payload && payload.expanded) return { ...EXPANDED_WINDOW_BOUNDS, layout: 'expanded' }
+  if (payload && payload.expanded) return resolveExpandedWindowLayoutBounds(payload)
   if (payload && payload.menu) return { ...MENU_WINDOW_BOUNDS, layout: 'menu' }
   if (payload && payload.bubble) {
     const bubbleHeight = Number(payload.bubble_height || 0)
@@ -384,6 +414,50 @@ function resolveWindowLayoutBounds(payload) {
     }
   }
   return { ...COLLAPSED_WINDOW_BOUNDS, layout: 'collapsed' }
+}
+
+function resolveExpandedWindowLayoutBounds(payload) {
+  const panelSize = resolveExpandedPanelSize(payload)
+  if (!panelSize) return { ...EXPANDED_WINDOW_BOUNDS, layout: 'expanded' }
+  return {
+    width: panelSize.width + EXPANDED_PANEL_WINDOW_PADDING_X,
+    height: panelSize.height + EXPANDED_PANEL_WINDOW_PADDING_Y,
+    layout: 'expanded',
+  }
+}
+
+function resolveExpandedPanelSize(payload) {
+  const width = Number(payload && payload.panel_width)
+  const height = Number(payload && payload.panel_height)
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null
+  return {
+    width: clampMinimum(width, EXPANDED_PANEL_MIN_SIZE.width),
+    height: clampMinimum(height, EXPANDED_PANEL_MIN_SIZE.height),
+  }
+}
+
+function sanitizeResizeAnchor(value) {
+  const text = String(value || '').trim()
+  const allowed = new Set(['top', 'right', 'bottom', 'left', 'top-left', 'top-right', 'bottom-right', 'bottom-left'])
+  return allowed.has(text) ? text : ''
+}
+
+function anchoredWindowBounds(bounds, target, resizeAnchor) {
+  const keepRight = resizeAnchor.includes('left')
+  const keepLeft = resizeAnchor.includes('right')
+  const keepBottom = resizeAnchor.includes('top') || (!resizeAnchor && target.layout === 'expanded')
+  const keepTop = resizeAnchor.includes('bottom')
+  const x = keepRight
+    ? bounds.x + bounds.width - target.width
+    : keepLeft
+      ? bounds.x
+      : bounds.x + bounds.width / 2 - target.width / 2
+  const y = keepTop ? bounds.y : bounds.y + bounds.height - target.height
+  return { x, y, preserveBottom: keepBottom || !keepTop }
+}
+
+function clampMinimum(value, min) {
+  return Math.max(min, Math.round(value))
 }
 
 function clampWindowBounds(x, y, width, height, options = {}) {

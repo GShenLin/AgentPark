@@ -83,6 +83,14 @@ html.pet-transparent-root .app-shell {
   overflow-wrap: anywhere;
 }
 
+.pet-bubble-text {
+  display: -webkit-box;
+  max-height: 54px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .pet-bubble.live {
   border-color: rgba(46, 125, 116, 0.24);
 }
@@ -160,6 +168,10 @@ html.pet-transparent-root .app-shell {
 }
 
 .pet-panel {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: min(340px, calc(100vw - 20px));
   align-self: start;
   border: 1px solid rgba(30, 44, 58, 0.18);
@@ -169,13 +181,91 @@ html.pet-transparent-root .app-shell {
   overflow: hidden;
 }
 
+.pet-panel-resize {
+  -webkit-app-region: no-drag;
+  position: absolute;
+  z-index: 30;
+  touch-action: none;
+}
+
+.pet-panel-resize-top,
+.pet-panel-resize-bottom {
+  left: 18px;
+  right: 18px;
+  height: 16px;
+  cursor: ns-resize;
+}
+
+.pet-panel-resize-left,
+.pet-panel-resize-right {
+  top: 10px;
+  bottom: 10px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.pet-panel-resize-top {
+  top: 0;
+}
+
+.pet-panel-resize-right {
+  right: 0;
+}
+
+.pet-panel-resize-bottom {
+  bottom: 0;
+}
+
+.pet-panel-resize-left {
+  left: 0;
+}
+
+.pet-panel-resize-top-left,
+.pet-panel-resize-top-right,
+.pet-panel-resize-bottom-right,
+.pet-panel-resize-bottom-left {
+  width: 28px;
+  height: 24px;
+}
+
+.pet-panel-resize-top-left {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.pet-panel-resize-top-right {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.pet-panel-resize-bottom-right {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.pet-panel-resize-bottom-left {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
 .pet-header {
+  -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 12px 10px;
+  padding: 16px 12px 10px;
   background: #f4f6f1;
+}
+
+.pet-header-drag-region {
+  -webkit-app-region: drag;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .pet-title {
@@ -245,7 +335,9 @@ html.pet-transparent-root .app-shell {
 }
 
 .pet-output {
-  max-height: 92px;
+  flex: 1 1 auto;
+  min-height: 72px;
+  max-height: none;
   margin: 10px 12px 0;
   padding: 9px;
   overflow: auto;
@@ -259,9 +351,84 @@ html.pet-transparent-root .app-shell {
   overflow-wrap: anywhere;
 }
 
+.pet-output.markdown-body {
+  -webkit-app-region: no-drag;
+  user-select: text;
+  white-space: normal;
+}
+
+.pet-output.markdown-body p,
+.pet-output.markdown-body ul,
+.pet-output.markdown-body ol,
+.pet-output.markdown-body blockquote,
+.pet-output.markdown-body pre {
+  margin: 0 0 8px;
+}
+
+.pet-output.markdown-body p:last-child,
+.pet-output.markdown-body ul:last-child,
+.pet-output.markdown-body ol:last-child,
+.pet-output.markdown-body blockquote:last-child,
+.pet-output.markdown-body pre:last-child {
+  margin-bottom: 0;
+}
+
+.pet-output.markdown-body ul,
+.pet-output.markdown-body ol {
+  padding-left: 18px;
+}
+
+.pet-output.markdown-body li + li {
+  margin-top: 3px;
+}
+
+.pet-output.markdown-body code {
+  border-radius: 4px;
+  background: rgba(30, 44, 58, 0.08);
+  color: #21313c;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+}
+
+.pet-output.markdown-body .markdown-code-block {
+  margin: 8px 0;
+  border-radius: 6px;
+}
+
+.pet-output.markdown-body .markdown-code-block pre {
+  padding: 10px 44px 10px 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.pet-output.markdown-body .markdown-code-block code {
+  background: transparent;
+  color: #e6eef8;
+  padding: 0;
+}
+
+.pet-output.markdown-body .markdown-code-copy {
+  right: 7px;
+  bottom: 7px;
+  min-width: 42px;
+  height: 24px;
+  line-height: 22px;
+  padding: 0 8px;
+}
+
+.pet-output.markdown-body blockquote {
+  border-left: 3px solid #c7d4d1;
+  color: #52636f;
+  padding-left: 9px;
+}
+
 .pet-compose {
   display: grid;
+  flex: 0 0 auto;
   gap: 8px;
+  margin-top: auto;
   padding: 10px 12px 12px;
 }
 
@@ -282,6 +449,85 @@ html.pet-transparent-root .app-shell {
 .pet-compose textarea:focus {
   border-color: #2e7d74;
   box-shadow: 0 0 0 3px rgba(46, 125, 116, 0.14);
+}
+
+.pet-attachments {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pet-attachment {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d4e0dd;
+  border-radius: 6px;
+  background: #f6faf8;
+  padding: 5px 7px;
+}
+
+.pet-attachment.image {
+  padding-left: 5px;
+}
+
+.pet-attachment-thumb {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  width: 42px;
+  height: 34px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid #cfdbd8;
+  border-radius: 5px;
+  background: #ffffff;
+}
+
+.pet-attachment-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.pet-attachment-name {
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  color: #32434f;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-attachment-remove {
+  -webkit-app-region: no-drag;
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  place-items: center;
+  border: 1px solid #c9d5d2;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #4d5c66;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.pet-attachment-remove:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.pet-uploading {
+  color: #607080;
+  font-size: 12px;
 }
 
 .pet-actions {

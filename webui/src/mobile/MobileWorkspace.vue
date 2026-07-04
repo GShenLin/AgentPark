@@ -702,6 +702,7 @@ onMounted(() => {
       :available-tools="workspace.availableTools.value"
       :nodes="workspace.nodes.value"
       :output-routes="workspace.selectedNodeOutputRoutes.value"
+      :rename-node="workspace.renameSelectedNode"
       :add-output-route="workspace.addSelectedNodeOutputRoute"
       :update-output-route="workspace.updateSelectedNodeOutputRoute"
       :remove-output-route="workspace.removeSelectedNodeOutputRoute"

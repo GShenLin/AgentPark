@@ -34,3 +34,25 @@ def test_normalize_avatar_style_rejects_non_string_and_unknown_avatar_id():
     with pytest.raises(HTTPException) as missing_error:
         domain._normalize_avatar_style("missing")
     assert missing_error.value.status_code == 404
+
+
+def test_normalize_panel_size_accepts_supported_dimensions():
+    domain = NodeDesktopViewDomain(SimpleNamespace())
+
+    assert domain._normalize_panel_size({"width": "320", "height": 360}) == {"width": 320, "height": 360}
+    assert domain._normalize_panel_size({"width": 1600, "height": 1200}) == {"width": 1600, "height": 1200}
+    assert domain._normalize_panel_size(None) is None
+
+
+def test_normalize_panel_size_rejects_invalid_payloads():
+    domain = NodeDesktopViewDomain(SimpleNamespace())
+
+    with pytest.raises(HTTPException) as type_error:
+        domain._normalize_panel_size("320x360")
+    assert type_error.value.status_code == 400
+    assert type_error.value.detail == "panel_size must be an object"
+
+    with pytest.raises(HTTPException) as range_error:
+        domain._normalize_panel_size({"width": 120, "height": 360})
+    assert range_error.value.status_code == 400
+    assert range_error.value.detail == "panel_size.width is below the supported minimum"
