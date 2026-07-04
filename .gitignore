@@ -30,6 +30,7 @@ venv/
 .venv/
 env/
 .env
+AgnetPark_Linux_env/
 .runtime/
 .cache/
 

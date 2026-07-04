@@ -113,10 +113,11 @@ AgentPark/
 
 ## 环境要求
 
-- Windows 是主要目标环境。部分功能依赖 `.bat`、PowerShell、桌面自动化或 PyInstaller 打包路径。
-- Python 3.11+。项目脚本会优先使用本地 Python 3.14/3.12/3.11，也可以使用 `python`。
+- 当前 checkout 以 Linux 为主要目标环境。仓库仍保留原 Windows 脚本。
+- Python 3.11+。Linux 脚本会优先使用 `AgnetPark_Linux_env/bin/python`，再尝试 `.venv/bin/python`、`python3`、`python`。
 - Node.js + npm，用于安装和构建 `webui`。
 - 推荐安装 ripgrep `rg`；文件搜索工具和部分前端搜索路径会优先使用它。
+- GUI 自动化和截图工具需要可用的桌面会话；Linux 下截图会通过 `pyautogui` 后端兜底。
 
 ## 安装
 
@@ -124,6 +125,12 @@ AgentPark/
 
 ```bat
 python -m pip install -e .
+```
+
+如果使用本项目虚拟环境：
+
+```sh
+AgnetPark_Linux_env/bin/python -m pip install -e .
 ```
 
 安装前端依赖：
@@ -180,13 +187,19 @@ npm install
 
 ### 构建并运行
 
-Windows 下推荐入口：
+Linux 下推荐入口：
+
+```sh
+./build_and_run.sh
+```
+
+原 Windows 入口仍保留：
 
 ```bat
 build_and_run.bat
 ```
 
-该脚本会：
+Linux 脚本会：
 
 - 检查 Python 和 `rg`。
 - 安装缺失的前端依赖。
@@ -194,13 +207,13 @@ build_and_run.bat
 - 运行 `python -m pip install -e .`。
 - 启动 `python -m src.fast_api --workspace-root <repo root>`。
 
-启动后会自动打开浏览器。默认端口来自 `config/config.json`，当前默认值为 `8788`。
+默认端口来自 `config/config.json`，当前默认值为 `8788`。
 
 ### 生产模式
 
 先构建前端静态文件：
 
-```bat
+```sh
 cd webui
 npm install
 npm run build
@@ -208,9 +221,9 @@ npm run build
 
 然后回到仓库根目录并启动后端：
 
-```bat
+```sh
 cd ..
-python -m src.fast_api --host 127.0.0.1 --port 8788
+AgnetPark_Linux_env/bin/python -m src.fast_api --host 127.0.0.1 --port 8788
 ```
 
 打开：
@@ -221,21 +234,21 @@ http://127.0.0.1:8788/
 
 如需禁止自动打开浏览器，添加 `--no-browser`：
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
+```sh
+AgnetPark_Linux_env/bin/python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
 ```
 
 ### 开发模式
 
 启动后端：
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
+```sh
+AgnetPark_Linux_env/bin/python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
 ```
 
 启动 Vite：
 
-```bat
+```sh
 cd webui
 npm run dev
 ```
@@ -250,13 +263,19 @@ http://localhost:5173/
 
 ### 重启
 
+Linux 下运行：
+
+```sh
+./Restart.sh
+```
+
 Windows 下运行：
 
 ```bat
 Restart.bat
 ```
 
-脚本会尝试停止当前 AgentPark 服务，执行 `git pull --rebase`，并通过 `build_and_run.bat` 重启。
+重启脚本会尝试停止当前 AgentPark 服务，仅在工作区干净时执行 `git pull --rebase`，并通过对应平台的 build-and-run 脚本重启。
 
 WebUI 也可以调用 `/api/system/restart` 触发重启流程。
 
@@ -348,11 +367,11 @@ memories/Companion/Companion/memory.md
 memories/Companion/Companion/messages.jsonl
 ```
 
-正常构建/安装流程完成后，`build_and_run.bat` 会在后台启动 WebUI 服务，由该服务进程打开浏览器，然后在当前终端启动交互式 companion CLI。`build_and_run.bat cli` 和 `build_and_run.bat chat` 使用相同的 Web + CLI 组合启动方式。只运行 WebUI 服务时使用 `build_and_run.bat server` 或 `build_and_run.bat web`；只运行 CLI 且不启动 WebUI 时使用 `build_and_run.bat cli-only`。
+正常构建/安装流程完成后，`build_and_run.sh` 会在后台启动 WebUI 服务，然后在当前终端启动交互式 companion CLI。`build_and_run.sh cli` 和 `build_and_run.sh chat` 使用相同的 Web + CLI 组合启动方式。只运行 WebUI 服务时使用 `build_and_run.sh server` 或 `build_and_run.sh web`；只运行 CLI 且不启动 WebUI 时使用 `build_and_run.sh cli-only`。
 
-companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/Companion/Companion/`。如果终端不接受输入，运行 `build_and_run.bat cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
+companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/Companion/Companion/`。如果终端不接受输入，运行 `build_and_run.sh cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
 
-在 companion CLI 中，`/restart` 会启动仓库中的 `Restart.bat` 并退出当前 CLI 会话，确保重启行为仍走标准启动路径。
+在 companion CLI 中，`/restart` 会启动当前平台的重启脚本并退出当前 CLI 会话，确保重启行为仍走标准启动路径。
 
 节点配置读写见 `docs/config-contract.md`。运行时状态恢复见 `docs/runtime-state-machine.md`。服务商功能支持见 `docs/provider-feature-matrix.md`。能力描述符和依赖报告见 `docs/capability-system.md`。Skill/plugin 作者指南见 `docs/skill-plugin-authoring.md`。长期 sidecar、缓存和分发边界见 `docs/long-term-architecture.md`。恢复步骤见 `docs/troubleshooting.md`。
 

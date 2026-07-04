@@ -113,10 +113,11 @@ AgentPark/
 
 ## Requirements
 
-- Windows is the primary target environment. Some features depend on `.bat`, PowerShell, desktop automation, or PyInstaller packaging paths.
-- Python 3.11+. Project scripts prefer local Python 3.14/3.12/3.11 when available, and can also use `python`.
+- Linux is the primary target for this checkout. Windows scripts remain in the repository for the original platform.
+- Python 3.11+. The Linux scripts prefer `AgnetPark_Linux_env/bin/python`, then `.venv/bin/python`, then `python3`/`python`.
 - Node.js + npm for installing and building `webui`.
 - ripgrep `rg` is recommended; file search tools and some frontend search paths prefer it.
+- GUI automation and screenshot tools require a usable desktop session. On Linux, the screenshot fallback uses `pyautogui`.
 
 ## Installation
 
@@ -124,6 +125,12 @@ Install backend dependencies from the repository root:
 
 ```bat
 python -m pip install -e .
+```
+
+If you use the project virtual environment:
+
+```sh
+AgnetPark_Linux_env/bin/python -m pip install -e .
 ```
 
 Install frontend dependencies:
@@ -180,13 +187,19 @@ Common `type` values include `doubao`, `gemini`, `openai`, `zhipu`, and `hyper3d
 
 ### Build and Run
 
-On Windows, the recommended entry is:
+On Linux, the recommended entry is:
+
+```sh
+./build_and_run.sh
+```
+
+The original Windows entry is still available:
 
 ```bat
 build_and_run.bat
 ```
 
-This script:
+The Linux script:
 
 - Checks Python and `rg`.
 - Installs missing frontend dependencies.
@@ -194,13 +207,13 @@ This script:
 - Runs `python -m pip install -e .`.
 - Starts `python -m src.fast_api --workspace-root <repo root>`.
 
-After startup, the browser opens automatically. The default port comes from `config/config.json`; the current default is `8788`.
+The default port comes from `config/config.json`; the current default is `8788`.
 
 ### Production Mode
 
 Build the frontend static files first:
 
-```bat
+```sh
 cd webui
 npm install
 npm run build
@@ -208,9 +221,9 @@ npm run build
 
 Then return to the repository root and start the backend:
 
-```bat
+```sh
 cd ..
-python -m src.fast_api --host 127.0.0.1 --port 8788
+AgnetPark_Linux_env/bin/python -m src.fast_api --host 127.0.0.1 --port 8788
 ```
 
 Open:
@@ -221,21 +234,21 @@ http://127.0.0.1:8788/
 
 To prevent automatic browser launch, add `--no-browser`:
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
+```sh
+AgnetPark_Linux_env/bin/python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
 ```
 
 ### Development Mode
 
 Start the backend:
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
+```sh
+AgnetPark_Linux_env/bin/python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
 ```
 
 Start Vite:
 
-```bat
+```sh
 cd webui
 npm run dev
 ```
@@ -250,13 +263,19 @@ http://localhost:5173/
 
 ### Restart
 
+On Linux, run:
+
+```sh
+./Restart.sh
+```
+
 On Windows, run:
 
 ```bat
 Restart.bat
 ```
 
-The script attempts to stop the current AgentPark service, run `git pull --rebase`, and restart through `build_and_run.bat`.
+The restart script attempts to stop the current AgentPark service, run `git pull --rebase` only when the working tree is clean, and restart through the platform build-and-run script.
 
 The WebUI can also call `/api/system/restart` to trigger the restart flow.
 
@@ -348,11 +367,11 @@ memories/Companion/Companion/memory.md
 memories/Companion/Companion/messages.jsonl
 ```
 
-After the normal build/install flow, `build_and_run.bat` starts the WebUI server in the background, opens the browser from that server process, and then starts the interactive companion CLI in the current terminal. `build_and_run.bat cli` and `build_and_run.bat chat` use the same combined Web + CLI startup. Use `build_and_run.bat server` or `build_and_run.bat web` when only the WebUI server should run, and `build_and_run.bat cli-only` when the CLI should run without starting WebUI.
+After the normal build/install flow, `build_and_run.sh` starts the WebUI server in the background and then starts the interactive companion CLI in the current terminal. `build_and_run.sh cli` and `build_and_run.sh chat` use the same combined Web + CLI startup. Use `build_and_run.sh server` or `build_and_run.sh web` when only the WebUI server should run, and `build_and_run.sh cli-only` when the CLI should run without starting WebUI.
 
-The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/Companion/Companion/`. If the terminal does not accept input, run `build_and_run.bat cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
+The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/Companion/Companion/`. If the terminal does not accept input, run `build_and_run.sh cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
 
-Inside the companion CLI, `/restart` launches the repository `Restart.bat` and exits the current CLI session so restart behavior stays on the canonical startup path.
+Inside the companion CLI, `/restart` launches the platform restart script and exits the current CLI session so restart behavior stays on the canonical startup path.
 
 Node config reads and writes are documented in `docs/config-contract.md`. Runtime state recovery is documented in `docs/runtime-state-machine.md`. Provider feature support is documented in `docs/provider-feature-matrix.md`. Capability descriptors and dependency reporting are documented in `docs/capability-system.md`. Skill/plugin authoring is documented in `docs/skill-plugin-authoring.md`. Long-term sidecar, caching, and distribution boundaries are documented in `docs/long-term-architecture.md`. Recovery steps are documented in `docs/troubleshooting.md`.
 

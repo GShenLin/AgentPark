@@ -15,7 +15,7 @@ _SUPPORTED_BACKENDS = {"gdi", "pyautogui", "auto"}
 def capture_screenshot(
     capture_region=None,
     image_format="png",
-    backend="gdi",
+    backend="auto",
     png_compress_level=1,
     jpeg_quality=92,
     agent=None,
@@ -149,7 +149,7 @@ capture_screenshot_declaration = {
         "name": "capture_screenshot",
         "description": (
             "Capture a local desktop screenshot and return the image directly to the model. "
-            "Uses fast Windows GDI by default and does not write image files."
+            "Uses the best available local screenshot backend and does not write image files."
         ),
         "parameters": {
             "type": "object",
@@ -178,7 +178,7 @@ capture_screenshot_declaration = {
                     "type": "string",
                     "enum": ["gdi", "pyautogui", "auto"],
                     "description": "Capture backend. gdi is fastest on Windows; auto tries gdi then pyautogui.",
-                    "default": "gdi",
+                    "default": "auto",
                 },
                 "png_compress_level": {
                     "type": "integer",
