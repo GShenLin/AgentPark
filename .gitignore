@@ -42,6 +42,8 @@ AgnetPark_Linux_env/
 
 # Config (Keep template, ignore local secrets)
 config/*.local.json
+config/bak.config.json
+config/remote.json
 # config/aitools.json
 
 # Node (Legacy)
