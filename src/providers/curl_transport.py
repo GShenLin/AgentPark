@@ -24,6 +24,10 @@ class CurlTransportError(ProviderTransportError):
 
 
 class CurlHttpTransport:
+    @staticmethod
+    def _curl_executable() -> str:
+        return "curl.exe" if os.name == "nt" else "curl"
+
     def _cancel_source(self):
         return getattr(self, "cancel_event", None) or getattr(self, "cancel_check", None)
 
@@ -39,7 +43,7 @@ class CurlHttpTransport:
             with self._provider_pressure_slot():
                 proc = subprocess.run(
                     [
-                        "curl.exe",
+                        self._curl_executable(),
                         "--silent",
                         "--show-error",
                         "--location",
@@ -67,7 +71,7 @@ class CurlHttpTransport:
         connect_timeout = max(1, min(15, timeout_val))
         try:
             cmd = [
-                "curl.exe",
+                self._curl_executable(),
                 "--silent",
                 "--show-error",
                 "--location",
@@ -285,10 +289,10 @@ class CurlHttpTransport:
         except Exception:
             pass
 
-    @staticmethod
-    def _build_curl_post_command(*, url, headers, payload_path, timeout_val, connect_timeout, marker, no_buffer):
+    @classmethod
+    def _build_curl_post_command(cls, *, url, headers, payload_path, timeout_val, connect_timeout, marker, no_buffer):
         cmd = [
-            "curl.exe",
+            cls._curl_executable(),
             "--silent",
             "--show-error",
             "--location",
