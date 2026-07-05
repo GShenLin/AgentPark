@@ -1,6 +1,7 @@
 from src.base_agent import BaseAgent
 from src.providers.openai_chat_runtime import OpenAIChatRuntime
 from src.providers.openai_mapping import OpenAIResponsesMapping
+from src.providers.openai_image_generation import OpenAIImageGeneration
 from src.providers.openai_responses_runtime import OpenAIResponsesRuntime
 from src.providers.openai_transport import OpenAITransport
 from src.providers.tool_feedback import ToolFeedbackMixin
@@ -33,6 +34,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 OpenAIResponsesMapping(self),
                 ToolCallExecutionRuntime(self),
                 OpenAIResponsesRuntime(self),
+                OpenAIImageGeneration(self),
             )
             object.__setattr__(self, "_service_targets_cache", cached)
         return cached

@@ -1,3 +1,4 @@
+import json
 import os
 
 from nodes.base_node import BaseNode
@@ -170,6 +171,9 @@ class Node(BaseNode):
             meta["image_size"] = image_size
         if image_paths:
             meta["image_count"] = len(image_paths)
+            meta["image_paths"] = list(image_paths)
+            meta["saved_files"] = list(image_paths)
+            meta["primary_image_path"] = image_paths[0]
         parts.append({"type": "structured", "data": meta})
 
         if not image_paths and not text_parts:

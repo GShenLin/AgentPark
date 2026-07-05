@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import mimetypes
 import os
+from urllib.parse import quote
 
+from src.media_resource_utils import normalize_public_base_url
 from src.message_protocol import MetaPart
 from src.message_protocol import ResourcePart
 from src.message_protocol import StructuredPart
@@ -12,6 +15,12 @@ from src.message_protocol import TextPart
 from src.message_protocol import build_resource_part, build_text_envelope, envelope_text, normalize_envelope
 from src.message_protocol import normalize_message_envelope
 from src.video_generation_content import build_doubao_video_generation_content
+
+
+_AGENT_IMAGE_MAX_INLINE_BYTES = 512 * 1024
+_AGENT_IMAGE_RAW_FALLBACK_MAX_BYTES = 128 * 1024
+_AGENT_IMAGE_JPEG_QUALITIES = (82, 72, 62)
+_AGENT_IMAGE_RESIZE_DIMENSIONS = (1024, 768, 512)
 
 
 def build_agent_user_content(
@@ -52,7 +61,8 @@ def build_agent_user_content(
         else:
             other_resources.append(res)
 
-    if str(mode or "").strip().lower() == "video_generation" and "doubao" in str(provider_id or "").strip().lower():
+    mode_name = str(mode or "").strip().lower()
+    if mode_name == "video_generation" and "doubao" in str(provider_id or "").strip().lower():
         return build_doubao_video_generation_content(
             envelope.to_dict(),
             public_base_url=public_base_url,
@@ -62,6 +72,8 @@ def build_agent_user_content(
         text_parts.extend(
             [f"[{str(item.get('kind') or 'file')}] {str(item.get('uri') or '').strip()}" for item in other_resources]
         )
+    if image_resources and _should_include_image_reference_text(mode_name, image_resources):
+        text_parts.extend(_resource_reference_line(item) for item in image_resources)
     merged_text = "\n".join([item for item in text_parts if item]).strip()
     provider = str(provider_id or "").strip().lower()
 
@@ -82,13 +94,7 @@ def build_agent_user_content(
         image_url = uri
         local_path = _to_local_path(uri)
         if local_path and os.path.exists(local_path):
-            try:
-                with open(local_path, "rb") as f:
-                    encoded = base64.b64encode(f.read()).decode("utf-8")
-                mime = _image_mime(resource, local_path)
-                image_url = f"data:{mime};base64,{encoded}"
-            except Exception:
-                image_url = uri
+            image_url = _local_image_to_agent_url(resource, local_path, public_base_url)
         content_parts.append({"type": "image_url", "image_url": {"url": image_url}})
     return content_parts
 
@@ -169,6 +175,44 @@ def append_channel_meta(output_message: dict, meta_parts: list[dict]) -> dict:
     return envelope
 
 
+def append_input_resources_for_imagechat(output_message: dict, input_message: object, mode: object) -> dict:
+    if str(mode or "").strip().lower() != "imagechat":
+        return output_message
+
+    output_envelope = normalize_envelope(output_message, default_role="assistant")
+    input_envelope = normalize_message_envelope(input_message, default_role="user")
+    parts = output_envelope.get("parts")
+    if not isinstance(parts, list):
+        parts = []
+
+    existing_uris = {
+        str(((part or {}).get("resource") or {}).get("uri") or "").strip()
+        for part in parts
+        if isinstance(part, dict) and str(part.get("type") or "").strip().lower() == "resource"
+    }
+
+    for part in input_envelope.parts:
+        if not isinstance(part, ResourcePart):
+            continue
+        resource = dict(part.resource)
+        uri = str(resource.get("uri") or "").strip()
+        kind = str(resource.get("kind") or "").strip().lower()
+        if not uri or uri in existing_uris or kind != "image":
+            continue
+        parts.append(build_resource_part(
+            uri=uri,
+            kind=kind,
+            mime=resource.get("mime"),
+            name=resource.get("name"),
+            source=resource.get("source") or "imagechat_input",
+            metadata=resource.get("metadata"),
+        ))
+        existing_uris.add(uri)
+
+    output_envelope["parts"] = parts
+    return output_envelope
+
+
 def history_envelope_to_agent_message(
     envelope: dict,
     provider_id: str,
@@ -198,6 +242,88 @@ def _to_local_path(uri: object) -> str:
     if raw.startswith("file://"):
         return raw[7:]
     return raw
+
+
+def _resource_reference_line(resource: dict) -> str:
+    kind = str(resource.get("kind") or "file").strip().lower() or "file"
+    uri = str(resource.get("uri") or "").strip()
+    if not uri:
+        return ""
+    if uri.startswith("data:"):
+        name = str(resource.get("name") or "").strip()
+        suffix = f" {name}" if name else ""
+        return f"[{kind}] <data-url>{suffix}"
+    return f"[{kind}] {uri}"
+
+
+def _should_include_image_reference_text(mode_name: str, image_resources: list[dict]) -> bool:
+    if mode_name == "imagechat":
+        return True
+    for resource in image_resources:
+        source = str(resource.get("source") or "").strip().lower()
+        if source == "image_generation":
+            return True
+    return False
+
+
+def _local_image_to_agent_url(resource: dict, local_path: str, public_base_url: object) -> str:
+    base = normalize_public_base_url(public_base_url)
+    if base:
+        return f"{base}/api/files/raw?path={quote(os.path.abspath(local_path), safe='')}&download=1"
+
+    try:
+        return _compress_local_image_to_data_url(local_path)
+    except Exception as exc:
+        size = os.path.getsize(local_path)
+        if size <= _AGENT_IMAGE_RAW_FALLBACK_MAX_BYTES:
+            return _raw_local_image_to_data_url(resource, local_path)
+        raise ValueError(
+            f"Local image is too large or unreadable for controlled inline upload: {local_path}"
+        ) from exc
+
+
+def _compress_local_image_to_data_url(local_path: str) -> str:
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as exc:
+        raise RuntimeError("Pillow is required to compress local image inputs for agent requests.") from exc
+
+    with Image.open(local_path) as source:
+        image = ImageOps.exif_transpose(source)
+        if image.mode not in {"RGB", "L"}:
+            background = Image.new("RGB", image.size, (255, 255, 255))
+            alpha = image.getchannel("A") if "A" in image.getbands() else None
+            background.paste(image.convert("RGBA"), mask=alpha)
+            image = background
+        elif image.mode == "L":
+            image = image.convert("RGB")
+        else:
+            image = image.copy()
+
+    last_bytes = b""
+    for max_dimension in _AGENT_IMAGE_RESIZE_DIMENSIONS:
+        candidate = image.copy()
+        candidate.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        for quality in _AGENT_IMAGE_JPEG_QUALITIES:
+            buffer = io.BytesIO()
+            candidate.save(buffer, format="JPEG", quality=quality, optimize=True)
+            data = buffer.getvalue()
+            last_bytes = data
+            if len(data) <= _AGENT_IMAGE_MAX_INLINE_BYTES:
+                encoded = base64.b64encode(data).decode("ascii")
+                return f"data:image/jpeg;base64,{encoded}"
+
+    raise ValueError(
+        f"Compressed image still exceeds {_AGENT_IMAGE_MAX_INLINE_BYTES} bytes "
+        f"after resizing to {_AGENT_IMAGE_RESIZE_DIMENSIONS[-1]}px: {len(last_bytes)} bytes"
+    )
+
+
+def _raw_local_image_to_data_url(resource: dict, local_path: str) -> str:
+    with open(local_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+    mime = _image_mime(resource, local_path)
+    return f"data:{mime};base64,{encoded}"
 
 
 def _image_mime(resource: dict, local_path: str) -> str:

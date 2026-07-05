@@ -5,6 +5,7 @@ from typing import Callable
 from nodes.agent_assistant_memory import persist_assistant_tool_call_note
 from nodes.agent_message_adapter import (
     append_channel_meta,
+    append_input_resources_for_imagechat,
     build_agent_output_message,
     build_agent_user_content,
     extract_channel_meta,
@@ -416,6 +417,7 @@ class Node(BaseNode):
                     time.sleep(min(0.05, remaining))
         raise_if_cancel_requested(cancel_source)
         output_message = build_agent_output_message(response)
+        output_message = append_input_resources_for_imagechat(output_message, input_message, run_request.mode)
         output_message = append_channel_meta(output_message, channel_meta_parts)
         final_text = envelope_text(output_message).strip()
         stream_runtime.emit_done(final_text)

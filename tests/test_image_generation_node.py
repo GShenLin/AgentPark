@@ -52,6 +52,10 @@ def test_image_generation_node_calls_provider_and_returns_image(monkeypatch, tmp
     payload = result["routes"][0]["payload"]
     parts = payload["parts"]
     assert any(part.get("type") == "resource" and (part.get("resource") or {}).get("kind") == "image" for part in parts)
+    structured = next(part for part in parts if part.get("type") == "structured")
+    assert structured["data"]["image_paths"] == [str(tmp_path / "out.png")]
+    assert structured["data"]["saved_files"] == [str(tmp_path / "out.png")]
+    assert structured["data"]["primary_image_path"] == str(tmp_path / "out.png")
     assert str(tmp_path / "out.png") in result["display"]
 
 

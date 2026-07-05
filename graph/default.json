@@ -1,0 +1,16 @@
+{
+  "id": "default",
+  "name": "default",
+  "source_graph_id": "default",
+  "graph": {
+    "id": "default",
+    "name": "default",
+    "working_path": "",
+    "output_routes": {},
+    "version": 1783169360834334200,
+    "nodes": []
+  },
+  "node_configs": [],
+  "updated_at": "2026-07-04T20:52:08+08:00",
+  "created_at": "2026-07-04T20:52:08+08:00"
+}
