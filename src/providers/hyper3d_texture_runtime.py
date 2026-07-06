@@ -143,7 +143,7 @@ class Hyper3DTextureRuntime(Hyper3DRuntimeBase):
             default=1800,
         )
 
-        with tempfile.TemporaryDirectory(prefix="aitools_hyper3d_texture_") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix="agentpark_hyper3d_texture_") as temp_dir:
             local_model = self._materialize_path(model_path, temp_dir, prefix="model", default_ext=".obj")
             local_image = self._materialize_path(image_path, temp_dir, prefix="image", default_ext=".jpg")
             self._validate_model_size(local_model)

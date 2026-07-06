@@ -7,9 +7,11 @@ from typing import Callable
 from src.providers.openai_curl_transport import OpenAICurlTransport
 from src.providers.openai_transport_errors import OpenAIHttpError, OpenAITransportError
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
 from src.providers.responses_stream_events import ResponsesOutputItemDone
 from src.providers.responses_stream_events import ResponsesOutputTextDelta
+from src.providers.responses_stream_events import ResponsesReasoningDelta
 from src.providers.responses_stream_events import ResponsesResponseCompleted
 from src.providers.responses_stream_events import ResponsesStreamEvent
 from src.providers.responses_stream_events import ResponsesStreamFailure
@@ -18,7 +20,7 @@ from src.runtime_cancellation import sleep_with_cancel
 from src.service_host import HostBoundService
 
 
-class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundService):
+class OpenAITransport(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundService):
     @staticmethod
     def _http_status_retryable(status_code):
         code = int(status_code or 0)
@@ -88,11 +90,16 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
         return message or code or json.dumps(error or {}, ensure_ascii=False)
 
     @staticmethod
-    def _emit_stream_text(stream_handler: Callable[[object, object], None] | None, delta_text: object, full_text: object) -> None:
-        if not callable(stream_handler):
+    def _emit_stream_thinking(
+        thinking_stream_handler: Callable[[object, object, object], None] | None,
+        delta_text: object,
+        full_text: object,
+        provider: object = "openai_responses",
+    ) -> None:
+        if not callable(thinking_stream_handler):
             return
         try:
-            stream_handler(delta_text, full_text)
+            thinking_stream_handler(delta_text, full_text, provider)
         except CancellationRequested:
             raise
         except Exception:
@@ -180,9 +187,12 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
         payload_json,
         timeout_sec,
         stream_handler,
+        thinking_stream_handler=None,
         item_event_handler: Callable[[ResponsesStreamEvent], None] | None = None,
     ):
         text_chunks: list[str] = []
+        thinking_chunks: list[str] = []
+        debug_events: list[dict] = []
         normalizer = OpenAIResponsesStreamEventNormalizer(provider="openai_responses")
         function_call_items: list[dict] = []
         function_call_by_item_id: dict[str, dict] = {}
@@ -222,12 +232,53 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
             merged["output"] = next_output
             return merged
 
+        def _write_sse_debug(final_payload=None) -> None:
+            self._write_sse_debug_if_needed(
+                endpoint="responses",
+                url=url,
+                payload_json=payload_json,
+                events=debug_events,
+                final_payload=final_payload,
+                filename_prefix="openai_sse_responses",
+                force=self._sse_payload_has_reasoning_or_web_search(payload_json),
+            )
+
+        def _summarize_response_payload(response_obj: dict) -> dict:
+            output = response_obj.get("output") if isinstance(response_obj, dict) else None
+            return {
+                "id": str((response_obj or {}).get("id") or ""),
+                "status": str((response_obj or {}).get("status") or ""),
+                "output_count": len(output) if isinstance(output, list) else 0,
+                "output": [
+                    self._summarize_sse_output_item(item)
+                    for item in output[:20]
+                    if isinstance(item, dict)
+                ]
+                if isinstance(output, list)
+                else [],
+            }
+
         for data_text in self._curl_post_sse_data_lines(
             url=url,
             headers=headers,
             payload_json=payload_json,
             timeout_sec=timeout_sec,
         ):
+            parsed_debug_event = None
+            if data_text == "[DONE]":
+                debug_events.append({"index": len(debug_events), "raw": "[DONE]"})
+            else:
+                try:
+                    parsed_debug_event = json.loads(str(data_text or ""))
+                except Exception:
+                    parsed_debug_event = None
+                debug_events.append(
+                    self._build_sse_debug_event(
+                        index=len(debug_events),
+                        raw_data=data_text,
+                        parsed_event=parsed_debug_event,
+                    )
+                )
             for event in normalizer.ingest_sse_data(data_text):
                 self._emit_responses_stream_event(item_event_handler, event)
                 if isinstance(event, ResponsesStreamFailure):
@@ -238,6 +289,16 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
                     if event.delta:
                         text_chunks.append(event.delta)
                         self._emit_stream_text(stream_handler, event.delta, "".join(text_chunks))
+                    continue
+                if isinstance(event, ResponsesReasoningDelta):
+                    if event.delta:
+                        thinking_chunks.append(event.delta)
+                        self._emit_stream_thinking(
+                            thinking_stream_handler,
+                            event.delta,
+                            "".join(thinking_chunks),
+                            event.provider or "openai_responses",
+                        )
                     continue
                 if isinstance(event, ResponsesOutputItemDone) and event.function_call is not None:
                     item = event.function_call.to_response_item()
@@ -296,6 +357,7 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
                 delta = final_text[len(streamed) :] if final_text.startswith(streamed) else final_text
                 self._emit_stream_text(stream_handler, delta, final_text)
             if final_text or function_calls:
+                _write_sse_debug(final_payload={"completed_response": _summarize_response_payload(completed_response)})
                 return completed_response
 
         output_items: list[dict] = []
@@ -304,7 +366,9 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
         full_text = "".join(text_chunks)
         if full_text:
             output_items.append({"type": "message", "content": [{"type": "output_text", "text": full_text}]})
-        return {"output": output_items}
+        synthetic = {"output": output_items}
+        _write_sse_debug(final_payload={"synthetic_response": _summarize_response_payload(synthetic)})
+        return synthetic
 
     def _stream_responses_with_retry(
         self,
@@ -314,6 +378,7 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
         headers,
         payload_json,
         stream_handler,
+        thinking_stream_handler=None,
         item_event_handler: Callable[[ResponsesStreamEvent], None] | None = None,
     ):
         timeout = self.config.get("timeoutMs", 60000) / 1000
@@ -326,6 +391,7 @@ class OpenAITransport(OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundS
                     payload_json=payload_json,
                     timeout_sec=timeout,
                     stream_handler=stream_handler,
+                    thinking_stream_handler=thinking_stream_handler,
                     item_event_handler=item_event_handler,
                 )
             except (OpenAIHttpError, OpenAITransportError) as exc:

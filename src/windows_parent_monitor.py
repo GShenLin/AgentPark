@@ -82,7 +82,7 @@ def start_process_exit_monitor(parent_pid: int, exit_func=None, *, thread_name: 
     return True
 
 
-def start_env_parent_exit_monitor(env_var: str = "AITOOLS_EXIT_WHEN_PID_EXITS", exit_func=None) -> bool:
+def start_env_parent_exit_monitor(env_var: str = "AGENTPARK_EXIT_WHEN_PID_EXITS", exit_func=None) -> bool:
     raw_pid = str(os.environ.get(env_var) or "").strip()
     if not raw_pid:
         return False

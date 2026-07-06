@@ -5,16 +5,25 @@ import inspect
 
 from src.node_stream_protocol import build_node_message_delta
 from src.node_stream_protocol import build_node_message_done
+from src.node_stream_protocol import build_node_thinking_delta
 
 
 StreamCallback = Callable[[dict], None]
 
 
 class AgentStreamRuntime:
-    def __init__(self, stream_callback: StreamCallback | None, *, suppress_callback_errors: bool = False):
+    def __init__(
+        self,
+        stream_callback: StreamCallback | None,
+        *,
+        suppress_callback_errors: bool = False,
+        tool_event_callback: StreamCallback | None = None,
+    ):
         self.stream_callback = stream_callback if callable(stream_callback) else None
         self.suppress_callback_errors = bool(suppress_callback_errors)
+        self.tool_event_callback = tool_event_callback if callable(tool_event_callback) else None
         self.streamed_text = ""
+        self.thinking_text = ""
 
     def on_stream_delta(self, delta: object, full_text: object | None = None) -> None:
         delta_text = str(delta or "")
@@ -24,9 +33,19 @@ class AgentStreamRuntime:
             self.streamed_text = str(full_text or "")
         self._emit(build_node_message_delta(delta_text, self.streamed_text))
 
+    def on_thinking_delta(self, delta: object, full_text: object | None = None, provider: object = "") -> None:
+        delta_text = str(delta or "")
+        if full_text is None:
+            self.thinking_text = self.thinking_text + delta_text
+        else:
+            self.thinking_text = str(full_text or "")
+        self._emit(build_node_thinking_delta(delta_text, self.thinking_text, provider=provider))
+
     def on_tool_event(self, event: object) -> None:
         if isinstance(event, dict):
-            self._emit(dict(event))
+            if callable(self.tool_event_callback):
+                self.tool_event_callback(dict(event))
+            self._emit(self._public_tool_event(event))
 
     def send(self, agent: object, requested_kwargs: dict) -> object:
         previous_tool_event_callback = getattr(agent, "tool_event_callback", None)
@@ -78,3 +97,11 @@ class AgentStreamRuntime:
         }
         supported_names.discard("self")
         return {key: value for key, value in requested_kwargs.items() if key in supported_names}
+
+    @staticmethod
+    def _public_tool_event(event: dict) -> dict:
+        payload = dict(event)
+        payload.pop("raw_call", None)
+        payload.pop("result", None)
+        payload.pop("arguments_json", None)
+        return payload

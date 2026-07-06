@@ -35,9 +35,9 @@ _WINDOWS_VT_CACHE: dict[int, bool] = {}
 def color_enabled(stream=None) -> bool:
     if os.environ.get("NO_COLOR"):
         return False
-    if os.environ.get("AITOOLS_COLOR", "").lower() in {"0", "false", "no"}:
+    if os.environ.get("AGENTPARK_COLOR", "").lower() in {"0", "false", "no"}:
         return False
-    if os.environ.get("AITOOLS_COLOR", "").lower() in {"1", "true", "yes", "always"}:
+    if os.environ.get("AGENTPARK_COLOR", "").lower() in {"1", "true", "yes", "always"}:
         return True
     target = stream or sys.stdout
     if not bool(getattr(target, "isatty", lambda: False)()):

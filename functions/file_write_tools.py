@@ -130,7 +130,7 @@ def write_file(
         else:
             if atomic:
                 parent = os.path.dirname(target) or "."
-                fd, temp_path = tempfile.mkstemp(prefix=".aitools_tmp_", dir=parent)
+                fd, temp_path = tempfile.mkstemp(prefix=".agentpark_tmp_", dir=parent)
                 with os.fdopen(fd, "w", encoding=encoding, errors="replace") as f:
                     chars_written = f.write(content)
                     f.flush()

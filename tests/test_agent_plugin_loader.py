@@ -3,7 +3,7 @@ import pytest
 from src.capabilities.discovery_cache import invalidate_discovery_cache
 
 
-def _write_plugin_manifest(plugin_dir, filename="aitools.plugin.json", payload=None):
+def _write_plugin_manifest(plugin_dir, filename="agentpark.plugin.json", payload=None):
     import json
 
     plugin_dir.mkdir(parents=True, exist_ok=True)
@@ -86,7 +86,7 @@ def test_plugin_option_discovery_cache_refreshes_on_explicit_invalidation(tmp_pa
     assert refreshed == [{"value": "core-dev", "label": "Core Dev - Second"}]
 
 
-def test_resolve_plugin_capabilities_reads_aitools_manifest(tmp_path):
+def test_resolve_plugin_capabilities_reads_agentpark_manifest(tmp_path):
     from nodes.agent_plugin_loader import resolve_plugin_capabilities
 
     _write_plugin_manifest(
@@ -106,7 +106,7 @@ def test_resolve_plugin_capabilities_reads_aitools_manifest(tmp_path):
 
     assert len(capabilities.plugins) == 1
     assert capabilities.plugins[0].version == "1.2.3"
-    assert capabilities.plugins[0].source_format == "aitools"
+    assert capabilities.plugins[0].source_format == "agentpark"
     assert capabilities.plugins[0].config_schema == {"enabled": {"type": "boolean"}}
     assert capabilities.tools == ("file_read_tools", "rg_tools")
     assert capabilities.skills == ("control-in-app-browser",)

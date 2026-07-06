@@ -2,7 +2,7 @@
 
 运行时会按以下顺序定位 Provider 配置：
 
-1. 如果设置了环境变量 `AITOOLS_CONFIG_PATH`，读取该路径指向的 JSON 文件。
+1. 如果设置了环境变量 `AGENTPARK_CONFIG_PATH`，读取该路径指向的 JSON 文件。
 2. 否则读取工作区 `config/moduleProvider.json`。
 3. 如果工作区路径不可用，再尝试当前进程目录下的 `config/moduleProvider.json`。
 
@@ -32,7 +32,8 @@ Provider 实现类型。运行时根据它选择具体 Agent / runtime。
 当前常用取值：
 
 - `openai`: OpenAI Responses API 兼容实现。当前 `OpenAIAgent` 固定走 `/responses`。
-- `doubao`: 豆包 / OpenAI chat-completions 兼容实现，同时包含图片、视频、换人视频等生成能力。
+- `claude`: Claude 原生 Anthropic Messages API 实现，走 `/messages`，支持 Claude tools、web search tool、thinking 与 `output_config.effort`；不使用 OpenAI Responses API 字段。
+- `doubao`: 火山方舟 Ark Responses 实现，chat/Agent 主路径走 `/responses`；同时包含图片、视频、换人视频等生成能力。旧的 OpenAI-compatible `/chat/completions` 只作为未声明 `responsesApi: true` 的兼容路径。
 - `gemini`: Gemini chat / image generation 实现。
 - `zhipu`: 智谱 GLM chat 实现。
 - `hyper3d`: Hyper3D Rodin 3D 模型和贴图生成实现。
@@ -65,7 +66,8 @@ Provider API 根地址。
 用途：
 
 - `openai`: runtime 会在去掉末尾 `/` 后请求 `{baseUrl}/responses`。
-- `doubao`: chat 路径会请求 `{baseUrl}/chat/completions`；开启 `responsesApi` 且使用 web search 时会请求 `{baseUrl}/responses`。
+- `claude`: runtime 会在去掉末尾 `/` 后请求 `{baseUrl}/messages`；如果 `baseUrl` 已经以 `/messages` 结尾则直接使用。
+- `doubao`: 声明 `responsesApi: true` 时 chat/Agent 路径会请求 `{baseUrl}/responses`；如果 `baseUrl` 已经以 `/responses` 结尾则直接使用。未声明 `responsesApi: true` 的旧兼容路径才会请求 `{baseUrl}/chat/completions`。
 - `zhipu`: HTTP transport 会基于该地址构造 chat 请求；缺失时使用 Zhipu transport 内部默认地址。
 - `gemini`: 用于 Gemini API 请求。
 - `hyper3d`: 用于 Hyper3D API 请求；缺失时 Hyper3D runtime 有内部默认值 `https://api.hyper3d.com/api/v2`，但实际配置仍建议显式写出。
@@ -130,6 +132,24 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 - 普通 chat Provider 通常使用 `60000`。
 - 生成类或长上下文 Provider 可以使用 `180000` 或更高。
 - 不要把 `timeoutMs` 当成长任务总等待时间；轮询类任务应配置对应的 `maxWaitSec`。
+
+### `streamEnabled`
+
+该 Provider 的节点执行是否请求 SSE 流式响应。
+
+用途：
+
+- `nodes/agent_node.py` 构造 `stream_runtime.send(...)` 请求时会读取它，作为传给 `agent.Send(..., stream=...)` 的值。
+- 关闭后该 Provider 的节点执行会走非流式请求；`stream_handler` 回调仍会在响应到达后一次性收到完整文本（而不是逐个 delta）。
+
+要求：
+
+- 必须是布尔值；不是布尔值会报错。
+- 缺失时默认为 `true`，与当前所有 Provider 的既有行为一致。
+
+注意：
+
+- 这是唯一一个"缺失时不报错，而是自动补默认值"的开关字段；这是有意为之，目的是让新增/未显式配置的 Provider 保持现状（一直走流式），不需要逐个补写这个字段。
 
 ## Responses API 字段
 
@@ -298,11 +318,74 @@ Rules:
 - `record_operational_memory`
 - `compact_tool_context`
 
-## Doubao / Responses 字段
+## Claude Messages 字段
+
+这些字段用于 `type: "claude"`，会映射到 Anthropic Messages API。
+
+### `thinking`
+
+- `disabled`: 不发送 `thinking` 字段。
+- `enabled`: 发送 `{"type": "enabled", "budget_tokens": thinkingBudgetTokens}`。
+- `auto`: 发送 `{"type": "adaptive"}`。
+
+`thinkingBudgetTokens` 必须大于 0 且小于 `maxTokens`。
+
+### `reasoningEffort`
+
+Claude 原生实现会映射为 `output_config.effort`，当前允许：
+
+- `low`
+- `medium`
+- `high`
+- `xhigh`
+- `max`
+
+### `webSearchToolType`
+
+Claude web search server tool 类型，缺省为 `web_search_20260318`。兼容旧配置名 `claudeWebSearchToolType`。
+
+可选相关字段：
+
+- `webSearchLimit` / `claudeWebSearchMaxUses` -> `max_uses`
+- `webSearchAllowedDomains` / `claudeWebSearchAllowedDomains` -> `allowed_domains`
+- `webSearchBlockedDomains` / `claudeWebSearchBlockedDomains` -> `blocked_domains`
+- `webSearchAllowedCallers` / `claudeWebSearchAllowedCallers` -> `allowed_callers`
+- `webSearchUserLocation` / `claudeWebSearchUserLocation` -> `user_location`
+- `webSearchResponseInclusion` / `claudeWebSearchResponseInclusion` -> `response_inclusion`
+
+`allowed_domains` 和 `blocked_domains` 不能同时配置。
+
+## Doubao / Ark Responses 字段
+
+这些字段用于 `type: "doubao"` 且 `responsesApi: true` 的火山方舟 Responses 路径。
+
+### `thinking`
+
+Doubao Ark Responses 会把该值映射到请求体的 `thinking.type`。
+
+常见取值：
+
+- `enabled`
+- `disabled`
+- `auto`
+
+实际可用值取决于模型。当前 live probe 显示 `doubao-seed-2-1-pro-260628` 接受 `enabled` / `disabled`，但拒绝 `auto`；以 ProviderLimit probe 的结果为准。
+
+### `reasoningEffort`
+
+Doubao Ark Responses 会映射为 `reasoning.effort`。
+
+当前允许：
+
+- `low`
+- `medium`
+- `high`
+
+`xhigh` / `max` 是 AgentPark/OpenAI-compatible 扩展值，不属于当前 Doubao Ark Responses 合同；runtime 会在本地拒绝，避免发出已知会 400 的请求。
 
 ### `webSearchMaxKeyword`
 
-Doubao Responses web search 的最大关键词数量。
+Doubao Ark Responses web search 的最大关键词数量。
 
 用途：
 

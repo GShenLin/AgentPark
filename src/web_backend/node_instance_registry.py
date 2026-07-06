@@ -309,7 +309,7 @@ class NodeInstanceRegistry(HostBoundService):
             raise HTTPException(status_code=500, detail=str(exc))
         working_path = resolve_agent_configured_working_path(
             SimpleNamespace(
-                _aitools_graph_id=safe_graph_id,
+                _agentpark_graph_id=safe_graph_id,
                 config={"working_path": str((cfg if isinstance(cfg, dict) else {}).get("working_path") or "").strip()},
             )
         )

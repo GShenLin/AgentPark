@@ -12,11 +12,11 @@ def test_agent_environment_context_includes_only_stable_model_visible_fields(mon
     monkeypatch.setattr(module, "get_workspace_root", lambda: str(workspace))
 
     agent = SimpleNamespace(
-        _aitools_workspace_root=str(workspace),
-        _aitools_working_path=str(working),
-        _aitools_shell="powershell",
-        _aitools_graph_id="graph-secret",
-        _aitools_node_id="node-secret",
+        _agentpark_workspace_root=str(workspace),
+        _agentpark_working_path=str(working),
+        _agentpark_shell="powershell",
+        _agentpark_graph_id="graph-secret",
+        _agentpark_node_id="node-secret",
         config={
             "apiKey": "sk-secret",
             "tools": ["rg_search_text"],
@@ -118,7 +118,7 @@ def test_resolve_agent_relative_path_uses_working_path_for_relative_paths(tmp_pa
 
     working = tmp_path / "work"
     working.mkdir()
-    agent = SimpleNamespace(_aitools_working_path=str(working))
+    agent = SimpleNamespace(_agentpark_working_path=str(working))
 
     assert module.resolve_agent_relative_path("src/app.py", agent=agent) == str(working / "src" / "app.py")
 
@@ -129,7 +129,7 @@ def test_resolve_agent_relative_path_preserves_absolute_paths(tmp_path):
     working = tmp_path / "work"
     absolute = tmp_path / "outside.txt"
     working.mkdir()
-    agent = SimpleNamespace(_aitools_working_path=str(working))
+    agent = SimpleNamespace(_agentpark_working_path=str(working))
 
     assert module.resolve_agent_relative_path(str(absolute), agent=agent) == str(absolute)
 
@@ -139,7 +139,7 @@ def test_resolve_agent_relative_path_rejects_missing_working_path(tmp_path):
     import src.providers.agent_environment_context as module
 
     missing = tmp_path / "missing"
-    agent = SimpleNamespace(_aitools_working_path=str(missing))
+    agent = SimpleNamespace(_agentpark_working_path=str(missing))
 
     with pytest.raises(ValueError, match="WorkingPath directory does not exist"):
         module.resolve_agent_relative_path("relative.txt", agent=agent)
@@ -162,7 +162,7 @@ def test_resolve_agent_relative_path_uses_graph_working_path_when_node_unset(mon
     )
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(runtime_root))
 
-    agent = SimpleNamespace(_aitools_graph_id="g1", config={})
+    agent = SimpleNamespace(_agentpark_graph_id="g1", config={})
 
     assert module.resolve_agent_relative_path("src/app.py", agent=agent) == str(graph_work / "src" / "app.py")
 
@@ -186,6 +186,6 @@ def test_resolve_agent_relative_path_prefers_node_working_path_over_graph(monkey
     )
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(runtime_root))
 
-    agent = SimpleNamespace(_aitools_graph_id="g1", config={"working_path": str(node_work)})
+    agent = SimpleNamespace(_agentpark_graph_id="g1", config={"working_path": str(node_work)})
 
     assert module.resolve_agent_relative_path("src/app.py", agent=agent) == str(node_work / "src" / "app.py")

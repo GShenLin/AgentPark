@@ -8,7 +8,7 @@ from .workspace_settings import get_workspace_root
 
 
 class ConfigLoader:
-    CONFIG_PATH_ENV = "AITOOLS_CONFIG_PATH"
+    CONFIG_PATH_ENV = "AGENTPARK_CONFIG_PATH"
 
     def _resolve_provider_config_path(self):
         explicit_path = str(os.environ.get(self.CONFIG_PATH_ENV) or "").strip()
@@ -108,6 +108,12 @@ class ConfigLoader:
         if "responsesApi" in provider and not isinstance(provider.get("responsesApi"), bool):
             raise ValueError(
                 f"Provider '{provider_name}' has invalid responsesApi; expected a boolean."
+            )
+        if "streamEnabled" not in provider:
+            provider["streamEnabled"] = True
+        elif not isinstance(provider["streamEnabled"], bool):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid streamEnabled; expected a boolean."
             )
         self._validate_responses_provider_config(provider_name, provider, provider_type)
 

@@ -95,7 +95,7 @@ export type {
 } from './apiTypes'
 
 const DEFAULT_API_BASE = (import.meta as any).env?.VITE_API_BASE || ''
-const ACTIVE_REMOTE_KEY = 'aitools.activeRemoteBaseUrl'
+const ACTIVE_REMOTE_KEY = 'agentpark.activeRemoteBaseUrl'
 
 function readActiveApiBase() {
   try {
@@ -117,14 +117,39 @@ export function getActiveApiBase() {
   return readActiveApiBase()
 }
 
-async function requestJson(baseUrl: string, path: string, init?: RequestInit) {
-  const res = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
-  })
+export function apiEndpointLabel(baseUrl: string, path: string) {
+  const safeBaseUrl = String(baseUrl || '').replace(/\/$/, '')
+  if (safeBaseUrl) return `${safeBaseUrl}${path}`
+  try {
+    return `${window.location.origin}${path}`
+  } catch {
+    return `current origin${path}`
+  }
+}
+
+function errorDetail(error: unknown) {
+  return String((error as { message?: unknown })?.message || error || 'unknown error')
+}
+
+export function createApiNetworkError(baseUrl: string, path: string, init: RequestInit | undefined, error: unknown) {
+  const method = String(init?.method || 'GET').toUpperCase()
+  return new Error(`Network request failed for ${method} ${apiEndpointLabel(baseUrl, path)}: ${errorDetail(error)}`)
+}
+
+export async function requestApiJson(baseUrl: string, path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers)
+  if (init?.body != null && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers,
+    })
+  } catch (error) {
+    throw createApiNetworkError(baseUrl, path, init, error)
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     let detail = text.trim()
@@ -144,11 +169,11 @@ async function requestJson(baseUrl: string, path: string, init?: RequestInit) {
 }
 
 async function apiFetch(path: string, init?: RequestInit) {
-  return requestJson(readActiveApiBase(), path, init)
+  return requestApiJson(readActiveApiBase(), path, init)
 }
 
 async function remoteConfigFetch(path: string, init?: RequestInit) {
-  return requestJson(DEFAULT_API_BASE, path, init)
+  return requestApiJson(DEFAULT_API_BASE, path, init)
 }
 
 export async function restartServer(): Promise<{ ok: boolean }> {
@@ -653,6 +678,7 @@ export async function getNodeInstanceMemory(
   state?: NodeInstanceState
   last_message?: string
   live_message?: string
+  thinking_message?: string
 }> {
   const query = graphId ? `&graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}${query}`)
@@ -672,7 +698,7 @@ export async function deleteNodeInstanceMemoryMessage(
 export async function getNodeInstanceLive(
   nodeId: string,
   graphId?: string,
-): Promise<{ node_id: string; graph_id: string; live_message: string }> {
+): Promise<{ node_id: string; graph_id: string; live_message: string; thinking_message?: string }> {
   const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/live${query}`)
 }
@@ -682,20 +708,22 @@ export function nodeInstanceLiveStreamUrl(nodeId: string, graphId?: string): str
   return `${readActiveApiBase()}/api/nodes/instances/${encodeURIComponent(nodeId)}/live/stream${query}`
 }
 
-export async function listPrompts(): Promise<string[]> {
-  const data = await apiFetch('/api/config/prompts')
+export type PromptLibraryKind = 'instruction' | 'system_prompt'
+
+export async function listPrompts(kind: PromptLibraryKind): Promise<string[]> {
+  const data = await apiFetch(`/api/config/prompts?kind=${encodeURIComponent(kind)}`)
   return (data?.prompts || []) as string[]
 }
 
-export async function getPrompt(filename: string): Promise<string> {
-  const data = await apiFetch(`/api/config/prompts/${filename}`)
+export async function getPrompt(kind: PromptLibraryKind, filename: string): Promise<string> {
+  const data = await apiFetch(`/api/config/prompts/${encodeURIComponent(filename)}?kind=${encodeURIComponent(kind)}`)
   return (data?.content || '') as string
 }
 
-export async function savePrompt(filename: string, content: string): Promise<void> {
+export async function savePrompt(kind: PromptLibraryKind, filename: string, content: string): Promise<void> {
   await apiFetch('/api/config/prompts', {
     method: 'POST',
-    body: JSON.stringify({ filename, content }),
+    body: JSON.stringify({ kind, filename, content }),
   })
 }
 
@@ -758,10 +786,9 @@ export async function getMobileNodeConversation(
   pcId: string,
   graphId: string,
   nodeId: string,
-  maxChars = 20000,
 ): Promise<MobileNodeConversation> {
   return apiFetch(
-    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/conversation?max_chars=${maxChars}`,
+    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/conversation`,
   ) as Promise<MobileNodeConversation>
 }
 
@@ -770,7 +797,14 @@ export async function sendMobileNodeMessage(
   graphId: string,
   nodeId: string,
   message: string | MessageEnvelope,
-): Promise<{ ok: boolean; queued: boolean; trace_id?: string }> {
+): Promise<{
+  ok: boolean
+  queued: boolean
+  trace_id?: string
+  pending_count?: number
+  node: MobileNode
+  conversation: MobileNodeConversation
+}> {
   return apiFetch(`/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages`, {
     method: 'POST',
     body: JSON.stringify({ message }),

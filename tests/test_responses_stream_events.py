@@ -3,6 +3,7 @@ import json
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
 from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta
 from src.providers.responses_stream_events import ResponsesOutputItemDone
+from src.providers.responses_stream_events import ResponsesReasoningDelta
 from src.providers.responses_stream_events import ResponsesStreamFailure
 
 
@@ -96,6 +97,26 @@ def test_openai_responses_sse_malformed_json_surfaces_typed_failure():
     assert events[0].event == "response_failed"
     assert events[0].code == "invalid_sse_json"
     assert "Malformed Responses SSE event JSON" in events[0].message
+
+
+def test_openai_responses_sse_reasoning_summary_delta_normalizes():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "content_index": 0,
+                "delta": "Need a short plan.",
+            },
+        ]
+    )
+
+    assert len(events) == 1
+    assert isinstance(events[0], ResponsesReasoningDelta)
+    assert events[0].delta == "Need a short plan."
+    assert events[0].item_id == "rs_1"
+    assert events[0].provider == "openai_responses"
 
 
 def test_function_call_arguments_delta_requires_item_or_call_identity():
@@ -254,6 +275,34 @@ def test_openai_transport_text_streaming_stays_delta_then_full(monkeypatch):
         "response_completed",
     ]
     assert result["output"][0]["content"][0]["text"] == "hello"
+
+
+def test_openai_transport_forwards_reasoning_delta_to_thinking_stream(monkeypatch):
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    raw_events = [
+        {"type": "response.reasoning_summary_text.delta", "delta": "plan"},
+        {"type": "response.output_text.delta", "delta": "done"},
+    ]
+    monkeypatch.setattr(agent, "_curl_post_sse_data_lines", lambda **_kwargs: (json.dumps(event) for event in raw_events))
+    stream_events = []
+    thinking_events = []
+
+    result = agent._stream_responses_once(
+        url="https://api.openai.test/v1/responses",
+        headers={},
+        payload_json="{}",
+        timeout_sec=1,
+        stream_handler=lambda delta, full: stream_events.append((delta, full)),
+        thinking_stream_handler=lambda delta, full, provider: thinking_events.append((delta, full, provider)),
+    )
+
+    assert stream_events == [("done", "done")]
+    assert thinking_events == [("plan", "plan", "openai_responses")]
+    assert result["output"][0]["content"][0]["text"] == "done"
 
 
 def test_openai_transport_returns_immediately_after_response_completed(monkeypatch):

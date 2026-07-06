@@ -6,7 +6,7 @@ def test_agent_project_instructions_loads_agents_md_from_cwd(tmp_path):
     from src.providers.agent_project_instructions import is_agent_project_instructions_text
 
     (tmp_path / "AGENTS.md").write_text("Use the project formatter.\n", encoding="utf-8")
-    agent = SimpleNamespace(_aitools_workspace_root=str(tmp_path), config={})
+    agent = SimpleNamespace(_agentpark_workspace_root=str(tmp_path), config={})
 
     context = build_agent_project_instructions_context(
         agent,
@@ -32,7 +32,7 @@ def test_agent_project_instructions_prefers_override_and_walks_from_project_root
     (root / "AGENTS.md").write_text("root doc", encoding="utf-8")
     (nested / "AGENTS.md").write_text("nested doc", encoding="utf-8")
     (nested / "AGENTS.override.md").write_text("override doc", encoding="utf-8")
-    agent = SimpleNamespace(_aitools_workspace_root=str(nested), config={})
+    agent = SimpleNamespace(_agentpark_workspace_root=str(nested), config={})
 
     context = build_agent_project_instructions_context(
         agent,
@@ -50,7 +50,7 @@ def test_agent_project_instructions_uses_fallback_filenames(tmp_path):
 
     (tmp_path / "PROJECT.md").write_text("fallback doc", encoding="utf-8")
     agent = SimpleNamespace(
-        _aitools_workspace_root=str(tmp_path),
+        _agentpark_workspace_root=str(tmp_path),
         config={"projectDocFallbackFilenames": ["PROJECT.md"]},
     )
 
@@ -75,7 +75,7 @@ def test_agent_project_instructions_empty_root_markers_disable_parent_walk(tmp_p
     (root / "AGENTS.md").write_text("root doc", encoding="utf-8")
     (nested / "AGENTS.md").write_text("nested doc", encoding="utf-8")
     agent = SimpleNamespace(
-        _aitools_workspace_root=str(nested),
+        _agentpark_workspace_root=str(nested),
         config={"projectRootMarkers": []},
     )
 

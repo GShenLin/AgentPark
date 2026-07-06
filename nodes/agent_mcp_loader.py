@@ -144,13 +144,13 @@ def with_mcp_caller_context(settings: dict | None, *, graph_id: object, node_id:
     next_servers: dict[str, dict[str, Any]] = {}
     for name, config in servers.items():
         next_config = dict(config)
-        if name == "aitools-companion":
+        if name == "agentpark-companion":
             headers = next_config.get("headers")
             next_headers = dict(headers) if isinstance(headers, dict) else {}
             if graph_text:
-                next_headers["x-aitools-graph-id"] = encode_caller_header_value(graph_text)
+                next_headers["x-agentpark-graph-id"] = encode_caller_header_value(graph_text)
             if node_text:
-                next_headers["x-aitools-node-id"] = encode_caller_header_value(node_text)
+                next_headers["x-agentpark-node-id"] = encode_caller_header_value(node_text)
             next_config["headers"] = next_headers
         next_servers[name] = next_config
     raw_settings["mcpServers"] = next_servers

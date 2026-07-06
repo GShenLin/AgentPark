@@ -9,6 +9,7 @@ from typing import Protocol
 
 from src.node_stream_protocol import NODE_MESSAGE_DELTA
 from src.node_stream_protocol import NODE_MESSAGE_DONE
+from src.node_stream_protocol import NODE_THINKING_DELTA
 from src.node_stream_protocol import normalize_node_message_event
 
 from .runtime_event_store import normalize_runtime_event
@@ -26,6 +27,11 @@ NODE_RUNTIME_EVENTS_FILENAME = "runtime_events.jsonl"
 
 class UpdateLiveOutput(Protocol):
     def __call__(self, graph_id: str, node_id: str, text: str, *, trace_id: str = "") -> None:
+        ...
+
+
+class UpdateLiveThinking(Protocol):
+    def __call__(self, graph_id: str, node_id: str, text: str, *, trace_id: str = "", event: dict | None = None) -> None:
         ...
 
 
@@ -58,6 +64,7 @@ class NodeRuntimeEventSink:
     log_graph_event: LogGraphEvent
     append_tool_call_entry: AppendToolCallEntry
     update_live_output: UpdateLiveOutput | None = None
+    update_live_thinking: UpdateLiveThinking | None = None
     publish_live_event: PublishLiveEvent | None = None
     publish_completion_event: PublishCompletionEvent | None = None
     append_runtime_log: AppendRuntimeLog | None = None
@@ -72,6 +79,8 @@ class NodeRuntimeEventSink:
             normalized = normalize_node_message_event(event)
             custom_event = event.get("event")
             return self._handle_delta(normalized, custom_event=custom_event if isinstance(custom_event, dict) else None)
+        if event_type == NODE_THINKING_DELTA:
+            return self._handle_thinking_delta(event)
         if event_type == NODE_MESSAGE_DONE:
             return self._handle_done(normalize_node_message_event(event))
         if event_type == "runtime_notice":
@@ -96,6 +105,11 @@ class NodeRuntimeEventSink:
                 self.publish_live_event(self.graph_id, self.node_id, live_event_type, custom_event, trace_id=self.trace_id)
         if not changed and not custom_event:
             return
+
+    def _handle_thinking_delta(self, event: dict) -> None:
+        text = str(event.get("text") or "")
+        if callable(self.update_live_thinking):
+            self.update_live_thinking(self.graph_id, self.node_id, text, trace_id=self.trace_id, event=event)
 
     def _handle_done(self, event: dict) -> None:
         text = str(event.get("text") or "")

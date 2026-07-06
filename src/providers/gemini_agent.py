@@ -9,6 +9,7 @@ from src.providers.provider_errors import ProviderImageAttachmentError
 from src.providers.gemini_function_runtime import GeminiFunctionRuntime
 from src.providers.gemini_image_generation import GeminiImageGeneration
 from src.providers.gemini_stream_runtime import GeminiStreamRuntime
+from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.service_host import ServiceHost
 
 
@@ -292,6 +293,7 @@ class GeminiAgent(ServiceHost, BaseAgent):
                                     return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
                                 self._run_operational_memory_gate_for_failed_executions(executions)
                                 self._run_tool_context_compaction_gate_if_needed(executions)
+                                append_mid_turn_user_messages(self)
                                 return self.Send(
                                     tools=tools,
                                     run_tools=run_tools,

@@ -257,7 +257,7 @@ async function waitLogin() {
 }
 
 function hasDroppedPayload(event: DragEvent) {
-  const internal = String(event.dataTransfer?.getData('application/x-aitools-file') || '').trim()
+  const internal = String(event.dataTransfer?.getData('application/x-agentpark-file') || '').trim()
   if (internal) return true
   return Array.from(event.dataTransfer?.files || []).length > 0
 }

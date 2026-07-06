@@ -4,7 +4,7 @@ def test_start_env_parent_exit_monitor_uses_configured_pid(monkeypatch):
     captured = {}
     exit_func = object()
 
-    monkeypatch.setenv("AITOOLS_EXIT_WHEN_PID_EXITS", "12345")
+    monkeypatch.setenv("AGENTPARK_EXIT_WHEN_PID_EXITS", "12345")
     monkeypatch.setattr(
         windows_parent_monitor,
         "start_process_exit_monitor",
@@ -25,7 +25,7 @@ def test_start_env_parent_exit_monitor_uses_configured_pid(monkeypatch):
 def test_start_env_parent_exit_monitor_ignores_invalid_pid(monkeypatch):
     from src import windows_parent_monitor
 
-    monkeypatch.setenv("AITOOLS_EXIT_WHEN_PID_EXITS", "not-a-pid")
+    monkeypatch.setenv("AGENTPARK_EXIT_WHEN_PID_EXITS", "not-a-pid")
     monkeypatch.setattr(
         windows_parent_monitor,
         "start_process_exit_monitor",

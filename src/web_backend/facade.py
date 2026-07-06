@@ -2,9 +2,10 @@ import os
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
@@ -19,7 +20,7 @@ class WebBackendFacade:
         self.companion_mcp = None
         self.companion_mcp_app = None
         self.app = FastAPI(
-            title="AITools Mission2 Web",
+            title="AgentPark Mission2 Web",
             lifespan=self._lifespan,
         )
         self.app.add_middleware(
@@ -29,7 +30,14 @@ class WebBackendFacade:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+        self.app.middleware("http")(self._private_network_access_headers)
         self._desktop_pet_restore_timer = None
+
+    async def _private_network_access_headers(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        if request.headers.get("access-control-request-private-network") == "true":
+            response.headers["Access-Control-Allow-Private-Network"] = "true"
+        return response
 
     def register_routes(self) -> None:
         ApiRouteRegistry.register(self.app, self.core)

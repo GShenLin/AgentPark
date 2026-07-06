@@ -3,7 +3,6 @@ import json
 from src.operational_memory import OperationalMemoryError
 from src.operational_memory import operational_memory_path_for_agent
 from src.operational_memory import record_operational_memory_entry
-from src.operational_memory_companion import notify_companion_about_operational_memory
 
 
 def record_operational_memory(
@@ -68,7 +67,6 @@ def record_operational_memory(
             memories=arguments["memories"],
         )
         result["path"] = path
-        notify_companion_about_operational_memory(agent=agent, arguments=arguments, result=result)
         return json.dumps(result, ensure_ascii=False)
     except OperationalMemoryError as exc:
         return json.dumps({"status": "error", "error": str(exc), "tool": "record_operational_memory"}, ensure_ascii=False)

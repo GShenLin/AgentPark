@@ -160,8 +160,8 @@ function deleteMcpServer() {
           <input :value="fieldText('agentNode', 'historyMessageLimit')" type="number" min="0" @input="setNestedNumber('agentNode', 'historyMessageLimit', ($event.target as HTMLInputElement).value)" />
         </label>
         <label class="checkbox-label">
-          <span>Notify Companion On Error</span>
-          <input :checked="fieldBool('agentNode', 'notifyCompanionOnError', true)" type="checkbox" @change="setNestedBoolean('agentNode', 'notifyCompanionOnError', ($event.target as HTMLInputElement).checked)" />
+          <span>Review Persisted Node Runs</span>
+          <input :checked="fieldBool('agentNode', 'reviewNodeRunsWithCompanion', false)" type="checkbox" @change="setNestedBoolean('agentNode', 'reviewNodeRunsWithCompanion', ($event.target as HTMLInputElement).checked)" />
         </label>
       </div>
     </section>

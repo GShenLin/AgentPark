@@ -50,7 +50,7 @@ def test_get_config_returns_normalized_payload_and_supports_explicit_config_path
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     loader = ConfigLoader()
@@ -84,7 +84,7 @@ def test_get_provider_config_requires_non_empty_api_key(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     loader = ConfigLoader()
@@ -114,7 +114,7 @@ def test_get_provider_config_still_accepts_direct_api_key(monkeypatch, tmp_path)
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     payload = ConfigLoader().get_provider_config("demo")
@@ -141,7 +141,7 @@ def test_get_config_rejects_invalid_provider_timeout(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="Provider 'demo' has invalid timeoutMs"):
@@ -166,7 +166,7 @@ def test_get_config_reloads_from_disk_when_file_changes(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     loader = ConfigLoader()
@@ -212,6 +212,7 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
                         **_responses_contract(),
                     },
                     "zhipu": {"type": "zhipu", "apiKey": "zhipu-key"},
+                    "claude": {"type": "claude", "apiKey": "claude-key"},
                     "gemini": {"type": "gemini", "apiKey": "gemini-key"},
                 }
             },
@@ -220,7 +221,7 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     providers = ConfigLoader().get_all_providers()
@@ -234,11 +235,17 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
     assert providers["openai-responses"]["features"]["web_search"]["supported"] is True
     assert providers["doubao-chat"]["features"]["web_search"]["supported"] is False
     assert providers["doubao-chat"]["features"]["web_search"]["requires"] == "responsesApi=true"
+    assert providers["doubao-chat"]["features"]["thinking"]["supported"] is False
     assert providers["doubao-responses"]["features"]["web_search"]["supported"] is True
     assert providers["doubao-responses"]["features"]["responses_api"]["supported"] is True
     assert providers["doubao-responses"]["features"]["thinking"]["values"] == ["enabled", "disabled", "auto"]
+    assert providers["doubao-responses"]["features"]["reasoning_effort"]["values"] == ["low", "medium", "high"]
     assert providers["zhipu"]["features"]["thinking"]["values"] == ["enabled", "disabled"]
     assert providers["zhipu"]["features"]["reasoning_effort"]["supported"] is True
+    assert providers["zhipu"]["features"]["tools"]["supported"] is True
+    assert providers["claude"]["features"]["tools"]["supported"] is True
+    assert providers["claude"]["features"]["reasoning_effort"]["supported"] is True
+    assert providers["claude"]["features"]["reasoning_effort"]["values"] == ["low", "medium", "high", "xhigh", "max"]
     assert providers["gemini"]["features"]["web_search"]["supported"] is False
 
 
@@ -260,7 +267,7 @@ def test_responses_api_config_requires_boolean(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     try:
@@ -270,6 +277,82 @@ def test_responses_api_config_requires_boolean(monkeypatch, tmp_path):
         assert "expected a boolean" in str(exc)
     else:
         raise AssertionError("string responsesApi should fail")
+
+
+def test_stream_enabled_defaults_to_true_when_absent(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "claude",
+                        "apiKey": "claude-key",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    providers = ConfigLoader().get_all_providers()
+
+    assert providers["demo"]["streamEnabled"] is True
+
+
+def test_stream_enabled_preserves_explicit_false(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "claude",
+                        "apiKey": "claude-key",
+                        "streamEnabled": False,
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    providers = ConfigLoader().get_all_providers()
+
+    assert providers["demo"]["streamEnabled"] is False
+
+
+def test_stream_enabled_rejects_non_boolean(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "claude",
+                        "apiKey": "claude-key",
+                        "streamEnabled": "true",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="streamEnabled"):
+        ConfigLoader().get_all_providers()
 
 
 def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, tmp_path):
@@ -293,7 +376,7 @@ def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, 
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="toolContextCompactionEveryToolCalls"):
@@ -318,7 +401,7 @@ def test_openai_responses_api_provider_requires_reasoning_replay_contract(monkey
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="responsesReplayReasoningItems"):
@@ -346,7 +429,7 @@ def test_responses_api_provider_validates_field_types(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="toolContextCompactionEnabled"):

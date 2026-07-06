@@ -3,17 +3,17 @@ import os
 import random
 import time
 from datetime import datetime
-from typing import Callable
 
 from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
 from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportError, format_doubao_http_error
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import sleep_with_cancel
 from src.service_host import HostBoundService
 
 
-class DoubaoHttpTransport(CurlHttpTransport, ProviderRuntimeEventMixin, HostBoundService):
+class DoubaoHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRuntimeEventMixin, HostBoundService):
     def _mask_headers_for_log(self, headers):
         masked = {}
         if not isinstance(headers, dict):
@@ -226,14 +226,3 @@ class DoubaoHttpTransport(CurlHttpTransport, ProviderRuntimeEventMixin, HostBoun
                     continue
                 raise RuntimeError(f"{endpoint}: Error after {max_retries} retries: {error_str}") from e
         raise RuntimeError("Error: Max retries exceeded")
-
-    @staticmethod
-    def _emit_stream_text(stream_handler: Callable[[object, object], None] | None, delta_text: object, full_text: object) -> None:
-        if not callable(stream_handler):
-            return
-        try:
-            stream_handler(delta_text, full_text)
-        except CancellationRequested:
-            raise
-        except Exception:
-            return

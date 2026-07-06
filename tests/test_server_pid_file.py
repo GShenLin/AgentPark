@@ -7,11 +7,11 @@ def test_write_server_pid_file_records_runtime_contract(tmp_path):
 
     pid_path = server_pid_file.write_server_pid_file("127.0.0.1", 9107, workspace_root=str(tmp_path))
 
-    assert pid_path == os.path.join(str(tmp_path), ".runtime", "aitools-server.pid")
-    payload = json.loads((tmp_path / ".runtime" / "aitools-server.pid").read_text(encoding="utf-8"))
+    assert pid_path == os.path.join(str(tmp_path), ".runtime", "agentpark-server.pid")
+    payload = json.loads((tmp_path / ".runtime" / "agentpark-server.pid").read_text(encoding="utf-8"))
 
     assert payload["schema_version"] == server_pid_file.PID_FILE_SCHEMA_VERSION
-    assert payload["app"] == "AITools"
+    assert payload["app"] == "AgentPark"
     assert payload["kind"] == "fast_api_server"
     assert payload["pid"] == os.getpid()
     assert payload["host"] == "127.0.0.1"

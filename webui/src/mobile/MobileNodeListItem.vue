@@ -8,6 +8,8 @@ defineProps<{
 const emit = defineEmits<{
   (event: 'select', node: MobileNode): void
   (event: 'delete', node: MobileNode): void
+  (event: 'trigger', node: MobileNode): void
+  (event: 'copy', node: MobileNode): void
 }>()
 
 function nodeStateLabel(node: MobileNode) {
@@ -31,6 +33,14 @@ function selectNode(node: MobileNode) {
 function deleteNode(node: MobileNode) {
   emit('delete', node)
 }
+
+function triggerNode(node: MobileNode) {
+  emit('trigger', node)
+}
+
+function copyNode(node: MobileNode) {
+  emit('copy', node)
+}
 </script>
 
 <template>
@@ -49,7 +59,11 @@ function deleteNode(node: MobileNode) {
       <span v-if="node.pending_count" class="pending-pill">{{ node.pending_count }}</span>
       <span class="row-arrow">›</span>
     </button>
-    <button v-if="!node.readonly" class="delete-btn" type="button" @click="deleteNode(node)">Delete</button>
+    <div v-if="!node.readonly" class="node-actions">
+      <button class="node-action danger" type="button" @click="deleteNode(node)">Delete</button>
+      <button class="node-action" type="button" @click="triggerNode(node)">Trigger</button>
+      <button class="node-action" type="button" @click="copyNode(node)">Copy</button>
+    </div>
   </div>
 </template>
 
@@ -60,6 +74,7 @@ function deleteNode(node: MobileNode) {
   min-height: auto;
   flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
   align-items: stretch;
   gap: 8px;
   padding: 0;
@@ -91,7 +106,7 @@ function deleteNode(node: MobileNode) {
 }
 
 .node-select:focus-visible,
-.delete-btn:focus-visible {
+.node-action:focus-visible {
   outline: 2px solid rgba(56, 189, 248, 0.8);
   outline-offset: 1px;
 }
@@ -181,15 +196,27 @@ function deleteNode(node: MobileNode) {
   font-weight: 700;
 }
 
-.delete-btn {
-  flex: 0 0 68px;
-  min-height: 48px;
-  align-self: stretch;
-  padding: 0 8px;
+.node-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.node-action {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
   border-radius: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  background: rgba(14, 116, 144, 0.2);
+  color: rgba(224, 242, 254, 0.96);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.node-action.danger {
   border-color: rgba(248, 113, 113, 0.45);
   background: rgba(127, 29, 29, 0.3);
   color: rgba(254, 226, 226, 0.96);
-  font-size: 12px;
 }
 </style>

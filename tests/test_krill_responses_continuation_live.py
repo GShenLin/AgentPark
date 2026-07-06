@@ -5,7 +5,7 @@ import pytest
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("AITOOLS_RUN_KRILL_RESPONSES_LIVE") != "1",
+    os.environ.get("AGENTPARK_RUN_KRILL_RESPONSES_LIVE") != "1",
     reason="live Krill Responses multi-tool continuation test is opt-in",
 )
 

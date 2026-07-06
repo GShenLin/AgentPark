@@ -28,7 +28,7 @@ def test_with_mcp_caller_context_adds_companion_headers():
 
     settings = {
         "mcpServers": {
-            "aitools-companion": {
+            "agentpark-companion": {
                 "transport": "streamable-http",
                 "url": "http://127.0.0.1:8788/mcp/",
                 "headers": {"existing": "ok"},
@@ -39,12 +39,12 @@ def test_with_mcp_caller_context_adds_companion_headers():
 
     updated = with_mcp_caller_context(settings, graph_id="default", node_id="Agent1")
 
-    companion = updated["mcpServers"]["aitools-companion"]
+    companion = updated["mcpServers"]["agentpark-companion"]
     assert companion["headers"]["existing"] == "ok"
-    assert companion["headers"]["x-aitools-graph-id"].isascii()
-    assert companion["headers"]["x-aitools-node-id"].isascii()
-    assert decode_caller_header_value(companion["headers"]["x-aitools-graph-id"]) == "default"
-    assert decode_caller_header_value(companion["headers"]["x-aitools-node-id"]) == "Agent1"
+    assert companion["headers"]["x-agentpark-graph-id"].isascii()
+    assert companion["headers"]["x-agentpark-node-id"].isascii()
+    assert decode_caller_header_value(companion["headers"]["x-agentpark-graph-id"]) == "default"
+    assert decode_caller_header_value(companion["headers"]["x-agentpark-node-id"]) == "Agent1"
     assert "headers" not in updated["mcpServers"]["docs"]
 
 
@@ -54,7 +54,7 @@ def test_with_mcp_caller_context_supports_non_ascii_ids():
 
     settings = {
         "mcpServers": {
-            "aitools-companion": {
+            "agentpark-companion": {
                 "transport": "streamable-http",
                 "url": "http://127.0.0.1:8788/mcp/",
             },
@@ -63,11 +63,11 @@ def test_with_mcp_caller_context_supports_non_ascii_ids():
 
     updated = with_mcp_caller_context(settings, graph_id="默认图", node_id="核对答案")
 
-    headers = updated["mcpServers"]["aitools-companion"]["headers"]
-    assert headers["x-aitools-graph-id"].isascii()
-    assert headers["x-aitools-node-id"].isascii()
-    assert decode_caller_header_value(headers["x-aitools-graph-id"]) == "默认图"
-    assert decode_caller_header_value(headers["x-aitools-node-id"]) == "核对答案"
+    headers = updated["mcpServers"]["agentpark-companion"]["headers"]
+    assert headers["x-agentpark-graph-id"].isascii()
+    assert headers["x-agentpark-node-id"].isascii()
+    assert decode_caller_header_value(headers["x-agentpark-graph-id"]) == "默认图"
+    assert decode_caller_header_value(headers["x-agentpark-node-id"]) == "核对答案"
 
 
 def test_missing_configured_mcp_server_fails():

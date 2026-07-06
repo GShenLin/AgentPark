@@ -6,7 +6,6 @@ from src.runtime_cancellation import CancellationRequested, cancel_source_from_a
 
 
 _TOOL_NAME = "multi_tool_use_parallel"
-_LEGACY_TOOL_NAME = "multi_tool_use.parallel"
 _RECIPIENT_PREFIX = "functions."
 _MAX_TOOL_USES = 64
 _ERROR_STATUSES = {
@@ -55,7 +54,7 @@ def _validate_tool_uses(tool_uses):
         tool_name = recipient_name[len(_RECIPIENT_PREFIX):].strip()
         if not tool_name:
             return None, f"tool_uses[{index}].recipient_name does not contain a tool name."
-        if tool_name in {_TOOL_NAME, _LEGACY_TOOL_NAME}:
+        if tool_name == _TOOL_NAME:
             return None, f"tool_uses[{index}] cannot invoke {_TOOL_NAME} recursively."
 
         parameters = item.get("parameters")
@@ -302,10 +301,3 @@ multi_tool_use_parallel_declaration = {
 
 # Disable wrapper timeout to avoid cutting off long-running child tool batches.
 multi_tool_use_parallel.tool_timeout_seconds = 0
-
-# Keep the old dotted name executable for internal callers, but never expose it in tool declarations.
-globals()[_LEGACY_TOOL_NAME] = multi_tool_use_parallel
-tool_function_aliases = {
-    _TOOL_NAME: [_LEGACY_TOOL_NAME],
-}
-

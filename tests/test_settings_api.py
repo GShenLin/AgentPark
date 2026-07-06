@@ -27,7 +27,7 @@ def test_settings_api_reads_and_writes_module_provider(monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
-    monkeypatch.delenv("AITOOLS_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     domain = SettingsApiDomain(SimpleNamespace())
@@ -61,7 +61,7 @@ def test_settings_api_reads_and_writes_module_provider(monkeypatch, tmp_path):
 def test_settings_api_rejects_module_provider_without_providers(monkeypatch, tmp_path):
     from src import workspace_settings
 
-    monkeypatch.delenv("AITOOLS_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     domain = SettingsApiDomain(SimpleNamespace())
@@ -71,6 +71,38 @@ def test_settings_api_rejects_module_provider_without_providers(monkeypatch, tmp
 
     assert exc.value.status_code == 400
     assert "providers" in str(exc.value.detail)
+
+
+def test_settings_api_rejects_invalid_responses_provider_contract(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    domain = SettingsApiDomain(SimpleNamespace())
+
+    with pytest.raises(HTTPException) as exc:
+        domain.update_settings_section(
+            "module-provider",
+            {
+                "content": json.dumps(
+                    {
+                        "providers": {
+                            "fable-5-krill": {
+                                "type": "openai",
+                                "apiKey": "test-key",
+                                "responsesApi": True,
+                                "toolResultSubmissionMaxChars": 50000,
+                            }
+                        }
+                    }
+                )
+            },
+        )
+
+    assert exc.value.status_code == 400
+    assert "fable-5-krill" in str(exc.value.detail)
+    assert "responsesContinuationMode" in str(exc.value.detail)
 
 
 def test_settings_api_rejects_invalid_defaults_section(monkeypatch, tmp_path):
@@ -87,7 +119,7 @@ def test_settings_api_rejects_invalid_defaults_section(monkeypatch, tmp_path):
     assert "server" in str(exc.value.detail)
 
 
-def test_settings_api_rejects_non_boolean_companion_error_notice_switch(monkeypatch, tmp_path):
+def test_settings_api_rejects_non_boolean_companion_node_review_switch(monkeypatch, tmp_path):
     from src import workspace_settings
 
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
@@ -97,11 +129,11 @@ def test_settings_api_rejects_non_boolean_companion_error_notice_switch(monkeypa
     with pytest.raises(HTTPException) as exc:
         domain.update_settings_section(
             "defaults",
-            {"content": json.dumps({"agentNode": {"notifyCompanionOnError": "yes"}})},
+            {"content": json.dumps({"agentNode": {"reviewNodeRunsWithCompanion": "yes"}})},
         )
 
     assert exc.value.status_code == 400
-    assert "notifyCompanionOnError" in str(exc.value.detail)
+    assert "reviewNodeRunsWithCompanion" in str(exc.value.detail)
 
 
 def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
@@ -166,3 +198,49 @@ def test_settings_api_rejects_invalid_companion_config(monkeypatch, tmp_path):
 
     assert exc.value.status_code == 400
     assert "agent_node" in str(exc.value.detail)
+
+
+def test_settings_api_reads_tool_stats(monkeypatch, tmp_path):
+    from src.tool import tool_stats_store
+
+    monkeypatch.setattr(tool_stats_store, "get_workspace_cache_dir", lambda: str(tmp_path / ".cache"))
+    recorder = tool_stats_store.ToolCallStatsRecorder(provider_id="demo")
+    recorder.handle(
+        {
+            "type": "tool_call_start",
+            "name": "read_file",
+            "call_id": "call-1",
+            "arguments": {"path": "notes.txt"},
+        }
+    )
+    recorder.handle(
+        {
+            "type": "tool_call_end",
+            "name": "read_file",
+            "call_id": "call-1",
+            "status": "completed",
+            "result_preview": "ok",
+        }
+    )
+
+    domain = SettingsApiDomain(SimpleNamespace())
+    result = domain.get_tool_stats()
+
+    assert result["summary"]["providers"]["demo"]["total"] == 1
+    assert result["recent_calls"][0]["tool_name"] == "read_file"
+
+
+def test_settings_api_clears_tool_stats(monkeypatch, tmp_path):
+    from src.tool import tool_stats_store
+
+    monkeypatch.setattr(tool_stats_store, "get_workspace_cache_dir", lambda: str(tmp_path / ".cache"))
+    recorder = tool_stats_store.ToolCallStatsRecorder(provider_id="demo")
+    recorder.handle({"type": "tool_call_start", "name": "read_file", "call_id": "call-1"})
+    recorder.handle({"type": "tool_call_end", "name": "read_file", "call_id": "call-1", "status": "completed"})
+
+    domain = SettingsApiDomain(SimpleNamespace())
+    result = domain.clear_tool_stats()
+
+    assert result["ok"] is True
+    assert result["summary"] == {"providers": {}}
+    assert result["recent_calls"] == []

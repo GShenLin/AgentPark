@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-交互输入测试脚本 - 用于测试 AITools ConsoleCommand 节点的交互输入功能
+交互输入测试脚本 - 用于测试 AgentPark ConsoleCommand 节点的交互输入功能
 
 使用方法:
   在 ConsoleCommand 节点里执行: python scripts/test_interactive.py

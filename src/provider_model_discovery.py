@@ -192,7 +192,7 @@ def _model_id_from_item(item: Any, provider_type: str) -> str:
 
 
 def _models_endpoint(provider: dict[str, Any], provider_type: str) -> str:
-    if provider_type in {"openai", "doubao", "zhipu", "gemini"}:
+    if provider_type in {"openai", "claude", "doubao", "zhipu", "gemini"}:
         return f"{_base_url(provider)}/models"
     return ""
 
@@ -200,6 +200,11 @@ def _models_endpoint(provider: dict[str, Any], provider_type: str) -> str:
 def _model_headers(provider: dict[str, Any], provider_type: str) -> dict[str, str]:
     if provider_type == "gemini":
         return {"x-goog-api-key": str(provider.get("apiKey") or "")}
+    if provider_type == "claude":
+        return {
+            "x-api-key": str(provider.get("apiKey") or ""),
+            "anthropic-version": str(provider.get("anthropicVersion") or "2023-06-01"),
+        }
     return {"Authorization": f"Bearer {str(provider.get('apiKey') or '')}"}
 
 
@@ -237,4 +242,7 @@ def _sanitize_error(text: str, headers: dict[str, str]) -> str:
     api_key = str((headers or {}).get("x-goog-api-key") or "")
     if api_key:
         output = output.replace(api_key, "<redacted>")
+    anthropic_key = str((headers or {}).get("x-api-key") or "")
+    if anthropic_key:
+        output = output.replace(anthropic_key, "<redacted>")
     return output[:1200]

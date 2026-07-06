@@ -1,4 +1,4 @@
-import { getActiveApiBase } from './api'
+import { createApiNetworkError, getActiveApiBase } from './api'
 
 export type UploadedFileItem = {
   path: string
@@ -24,10 +24,18 @@ export async function uploadFiles(files: File[], traceId = ''): Promise<{ files:
     body.append('trace_id', safeTraceId)
   }
 
-  const res = await fetch(`${getActiveApiBase()}/api/files/upload`, {
+  const baseUrl = getActiveApiBase()
+  const path = '/api/files/upload'
+  const init: RequestInit = {
     method: 'POST',
     body,
-  })
+  }
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl}${path}`, init)
+  } catch (error) {
+    throw createApiNetworkError(baseUrl, path, init, error)
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(text || `HTTP ${res.status}`)

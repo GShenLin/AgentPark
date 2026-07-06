@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 import json
 
+from src.providers.sse_debug import ProviderSseDebugMixin
 from src.tool.tool_event_protocol import RuntimeNoticeEvent
 
 
@@ -25,7 +26,7 @@ def emit_provider_runtime_notice(
     callback(event)
 
 
-class ProviderRuntimeEventMixin:
+class ProviderRuntimeEventMixin(ProviderSseDebugMixin):
     def _emit_provider_runtime_notice(self, *, message: str, stage: str) -> None:
         emit_provider_runtime_notice(
             getattr(self, "tool_event_callback", None),

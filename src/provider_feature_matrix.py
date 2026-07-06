@@ -24,6 +24,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "requires": "responsesApi=true",
                 "transport": "responses" if responses_api else "",
             },
+            tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": False, "values": []},
             reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh"]},
         )
@@ -42,30 +43,48 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "requires": "responsesApi=true",
                 "transport": "responses" if responses_api else "",
             },
-            thinking={"supported": True, "values": ["enabled", "disabled", "auto"]},
-            # Doubao Responses API accepts reasoning.effort with the standard
-            # OpenAI values low/medium/high but not the AITools extensions
-            # "minimal" or "xhigh". Sending xhigh yields HTTP 400
-            # "unknown type: xhigh".
-            reasoning_effort={"supported": True, "values": ["low", "medium", "high"]},
+            tools={"supported": True, "values": ["enabled", "disabled"]},
+            thinking={
+                "supported": responses_api,
+                "values": ["enabled", "disabled", "auto"] if responses_api else [],
+                "requires": "responsesApi=true",
+                "transport": "responses" if responses_api else "",
+            },
+            reasoning_effort={
+                "supported": responses_api,
+                "values": ["low", "medium", "high"] if responses_api else [],
+                "requires": "responsesApi=true",
+                "transport": "responses" if responses_api else "",
+            },
         )
     if provider_type == "zhipu":
         return _payload(
             responses_api={"supported": False, "values": []},
             web_search={"supported": False, "values": []},
+            tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": True, "values": ["enabled", "disabled"]},
             reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh"]},
+        )
+    if provider_type == "claude":
+        return _payload(
+            responses_api={"supported": False, "values": []},
+            web_search={"supported": True, "values": ["enabled", "disabled"], "transport": "messages"},
+            tools={"supported": True, "values": ["enabled", "disabled"]},
+            thinking={"supported": True, "values": ["enabled", "disabled", "auto"], "transport": "messages"},
+            reasoning_effort={"supported": True, "values": ["low", "medium", "high", "xhigh", "max"], "transport": "messages"},
         )
     if provider_type == "gemini":
         return _payload(
             responses_api={"supported": False, "values": []},
             web_search={"supported": False, "values": []},
+            tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": False, "values": []},
             reasoning_effort={"supported": False, "values": []},
         )
     return _payload(
         responses_api={"supported": False, "values": []},
         web_search={"supported": False, "values": []},
+        tools={"supported": False, "values": []},
         thinking={"supported": False, "values": []},
         reasoning_effort={"supported": False, "values": []},
     )

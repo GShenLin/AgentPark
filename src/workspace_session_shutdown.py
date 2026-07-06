@@ -20,7 +20,7 @@ def start_workspace_session_shutdown(*, reason: str, stop_timeout_seconds: int =
 
 
 def _start_windows_workspace_session_shutdown(*, root: str, reason: str, stop_timeout_seconds: int) -> dict[str, Any]:
-    script_path = os.path.join(root, "scripts", "restart_aitools.ps1")
+    script_path = os.path.join(root, "scripts", "restart_agentpark.ps1")
     if not os.path.isfile(script_path):
         raise FileNotFoundError(f"workspace shutdown script not found: {script_path}")
 

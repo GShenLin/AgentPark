@@ -63,7 +63,7 @@ def test_interaction_schema_accepts_custom_html(tmp_path, monkeypatch):
                 "label": "设计器",
                 "html": "<button>提交</button>",
                 "css": "button { color: red; }",
-                "js": "window.AITOOLS_INTERACTION.submit({ ok: true })",
+                "js": "window.AGENTPARK_INTERACTION.submit({ ok: true })",
                 "height": 500,
                 "initial_data": {"mode": "demo"},
             }

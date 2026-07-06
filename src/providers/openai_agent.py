@@ -1,4 +1,5 @@
 from src.base_agent import BaseAgent
+from src.providers.openai_chat_runtime import OpenAIChatRuntime
 from src.providers.openai_mapping import OpenAIResponsesMapping
 from src.providers.openai_responses_runtime import OpenAIResponsesRuntime
 from src.providers.openai_transport import OpenAITransport
@@ -28,6 +29,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         if cached is None:
             cached = (
                 OpenAITransport(self),
+                OpenAIChatRuntime(self),
                 OpenAIResponsesMapping(self),
                 ToolCallExecutionRuntime(self),
                 OpenAIResponsesRuntime(self),
@@ -45,9 +47,9 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         reasoning_effort=None,
         stream=False,
         stream_handler=None,
+        thinking_stream_handler=None,
     ):
         self.config = self._read_provider_config_from_file()
-        _ = thinking
         if str(mode or "chat").strip().lower() not in {"chat", "imagechat"}:
             raise ValueError("OpenAI agent currently supports chat and imagechat modes.")
 
@@ -61,7 +63,25 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         if effort_source is None or effort_source == "":
             effort_source = self.config.get("reasoningEffort", self.config.get("reasoning_effort", ""))
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
-        web_search_mode = parse_switch_mode(web_search, default="disabled")
+        web_search_mode = self._effective_feature_switch(
+            "web_search",
+            parse_switch_mode(web_search, default="disabled"),
+            supported_default=self._supports_responses_api(),
+        )
+        _ = self._effective_feature_switch(
+            "thinking",
+            parse_switch_mode(thinking, default="disabled"),
+            supported_default=False,
+        )
+        if not self._supports_responses_api():
+            return self._send_chat_completions(
+                messages=messages,
+                active_tools=active_tools,
+                run_tools=run_tools,
+                reasoning_effort=effort_source,
+                stream=stream,
+                stream_handler=stream_handler,
+            )
         return self._send_via_responses(
             messages=messages,
             active_tools=active_tools,
@@ -69,4 +89,14 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             reasoning_effort=effort_source,
             web_search_mode=web_search_mode,
             stream_handler=stream_handler if stream and callable(stream_handler) else None,
+            thinking_stream_handler=thinking_stream_handler if stream and callable(thinking_stream_handler) else None,
         )
+
+    def _effective_feature_switch(self, feature_name: str, requested_mode: str | None, *, supported_default: bool) -> str:
+        mode = requested_mode if requested_mode in {"enabled", "disabled", "auto"} else "disabled"
+        if mode == "disabled":
+            return "disabled"
+        features = self.config.get("features") if isinstance(self.config, dict) else None
+        feature = features.get(feature_name) if isinstance(features, dict) else None
+        supported = bool(feature.get("supported")) if isinstance(feature, dict) else bool(supported_default)
+        return mode if supported else "disabled"

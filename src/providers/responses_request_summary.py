@@ -370,7 +370,7 @@ def _context_text_chars(item: Any, predicate) -> int:
 
 def _is_internal_context_text(value: object) -> bool:
     text = str(value or "").strip()
-    return text.startswith("<codex_internal_context") and text.endswith("</codex_internal_context>")
+    return text.startswith("<agentpark_internal_context") and text.endswith("</agentpark_internal_context>")
 
 
 def _is_skills_context_text(value: object) -> bool:

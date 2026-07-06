@@ -12,12 +12,12 @@ def test_resolve_public_base_url_precedence(monkeypatch):
     import src.media_resource_utils as media_utils
 
     monkeypatch.setattr(media_utils, "ConfigLoader", Loader)
-    monkeypatch.setenv("AITOOLS_PUBLIC_BASE_URL", "https://env.example.com/")
+    monkeypatch.setenv("AGENTPARK_PUBLIC_BASE_URL", "https://env.example.com/")
 
     assert resolve_public_base_url("https://explicit.example.com/", "demo") == "https://explicit.example.com"
     assert resolve_public_base_url("", "demo") == "https://env.example.com"
 
-    monkeypatch.delenv("AITOOLS_PUBLIC_BASE_URL")
+    monkeypatch.delenv("AGENTPARK_PUBLIC_BASE_URL")
 
     assert resolve_public_base_url("", "demo") == "https://workspace.example.com"
 
@@ -33,6 +33,6 @@ def test_resolve_public_base_url_falls_back_to_provider(monkeypatch):
     import src.media_resource_utils as media_utils
 
     monkeypatch.setattr(media_utils, "ConfigLoader", Loader)
-    monkeypatch.delenv("AITOOLS_PUBLIC_BASE_URL", raising=False)
+    monkeypatch.delenv("AGENTPARK_PUBLIC_BASE_URL", raising=False)
 
     assert resolve_public_base_url("", "demo") == "https://demo.example.com"

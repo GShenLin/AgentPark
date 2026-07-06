@@ -138,15 +138,87 @@ class MobileApiDomain(DomainBase):
                 "graph_id": COMPANION_GRAPH_ID,
                 "state": "idle",
                 "pending_count": 0,
+                "has_inflight": False,
+                "stop_requested": bool(cfg.get("_stop_requested")),
                 "last_message": str(cfg.get("last_message") or ""),
                 "last_run_at": cfg.get("last_run_at"),
                 "last_runtime_event": cfg.get("last_runtime_event"),
                 "runtime_tool_calls": cfg.get("runtime_tool_calls"),
+                "goal": str(cfg.get("goal") or ""),
+                "goal_state": cfg.get("goal_state") if isinstance(cfg.get("goal_state"), dict) else None,
                 "input_num": 1,
                 "output_num": 1,
                 "readonly": True,
             }
         ]
+
+    def _mobile_node_from_config(self, item: dict, graph_id: str) -> dict:
+        node_id = str(item.get("node_id") or "").strip()
+        type_id = str(item.get("type_id") or "").strip()
+        if not node_id or not type_id:
+            raise HTTPException(status_code=500, detail="node list item is missing node_id or type_id")
+        return {
+            "id": node_id,
+            "name": str(item.get("name") or node_id),
+            "type_id": type_id,
+            "graph_id": graph_id,
+            "state": item.get("state"),
+            "pending_count": item.get("pending_count"),
+            "has_inflight": isinstance(item.get("inflight"), dict),
+            "stop_requested": bool(item.get("_stop_requested")),
+            "last_message": item.get("last_message"),
+            "last_run_at": item.get("last_run_at"),
+            "last_runtime_event": item.get("last_runtime_event"),
+            "runtime_tool_calls": item.get("runtime_tool_calls"),
+            "goal": str(item.get("goal") or ""),
+            "goal_state": item.get("goal_state") if isinstance(item.get("goal_state"), dict) else None,
+            "input_num": item.get("input_num"),
+            "output_num": item.get("output_num"),
+        }
+
+    def _list_mobile_nodes_for_graph(self, graph_id: str) -> list[dict]:
+        if self._is_companion_target(graph_id):
+            return self._list_companion_nodes()
+        payload = self.core.node_ops.list_node_instance_configs(graph_id)
+        nodes = payload.get("nodes") if isinstance(payload, dict) else None
+        if not isinstance(nodes, list):
+            raise HTTPException(status_code=500, detail="invalid node list response")
+
+        result = []
+        for item in nodes:
+            if not isinstance(item, dict):
+                raise HTTPException(status_code=500, detail="invalid node list item")
+            result.append(self._mobile_node_from_config(item, graph_id))
+        return result
+
+    def _mobile_node_snapshot(self, graph_id: str, node_id: str) -> dict:
+        folded_node_id = node_id.lower()
+        for item in self._list_mobile_nodes_for_graph(graph_id):
+            item_id = str(item.get("id") or "").strip()
+            if item_id == node_id or item_id.lower() == folded_node_id:
+                return item
+        raise HTTPException(status_code=500, detail="sent node is missing from mobile node snapshot")
+
+    def _mobile_node_conversation_snapshot(self, graph_id: str, node_id: str):
+        if self._is_companion_target(graph_id, node_id):
+            config_path, memory_path, messages_path = self._companion_node_paths()
+            if not os.path.exists(config_path):
+                raise HTTPException(status_code=404, detail="companion config not found")
+            return self.core.node_ops.get_node_instance_memory_from_paths(
+                config_path,
+                memory_path,
+                messages_path,
+                graph_id,
+                node_id,
+                max_chars=None,
+                messages_limit=None,
+            )
+        return self.core.node_ops.get_node_instance_memory(
+            node_id,
+            max_chars=None,
+            graph_id=graph_id,
+            messages_limit=None,
+        )
 
     def _require_graph(self, graph_id: str) -> str:
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -185,59 +257,18 @@ class MobileApiDomain(DomainBase):
     def list_mobile_nodes(self, pc_id: str, graph_id: str):
         self._require_local_pc(pc_id)
         safe_graph_id = self._require_graph(graph_id)
-        if self._is_companion_target(safe_graph_id):
-            return {"pc_id": LOCAL_PC_ID, "graph_id": safe_graph_id, "nodes": self._list_companion_nodes()}
-        payload = self.core.node_ops.list_node_instance_configs(safe_graph_id)
-        nodes = payload.get("nodes") if isinstance(payload, dict) else None
-        if not isinstance(nodes, list):
-            raise HTTPException(status_code=500, detail="invalid node list response")
+        return {"pc_id": LOCAL_PC_ID, "graph_id": safe_graph_id, "nodes": self._list_mobile_nodes_for_graph(safe_graph_id)}
 
-        result = []
-        for item in nodes:
-            if not isinstance(item, dict):
-                raise HTTPException(status_code=500, detail="invalid node list item")
-            node_id = str(item.get("node_id") or "").strip()
-            type_id = str(item.get("type_id") or "").strip()
-            if not node_id or not type_id:
-                raise HTTPException(status_code=500, detail="node list item is missing node_id or type_id")
-            result.append(
-                {
-                    "id": node_id,
-                    "name": str(item.get("name") or node_id),
-                    "type_id": type_id,
-                    "graph_id": safe_graph_id,
-                    "state": item.get("state"),
-                    "pending_count": item.get("pending_count"),
-                    "last_message": item.get("last_message"),
-                    "last_run_at": item.get("last_run_at"),
-                    "last_runtime_event": item.get("last_runtime_event"),
-                    "runtime_tool_calls": item.get("runtime_tool_calls"),
-                    "input_num": item.get("input_num"),
-                    "output_num": item.get("output_num"),
-                }
-            )
-        return {"pc_id": LOCAL_PC_ID, "graph_id": safe_graph_id, "nodes": result}
-
-    def get_mobile_node_conversation(self, pc_id: str, graph_id: str, node_id: str, max_chars: int = 20000):
+    def get_mobile_node_conversation(self, pc_id: str, graph_id: str, node_id: str):
         self._require_local_pc(pc_id)
         safe_graph_id = self._require_graph(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         if not safe_node_id:
             raise HTTPException(status_code=400, detail="invalid node id")
         if self._is_companion_target(safe_graph_id, safe_node_id):
-            config_path, memory_path, messages_path = self._companion_node_paths()
-            if not os.path.exists(config_path):
-                raise HTTPException(status_code=404, detail="companion config not found")
-            return self.core.node_ops.get_node_instance_memory_from_paths(
-                config_path,
-                memory_path,
-                messages_path,
-                safe_graph_id,
-                safe_node_id,
-                max_chars=max_chars,
-            )
+            return self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id)
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
-        return self.core.node_ops.get_node_instance_memory(safe_node_id, max_chars=max_chars, graph_id=safe_graph_id)
+        return self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id)
 
     def delete_mobile_node_message(self, pc_id: str, graph_id: str, node_id: str, message_id: str):
         self._require_local_pc(pc_id)
@@ -286,6 +317,7 @@ class MobileApiDomain(DomainBase):
             config_path = self._companion_config_path()
             if not os.path.exists(config_path):
                 raise HTTPException(status_code=404, detail="companion config not found")
+            _set_node_config_last_message(config_path, prompt)
             self.core.node_live_outputs.publish_event(
                 safe_graph_id,
                 safe_node_id,
@@ -300,7 +332,14 @@ class MobileApiDomain(DomainBase):
                 name=f"mobile-companion-turn-{trace_id[:8]}",
             )
             th.start()
-            return {"ok": True, "queued": True, "trace_id": trace_id, "pending_count": 0}
+            return {
+                "ok": True,
+                "queued": True,
+                "trace_id": trace_id,
+                "pending_count": 0,
+                "node": self._mobile_node_snapshot(safe_graph_id, safe_node_id),
+                "conversation": self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id),
+            }
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
         result = self.core.node_ops.enqueue_node_instance_pending(
             safe_node_id,
@@ -333,7 +372,14 @@ class MobileApiDomain(DomainBase):
             {"type": "node_input", "text": text_full or text_preview},
             trace_id=trace_id,
         )
-        return {"ok": True, "queued": True, "trace_id": trace_id, "pending_count": result.get("pending_count")}
+        return {
+            "ok": True,
+            "queued": True,
+            "trace_id": trace_id,
+            "pending_count": result.get("pending_count"),
+            "node": self._mobile_node_snapshot(safe_graph_id, safe_node_id),
+            "conversation": self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id),
+        }
 
     def _run_companion_turn_background(self, config_path: str, prompt: str, trace_id: str) -> None:
         graph_id = COMPANION_GRAPH_ID

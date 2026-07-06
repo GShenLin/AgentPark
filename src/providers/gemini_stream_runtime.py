@@ -3,19 +3,11 @@ import urllib.request
 from typing import Callable
 
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.service_host import HostBoundService
 
 
-class GeminiStreamRuntime(ProviderRuntimeEventMixin, HostBoundService):
-    @staticmethod
-    def _emit_stream_text(stream_handler: Callable[[object, object], None] | None, delta_text: object, full_text: object) -> None:
-        if not callable(stream_handler):
-            return
-        try:
-            stream_handler(delta_text, full_text)
-        except Exception:
-            return
-
+class GeminiStreamRuntime(ProviderStreamEmitMixin, ProviderRuntimeEventMixin, HostBoundService):
     def _stream_generate_content_once(self, *, url: str, headers: dict, payload_json: str, timeout_sec: float, stream_handler):
         req = urllib.request.Request(
             str(url),

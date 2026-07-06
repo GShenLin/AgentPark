@@ -70,6 +70,32 @@ def test_stream_chat_completions_reads_curl_sse_lines():
     assert events == [("O", "O"), ("K", "OK")]
 
 
+def test_stream_chat_completions_forwards_reasoning_content():
+    agent = _build_agent()
+    stream_events = []
+    thinking_events = []
+
+    def _fake_sse_lines(**_kwargs):
+        yield '{"choices":[{"delta":{"reasoning_content":"plan ","content":"O"},"index":0}]}'
+        yield '{"choices":[{"delta":{"reasoning_content":"then","content":"K"},"index":0}]}'
+        yield "[DONE]"
+
+    agent._curl_post_sse_data_lines = _fake_sse_lines
+
+    result = agent._stream_chat_completions_once(
+        url="https://example.com/v1/chat/completions",
+        headers={"Authorization": "Bearer test"},
+        payload_json='{"stream": true}',
+        timeout_sec=60,
+        stream_handler=lambda delta, full: stream_events.append((delta, full)),
+        thinking_stream_handler=lambda delta, full, provider: thinking_events.append((delta, full, provider)),
+    )
+
+    assert result["choices"][0]["message"]["content"] == "OK"
+    assert stream_events == [("O", "O"), ("K", "OK")]
+    assert thinking_events == [("plan ", "plan ", "doubao"), ("then", "plan then", "doubao")]
+
+
 def test_stream_chat_completions_retry_does_not_forward_item_event_handler():
     agent = _build_agent()
     events = []
@@ -289,6 +315,68 @@ def test_send_stream_returns_tool_submission_size_error_to_model():
     assert len(notices) == 2
     assert all("web_search" in event["message"] for event in notices)
     assert all("call-1" in event["message"] for event in notices)
+
+
+def test_chat_completions_tool_continuation_appends_mid_turn_user_input():
+    import json
+
+    from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
+
+    agent = _build_agent()
+    agent.config["responsesApi"] = False
+    send_payloads = []
+    mid_turn_messages = [[{"role": "user", "content": "补充：改查 B。"}]]
+    bind_agent_runtime_context(
+        agent,
+        AgentRuntimeContext(
+            graph_id="g1",
+            node_id="agent1",
+            node_type_id="agent_node",
+            consume_mid_turn_user_inputs=lambda: mid_turn_messages.pop(0) if mid_turn_messages else [],
+        ),
+    )
+
+    def _fake_post_call(**kwargs):
+        send_payloads.append(json.loads(kwargs["payload_json"]))
+        if len(send_payloads) == 1:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "web_search",
+                                        "arguments": "{\"query\":\"today\"}",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        return {"choices": [{"message": {"role": "assistant", "content": "final answer"}}]}
+
+    def web_search(query=None):
+        return f"search:{query}"
+
+    agent._post_json_with_retry = _fake_post_call
+    agent.tools.function_map["web_search"] = web_search
+    agent.Message("user", "最新新闻", persist=False)
+
+    assert agent.Send(run_tools=True, stream=False) == "final answer"
+    assert len(send_payloads) == 2
+    assert send_payloads[1]["messages"][-2] == {
+        "role": "tool",
+        "content": "search:today",
+        "tool_call_id": "call-1",
+        "name": "web_search",
+    }
+    assert send_payloads[1]["messages"][-1] == {"role": "user", "content": "补充：改查 B。"}
 
 
 def test_send_stream_returns_timeout_tool_error_when_tool_messages_are_filtered():

@@ -17,7 +17,7 @@ def infer_node_can(payload: dict[str, Any]) -> dict[str, bool]:
     has_file_read = "file_read_tools" in tools or "read_file" in tool_text or has_system
     has_file_write = "file_write_tools" in tools or "write_file" in tool_text or has_system
     has_shell = "console_tools" in tools or "execute_console_command" in tool_text or has_system
-    has_curl = "curl_tools" in tools or "execute_curl_command" in tool_text or has_system
+    has_curl = "network_tools" in tools or "curl_tools" in tools or "execute_curl_command" in tool_text
 
     return {
         "read_local_files": bool(has_file_read or has_rg),
@@ -26,7 +26,7 @@ def infer_node_can(payload: dict[str, Any]) -> dict[str, bool]:
         "execute_shell": bool(has_shell),
         "web_fetch": bool(has_curl or "web" in all_text or "browser" in all_text),
         "web_search": bool("web_search" in exact_names),
-        "control_aitools": bool("aitools-companion" in mcp_servers or "aitools_companion" in all_text),
+        "control_agentpark": bool("agentpark-companion" in mcp_servers or "agentpark_companion" in all_text),
         "spawn_sub_agents": bool("multi_tool_use_tools" in tools or "agent" in all_text),
     }
 

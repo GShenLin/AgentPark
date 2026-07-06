@@ -31,7 +31,7 @@ def analyze_responses_payload_log(path: str) -> dict[str, Any]:
         "requests": requests,
         "gaps": gaps,
         "codex_reference": {
-            "base_instructions": "Responses payload instructions",
+            "instructions": "Responses payload instructions",
             "runtime_context": "developer/user input items recorded in conversation history",
             "turn_context_item": "durable rollout baseline, not raw model input text",
             "source_files": [
@@ -163,7 +163,7 @@ def _context_kinds(item: dict[str, Any]) -> list[str]:
             kinds.append("mcp_servers")
         if raw_text.startswith("Operational memory for this node:") and "operational_memory" not in kinds:
             kinds.append("operational_memory")
-        if raw_text.startswith("<codex_internal_context") and raw_text.endswith("</codex_internal_context>"):
+        if raw_text.startswith("<agentpark_internal_context") and raw_text.endswith("</agentpark_internal_context>"):
             if "internal_context" not in kinds:
                 kinds.append("internal_context")
     return kinds
@@ -191,12 +191,9 @@ def _codex_like_gaps(requests: list[dict[str, Any]]) -> list[str]:
         return ["payload log has no request records"]
 
     first = requests[0]
-    first_items = first.get("input_items") if isinstance(first.get("input_items"), list) else []
     first_roles = first.get("roles") if isinstance(first.get("roles"), list) else []
-    if any(item.get("role") == "system" for item in first_items if isinstance(item, dict)):
-        gaps.append("system role item is still in Responses input; Codex-style base instructions should use payload.instructions")
     if not first.get("instructions_present"):
-        gaps.append("payload.instructions is absent; compare whether node system_prompt/base instructions were empty or leaked into input")
+        gaps.append("payload.instructions is absent; compare whether node instruction/default instructions were empty")
     if "developer" not in first_roles[:2]:
         gaps.append("first request does not start with a developer context item")
     if not _request_has_context(first, "permissions"):
@@ -225,7 +222,7 @@ def _codex_like_gaps(requests: list[dict[str, Any]]) -> list[str]:
     for request in requests[1:]:
         if first.get("instructions_present") and not request.get("instructions_present"):
             gaps.append(
-                f"request {request.get('request_index')} lacks payload.instructions even though the first request had base instructions"
+                f"request {request.get('request_index')} lacks payload.instructions even though the first request had instructions"
             )
         for kind in ("permissions", "environment", "project_instructions"):
             count = _request_context_count(request, kind)

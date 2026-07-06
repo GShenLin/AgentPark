@@ -74,7 +74,7 @@ function normalizePromptFilename(value: string) {
 }
 
 async function refreshPromptLibraryFiles() {
-  promptLibraryFiles.value = (await listPrompts())
+  promptLibraryFiles.value = (await listPrompts('system_prompt'))
     .map((item) => String(item || '').trim())
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b))
@@ -126,7 +126,7 @@ async function saveSystemPrompt() {
   promptActionBusy.value = 'save'
   promptActionMessage.value = ''
   try {
-    await savePrompt(filename, content)
+    await savePrompt('system_prompt', filename, content)
     promptSaveFilename.value = filename
     await refreshPromptLibraryFiles()
     promptLibraryMode.value = ''
@@ -148,7 +148,7 @@ async function loadSystemPrompt() {
   promptActionBusy.value = 'load'
   promptActionMessage.value = ''
   try {
-    const content = await getPrompt(filename)
+    const content = await getPrompt('system_prompt', filename)
     promptSaveFilename.value = filename
     setField('system_prompt', content)
     promptLibraryMode.value = ''

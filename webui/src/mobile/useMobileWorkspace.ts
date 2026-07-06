@@ -2,12 +2,14 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   createGraphFromProfile,
   clearNodeInstanceMemory,
+  cloneNodeInstance,
   controlNodeInstance,
   createNodeInstance,
   deleteGraph,
   deleteMobileNodeMessage,
   deleteNodeInstance,
   getMobileNodeConversation,
+  emitGraph,
   graphEventsStreamUrl,
   listAgentProfiles,
   listGraphProfiles,
@@ -24,6 +26,7 @@ import {
   saveGraph,
   sendMobileNodeMessage,
   setStartupGraphConfig,
+  startGraphRunner,
   updateNodeInstanceConfig,
   type GraphConfig,
   type GraphOutputRoutes,
@@ -39,6 +42,7 @@ import {
   type NodeInstanceConfig,
   type ProviderInfo,
 } from '../api'
+import { useGlobalState } from '../composables/useGlobalState'
 import { messageText } from './mobileMessageRender'
 
 export type MobileView = 'pcs' | 'graphs' | 'nodes' | 'chat'
@@ -64,8 +68,6 @@ type MobileGraphSelection = {
 type MobileChatSelection = MobileGraphSelection & {
   nodeId: string
 }
-
-const POST_SEND_SYNC_ERROR_PREFIX = 'Message sent, but latest state sync failed: '
 
 const chatConversationRefreshEvents = new Set([
   'tool_call_start',
@@ -113,6 +115,31 @@ const chatConversationGraphEvents = new Set([
   'node_error',
   'node_memory_cleared',
 ])
+
+const chatLightweightGraphEvents = new Set([
+  'emit_enqueued',
+  'pending_enqueue_api',
+  'node_dequeue',
+  'node_state_set',
+  'tool_call_start',
+  'tool_call_end',
+  'node_message_done',
+  'node_output',
+  'node_input',
+  'node_stop_completed',
+  'runtime_notice',
+  'node_control',
+  'node_goal_evaluated',
+  'node_goal_blocked',
+  'node_goal_evaluation_failed',
+  'event_dispatch_enqueue',
+  'propagate_enqueue',
+  'startup_node_state_recovered',
+])
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
 
 function messagesContainCommittedLive(messages: MessageEnvelope[], text: string, traceId: string): boolean {
   const safeTraceId = String(traceId || '').trim()
@@ -265,6 +292,7 @@ function pruneOutputRoutesForNode(routes: GraphOutputRoutes, nodeId: string): Gr
 }
 
 export function useMobileWorkspace() {
+  const { nodeTriggerInputs } = useGlobalState()
   const view = ref<MobileView>('pcs')
   const pcs = ref<MobilePc[]>([])
   const graphInstances = ref<MobileGraphInstance[]>([])
@@ -290,6 +318,7 @@ export function useMobileWorkspace() {
   let graphRefreshTimer: number | null = null
   let graphRefreshInFlight = false
   let graphRefreshNeedsConversation = false
+  let graphRefreshNeedsGraphConfig = false
   let pendingConversationLiveText = ''
   let pendingConversationLiveTraceId = ''
 
@@ -315,12 +344,18 @@ export function useMobileWorkspace() {
     error.value = errorText(value)
   }
 
-  function setPostSendSyncError(value: unknown) {
-    error.value = `${POST_SEND_SYNC_ERROR_PREFIX}${errorText(value)}`
-  }
-
-  function clearPostSendSyncError() {
-    if (error.value.startsWith(POST_SEND_SYNC_ERROR_PREFIX)) error.value = ''
+  function mergeNodeConfig(nodeId: string, patch: Record<string, unknown>) {
+    const safeNodeId = String(nodeId || '').trim()
+    if (!safeNodeId) return
+    const existing = nodeConfigs.value[safeNodeId]
+    nodeConfigs.value = {
+      ...nodeConfigs.value,
+      [safeNodeId]: {
+        ...(existing || ({ node_id: safeNodeId, type_id: '' } as NodeInstanceConfig)),
+        ...(patch as Partial<NodeInstanceConfig>),
+        node_id: safeNodeId,
+      } as NodeInstanceConfig,
+    }
   }
 
   function currentGraphSelection(): MobileGraphSelection | null {
@@ -362,10 +397,54 @@ export function useMobileWorkspace() {
     }
   }
 
+  function mergeMobileNodeSummary(nodeId: string, patch: Partial<MobileNode>) {
+    const safeNodeId = String(nodeId || '').trim()
+    if (!safeNodeId) return
+    nodes.value = nodes.value.map((node) => (node.id === safeNodeId ? { ...node, ...patch } : node))
+    if (selectedNode.value?.id === safeNodeId) {
+      selectedNode.value = { ...selectedNode.value, ...patch }
+    }
+  }
+
   async function refreshNodesForSelection(selection: MobileGraphSelection) {
     const nextNodes = await listMobileNodes(selection.pcId, selection.graphId)
     if (!isCurrentGraphSelection(selection)) return
     applyNodes(nextNodes)
+  }
+
+  async function waitForNodeOutputFromSummary(
+    selection: MobileGraphSelection,
+    nodeId: string,
+    prevRunAt: string | null,
+    prevMessage: string | null,
+  ) {
+    const timeoutMs = 60_000
+    const pollMs = 250
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const nextNodes = await listMobileNodes(selection.pcId, selection.graphId)
+      if (!isCurrentGraphSelection(selection)) return { status: 'deadline' as const, message: '' }
+      applyNodes(nextNodes)
+      const current = nextNodes.find((item) => String(item.id || '') === nodeId)
+      if (!current) {
+        await sleep(pollMs)
+        continue
+      }
+      const state = String(current.state || 'idle')
+      if (state === 'stop') return { status: 'stopped' as const, message: '' }
+      const runAt = String(current.last_run_at ?? '')
+      const message = String(current.last_message ?? '')
+      const pendingCount = Number(current.pending_count ?? 0)
+      const busy = state === 'working' || pendingCount > 0
+      if (runAt && (!prevRunAt || runAt !== prevRunAt)) {
+        return { status: 'completed' as const, message }
+      }
+      if (!runAt && !busy && message.trim() && message !== String(prevMessage ?? '')) {
+        return { status: 'completed' as const, message }
+      }
+      await sleep(pollMs)
+    }
+    return { status: 'deadline' as const, message: '' }
   }
 
   function rememberConversationCommit(text: string, traceId: string) {
@@ -384,7 +463,7 @@ export function useMobileWorkspace() {
     const messages = Array.isArray(nextConversation.messages) ? nextConversation.messages : []
     if (messagesContainCommittedLive(messages, pendingConversationLiveText, pendingConversationLiveTraceId)) {
       clearConversationCommit()
-      return { ...nextConversation, live_message: '' }
+      return { ...nextConversation, live_message: '', thinking_message: '' }
     }
     if (pendingConversationLiveText && !String(nextConversation.live_message || '').trim()) {
       return { ...nextConversation, live_message: pendingConversationLiveText }
@@ -398,18 +477,24 @@ export function useMobileWorkspace() {
     conversation.value = normalizeConversationAfterRefresh(nextConversation)
   }
 
-  async function syncChatAfterSend(selection: MobileChatSelection) {
-    const results = await Promise.allSettled([
-      refreshNodesForSelection(selection),
-      refreshConversationForSelection(selection),
-    ])
+  function applySentMessageSnapshot(
+    selection: MobileChatSelection,
+    snapshot: { node?: MobileNode; conversation?: MobileNodeConversation },
+  ) {
     if (!isCurrentChatSelection(selection)) return
-    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (failed) {
-      setPostSendSyncError(failed.reason)
-      return
+    const nextNode = snapshot.node
+    if (nextNode) {
+      const index = nodes.value.findIndex((item) => item.id === nextNode.id)
+      if (index >= 0) {
+        nodes.value.splice(index, 1, nextNode)
+      } else {
+        nodes.value.push(nextNode)
+      }
+      if (selectedNode.value?.id === nextNode.id) selectedNode.value = nextNode
     }
-    clearPostSendSyncError()
+    if (snapshot.conversation) {
+      conversation.value = normalizeConversationAfterRefresh(snapshot.conversation)
+    }
   }
 
   async function loadPcs() {
@@ -422,6 +507,7 @@ export function useMobileWorkspace() {
     graphInstances.value = []
     nodes.value = []
     graphConfig.value = null
+    nodeConfigs.value = {}
     conversation.value = null
     error.value = ''
     loading.value = true
@@ -471,6 +557,7 @@ export function useMobileWorkspace() {
     selectedNode.value = null
     nodes.value = []
     graphConfig.value = null
+    nodeConfigs.value = {}
     conversation.value = null
     view.value = 'graphs'
     error.value = ''
@@ -495,17 +582,19 @@ export function useMobileWorkspace() {
     await refreshNodesForSelection(requireGraphSelection())
   }
 
-  async function refreshNodeConfigs() {
+  async function refreshSelectedNodeConfig() {
     const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(selectedNode.value?.id || '').trim()
     if (!graphId) throw new Error('Graph selection is required')
+    if (!nodeId) throw new Error('Node selection is required')
     const response = await listNodeInstanceConfigs(graphId)
     const configs = response.nodes || []
-    const next: Record<string, NodeInstanceConfig> = {}
-    for (const item of configs) {
-      const nodeId = String(item.node_id || '').trim()
-      if (nodeId) next[nodeId] = item
+    const selected = configs.find((item) => String(item.node_id || '').trim() === nodeId)
+    if (!selected) return
+    nodeConfigs.value = {
+      ...nodeConfigs.value,
+      [nodeId]: selected,
     }
-    nodeConfigs.value = next
   }
 
   async function refreshGraphConfig() {
@@ -555,6 +644,7 @@ export function useMobileWorkspace() {
         selectedNode.value = null
         nodes.value = []
         graphConfig.value = null
+        nodeConfigs.value = {}
         conversation.value = null
         view.value = 'graphs'
         await setStartupGraphConfig('default', 'default').catch(() => null)
@@ -610,6 +700,29 @@ export function useMobileWorkspace() {
     return `${cleaned}_${Date.now()}`
   }
 
+  function graphNodeForMobileNode(node: MobileNode, nodeId: string, ui: { x: number; y: number }) {
+    const graphNode = (graphConfig.value?.nodes || []).find((item) => item.id === node.id)
+    return {
+      id: nodeId,
+      typeId: String(node.type_id || graphNode?.typeId || '').trim(),
+      name: nodeId,
+      input_num: Number(node.input_num || graphNode?.input_num || 1),
+      output_num: Number(node.output_num || graphNode?.output_num || 1),
+      ui,
+      providerId: String(graphNode?.providerId ?? '').trim(),
+      mode: String(graphNode?.mode ?? '').trim(),
+      web_search: graphNode?.web_search,
+      thinking: graphNode?.thinking,
+      reasoning_effort: String(graphNode?.reasoning_effort ?? ''),
+      instruction: String(graphNode?.instruction ?? ''),
+      systemPrompt: String(graphNode?.systemPrompt ?? ''),
+      plugins: Array.isArray(graphNode?.plugins) ? graphNode.plugins.map(String).filter(Boolean) : [],
+      tools: Array.isArray(graphNode?.tools) ? graphNode.tools.map(String).filter(Boolean) : [],
+      mcpServers: Array.isArray(graphNode?.mcpServers) ? graphNode.mcpServers.map(String).filter(Boolean) : [],
+      workingPath: String(graphNode?.workingPath ?? '').trim(),
+    }
+  }
+
   function nextMobileNodeUi() {
     const index = nodes.value.length
     return {
@@ -661,6 +774,7 @@ export function useMobileWorkspace() {
             web_search: (fields as any)?.web_search as any,
             thinking: (fields as any)?.thinking as any,
             reasoning_effort: String((fields as any)?.reasoning_effort ?? ''),
+            instruction: String((fields as any)?.instruction ?? ''),
             systemPrompt: String((fields as any)?.system_prompt ?? ''),
             plugins: Array.isArray((fields as any)?.plugins) ? (fields as any).plugins.map(String).filter(Boolean) : [],
             tools: Array.isArray((fields as any)?.tools) ? (fields as any).tools.map(String).filter(Boolean) : [],
@@ -674,7 +788,7 @@ export function useMobileWorkspace() {
         node_instance_id: createdNodeId,
         node_type_id: safeTypeId,
       })
-      await Promise.all([refreshNodes(), refreshNodeConfigs()])
+      await refreshNodes()
       return createdNodeId
     } catch (e) {
       setError(e)
@@ -717,7 +831,7 @@ export function useMobileWorkspace() {
         selectedNode.value = null
         conversation.value = null
       }
-      await Promise.all([refreshNodes(), refreshNodeConfigs()])
+      await refreshNodes()
     } catch (e) {
       setError(e)
       throw e
@@ -726,17 +840,93 @@ export function useMobileWorkspace() {
     }
   }
 
-  async function setSelectedNodeFields(fields: Record<string, unknown>) {
+  async function triggerNode(node: MobileNode) {
+    const selection = requireGraphSelection()
+    const graphId = selection.graphId
+    const nodeId = String(node?.id || '').trim()
+    if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
+    error.value = ''
+    try {
+      const input = String(nodeTriggerInputs.value[nodeId] || '')
+      const prevRunAt = String(node.last_run_at ?? '')
+      const prevMessage = String(node.last_message ?? '')
+      await startGraphRunner(graphId).catch(() => null)
+      await emitGraph(graphId, nodeId, input).catch(() => null)
+      scheduleGraphRefresh(selectedNode.value?.id === nodeId)
+      const waited = await waitForNodeOutputFromSummary(selection, nodeId, prevRunAt || null, prevMessage || null)
+      if (waited.status === 'completed') {
+        const current = nodes.value.find((item) => item.id === nodeId)
+        if (current) current.last_message = waited.message
+        if (selectedNode.value?.id === nodeId) {
+          selectedNode.value = { ...selectedNode.value, last_message: waited.message }
+        }
+      }
+      const tasks: Promise<unknown>[] = [refreshNodes(), refreshGraphConfig()]
+      if (selectedNode.value?.id === nodeId) tasks.push(refreshConversation())
+      await Promise.all(tasks)
+    } catch (e) {
+      setError(e)
+      throw e
+    }
+  }
+
+  async function copyNode(node: MobileNode) {
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const sourceNodeId = String(node?.id || '').trim()
+    if (!graphId || !sourceNodeId) throw new Error('Graph and Node selection are required')
+    const newNodeId = makeUniqueNodeId(`${String(node.name || sourceNodeId).trim() || 'node'}1`)
+    const ui = nextMobileNodeUi()
+    error.value = ''
+    loading.value = true
+    try {
+      const cloned = await cloneNodeInstance(sourceNodeId, graphId, newNodeId, newNodeId, ui, graphId)
+      const clonedNodeId = String(cloned?.node_id || newNodeId).trim() || newNodeId
+      await persistGraphNodeList(graphId, (graph) => ({
+        ...graph,
+        nodes: [
+          ...(graph.nodes || []).filter((item) => item.id !== clonedNodeId),
+          graphNodeForMobileNode(node, clonedNodeId, ui),
+        ],
+      }))
+      logMobileGraphEvent('node_cloned', {
+        source_node_id: sourceNodeId,
+        node_id: clonedNodeId,
+        node_instance_id: clonedNodeId,
+        node_type_id: node.type_id,
+      })
+      await Promise.all([refreshNodes(), refreshGraphConfig()])
+      return clonedNodeId
+    } catch (e) {
+      setError(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function setSelectedNodeFields(fields: Record<string, unknown>, options: { emitEvent?: boolean } = {}) {
     const graphId = String(selectedGraph.value?.id || '').trim()
     const nodeId = String(selectedNode.value?.id || '').trim()
     if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
-    await updateNodeInstanceConfig(nodeId, { fields }, graphId)
-    logMobileGraphEvent('node_config_updated', {
-      node_id: nodeId,
-      node_instance_id: nodeId,
-      changed_fields: Object.keys(fields || {}),
-    })
-    await refreshNodeConfigs()
+    const result = await updateNodeInstanceConfig(nodeId, { fields }, graphId)
+    if (result?.after && typeof result.after === 'object') {
+      mergeNodeConfig(nodeId, result.after)
+    }
+    const summaryPatch: Partial<MobileNode> = {}
+    if (Object.prototype.hasOwnProperty.call(fields, 'goal')) summaryPatch.goal = String(fields.goal || '')
+    if (Object.prototype.hasOwnProperty.call(fields, 'goal_state')) {
+      summaryPatch.goal_state = fields.goal_state && typeof fields.goal_state === 'object'
+        ? (fields.goal_state as Record<string, unknown>)
+        : null
+    }
+    if (Object.keys(summaryPatch).length) mergeMobileNodeSummary(nodeId, summaryPatch)
+    if (options.emitEvent !== false) {
+      logMobileGraphEvent('node_config_updated', {
+        node_id: nodeId,
+        node_instance_id: nodeId,
+        changed_fields: Object.keys(fields || {}),
+      })
+    }
   }
 
   async function clearSelectedNodeFields(fields: string[]) {
@@ -744,12 +934,21 @@ export function useMobileWorkspace() {
     const nodeId = String(selectedNode.value?.id || '').trim()
     if (!graphId || !nodeId) throw new Error('Graph and Node selection are required')
     await updateNodeInstanceConfig(nodeId, { clear_fields: fields }, graphId)
+    const existing = nodeConfigs.value[nodeId]
+    if (existing) {
+      const next = { ...existing }
+      for (const field of fields) delete (next as any)[field]
+      nodeConfigs.value = { ...nodeConfigs.value, [nodeId]: next }
+    }
+    const summaryPatch: Partial<MobileNode> = {}
+    if (fields.includes('goal')) summaryPatch.goal = ''
+    if (fields.includes('goal_state')) summaryPatch.goal_state = null
+    if (Object.keys(summaryPatch).length) mergeMobileNodeSummary(nodeId, summaryPatch)
     logMobileGraphEvent('node_config_updated', {
       node_id: nodeId,
       node_instance_id: nodeId,
       cleared_fields: fields,
     })
-    await refreshNodeConfigs()
   }
 
   async function renameSelectedNode(name: string) {
@@ -761,7 +960,7 @@ export function useMobileWorkspace() {
     const currentName = String(selectedNode.value?.name || nodeId).trim()
     if (nextName === currentName) return
     await renameNodeInstance(nodeId, graphId, nodeId, nextName)
-    await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()])
+    await Promise.all([refreshNodes(), refreshGraphConfig()])
   }
 
   async function selectGraph(graph: MobileGraph) {
@@ -769,12 +968,13 @@ export function useMobileWorkspace() {
     if (!graphId) throw new Error('Graph id is required')
     selectedGraph.value = graph
     selectedNode.value = null
+    nodeConfigs.value = {}
     conversation.value = null
     view.value = 'nodes'
     error.value = ''
     loading.value = true
     try {
-      await Promise.all([loadEditorCatalog(), refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()])
+      await Promise.all([loadEditorCatalog(), refreshNodes(), refreshGraphConfig()])
       startGraphEventStream()
     } catch (e) {
       setError(e)
@@ -795,9 +995,18 @@ export function useMobileWorkspace() {
     }
   }
 
+  function setConversationThinkingMessage(text: string) {
+    if (!conversation.value) return
+    conversation.value = {
+      ...conversation.value,
+      thinking_message: text,
+    }
+  }
+
   async function selectNode(node: MobileNode) {
     const nodeId = String(node.id || '').trim()
     if (!nodeId) throw new Error('Node id is required')
+    stopGraphEventStream()
     selectedNode.value = node
     view.value = 'chat'
     error.value = ''
@@ -819,7 +1028,7 @@ export function useMobileWorkspace() {
     error.value = ''
     try {
       const response = await sendMobileNodeMessage(selection.pcId, selection.graphId, selection.nodeId, message)
-      void syncChatAfterSend(selection).catch(setPostSendSyncError)
+      applySentMessageSnapshot(selection, response)
       return response
     } catch (e) {
       setError(e)
@@ -830,22 +1039,13 @@ export function useMobileWorkspace() {
   }
 
   function markSelectedNodeStopRequested(nodeId: string) {
-    const cfg = nodeConfigs.value[nodeId]
-    nodeConfigs.value = {
-      ...nodeConfigs.value,
-      [nodeId]: {
-        ...(cfg || ({ node_id: nodeId, type_id: '' } as NodeInstanceConfig)),
-        node_id: nodeId,
-        _stop_requested: true,
-        state: 'working',
-        last_message: 'Stop requested. Cancelling active work.',
-      } as NodeInstanceConfig,
-    }
     const nextNodes = nodes.value.map((node) => {
       if (node.id !== nodeId) return node
       return {
         ...node,
         state: 'working' as const,
+        has_inflight: true,
+        stop_requested: true,
         last_message: 'Stop requested. Cancelling active work.',
       }
     })
@@ -863,20 +1063,18 @@ export function useMobileWorkspace() {
     markSelectedNodeStopRequested(nodeId)
     try {
       const response = await controlNodeInstance(nodeId, 'stop', graphId)
-      const cfg = nodeConfigs.value[nodeId]
-      if (cfg) {
-        nodeConfigs.value = {
-          ...nodeConfigs.value,
-          [nodeId]: {
-            ...cfg,
-            state: response.state,
-          },
-        }
+      const nextNodes = nodes.value.map((node) => {
+        if (node.id !== nodeId) return node
+        return { ...node, state: response.state, has_inflight: false, stop_requested: false }
+      })
+      nodes.value = nextNodes
+      if (selectedNode.value?.id === nodeId) {
+        selectedNode.value = nextNodes.find((node) => node.id === nodeId) || selectedNode.value
       }
-      await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshConversation()])
+      await Promise.all([refreshNodes(), refreshConversation()])
     } catch (e) {
       setError(e)
-      await Promise.allSettled([refreshNodes(), refreshNodeConfigs(), refreshConversation()])
+      await Promise.allSettled([refreshNodes(), refreshConversation()])
       throw e
     }
   }
@@ -1020,10 +1218,10 @@ export function useMobileWorkspace() {
       return
     }
     if (view.value === 'nodes') {
-      await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()])
+      await Promise.all([refreshNodes(), refreshGraphConfig()])
       return
     }
-    await Promise.all([refreshNodes(), refreshNodeConfigs(), refreshGraphConfig(), refreshConversation()])
+    await Promise.all([refreshNodes(), refreshGraphConfig(), refreshConversation()])
   }
 
   function backToPcs() {
@@ -1036,6 +1234,7 @@ export function useMobileWorkspace() {
     selectedNode.value = null
     nodes.value = []
     graphConfig.value = null
+    nodeConfigs.value = {}
     conversation.value = null
     view.value = 'graphs'
   }
@@ -1078,30 +1277,43 @@ export function useMobileWorkspace() {
     const eventName = String(payload?.event || '').trim()
     if (!chatNodeRefreshGraphEvents.has(eventName)) return
     if (view.value === 'nodes') {
-      scheduleGraphRefresh(false)
+      scheduleGraphRefresh({
+        includeConversation: false,
+        includeGraphConfig: !chatLightweightGraphEvents.has(eventName),
+      })
       return
     }
     if (view.value !== 'chat') return
     const nodeId = String(selectedNode.value?.id || '').trim()
     if (!graphEventTargetsSelectedNode(payload, nodeId)) return
-    scheduleGraphRefresh(chatConversationGraphEvents.has(eventName))
+    const includeConversation = chatConversationGraphEvents.has(eventName)
+    scheduleGraphRefresh({ includeConversation, includeGraphConfig: !chatLightweightGraphEvents.has(eventName) })
   }
 
-  function scheduleGraphRefresh(includeConversation: boolean) {
+  function scheduleGraphRefresh(options: boolean | { includeConversation?: boolean; includeGraphConfig?: boolean }) {
+    const includeConversation = typeof options === 'boolean' ? options : !!options.includeConversation
+    const includeGraphConfig = typeof options === 'boolean' ? true : options.includeGraphConfig !== false
     graphRefreshNeedsConversation = graphRefreshNeedsConversation || includeConversation
+    graphRefreshNeedsGraphConfig = graphRefreshNeedsGraphConfig || includeGraphConfig
     if (graphRefreshTimer != null) return
     graphRefreshTimer = window.setTimeout(async () => {
       graphRefreshTimer = null
       if (graphRefreshInFlight) {
-        scheduleGraphRefresh(false)
+        scheduleGraphRefresh({
+          includeConversation: graphRefreshNeedsConversation,
+          includeGraphConfig: graphRefreshNeedsGraphConfig,
+        })
         return
       }
       if (view.value !== 'nodes' && view.value !== 'chat') return
       graphRefreshInFlight = true
       const shouldRefreshConversation = graphRefreshNeedsConversation && view.value === 'chat'
+      const shouldRefreshGraphConfig = graphRefreshNeedsGraphConfig
       graphRefreshNeedsConversation = false
+      graphRefreshNeedsGraphConfig = false
       try {
-        const tasks: Promise<unknown>[] = [refreshNodes(), refreshNodeConfigs(), refreshGraphConfig()]
+        const tasks: Promise<unknown>[] = [refreshNodes()]
+        if (shouldRefreshGraphConfig) tasks.push(refreshGraphConfig())
         if (shouldRefreshConversation) tasks.push(refreshConversation())
         await Promise.all(tasks)
       } catch (e) {
@@ -1140,17 +1352,20 @@ export function useMobileWorkspace() {
           ? (payload.event as Record<string, unknown>)
           : null
         const nextLiveMessage = String(payload?.live_message || '')
+        const nextThinkingMessage = String(payload?.thinking_message || '')
+        setConversationThinkingMessage(nextThinkingMessage)
         if (eventType === 'node_message_done' || eventType === 'node_output') {
           rememberConversationCommit(
             String(eventData?.text || nextLiveMessage || conversation.value?.live_message || ''),
             String(payload?.trace_id || eventData?.trace_id || ''),
           )
           if (pendingConversationLiveText) setConversationLiveMessage(pendingConversationLiveText)
+          setConversationThinkingMessage('')
         } else if (nextLiveMessage || !pendingConversationLiveText) {
           setConversationLiveMessage(nextLiveMessage)
         }
         if (chatConversationRefreshEvents.has(eventType)) {
-          scheduleGraphRefresh(true)
+          scheduleGraphRefresh({ includeConversation: true, includeGraphConfig: false })
         }
       } catch {
         // Ignore malformed stream payloads; the next valid event will correct the chat view.
@@ -1222,7 +1437,6 @@ export function useMobileWorkspace() {
   function startChatStreams() {
     stopChatLiveStream()
     startChatLiveStream()
-    startGraphEventStream()
   }
 
   function stopChatStreams() {
@@ -1241,6 +1455,7 @@ export function useMobileWorkspace() {
     }
     graphRefreshInFlight = false
     graphRefreshNeedsConversation = false
+    graphRefreshNeedsGraphConfig = false
   }
 
   function stopPolling() {
@@ -1257,7 +1472,6 @@ export function useMobileWorkspace() {
     flatGraphs,
     nodes,
     graphConfig,
-    nodeConfigs,
     availableNodeTypes,
     agentProfiles,
     graphProfiles,
@@ -1293,8 +1507,10 @@ export function useMobileWorkspace() {
     createNode,
     createNodeFromProfile,
     deleteNode,
+    triggerNode,
+    copyNode,
     refreshCurrent,
-    refreshNodeConfigs,
+    refreshSelectedNodeConfig,
     refreshEditorCatalog,
     refreshAgentProfiles,
     refreshGraphProfiles,

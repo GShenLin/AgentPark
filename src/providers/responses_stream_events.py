@@ -63,6 +63,17 @@ class ResponsesOutputTextDelta:
 
 
 @dataclass(frozen=True)
+class ResponsesReasoningDelta:
+    delta: str
+    item_id: str = ""
+    output_index: int | None = None
+    content_index: int | None = None
+    provider: str = ""
+    raw_event_type: str = ""
+    event: str = field(default="reasoning_delta", init=False)
+
+
+@dataclass(frozen=True)
 class ResponsesFunctionCallArgumentsDelta:
     item_id: str
     call_id: str
@@ -93,6 +104,7 @@ ResponsesStreamEvent = (
     | ResponsesResponseCreated
     | ResponsesOutputItemAdded
     | ResponsesOutputTextDelta
+    | ResponsesReasoningDelta
     | ResponsesFunctionCallArgumentsDelta
     | ResponsesOutputItemDone
     | ResponsesResponseCompleted

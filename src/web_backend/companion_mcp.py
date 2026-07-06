@@ -21,7 +21,7 @@ class _TerminatingNoneSessionFilter(logging.Filter):
 
 
 def _install_companion_log_filters() -> None:
-    marker = "_aitools_companion_filter_installed"
+    marker = "_agentpark_companion_filter_installed"
     root = logging.getLogger()
     if bool(getattr(root, marker, False)):
         return
@@ -57,15 +57,15 @@ def _caller_from_context(ctx: Context | None) -> dict[str, str]:
             return ""
 
     return {
-        "graph_id": header("x-aitools-graph-id"),
-        "node_id": header("x-aitools-node-id"),
+        "graph_id": header("x-agentpark-graph-id"),
+        "node_id": header("x-agentpark-node-id"),
     }
 
 
 def build_companion_mcp(core: object) -> FastMCP:
     _install_companion_log_filters()
     mcp = FastMCP(
-        "aitools-companion",
+        "agentpark-companion",
         instructions=COMPANION_MCP_INSTRUCTIONS,
         streamable_http_path="/",
         stateless_http=True,
@@ -80,7 +80,7 @@ def build_companion_mcp(core: object) -> FastMCP:
 
     @mcp.tool(name="list_graph")
     async def list_graph() -> dict[str, Any]:
-        """List available AITools graphs."""
+        """List available AgentPark graphs."""
         return await _run_blocking_tool(tools.list_graph)
 
     @mcp.tool(name="list_node")

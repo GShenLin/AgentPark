@@ -148,6 +148,30 @@
       "toolContextCompactionEveryToolCalls": 10,
       "toolResultSubmissionMaxChars": 50000,
       "timeoutMs": 180000
+    },
+    "fable-5-krill": {
+      "type": "claude",
+      "model": "claude-fable-5",
+      "supportmode": [
+        "chat"
+      ],
+      "baseUrl": "https://api.krill-ai.com/v1",
+      "apiKey": "YOUR-KEY",
+      "toolContextCompactionEnabled": false,
+      "toolContextCompactionEveryToolCalls": 30,
+      "toolResultSubmissionMaxChars": 50000
+    },
+    "sonnet-5-krill": {
+      "type": "claude",
+      "model": "claude-sonnet-5",
+      "supportmode": [
+        "chat"
+      ],
+      "baseUrl": "https://api.krill-ai.com/v1",
+      "apiKey": "YOUR-KEY",
+      "toolContextCompactionEnabled": false,
+      "toolContextCompactionEveryToolCalls": 30,
+      "toolResultSubmissionMaxChars": 50000
     }
   }
 }

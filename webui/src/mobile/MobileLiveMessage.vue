@@ -4,9 +4,11 @@ import { renderMarkdownTextWithoutKatex } from '../components/memoryMarkdown'
 
 const props = defineProps<{
   text: string
+  thinkingText?: string
 }>()
 
 const renderedMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.text))
+const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.thinkingText || ''))
 </script>
 
 <template>
@@ -15,7 +17,14 @@ const renderedMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.tex
       <span class="mobile-live-role">Live</span>
       <span class="mobile-live-status">streaming</span>
     </div>
-    <div class="mobile-live-body mobile-live-markdown" v-html="renderedMarkdown"></div>
+    <section v-if="thinkingText" class="mobile-live-section thinking">
+      <div class="mobile-live-section-label">Thinking</div>
+      <div class="mobile-live-body mobile-live-markdown" v-html="renderedThinkingMarkdown"></div>
+    </section>
+    <section v-if="text" class="mobile-live-section">
+      <div v-if="thinkingText" class="mobile-live-section-label">Answer</div>
+      <div class="mobile-live-body mobile-live-markdown" v-html="renderedMarkdown"></div>
+    </section>
   </div>
 </template>
 
@@ -46,6 +55,21 @@ const renderedMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.tex
 .mobile-live-status {
   color: rgba(125, 211, 252, 0.9);
   font-size: 11px;
+}
+
+.mobile-live-section + .mobile-live-section {
+  border-top: 1px solid rgba(125, 211, 252, 0.16);
+}
+
+.mobile-live-section.thinking {
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.mobile-live-section-label {
+  padding: 8px 10px 0;
+  color: rgba(125, 211, 252, 0.88);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .mobile-live-body {

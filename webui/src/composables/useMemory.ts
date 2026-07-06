@@ -63,6 +63,7 @@ export function useMemory() {
     memoryText,
     memoryMessages,
     memoryLiveMessage,
+    memoryThinkingMessage,
     memoryInteractiveSessionId,
     memoryInteractiveSending,
     memoryTitle,
@@ -90,6 +91,7 @@ export function useMemory() {
       memoryText.value = ''
       memoryMessages.value = []
       memoryLiveMessage.value = ''
+      memoryThinkingMessage.value = ''
       clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       memoryTitle.value = ''
@@ -113,6 +115,7 @@ export function useMemory() {
         const nextLiveMessage = String((res as any)?.live_message || '')
         memoryLiveMessage.value = nextLiveMessage || pendingCommittedLiveText
       }
+      memoryThinkingMessage.value = String((res as any)?.thinking_message || '')
       memoryTitle.value = `Node ${nodeId}`
       memoryMeta.value = res.memory_path || null
       agentImages.value = []
@@ -124,6 +127,7 @@ export function useMemory() {
       memoryText.value = ''
       memoryMessages.value = []
       memoryLiveMessage.value = ''
+      memoryThinkingMessage.value = ''
       clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       memoryTitle.value = `Node ${nodeId}`
@@ -140,6 +144,7 @@ export function useMemory() {
     if (!nodeId) {
       if (requestId !== liveLoadRequestId || memoryMode.value !== 'agent') return
       memoryLiveMessage.value = ''
+      memoryThinkingMessage.value = ''
       clearPendingCommittedLive()
       return
     }
@@ -151,12 +156,14 @@ export function useMemory() {
       if ((currentGraphId.value || 'default') !== graphId) return
       const nextLiveMessage = String((res as any)?.live_message || '')
       memoryLiveMessage.value = nextLiveMessage || pendingCommittedLiveText
+      memoryThinkingMessage.value = String((res as any)?.thinking_message || '')
     } catch {
       if (requestId !== liveLoadRequestId) return
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
       memoryLiveMessage.value = ''
+      memoryThinkingMessage.value = ''
       clearPendingCommittedLive()
     }
   }
@@ -252,6 +259,7 @@ export function useMemory() {
     if (!nodeId) {
       stopAgentLiveStream()
       memoryLiveMessage.value = ''
+      memoryThinkingMessage.value = ''
       clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       return
@@ -279,12 +287,15 @@ export function useMemory() {
           ? (payload.event as Record<string, unknown>)
           : null
         const nextLiveMessage = String(payload?.live_message || '')
+        const nextThinkingMessage = String(payload?.thinking_message || '')
+        memoryThinkingMessage.value = nextThinkingMessage
         if (eventType === 'node_message_done' || eventType === 'node_output') {
           rememberCommittedLiveText(
             String(eventData?.text || nextLiveMessage || memoryLiveMessage.value || ''),
             String(payload?.trace_id || eventData?.trace_id || ''),
           )
           if (pendingCommittedLiveText) memoryLiveMessage.value = pendingCommittedLiveText
+          memoryThinkingMessage.value = ''
         } else if (nextLiveMessage || !pendingCommittedLiveText) {
           memoryLiveMessage.value = nextLiveMessage
         }
@@ -335,6 +346,7 @@ export function useMemory() {
     memoryText.value = 'Loading...'
     memoryMessages.value = []
     memoryLiveMessage.value = ''
+    memoryThinkingMessage.value = ''
     clearPendingCommittedLive()
     memoryInteractiveSessionId.value = ''
     try {

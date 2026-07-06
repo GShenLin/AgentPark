@@ -22,7 +22,7 @@ def test_file_tools_do_not_emit_progress_to_stdout(tmp_path, capsys):
 def test_file_tools_resolve_relative_paths_from_agent_working_path(tmp_path):
     work = tmp_path / "work"
     work.mkdir()
-    agent = SimpleNamespace(_aitools_working_path=str(work))
+    agent = SimpleNamespace(_agentpark_working_path=str(work))
 
     write_result = json.loads(write_file("nested/demo.txt", "hello", agent=agent))
     read_result = json.loads(read_file("nested/demo.txt", agent=agent))

@@ -17,7 +17,7 @@ def resolve_public_base_url(explicit: object, provider_id: object = "") -> str:
     if direct:
         return direct
 
-    env_value = normalize_public_base_url(os.environ.get("AITOOLS_PUBLIC_BASE_URL"))
+    env_value = normalize_public_base_url(os.environ.get("AGENTPARK_PUBLIC_BASE_URL"))
     if env_value:
         return env_value
 

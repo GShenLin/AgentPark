@@ -36,3 +36,19 @@ def test_tool_bundle_split_exposes_expected_tools_only():
         tool = BaseTool(DummyAgent())
         tool.addTool(bundle_name)
         assert _function_names(tool) == function_names
+
+
+def test_system_tools_excludes_curl():
+    tool = BaseTool(DummyAgent())
+    tool.addTool("system_tools")
+
+    assert _function_names(tool) == {
+        "apply_patch",
+        "execute_console_command",
+        "read_file",
+        "rg_search_text",
+        "rg_list_files",
+        "multi_tool_use_parallel",
+        "write_file",
+    }
+    assert "execute_curl_command" not in tool.function_map

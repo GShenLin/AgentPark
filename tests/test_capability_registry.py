@@ -53,7 +53,7 @@ def test_capability_registry_reports_plugin_contributions(monkeypatch):
                 id="demo",
                 name="Demo Plugin",
                 description="Demo",
-                path="plugins/demo/aitools.plugin.json",
+                path="plugins/demo/agentpark.plugin.json",
                 version="2.0.0",
                 tools=("file_read_tools",),
                 skills=("docs",),

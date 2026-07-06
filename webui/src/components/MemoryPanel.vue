@@ -29,6 +29,7 @@ const {
   memoryText,
   memoryMessages,
   memoryLiveMessage,
+  memoryThinkingMessage,
   memoryInteractiveSessionId,
   memoryInteractiveSending,
   memoryTitle,
@@ -112,6 +113,7 @@ async function clearSelectedNodeMemory() {
       memoryText.value = ''
       memoryMessages.value = []
       memoryLiveMessage.value = ''
+      memoryThinkingMessage.value = ''
       await loadAgentMemory()
     }
   } catch (e: any) {
@@ -494,6 +496,7 @@ onBeforeUnmount(() => {
       :mode="memoryMode"
       :messages="structuredMessages"
       :live-message="memoryLiveMessage"
+      :thinking-message="memoryThinkingMessage"
       :markdown-preview="isMarkdownPreview"
       :word-wrap="isWordWrap"
       :show-line-numbers="showLineNumbers"

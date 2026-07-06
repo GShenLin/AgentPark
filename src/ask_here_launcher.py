@@ -171,7 +171,7 @@ def _read_pid_payload() -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         _debug_log("pid-file-not-object", path=path)
         return None
-    if str(payload.get("app") or "") != "AITools" or str(payload.get("kind") or "") != "fast_api_server":
+    if str(payload.get("app") or "") != "AgentPark" or str(payload.get("kind") or "") != "fast_api_server":
         _debug_log("pid-file-wrong-kind", path=path, app=payload.get("app"), kind=payload.get("kind"))
         return None
     payload_root = os.path.abspath(str(payload.get("workspace_root") or ""))

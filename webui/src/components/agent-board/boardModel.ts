@@ -117,6 +117,7 @@ export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: numbe
     webSearch: normalizeSwitch((cfg as any)?.web_search, 'disabled'),
     thinking: normalizeSwitch((cfg as any)?.thinking, 'enabled'),
     reasoningEffort: (cfg as any)?.reasoning_effort ?? 'high',
+    instruction: String((cfg as any)?.instruction ?? ''),
     systemPrompt: String((cfg as any)?.system_prompt ?? ''),
     plugins: normalizeConfigList((cfg as any)?.plugins),
     tools: normalizeConfigList((cfg as any)?.tools),
@@ -141,6 +142,7 @@ export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, u
   node.webSearch = normalizeSwitch((cfg as any)?.web_search ?? node.webSearch, 'disabled')
   node.thinking = normalizeSwitch((cfg as any)?.thinking ?? node.thinking, 'enabled')
   node.reasoningEffort = (cfg as any)?.reasoning_effort ?? node.reasoningEffort ?? 'high'
+  node.instruction = String((cfg as any)?.instruction ?? node.instruction ?? '')
   node.systemPrompt = String((cfg as any)?.system_prompt ?? node.systemPrompt ?? '')
   node.plugins = Array.isArray((cfg as any)?.plugins) ? normalizeConfigList((cfg as any).plugins) : node.plugins || []
   node.tools = Array.isArray((cfg as any)?.tools) ? normalizeConfigList((cfg as any).tools) : node.tools || []
@@ -200,6 +202,9 @@ export function applyNodeFieldPatchToCard(
   }
   if (hasOwn(fields, 'reasoning_effort')) {
     node.reasoningEffort = String((merged as any)?.reasoning_effort ?? '')
+  }
+  if (hasOwn(fields, 'instruction')) {
+    node.instruction = String((merged as any)?.instruction ?? '')
   }
   if (hasOwn(fields, 'system_prompt')) {
     node.systemPrompt = String((merged as any)?.system_prompt ?? '')
@@ -291,6 +296,7 @@ export function buildBoardGraphConfig(options: {
       web_search: node.webSearch,
       thinking: node.thinking,
       reasoning_effort: node.reasoningEffort,
+      instruction: node.instruction,
       systemPrompt: node.systemPrompt,
       plugins: node.plugins,
       tools: node.tools,

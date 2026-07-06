@@ -33,10 +33,10 @@ const { onFileSelected } = useMemory()
 const agentBoard = useAgentBoard()
 provide(AgentBoardKey, agentBoard)
 
-const LEFT_WIDTH_KEY = 'aitools.leftSidebarWidth'
-const RIGHT_WIDTH_KEY = 'aitools.rightPanelWidth'
-const LEFT_COLLAPSED_KEY = 'aitools.leftCollapsed'
-const RIGHT_COLLAPSED_KEY = 'aitools.rightCollapsed'
+const LEFT_WIDTH_KEY = 'agentpark.leftSidebarWidth'
+const RIGHT_WIDTH_KEY = 'agentpark.rightPanelWidth'
+const LEFT_COLLAPSED_KEY = 'agentpark.leftCollapsed'
+const RIGHT_COLLAPSED_KEY = 'agentpark.rightCollapsed'
 
 function readStoredNumber(key: string, fallback: number, min: number, max: number) {
   try {

@@ -48,7 +48,7 @@ def test_analyze_responses_payload_log_reports_codex_like_shape(tmp_path):
     assert request["summary"]["context_update_mode"] == "full"
 
 
-def test_analyze_responses_payload_log_flags_system_input_gap(tmp_path):
+def test_analyze_responses_payload_log_allows_system_input_but_flags_missing_instructions(tmp_path):
     from src.providers.responses_payload_analysis import analyze_responses_payload_log
 
     path = tmp_path / "responses_payloads.jsonl"
@@ -66,8 +66,8 @@ def test_analyze_responses_payload_log_flags_system_input_gap(tmp_path):
 
     analysis = analyze_responses_payload_log(str(path))
 
-    assert any("system role item" in gap for gap in analysis["gaps"])
     assert any("payload.instructions is absent" in gap for gap in analysis["gaps"])
+    assert not any("system role item" in gap for gap in analysis["gaps"])
 
 
 def test_analyze_responses_payload_log_flags_missing_followup_instructions(tmp_path):

@@ -5,14 +5,31 @@ from typing import Callable
 
 from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportError, format_doubao_http_error
 from src.providers.doubao_curl_stream_transport import DoubaoCurlStreamTransport
-from src.providers.doubao_sse_debug import DoubaoSseDebugMixin
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.providers.responses_stream_events import ResponsesReasoningDelta
 from src.providers.responses_stream_events import ResponsesStreamEvent
+from src.runtime_cancellation import CancellationRequested
 from src.service_host import HostBoundService
 
 
-class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, ProviderRuntimeEventMixin, HostBoundService):
+class DoubaoStreamRuntime(DoubaoCurlStreamTransport, ProviderRuntimeEventMixin, HostBoundService):
+    @staticmethod
+    def _emit_stream_thinking(
+        thinking_stream_handler: Callable[[object, object, object], None] | None,
+        delta_text: object,
+        full_text: object,
+        provider: object = "doubao",
+    ) -> None:
+        if not callable(thinking_stream_handler):
+            return
+        try:
+            thinking_stream_handler(delta_text, full_text, provider)
+        except CancellationRequested:
+            raise
+        except Exception:
+            return
+
     def _stream_chat_completions_once(
         self,
         *,
@@ -21,8 +38,10 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
         payload_json: str,
         timeout_sec: float,
         stream_handler: Callable[[object, object], None] | None,
+        thinking_stream_handler: Callable[[object, object, object], None] | None = None,
     ) -> dict:
         content_chunks: list[str] = []
+        thinking_chunks: list[str] = []
         tool_calls_by_index: dict[int, dict] = {}
         debug_events: list[dict] = []
         for data_text in self._curl_post_sse_data_lines(
@@ -59,6 +78,15 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
                 if isinstance(delta_text, str) and delta_text:
                     content_chunks.append(delta_text)
                     self._emit_stream_text(stream_handler, delta_text, "".join(content_chunks))
+                reasoning_text = delta.get("reasoning_content")
+                if isinstance(reasoning_text, str) and reasoning_text:
+                    thinking_chunks.append(reasoning_text)
+                    self._emit_stream_thinking(
+                        thinking_stream_handler,
+                        reasoning_text,
+                        "".join(thinking_chunks),
+                        "doubao",
+                    )
                 tool_calls_delta = delta.get("tool_calls")
                 if not isinstance(tool_calls_delta, list):
                     continue
@@ -141,6 +169,7 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
         max_retries: int,
         retry_delay: float,
         stream_handler: Callable[[object, object], None] | None,
+        thinking_stream_handler: Callable[[object, object, object], None] | None = None,
     ) -> dict:
         timeout = self.config.get("timeoutMs", 60000) / 1000
         current_delay = float(retry_delay)
@@ -152,6 +181,7 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
                     payload_json=payload_json,
                     timeout_sec=timeout,
                     stream_handler=stream_handler,
+                    thinking_stream_handler=thinking_stream_handler,
                 )
             except _CurlHTTPError as e:
                 status_code = int(e.status_code or 0)
@@ -199,9 +229,11 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
         payload_json: str,
         timeout_sec: float,
         stream_handler: Callable[[object, object], None] | None,
+        thinking_stream_handler: Callable[[object, object, object], None] | None = None,
         item_event_handler: Callable[[ResponsesStreamEvent], None] | None = None,
     ) -> dict:
         text_chunks: list[str] = []
+        thinking_chunks: list[str] = []
         saw_text_delta = False
         normalizer = OpenAIResponsesStreamEventNormalizer(provider="doubao_responses")
         function_call_buckets: dict[str, dict] = {}
@@ -249,6 +281,24 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
             if callable(item_event_handler):
                 for normalized_event in normalizer.ingest_event(event):
                     item_event_handler(normalized_event)
+                    if isinstance(normalized_event, ResponsesReasoningDelta) and normalized_event.delta:
+                        thinking_chunks.append(normalized_event.delta)
+                        self._emit_stream_thinking(
+                            thinking_stream_handler,
+                            normalized_event.delta,
+                            "".join(thinking_chunks),
+                            normalized_event.provider or "doubao_responses",
+                        )
+            elif callable(thinking_stream_handler):
+                for normalized_event in normalizer.ingest_event(event):
+                    if isinstance(normalized_event, ResponsesReasoningDelta) and normalized_event.delta:
+                        thinking_chunks.append(normalized_event.delta)
+                        self._emit_stream_thinking(
+                            thinking_stream_handler,
+                            normalized_event.delta,
+                            "".join(thinking_chunks),
+                            normalized_event.provider or "doubao_responses",
+                        )
             event_type = str(event.get("type") or "").strip().lower()
             if event_type in {"response.output_text.delta", "output_text.delta"}:
                 delta_text = str(event.get("delta") or "")
@@ -321,6 +371,7 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
         max_retries: int,
         retry_delay: float,
         stream_handler: Callable[[object, object], None] | None,
+        thinking_stream_handler: Callable[[object, object, object], None] | None = None,
         item_event_handler: Callable[[ResponsesStreamEvent], None] | None = None,
     ) -> dict:
         timeout = self.config.get("timeoutMs", 60000) / 1000
@@ -333,6 +384,7 @@ class DoubaoStreamRuntime(DoubaoSseDebugMixin, DoubaoCurlStreamTransport, Provid
                     payload_json=payload_json,
                     timeout_sec=timeout,
                     stream_handler=stream_handler,
+                    thinking_stream_handler=thinking_stream_handler,
                     item_event_handler=item_event_handler,
                 )
             except _CurlHTTPError as e:

@@ -14,6 +14,7 @@ const lastError = ref<string | null>(null)
 const memoryText = ref('')
 const memoryMessages = ref<MessageEnvelope[]>([])
 const memoryLiveMessage = ref('')
+const memoryThinkingMessage = ref('')
 const memoryInteractiveSessionId = ref('')
 const memoryInteractiveSending = ref(false)
 const memoryTitle = ref('')
@@ -41,6 +42,7 @@ export function useGlobalState() {
     memoryText,
     memoryMessages,
     memoryLiveMessage,
+    memoryThinkingMessage,
     memoryInteractiveSessionId,
     memoryInteractiveSending,
     memoryTitle,

@@ -4,6 +4,7 @@ import pytest
 
 from src.tool.base_tool import BaseTool
 from src.providers.tool_call_runtime import ToolCallExecutionRuntime
+from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
 from src.providers.zhipu_agent import ZhipuAgent
 from src.providers.zhipu_chat_runtime import ZhipuChatRuntime
 from src.providers.zhipu_http_transport import ZhipuHttpError
@@ -160,6 +161,66 @@ def test_zhipu_tool_call_continuation_uses_chat_messages():
         "tool_call_id": "call-1",
         "name": "echo_tool",
     }
+
+
+def test_zhipu_tool_call_continuation_appends_mid_turn_user_input():
+    agent = _make_zhipu_agent()
+    agent.messages = [{"role": "user", "content": "run echo"}]
+    requests = []
+    mid_turn_messages = [[{"role": "user", "content": "补充：改查 B。"}]]
+
+    bind_agent_runtime_context(
+        agent,
+        AgentRuntimeContext(
+            graph_id="g1",
+            node_id="agent1",
+            node_type_id="agent_node",
+            consume_mid_turn_user_inputs=lambda: mid_turn_messages.pop(0) if mid_turn_messages else [],
+        ),
+    )
+
+    def echo_tool(message=None):
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+    responses = iter(
+        [
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "type": "function",
+                                    "function": {"name": "echo_tool", "arguments": '{"message":"hello"}'},
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            },
+            {"choices": [{"message": {"role": "assistant", "content": "done"}, "finish_reason": "stop"}]},
+        ]
+    )
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+
+    assert agent.Send(run_tools=True) == "done"
+    assert requests[1]["messages"][-2] == {
+        "role": "tool",
+        "content": "echo:hello",
+        "tool_call_id": "call-1",
+        "name": "echo_tool",
+    }
+    assert requests[1]["messages"][-1] == {"role": "user", "content": "补充：改查 B。"}
 
 
 def test_zhipu_tool_context_compaction_runs_between_tool_rounds():

@@ -335,6 +335,7 @@ export function useAgentBoard(): AgentBoardContext {
       webSearch: normalizeSwitch((fields as any)?.web_search, 'disabled'),
       thinking: normalizeSwitch((fields as any)?.thinking, 'disabled'),
       reasoningEffort: (fields as any)?.reasoning_effort ?? 'high',
+      instruction: String((fields as any)?.instruction ?? ''),
       systemPrompt: String((fields as any)?.system_prompt ?? ''),
       plugins: Array.isArray((fields as any)?.plugins) ? (fields as any).plugins.map(String).filter(Boolean) : [],
       tools: Array.isArray((fields as any)?.tools) ? (fields as any).tools.map(String).filter(Boolean) : [],

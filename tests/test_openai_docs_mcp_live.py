@@ -6,7 +6,7 @@ import pytest
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("AITOOLS_RUN_OPENAI_MCP_LIVE") != "1",
+    os.environ.get("AGENTPARK_RUN_OPENAI_MCP_LIVE") != "1",
     reason="live OpenAI Docs MCP smoke test is opt-in",
 )
 

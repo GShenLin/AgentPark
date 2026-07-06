@@ -19,6 +19,24 @@ def test_agent_stream_runtime_emits_delta_tool_event_and_done():
     ]
 
 
+def test_agent_stream_runtime_emits_thinking_delta_separately():
+    events = []
+    runtime = AgentStreamRuntime(lambda payload: events.append(payload))
+
+    runtime.on_thinking_delta("plan", "plan", "openai_responses")
+    runtime.on_stream_delta("Answer", "Answer")
+
+    assert events == [
+        {
+            "type": "node_thinking_delta",
+            "delta": "plan",
+            "text": "plan",
+            "provider": "openai_responses",
+        },
+        {"type": "node_message_delta", "delta": "Answer", "text": "Answer"},
+    ]
+
+
 def test_agent_stream_runtime_restores_tool_callback_after_send():
     previous_events = []
 
@@ -48,6 +66,20 @@ def test_agent_stream_runtime_restores_tool_callback_after_send():
         {"type": "tool_call_start", "name": "read_file"},
         {"type": "node_message_delta", "delta": "O", "text": "O"},
     ]
+
+
+def test_agent_stream_runtime_accepts_tool_event_callback_keyword():
+    stream_events = []
+    tool_events = []
+    runtime = AgentStreamRuntime(
+        lambda payload: stream_events.append(payload),
+        tool_event_callback=lambda payload: tool_events.append(payload),
+    )
+
+    runtime.on_tool_event({"type": "tool_call_start", "name": "read_file"})
+
+    assert tool_events == [{"type": "tool_call_start", "name": "read_file"}]
+    assert stream_events == [{"type": "tool_call_start", "name": "read_file"}]
 
 
 def test_agent_stream_runtime_filters_unsupported_kwargs_and_restores_tool_callback():

@@ -282,6 +282,65 @@ class NodeConfigStore:
         runtime_state_memory_store.update(config_path, mutate)
         return picked
 
+    def consume_mid_turn_user_inputs(self, config_path: str, limit: int = 16) -> list[dict]:
+        if not config_path:
+            return []
+        consumed: list[dict] = []
+        max_items = max(1, int(limit or 16))
+
+        def mutate(payload: dict) -> None:
+            nonlocal consumed
+            if bool(payload.get("_delete_requested")) or bool(payload.get("_stop_requested")):
+                return
+            if parse_node_state(payload.get("state")) != "working":
+                return
+            if not isinstance(payload.get("inflight"), dict):
+                return
+            pending = payload.get("pending")
+            if not isinstance(pending, list) or not pending:
+                pending_count_raw = payload.get("pending_count")
+                pending_count = int(pending_count_raw) if isinstance(pending_count_raw, (int, float)) else 0
+                if pending_count != 0:
+                    payload["pending_count"] = 0
+                return
+            node_id = str(payload.get("node_id") or "").strip()
+            remaining: list = []
+            for item in pending:
+                if len(consumed) < max_items and self._is_mid_turn_user_input_item(item, node_id):
+                    consumed.append(item if isinstance(item, dict) else {})
+                    continue
+                remaining.append(item)
+            if len(remaining) == len(pending):
+                return
+            payload["pending"] = remaining
+            payload["pending_count"] = len(remaining)
+            bump_node_event_seq(payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
+        return consumed
+
+    @staticmethod
+    def _is_mid_turn_user_input_item(item: object, node_id: str) -> bool:
+        if not isinstance(item, dict):
+            return False
+        if str(item.get("source") or "").strip() != "emit":
+            return False
+        try:
+            depth = int(float(item.get("depth") or 0))
+        except Exception:
+            depth = 0
+        if depth != 0:
+            return False
+        if str(item.get("link_id") or "").strip():
+            return False
+        from_node = str(item.get("from") or "").strip()
+        if node_id and from_node and from_node != node_id:
+            return False
+        payload = item.get("payload")
+        if not isinstance(payload, dict):
+            return False
+        return str(payload.get("role") or "").strip().lower() == "user"
+
     def mark_delete_requested(self, config_path: str) -> dict:
         result = {"cleared_pending": 0, "cleared_inflight": False, "state": "stop"}
         if not config_path:
@@ -463,6 +522,10 @@ def _finish_node_stop_requested(config_path: str, message: str = "Stopped.") -> 
 
 def _dequeue_node_pending_to_working(config_path: str, runtime_owner_id: str | None = None) -> dict | None:
     return _NODE_CONFIG_STORE.dequeue_pending_to_working(config_path, runtime_owner_id=runtime_owner_id)
+
+
+def _consume_node_mid_turn_user_inputs(config_path: str, limit: int = 16) -> list[dict]:
+    return _NODE_CONFIG_STORE.consume_mid_turn_user_inputs(config_path, limit=limit)
 
 
 def _set_node_config_last_message(config_path: str, output: str) -> None:

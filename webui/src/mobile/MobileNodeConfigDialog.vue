@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import {
   getNodeTemplate,
-  updateNodeInstanceConfig,
   type MobileNode,
   type NodeInstanceConfig,
   type ProviderInfo,
@@ -13,13 +12,13 @@ import type { MobileOutputRouteRow } from './useMobileWorkspace'
 
 const props = defineProps<{
   open: boolean
-  graphId: string
   node: MobileNode | null
   config: NodeInstanceConfig | null
   providers: ProviderInfo[]
   availableTools: string[]
   nodes: MobileNode[]
   outputRoutes: MobileOutputRouteRow[]
+  saveFields: (fields: Record<string, unknown>) => Promise<void>
   renameNode: (name: string) => Promise<void>
   addOutputRoute: () => Promise<void>
   updateOutputRoute: (
@@ -172,7 +171,6 @@ async function loadTemplate() {
 
 async function applyChanges() {
   const nodeId = String(props.node?.id || '').trim()
-  const graphId = String(props.graphId || '').trim() || 'default'
   if (!nodeId) return
   const keys = Object.keys(dirtyKeys.value || {})
   const shouldRename = nodeNameDirty.value
@@ -196,7 +194,7 @@ async function applyChanges() {
       nodeNameDraft.value = nextNodeName
     }
     if (keys.length) {
-      await updateNodeInstanceConfig(nodeId, { fields }, graphId)
+      await props.saveFields(fields)
       dirtyKeys.value = {}
     }
     emit('saved')

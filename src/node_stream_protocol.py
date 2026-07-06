@@ -6,6 +6,7 @@ from typing import Any
 
 NODE_MESSAGE_DELTA = "node_message_delta"
 NODE_MESSAGE_DONE = "node_message_done"
+NODE_THINKING_DELTA = "node_thinking_delta"
 NODE_MESSAGE_EVENT_TYPES = {NODE_MESSAGE_DELTA, NODE_MESSAGE_DONE}
 
 
@@ -44,6 +45,18 @@ def build_node_message_done(text: object) -> dict[str, Any]:
         event_type=NODE_MESSAGE_DONE,
         text="" if text is None else str(text),
     ).to_payload()
+
+
+def build_node_thinking_delta(delta: object, text: object, *, provider: object = "") -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "type": NODE_THINKING_DELTA,
+        "delta": "" if delta is None else str(delta),
+        "text": "" if text is None else str(text),
+    }
+    provider_text = str(provider or "").strip()
+    if provider_text:
+        payload["provider"] = provider_text
+    return payload
 
 
 def normalize_node_message_event(event: dict[str, Any]) -> dict[str, Any]:

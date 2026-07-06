@@ -68,6 +68,145 @@ def test_doubao_send_uses_responses_api_for_plain_chat_when_enabled():
     assert payload["input"][-1]["content"][0]["text"] == "plain chat"
 
 
+def test_doubao_responses_rejects_non_ark_reasoning_effort_before_request():
+    import pytest
+
+    from src.tool.base_tool import BaseTool
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test-key",
+        "baseUrl": "https://example.com/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "doubao"
+    agent.system_prompt = None
+    agent.messages = [{"role": "user", "content": "plain chat"}]
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.tool_declarations = []
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    agent._post_json_with_retry = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("request should not be sent"))
+    agent._stream_responses_with_retry = agent._post_json_with_retry
+
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        agent.Send(run_tools=False, web_search="disabled", reasoning_effort="xhigh", stream=False)
+
+
+def test_doubao_responses_accepts_base_url_that_already_ends_with_responses():
+    from src.tool.base_tool import BaseTool
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test-key",
+        "baseUrl": "https://example.com/api/v3/responses",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "doubao"
+    agent.system_prompt = None
+    agent.messages = [{"role": "user", "content": "plain chat"}]
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.tool_declarations = []
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    urls = []
+
+    def fake_post(**kwargs):
+        urls.append(kwargs["url"])
+        return {"id": "resp-plain", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent.Send(run_tools=False, stream=False) == "ok"
+    assert urls == ["https://example.com/api/v3/responses"]
+
+
+def test_doubao_responses_appends_turn_trigger_after_terminal_assistant_context():
+    from src.tool.base_tool import BaseTool
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test-key",
+        "baseUrl": "https://example.com/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "doubao"
+    agent.system_prompt = None
+    agent.messages = []
+    agent._agentpark_responses_instruction = "Call the maintenance tool if needed."
+    agent.tools = BaseTool(agent)
+    agent.tool_declarations = []
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+
+    def _fake_post_json_with_retry(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        payloads.append(payload)
+        return {
+            "id": "resp-maintenance",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ],
+        }
+
+    agent._post_json_with_retry = _fake_post_json_with_retry
+    agent._stream_responses_with_retry = _fake_post_json_with_retry
+
+    result = agent._send_via_responses(
+        messages=[
+            {"role": "system", "content": "Keep this as system prompt."},
+            {"role": "user", "content": "inspect project"},
+            {"role": "assistant", "content": "I inspected it."},
+        ],
+        active_tools=[],
+        run_tools=True,
+        stream=False,
+    )
+
+    assert result == "ok"
+    payload = payloads[0]
+    assert payload["instructions"] == "Call the maintenance tool if needed."
+    assert any(item.get("role") == "system" for item in payload["input"])
+    assert payload["input"][-2]["role"] == "assistant"
+    assert payload["input"][-1]["role"] == "user"
+    assert payload["input"][-1]["content"][0]["text"].startswith("Continue by following")
+    assert "partial" not in payload
+
+
 def test_doubao_send_keeps_chat_completions_when_responses_api_disabled():
     from src.tool.base_tool import BaseTool
     from src.providers.doubao_agent import DouBaoAgent
@@ -147,7 +286,7 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
                 node_type_id="agent_node",
                 workspace_root=str(workspace),
                 shell="powershell",
-                responses_system_prompt_as_instructions=True,
+                responses_instruction="Base instructions.",
             ),
         )
         agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
@@ -212,7 +351,7 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
     attach_fake_post(doubao_agent, "doubao")
 
     messages = [
-        {"role": "system", "content": "Base instructions."},
+        {"role": "system", "content": "System prompt."},
         {"role": "developer", "content": "Operational memory for this node:\n- Keep the shared context."},
         {"role": "user", "content": "do work"},
     ]
@@ -221,6 +360,7 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
 
     for payload in payloads.values():
         assert payload["instructions"] == "Base instructions."
+        assert any(item.get("role") == "system" for item in payload["input"])
         assert payload["input"][0]["role"] == "developer"
         developer_texts = [part["text"] for part in payload["input"][0]["content"]]
         assert developer_texts[0].startswith("<permissions instructions>")
@@ -278,7 +418,7 @@ def test_doubao_responses_persists_runtime_context_between_sends(tmp_path):
             node_type_id="agent_node",
             workspace_root=str(workspace),
             shell="powershell",
-            responses_system_prompt_as_instructions=True,
+            responses_instruction="",
         ),
     )
     payloads = []

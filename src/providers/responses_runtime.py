@@ -18,9 +18,14 @@ class ResponsesRuntime(ResponsesRuntimeMethods, ToolFeedbackMixin, HostBoundServ
         if self._supports_responses_api():
             return
         provider = str(getattr(self, "provider_name", "") or "").strip() or "provider"
+        config = getattr(self, "config", None)
+        provider_type = ""
+        if isinstance(config, dict):
+            provider_type = str(config.get("type") or "").strip()
+        type_suffix = f" ({provider_type})" if provider_type else ""
         raise ValueError(
-            f"{feature_name} requires Responses API support, but provider '{provider}' does not declare "
-            "responsesApi=true. Disable this feature or select a provider configured for Responses API."
+            f"Feature '{feature_name}' is not available for provider '{provider}'{type_suffix}. "
+            f"Disable {feature_name} on this node or choose a provider whose feature matrix supports it."
         )
 
     def _send_via_responses(
@@ -31,6 +36,7 @@ class ResponsesRuntime(ResponsesRuntimeMethods, ToolFeedbackMixin, HostBoundServ
         run_tools,
         web_search_mode="disabled",
         stream_handler=None,
+        thinking_stream_handler=None,
         **provider_options,
     ):
         return send_via_responses(
@@ -40,5 +46,6 @@ class ResponsesRuntime(ResponsesRuntimeMethods, ToolFeedbackMixin, HostBoundServ
             run_tools=run_tools,
             web_search_mode=web_search_mode,
             stream_handler=stream_handler,
+            thinking_stream_handler=thinking_stream_handler,
             **provider_options,
         )

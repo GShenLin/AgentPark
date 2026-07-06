@@ -90,6 +90,8 @@ class ApiRouteRegistry:
         ("post", "/api/providers/limits/test", lambda core: core.settings_api.start_provider_limit_tests),
         ("post", "/api/providers/limits/models", lambda core: core.settings_api.start_provider_model_discovery),
         ("get", "/api/providers/limits/test/{job_id}", lambda core: core.settings_api.get_provider_limit_test_job),
+        ("get", "/api/tool-stats", lambda core: core.settings_api.get_tool_stats),
+        ("delete", "/api/tool-stats", lambda core: core.settings_api.clear_tool_stats),
         ("get", "/api/settings", lambda core: core.settings_api.list_settings_sections),
         ("get", "/api/settings/{section}", lambda core: core.settings_api.get_settings_section),
         ("post", "/api/settings/{section}", lambda core: core.settings_api.update_settings_section),

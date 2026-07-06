@@ -182,7 +182,7 @@ def test_cli_chat_renders_assistant_markdown(monkeypatch, tmp_path, capsys):
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
-    monkeypatch.setenv("AITOOLS_COLOR", "1")
+    monkeypatch.setenv("AGENTPARK_COLOR", "1")
 
     markdown_text = "# Plan\n- inspect `code`\n```py\nprint(1)\n```"
 
@@ -247,7 +247,7 @@ def test_cli_chat_interactive_commands_render_shell(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "AITools Companion" in output
+    assert "AgentPark Companion" in output
     assert "provider: unit-provider" in output
     assert "status" in output
     assert "Commands:" in output
@@ -581,7 +581,7 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
     monkeypatch.setattr(
         companion_notice_settings.ConfigLoader,
         "get_config",
-        lambda _self: {"agentNode": {"notifyCompanionOnError": True}},
+        lambda _self: {"agentNode": {"reviewNodeRunsWithCompanion": True}},
     )
     seen_inputs = []
 
@@ -604,9 +604,22 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
     monkeypatch.setattr(chat_command, "AgentNode", lambda: DummyAgentNode())
     assert deliver_companion_notice(
         {
-            "source": {"graph_id": "default", "node_id": "Agent1", "provider": "unit"},
-            "issue": {"tool_name": "execute_console_command", "error": "boom"},
-            "memory": {"action": "upsert", "title": "Avoid boom", "lesson": "Use the stable path."},
+            "type": "node_review_notice",
+            "source": {"graph_id": "default", "node_id": "Agent1", "node_type_id": "agent_node"},
+            "run": {
+                "trace_id": "trace-1",
+                "from_node": "Trigger1",
+                "input_preview": "start work",
+                "output_preview": "done",
+                "duration_ms": 42,
+                "goal_status": "complete",
+            },
+            "report": {
+                "memory_path": str(tmp_path / "memories" / "default" / "Agent1" / "memory.md"),
+                "messages_path": str(tmp_path / "memories" / "default" / "Agent1" / "messages.jsonl"),
+                "runtime_events_path": str(tmp_path / "memories" / "default" / "Agent1" / "runtime_events.jsonl"),
+                "report_path": str(tmp_path / "memories" / "default" / "Agent1" / "reports" / "review.md"),
+            },
         },
         config_path=str(config_path),
     )
@@ -616,16 +629,15 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "A node encountered the following issue. Determine whether project code changes are needed." in output
-    assert "If needed, update this model's prompt to improve the node's future runs." in output
+    assert "A node run was persisted. Review the full persisted run" in output
     assert "Node: default/Agent1" in output
-    assert "Issue: boom" in output
+    assert "Triggered by node: default/Trigger1" in output
+    assert "Write report to:" in output
     assert "acknowledged" in output
     assert len(seen_inputs) == 1
     assert seen_inputs[0].startswith(
-        "A node encountered the following issue. Determine whether project code changes are needed."
+        "A node run was persisted. Review the full persisted run"
     )
-    assert "If needed, update this model's prompt to improve the node's future runs." in seen_inputs[0]
     assert "Node: default/Agent1" in seen_inputs[0]
     assert (config_path.parent / "inbox.jsonl").read_text(encoding="utf-8") == ""
     records = [
@@ -634,7 +646,7 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
         if line.strip()
     ]
     assert [item["role"] for item in records] == ["user", "assistant"]
-    assert "Issue: boom" in records[0]["parts"][0]["text"]
+    assert "Triggered by node: default/Trigger1" in records[0]["parts"][0]["text"]
 
 
 def test_companion_tui_edits_draft_from_key_events(tmp_path):
@@ -721,7 +733,7 @@ def test_cli_doctor_reports_invalid_plugin_manifest(monkeypatch, tmp_path, capsy
     plugin_root = tmp_path / "plugins"
     bad_plugin = plugin_root / "bad"
     bad_plugin.mkdir(parents=True)
-    (bad_plugin / "aitools.plugin.json").write_text(
+    (bad_plugin / "agentpark.plugin.json").write_text(
         '{"id":"bad","configSchema":[]}',
         encoding="utf-8",
     )

@@ -120,7 +120,13 @@ class NodeInstanceRuntime(HostBoundService):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    def get_node_instance_memory(self, node_id: str, max_chars: int = 20000, graph_id: str = ""):
+    def get_node_instance_memory(
+        self,
+        node_id: str,
+        max_chars: int | None = 20000,
+        graph_id: str = "",
+        messages_limit: int | None = 400,
+    ):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
@@ -133,6 +139,7 @@ class NodeInstanceRuntime(HostBoundService):
             safe_graph_id,
             safe_node_id,
             max_chars=max_chars,
+            messages_limit=messages_limit,
         )
 
     def get_node_instance_memory_from_paths(
@@ -142,7 +149,8 @@ class NodeInstanceRuntime(HostBoundService):
         messages_path: str,
         graph_id: str,
         node_id: str,
-        max_chars: int = 20000,
+        max_chars: int | None = 20000,
+        messages_limit: int | None = 400,
     ):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
@@ -152,9 +160,10 @@ class NodeInstanceRuntime(HostBoundService):
         text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
         messages = [
             normalize_envelope(item, default_role="assistant")
-            for item in load_recent_node_memory_records(memory_path, messages_path, limit=400)
+            for item in load_recent_node_memory_records(memory_path, messages_path, limit=messages_limit)
         ]
         current_paths = current_node_memory_paths(memory_path, messages_path)
+        live = self.core.node_live_outputs.get(graph_id, node_id) or {}
         return {
             "memory_path": current_paths.get("memory_path") or memory_path,
             "messages_path": current_paths.get("messages_path") or messages_path,
@@ -162,7 +171,8 @@ class NodeInstanceRuntime(HostBoundService):
             "messages": messages,
             "state": parse_node_state(cfg.get("state")) if isinstance(cfg, dict) else "idle",
             "last_message": str(cfg.get("last_message") or "") if isinstance(cfg, dict) else "",
-            "live_message": str((self.core.node_live_outputs.get(graph_id, node_id) or {}).get("text") or ""),
+            "live_message": str(live.get("text") or ""),
+            "thinking_message": str(live.get("thinking_text") or ""),
         }
 
     def delete_node_instance_memory_message(self, node_id: str, message_id: str, graph_id: str = ""):
@@ -208,10 +218,12 @@ class NodeInstanceRuntime(HostBoundService):
             raise HTTPException(status_code=404, detail="node instance not found")
         if bool(cfg.get("_delete_requested")):
             raise HTTPException(status_code=409, detail="node is being deleted")
+        live = self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}
         return {
             "node_id": safe_node_id,
             "graph_id": safe_graph_id,
-            "live_message": str((self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}).get("text") or ""),
+            "live_message": str(live.get("text") or ""),
+            "thinking_message": str(live.get("thinking_text") or ""),
         }
 
     def stream_node_instance_live(self, node_id: str, graph_id: str = ""):
@@ -229,6 +241,7 @@ class NodeInstanceRuntime(HostBoundService):
                 "node_id": safe_node_id,
                 "graph_id": safe_graph_id,
                 "live_message": str((item or {}).get("text") or ""),
+                "thinking_message": str((item or {}).get("thinking_text") or ""),
                 "version": int((item or {}).get("version") or 0),
                 "trace_id": str((item or {}).get("trace_id") or ""),
                 "updated_at": float((item or {}).get("updated_at") or 0),

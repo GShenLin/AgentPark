@@ -17,6 +17,7 @@ const props = defineProps<{
   memoryText: string
   messages: MessageEnvelope[]
   liveMessage: string
+  thinkingMessage: string
   markdownPreview: boolean
   wordWrap: boolean
   showLineNumbers: boolean
@@ -66,7 +67,9 @@ const interactiveInputRef = ref<HTMLInputElement | null>(null)
 const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/) : []))
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
 const renderedLiveMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.liveMessage))
+const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.thinkingMessage))
 const showInteractiveBar = computed(() => props.mode === 'agent' && !!props.interactiveSessionId)
+const hasLiveActivity = computed(() => !!props.liveMessage || !!props.thinkingMessage)
 
 function updateMemoryText(event: Event) {
   emit('update:memoryText', String((event.target as HTMLTextAreaElement | null)?.value || ''))
@@ -211,7 +214,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
     </div>
 
     <div
-      v-else-if="mode === 'agent' && (messages.length > 0 || liveMessage || showInteractiveBar)"
+      v-else-if="mode === 'agent' && (messages.length > 0 || hasLiveActivity || showInteractiveBar)"
       ref="memoryPanelRef"
       class="panel-body message-feed"
       @scroll="syncScroll"
@@ -223,11 +226,23 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         @copy-message="emit('copyMessage', $event)"
         @delete-message="emit('deleteMessage', $event)"
       />
-      <div v-if="liveMessage" class="live-message">
+      <div v-if="hasLiveActivity" class="live-message">
         <div class="live-head">
           <span class="live-role">Live</span>
           <span class="live-status">streaming</span>
         </div>
+        <section v-if="thinkingMessage" class="live-section thinking">
+          <div class="live-section-label">Thinking</div>
+          <div
+            v-if="markdownPreview"
+            class="live-body live-markdown"
+            v-html="renderedThinkingMarkdown"
+            @click="handleMarkdownCodeCopyClick"
+          ></div>
+          <div v-else class="live-body">{{ thinkingMessage }}</div>
+        </section>
+        <section v-if="liveMessage" class="live-section">
+          <div v-if="thinkingMessage" class="live-section-label">Answer</div>
         <div
           v-if="markdownPreview"
           class="live-body live-markdown"
@@ -235,6 +250,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
           @click="handleMarkdownCodeCopyClick"
         ></div>
         <div v-else class="live-body">{{ liveMessage }}</div>
+        </section>
       </div>
     </div>
 
@@ -554,6 +570,21 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 .live-status {
   font-size: 11px;
   color: rgba(125, 211, 252, 0.86);
+}
+
+.live-section + .live-section {
+  border-top: 1px solid rgba(125, 211, 252, 0.16);
+}
+
+.live-section.thinking {
+  background: rgba(15, 23, 42, 0.24);
+}
+
+.live-section-label {
+  padding: 8px 10px 0;
+  color: rgba(125, 211, 252, 0.88);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .live-body {

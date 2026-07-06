@@ -6,6 +6,7 @@ from typing import Any, Callable
 from src.providers.curl_transport import CurlHttpTransport, CurlResponse, CurlTransportError
 from src.providers.provider_errors import ProviderHttpError, ProviderProtocolError, ProviderTransportError
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import sleep_with_cancel
 from src.service_host import HostBoundService
@@ -19,7 +20,7 @@ class ZhipuTransportError(ProviderTransportError):
     pass
 
 
-class ZhipuHttpTransport(CurlHttpTransport, ProviderRuntimeEventMixin, HostBoundService):
+class ZhipuHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRuntimeEventMixin, HostBoundService):
     DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 
     def _chat_completions_url(self) -> str:
@@ -299,13 +300,3 @@ class ZhipuHttpTransport(CurlHttpTransport, ProviderRuntimeEventMixin, HostBound
             )
         return output
 
-    @staticmethod
-    def _emit_stream_text(stream_handler: Callable[[object, object], None] | None, delta_text: object, full_text: object) -> None:
-        if not callable(stream_handler):
-            return
-        try:
-            stream_handler(delta_text, full_text)
-        except CancellationRequested:
-            raise
-        except Exception:
-            return

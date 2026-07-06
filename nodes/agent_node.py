@@ -33,13 +33,15 @@ from src.media_resource_utils import resolve_public_base_url
 from src.message_protocol import envelope_text, normalize_envelope
 from src.operational_memory import build_operational_memory_summary
 from src.providers import create_agent
-from src.providers.agent_codex_base_instructions import resolve_agent_codex_base_instructions
+from src.providers.instructions import resolve_agent_default_instructions
 from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.switch_utils import parse_switch_mode
+from src.tool.tool_stats_store import ToolCallStatsRecorder
 from src.workspace_settings import get_workspace_root
 from src.web_backend.node_memory_store import load_recent_node_memory_records
 from src.web_backend.node_goal_runtime import node_goal_context
+from src.web_backend.state_store import _consume_node_mid_turn_user_inputs
 
 
 class Node(BaseNode):
@@ -67,6 +69,7 @@ class Node(BaseNode):
 
     config_defaults = {
         "provider_id": "",
+        "instruction": "",
         "system_prompt": "",
         "mode": "chat",
         "collaboration_mode": "default",
@@ -79,6 +82,7 @@ class Node(BaseNode):
     }
     config_schema = {
         "provider_id": {"type": "text", "label": "provider_id"},
+        "instruction": {"type": "text", "label": "instruction"},
         "system_prompt": {"type": "text", "label": "system_prompt"},
         "mode": {"type": "text", "label": "mode"},
         "collaboration_mode": {
@@ -140,7 +144,7 @@ class Node(BaseNode):
             field_schema["type"] = "multiselect"
             field_schema["options"] = list((capability_payload.get(kind) or {}).get("available") or [])
             schema[field] = field_schema
-        for field in ("web_search", "thinking", "reasoning_effort"):
+        for field in ("web_search", "thinking", "reasoning_effort", "tools"):
             if field not in schema:
                 continue
             field_schema = dict(schema.get(field) or {})
@@ -243,6 +247,7 @@ class Node(BaseNode):
             internal_memory_enabled=False,
         )
         agent.operational_memory_gate_enabled = True
+        resolved_public_base_url = resolve_public_base_url(run_request.public_base_url, run_request.provider_id)
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
         if cancel_source is not None:
             agent.cancel_event = cancel_source
@@ -252,6 +257,30 @@ class Node(BaseNode):
             memory_path=memory_path,
             messages_path=self._resolve_messages_path(ctx),
         )
+
+        def consume_mid_turn_user_inputs() -> list[dict]:
+            messages: list[dict] = []
+            for pending_item in _consume_node_mid_turn_user_inputs(config_path):
+                if not isinstance(pending_item, dict):
+                    continue
+                envelope = normalize_envelope(pending_item.get("payload"), default_role="user")
+                content = build_agent_user_content(
+                    run_request.provider_id,
+                    run_request.mode,
+                    envelope,
+                    resolved_public_base_url,
+                )
+                if content is None:
+                    continue
+                if isinstance(content, str) and not content.strip():
+                    continue
+                if isinstance(content, list) and not content:
+                    continue
+                message = {"role": "user", "content": content}
+                agent.Message("user", content, persist=False)
+                messages.append(message)
+            return messages
+
         bind_agent_runtime_context(
             agent,
             AgentRuntimeContext(
@@ -262,17 +291,16 @@ class Node(BaseNode):
                 working_path=run_request.working_path,
                 collaboration_mode=run_request.collaboration_mode,
                 shell="powershell" if os.name == "nt" else "",
-                responses_system_prompt_as_instructions=_uses_responses_api_context(agent),
+                responses_instruction=_effective_instruction(agent, run_request.instruction)
+                if _uses_responses_api_context(agent)
+                else "",
                 skill_resource_roots=capability_plan.skill_resource_roots,
                 persist_assistant_tool_call_note=persist_tool_call_note,
+                consume_mid_turn_user_inputs=consume_mid_turn_user_inputs,
             ),
         )
-        codex_context_role = _codex_like_context_role(agent)
-        effective_system_prompt = (
-            resolve_agent_codex_base_instructions(agent, explicit_system_prompt=run_request.system_prompt)
-            if _uses_responses_api_context(agent)
-            else str(run_request.system_prompt or "").strip()
-        )
+        instruction_role = _instruction_role(agent)
+        effective_system_prompt = str(run_request.system_prompt or "").strip()
 
         load_configured_tools(agent, capability_plan.tool_names)
         if capability_plan.plugin_capabilities.tool_definitions:
@@ -293,30 +321,33 @@ class Node(BaseNode):
             has_system = any((msg or {}).get("role") == "system" for msg in getattr(agent, "messages", []) or [])
             if not has_system:
                 agent.Message("system", effective_system_prompt)
+        if not _uses_responses_api_context(agent):
+            effective_instruction = _effective_instruction(agent, run_request.instruction)
+            if effective_instruction:
+                agent.Message(instruction_role, effective_instruction, persist=False)
         operational_memory_summary = build_operational_memory_summary(
             os.path.join(os.path.dirname(memory_path), "operational_memory.json") if memory_path else ""
         )
         if operational_memory_summary:
-            agent.Message(codex_context_role, operational_memory_summary, persist=False)
+            agent.Message(instruction_role, operational_memory_summary, persist=False)
         if capability_plan.mcp_server_names:
             inject_mcp_server_context(
                 agent,
                 list(capability_plan.mcp_server_names),
                 settings=mcp_settings,
-                role=codex_context_role,
+                role=instruction_role,
             )
         self._inject_configured_skills(
             agent,
             {"skills": list(capability_plan.skill_names)},
             node_id=run_request.agent_id,
             extra_skills=skill_definitions,
-            role=codex_context_role,
+            role=instruction_role,
         )
         goal_context = node_goal_context(run_request.config_data or ctx)
         if goal_context:
             agent.Message("user", goal_context, persist=False)
 
-        resolved_public_base_url = resolve_public_base_url(run_request.public_base_url, run_request.provider_id)
         for history_message in self._load_node_history_messages(ctx, input_message, run_request.provider_id, resolved_public_base_url):
             agent.Message(history_message["role"], history_message["content"], persist=False)
 
@@ -327,7 +358,15 @@ class Node(BaseNode):
         reasoning_effort = run_request.reasoning_effort
         if reasoning_effort is None:
             reasoning_effort = self.config_defaults["reasoning_effort"]
-        stream_runtime = AgentStreamRuntime(self._resolve_stream_callback(ctx))
+        tool_stats_recorder = ToolCallStatsRecorder(
+            provider_id=run_request.provider_id,
+            graph_id=run_request.graph_id,
+            node_id=run_request.agent_id,
+        )
+        stream_runtime = AgentStreamRuntime(
+            self._resolve_stream_callback(ctx),
+            tool_event_callback=tool_stats_recorder.handle,
+        )
 
         start_time = time.monotonic()
         raise_if_cancel_requested(cancel_source)
@@ -339,8 +378,9 @@ class Node(BaseNode):
                 "web_search": web_search_mode,
                 "thinking": thinking_mode,
                 "reasoning_effort": reasoning_effort,
-                "stream": True,
+                "stream": _stream_enabled_for_agent(agent),
                 "stream_handler": stream_runtime.on_stream_delta,
+                "thinking_stream_handler": stream_runtime.on_thinking_delta,
             },
         )
         min_delay_ms = resolve_agent_node_settings(ConfigLoader().get_config()).min_send_delay_ms
@@ -366,10 +406,19 @@ class Node(BaseNode):
         }
 
 
-def _codex_like_context_role(agent: object) -> str:
+def _instruction_role(agent: object) -> str:
     if _uses_responses_api_context(agent):
         return "developer"
     return "system"
+
+
+def _effective_instruction(agent: object, instruction: object) -> str:
+    explicit_instruction = str(instruction or "").strip()
+    if explicit_instruction:
+        return explicit_instruction
+    if _uses_responses_api_context(agent):
+        return resolve_agent_default_instructions(agent)
+    return ""
 
 
 def _uses_responses_api_context(agent: object) -> bool:
@@ -378,3 +427,11 @@ def _uses_responses_api_context(agent: object) -> bool:
         return False
     provider_type = str(config.get("type") or "").strip().lower()
     return provider_type in {"openai", "doubao"} and config.get("responsesApi") is True
+
+
+def _stream_enabled_for_agent(agent: object) -> bool:
+    config = getattr(agent, "config", None)
+    if not isinstance(config, dict):
+        return True
+    value = config.get("streamEnabled", True)
+    return value if isinstance(value, bool) else True

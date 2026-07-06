@@ -6,7 +6,7 @@ from src.tool.tool_json_response import tool_json_error, tool_json_payload
 
 
 def _agent_resource_roots(agent):
-    roots = getattr(agent, "_aitools_skill_resource_roots", None) if agent is not None else None
+    roots = getattr(agent, "_agentpark_skill_resource_roots", None) if agent is not None else None
     if not isinstance(roots, dict):
         return {}
     return {str(key): str(value) for key, value in roots.items() if str(key or "").strip() and str(value or "").strip()}

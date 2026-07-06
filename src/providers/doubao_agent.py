@@ -9,6 +9,7 @@ from src.providers.doubao_stream_runtime import DoubaoStreamRuntime
 from src.providers.tool_feedback import ToolFeedbackMixin
 from src.providers.doubao_tool_runtime import DoubaoToolRuntime
 from src.providers.doubao_video_generation import DoubaoVideoGeneration
+from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.providers.wan_animate_mix_runtime import WanAnimateMixRuntime
 from src.service_host import ServiceHost
 from src.switch_utils import parse_switch_mode
@@ -90,6 +91,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         reasoning_effort=None,
         stream=False,
         stream_handler=None,
+        thinking_stream_handler=None,
         _tool_submission_error_recovered=False,
     ):
         self.config = self._read_provider_config_from_file()
@@ -145,6 +147,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 reasoning_effort=reasoning_effort,
                 web_search_mode=web_search_mode,
                 stream_handler=stream_handler if stream and callable(stream_handler) else None,
+                thinking_stream_handler=thinking_stream_handler if stream and callable(thinking_stream_handler) else None,
             )
             return response_text
         if web_search_mode == "enabled":
@@ -181,6 +184,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                     max_retries=max_retries,
                     retry_delay=retry_delay,
                     stream_handler=stream_handler if callable(stream_handler) else None,
+                    thinking_stream_handler=thinking_stream_handler if callable(thinking_stream_handler) else None,
                 )
             else:
                 result = self._post_json_with_retry(
@@ -206,6 +210,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                     reasoning_effort=reasoning_effort,
                     stream=stream,
                     stream_handler=stream_handler,
+                    thinking_stream_handler=thinking_stream_handler,
                     _tool_submission_error_recovered=True,
                 )
             return str(e)
@@ -249,6 +254,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                         return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
                     self._run_operational_memory_gate_for_failed_executions(executions)
                     self._run_tool_context_compaction_gate_if_needed(executions)
+                    append_mid_turn_user_messages(self)
                     return self.Send(
                         tools=tools,
                         run_tools=run_tools,
@@ -258,6 +264,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                         reasoning_effort=reasoning_effort,
                         stream=stream,
                         stream_handler=stream_handler,
+                        thinking_stream_handler=thinking_stream_handler,
                     )
                 return {"type": "function_call", "function": tool_calls[0]["function"], "tool_calls": tool_calls}
 

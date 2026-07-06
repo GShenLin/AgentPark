@@ -37,9 +37,9 @@ async function syncDocumentTitle() {
     }
     const pcs = await listMobilePcs()
     const name = String(pcs.find((pc) => pc.id === 'local')?.name || pcs[0]?.name || '').trim()
-    document.title = name || 'AITools'
+    document.title = name || 'AgentPark'
   } catch {
-    document.title = 'AITools'
+    document.title = 'AgentPark'
   }
 }
 

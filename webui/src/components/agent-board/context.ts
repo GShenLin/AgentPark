@@ -48,6 +48,7 @@ export type NodeCard = {
   webSearch?: 'enabled' | 'disabled'
   thinking?: 'enabled' | 'disabled'
   reasoningEffort?: string
+  instruction?: string
   systemPrompt?: string
   plugins?: string[]
   tools?: string[]

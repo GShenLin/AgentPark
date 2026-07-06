@@ -8,6 +8,9 @@ from typing import Any, Callable
 
 from src.config_loader import ConfigLoader
 from src.file_transaction import atomic_write_text
+from src.provider_limit_claude import test_claude_limits
+from src.provider_limit_doubao import test_doubao_limits
+from src.provider_limit_hyper3d import test_hyper3d_limits
 from src.providers.curl_transport import CurlHttpTransport
 from src.providers.curl_transport import CurlTransportError
 from src.provider_limit_schema import PROVIDER_LIMIT_SCHEMA_VERSION
@@ -15,6 +18,7 @@ from src.provider_limit_schema import REASONING_EFFORT_VALUES
 from src.provider_limit_schema import THINKING_VALUES
 from src.provider_limit_schema import ProbeResult
 from src.provider_limit_schema import provider_limit_path
+from src.provider_limit_static_contract import record_static_contract_limits
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -131,7 +135,7 @@ def test_provider_limits(provider_id: str, provider: dict[str, Any], *, timeout_
         result["status"] = "unavailable"
         result["access_error"] = validation_error
         _record_unsupported(result, "access", validation_error)
-        _record_static_contract_limits(result, provider_type, skip_access=True)
+        record_static_contract_limits(result, provider_type, skip_access=True)
         return result
 
     tester = _tester_for_type(provider_type)
@@ -140,7 +144,7 @@ def test_provider_limits(provider_id: str, provider: dict[str, Any], *, timeout_
         result["status"] = "unavailable"
         result["access_error"] = reason
         _record_unsupported(result, "access", reason)
-        _record_static_contract_limits(result, provider_type, skip_access=True)
+        record_static_contract_limits(result, provider_type, skip_access=True)
         return result
 
     tester(result, config, timeout_seconds=max(1.0, float(timeout_seconds or 30.0)))
@@ -162,6 +166,7 @@ def _validate_common_config(config: dict[str, Any], provider_type: str) -> str:
 def _tester_for_type(provider_type: str):
     return {
         "openai": _test_openai_compatible,
+        "claude": _test_claude,
         "doubao": _test_doubao,
         "zhipu": _test_zhipu,
         "gemini": _test_gemini,
@@ -185,23 +190,30 @@ def _test_openai_compatible(result: dict[str, Any], config: dict[str, Any], *, t
     )
 
 def _test_doubao(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
-    access = _probe_chat_completions(config, {}, timeout_seconds=timeout_seconds)
-    _set_feature(result, "access", access)
-    responses = _probe_responses(config, {}, timeout_seconds=timeout_seconds)
-    _set_feature(result, "responses_api", responses)
-    _set_feature(result, "web_search", _probe_responses(config, _doubao_web_search_payload(config), timeout_seconds=timeout_seconds))
-    _set_value_features(
+    test_doubao_limits(
         result,
-        "thinking",
-        {
-            mode: _probe_chat_completions(config, {"thinking": {"type": mode}}, timeout_seconds=timeout_seconds)
-            for mode in THINKING_VALUES
-        },
+        config,
+        timeout_seconds=timeout_seconds,
+        post_json_probe=lambda url, headers, payload: _post_json_probe(
+            url,
+            headers,
+            payload,
+            timeout_seconds=timeout_seconds,
+        ),
     )
-    _set_value_features(
+
+
+def _test_claude(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
+    test_claude_limits(
         result,
-        "reasoning_effort",
-        {effort: ProbeResult(False, "Doubao provider contract does not send reasoning_effort") for effort in REASONING_EFFORT_VALUES},
+        config,
+        timeout_seconds=timeout_seconds,
+        post_json_probe=lambda url, headers, payload: _post_json_probe(
+            url,
+            headers,
+            payload,
+            timeout_seconds=timeout_seconds,
+        ),
     )
 
 
@@ -240,16 +252,7 @@ def _test_gemini(result: dict[str, Any], config: dict[str, Any], *, timeout_seco
     )
 
 def _test_hyper3d(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
-    _ = timeout_seconds
-    _set_feature(result, "access", ProbeResult(True, "Configuration is present; generation endpoints are not probed to avoid creating billable jobs"))
-    _set_feature(result, "responses_api", ProbeResult(False, "Hyper3D provider is generation-only and has no Responses API"))
-    _set_feature(result, "web_search", ProbeResult(False, "Hyper3D provider is generation-only and has no web_search"))
-    _set_feature(result, "thinking", ProbeResult(False, "Hyper3D provider is generation-only and has no thinking"))
-    _set_value_features(
-        result,
-        "reasoning_effort",
-        {effort: ProbeResult(False, "Hyper3D provider is generation-only and has no reasoning_effort") for effort in REASONING_EFFORT_VALUES},
-    )
+    test_hyper3d_limits(result, config, timeout_seconds=timeout_seconds)
 
 
 def _probe_chat_completions(config: dict[str, Any], extra_payload: dict[str, Any], *, timeout_seconds: float) -> ProbeResult:
@@ -320,21 +323,6 @@ def _web_search_payload(config: dict[str, Any]) -> dict[str, Any]:
     return {"tools": [{"type": tool_type or "web_search"}]}
 
 
-def _doubao_web_search_payload(config: dict[str, Any]) -> dict[str, Any]:
-    tool: dict[str, Any] = {"type": "web_search"}
-    for source_key, target_key in (
-        ("webSearchMaxKeyword", "max_keyword"),
-        ("webSearchLimit", "limit"),
-    ):
-        value = config.get(source_key)
-        if isinstance(value, int) and value > 0:
-            tool[target_key] = value
-    sources = config.get("webSearchSources")
-    if isinstance(sources, list) and sources:
-        tool["sources"] = [str(item) for item in sources if str(item or "").strip()]
-    return {"tools": [tool]}
-
-
 def _set_feature(result: dict[str, Any], feature_name: str, probe: ProbeResult) -> None:
     features = result.setdefault("features", {})
     features[feature_name] = probe.to_payload()
@@ -363,18 +351,6 @@ def _record_unsupported(result: dict[str, Any], name: str, reason: str) -> None:
     result.setdefault("unsupported", {})[name] = str(reason or "not supported")
 
 
-def _record_static_contract_limits(result: dict[str, Any], provider_type: str, *, skip_access: bool) -> None:
-    if not skip_access:
-        return
-    if provider_type not in {"openai", "doubao", "zhipu", "gemini", "hyper3d"}:
-        return
-    result.setdefault("features", {})
-    result.setdefault("unsupported", {})
-    for feature in ("responses_api", "web_search", "thinking", "reasoning_effort"):
-        if feature not in result["unsupported"]:
-            result["unsupported"][feature] = "not tested because provider is not accessible"
-
-
 def _base_url(config: dict[str, Any]) -> str:
     return str(config.get("baseUrl") or "").strip().rstrip("/")
 
@@ -396,4 +372,7 @@ def _sanitize_error(text: str, *, config_api_key: dict[str, str]) -> str:
     api_key = str((config_api_key or {}).get("x-goog-api-key") or "")
     if api_key:
         output = output.replace(api_key, "<redacted>")
+    anthropic_key = str((config_api_key or {}).get("x-api-key") or "")
+    if anthropic_key:
+        output = output.replace(anthropic_key, "<redacted>")
     return output[:1200]

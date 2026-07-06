@@ -27,6 +27,13 @@ const providerIds = computed(() => Object.keys(providers.value))
 const selectedProvider = computed(() => providers.value[selectedProviderId.value] || null)
 const selectedLimit = computed(() => providerLimits.value?.providers?.[selectedProviderId.value] || null)
 const availableModelIds = computed(() => selectedLimit.value?.available_model_ids || [])
+const modelOptions = computed(() => {
+  const current = currentModelValue()
+  const ids = availableModelIds.value
+    .map((modelId) => String(modelId || '').trim())
+    .filter(Boolean)
+  return current && !ids.includes(current) ? [current, ...ids] : ids
+})
 const activeLimitWarnings = computed(() => {
   const warnings: string[] = []
   const provider = selectedProvider.value
@@ -109,7 +116,28 @@ function setField(key: string, value: unknown) {
   } else {
     provider[key] = value
   }
+  if (key === 'responsesApi' && value === true) {
+    applyResponsesApiDefaults(provider)
+  }
   emitProvider(selectedProviderId.value, provider)
+}
+
+function applyResponsesApiDefaults(provider: Record<string, unknown>) {
+  if (!provider.responsesContinuationMode) {
+    provider.responsesContinuationMode = 'explicit_context'
+  }
+  if (provider.toolResultSubmissionMaxChars === undefined || provider.toolResultSubmissionMaxChars === null || provider.toolResultSubmissionMaxChars === '') {
+    provider.toolResultSubmissionMaxChars = 50000
+  }
+  if (provider.toolContextCompactionEnabled === undefined || provider.toolContextCompactionEnabled === null) {
+    provider.toolContextCompactionEnabled = false
+  }
+  if (provider.toolContextCompactionEveryToolCalls === undefined || provider.toolContextCompactionEveryToolCalls === null || provider.toolContextCompactionEveryToolCalls === '') {
+    provider.toolContextCompactionEveryToolCalls = 30
+  }
+  if (String(provider.type || '').trim().toLowerCase() === 'openai' && typeof provider.responsesReplayReasoningItems !== 'boolean') {
+    provider.responsesReplayReasoningItems = false
+  }
 }
 
 function setNumberField(key: string, raw: string) {
@@ -243,6 +271,7 @@ onMounted(loadProviderLimits)
           <select :value="stringValue('type')" @change="setField('type', ($event.target as HTMLSelectElement).value)">
             <option value="">Unset</option>
             <option value="openai">openai</option>
+            <option value="claude">claude</option>
             <option value="doubao">doubao</option>
             <option value="gemini">gemini</option>
             <option value="zhipu">zhipu</option>
@@ -252,15 +281,13 @@ onMounted(loadProviderLimits)
         <label>
           <span>Model</span>
           <select
-            v-if="availableModelIds.length"
             :value="stringValue('model')"
+            :disabled="modelOptions.length === 0"
             @change="setField('model', ($event.target as HTMLSelectElement).value)"
           >
-            <option value="">Unset</option>
-            <option v-if="currentModelValue() && !availableModelIds.includes(currentModelValue())" :value="currentModelValue()">{{ currentModelValue() }}</option>
-            <option v-for="modelId in availableModelIds" :key="modelId" :value="modelId">{{ modelId }}</option>
+            <option value="">{{ modelOptions.length ? 'Unset' : 'No discovered models' }}</option>
+            <option v-for="modelId in modelOptions" :key="modelId" :value="modelId">{{ modelId }}</option>
           </select>
-          <input v-else :value="stringValue('model')" @input="setField('model', ($event.target as HTMLInputElement).value)" />
         </label>
         <label>
           <span>Base URL</span>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getPrompt, listPrompts, savePrompt, type ProviderInfo } from '../../api'
+import { getPrompt, listPrompts, savePrompt, type PromptLibraryKind, type ProviderInfo } from '../../api'
 import { ASSET_FIELD_KEYS } from '../../composables/droppedPaths'
 import {
   dedupeStrings,
@@ -66,6 +66,7 @@ const multiSelectSearchQueries = ref<Record<string, string>>({})
 const promptActionBusy = ref('')
 const promptActionMessage = ref('')
 const promptLibraryMode = ref<'' | 'save' | 'load'>('')
+const promptLibraryField = ref('')
 const promptLibraryFiles = ref<string[]>([])
 const promptSaveFilename = ref('system_prompt.txt')
 const schemaKeys = computed(() => Object.keys(props.schema || {}).filter((key) => shouldShowField(key)))
@@ -92,12 +93,33 @@ const providerOptions = computed(() => {
 })
 
 function setField(key: string, value: any) {
-  if (isSystemPromptField(key)) promptActionMessage.value = ''
+  if (isPromptLibraryField(key)) promptActionMessage.value = ''
   emit('update-field', key, value)
 }
 
-function isSystemPromptField(key: string) {
-  return props.enablePromptLibrary && String(key || '').trim() === 'system_prompt'
+function isPromptLibraryField(key: string) {
+  const field = String(key || '').trim()
+  return props.enablePromptLibrary && (field === 'system_prompt' || field === 'instruction')
+}
+
+function isPromptLibraryOpen(key: string) {
+  return Boolean(isPromptLibraryField(key) && promptLibraryMode.value && promptLibraryField.value === String(key || '').trim())
+}
+
+function defaultPromptFilename(key: string) {
+  return String(key || '').trim() === 'instruction' ? 'instruction.txt' : 'system_prompt.txt'
+}
+
+function promptLibraryKindForField(key: string): PromptLibraryKind {
+  return String(key || '').trim() === 'instruction' ? 'instruction' : 'system_prompt'
+}
+
+function ensurePromptLibraryField(key: string) {
+  const field = String(key || '').trim()
+  if (promptLibraryField.value !== field) {
+    promptLibraryField.value = field
+    promptSaveFilename.value = defaultPromptFilename(field)
+  }
 }
 
 function normalizePromptFilename(value: string) {
@@ -106,8 +128,8 @@ function normalizePromptFilename(value: string) {
   return filename.toLowerCase().endsWith('.txt') ? filename : `${filename}.txt`
 }
 
-async function refreshPromptLibraryFiles() {
-  promptLibraryFiles.value = (await listPrompts())
+async function refreshPromptLibraryFiles(key: string) {
+  promptLibraryFiles.value = (await listPrompts(promptLibraryKindForField(key)))
     .map((item) => String(item || '').trim())
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b))
@@ -129,10 +151,10 @@ function promptActionError(error: unknown) {
 }
 
 async function saveSystemPrompt(key: string) {
-  if (!isSystemPromptField(key) || promptActionBusy.value) return
+  if (!isPromptLibraryField(key) || promptActionBusy.value) return
   const content = String(props.fields[key] ?? '')
   if (!content.trim()) {
-    promptActionError('system_prompt is empty; nothing to save.')
+    promptActionError(`${key} is empty; nothing to save.`)
     return
   }
   const filename = normalizePromptFilename(promptSaveFilename.value)
@@ -143,9 +165,9 @@ async function saveSystemPrompt(key: string) {
   promptActionBusy.value = 'save'
   emit('field-error', '')
   try {
-    await savePrompt(filename, content)
+    await savePrompt(promptLibraryKindForField(key), filename, content)
     promptSaveFilename.value = filename
-    await refreshPromptLibraryFiles()
+    await refreshPromptLibraryFiles(key)
     promptLibraryMode.value = ''
     promptActionMessage.value = `Saved ${filename}`
   } catch (error) {
@@ -159,13 +181,19 @@ async function loadSystemPrompt(key: string) {
   await loadPromptFile(key, promptSaveFilename.value)
 }
 
-async function openPromptLibrary(mode: 'save' | 'load') {
+async function openPromptLibraryForField(mode: 'save' | 'load', key: string) {
   if (promptActionBusy.value) return
-  promptLibraryMode.value = promptLibraryMode.value === mode ? '' : mode
+  const sameOpen = promptLibraryMode.value === mode && promptLibraryField.value === String(key || '').trim()
+  if (sameOpen) {
+    promptLibraryMode.value = ''
+    return
+  }
+  ensurePromptLibraryField(key)
+  promptLibraryMode.value = mode
   promptActionBusy.value = 'load'
   emit('field-error', '')
   try {
-    await refreshPromptLibraryFiles()
+    await refreshPromptLibraryFiles(key)
     if (mode === 'load' && promptLibraryFiles.value.length) {
       promptSaveFilename.value = promptLibraryFiles.value[0] || ''
     }
@@ -177,7 +205,7 @@ async function openPromptLibrary(mode: 'save' | 'load') {
 }
 
 async function loadPromptFile(key: string, requested: string) {
-  if (!isSystemPromptField(key) || promptActionBusy.value) return
+  if (!isPromptLibraryField(key) || promptActionBusy.value) return
   const filename = normalizePromptFilename(requested)
   if (!filename) {
     promptActionError('Prompt filename is required.')
@@ -186,7 +214,7 @@ async function loadPromptFile(key: string, requested: string) {
   promptActionBusy.value = 'load'
   emit('field-error', '')
   try {
-    const content = await getPrompt(filename)
+    const content = await getPrompt(promptLibraryKindForField(key), filename)
     promptSaveFilename.value = filename
     setField(key, content)
     promptLibraryMode.value = ''
@@ -236,7 +264,7 @@ function getSelectedProvider() {
 
 function getProviderFeatureHint(key: string) {
   if (props.typeId !== 'agent_node') return ''
-  if (!['web_search', 'thinking', 'reasoning_effort'].includes(key)) return ''
+  if (!['web_search', 'thinking', 'reasoning_effort', 'tools'].includes(key)) return ''
   const provider = getSelectedProvider()
   const feature = provider?.features?.[key]
   if (!feature || typeof feature !== 'object') return ''
@@ -400,12 +428,12 @@ watch(
     >
       <span class="field-head" :class="{ 'field-head-search': isDropdownMultiSelectField(key) }">
         <span class="field-label">{{ getFieldLabel(key) }}</span>
-        <span v-if="isSystemPromptField(key)" class="field-prompt-actions">
+        <span v-if="isPromptLibraryField(key)" class="field-prompt-actions">
           <button
             class="field-prompt-btn field-prompt-save"
             type="button"
             :disabled="!!promptActionBusy"
-            @click.prevent.stop="openPromptLibrary('save')"
+            @click.prevent.stop="openPromptLibraryForField('save', key)"
           >
             Save
           </button>
@@ -413,7 +441,7 @@ watch(
             class="field-prompt-btn field-prompt-load"
             type="button"
             :disabled="!!promptActionBusy"
-            @click.prevent.stop="openPromptLibrary('load')"
+            @click.prevent.stop="openPromptLibraryForField('load', key)"
           >
             {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
           </button>
@@ -545,7 +573,7 @@ watch(
         @error="emit('field-error', $event)"
       />
 
-      <div v-if="isSystemPromptField(key) && promptLibraryMode" class="field-prompt-library" @click.stop @keydown.stop>
+      <div v-if="isPromptLibraryOpen(key)" class="field-prompt-library" @click.stop @keydown.stop>
         <template v-if="promptLibraryMode === 'save'">
           <select
             v-if="promptLibraryFiles.length"
@@ -560,7 +588,7 @@ watch(
             v-model="promptSaveFilename"
             class="field-input field-prompt-name field-prompt-custom-name"
             type="text"
-            placeholder="system_prompt.txt"
+            :placeholder="defaultPromptFilename(key)"
           />
           <button
             class="field-prompt-btn field-prompt-confirm field-prompt-save"
@@ -593,7 +621,7 @@ watch(
       </div>
 
       <span v-if="getFieldHint(key)" class="field-hint">{{ getFieldHint(key) }}</span>
-      <span v-if="isSystemPromptField(key) && promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
+      <span v-if="isPromptLibraryField(key) && promptLibraryField === key && promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
       <span v-if="enableAssetDrop && isAssetFieldKey(key)" class="field-drop-hint">Drop files here to upload and fill this asset field.</span>
     </label>
   </div>

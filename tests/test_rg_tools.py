@@ -138,7 +138,7 @@ def test_rg_search_text_defaults_to_agent_working_path(monkeypatch, tmp_path):
     raw = rg_tools.rg_search_text(
         query="needle",
         include_globs=["*.txt"],
-        agent=SimpleNamespace(_aitools_working_path=str(work)),
+        agent=SimpleNamespace(_agentpark_working_path=str(work)),
     )
     payload = json.loads(raw)
 

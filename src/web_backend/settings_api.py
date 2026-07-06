@@ -9,6 +9,11 @@ from src import workspace_settings
 from src.config_loader import ConfigLoader
 from src.file_transaction import atomic_write_text
 from src.provider_limit_schema import read_provider_limit_file
+from src.tool.tool_stats_store import (
+    clear_tool_stats as clear_tool_stats_store,
+    load_recent_tool_call_stats,
+    load_tool_stats_summary,
+)
 
 from .domain_base import DomainBase
 from . import runtime_paths
@@ -84,6 +89,7 @@ class SettingsApiDomain(DomainBase):
             providers = payload.get("providers")
             if not isinstance(providers, dict):
                 raise HTTPException(status_code=400, detail="moduleProvider.json field 'providers' must be an object")
+            config_loader = ConfigLoader()
             for provider_id, provider in providers.items():
                 if not str(provider_id or "").strip():
                     raise HTTPException(status_code=400, detail="provider id must be non-empty")
@@ -92,6 +98,10 @@ class SettingsApiDomain(DomainBase):
                         status_code=400,
                         detail=f"provider '{provider_id}' configuration must be an object",
                     )
+                try:
+                    config_loader._normalize_provider_config(str(provider_id), provider, require_api_key=False)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
         elif section == "defaults":
             for key in ("server", "agentNode", "graphRunner", "consoleCommand", "nodeMemory", "mcpServers"):
                 value = payload.get(key)
@@ -99,11 +109,11 @@ class SettingsApiDomain(DomainBase):
                     raise HTTPException(status_code=400, detail=f"config.json field '{key}' must be an object")
             agent_node = payload.get("agentNode")
             if isinstance(agent_node, dict):
-                notify_on_error = agent_node.get("notifyCompanionOnError")
-                if notify_on_error is not None and not isinstance(notify_on_error, bool):
+                review_node_runs = agent_node.get("reviewNodeRunsWithCompanion")
+                if review_node_runs is not None and not isinstance(review_node_runs, bool):
                     raise HTTPException(
                         status_code=400,
-                        detail="config.json field 'agentNode.notifyCompanionOnError' must be a boolean",
+                        detail="config.json field 'agentNode.reviewNodeRunsWithCompanion' must be a boolean",
                     )
         elif section == "companion":
             type_id = str(payload.get("type_id") or "agent_node").strip() or "agent_node"
@@ -166,6 +176,26 @@ class SettingsApiDomain(DomainBase):
             return read_provider_limit_file()
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to read ProviderLimit.json: {exc}") from exc
+
+    def get_tool_stats(self):
+        try:
+            return {
+                "summary": load_tool_stats_summary(),
+                "recent_calls": load_recent_tool_call_stats(),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to read tool stats: {exc}") from exc
+
+    def clear_tool_stats(self):
+        try:
+            clear_tool_stats_store()
+            return {
+                "ok": True,
+                "summary": load_tool_stats_summary(),
+                "recent_calls": load_recent_tool_call_stats(),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to clear tool stats: {exc}") from exc
 
     def start_provider_limit_tests(self, payload: dict | None = None):
         running = self.core.provider_limit_jobs.latest_running()

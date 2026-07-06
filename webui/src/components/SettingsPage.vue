@@ -15,6 +15,7 @@ import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
 import ModuleProviderSettingsForm from './settings/ModuleProviderSettingsForm.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
+import ToolStatsSettingsPanel from './settings/ToolStatsSettingsPanel.vue'
 
 const AnimEditor = defineAsyncComponent(() => import('./settings/AnimEditor.vue'))
 const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
@@ -72,6 +73,14 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
       filename: 'ProviderLimit.json',
     })
   }
+  if (!base.some((item) => item.id === 'tool-stats')) {
+    base.push({
+      id: 'tool-stats',
+      label: 'Static',
+      path: '.cache/tool_stats',
+      filename: 'summary.json',
+    })
+  }
   if (!base.some((item) => item.id === 'anim-editor')) {
     base.push({
       id: 'anim-editor',
@@ -100,15 +109,17 @@ const activeLabel = computed(() => {
   if (activeSection.value === 'defaults') return 'Default settings'
   if (activeSection.value === 'companion') return 'Companion'
   if (activeSection.value === 'provider-test') return 'Test'
+  if (activeSection.value === 'tool-stats') return 'Static'
   if (activeSection.value === 'anim-editor') return 'AnimEditor'
   if (activeSection.value === 'exit') return 'Exit'
   return currentSection.value?.label || activeSection.value
 })
 
 const isProviderTest = computed(() => activeSection.value === 'provider-test')
+const isToolStats = computed(() => activeSection.value === 'tool-stats')
 const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
-const isVirtualSection = computed(() => isProviderTest.value || isAnimEditor.value || isExitSection.value)
+const isVirtualSection = computed(() => isProviderTest.value || isToolStats.value || isAnimEditor.value || isExitSection.value)
 const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 
 const formData = computed<Record<string, unknown> | null>(() => {
@@ -125,6 +136,7 @@ function labelFor(section: SettingsSectionInfo) {
   if (section.id === 'defaults') return 'Default settings'
   if (section.id === 'companion') return 'Companion'
   if (section.id === 'provider-test') return 'Test'
+  if (section.id === 'tool-stats') return 'Static'
   if (section.id === 'anim-editor') return 'AnimEditor'
   if (section.id === 'exit') return 'Exit'
   return section.label
@@ -174,7 +186,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'provider-test' || sectionId === 'anim-editor' || sectionId === 'exit') {
+  if (sectionId === 'provider-test' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -254,7 +266,7 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>Settings</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isAnimEditor ? 'petAvatars/*/frame.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isToolStats ? '.cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
         <button type="button" class="settings-btn" @click="emit('back')">{{ props.backLabel }}</button>
@@ -295,6 +307,7 @@ onMounted(async () => {
         </div>
 
         <ProviderTestSettingsPanel v-if="isProviderTest" />
+        <ToolStatsSettingsPanel v-else-if="isToolStats" />
         <AnimEditor v-else-if="isAnimEditor" @error="error = $event" @status="status = $event" />
         <SystemExitPanel v-else-if="isExitSection" />
 

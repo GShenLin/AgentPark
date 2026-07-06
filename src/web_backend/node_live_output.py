@@ -26,12 +26,35 @@ class NodeLiveOutputStore:
             current = self._items.get(key) if isinstance(self._items.get(key), dict) else {}
             self._items[key] = {
                 "text": str(text or ""),
+                "thinking_text": str((current or {}).get("thinking_text") or ""),
                 "trace_id": str(trace_id or ""),
                 "updated_at": now,
                 "is_streaming": True,
                 "version": version,
                 # Persist interactive_session_id across text updates so it is
                 # not erased before the SSE client can observe stdin_ready.
+                "interactive_session_id": str((current or {}).get("interactive_session_id") or ""),
+            }
+            self._condition.notify_all()
+
+    def update_thinking(self, graph_id: str, node_id: str, text: str, *, trace_id: str = "", event: dict | None = None) -> None:
+        key = self._key(graph_id, node_id)
+        if not key[1]:
+            return
+        now = time.time()
+        with self._condition:
+            version = int(self._versions.get(key) or 0) + 1
+            self._versions[key] = version
+            current = self._items.get(key) if isinstance(self._items.get(key), dict) else {}
+            self._items[key] = {
+                "text": str((current or {}).get("text") or ""),
+                "thinking_text": str(text or ""),
+                "trace_id": str(trace_id or (current or {}).get("trace_id") or ""),
+                "updated_at": now,
+                "is_streaming": True,
+                "version": version,
+                "event_type": "node_thinking_delta",
+                "event": dict(event or {"type": "node_thinking_delta", "text": str(text or "")}),
                 "interactive_session_id": str((current or {}).get("interactive_session_id") or ""),
             }
             self._condition.notify_all()
@@ -65,6 +88,7 @@ class NodeLiveOutputStore:
                 persistent_session = str((current or {}).get("interactive_session_id") or "")
             self._items[key] = {
                 "text": str((current or {}).get("text") or ""),
+                "thinking_text": str((current or {}).get("thinking_text") or ""),
                 "trace_id": str(trace_id or (current or {}).get("trace_id") or ""),
                 "updated_at": now,
                 "is_streaming": bool((current or {}).get("is_streaming")),
@@ -94,6 +118,7 @@ class NodeLiveOutputStore:
             self._versions[key] = version
             self._items[key] = {
                 "text": "",
+                "thinking_text": "",
                 "trace_id": str(trace_id or (current or {}).get("trace_id") or ""),
                 "updated_at": now,
                 "is_streaming": False,

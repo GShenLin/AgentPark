@@ -54,10 +54,10 @@ def test_node_goal_context_only_renders_active_goal():
     )
 
     assert "ship the workflow" in active
-    assert active.startswith('<codex_internal_context source="goal">\n')
+    assert active.startswith('<agentpark_internal_context source="goal">\n')
     assert "<objective>\nship the workflow\n</objective>" in active
     assert "Goal completion audit:" in active
-    assert active.endswith("</codex_internal_context>")
+    assert active.endswith("</agentpark_internal_context>")
     assert complete == ""
 
 

@@ -134,7 +134,7 @@ def test_video_change_person_node_schema_filters_supported_providers(monkeypatch
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     ConfigLoader._instance = None
 
     try:

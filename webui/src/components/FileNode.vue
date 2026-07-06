@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { listFiles, type FileItem } from '../api'
 import FileNode from './FileNode.vue'
@@ -74,7 +74,7 @@ function onDragStart(event: DragEvent) {
   if (!event.dataTransfer) return
   event.dataTransfer.setData('text/plain', props.path)
   event.dataTransfer.setData(
-    'application/x-aitools-file',
+    'application/x-agentpark-file',
     JSON.stringify({
       name: props.name,
       path: props.path,

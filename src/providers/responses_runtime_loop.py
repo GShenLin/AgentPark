@@ -5,6 +5,7 @@ from src.providers.agent_context_history import load_agent_context_history
 from src.providers.agent_context_history import save_agent_context_history
 from src.providers.agent_turn_context import load_agent_turn_context_reference
 from src.providers.agent_turn_context import save_agent_turn_context_reference
+from src.providers.mid_turn_user_inputs import consume_mid_turn_user_messages
 from src.providers.responses_runtime_context import build_responses_agent_environment_context
 from src.providers.responses_runtime_context import build_responses_turn_context
 from src.providers.responses_runtime_context import runtime_context_history_items
@@ -25,6 +26,7 @@ def send_via_responses(
     run_tools,
     web_search_mode="disabled",
     stream_handler=None,
+    thinking_stream_handler=None,
     **provider_options,
 ):
     self = runtime
@@ -37,7 +39,7 @@ def send_via_responses(
     mode_decision = resolve_responses_runtime_mode(self)
     use_item_level_mode = mode_decision.mode == "item_level"
     use_stream, empty_message_feedback, request_index = (
-        callable(stream_handler) or use_item_level_mode,
+        callable(stream_handler) or callable(thinking_stream_handler) or use_item_level_mode,
         EmptyMessageFeedbackController(),
         0,
     )
@@ -49,9 +51,29 @@ def send_via_responses(
         reset_loop_guard()
     last_request_summary: dict[str, Any] | None = None
 
+    def _consume_mid_turn_user_input_items() -> list[dict[str, Any]]:
+        messages = consume_mid_turn_user_messages(self)
+        items = self._build_responses_input(messages)
+        if items:
+            self._emit_responses_notice(
+                stage="openai_responses_mid_turn_user_input",
+                payload={
+                    "message_count": len(messages),
+                    "input_item_count": len(items),
+                },
+            )
+        return items
+
     _on_stream = lambda delta_text, full_text: self._emit_stream_text(
         stream_handler, delta_text, stream_text.update(delta_text, full_text)
     )
+    thinking_text = ResponsesStreamText()
+
+    def _on_thinking(delta_text, full_text, provider=""):
+        if not callable(thinking_stream_handler):
+            return
+        resolved_full = thinking_text.update(delta_text, full_text)
+        thinking_stream_handler(delta_text, resolved_full, provider)
 
     def _emit_turn_debug(**kwargs):
         self._emit_responses_turn_debug(
@@ -73,6 +95,7 @@ def send_via_responses(
                 item_tool_runner.abort(reason=reason, error=f"{type(error).__name__}: {error}")
 
         stream_text.reset()
+        thinking_text.reset()
         request_previous_response_id = previous_response_id
         request_index += 1
         turn_context = build_responses_turn_context(
@@ -136,6 +159,7 @@ def send_via_responses(
                 headers=headers,
                 payload_json=payload_json,
                 stream_handler=_on_stream if use_stream else None,
+                thinking_stream_handler=_on_thinking if use_stream else None,
                 item_event_handler=item_tool_runner.handle_event if item_tool_runner is not None else None,
             )
         except CancellationRequested as exc:
@@ -334,11 +358,16 @@ def send_via_responses(
                 previous_response_id = ""
                 continue
 
-            explicit_context_input = explicit_context_input + continuation_items + followup_items
+            mid_turn_user_items = _consume_mid_turn_user_input_items()
+            explicit_context_input = explicit_context_input + continuation_items + followup_items + mid_turn_user_items
             previous_response_fallback_input = list(explicit_context_input)
             if response_id and continuation_mode == "previous_response_id":
                 previous_response_id = response_id
-                current_input = self._responses_previous_response_input(continuation_items, followup_items)
+                current_input = self._responses_previous_response_input(
+                    continuation_items,
+                    followup_items,
+                    mid_turn_user_items,
+                )
                 _emit_turn_debug(
                     response_id=response_id,
                     content=content,

@@ -11,8 +11,8 @@ def test_desktop_pet_base_url_uses_loopback_for_wildcard_bind_host():
     assert (
         launcher._desktop_pet_base_url(
             {
-                "AITOOLS_SERVER_HOST": "0.0.0.0",
-                "AITOOLS_SERVER_PORT": "8788",
+                "AGENTPARK_SERVER_HOST": "0.0.0.0",
+                "AGENTPARK_SERVER_PORT": "8788",
             }
         )
         == "http://127.0.0.1:8788"

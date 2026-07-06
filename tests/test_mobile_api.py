@@ -10,7 +10,7 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
     import src.web_backend.runtime_paths as runtime_paths_module
     from src.web_backend.state_store import _set_node_config_runtime_event
 
-    runtime_root = str(tmp_path / "AITools")
+    runtime_root = str(tmp_path / "AgentPark")
     resource_root = backend._get_runtime_root()
     os.makedirs(runtime_root, exist_ok=True)
 
@@ -59,13 +59,13 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
         pcs = client.get("/api/mobile/pcs")
         assert pcs.status_code == 200
         assert pcs.json()["pcs"][0]["id"] == "local"
-        assert pcs.json()["pcs"][0]["instances"][0]["name"] == "AITools"
+        assert pcs.json()["pcs"][0]["instances"][0]["name"] == "AgentPark"
 
         graphs = client.get("/api/mobile/pcs/local/graphs")
         assert graphs.status_code == 200
         graph_item = graphs.json()["instances"][0]["graphs"][0]
         assert graph_item["id"] == "default"
-        assert graph_item["display_name"] == "AITools.Default"
+        assert graph_item["display_name"] == "AgentPark.Default"
 
         nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
         assert nodes.status_code == 200
@@ -94,7 +94,13 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
             json={"message": "hello from phone"},
         )
         assert sent.status_code == 200
-        assert sent.json()["queued"] is True
+        sent_payload = sent.json()
+        assert sent_payload["queued"] is True
+        assert sent_payload["node"]["id"] == "agent1"
+        assert sent_payload["node"]["last_message"] == "hello from phone"
+        assert sent_payload["node"]["pending_count"] == 1
+        assert sent_payload["conversation"]["messages"][-1]["role"] == "user"
+        assert sent_payload["conversation"]["messages"][-1]["parts"][0]["text"] == "hello from phone"
 
         cfgs = client.get("/api/nodes/instances/configs?graph_id=default").json()["nodes"]
         cfg = next(item for item in cfgs if item["node_id"] == "agent1")
@@ -132,7 +138,7 @@ def test_mobile_live_uses_directory_node_id_when_config_node_id_case_differs(mon
     import src.web_backend.node_runtime as node_runtime_module
     import src.web_backend.runtime_paths as runtime_paths_module
 
-    runtime_root = str(tmp_path / "AITools")
+    runtime_root = str(tmp_path / "AgentPark")
     resource_root = backend._get_runtime_root()
     os.makedirs(runtime_root, exist_ok=True)
 
@@ -176,6 +182,7 @@ def test_mobile_live_uses_directory_node_id_when_config_node_id_case_differs(mon
             json.dump(cfg, f, ensure_ascii=False, indent=2)
 
         facade.core.node_live_outputs.update("default", "agent1", "partial stream")
+        facade.core.node_live_outputs.update_thinking("default", "agent1", "checking sources")
 
         nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
         assert nodes.status_code == 200
@@ -187,10 +194,82 @@ def test_mobile_live_uses_directory_node_id_when_config_node_id_case_differs(mon
         assert live.status_code == 200
         assert live.json()["node_id"] == "agent1"
         assert live.json()["live_message"] == "partial stream"
+        assert live.json()["thinking_message"] == "checking sources"
 
         conversation = client.get("/api/mobile/pcs/local/graphs/default/nodes/Agent1/conversation")
         assert conversation.status_code == 200
         assert conversation.json()["live_message"] == "partial stream"
+        assert conversation.json()["thinking_message"] == "checking sources"
+    finally:
+        backend._get_runtime_root = original_backend_runtime_root
+        backend._get_resource_root = original_backend_resource_root
+        runtime_paths_module._get_runtime_root = original_runtime_paths_runtime_root
+        runtime_paths_module._get_resource_root = original_runtime_paths_resource_root
+        node_runtime_module._get_runtime_root = original_node_runtime_runtime_root
+        node_runtime_module._get_resource_root = original_node_runtime_resource_root
+        mobile_api_module._get_runtime_root = original_mobile_runtime_root
+        shutil.rmtree(runtime_root, ignore_errors=True)
+
+
+def test_mobile_conversation_returns_full_node_history(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    import src.web_backend.mobile_api as mobile_api_module
+    import src.web_backend.node_runtime as node_runtime_module
+    import src.web_backend.runtime_paths as runtime_paths_module
+    from src.message_protocol import build_text_envelope
+    from src.web_backend.node_memory_store import append_node_memory_entry
+
+    runtime_root = str(tmp_path / "AgentPark")
+    resource_root = backend._get_runtime_root()
+    os.makedirs(runtime_root, exist_ok=True)
+
+    original_backend_runtime_root = backend._get_runtime_root
+    original_backend_resource_root = backend._get_resource_root
+    original_runtime_paths_runtime_root = runtime_paths_module._get_runtime_root
+    original_runtime_paths_resource_root = runtime_paths_module._get_resource_root
+    original_node_runtime_runtime_root = node_runtime_module._get_runtime_root
+    original_node_runtime_resource_root = node_runtime_module._get_resource_root
+    original_mobile_runtime_root = mobile_api_module._get_runtime_root
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+    runtime_paths_module._get_runtime_root = lambda: runtime_root
+    runtime_paths_module._get_resource_root = lambda: resource_root
+    node_runtime_module._get_runtime_root = lambda: runtime_root
+    node_runtime_module._get_resource_root = lambda: resource_root
+    mobile_api_module._get_runtime_root = lambda: runtime_root
+
+    try:
+        facade = backend.WebBackendFacade()
+        app = facade.build()
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+
+        graph = {"id": "default", "name": "Default", "output_routes": {}}
+        assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
+        assert client.post(
+            "/api/nodes/instances",
+            json={"node_id": "agent1", "type_id": "agent_node", "name": "Agent 1", "graph_id": "default"},
+        ).status_code == 200
+
+        memory_path = facade.core.graph_runtime._node_memory_path("agent1", "default")
+        messages_path = facade.core.graph_runtime._node_messages_path("agent1", "default")
+        for index in range(410):
+            append_node_memory_entry(
+                memory_path,
+                messages_path,
+                "user",
+                build_text_envelope(f"message-{index:03d} " + ("x" * 70), role="user"),
+            )
+
+        conversation = client.get("/api/mobile/pcs/local/graphs/default/nodes/agent1/conversation")
+        assert conversation.status_code == 200
+        payload = conversation.json()
+        assert len(payload["text"]) > 20000
+        assert len(payload["messages"]) == 410
+        assert payload["messages"][0]["parts"][0]["text"].startswith("message-000")
+        assert payload["messages"][-1]["parts"][0]["text"].startswith("message-409")
     finally:
         backend._get_runtime_root = original_backend_runtime_root
         backend._get_resource_root = original_backend_resource_root
@@ -208,7 +287,7 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
     import src.web_backend.node_runtime as node_runtime_module
     import src.web_backend.runtime_paths as runtime_paths_module
 
-    runtime_root = str(tmp_path / "AITools")
+    runtime_root = str(tmp_path / "AgentPark")
     resource_root = backend._get_runtime_root()
     companion_dir = os.path.join(runtime_root, "memories", "companion")
     os.makedirs(companion_dir, exist_ok=True)
@@ -245,7 +324,7 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
         graph_items = graphs.json()["instances"][0]["graphs"]
         companion_graph = next(item for item in graph_items if item["id"] == "companion")
         assert companion_graph["readonly"] is True
-        assert companion_graph["display_name"] == "AITools.Companion"
+        assert companion_graph["display_name"] == "AgentPark.Companion"
 
         nodes = client.get("/api/mobile/pcs/local/graphs/companion/nodes")
         assert nodes.status_code == 200

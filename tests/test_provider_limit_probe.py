@@ -28,7 +28,7 @@ def test_provider_limit_probe_writes_unsupported_features(monkeypatch, tmp_path)
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fake_curl_post_once_raw(self, *, url, headers, payload_json, timeout_sec, marker, no_buffer=False):
@@ -54,6 +54,123 @@ def test_provider_limit_probe_writes_unsupported_features(monkeypatch, tmp_path)
     assert saved["total_providers"] == 1
 
 
+def test_provider_limit_probe_tests_claude_native_messages_features(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.provider_limit_probe import run_provider_limit_tests
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "moduleProvider.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "claude-demo": {
+                        "type": "claude",
+                        "apiKey": "test-key",
+                        "baseUrl": "https://api.anthropic.test/v1",
+                        "model": "claude-demo-model",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    observed_payloads = []
+
+    def fake_curl_post_once_raw(self, *, url, headers, payload_json, timeout_sec, marker, no_buffer=False):
+        _ = self, headers, timeout_sec, marker, no_buffer
+        observed_payloads.append((url, json.loads(payload_json)))
+        if '"type": "adaptive"' in payload_json:
+            return _FakeResponse('{"error":{"message":"unsupported adaptive thinking"}}', 400)
+        return _FakeResponse()
+
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw", fake_curl_post_once_raw)
+
+    result = run_provider_limit_tests(timeout_seconds=1)
+
+    provider = result["providers"]["claude-demo"]
+    assert provider["accessible"] is True
+    assert provider["features"]["responses_api"]["supported"] is False
+    assert provider["features"]["web_search"]["supported"] is True
+    assert provider["features"]["thinking"]["supported"] is True
+    assert provider["features"]["thinking"]["values"]["enabled"]["supported"] is True
+    assert provider["features"]["thinking"]["values"]["auto"]["supported"] is False
+    assert provider["features"]["reasoning_effort"]["values"]["high"]["supported"] is True
+    assert provider["features"]["reasoning_effort"]["values"]["xhigh"]["supported"] is True
+    assert provider["features"]["reasoning_effort"]["values"]["max"]["supported"] is True
+    assert provider["unsupported"]["thinking"]["auto"].startswith("HTTP 400")
+    assert {url for url, _payload in observed_payloads} == {"https://api.anthropic.test/v1/messages"}
+    assert any(payload.get("output_config") == {"effort": "high"} for _url, payload in observed_payloads)
+    assert any(payload.get("output_config") == {"effort": "xhigh"} for _url, payload in observed_payloads)
+    assert any(payload.get("output_config") == {"effort": "max"} for _url, payload in observed_payloads)
+    assert any(payload.get("tools") == [{"type": "web_search_20260318", "name": "web_search"}] for _url, payload in observed_payloads)
+    assert not any("/responses" in url for url, _payload in observed_payloads)
+
+
+def test_provider_limit_probe_tests_doubao_ark_responses_features(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.provider_limit_probe import run_provider_limit_tests
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "moduleProvider.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "doubao-demo": {
+                        "type": "doubao",
+                        "apiKey": "test-key",
+                        "baseUrl": "https://ark.test/api/v3",
+                        "model": "doubao-demo-model",
+                        "responsesApi": True,
+                        "responsesContinuationMode": "previous_response_id",
+                        "toolResultSubmissionMaxChars": 50000,
+                        "toolContextCompactionEnabled": False,
+                        "toolContextCompactionEveryToolCalls": 10,
+                        "webSearchMaxKeyword": 2,
+                        "webSearchLimit": 3,
+                        "webSearchSources": ["toutiao"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    observed_payloads = []
+
+    def fake_curl_post_once_raw(self, *, url, headers, payload_json, timeout_sec, marker, no_buffer=False):
+        _ = self, headers, timeout_sec, marker, no_buffer
+        payload = json.loads(payload_json)
+        observed_payloads.append((url, payload))
+        if payload.get("thinking", {}).get("type") == "auto":
+            return _FakeResponse('{"error":{"message":"unsupported auto thinking"}}', 400)
+        if payload.get("reasoning", {}).get("effort") in {"xhigh", "max"}:
+            return _FakeResponse('{"error":{"message":"unknown effort"}}', 400)
+        return _FakeResponse()
+
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw", fake_curl_post_once_raw)
+
+    result = run_provider_limit_tests(timeout_seconds=1)
+
+    provider = result["providers"]["doubao-demo"]
+    assert provider["accessible"] is True
+    assert provider["features"]["responses_api"]["supported"] is True
+    assert provider["features"]["web_search"]["supported"] is True
+    assert provider["features"]["thinking"]["values"]["enabled"]["supported"] is True
+    assert provider["features"]["thinking"]["values"]["auto"]["supported"] is False
+    assert provider["features"]["reasoning_effort"]["values"]["high"]["supported"] is True
+    assert provider["features"]["reasoning_effort"]["values"]["xhigh"]["supported"] is False
+    assert {url for url, _payload in observed_payloads} == {"https://ark.test/api/v3/responses"}
+    assert any(payload.get("tools") == [{"type": "web_search", "max_keyword": 2, "limit": 3, "sources": ["toutiao"]}] for _url, payload in observed_payloads)
+    assert any(payload.get("thinking") == {"type": "enabled"} for _url, payload in observed_payloads)
+    assert any(payload.get("reasoning") == {"effort": "high"} for _url, payload in observed_payloads)
+    assert not any("/chat/completions" in url for url, _payload in observed_payloads)
+
+
 def test_provider_limit_probe_records_missing_required_config(monkeypatch, tmp_path):
     from src import workspace_settings
     from src.provider_limit_probe import run_provider_limit_tests
@@ -64,7 +181,7 @@ def test_provider_limit_probe_records_missing_required_config(monkeypatch, tmp_p
         json.dumps({"providers": {"bad": {"type": "openai", "baseUrl": "https://example.test/v1", "model": "x"}}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     result = run_provider_limit_tests(timeout_seconds=1)
@@ -92,7 +209,7 @@ def test_provider_limit_probe_updates_file_after_each_provider(monkeypatch, tmp_
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     observed_snapshots = []
@@ -135,7 +252,7 @@ def test_provider_model_discovery_writes_available_models(monkeypatch, tmp_path)
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fake_curl_get_text_once_raw(self, *, url, headers, timeout_sec, marker):
@@ -177,7 +294,7 @@ def test_provider_model_discovery_strips_gemini_model_prefix(monkeypatch, tmp_pa
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fake_curl_get_text_once_raw(self, *, url, headers, timeout_sec, marker):

@@ -123,7 +123,7 @@ def test_model_texture_generation_node_schema_filters_texture_providers(monkeypa
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     ConfigLoader._instance = None
 
     try:

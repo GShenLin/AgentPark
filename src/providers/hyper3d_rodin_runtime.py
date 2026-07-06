@@ -215,7 +215,7 @@ class Hyper3DRodinRuntime(Hyper3DRuntimeBase):
             default=1800,
         )
 
-        with tempfile.TemporaryDirectory(prefix="aitools_hyper3d_") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix="agentpark_hyper3d_") as temp_dir:
             image_paths = self._materialize_image_paths(images or [], temp_dir)
             if not prompt and not image_paths:
                 raise ValueError("Hyper3D Rodin requires a prompt or images.")

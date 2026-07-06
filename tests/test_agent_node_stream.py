@@ -99,6 +99,7 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
                 "zhipu": {
                     "features": {
                         "web_search": {"supported": False, "values": []},
+                        "tools": {"supported": False, "values": []},
                         "thinking": {"supported": True, "values": ["enabled", "disabled"]},
                         "reasoning_effort": {
                             "supported": True,
@@ -115,6 +116,8 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
 
     assert schema["web_search"]["provider_feature"]["supported"] is False
     assert "not supported" in schema["web_search"]["description"]
+    assert schema["tools"]["provider_feature"]["supported"] is False
+    assert "not supported" in schema["tools"]["description"]
     assert schema["thinking"]["provider_feature"]["values"] == ["enabled", "disabled"]
     assert "Supported values: enabled, disabled" in schema["thinking"]["description"]
     assert schema["reasoning_effort"]["provider_feature"]["supported"] is True
@@ -418,7 +421,7 @@ def test_agent_node_auto_loads_skill_resource_tool_for_resource_skills(monkeypat
 
     assert str(result.get("display") or "") == "ok"
     assert captured["tools"] == ["file_read_tools", "skill_resource_tools"]
-    assert captured["agent"]._aitools_skill_resource_roots["demo"] == str(skill_dir)
+    assert captured["agent"]._agentpark_skill_resource_roots["demo"] == str(skill_dir)
 
 
 def test_agent_node_registers_selected_skill_script_tools(monkeypatch, tmp_path):
@@ -542,6 +545,102 @@ def test_agent_node_stream_callback_and_done(monkeypatch):
     assert str(done_event.get("text") or "") == "AB"
 
 
+def test_agent_node_sse_response_mode_separates_instruction_and_system_prompt(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "openai", "responsesApi": True}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **kwargs):
+            handler = kwargs.get("stream_handler")
+            if callable(handler):
+                handler("O", "O")
+                handler("K", "OK")
+            return "OK"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "resolve_agent_default_instructions", lambda *_args, **_kwargs: "")
+
+    events: list[dict] = []
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_response_instruction_sse",
+            "node_instance_id": "n_response_instruction_sse",
+            "provider_id": "openai",
+            "instruction": "Use the Responses instructions parameter.",
+            "system_prompt": "Use the system prompt parameter.",
+            "stream_callback": lambda payload: events.append(dict(payload)),
+        },
+    )
+
+    assert str(result.get("display") or "") == "OK"
+    assert any(str(item.get("type") or "") == "node_message_delta" for item in events)
+    assert created_agents[0]._agentpark_responses_instruction == "Use the Responses instructions parameter."
+    assert [item for item in created_agents[0].messages if item.get("role") == "system"][0]["content"] == "Use the system prompt parameter."
+    assert not any("Responses instructions parameter" in str(item.get("content") or "") for item in created_agents[0].messages)
+
+
+def test_agent_node_sse_chat_mode_keeps_instruction_and_system_prompt_as_messages(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "doubao", "responsesApi": False}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **kwargs):
+            handler = kwargs.get("stream_handler")
+            if callable(handler):
+                handler("O", "O")
+                handler("K", "OK")
+            return "OK"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    events: list[dict] = []
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_chat_instruction_sse",
+            "node_instance_id": "n_chat_instruction_sse",
+            "provider_id": "doubao-chat",
+            "instruction": "Use the chat instruction context.",
+            "system_prompt": "Use the chat system prompt.",
+            "stream_callback": lambda payload: events.append(dict(payload)),
+        },
+    )
+
+    assert str(result.get("display") or "") == "OK"
+    assert any(str(item.get("type") or "") == "node_message_delta" for item in events)
+    system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
+    assert [item["content"] for item in system_messages[:2]] == [
+        "Use the chat system prompt.",
+        "Use the chat instruction context.",
+    ]
+    assert not str(getattr(created_agents[0], "_agentpark_responses_instruction", "") or "").strip()
+
+
 def test_agent_node_forwards_reasoning_effort(monkeypatch):
     import nodes.agent_node as agent_node_module
 
@@ -577,6 +676,75 @@ def test_agent_node_forwards_reasoning_effort(monkeypatch):
     assert captured["reasoning_effort"] == "high"
 
 
+def test_agent_node_forwards_stream_enabled_false_from_provider_config(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    captured = {}
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "claude", "streamEnabled": False}
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **kwargs):
+            captured.update(kwargs)
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_stream_disabled",
+            "node_instance_id": "n_stream_disabled",
+            "provider_id": "claude",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    assert captured["stream"] is False
+
+
+def test_agent_node_defaults_stream_enabled_true_when_absent(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    captured = {}
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **kwargs):
+            captured.update(kwargs)
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_stream_default",
+            "node_instance_id": "n_stream_default",
+            "provider_id": "openai",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    assert captured["stream"] is True
+
+
 def test_agent_node_sets_collaboration_mode_runtime_attribute(monkeypatch):
     import nodes.agent_node as agent_node_module
 
@@ -609,7 +777,7 @@ def test_agent_node_sets_collaboration_mode_runtime_attribute(monkeypatch):
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert created_agents[0]._aitools_collaboration_mode == "plan"
+    assert created_agents[0]._agentpark_collaboration_mode == "plan"
 
 
 def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch):
@@ -642,14 +810,13 @@ def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch
     result = agent_node_module.Node().on_input(
         "hello",
         {
-            "graph_id": "g_codex_context_role_unit",
-            "node_instance_id": "n_codex_context_role_unit",
+            "graph_id": "g_instruction_role_unit",
+            "node_instance_id": "n_instruction_role_unit",
             "provider_id": "openai",
         },
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert created_agents[0]._aitools_responses_system_prompt_as_instructions is True
     memory_message = next(
         item for item in created_agents[0].messages if "Operational memory" in str(item.get("content") or "")
     )
@@ -693,14 +860,13 @@ def test_agent_node_uses_developer_context_role_for_doubao_responses(monkeypatch
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert created_agents[0]._aitools_responses_system_prompt_as_instructions is True
     memory_message = next(
         item for item in created_agents[0].messages if "Operational memory" in str(item.get("content") or "")
     )
     assert memory_message["role"] == "developer"
 
 
-def test_agent_node_injects_codex_base_instructions_for_openai_responses(monkeypatch):
+def test_agent_node_injects_default_instructions_for_openai_responses(monkeypatch):
     import nodes.agent_node as agent_node_module
 
     created_agents = []
@@ -723,25 +889,25 @@ def test_agent_node_injects_codex_base_instructions_for_openai_responses(monkeyp
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
     monkeypatch.setattr(
         agent_node_module,
-        "resolve_agent_codex_base_instructions",
-        lambda *_args, **_kwargs: "Codex base instructions",
+        "resolve_agent_default_instructions",
+        lambda *_args, **_kwargs: "Default instructions",
     )
 
     result = agent_node_module.Node().on_input(
         "hello",
         {
-            "graph_id": "g_codex_base_unit",
-            "node_instance_id": "n_codex_base_unit",
+            "graph_id": "g_default_instructions_unit",
+            "node_instance_id": "n_default_instructions_unit",
             "provider_id": "openai",
         },
     )
 
     assert str(result.get("display") or "") == "ok"
-    system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
-    assert system_messages[0]["content"] == "Codex base instructions"
+    assert created_agents[0]._agentpark_responses_instruction == "Default instructions"
+    assert not [item for item in created_agents[0].messages if item.get("role") == "system"]
 
 
-def test_agent_node_injects_codex_base_instructions_for_doubao_responses(monkeypatch):
+def test_agent_node_injects_default_instructions_for_doubao_responses(monkeypatch):
     import nodes.agent_node as agent_node_module
 
     created_agents = []
@@ -764,26 +930,27 @@ def test_agent_node_injects_codex_base_instructions_for_doubao_responses(monkeyp
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
     monkeypatch.setattr(
         agent_node_module,
-        "resolve_agent_codex_base_instructions",
-        lambda *_args, **_kwargs: "Codex base instructions",
+        "resolve_agent_default_instructions",
+        lambda *_args, **_kwargs: "Default instructions",
     )
 
     result = agent_node_module.Node().on_input(
         "hello",
         {
-            "graph_id": "g_doubao_codex_base_unit",
-            "node_instance_id": "n_doubao_codex_base_unit",
+            "graph_id": "g_doubao_default_instructions_unit",
+            "node_instance_id": "n_doubao_default_instructions_unit",
             "provider_id": "doubao-seed-evolving",
         },
     )
 
     assert str(result.get("display") or "") == "ok"
-    system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
-    assert system_messages[0]["content"] == "Codex base instructions"
+    assert created_agents[0]._agentpark_responses_instruction == "Default instructions"
+    assert not [item for item in created_agents[0].messages if item.get("role") == "system"]
 
 
-def test_agent_node_forwards_tool_lifecycle_events(monkeypatch):
+def test_agent_node_forwards_tool_lifecycle_events(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
+    from src.tool import tool_stats_store
 
     class DummyAgent:
         def __init__(self):
@@ -805,6 +972,8 @@ def test_agent_node_forwards_tool_lifecycle_events(monkeypatch):
                     "call_id": "call-1",
                     "provider": "unit",
                     "arguments": {"filePath": "README.md"},
+                    "arguments_json": '{"filePath":"README.md"}',
+                    "raw_call": {"id": "call-1", "function": {"name": "read_file"}},
                 }
             )
             self.tool_event_callback(
@@ -815,12 +984,14 @@ def test_agent_node_forwards_tool_lifecycle_events(monkeypatch):
                     "provider": "unit",
                     "status": "completed",
                     "duration_ms": 3,
+                    "result": {"status": "completed", "text": "ok"},
                     "result_preview": "ok",
                 }
             )
             return "done"
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(tool_stats_store, "get_workspace_cache_dir", lambda: str(tmp_path / ".cache"))
 
     events: list[dict] = []
     node = agent_node_module.Node()
@@ -841,6 +1012,15 @@ def test_agent_node_forwards_tool_lifecycle_events(monkeypatch):
     assert "tool_call_end" in event_types
     assert events[event_types.index("tool_call_start")]["name"] == "read_file"
     assert events[event_types.index("tool_call_end")]["status"] == "completed"
+    stats_path = tmp_path / ".cache" / "tool_stats" / "tool_calls.jsonl"
+    stats_records = [json.loads(line) for line in stats_path.read_text(encoding="utf-8").splitlines()]
+    assert stats_records[-1]["provider_id"] == "provider-stream"
+    assert stats_records[-1]["success"] is True
+    assert stats_records[-1]["tool_call_raw"] == {"id": "call-1", "function": {"name": "read_file"}}
+    assert stats_records[-1]["result"] == {"status": "completed", "text": "ok"}
+    summary = json.loads((tmp_path / ".cache" / "tool_stats" / "summary.json").read_text(encoding="utf-8"))
+    assert summary["providers"]["provider-stream"]["success"] == 1
+    assert summary["providers"]["provider-stream"]["tools"]["read_file"]["success"] == 1
 
 
 def test_agent_node_keeps_working_path_runtime_only(monkeypatch):
@@ -871,14 +1051,14 @@ def test_agent_node_keeps_working_path_runtime_only(monkeypatch):
             "graph_id": "g_working_path_unit",
             "node_instance_id": "n_working_path_unit",
             "provider_id": "provider-stream",
-            "working_path": r"C:\Project\AITools\XYJ",
+            "working_path": r"C:\Project\AgentPark\XYJ",
         },
     )
 
     assert str(result.get("display") or "") == "ok"
     system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
-    assert not any("C:\\Project\\AITools\\XYJ" in str(item.get("content") or "") for item in system_messages)
-    assert created_agents[0]._aitools_working_path == r"C:\Project\AITools\XYJ"
+    assert not any("C:\\Project\\AgentPark\\XYJ" in str(item.get("content") or "") for item in system_messages)
+    assert created_agents[0]._agentpark_working_path == r"C:\Project\AgentPark\XYJ"
     sent_user = next(item for item in created_agents[0].messages if item.get("role") == "user")
     assert sent_user.get("content") == "hello"
 
@@ -1210,7 +1390,7 @@ def test_agent_node_persists_assistant_content_returned_with_tool_calls(monkeypa
                 note_message["content"],
                 tool_calls=note_message["tool_calls"],
             )
-            self._aitools_persist_assistant_tool_call_note(note_message)
+            self._agentpark_persist_assistant_tool_call_note(note_message)
             assert messages_path.exists()
             self.Message("tool", "README contents", tool_call_id="call-1", name="read_file")
             self.Message("assistant", "Final answer.")
@@ -1282,7 +1462,7 @@ def test_agent_node_injects_active_goal_context(monkeypatch):
     goal_messages = [
         item
         for item in created_agents[0].messages
-        if item["role"] == "user" and str(item.get("content") or "").startswith('<codex_internal_context source="goal">')
+        if item["role"] == "user" and str(item.get("content") or "").startswith('<agentpark_internal_context source="goal">')
     ]
     assert len(goal_messages) == 1
     assert "<objective>\nfinish the node goal\n</objective>" in goal_messages[0]["content"]

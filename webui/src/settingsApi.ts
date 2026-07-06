@@ -1,4 +1,4 @@
-import { getActiveApiBase } from './api'
+import { getActiveApiBase, requestApiJson } from './api'
 
 export type SettingsSectionInfo = {
   id: string
@@ -76,30 +76,57 @@ export type ProviderLimitTestResponse = {
   result: ProviderLimitDocument
 }
 
+export type ToolStatsToolSummary = {
+  tool_name: string
+  total: number
+  success: number
+  failure: number
+  statuses: Record<string, number>
+  last_call_at: string
+  last_status: string
+  last_error: string
+  last_result_preview: string
+}
+
+export type ToolStatsProviderSummary = {
+  provider_id: string
+  total: number
+  success: number
+  failure: number
+  statuses: Record<string, number>
+  tools: Record<string, ToolStatsToolSummary>
+  last_call_at: string
+}
+
+export type ToolStatsSummary = {
+  updated_at?: string
+  providers: Record<string, ToolStatsProviderSummary>
+}
+
+export type ToolCallStatRecord = {
+  recorded_at: string
+  provider_id: string
+  graph_id: string
+  node_id: string
+  tool_name: string
+  call_id: string
+  success: boolean
+  status: string
+  error: string
+  duration_ms: number | null
+  started_at: string
+  completed_at: string
+  result_preview: string
+  result_chars: number | null
+}
+
+export type ToolStatsDocument = {
+  summary: ToolStatsSummary
+  recent_calls: ToolCallStatRecord[]
+}
+
 async function requestJson(path: string, init?: RequestInit) {
-  const res = await fetch(`${getActiveApiBase()}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    let detail = text.trim()
-    if (detail) {
-      try {
-        const parsed = JSON.parse(detail)
-        if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
-          detail = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail)
-        }
-      } catch {
-        // Keep the raw response body when it is not JSON.
-      }
-    }
-    throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`)
-  }
-  return res.json()
+  return requestApiJson(getActiveApiBase(), path, init)
 }
 
 export async function listSettingsSections(): Promise<SettingsSectionInfo[]> {
@@ -120,6 +147,14 @@ export async function updateSettingsSection(section: string, content: string): P
 
 export async function getProviderLimits(): Promise<ProviderLimitDocument> {
   return requestJson('/api/providers/limits') as Promise<ProviderLimitDocument>
+}
+
+export async function getToolStats(): Promise<ToolStatsDocument> {
+  return requestJson('/api/tool-stats') as Promise<ToolStatsDocument>
+}
+
+export async function clearToolStats(): Promise<ToolStatsDocument> {
+  return requestJson('/api/tool-stats', { method: 'DELETE' }) as Promise<ToolStatsDocument>
 }
 
 export async function startProviderLimitTests(timeoutSeconds = 30): Promise<ProviderLimitTestResponse> {

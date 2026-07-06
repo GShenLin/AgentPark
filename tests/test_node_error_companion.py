@@ -53,6 +53,15 @@ class _FakeHost:
     def _append_node_memory_entry(self, *_args, **_kwargs):
         return None
 
+    def _node_dir(self, graph_id, node_id):
+        return f"C:/tmp/{graph_id}/{node_id}"
+
+    def _node_memory_path(self, node_id, graph_id):
+        return f"C:/tmp/{graph_id}/{node_id}/memory.md"
+
+    def _node_messages_path(self, node_id, graph_id):
+        return f"C:/tmp/{graph_id}/{node_id}/messages.jsonl"
+
     def _evaluate_node_goal_after_persist(self, **_kwargs):
         return {"active": False, "should_continue": False}
 
@@ -60,40 +69,49 @@ class _FakeHost:
         return False
 
 
-def test_node_error_notice_format_instructs_companion_to_fix_and_restore():
-    from src.companion_inbox import format_companion_notice
-    from src.node_error_companion import build_node_error_notice
+def test_companion_node_review_enabled_reads_agent_node_switch():
+    from src.companion_notice_settings import companion_node_review_enabled
 
-    notice = build_node_error_notice(
+    assert companion_node_review_enabled({}) is False
+    assert companion_node_review_enabled({"agentNode": {}}) is False
+    assert companion_node_review_enabled({"agentNode": {"reviewNodeRunsWithCompanion": True}}) is True
+    assert companion_node_review_enabled({"agentNode": {"reviewNodeRunsWithCompanion": False}}) is False
+
+
+def test_node_review_notice_format_instructs_companion_to_write_report():
+    from src.companion_inbox import format_companion_notice
+    from src.node_run_companion import build_node_run_review_notice
+
+    notice = build_node_run_review_notice(
         graph_id="default",
         node_id="Agent1",
         node_type_id="agent_node",
-        error="RuntimeError: boom",
-        error_message="Error: RuntimeError: boom",
-        trigger={"from_node": "Trigger1", "trace_id": "trace-1", "input": "start work"},
-        traceback_text="Traceback line",
+        trace_id="trace-1",
+        from_node="Trigger1",
+        input_preview="start work",
+        output_preview="done",
+        duration_ms=123,
+        goal_result={"goal_state": {"status": "complete", "reason": "verified"}},
+        node_dir="C:/tmp/default/Agent1",
+        memory_path="C:/tmp/default/Agent1/memory.md",
+        messages_path="C:/tmp/default/Agent1/messages.jsonl",
+        runtime_events_path="C:/tmp/default/Agent1/runtime_events.jsonl",
     )
 
     text = format_companion_notice(notice)
 
-    assert "This is an error notice." in text
-    assert "fix the code, then restore the affected node so it can run again" in text
-    assert "Errored node: default/Agent1" in text
+    assert "A node run was persisted" in text
+    assert "write a summary analysis report" in text
+    assert "Node: default/Agent1" in text
     assert "Triggered by node: default/Trigger1" in text
-    assert "Error: RuntimeError: boom" in text
-    assert "Original input: start work" in text
+    assert "Goal status after run: complete" in text
+    assert "Memory file: C:/tmp/default/Agent1/memory.md" in text
+    assert "Write report to:" in text
+    assert "reports" in text
+    assert "tool calls, tool results, and final answer" in text
 
 
-def test_companion_error_notice_enabled_reads_agent_node_switch():
-    from src.node_error_companion import companion_error_notice_enabled
-
-    assert companion_error_notice_enabled({}) is True
-    assert companion_error_notice_enabled({"agentNode": {}}) is True
-    assert companion_error_notice_enabled({"agentNode": {"notifyCompanionOnError": True}}) is True
-    assert companion_error_notice_enabled({"agentNode": {"notifyCompanionOnError": False}}) is False
-
-
-def test_graph_node_error_delivers_companion_notice(monkeypatch, tmp_path):
+def test_graph_node_error_does_not_deliver_companion_notice(monkeypatch, tmp_path):
     import src.companion_notice_settings as companion_notice_settings
     import src.web_backend.graph_node_execution as graph_node_execution
     from src.web_backend import runtime_paths
@@ -110,74 +128,7 @@ def test_graph_node_error_delivers_companion_notice(monkeypatch, tmp_path):
     monkeypatch.setattr(
         companion_notice_settings.ConfigLoader,
         "get_config",
-        lambda _self: {"agentNode": {"notifyCompanionOnError": True}},
-    )
-
-    config_path = graphs_dir / "default" / "Agent1" / "config.json"
-    config_path.parent.mkdir(parents=True)
-    config_path.write_text(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "node_id": "Agent1",
-                "graph_id": "default",
-                "type_id": "agent_node",
-                "state": "working",
-                "pending": [],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    def fake_run_node_logic(_nodes_dir, _type_id, _pending_message, _context):
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(graph_node_execution, "_run_node_logic_with_routes", fake_run_node_logic)
-    host = _FakeHost()
-
-    GraphNodeExecution(host)._run_single_node_iteration(
-        safe_graph_id="default",
-        entry="Agent1",
-        cfg={},
-        config_path=str(config_path),
-        pending_item={"from": "Trigger1"},
-        outgoing={},
-        nodes_dir=str(tmp_path),
-        wake_event=threading.Event(),
-    )
-
-    inbox_text = (companion_config.parent / "inbox.jsonl").read_text(encoding="utf-8")
-    notice = json.loads(inbox_text.strip())
-    assert notice["type"] == "node_error_notice"
-    assert notice["source"]["graph_id"] == "default"
-    assert notice["source"]["node_id"] == "Agent1"
-    assert notice["source"]["node_type_id"] == "agent_node"
-    assert notice["issue"]["error"] == "RuntimeError: boom"
-    assert notice["issue"]["trigger"]["from_node"] == "Trigger1"
-    assert notice["recovery"]["original_input"] == "run failing work"
-    event = next(item for item in host.events if item["event"] == "node_error_companion_notice")
-    assert event["delivered"] is True
-
-
-def test_graph_node_error_respects_disabled_companion_notice_switch(monkeypatch, tmp_path):
-    import src.companion_notice_settings as companion_notice_settings
-    import src.web_backend.graph_node_execution as graph_node_execution
-    from src.web_backend import runtime_paths
-    from src.web_backend.graph_node_execution import GraphNodeExecution
-
-    graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
-    companion_config.parent.mkdir(parents=True)
-    companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
-    monkeypatch.setattr(
-        companion_notice_settings.ConfigLoader,
-        "get_config",
-        lambda _self: {"agentNode": {"notifyCompanionOnError": False}},
+        lambda _self: {"agentNode": {"reviewNodeRunsWithCompanion": True}},
     )
 
     config_path = graphs_dir / "default" / "Agent1" / "config.json"
@@ -215,5 +166,70 @@ def test_graph_node_error_respects_disabled_companion_notice_switch(monkeypatch,
     )
 
     assert not (companion_config.parent / "inbox.jsonl").exists()
-    event = next(item for item in host.events if item["event"] == "node_error_companion_notice")
-    assert event["delivered"] is False
+    assert not any("companion" in item["event"] for item in host.events)
+
+
+def test_graph_node_success_delivers_review_notice_when_enabled(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
+    import src.web_backend.graph_node_execution as graph_node_execution
+    from src.web_backend import runtime_paths
+    from src.web_backend.graph_node_execution import GraphNodeExecution
+
+    graphs_dir = tmp_path / "memories"
+    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config.parent.mkdir(parents=True)
+    companion_config.write_text(
+        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"reviewNodeRunsWithCompanion": True}},
+    )
+
+    config_path = graphs_dir / "default" / "Agent1" / "config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "node_id": "Agent1",
+                "graph_id": "default",
+                "type_id": "agent_node",
+                "state": "working",
+                "pending": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_node_logic(_nodes_dir, _type_id, _pending_message, _context):
+        return {"message": build_text_envelope("completed answer", role="assistant"), "routes": []}
+
+    monkeypatch.setattr(graph_node_execution, "_run_node_logic_with_routes", fake_run_node_logic)
+    host = _FakeHost()
+
+    GraphNodeExecution(host)._run_single_node_iteration(
+        safe_graph_id="default",
+        entry="Agent1",
+        cfg={},
+        config_path=str(config_path),
+        pending_item={"from": "Trigger1"},
+        outgoing={},
+        nodes_dir=str(tmp_path),
+        wake_event=threading.Event(),
+    )
+
+    inbox_text = (companion_config.parent / "inbox.jsonl").read_text(encoding="utf-8")
+    notice = json.loads(inbox_text.strip())
+    assert notice["type"] == "node_review_notice"
+    assert notice["source"]["graph_id"] == "default"
+    assert notice["source"]["node_id"] == "Agent1"
+    assert notice["run"]["trace_id"] == "trace-err"
+    assert notice["run"]["from_node"] == "Trigger1"
+    assert notice["report"]["report_path"]
+    event = next(item for item in host.events if item["event"] == "node_run_companion_review_notice")
+    assert event["delivered"] is True

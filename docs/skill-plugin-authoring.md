@@ -83,7 +83,7 @@ Scripts are inert unless declared in `skill.json`. A script declaration must spe
 }
 ```
 
-`entry` must stay under `scripts/`, and `cwd` must stay inside the skill directory. Python scripts receive the JSON arguments on stdin and in `AITOOLS_SKILL_SCRIPT_ARGS`.
+`entry` must stay under `scripts/`, and `cwd` must stay inside the skill directory. Python scripts receive the JSON arguments on stdin and in `AGENTPARK_SKILL_SCRIPT_ARGS`.
 
 Read-only scripts (`allowWrite: false`) are registered as tools by default. Write-capable scripts require both `allowWrite: true` and `enabled: true`; otherwise they remain declared but are not exposed as executable tools.
 
@@ -103,7 +103,7 @@ Plugin contributions are surfaced through `CapabilityRegistry`, including depend
 
 ## AgentPark Plugin Manifest
 
-Use `aitools.plugin.json` for native AgentPark plugins:
+Use `agentpark.plugin.json` for native AgentPark plugins:
 
 ```json
 {

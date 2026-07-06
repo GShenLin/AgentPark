@@ -37,7 +37,7 @@ class PluginDefinition:
     description: str
     path: str
     version: str = ""
-    source_format: str = "aitools"
+    source_format: str = "agentpark"
     tools: tuple[str, ...] = ()
     tool_definitions: tuple[PluginToolDefinition, ...] = ()
     skills: tuple[str, ...] = ()

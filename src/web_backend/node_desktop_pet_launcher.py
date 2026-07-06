@@ -120,8 +120,8 @@ def launch_node_desktop_pet_process(graph_id: str, node_id: str, payload: dict[s
 
 
 def _desktop_pet_base_url(env: dict[str, str]) -> str:
-    host = resolve_local_client_host(env.get("AITOOLS_SERVER_HOST") or "127.0.0.1")
-    port = str(env.get("AITOOLS_SERVER_PORT") or "8766")
+    host = resolve_local_client_host(env.get("AGENTPARK_SERVER_HOST") or "127.0.0.1")
+    port = str(env.get("AGENTPARK_SERVER_PORT") or "8766")
     return f"http://{host}:{port}"
 
 

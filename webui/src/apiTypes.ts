@@ -105,6 +105,7 @@ export type GraphNode = {
   web_search?: 'enabled' | 'disabled'
   thinking?: 'enabled' | 'disabled'
   reasoning_effort?: string
+  instruction?: string
   systemPrompt?: string
   plugins?: string[]
   tools?: string[]
@@ -417,10 +418,14 @@ export type MobileNode = {
   graph_id: string
   state?: NodeInstanceState
   pending_count?: number
+  has_inflight?: boolean
+  stop_requested?: boolean
   last_message?: string
   last_run_at?: string
   last_runtime_event?: RuntimeEvent | null
   runtime_tool_calls?: RuntimeToolCall[]
+  goal?: string
+  goal_state?: Record<string, unknown> | null
   input_num?: number
   output_num?: number
   readonly?: boolean
@@ -544,4 +549,5 @@ export type MobileNodeConversation = {
   state?: NodeInstanceState
   last_message?: string
   live_message?: string
+  thinking_message?: string
 }

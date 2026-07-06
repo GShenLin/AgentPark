@@ -229,7 +229,7 @@ def node_memory_paths_for_record(memory_path: str, messages_path: str, record: d
     return current_node_memory_paths(memory_path, messages_path)
 
 
-def read_node_memory_text(memory_path: str, messages_path: str, *, max_chars: int = 20000) -> str:
+def read_node_memory_text(memory_path: str, messages_path: str, *, max_chars: int | None = 20000) -> str:
     return _run_node_memory_transaction(
         memory_path,
         messages_path,
@@ -237,17 +237,20 @@ def read_node_memory_text(memory_path: str, messages_path: str, *, max_chars: in
     )
 
 
-def _read_node_memory_text_unlocked(memory_path: str, messages_path: str, *, max_chars: int = 20000) -> str:
+def _read_node_memory_text_unlocked(memory_path: str, messages_path: str, *, max_chars: int | None = 20000) -> str:
     failures: list[NodeMemoryPersistenceFailure] = []
     _migrate_legacy_node_memory(memory_path, messages_path, failures)
     _raise_if_failures(failures)
 
-    try:
-        limit = int(max_chars)
-    except Exception:
-        limit = 20000
-    if limit <= 0:
-        return ""
+    if max_chars is None:
+        limit = None
+    else:
+        try:
+            limit = int(max_chars)
+        except Exception:
+            limit = 20000
+        if limit <= 0:
+            return ""
 
     chunks: list[str] = []
     node_dir = _node_memory_dir(memory_path, messages_path)
@@ -284,14 +287,17 @@ def _read_node_memory_text_unlocked(memory_path: str, messages_path: str, *, max
                 )
             )
     _raise_if_failures(failures)
-    return "".join(chunks)[-limit:]
+    text = "".join(chunks)
+    if limit is None:
+        return text
+    return text[-limit:]
 
 
 def load_recent_node_memory_records(
     memory_path: str,
     messages_path: str,
     *,
-    limit: int,
+    limit: int | None,
 ) -> list[dict[str, Any]]:
     return _run_node_memory_transaction(
         memory_path,
@@ -304,18 +310,21 @@ def _load_recent_node_memory_records_unlocked(
     memory_path: str,
     messages_path: str,
     *,
-    limit: int,
+    limit: int | None,
 ) -> list[dict[str, Any]]:
     failures: list[NodeMemoryPersistenceFailure] = []
     _migrate_legacy_node_memory(memory_path, messages_path, failures)
     _raise_if_failures(failures)
 
-    try:
-        remaining = int(limit)
-    except Exception:
-        remaining = 0
-    if remaining <= 0:
-        return []
+    if limit is None:
+        remaining = None
+    else:
+        try:
+            remaining = int(limit)
+        except Exception:
+            remaining = 0
+        if remaining <= 0:
+            return []
 
     output_reversed: list[dict[str, Any]] = []
     current = current_node_memory_paths(memory_path, messages_path)
@@ -324,8 +333,9 @@ def _load_recent_node_memory_records_unlocked(
         try:
             for record in _read_jsonl_records_reversed(current_messages_path):
                 output_reversed.append(record)
-                remaining -= 1
-                if remaining <= 0:
+                if remaining is not None:
+                    remaining -= 1
+                if remaining is not None and remaining <= 0:
                     return list(reversed(output_reversed))
         except Exception as exc:
             failures.append(
@@ -343,8 +353,9 @@ def _load_recent_node_memory_records_unlocked(
         try:
             for record in _read_jsonl_records_reversed(path):
                 output_reversed.append(record)
-                remaining -= 1
-                if remaining <= 0:
+                if remaining is not None:
+                    remaining -= 1
+                if remaining is not None and remaining <= 0:
                     return list(reversed(output_reversed))
         except Exception as exc:
             failures.append(

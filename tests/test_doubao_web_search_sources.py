@@ -86,7 +86,7 @@ def test_web_search_requires_explicit_responses_api_support():
     agent._read_provider_config_from_file = lambda: dict(agent.config)
     agent._get_messages_with_memory = lambda: list(agent.messages)
 
-    with pytest.raises(ValueError, match="responsesApi=true"):
+    with pytest.raises(ValueError, match="Feature 'web_search'.*not available"):
         agent.Send(run_tools=False, web_search="enabled")
 
 

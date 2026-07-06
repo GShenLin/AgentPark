@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta, ResponsesFunctionCallStreamItem, ResponsesOutputItemAdded, ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesResponseCompleted, ResponsesResponseCreated, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta, ResponsesFunctionCallStreamItem, ResponsesOutputItemAdded, ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesResponseCompleted, ResponsesResponseCreated, ResponsesStreamEvent, ResponsesStreamFailure
 
 
 class OpenAIResponsesStreamEventNormalizer:
@@ -53,6 +53,10 @@ class OpenAIResponsesStreamEventNormalizer:
             return self._output_item_added(raw_event, raw_type)
         if event_type in {"response.output_text.delta", "output_text.delta"}:
             return self._output_text_delta(raw_event, raw_type)
+        if "reasoning" in event_type or "thinking" in event_type:
+            reasoning_delta = self._reasoning_delta(raw_event, raw_type)
+            if reasoning_delta is not None:
+                return [reasoning_delta]
         if event_type in {"response.function_call_arguments.delta", "function_call_arguments.delta"}:
             return self._function_call_arguments_delta(raw_event, raw_type)
         if event_type in {"response.function_call_arguments.done", "function_call_arguments.done"}:
@@ -135,6 +139,19 @@ class OpenAIResponsesStreamEventNormalizer:
             )
         ]
 
+    def _reasoning_delta(self, event: dict[str, Any], raw_type: str) -> ResponsesReasoningDelta | None:
+        delta = self._extract_reasoning_text(event)
+        if not delta:
+            return None
+        return ResponsesReasoningDelta(
+            delta=delta,
+            item_id=str(event.get("item_id") or "").strip(),
+            output_index=self._int_or_none(event.get("output_index")),
+            content_index=self._int_or_none(event.get("content_index")),
+            provider=self.provider,
+            raw_event_type=raw_type,
+        )
+
     def _function_call_arguments_delta(self, event: dict[str, Any], raw_type: str) -> list[ResponsesStreamEvent]:
         delta = event.get("delta")
         if not isinstance(delta, str):
@@ -213,7 +230,7 @@ class OpenAIResponsesStreamEventNormalizer:
         item_type = self._item_type(item)
         item_id = str(item.get("id") or event.get("item_id") or "").strip()
         if item_type != "function_call":
-            return [
+            events: list[ResponsesStreamEvent] = [
                 ResponsesOutputItemDone(
                     item_id=item_id,
                     output_index=self._int_or_none(event.get("output_index")),
@@ -222,6 +239,11 @@ class OpenAIResponsesStreamEventNormalizer:
                     function_call=None,
                 )
             ]
+            if item_type == "reasoning":
+                reasoning_delta = self._reasoning_delta(event, raw_type)
+                if reasoning_delta is not None:
+                    events.append(reasoning_delta)
+            return events
         failure = self._merge_function_call_item(item, event=event, require_arguments=True)
         if failure is not None:
             return [failure]
@@ -372,6 +394,25 @@ class OpenAIResponsesStreamEventNormalizer:
     @staticmethod
     def _item_type(item: dict[str, Any]) -> str:
         return str(item.get("type") or "").strip().lower()
+
+    @classmethod
+    def _extract_reasoning_text(cls, event: dict[str, Any]) -> str:
+        for key in ("delta", "text", "summary_text", "reasoning_text", "reasoning_content"):
+            value = event.get(key)
+            if isinstance(value, str) and value:
+                return value
+        summary = event.get("summary")
+        if isinstance(summary, list):
+            parts = []
+            for item in summary:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+            if parts:
+                return "".join(parts)
+        item = event.get("item")
+        if isinstance(item, dict):
+            return cls._extract_reasoning_text(item)
+        return ""
 
     @staticmethod
     def _int_or_none(value: Any) -> int | None:

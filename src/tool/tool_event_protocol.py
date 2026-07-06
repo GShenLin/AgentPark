@@ -33,9 +33,12 @@ class ToolLifecycleEvent:
     call_id: str
     provider: str | None
     arguments: dict[str, Any] | None = None
+    arguments_json: str | None = None
+    raw_call: Any = None
     status: str | None = None
     duration_ms: int | None = None
     error: str | None = None
+    result: Any = None
     result_preview: str | None = None
     result_chars: int | None = None
     result_preview_truncated: bool | None = None
@@ -53,12 +56,18 @@ class ToolLifecycleEvent:
         payload.update(runtime_event_timestamps())
         if self.arguments is not None:
             payload["arguments"] = self.arguments
+        if self.arguments_json is not None:
+            payload["arguments_json"] = self.arguments_json
+        if self.raw_call is not None:
+            payload["raw_call"] = self.raw_call
         if self.status is not None:
             payload["status"] = self.status
         if self.duration_ms is not None:
             payload["duration_ms"] = self.duration_ms
         if self.error:
             payload["error"] = self.error
+        if self.result is not None:
+            payload["result"] = self.result
         if self.result_preview:
             payload["result_preview"] = self.result_preview
         if self.result_chars is not None:
@@ -119,6 +128,8 @@ def build_tool_call_start(call: ToolCallEnvelope) -> dict[str, Any]:
         call_id=call.call_id,
         provider=call.provider,
         arguments=dict(call.arguments),
+        arguments_json=call.arguments_json,
+        raw_call=call.raw,
     ).to_payload()
 
 
@@ -141,6 +152,7 @@ def build_tool_call_end(
         status=status,
         duration_ms=duration_ms,
         error=error,
+        result=result,
         result_preview=result_preview.text,
         result_chars=result_preview.total_chars,
         result_preview_truncated=result_preview.truncated,

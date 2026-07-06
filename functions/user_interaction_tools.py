@@ -102,10 +102,10 @@ ask_user_declaration = {
                             "css": {"type": "string", "description": "Optional CSS for a custom_html field."},
                             "js": {
                                 "type": "string",
-                                "description": "Optional JavaScript for a custom_html field. Use window.parent.postMessage({ type: 'aitools-interaction-submit', values: {...} }, '*') to submit.",
+                                "description": "Optional JavaScript for a custom_html field. Use window.parent.postMessage({ type: 'agentpark-interaction-submit', values: {...} }, '*') to submit.",
                             },
                             "height": {"type": "integer", "description": "Iframe height in pixels for custom_html fields. Min 180, max 900."},
-                            "initial_data": {"type": "object", "description": "Initial data exposed to custom_html as window.AITOOLS_INITIAL_DATA."},
+                            "initial_data": {"type": "object", "description": "Initial data exposed to custom_html as window.AGENTPARK_INITIAL_DATA."},
                         },
                         "required": ["id", "type", "label"],
                     },

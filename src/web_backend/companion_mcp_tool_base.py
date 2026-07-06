@@ -62,7 +62,7 @@ class CompanionMcpToolBase:
         try:
             from importlib.metadata import version
 
-            return version("aitools")
+            return version("agentpark")
         except Exception:
             return "0.1.0"
 

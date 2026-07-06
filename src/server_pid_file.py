@@ -9,7 +9,7 @@ from src.workspace_settings import get_workspace_root
 
 
 PID_FILE_SCHEMA_VERSION = 1
-PID_FILE_APP = "AITools"
+PID_FILE_APP = "AgentPark"
 PID_FILE_KIND = "fast_api_server"
 
 
@@ -19,7 +19,7 @@ def get_runtime_state_dir(workspace_root: str | None = None) -> str:
 
 
 def get_server_pid_file_path(workspace_root: str | None = None) -> str:
-    return os.path.join(get_runtime_state_dir(workspace_root), "aitools-server.pid")
+    return os.path.join(get_runtime_state_dir(workspace_root), "agentpark-server.pid")
 
 
 def build_server_pid_payload(host: str, port: int, workspace_root: str | None = None) -> dict[str, Any]:

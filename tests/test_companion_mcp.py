@@ -22,8 +22,8 @@ def test_companion_mcp_decodes_non_ascii_caller_headers():
     class Headers:
         def get(self, name):
             values = {
-                "x-aitools-graph-id": encode_caller_header_value("默认图"),
-                "x-aitools-node-id": encode_caller_header_value("核对答案"),
+                "x-agentpark-graph-id": encode_caller_header_value("默认图"),
+                "x-agentpark-node-id": encode_caller_header_value("核对答案"),
             }
             return values.get(name)
 
@@ -60,7 +60,7 @@ def test_companion_mcp_tools_operate_on_backend_domains(monkeypatch, tmp_path):
             "inflight": {"trace_id": "fixture-working"},
             "working_path": str(tmp_path),
             "tools": ["file_read_tools", "rg_tools"],
-            "mcp_servers": ["aitools-companion"],
+            "mcp_servers": ["agentpark-companion"],
         },
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
@@ -73,7 +73,7 @@ def test_companion_mcp_tools_operate_on_backend_domains(monkeypatch, tmp_path):
     nodes = tools.list_node(graph_id="default")["nodes"]
     assert [item["node_id"] for item in nodes] == ["n1"]
     assert nodes[0]["capabilities"]["tools"] == ["file_read_tools", "rg_tools"]
-    assert nodes[0]["capabilities"]["mcp_servers"] == ["aitools-companion"]
+    assert nodes[0]["capabilities"]["mcp_servers"] == ["agentpark-companion"]
     assert nodes[0]["capabilities"]["can"]["read_local_files"] is True
     assert nodes[0]["capabilities"]["can"]["search_local_files"] is True
     assert tools.get_node_last_message(graph_id="default", node_id="n1")["last_message"] == "busy"

@@ -5,7 +5,7 @@ export type BoardAttachment = {
 
 export function isBoardFileDropEvent(event: DragEvent) {
   const types = Array.from(event.dataTransfer?.types || [])
-  return types.includes('application/x-aitools-file') || types.includes('Files')
+  return types.includes('application/x-agentpark-file') || types.includes('Files')
 }
 
 export function appendUniqueBoardAttachment(

@@ -19,6 +19,7 @@ class AgentNodeRunRequest:
     config_path: str
     config_data: dict[str, Any] | None
     provider_id: str
+    instruction: object
     system_prompt: object
     mode: str
     collaboration_mode: str
@@ -60,6 +61,7 @@ def load_agent_node_run_request(
         config_path=config_path,
         config_data=config_data,
         provider_id=provider_id,
+        instruction=setting("instruction"),
         system_prompt=setting("system_prompt"),
         mode=str(setting("mode", "chat") or "chat").strip() or "chat",
         collaboration_mode=str(setting("collaboration_mode", "default") or "default").strip() or "default",

@@ -3,11 +3,13 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+from src.companion_notice_settings import companion_node_review_enabled
 from src.runtime_cancellation import CancellationRequested
-from src.node_error_companion import notify_companion_about_node_error
+from src.node_run_companion import notify_companion_about_node_run
 
 from .service_host import HostBoundService
 from .route_parser import NodeRouteParser
+from .node_runtime_event_sink import NODE_RUNTIME_EVENTS_FILENAME
 from .node_runtime_event_sink import NodeRuntimeEventSink
 from .node_memory_store import NodeMemoryPersistenceError
 from .node_request_tracking import record_node_request_completion_or_log
@@ -100,6 +102,7 @@ class GraphNodeExecution(HostBoundService):
             log_graph_event=self._log_graph_event,
             append_tool_call_entry=self._append_node_tool_call_entry,
             update_live_output=self.core.node_live_outputs.update,
+            update_live_thinking=getattr(self.core.node_live_outputs, "update_thinking", None),
             publish_live_event=self.core.node_live_outputs.publish_event,
             publish_completion_event=self.core.node_live_outputs.publish_completion_event,
             append_runtime_log=self._append_runtime_log,
@@ -157,12 +160,9 @@ class GraphNodeExecution(HostBoundService):
             if finish_stop_requested():
                 self.core.node_live_outputs.clear(safe_graph_id, entry)
                 return
-            _set_node_config_inflight(config_path, None)
-            _transition_node_config_to_idle(config_path)
             error_text = f"{type(e).__name__}: {str(e)}"
             error_message = f"Error: {error_text}"
             traceback_text = traceback.format_exc()
-            _set_node_config_last_message(config_path, error_message)
             record_node_request_completion_or_log(
                 config_path,
                 request_id=trace_id,
@@ -175,6 +175,9 @@ class GraphNodeExecution(HostBoundService):
                 node_id=entry,
                 node_type_id=type_id,
             )
+            _set_node_config_inflight(config_path, None)
+            _transition_node_config_to_idle(config_path)
+            _set_node_config_last_message(config_path, error_message)
             _touch_node_config_last_run_at(config_path)
             try:
                 self._append_node_memory_entry(
@@ -204,41 +207,6 @@ class GraphNodeExecution(HostBoundService):
                 traceback=_preview_text(traceback_text, 4000),
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
-            try:
-                companion_notice_delivered = notify_companion_about_node_error(
-                    graph_id=safe_graph_id,
-                    node_id=entry,
-                    node_type_id=type_id,
-                    error=error_text,
-                    error_message=error_message,
-                    traceback_text=traceback_text,
-                    trigger={
-                        "trace_id": trace_id,
-                        "from_node": from_node,
-                        "link_id": link_id,
-                        "source": source,
-                        "depth": depth,
-                        "input": _preview_text(pending_full or envelope_preview(pending_message), 2000),
-                    },
-                )
-                self._log_graph_event(
-                    safe_graph_id,
-                    "node_error_companion_notice",
-                    trace_id=trace_id,
-                    node_instance_id=entry,
-                    node_type_id=type_id,
-                    delivered=companion_notice_delivered,
-                )
-            except Exception as companion_error:
-                self._log_graph_event(
-                    safe_graph_id,
-                    "node_error_companion_notice",
-                    trace_id=trace_id,
-                    node_instance_id=entry,
-                    node_type_id=type_id,
-                    delivered=False,
-                    error=str(companion_error),
-                )
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
         finally:
@@ -248,12 +216,8 @@ class GraphNodeExecution(HostBoundService):
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
 
-        _set_node_config_inflight(config_path, None)
-        _transition_node_config_to_idle(config_path)
         output_full = envelope_text(output_message).strip()
         final_message = output_full or pending_full or envelope_preview(output_message) or envelope_preview(pending_message)
-        _set_node_config_runtime_event(config_path, None)
-        _set_node_config_last_message(config_path, final_message)
         record_node_request_completion_or_log(
             config_path,
             request_id=trace_id,
@@ -266,6 +230,10 @@ class GraphNodeExecution(HostBoundService):
             node_id=entry,
             node_type_id=type_id,
         )
+        _set_node_config_inflight(config_path, None)
+        _transition_node_config_to_idle(config_path)
+        _set_node_config_runtime_event(config_path, None)
+        _set_node_config_last_message(config_path, final_message)
         _touch_node_config_last_run_at(config_path)
         try:
             self._append_node_memory_entry(safe_graph_id, entry, "assistant", output_message)
@@ -313,6 +281,57 @@ class GraphNodeExecution(HostBoundService):
             depth=depth,
             wake_event=wake_event,
         )
+        try:
+            review_enabled = companion_node_review_enabled()
+        except Exception as companion_error:
+            review_enabled = False
+            self._log_graph_event(
+                safe_graph_id,
+                "node_run_companion_review_notice",
+                trace_id=trace_id,
+                node_instance_id=entry,
+                node_type_id=type_id,
+                delivered=False,
+                error=str(companion_error),
+            )
+        if review_enabled:
+            try:
+                companion_review_delivered = notify_companion_about_node_run(
+                    graph_id=safe_graph_id,
+                    node_id=entry,
+                    node_type_id=type_id,
+                    trace_id=trace_id,
+                    from_node=from_node,
+                    input_preview=_preview_text(envelope_preview(pending_message), 2000),
+                    output_preview=_preview_text(envelope_preview(output_message), 2000),
+                    duration_ms=duration_ms,
+                    goal_result=goal_result if isinstance(goal_result, dict) else None,
+                    node_dir=self._node_dir(safe_graph_id, entry),
+                    memory_path=self._node_memory_path(entry, safe_graph_id),
+                    messages_path=self._node_messages_path(entry, safe_graph_id),
+                    runtime_events_path=os.path.join(
+                        self._node_dir(safe_graph_id, entry),
+                        NODE_RUNTIME_EVENTS_FILENAME,
+                    ),
+                )
+                self._log_graph_event(
+                    safe_graph_id,
+                    "node_run_companion_review_notice",
+                    trace_id=trace_id,
+                    node_instance_id=entry,
+                    node_type_id=type_id,
+                    delivered=companion_review_delivered,
+                )
+            except Exception as companion_error:
+                self._log_graph_event(
+                    safe_graph_id,
+                    "node_run_companion_review_notice",
+                    trace_id=trace_id,
+                    node_instance_id=entry,
+                    node_type_id=type_id,
+                    delivered=False,
+                    error=str(companion_error),
+                )
         if isinstance(goal_result, dict) and goal_result.get("should_continue"):
             self._log_graph_event(
                 safe_graph_id,

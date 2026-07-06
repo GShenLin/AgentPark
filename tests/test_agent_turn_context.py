@@ -6,8 +6,8 @@ def test_agent_turn_context_item_excludes_secrets_and_splits_volatile_fields(tmp
 
     agent = SimpleNamespace(
         provider_name="krill_gpt55",
-        _aitools_node_type_id="agent_node",
-        _aitools_working_path=str(tmp_path),
+        _agentpark_node_type_id="agent_node",
+        _agentpark_working_path=str(tmp_path),
         config={
             "apiKey": "sk-secret",
             "baseUrl": "https://example.invalid/v1",
@@ -127,7 +127,7 @@ def test_agent_turn_context_diff_detects_collaboration_mode_change():
     second_agent = SimpleNamespace(
         provider_name="openai",
         config={"type": "openai", "model": "gpt-test"},
-        _aitools_collaboration_mode="plan",
+        _agentpark_collaboration_mode="plan",
     )
 
     first = build_agent_turn_context_item(first_agent, environment_context={}, tools_payload=[])

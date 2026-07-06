@@ -66,7 +66,7 @@ Structured runtime payloads must carry schema versions at their contract boundar
 - PID/runtime files: `schema_version`
 - node config migrations: `schemaVersion`
 
-Native AgentPark plugins support `version` in `aitools.plugin.json`, and skills support optional `version` in `SKILL.md` frontmatter. Capability descriptors expose declared versions when present.
+Native AgentPark plugins support `version` in `agentpark.plugin.json`, and skills support optional `version` in `SKILL.md` frontmatter. Capability descriptors expose declared versions when present.
 
 Future package artifacts should include:
 

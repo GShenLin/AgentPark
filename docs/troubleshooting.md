@@ -16,7 +16,7 @@ Common check prefixes:
 - `providers`: `config/moduleProvider.json` and provider feature normalization
 - `mcp_server:<name>`: MCP transport and required fields
 - `skill:<id>`: `SKILL.md`, `skill.json`, resources, and `agents/*.yaml`
-- `plugin:<id>`: `aitools.plugin.json` or adapted plugin manifest
+- `plugin:<id>`: `agentpark.plugin.json` or adapted plugin manifest
 - `graph_config:<graph>`: persisted graph topology config
 - `node_config:<graph>/<node>`: persisted node config contract
 

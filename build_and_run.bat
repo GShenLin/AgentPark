@@ -3,63 +3,68 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 rem Switch to the script directory to ensure relative paths work
 cd /d "%~dp0"
-set "AITOOLS_LAUNCH_MODE=cli_web"
-set "AITOOLS_CLI_ARGS=chat"
-set "AITOOLS_RESTART_EXIT_CODE=43"
+set "AGENTPARK_WORKSPACE_ROOT=%cd%"
+if not exist "%AGENTPARK_WORKSPACE_ROOT%\.runtime" mkdir "%AGENTPARK_WORKSPACE_ROOT%\.runtime"
+set "AGENTPARK_DEPENDENCY_UPDATE_LOG=%AGENTPARK_WORKSPACE_ROOT%\.runtime\dependency-update.log"
+>>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo.
+>>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo ===== AgentPark dependency update session %date% %time% =====
+set "AGENTPARK_LAUNCH_MODE=cli_web"
+set "AGENTPARK_CLI_ARGS=chat"
+set "AGENTPARK_RESTART_EXIT_CODE=43"
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 if /I "%~1"=="server" (
-    set "AITOOLS_LAUNCH_MODE=server"
-    set "AITOOLS_CLI_ARGS="
+    set "AGENTPARK_LAUNCH_MODE=server"
+    set "AGENTPARK_CLI_ARGS="
 )
 if /I "%~1"=="web" (
-    set "AITOOLS_LAUNCH_MODE=server"
-    set "AITOOLS_CLI_ARGS="
+    set "AGENTPARK_LAUNCH_MODE=server"
+    set "AGENTPARK_CLI_ARGS="
 )
 if /I "%~1"=="cli-only" (
-    set "AITOOLS_LAUNCH_MODE=cli_only"
+    set "AGENTPARK_LAUNCH_MODE=cli_only"
     if "%~2"=="" (
-        set "AITOOLS_CLI_ARGS=chat"
+        set "AGENTPARK_CLI_ARGS=chat"
     ) else if /I "%~2"=="chat" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else if /I "%~2"=="doctor" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else if /I "%~2"=="capabilities" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else if /I "%~2"=="config" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else (
-        set "AITOOLS_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
     )
 )
 if /I "%~1"=="cli" (
-    set "AITOOLS_LAUNCH_MODE=cli_web"
+    set "AGENTPARK_LAUNCH_MODE=cli_web"
     if "%~2"=="" (
-        set "AITOOLS_CLI_ARGS=chat"
+        set "AGENTPARK_CLI_ARGS=chat"
     ) else if /I "%~2"=="chat" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else if /I "%~2"=="doctor" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else if /I "%~2"=="capabilities" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else if /I "%~2"=="config" (
-        set "AITOOLS_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
     ) else (
-        set "AITOOLS_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
+        set "AGENTPARK_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
     )
 )
 if /I "%~1"=="chat" (
-    set "AITOOLS_LAUNCH_MODE=cli_web"
-    set "AITOOLS_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
+    set "AGENTPARK_LAUNCH_MODE=cli_web"
+    set "AGENTPARK_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
 )
 if /I "%~1"=="pet" (
-    set "AITOOLS_LAUNCH_MODE=pet"
-    set "AITOOLS_PET_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
+    set "AGENTPARK_LAUNCH_MODE=pet"
+    set "AGENTPARK_PET_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
 )
 if /I "%~1"=="ask-here" (
-    set "AITOOLS_LAUNCH_MODE=ask_here"
-    set "AITOOLS_ASK_HERE_PATH=%~2"
-    set "AITOOLS_NO_PAUSE=1"
+    set "AGENTPARK_LAUNCH_MODE=ask_here"
+    set "AGENTPARK_ASK_HERE_PATH=%~2"
+    set "AGENTPARK_NO_PAUSE=1"
 )
 set "PYTHON_EXE="
 call :select_python "%LocalAppData%\Programs\Python\Python314\python.exe"
@@ -77,11 +82,11 @@ if not defined PYTHON_EXE (
 
 echo [INFO] Using Python: %PYTHON_EXE%
 
-if /I "%AITOOLS_LAUNCH_MODE%"=="ask_here" (
+if /I "%AGENTPARK_LAUNCH_MODE%"=="ask_here" (
     call :handle_ask_here
-    set "AITOOLS_ASK_HERE_EXIT=!errorlevel!"
+    set "AGENTPARK_ASK_HERE_EXIT=!errorlevel!"
     call :maybe_pause
-    exit /b !AITOOLS_ASK_HERE_EXIT!
+    exit /b !AGENTPARK_ASK_HERE_EXIT!
 )
 
 call :ensure_rg
@@ -94,13 +99,8 @@ cd webui
 echo [INFO] Current working directory: %cd%
 
 echo [INFO] Installing/updating WebUI dependencies...
-call npm install
-
-if %errorlevel% neq 0 (
-    echo [ERROR] WebUI dependency install failed with error code %errorlevel%
-    call :maybe_pause
-    exit /b %errorlevel%
-)
+set "AGENTPARK_UPDATE_COMMAND=npm install"
+call :run_optional_dependency_update "WebUI dependency update"
 
 echo [INFO] Compiling WebUI...
 call npm run build
@@ -117,15 +117,10 @@ rem Return to root directory
 cd ..
 
 echo [INFO] Installing/updating Python dependencies...
-"%PYTHON_EXE%" -m pip install -e .
+set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install -e ."
+call :run_optional_dependency_update "Python dependency update"
 
-if %errorlevel% neq 0 (
-    echo [ERROR] Python dependency install failed with error code %errorlevel%
-    call :maybe_pause
-    exit /b %errorlevel%
-)
-
-if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
+if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_web" (
     call :stop_existing_workspace_processes
     if errorlevel 1 (
         call :maybe_pause
@@ -138,7 +133,7 @@ if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
     )
 )
 
-if /I "%AITOOLS_LAUNCH_MODE%"=="pet" (
+if /I "%AGENTPARK_LAUNCH_MODE%"=="pet" (
     call :start_background_server
     if errorlevel 1 (
         call :maybe_pause
@@ -146,49 +141,45 @@ if /I "%AITOOLS_LAUNCH_MODE%"=="pet" (
     )
 )
 
-if /I "%AITOOLS_LAUNCH_MODE%"=="pet" (
-    echo [INFO] Starting AgentPark desktop pet: npm start -- !AITOOLS_PET_ARGS!
+if /I "%AGENTPARK_LAUNCH_MODE%"=="pet" (
+    echo [INFO] Starting AgentPark desktop pet: npm start -- !AGENTPARK_PET_ARGS!
     cd desktop\pet
-    call npm install
-    if %errorlevel% neq 0 (
-        echo [ERROR] Desktop pet dependency install failed with error code %errorlevel%
-        call :maybe_pause
-        exit /b %errorlevel%
-    )
-    call npm start -- !AITOOLS_PET_ARGS!
-    set "AITOOLS_PET_EXIT=!errorlevel!"
+    set "AGENTPARK_UPDATE_COMMAND=npm install"
+    call :run_optional_dependency_update "Desktop pet dependency update"
+    call npm start -- !AGENTPARK_PET_ARGS!
+    set "AGENTPARK_PET_EXIT=!errorlevel!"
     cd ..\..
     call :maybe_pause
-    exit /b !AITOOLS_PET_EXIT!
+    exit /b !AGENTPARK_PET_EXIT!
 )
 
-if /I "%AITOOLS_LAUNCH_MODE%"=="cli_web" (
-    if not defined AITOOLS_CLI_ARGS set "AITOOLS_CLI_ARGS=chat"
-    echo [INFO] Starting AITools CLI: python -m src.cli !AITOOLS_CLI_ARGS!
-    "%PYTHON_EXE%" -m src.cli !AITOOLS_CLI_ARGS!
-    set "AITOOLS_CLI_EXIT=!errorlevel!"
-    if "!AITOOLS_CLI_EXIT!"=="%AITOOLS_RESTART_EXIT_CODE%" (
+if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_web" (
+    if not defined AGENTPARK_CLI_ARGS set "AGENTPARK_CLI_ARGS=chat"
+    echo [INFO] Starting AgentPark CLI: python -m src.cli !AGENTPARK_CLI_ARGS!
+    "%PYTHON_EXE%" -m src.cli !AGENTPARK_CLI_ARGS!
+    set "AGENTPARK_CLI_EXIT=!errorlevel!"
+    if "!AGENTPARK_CLI_EXIT!"=="%AGENTPARK_RESTART_EXIT_CODE%" (
         echo [INFO] Restart requested by companion CLI; exiting without pause.
         exit /b 0
     )
     call :maybe_pause
-    exit /b !AITOOLS_CLI_EXIT!
+    exit /b !AGENTPARK_CLI_EXIT!
 )
 
-if /I "%AITOOLS_LAUNCH_MODE%"=="cli_only" (
-    if not defined AITOOLS_CLI_ARGS set "AITOOLS_CLI_ARGS=chat"
-    echo [INFO] Starting AITools CLI: python -m src.cli !AITOOLS_CLI_ARGS!
-    "%PYTHON_EXE%" -m src.cli !AITOOLS_CLI_ARGS!
-    set "AITOOLS_CLI_EXIT=!errorlevel!"
-    if "!AITOOLS_CLI_EXIT!"=="%AITOOLS_RESTART_EXIT_CODE%" (
+if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_only" (
+    if not defined AGENTPARK_CLI_ARGS set "AGENTPARK_CLI_ARGS=chat"
+    echo [INFO] Starting AgentPark CLI: python -m src.cli !AGENTPARK_CLI_ARGS!
+    "%PYTHON_EXE%" -m src.cli !AGENTPARK_CLI_ARGS!
+    set "AGENTPARK_CLI_EXIT=!errorlevel!"
+    if "!AGENTPARK_CLI_EXIT!"=="%AGENTPARK_RESTART_EXIT_CODE%" (
         echo [INFO] Restart requested by companion CLI; exiting without pause.
         exit /b 0
     )
     call :maybe_pause
-    exit /b !AITOOLS_CLI_EXIT!
+    exit /b !AGENTPARK_CLI_EXIT!
 )
 
-echo [INFO] Starting AITools server...
+echo [INFO] Starting AgentPark server...
 
 "%PYTHON_EXE%" -m src.fast_api --workspace-root "%cd%"
 
@@ -198,44 +189,73 @@ endlocal
 exit /b 0
 
 :maybe_pause
-if /I "%AITOOLS_NO_PAUSE%"=="1" exit /b 0
+if /I "%AGENTPARK_NO_PAUSE%"=="1" exit /b 0
 pause
+exit /b 0
+
+:run_optional_dependency_update
+set "AGENTPARK_UPDATE_LABEL=%~1"
+set "AGENTPARK_UPDATE_TEMP=%TEMP%\agentpark-dependency-update-%RANDOM%-%RANDOM%.log"
+echo [INFO] Running !AGENTPARK_UPDATE_LABEL!: !AGENTPARK_UPDATE_COMMAND!
+>>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo.
+>>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo ----- !AGENTPARK_UPDATE_LABEL! -----
+>>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo [INFO] cwd=%cd%
+>>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo [INFO] command=!AGENTPARK_UPDATE_COMMAND!
+cmd /d /s /c "!AGENTPARK_UPDATE_COMMAND!" > "!AGENTPARK_UPDATE_TEMP!" 2>&1
+set "AGENTPARK_UPDATE_EXIT=!errorlevel!"
+if exist "!AGENTPARK_UPDATE_TEMP!" (
+    type "!AGENTPARK_UPDATE_TEMP!"
+    type "!AGENTPARK_UPDATE_TEMP!" >> "%AGENTPARK_DEPENDENCY_UPDATE_LOG%"
+)
+if not "!AGENTPARK_UPDATE_EXIT!"=="0" (
+    echo [WARN] !AGENTPARK_UPDATE_LABEL! failed with error code !AGENTPARK_UPDATE_EXIT!.
+    echo [WARN] Dependency update output was printed above and saved to:
+    echo [WARN]   %AGENTPARK_DEPENDENCY_UPDATE_LOG%
+    echo [WARN] Continuing startup because existing installed packages may still be usable.
+    >>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo [WARN] !AGENTPARK_UPDATE_LABEL! failed with error code !AGENTPARK_UPDATE_EXIT!.
+    >>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo [WARN] Continuing startup because existing installed packages may still be usable.
+    if exist "!AGENTPARK_UPDATE_TEMP!" del /q "!AGENTPARK_UPDATE_TEMP!" >nul 2>nul
+    exit /b 0
+)
+echo [INFO] !AGENTPARK_UPDATE_LABEL! completed successfully.
+>>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo [INFO] !AGENTPARK_UPDATE_LABEL! completed successfully.
+if exist "!AGENTPARK_UPDATE_TEMP!" del /q "!AGENTPARK_UPDATE_TEMP!" >nul 2>nul
 exit /b 0
 
 :start_background_server
 if not exist ".runtime" mkdir ".runtime"
-set "AITOOLS_WEB_STDOUT=%cd%\.runtime\aitools-server.log"
-set "AITOOLS_WEB_STDERR=%cd%\.runtime\aitools-server.err.log"
-set "AITOOLS_WORKSPACE_ROOT=%cd%"
-set "AITOOLS_PYTHON_EXE=%PYTHON_EXE%"
-echo [INFO] Starting AITools web server in background. Logs:
-echo [INFO]   %AITOOLS_WEB_STDOUT%
-echo [INFO]   %AITOOLS_WEB_STDERR%
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AITOOLS_PYTHON_EXE; $root=$env:AITOOLS_WORKSPACE_ROOT; $stdout=$env:AITOOLS_WEB_STDOUT; $stderr=$env:AITOOLS_WEB_STDERR; $launcher=(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId; $env:AITOOLS_EXIT_WHEN_PID_EXITS=[string]$launcher; $arguments=@('-m','src.fast_api','--workspace-root',$root); Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr"
+set "AGENTPARK_WEB_STDOUT=%cd%\.runtime\agentpark-server.log"
+set "AGENTPARK_WEB_STDERR=%cd%\.runtime\agentpark-server.err.log"
+set "AGENTPARK_WORKSPACE_ROOT=%cd%"
+set "AGENTPARK_PYTHON_EXE=%PYTHON_EXE%"
+echo [INFO] Starting AgentPark web server in background. Logs:
+echo [INFO]   %AGENTPARK_WEB_STDOUT%
+echo [INFO]   %AGENTPARK_WEB_STDERR%
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AGENTPARK_PYTHON_EXE; $root=$env:AGENTPARK_WORKSPACE_ROOT; $stdout=$env:AGENTPARK_WEB_STDOUT; $stderr=$env:AGENTPARK_WEB_STDERR; $launcher=(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId; $env:AGENTPARK_EXIT_WHEN_PID_EXITS=[string]$launcher; $arguments=@('-m','src.fast_api','--workspace-root',$root); Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr"
 if errorlevel 1 (
-    echo [ERROR] Failed to start AITools web server in background.
+    echo [ERROR] Failed to start AgentPark web server in background.
     exit /b %errorlevel%
 )
 echo [INFO] Web server process launched.
 exit /b 0
 
 :stop_existing_workspace_processes
-if not exist "scripts\restart_aitools.ps1" exit /b 0
-echo [INFO] Stopping existing AITools processes for this workspace...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%cd%\scripts\restart_aitools.ps1" -WorkspaceRoot "%cd%"
+if not exist "scripts\restart_agentpark.ps1" exit /b 0
+echo [INFO] Stopping existing AgentPark processes for this workspace...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%cd%\scripts\restart_agentpark.ps1" -WorkspaceRoot "%cd%"
 if errorlevel 1 (
-    echo [ERROR] Failed to stop existing AITools processes.
+    echo [ERROR] Failed to stop existing AgentPark processes.
     exit /b %errorlevel%
 )
 exit /b 0
 
 :handle_ask_here
-if not defined AITOOLS_ASK_HERE_PATH (
+if not defined AGENTPARK_ASK_HERE_PATH (
     echo [ERROR] Ask Here requires a folder path.
     exit /b 1
 )
-if not exist "%AITOOLS_ASK_HERE_PATH%\." (
-    echo [ERROR] Ask Here folder path does not exist: "%AITOOLS_ASK_HERE_PATH%"
+if not exist "%AGENTPARK_ASK_HERE_PATH%\." (
+    echo [ERROR] Ask Here folder path does not exist: "%AGENTPARK_ASK_HERE_PATH%"
     exit /b 1
 )
 "%PYTHON_EXE%" -m src.ask_here_launcher ping >nul 2>nul
@@ -246,7 +266,7 @@ if errorlevel 1 (
     "%PYTHON_EXE%" -m src.ask_here_launcher wait --timeout 35
     if errorlevel 1 exit /b %errorlevel%
 )
-"%PYTHON_EXE%" -m src.ask_here_launcher dispatch --path "%AITOOLS_ASK_HERE_PATH%"
+"%PYTHON_EXE%" -m src.ask_here_launcher dispatch --path "%AGENTPARK_ASK_HERE_PATH%"
 exit /b %errorlevel%
 
 :register_folder_context_menu

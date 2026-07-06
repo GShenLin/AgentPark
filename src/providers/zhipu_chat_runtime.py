@@ -2,6 +2,7 @@ import json
 
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.providers.tool_call_execution import parse_openai_tool_call_items
+from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.providers.zhipu_http_transport import ZhipuHttpTransport
 from src.switch_utils import require_bool_switch
 from src.tool.tool_call_protocol import to_openai_tool_call
@@ -136,6 +137,7 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
                 return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
             self._run_operational_memory_gate_for_failed_executions(executions)
             self._run_tool_context_compaction_gate_if_needed(executions)
+            append_mid_turn_user_messages(self)
             return self.Send(
                 run_tools=run_tools,
                 mode="chat",

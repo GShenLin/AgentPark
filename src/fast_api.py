@@ -140,8 +140,8 @@ def main(argv=None):
     actual_port = find_available_server_port(args.host, args.port)
     if actual_port != int(args.port):
         print(f"[server] preferred port {args.port} unavailable, using {actual_port}")
-    os.environ["AITOOLS_SERVER_HOST"] = str(args.host)
-    os.environ["AITOOLS_SERVER_PORT"] = str(actual_port)
+    os.environ["AGENTPARK_SERVER_HOST"] = str(args.host)
+    os.environ["AGENTPARK_SERVER_PORT"] = str(actual_port)
     if "AGENTPARK_RESTORE_DESKTOP_PETS" not in os.environ:
         os.environ["AGENTPARK_RESTORE_DESKTOP_PETS"] = "1"
     pid_path = install_server_pid_file(args.host, actual_port)

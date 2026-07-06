@@ -95,7 +95,7 @@ class PlainCompanionTerminal:
         provider = str(self.target.config.get("provider_id") or "provider-unset")
         model_mode = str(self.target.config.get("mode") or "chat")
         print("")
-        print(accent("AITools Companion"))
+        print(accent("AgentPark Companion"))
         print(field_line("provider", provider))
         print(field_line("mode", model_mode))
         print(field_line("interface", "companion cli"))

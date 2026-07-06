@@ -137,7 +137,7 @@ def test_image_generation_node_schema_filters_image_generation_providers(monkeyp
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AITOOLS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     ConfigLoader._instance = None
     ConfigLoader._config = None
 

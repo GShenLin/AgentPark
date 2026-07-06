@@ -96,7 +96,7 @@ def test_apply_patch_resolves_relative_paths_from_agent_working_path(tmp_path):
     work = tmp_path / "work"
     work.mkdir()
     (work / "source.txt").write_text("alpha\nbeta\n", encoding="utf-8")
-    agent = SimpleNamespace(_aitools_working_path=str(work))
+    agent = SimpleNamespace(_agentpark_working_path=str(work))
 
     raw = patch_tools.apply_patch(
         """*** Begin Patch

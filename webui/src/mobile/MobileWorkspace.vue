@@ -68,12 +68,13 @@ const headerTitle = computed(() => {
 const messages = computed(() => workspace.conversation.value?.messages || [])
 const feedEntries = useMemoryFeedEntries(messages)
 const liveMessage = computed(() => String(workspace.conversation.value?.live_message || ''))
+const thinkingMessage = computed(() => String(workspace.conversation.value?.thinking_message || ''))
 const messageSignature = computed(() => buildMessageSignature(messages.value))
 const selectedGoalState = computed(() => {
-  const state = workspace.selectedConfig.value?.goal_state
+  const state = workspace.selectedNode.value?.goal_state
   return state && typeof state === 'object' ? state as Record<string, unknown> : null
 })
-const selectedGoalText = computed(() => String(workspace.selectedConfig.value?.goal || '').trim())
+const selectedGoalText = computed(() => String(workspace.selectedNode.value?.goal || '').trim())
 const hasPersistedGoal = computed(() => !!(selectedGoalText.value || selectedGoalState.value))
 const isAgentNode = computed(() => workspace.selectedNode.value?.type_id === 'agent_node')
 const goalEnabled = computed(() => isAgentNode.value || hasPersistedGoal.value)
@@ -90,19 +91,14 @@ const goalTitle = computed(() => {
   if (!isAgentNode.value) return 'Goal mode is available on Agent nodes'
   return goalActive.value ? 'Disable goal mode' : 'Enable goal mode'
 })
-const isStopRequested = computed(() => {
-  const id = String(workspace.selectedNode.value?.id || '').trim()
-  return !!(id && workspace.nodeConfigs.value[id]?._stop_requested)
-})
 const selectedNodeRunning = computed(() => {
   const node = workspace.selectedNode.value
   if (!node) return false
-  const id = String(node.id || '').trim()
-  const config = id ? workspace.nodeConfigs.value[id] : null
-  const state = String(config?.state || node.state || 'idle')
-  const pendingCount = Number(config?.pending_count ?? node.pending_count ?? 0)
-  return state === 'working' || pendingCount > 0 || !!config?.inflight || isStopRequested.value
+  const state = String(node.state || 'idle')
+  const pendingCount = Number(node.pending_count ?? 0)
+  return state === 'working' || pendingCount > 0 || !!node.has_inflight || !!node.stop_requested
 })
+const selectedNodeStopRequested = computed(() => !!workspace.selectedNode.value?.stop_requested)
 const composerLocked = computed(() => submittingDraft.value || workspace.sending.value)
 const canSendDraft = computed(() => !composerLocked.value && (!!draft.value.trim() || attachments.value.length > 0))
 
@@ -274,15 +270,18 @@ async function persistGoalForSend(payload: string | MessageEnvelope) {
   if (!objective) {
     throw new Error('Goal mode requires non-empty input.')
   }
-  await workspace.setSelectedNodeFields({
-    goal: objective,
-    goal_state: {
-      status: 'active',
-      reason: 'Goal started from mobile input.',
-      turn_count: 0,
-      updated_at: new Date().toISOString(),
+  await workspace.setSelectedNodeFields(
+    {
+      goal: objective,
+      goal_state: {
+        status: 'active',
+        reason: 'Goal started from mobile input.',
+        turn_count: 0,
+        updated_at: new Date().toISOString(),
+      },
     },
-  })
+    { emitEvent: false },
+  )
 }
 
 async function toggleGoal() {
@@ -313,7 +312,7 @@ async function stopSelectedNode() {
 async function openConfig() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   configOpen.value = true
-  await workspace.refreshNodeConfigs().catch((e: any) => {
+  await workspace.refreshSelectedNodeConfig().catch((e: any) => {
     workspace.error.value = String(e?.message || e)
   })
 }
@@ -426,6 +425,22 @@ async function deleteMobileNode(node: MobileNode) {
   }
 }
 
+async function triggerMobileNode(node: MobileNode) {
+  try {
+    await workspace.triggerNode(node)
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
+async function copyMobileNode(node: MobileNode) {
+  try {
+    await workspace.copyNode(node)
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
 async function clearMemory() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   const nodeId = String(workspace.selectedNode.value.id || '').trim()
@@ -453,7 +468,7 @@ async function deleteMobileMessage(message: MessageEnvelope) {
 }
 
 async function onConfigSaved() {
-  await Promise.all([workspace.refreshNodeConfigs(), workspace.refreshCurrent()]).catch((e: any) => {
+  await workspace.refreshCurrent().catch((e: any) => {
     workspace.error.value = String(e?.message || e)
   })
 }
@@ -489,6 +504,12 @@ watch(messageSignature, (_next, previous) => {
 })
 
 watch(liveMessage, (_next, previous) => {
+  const shouldStick = previous == null || isFeedNearBottom()
+  if (!shouldStick) return
+  void nextTick(scrollFeedToBottom)
+})
+
+watch(thinkingMessage, (_next, previous) => {
   const shouldStick = previous == null || isFeedNearBottom()
   if (!shouldStick) return
   void nextTick(scrollFeedToBottom)
@@ -592,6 +613,8 @@ onMounted(() => {
           :node="node"
           @select="workspace.selectNode"
           @delete="deleteMobileNode"
+          @trigger="triggerMobileNode"
+          @copy="copyMobileNode"
         />
         <button v-if="!workspace.selectedGraph.value?.readonly" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
       </section>
@@ -606,7 +629,7 @@ onMounted(() => {
         </div>
 
         <div ref="feedRef" class="chat-feed">
-          <div v-if="messages.length === 0 && !liveMessage" class="empty-chat">暂无消息</div>
+          <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage" class="empty-chat">暂无消息</div>
           <template v-for="entry in feedEntries" :key="entry.key">
             <article v-if="entry.type === 'message'" class="bubble" :class="messageRoleClass(entry.message)">
               <div class="bubble-meta">{{ String(entry.message.role || 'assistant') }}</div>
@@ -646,7 +669,7 @@ onMounted(() => {
               </div>
             </section>
           </template>
-          <MobileLiveMessage v-if="liveMessage" :text="liveMessage" />
+          <MobileLiveMessage v-if="liveMessage || thinkingMessage" :text="liveMessage" :thinking-text="thinkingMessage" />
         </div>
 
         <form class="composer" @submit.prevent="sendDraft">
@@ -670,11 +693,11 @@ onMounted(() => {
               v-if="selectedNodeRunning"
               class="stop-node-btn"
               type="button"
-              :disabled="isStopRequested"
-              :title="isStopRequested ? 'Stop requested' : 'Stop current node work'"
+              :disabled="selectedNodeStopRequested"
+              :title="selectedNodeStopRequested ? 'Stop requested' : 'Stop current node work'"
               @click="stopSelectedNode"
             >
-              {{ isStopRequested ? 'Stopping' : 'Stop' }}
+              {{ selectedNodeStopRequested ? 'Stopping' : 'Stop' }}
             </button>
             <input ref="fileInputRef" class="hidden-file-input" type="file" multiple @change="onFileSelected" />
           </div>
@@ -695,13 +718,13 @@ onMounted(() => {
 
     <MobileNodeConfigDialog
       :open="configOpen"
-      :graph-id="workspace.selectedGraph.value?.id || 'default'"
       :node="workspace.selectedNode.value"
       :config="workspace.selectedConfig.value"
       :providers="workspace.providers.value"
       :available-tools="workspace.availableTools.value"
       :nodes="workspace.nodes.value"
       :output-routes="workspace.selectedNodeOutputRoutes.value"
+      :save-fields="workspace.setSelectedNodeFields"
       :rename-node="workspace.renameSelectedNode"
       :add-output-route="workspace.addSelectedNodeOutputRoute"
       :update-output-route="workspace.updateSelectedNodeOutputRoute"

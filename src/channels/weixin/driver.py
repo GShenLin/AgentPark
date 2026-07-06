@@ -169,7 +169,7 @@ class WeixinChannelDriver:
             raise ChannelConfigError("to_user_id is required")
         if not body_text.strip():
             raise ChannelConfigError("text is required")
-        client_id = f"aitools-weixin-{uuid.uuid4().hex}"
+        client_id = f"agentpark-weixin-{uuid.uuid4().hex}"
         payload = {
             "msg": {
                 "from_user_id": "",
@@ -212,7 +212,7 @@ class WeixinChannelDriver:
             cdn_base_url=account["cdnBaseUrl"],
             get_upload_url=self._get_upload_url,
         )
-        client_id = f"aitools-weixin-{uuid.uuid4().hex}"
+        client_id = f"agentpark-weixin-{uuid.uuid4().hex}"
         aes_key_for_wire = base64.b64encode(str(uploaded["aeskey"]).encode("ascii")).decode("ascii")
         payload = {
             "msg": {
@@ -295,7 +295,7 @@ class WeixinChannelDriver:
         return tokens
 
     def _base_info(self) -> dict:
-        return {"channel_version": PLUGIN_VERSION, "bot_agent": "AITools/0.1.0"}
+        return {"channel_version": PLUGIN_VERSION, "bot_agent": "AgentPark/0.1.0"}
 
     def _headers(self, token: str = "", *, auth: bool = True) -> dict:
         headers = {

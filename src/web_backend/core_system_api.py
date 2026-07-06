@@ -64,7 +64,7 @@ class SystemApiDomain(DomainBase):
         try:
             if os.name == "nt":
                 subprocess.Popen(
-                    ["cmd.exe", "/c", "start", "AITools Restart", restart_path],
+                    ["cmd.exe", "/c", "start", "AgentPark Restart", restart_path],
                     cwd=runtime_root,
                     close_fds=True,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,

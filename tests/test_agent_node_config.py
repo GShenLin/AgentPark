@@ -9,6 +9,8 @@ def test_agent_node_run_request_prefers_config_file_over_context(tmp_path):
         json.dumps(
             {
                 "provider_id": "from-file",
+                "instruction": "from instruction file field",
+                "system_prompt": "from system prompt field",
                 "mode": "chat",
                 "collaboration_mode": "plan",
                 "working_path": "C:/Project",
@@ -30,6 +32,8 @@ def test_agent_node_run_request_prefers_config_file_over_context(tmp_path):
     assert request.agent_id == "Agent1"
     assert request.graph_id == "g1"
     assert request.provider_id == "from-file"
+    assert request.instruction == "from instruction file field"
+    assert request.system_prompt == "from system prompt field"
     assert request.mode == "chat"
     assert request.collaboration_mode == "plan"
     assert request.working_path == "C:/Project"

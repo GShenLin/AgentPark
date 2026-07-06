@@ -133,7 +133,7 @@ def _load_tool_module_file(path: str) -> list[PluginToolDefinition]:
 
 
 def _import_module_file(path: str):
-    module_name = "_aitools_plugin_tool_" + hashlib.sha256(os.path.realpath(path).encode("utf-8")).hexdigest()
+    module_name = "_agentpark_plugin_tool_" + hashlib.sha256(os.path.realpath(path).encode("utf-8")).hexdigest()
     spec = importlib.util.spec_from_file_location(module_name, path)
     if not spec or not spec.loader:
         raise PluginToolLoadError(f"failed to load plugin tool module: {path}")

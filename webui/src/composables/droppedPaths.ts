@@ -43,7 +43,7 @@ function uploadResultToDroppedItems(uploaded: unknown): DroppedPathItem[] {
 }
 
 export async function resolveDroppedPaths(event: DragEvent, traceId: string): Promise<DroppedPathItem[]> {
-  const raw = event.dataTransfer?.getData('application/x-aitools-file')
+  const raw = event.dataTransfer?.getData('application/x-agentpark-file')
   if (raw) {
     const internalItem = parseInternalDroppedItem(raw)
     return internalItem ? [internalItem] : []

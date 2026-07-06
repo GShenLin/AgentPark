@@ -1,7 +1,14 @@
 from src.providers.responses_runtime import ResponsesRuntime
+from src.providers.responses_input_items import build_responses_message_input_item
 
 
 class DoubaoResponsesRuntime(ResponsesRuntime):
+    def _responses_request_target(self) -> tuple[str, dict[str, str]]:
+        base_url = self.config["baseUrl"].rstrip("/")
+        url = base_url if base_url.endswith("/responses") else f"{base_url}/responses"
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.config['apiKey']}"}
+        return url, headers
+
     def _send_operational_memory_gate(self, declaration):
         return self._send_responses_gate(declaration)
 
@@ -26,8 +33,39 @@ class DoubaoResponsesRuntime(ResponsesRuntime):
             payload["thinking"] = {"type": thinking_mode}
         reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
         if reasoning_effort:
-            payload["reasoning"] = {"effort": reasoning_effort}
+            effort = reasoning_effort.lower()
+            if effort not in {"low", "medium", "high"}:
+                raise ValueError("Doubao Ark Responses reasoning_effort must be low, medium, or high.")
+            payload["reasoning"] = {"effort": effort}
         return payload
+
+    def _prepare_responses_request_input(self, current_input):
+        items, instructions = super()._prepare_responses_request_input(current_input)
+        if instructions and self._responses_input_ends_with_assistant(items):
+            items = [
+                *items,
+                build_responses_message_input_item(
+                    role="user",
+                    content=[
+                        {
+                            "type": "input_text",
+                            "text": "Continue by following the current instructions and available tool contract.",
+                        }
+                    ],
+                ),
+            ]
+        return items, instructions
+
+    @staticmethod
+    def _responses_input_ends_with_assistant(items) -> bool:
+        if not isinstance(items, list) or not items:
+            return False
+        last = items[-1]
+        return (
+            isinstance(last, dict)
+            and str(last.get("type") or "").strip().lower() == "message"
+            and str(last.get("role") or "").strip().lower() == "assistant"
+        )
 
     def _responses_continuation_mode(self):
         value = self.config.get("responsesContinuationMode", "previous_response_id")
@@ -50,7 +88,7 @@ class DoubaoResponsesRuntime(ResponsesRuntime):
             retry_delay=float(self.config.get("retryDelaySec", 1)),
         )
 
-    def _stream_responses_request(self, *, url, headers, payload_json, stream_handler, item_event_handler=None):
+    def _stream_responses_request(self, *, url, headers, payload_json, stream_handler, thinking_stream_handler=None, item_event_handler=None):
         return self._stream_responses_with_retry(
             endpoint="responses",
             url=url,
@@ -59,11 +97,12 @@ class DoubaoResponsesRuntime(ResponsesRuntime):
             max_retries=int(self.config.get("maxRetries", 3)),
             retry_delay=float(self.config.get("retryDelaySec", 1)),
             stream_handler=stream_handler,
+            thinking_stream_handler=thinking_stream_handler,
             item_event_handler=item_event_handler,
         )
 
-    def _responses_previous_response_input(self, _continuation_items, followup_items):
-        return list(followup_items)
+    def _responses_previous_response_input(self, _continuation_items, followup_items, user_items=None):
+        return list(followup_items) + list(user_items or [])
 
     def _responses_requires_response_id_for_tool_followup(self) -> bool:
         return True

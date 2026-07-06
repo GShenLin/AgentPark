@@ -102,7 +102,7 @@ def test_system_tools_registers_multi_tool_use_parallel():
     tool = BaseTool(_DummyAgent())
     tool.addTool("system_tools")
     assert "multi_tool_use_parallel" in tool.function_map
-    assert "multi_tool_use.parallel" in tool.function_map
+    assert "multi_tool_use.parallel" not in tool.function_map
     assert any(
         item.get("function", {}).get("name") == "multi_tool_use_parallel"
         for item in tool.tool_declarations

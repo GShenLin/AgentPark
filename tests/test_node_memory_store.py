@@ -140,6 +140,34 @@ def test_records_over_limit_archive_old_entries_and_keep_recent_active(tmp_path,
     assert "<!-- message_id: msg-3 -->" in text
 
 
+def test_read_node_memory_text_can_read_full_history(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    first_payload = "a" * 15000
+    second_payload = "b" * 15000
+
+    append_node_memory_entry(
+        str(memory_path),
+        str(messages_path),
+        "user",
+        build_text_envelope(first_payload, role="user"),
+    )
+    append_node_memory_entry(
+        str(memory_path),
+        str(messages_path),
+        "assistant",
+        build_text_envelope(second_payload, role="assistant"),
+    )
+
+    limited = read_node_memory_text(str(memory_path), str(messages_path), max_chars=20000)
+    full = read_node_memory_text(str(memory_path), str(messages_path), max_chars=None)
+
+    assert len(limited) == 20000
+    assert first_payload in full
+    assert second_payload in full
+    assert len(full) > 30000
+
+
 def test_concurrent_node_memory_appends_keep_all_records(tmp_path, monkeypatch):
     memory_path = tmp_path / "memory.md"
     messages_path = tmp_path / "messages.jsonl"

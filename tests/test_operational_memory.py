@@ -30,7 +30,7 @@ class DummyAgent(BaseAgent):
                 "title": "Use PowerShell-compatible commands",
                 "lesson": "Use PowerShell-compatible commands in this workspace.",
                 "evidence": "A bash-only command failed in the active shell.",
-                "scope": {"project": "C:\\Project\\AITools", "shell": "powershell"},
+                "scope": {"project": "C:\\Project\\AgentPark", "shell": "powershell"},
                 "tool_name": "execute_console_command",
                 "error": "bash heredoc syntax failed",
                 "avoid": ["cat <<EOF"],
@@ -69,7 +69,7 @@ def test_record_operational_memory_upserts_and_summarizes(tmp_path):
         title="Use rg instead of grep",
         lesson="Use rg for repository search in this workspace.",
         evidence="grep command failed while rg is available.",
-        scope={"project": "C:\\Project\\AITools"},
+        scope={"project": "C:\\Project\\AgentPark"},
         tool_name="execute_console_command",
         error="grep not found",
         avoid=["grep -r"],
@@ -84,7 +84,7 @@ def test_record_operational_memory_upserts_and_summarizes(tmp_path):
         title="Use rg instead of grep",
         lesson="Use rg for repository search in this workspace.",
         evidence="grep command failed again.",
-        scope={"project": "C:\\Project\\AITools"},
+        scope={"project": "C:\\Project\\AgentPark"},
         tool_name="execute_console_command",
         error="grep failed",
         avoid=["grep -r"],
@@ -102,8 +102,7 @@ def test_record_operational_memory_upserts_and_summarizes(tmp_path):
     assert "Prefer: rg" in summary
 
 
-def test_record_operational_memory_notifies_companion_inbox(monkeypatch, tmp_path):
-    import src.companion_notice_settings as companion_notice_settings
+def test_record_operational_memory_does_not_notify_companion_inbox(monkeypatch, tmp_path):
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
@@ -114,19 +113,14 @@ def test_record_operational_memory_notifies_companion_inbox(monkeypatch, tmp_pat
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
-    monkeypatch.setattr(
-        companion_notice_settings.ConfigLoader,
-        "get_config",
-        lambda _self: {"agentNode": {"notifyCompanionOnError": True}},
-    )
 
     memory_path = graphs_dir / "default" / "Agent1" / "memory.md"
     memory_path.parent.mkdir(parents=True)
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
-    agent._aitools_graph_id = "default"
-    agent._aitools_node_id = "Agent1"
-    agent._aitools_node_type_id = "agent_node"
+    agent._agentpark_graph_id = "default"
+    agent._agentpark_node_id = "Agent1"
+    agent._agentpark_node_type_id = "agent_node"
 
     result = json.loads(
         record_operational_memory(
@@ -136,58 +130,7 @@ def test_record_operational_memory_notifies_companion_inbox(monkeypatch, tmp_pat
             title="Use PowerShell commands",
             lesson="Use PowerShell-compatible syntax in this workspace.",
             evidence="Bash heredoc syntax failed in PowerShell.",
-            scope={"project": "D:\\Project\\AITools"},
-            tool_name="execute_console_command",
-            error="bash heredoc syntax failed",
-            confidence="high",
-            agent=agent,
-        )
-    )
-
-    assert result["ok"] is True
-    inbox_text = (companion_config.parent / "inbox.jsonl").read_text(encoding="utf-8")
-    notice = json.loads(inbox_text.strip())
-    assert notice["source"]["graph_id"] == "default"
-    assert notice["source"]["node_id"] == "Agent1"
-    assert notice["issue"]["error"] == "bash heredoc syntax failed"
-    assert not (companion_config.parent / "messages.jsonl").exists()
-
-
-def test_record_operational_memory_respects_disabled_companion_notice_switch(monkeypatch, tmp_path):
-    import src.companion_notice_settings as companion_notice_settings
-    from src.web_backend import runtime_paths
-
-    graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
-    companion_config.parent.mkdir(parents=True)
-    companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
-    monkeypatch.setattr(
-        companion_notice_settings.ConfigLoader,
-        "get_config",
-        lambda _self: {"agentNode": {"notifyCompanionOnError": False}},
-    )
-
-    memory_path = graphs_dir / "default" / "Agent1" / "memory.md"
-    memory_path.parent.mkdir(parents=True)
-    memory_path.write_text("", encoding="utf-8")
-    agent = DummyAgent(memory_path)
-    agent._aitools_graph_id = "default"
-    agent._aitools_node_id = "Agent1"
-    agent._aitools_node_type_id = "agent_node"
-
-    result = json.loads(
-        record_operational_memory(
-            action="upsert",
-            reason="The failure is reusable.",
-            kind="tool_limitation",
-            title="Use PowerShell commands",
-            lesson="Use PowerShell-compatible syntax in this workspace.",
-            evidence="Bash heredoc syntax failed in PowerShell.",
-            scope={"project": "D:\\Project\\AITools"},
+            scope={"project": "D:\\Project\\AgentPark"},
             tool_name="execute_console_command",
             error="bash heredoc syntax failed",
             confidence="high",
@@ -197,51 +140,7 @@ def test_record_operational_memory_respects_disabled_companion_notice_switch(mon
 
     assert result["ok"] is True
     assert not (companion_config.parent / "inbox.jsonl").exists()
-
-
-def test_record_operational_memory_notice_identity_falls_back_to_memory_path(monkeypatch, tmp_path):
-    import src.companion_notice_settings as companion_notice_settings
-    from src.web_backend import runtime_paths
-
-    graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
-    companion_config.parent.mkdir(parents=True)
-    companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
-    monkeypatch.setattr(
-        companion_notice_settings.ConfigLoader,
-        "get_config",
-        lambda _self: {"agentNode": {"notifyCompanionOnError": True}},
-    )
-
-    memory_path = graphs_dir / "default" / "Agent1" / "memory.md"
-    memory_path.parent.mkdir(parents=True)
-    memory_path.write_text("", encoding="utf-8")
-    agent = DummyAgent(memory_path)
-
-    result = json.loads(
-        record_operational_memory(
-            action="upsert",
-            reason="The failure is reusable.",
-            kind="tool_limitation",
-            title="Use PowerShell commands",
-            lesson="Use PowerShell-compatible syntax in this workspace.",
-            evidence="Bash heredoc syntax failed in PowerShell.",
-            scope={"project": "D:\\Project\\AITools"},
-            tool_name="execute_console_command",
-            error="bash heredoc syntax failed",
-            confidence="high",
-            agent=agent,
-        )
-    )
-
-    assert result["ok"] is True
-    notice = json.loads((companion_config.parent / "inbox.jsonl").read_text(encoding="utf-8").strip())
-    assert notice["source"]["graph_id"] == "default"
-    assert notice["source"]["node_id"] == "Agent1"
+    assert not (companion_config.parent / "messages.jsonl").exists()
 
 
 def test_record_operational_memory_skip_does_not_notify_companion(monkeypatch, tmp_path):
@@ -260,8 +159,8 @@ def test_record_operational_memory_skip_does_not_notify_companion(monkeypatch, t
     memory_path.parent.mkdir(parents=True)
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
-    agent._aitools_graph_id = "default"
-    agent._aitools_node_id = "Agent1"
+    agent._agentpark_graph_id = "default"
+    agent._agentpark_node_id = "Agent1"
 
     result = json.loads(
         record_operational_memory(
@@ -293,8 +192,8 @@ def test_companion_operational_memory_does_not_notify_itself(monkeypatch, tmp_pa
     memory_path = graphs_dir / "companion" / "memory.md"
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
-    agent._aitools_graph_id = "companion"
-    agent._aitools_node_id = "companion"
+    agent._agentpark_graph_id = "companion"
+    agent._agentpark_node_id = "companion"
 
     result = json.loads(
         record_operational_memory(
@@ -304,8 +203,8 @@ def test_companion_operational_memory_does_not_notify_itself(monkeypatch, tmp_pa
             title="Run Slow Console Commands Directly",
             lesson="Run slow console commands directly instead of through parallel wrappers.",
             evidence="A slow command was rejected by the parallel wrapper.",
-            scope={"tool": "multi_tool_use.parallel"},
-            tool_name="multi_tool_use.parallel",
+            scope={"tool": "multi_tool_use_parallel"},
+            tool_name="multi_tool_use_parallel",
             error="slow command rejected",
             confidence="high",
             agent=agent,
@@ -341,8 +240,8 @@ def test_companion_operational_memory_path_fallback_does_not_notify_itself(monke
             title="Run Slow Console Commands Directly",
             lesson="Run slow console commands directly instead of through parallel wrappers.",
             evidence="A slow command was rejected by the parallel wrapper.",
-            scope={"tool": "multi_tool_use.parallel"},
-            tool_name="multi_tool_use.parallel",
+            scope={"tool": "multi_tool_use_parallel"},
+            tool_name="multi_tool_use_parallel",
             error="slow command rejected",
             confidence="high",
             agent=agent,
@@ -378,7 +277,7 @@ def test_record_operational_memory_without_node_identity_does_not_notify_compani
             title="Use PowerShell commands",
             lesson="Use PowerShell-compatible syntax in this workspace.",
             evidence="Bash heredoc syntax failed in PowerShell.",
-            scope={"project": "D:\\Project\\AITools"},
+            scope={"project": "D:\\Project\\AgentPark"},
             tool_name="execute_console_command",
             error="bash heredoc syntax failed",
             confidence="high",
@@ -390,18 +289,13 @@ def test_record_operational_memory_without_node_identity_does_not_notify_compani
     assert not (companion_config.parent / "inbox.jsonl").exists()
 
 
-def test_record_operational_memory_ignores_companion_notification_failure(tmp_path):
+def test_record_operational_memory_keeps_original_result(tmp_path):
     memory_path = tmp_path / "agent" / "agent.md"
     memory_path.parent.mkdir(parents=True)
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
-    agent._aitools_graph_id = "default"
-    agent._aitools_node_id = "Agent1"
-
-    def fail_notice(_notice):
-        raise RuntimeError("companion unavailable")
-
-    agent._aitools_companion_notifier = fail_notice
+    agent._agentpark_graph_id = "default"
+    agent._agentpark_node_id = "Agent1"
 
     result = json.loads(
         record_operational_memory(
@@ -411,7 +305,7 @@ def test_record_operational_memory_ignores_companion_notification_failure(tmp_pa
             title="Use PowerShell commands",
             lesson="Use PowerShell-compatible syntax in this workspace.",
             evidence="Bash heredoc syntax failed in PowerShell.",
-            scope={"project": "D:\\Project\\AITools"},
+            scope={"project": "D:\\Project\\AgentPark"},
             tool_name="demo_tool",
             error="bash heredoc syntax failed",
             confidence="high",
@@ -432,8 +326,8 @@ def test_record_operational_memory_without_companion_keeps_original_result(monke
     memory_path.parent.mkdir(parents=True)
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
-    agent._aitools_graph_id = "default"
-    agent._aitools_node_id = "Agent1"
+    agent._agentpark_graph_id = "default"
+    agent._agentpark_node_id = "Agent1"
 
     result = json.loads(
         record_operational_memory(
@@ -502,7 +396,7 @@ def test_concurrent_operational_memory_upserts_keep_count(tmp_path):
             title="Use rg instead of grep",
             lesson="Use rg for repository search in this workspace.",
             evidence=f"grep command failed {index}.",
-            scope={"project": "C:\\Project\\AITools"},
+            scope={"project": "C:\\Project\\AgentPark"},
             tool_name="execute_console_command",
             error=f"grep failed {index}",
             avoid=["grep -r"],
@@ -653,7 +547,7 @@ def test_operational_memory_replace_rewrites_corrected_set(tmp_path):
         title="Bad old lesson",
         lesson="Old lesson.",
         evidence="old evidence",
-        scope={"project": "C:\\Project\\AITools"},
+        scope={"project": "C:\\Project\\AgentPark"},
         tool_name="demo_tool",
     )
 
@@ -664,7 +558,7 @@ def test_operational_memory_replace_rewrites_corrected_set(tmp_path):
         memories={
             "corrected-key": {
                 "kind": "environment_fact",
-                "scope": {"project": "C:\\Project\\AITools"},
+                "scope": {"project": "C:\\Project\\AgentPark"},
                 "tool_name": "execute_console_command",
                 "title": "Use PowerShell syntax",
                 "lesson": "Prefer PowerShell-compatible commands.",
@@ -696,7 +590,7 @@ def test_gate_prompt_includes_full_current_operational_memory(tmp_path):
         title="Existing environment fact",
         lesson="Existing full lesson visible to gate.",
         evidence="seed evidence",
-        scope={"project": "C:\\Project\\AITools"},
+        scope={"project": "C:\\Project\\AgentPark"},
         tool_name="demo_tool",
     )
     agent = DummyAgent(memory_path)

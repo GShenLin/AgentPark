@@ -20,13 +20,13 @@ const BRIDGE_SCRIPT = `
   function send(type, payload) {
     window.parent.postMessage(Object.assign({ type: type }, payload || {}), '*');
   }
-  window.AITOOLS_INTERACTION = {
-    submit: function (values) { send('aitools-interaction-submit', { values: values || {} }); },
-    change: function (value) { send('aitools-interaction-change', { value: value || {} }); },
-    error: function (message) { send('aitools-interaction-error', { message: String(message || '') }); }
+  window.AGENTPARK_INTERACTION = {
+    submit: function (values) { send('agentpark-interaction-submit', { values: values || {} }); },
+    change: function (value) { send('agentpark-interaction-change', { value: value || {} }); },
+    error: function (message) { send('agentpark-interaction-error', { message: String(message || '') }); }
   };
   window.addEventListener('error', function (event) {
-    send('aitools-interaction-error', { message: event.message || 'custom UI script error' });
+    send('agentpark-interaction-error', { message: event.message || 'custom UI script error' });
   });
 })();
 `
@@ -49,7 +49,7 @@ button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 ${props.field.css || ''}
 </style>
-<script>window.AITOOLS_INITIAL_DATA = ${initialData};${closeScript}
+<script>window.AGENTPARK_INITIAL_DATA = ${initialData};${closeScript}
 <script>${BRIDGE_SCRIPT}${closeScript}
 </head>
 <body>
@@ -63,11 +63,11 @@ function onMessage(event: MessageEvent) {
   if (event.source !== frameEl.value?.contentWindow) return
   const data = event.data
   if (!data || typeof data !== 'object') return
-  if (data.type === 'aitools-interaction-submit') {
+  if (data.type === 'agentpark-interaction-submit') {
     emit('submit', data.values && typeof data.values === 'object' ? data.values : {})
-  } else if (data.type === 'aitools-interaction-change') {
+  } else if (data.type === 'agentpark-interaction-change') {
     emit('change', data.value && typeof data.value === 'object' ? data.value : {})
-  } else if (data.type === 'aitools-interaction-error') {
+  } else if (data.type === 'agentpark-interaction-error') {
     emit('error', String(data.message || '自定义交互页面报错'))
   }
 }

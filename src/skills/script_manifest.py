@@ -107,9 +107,9 @@ def run_skill_script(definition: SkillScriptDefinition, arguments: dict[str, Any
     command = _script_command(definition.entry)
     args_payload = json.dumps(normalized_args, ensure_ascii=False)
     env = dict(os.environ)
-    env["AITOOLS_SKILL_SCRIPT_ID"] = definition.id
-    env["AITOOLS_SKILL_SCRIPT_ARGS"] = args_payload
-    env["AITOOLS_SKILL_SCRIPT_ALLOW_WRITE"] = "1" if definition.allow_write else "0"
+    env["AGENTPARK_SKILL_SCRIPT_ID"] = definition.id
+    env["AGENTPARK_SKILL_SCRIPT_ARGS"] = args_payload
+    env["AGENTPARK_SKILL_SCRIPT_ALLOW_WRITE"] = "1" if definition.allow_write else "0"
     try:
         completed = subprocess.run(
             command,

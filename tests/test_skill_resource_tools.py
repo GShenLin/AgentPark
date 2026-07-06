@@ -19,7 +19,7 @@ def _write_skill_dir(tmp_path):
 
 class Agent:
     def __init__(self, skill_dir):
-        self._aitools_skill_resource_roots = {"demo": str(skill_dir)}
+        self._agentpark_skill_resource_roots = {"demo": str(skill_dir)}
 
 
 def test_list_and_read_skill_resource_from_agent_bound_roots(tmp_path):

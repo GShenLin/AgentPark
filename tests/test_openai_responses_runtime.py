@@ -1354,7 +1354,7 @@ def test_responses_turn_context_persists_reference_between_sends(monkeypatch, tm
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
+    agent._agentpark_workspace_root = str(tmp_path)
     payloads = []
     responses = iter(
         [
@@ -1489,7 +1489,7 @@ def test_responses_context_history_does_not_duplicate_tool_followup_context(tmp_
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
+    agent._agentpark_workspace_root = str(tmp_path)
     agent._execute_tool_call_envelopes_parallel = lambda _calls: [
         ToolCallExecution(
             func_name="echo_tool",
@@ -1585,7 +1585,7 @@ def test_responses_dedupes_persisted_runtime_context_history(tmp_path):
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
+    agent._agentpark_workspace_root = str(tmp_path)
     context_item = {
         "type": "message",
         "role": "user",
@@ -1643,7 +1643,7 @@ def test_responses_merges_developer_context_after_persisted_runtime_user_context
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
+    agent._agentpark_workspace_root = str(tmp_path)
     save_agent_context_history(
         agent,
         [
@@ -1722,7 +1722,7 @@ def test_responses_context_history_strips_operational_memory_from_persisted_deve
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
+    agent._agentpark_workspace_root = str(tmp_path)
     save_agent_context_history(
         agent,
         [
@@ -1788,7 +1788,7 @@ def test_responses_plan_collaboration_mode_injects_developer_context(tmp_path):
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_collaboration_mode = "plan"
+    agent._agentpark_collaboration_mode = "plan"
     payloads = []
 
     def fake_post(**kwargs):
@@ -1845,7 +1845,7 @@ def test_responses_writes_sanitized_request_payload_log(tmp_path):
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
+    agent._agentpark_workspace_root = str(tmp_path)
 
     def fake_post(**kwargs):
         return {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]}
@@ -1874,7 +1874,7 @@ def test_responses_writes_sanitized_request_payload_log(tmp_path):
     assert payload_log_events[0]["path"] == str(payload_log)
 
 
-def test_responses_can_send_system_prompt_as_instructions_parameter(tmp_path):
+def test_responses_sends_instruction_parameter_and_preserves_system_prompt(tmp_path):
     from types import SimpleNamespace
 
     from src.providers.openai_agent import OpenAIAgent
@@ -1900,8 +1900,8 @@ def test_responses_can_send_system_prompt_as_instructions_parameter(tmp_path):
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
-    agent._aitools_responses_system_prompt_as_instructions = True
+    agent._agentpark_workspace_root = str(tmp_path)
+    agent._agentpark_responses_instruction = "Use the Responses instructions parameter."
     payloads = []
 
     def fake_post(**kwargs):
@@ -1920,13 +1920,73 @@ def test_responses_can_send_system_prompt_as_instructions_parameter(tmp_path):
         run_tools=True,
     ) == "ok"
 
-    assert payloads[0]["instructions"] == "You are the node system prompt."
-    assert all(item.get("role") != "system" for item in payloads[0]["input"])
+    assert payloads[0]["instructions"] == "Use the Responses instructions parameter."
+    system_item = next(item for item in payloads[0]["input"] if item.get("role") == "system")
+    assert system_item["content"][0]["text"] == "You are the node system prompt."
     assert payloads[0]["input"][-1]["role"] == "user"
     assert payloads[0]["input"][-1]["content"][0]["text"] == "hello"
     summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
     assert summaries[0]["instructions_present"] is True
-    assert summaries[0]["instructions_chars"] == len("You are the node system prompt.")
+    assert summaries[0]["instructions_chars"] == len("Use the Responses instructions parameter.")
+
+
+def test_responses_stream_sends_instruction_parameter_and_system_input(tmp_path):
+    from types import SimpleNamespace
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "explicit_context",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
+    agent._agentpark_workspace_root = str(tmp_path)
+    agent._agentpark_responses_instruction = "Stream through payload.instructions."
+    payloads = []
+    stream_events = []
+
+    def fake_stream(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        handler = kwargs.get("stream_handler")
+        if callable(handler):
+            handler("O", "O")
+            handler("K", "OK")
+        return {"id": "resp-stream", "output": [{"type": "message", "content": [{"type": "output_text", "text": "OK"}]}]}
+
+    agent._post_json_with_retry = fake_stream
+    agent._stream_responses_with_retry = fake_stream
+
+    assert agent._send_via_responses(
+        messages=[
+            {"role": "system", "content": "System stream prompt."},
+            {"role": "user", "content": "hello"},
+        ],
+        active_tools=[],
+        run_tools=True,
+        stream_handler=lambda delta, full: stream_events.append((delta, full)),
+    ) == "OK"
+
+    assert stream_events == [("O", "O"), ("K", "OK")]
+    assert payloads[0]["stream"] is True
+    assert payloads[0]["instructions"] == "Stream through payload.instructions."
+    system_item = next(item for item in payloads[0]["input"] if item.get("role") == "system")
+    assert system_item["content"][0]["text"] == "System stream prompt."
 
 
 def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_path):
@@ -1955,8 +2015,8 @@ def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_p
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
-    agent._aitools_responses_system_prompt_as_instructions = True
+    agent._agentpark_workspace_root = str(tmp_path)
+    agent._agentpark_responses_instruction = "Use the Responses instructions parameter."
     agent._execute_tool_call_envelopes_parallel = lambda _calls: [
         ToolCallExecution(
             func_name="echo_tool",
@@ -2002,9 +2062,9 @@ def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_p
     ) == "ok"
 
     assert len(payloads) == 2
-    assert payloads[0]["instructions"] == "You are the node system prompt."
-    assert payloads[1]["instructions"] == "You are the node system prompt."
-    assert all(item.get("role") != "system" for payload in payloads for item in payload["input"])
+    assert payloads[0]["instructions"] == "Use the Responses instructions parameter."
+    assert payloads[1]["instructions"] == "Use the Responses instructions parameter."
+    assert any(item.get("role") == "system" for payload in payloads for item in payload["input"])
     summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
     assert [summary["instructions_present"] for summary in summaries] == [True, True]
 
@@ -2035,8 +2095,8 @@ def test_responses_merges_initial_developer_context_before_user_context(tmp_path
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
-    agent._aitools_responses_system_prompt_as_instructions = True
+    agent._agentpark_workspace_root = str(tmp_path)
+    agent._agentpark_responses_instruction = "Base instructions."
     payloads = []
 
     def fake_post(**kwargs):
@@ -2048,7 +2108,7 @@ def test_responses_merges_initial_developer_context_before_user_context(tmp_path
 
     assert agent._send_via_responses(
         messages=[
-            {"role": "system", "content": "Base instructions."},
+            {"role": "system", "content": "System prompt."},
             {"role": "developer", "content": "Operational memory for this node:\n- Keep it short."},
             {"role": "user", "content": "hello"},
         ],
@@ -2061,8 +2121,10 @@ def test_responses_merges_initial_developer_context_before_user_context(tmp_path
     assert first["role"] == "developer"
     assert first["content"][0]["text"].startswith("<permissions instructions>")
     assert first["content"][1]["text"].startswith("Operational memory for this node:")
-    assert payloads[0]["input"][1]["role"] == "user"
-    assert payloads[0]["input"][1]["content"][0]["text"].startswith("<environment_context>")
+    assert any(item.get("role") == "system" for item in payloads[0]["input"])
+    system_item = next(item for item in payloads[0]["input"] if item.get("role") == "system")
+    assert system_item["content"][0]["text"] == "System prompt."
+    assert any(item.get("role") == "user" and item["content"][0]["text"].startswith("<environment_context>") for item in payloads[0]["input"])
     assert all(item.get("role") != "developer" for item in payloads[0]["input"][1:])
 
 
@@ -2093,7 +2155,7 @@ def test_responses_injects_codex_like_agents_md_context(tmp_path):
     agent.events = []
     agent.tool_event_callback = agent.events.append
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "memory.md"))
-    agent._aitools_workspace_root = str(tmp_path)
+    agent._agentpark_workspace_root = str(tmp_path)
     payloads = []
 
     def fake_post(**kwargs):
@@ -2144,7 +2206,7 @@ def test_explicit_context_continuation_preserves_assistant_content_with_function
     )
     payloads = []
     order = []
-    agent._aitools_persist_assistant_tool_call_note = lambda message: order.append(
+    agent._agentpark_persist_assistant_tool_call_note = lambda message: order.append(
         ("persist", message.get("content"))
     )
 
@@ -2217,4 +2279,99 @@ def test_explicit_context_continuation_preserves_assistant_content_with_function
     assert len(preserved) == 1
     assert any(item.get("type") == "function_call" and item.get("call_id") == "call-1" for item in payloads[1]["input"])
     assert any(item.get("type") == "function_call_output" and item.get("call_id") == "call-1" for item in payloads[1]["input"])
+
+
+def test_responses_tool_followup_appends_mid_turn_user_input():
+    from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesContinuationMode": "previous_response_id",
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    mid_turn_messages = [[{"role": "user", "content": "补充：不要继续查 A，改查 B。"}]]
+
+    def consume_mid_turn_user_inputs():
+        return mid_turn_messages.pop(0) if mid_turn_messages else []
+
+    bind_agent_runtime_context(
+        agent,
+        AgentRuntimeContext(
+            graph_id="g1",
+            node_id="agent1",
+            node_type_id="agent_node",
+            consume_mid_turn_user_inputs=consume_mid_turn_user_inputs,
+        ),
+    )
+    payloads = []
+    responses = iter(
+        [
+            {
+                "id": "resp-tool",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "echo_tool",
+                        "arguments": "{}",
+                        "status": "completed",
+                    }
+                ],
+            },
+            {"id": "resp-final", "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}]},
+        ]
+    )
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+    agent._execute_tool_call_envelopes_parallel = lambda _calls: [
+        ToolCallExecution(
+            func_name="echo_tool",
+            call_id="call-1",
+            cleaned_result='{"status":"success"}',
+            image_data=None,
+        )
+    ]
+
+    assert agent._send_via_responses(
+        messages=[{"role": "user", "content": "run echo"}],
+        active_tools=[],
+        run_tools=True,
+    ) == "ok"
+
+    assert len(payloads) == 2
+    second_input = payloads[1]["input"]
+    assert second_input[-2]["type"] == "function_call_output"
+    assert second_input[-2]["call_id"] == "call-1"
+    assert second_input[-1] == {
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "input_text", "text": "补充：不要继续查 A，改查 B。"}],
+        "status": "completed",
+    }
+    notices = _runtime_notice_payloads(agent.events, "openai_responses_mid_turn_user_input")
+    assert notices == [{"message_count": 1, "input_item_count": 1}]
 

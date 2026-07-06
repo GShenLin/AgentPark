@@ -16,8 +16,6 @@ from src.providers.responses_runtime_context import has_collaboration_context
 from src.providers.responses_runtime_context import has_environment_context
 from src.providers.responses_runtime_context import has_permissions_context
 from src.providers.responses_runtime_context import has_project_instructions_context
-from src.providers.responses_runtime_context import is_system_message_item
-from src.providers.responses_runtime_context import message_item_text
 from src.providers.responses_runtime_context import peel_initial_developer_items
 
 
@@ -71,18 +69,7 @@ class ResponsesRuntimeMethods:
     def _prepare_responses_request_input(self, current_input: Any) -> tuple[list[Any], str]:
         items = list(current_input) if isinstance(current_input, list) else []
         runtime_context = get_agent_runtime_context(self)
-        if not runtime_context.responses_system_prompt_as_instructions:
-            return items, ""
-        kept = []
-        instructions = []
-        for item in items:
-            if is_system_message_item(item):
-                text = message_item_text(item)
-                if text:
-                    instructions.append(text)
-                continue
-            kept.append(item)
-        return kept, "\n\n".join(instructions).strip()
+        return items, str(runtime_context.responses_instruction or "").strip()
 
     def _persist_assistant_tool_call_note_if_available(self, message: dict[str, Any]) -> None:
         callback = get_agent_runtime_context(self).persist_assistant_tool_call_note
@@ -152,13 +139,14 @@ class ResponsesRuntimeMethods:
             prefix_items.append(build_responses_message_input_item(role="user", content=contextual_user_parts))
         return [*prefix_items, *items]
 
-    def _send_responses_request(self, *, url, headers, payload_json, stream_handler, item_event_handler=None):
-        if callable(stream_handler):
+    def _send_responses_request(self, *, url, headers, payload_json, stream_handler, thinking_stream_handler=None, item_event_handler=None):
+        if callable(stream_handler) or callable(thinking_stream_handler):
             return self._stream_responses_request(
                 url=url,
                 headers=headers,
                 payload_json=payload_json,
                 stream_handler=stream_handler,
+                thinking_stream_handler=thinking_stream_handler,
                 item_event_handler=item_event_handler,
             )
         return self._post_responses_request(
@@ -222,8 +210,16 @@ class ResponsesRuntimeMethods:
     def _post_responses_request(self, *, url, headers, payload_json):
         return self._post_json_with_retry(endpoint="responses", url=url, headers=headers, payload_json=payload_json)
 
-    def _stream_responses_request(self, *, url, headers, payload_json, stream_handler, item_event_handler=None):
-        return self._stream_responses_with_retry(endpoint="responses", url=url, headers=headers, payload_json=payload_json, stream_handler=stream_handler, item_event_handler=item_event_handler)
+    def _stream_responses_request(self, *, url, headers, payload_json, stream_handler, thinking_stream_handler=None, item_event_handler=None):
+        return self._stream_responses_with_retry(
+            endpoint="responses",
+            url=url,
+            headers=headers,
+            payload_json=payload_json,
+            stream_handler=stream_handler,
+            thinking_stream_handler=thinking_stream_handler,
+            item_event_handler=item_event_handler,
+        )
 
     def _responses_continuation_mode(self) -> str:
         return "previous_response_id"
@@ -231,8 +227,8 @@ class ResponsesRuntimeMethods:
     def _responses_continuation_input_items(self, _result, function_calls):
         return self._build_responses_function_call_input_items(function_calls)
 
-    def _responses_previous_response_input(self, continuation_items, followup_items):
-        return list(continuation_items) + list(followup_items)
+    def _responses_previous_response_input(self, continuation_items, followup_items, user_items=None):
+        return list(continuation_items) + list(followup_items) + list(user_items or [])
 
     def _responses_requires_response_id_for_tool_followup(self) -> bool:
         return False

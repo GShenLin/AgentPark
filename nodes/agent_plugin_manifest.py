@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 
-PLUGIN_MANIFEST_FILENAMES = ("aitools.plugin.json", "openclaw.plugin.json", "plugin.json")
+PLUGIN_MANIFEST_FILENAMES = ("agentpark.plugin.json", "openclaw.plugin.json", "plugin.json")
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class PluginManifest:
     mcp_servers: tuple[str, ...] = ()
     mcp_server_configs: dict[str, dict] = field(default_factory=dict)
     config_schema: dict[str, Any] = field(default_factory=dict)
-    source_format: str = "aitools"
+    source_format: str = "agentpark"
 
 
 class PluginManifestError(RuntimeError):
@@ -50,7 +50,7 @@ def read_plugin_manifest(path: str, *, fallback_id: str = "") -> PluginManifest:
         raw = _adapt_openclaw_manifest(raw)
         source_format = "openclaw"
     else:
-        source_format = "aitools"
+        source_format = "agentpark"
     return _normalize_manifest(raw, path=path, fallback_id=fallback_id, source_format=source_format)
 
 
