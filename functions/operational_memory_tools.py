@@ -1,11 +1,11 @@
 import json
 
 from src.operational_memory import OperationalMemoryError
-from src.operational_memory import operational_memory_path_for_agent
 from src.operational_memory import record_operational_memory_entry
 
 
-def record_operational_memory(
+def edit_operational_memory(
+    memory_path,
     action,
     reason,
     kind="",
@@ -23,91 +23,85 @@ def record_operational_memory(
     key="",
     resolve_key="",
     memories=None,
-    agent=None,
 ):
+    path = str(memory_path or "").strip()
+    if not path:
+        return json.dumps(
+            {"status": "error", "error": "memory_path is required", "tool": "edit_operational_memory"},
+            ensure_ascii=False,
+        )
     try:
-        path = operational_memory_path_for_agent(agent)
-        arguments = {
-            "action": action,
-            "reason": reason,
-            "kind": kind,
-            "title": title,
-            "lesson": lesson,
-            "evidence": evidence,
-            "scope": scope if isinstance(scope, dict) else {},
-            "tool_name": tool_name,
-            "error": error,
-            "command": command,
-            "conclusion": conclusion,
-            "avoid": avoid if isinstance(avoid, list) else [],
-            "prefer": prefer if isinstance(prefer, list) else [],
-            "confidence": confidence,
-            "key": key,
-            "resolve_key": resolve_key,
-            "memories": memories if isinstance(memories, dict) else None,
-        }
         result = record_operational_memory_entry(
             path=path,
-            action=arguments["action"],
-            reason=arguments["reason"],
-            kind=arguments["kind"],
-            title=arguments["title"],
-            lesson=arguments["lesson"],
-            evidence=arguments["evidence"],
-            scope=arguments["scope"],
-            tool_name=arguments["tool_name"],
-            error=arguments["error"],
-            command=arguments["command"],
-            conclusion=arguments["conclusion"],
-            avoid=arguments["avoid"],
-            prefer=arguments["prefer"],
-            confidence=arguments["confidence"],
-            key=arguments["key"],
-            resolve_key=arguments["resolve_key"],
-            memories=arguments["memories"],
+            action=action,
+            reason=reason,
+            kind=kind,
+            title=title,
+            lesson=lesson,
+            evidence=evidence,
+            scope=scope if isinstance(scope, dict) else {},
+            tool_name=tool_name,
+            error=error,
+            command=command,
+            conclusion=conclusion,
+            avoid=avoid if isinstance(avoid, list) else [],
+            prefer=prefer if isinstance(prefer, list) else [],
+            confidence=confidence,
+            key=key,
+            resolve_key=resolve_key,
+            memories=memories if isinstance(memories, dict) else None,
         )
         result["path"] = path
         return json.dumps(result, ensure_ascii=False)
     except OperationalMemoryError as exc:
-        return json.dumps({"status": "error", "error": str(exc), "tool": "record_operational_memory"}, ensure_ascii=False)
+        return json.dumps(
+            {"status": "error", "error": str(exc), "tool": "edit_operational_memory", "path": path},
+            ensure_ascii=False,
+        )
     except Exception as exc:
         return json.dumps(
             {
                 "status": "exception",
                 "error": f"{type(exc).__name__}: {exc}",
-                "tool": "record_operational_memory",
+                "tool": "edit_operational_memory",
+                "path": path,
             },
             ensure_ascii=False,
         )
 
 
-record_operational_memory_declaration = {
+edit_operational_memory_declaration = {
     "type": "function",
     "function": {
-        "name": "record_operational_memory",
+        "name": "edit_operational_memory",
         "description": (
-            "Make the required memory decision after a tool failure. Use action=upsert only for reusable "
-            "operational lessons, action=replace to rewrite the corrected memory set, action=skip for transient or non-reusable failures, and action=resolve "
-            "when an existing operational memory is obsolete."
+            "Edit the exact operational_memory.json file named in a Companion notice. "
+            "Use this for reusable node-behavior corrections from tool-failure or persisted-run review notices. "
+            "The active memory summary is injected into "
+            "future model input for that node, so keep entries compact and high signal."
         ),
         "parameters": {
             "type": "object",
             "properties": {
+                "memory_path": {
+                    "type": "string",
+                    "description": "Exact operational_memory.json path to edit. Use the path from the Companion notice.",
+                },
                 "action": {
                     "type": "string",
                     "enum": ["upsert", "replace", "skip", "resolve"],
-                    "description": "Required decision for the current failure.",
+                    "description": "Use skip when no durable memory should be recorded.",
                 },
-                "reason": {
-                    "type": "string",
-                    "description": "Why this memory decision is appropriate.",
-                },
+                "reason": {"type": "string"},
                 "kind": {
                     "type": "string",
                     "enum": ["environment_fact", "tool_limitation", "repo_convention", "bad_pattern", "recovery_strategy"],
                 },
                 "title": {"type": "string"},
-                "lesson": {"type": "string"},
+                "lesson": {
+                    "type": "string",
+                    "description": "Short reusable correction. Keep it concise because it can enter future model context.",
+                },
                 "evidence": {"type": "string"},
                 "scope": {
                     "type": "object",
@@ -129,24 +123,34 @@ record_operational_memory_declaration = {
                     "additionalProperties": True,
                 },
             },
-            "required": ["action", "reason"],
+            "required": ["memory_path", "action", "reason"],
             "oneOf": [
                 {
                     "properties": {"action": {"enum": ["upsert"]}},
-                    "required": ["action", "reason", "kind", "title", "lesson", "evidence", "scope", "confidence"],
+                    "required": [
+                        "memory_path",
+                        "action",
+                        "reason",
+                        "kind",
+                        "title",
+                        "lesson",
+                        "evidence",
+                        "scope",
+                        "confidence",
+                    ],
                 },
                 {
                     "properties": {"action": {"enum": ["replace"]}},
-                    "required": ["action", "reason", "memories"],
+                    "required": ["memory_path", "action", "reason", "memories"],
                 },
                 {
                     "properties": {"action": {"enum": ["resolve"]}},
-                    "required": ["action", "reason"],
+                    "required": ["memory_path", "action", "reason"],
                     "anyOf": [{"required": ["key"]}, {"required": ["resolve_key"]}],
                 },
                 {
                     "properties": {"action": {"enum": ["skip"]}},
-                    "required": ["action", "reason"],
+                    "required": ["memory_path", "action", "reason"],
                 },
             ],
             "additionalProperties": False,

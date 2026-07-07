@@ -24,7 +24,6 @@ class ResponsesRuntimeMethods:
         self,
         *,
         current_input,
-        previous_response_id,
         tools_payload,
         use_stream,
         provider_options,
@@ -33,8 +32,6 @@ class ResponsesRuntimeMethods:
         payload = {"model": self.config["model"], "input": current_input}
         if str(instructions or "").strip():
             payload["instructions"] = str(instructions).strip()
-        if previous_response_id:
-            payload["previous_response_id"] = previous_response_id
         if tools_payload:
             payload["tools"] = tools_payload
             payload["tool_choice"] = self._responses_tool_choice()
@@ -162,7 +159,6 @@ class ResponsesRuntimeMethods:
         self,
         *,
         request_index: int,
-        previous_response_id: str,
         input_item_count: int,
         stream: bool,
         responses_mode: str,
@@ -172,8 +168,6 @@ class ResponsesRuntimeMethods:
             stage="openai_responses_request_start",
             payload={
                 "request_index": int(request_index),
-                "previous_response_id": str(previous_response_id or ""),
-                "previous_response_id_present": bool(previous_response_id),
                 "input_item_count": int(input_item_count),
                 "stream": bool(stream),
                 "responses_mode": str(responses_mode or ""),
@@ -221,14 +215,8 @@ class ResponsesRuntimeMethods:
             item_event_handler=item_event_handler,
         )
 
-    def _responses_continuation_mode(self) -> str:
-        return "previous_response_id"
-
     def _responses_continuation_input_items(self, _result, function_calls):
         return self._build_responses_function_call_input_items(function_calls)
-
-    def _responses_previous_response_input(self, continuation_items, followup_items, user_items=None):
-        return list(continuation_items) + list(followup_items) + list(user_items or [])
 
     def _responses_requires_response_id_for_tool_followup(self) -> bool:
         return False
@@ -264,15 +252,6 @@ class ResponsesRuntimeMethods:
     def _emit_responses_item_level_abort(self, _summary: dict[str, Any]) -> None:
         return None
 
-    def _emit_responses_previous_response_missing(
-        self,
-        *,
-        previous_response_id,
-        fallback_input_item_count,
-        stream,
-    ) -> None:
-        return None
-
     def _emit_responses_turn_debug(
         self,
         *,
@@ -280,7 +259,6 @@ class ResponsesRuntimeMethods:
         content,
         function_call_count,
         next_continuation_mode,
-        request_previous_response_id,
         request_input_item_count,
         followup_item_count,
         stream,

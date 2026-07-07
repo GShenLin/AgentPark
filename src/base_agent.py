@@ -8,16 +8,16 @@ from src.base_agent_manager import BaseAgentManager
 from src.config_loader import ConfigLoader
 from src.base_memory import BaseMemory
 from src.tool.base_tool import BaseTool
-from src.operational_memory_gate import OperationalMemoryGateMixin
+from src.tool_failure_memory_notice import ToolFailureMemoryNoticeMixin
 from src.tool_context_compaction_gate import ToolContextCompactionGateMixin
 
 
-class BaseAgent(ToolContextCompactionGateMixin, OperationalMemoryGateMixin, ABC):
+class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, ABC):
     def __init__(self, provider_name, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
         self.provider_name = provider_name
         self._config = {}
         self.messages = []
-        self.operational_memory_gate_enabled = False
+        self.tool_failure_memory_notice_enabled = False
         self._tool_context_compaction_since_last = 0
         self.internal_memory_enabled = bool(internal_memory_enabled)
         self.memory = BaseMemory(provider_name, memory_file_path=memory_file_path)
@@ -335,3 +335,27 @@ class BaseAgent(ToolContextCompactionGateMixin, OperationalMemoryGateMixin, ABC)
                 f"Reason: {reason}. Do not retry this call until external conditions change."
             )
         return None
+
+    def _append_tool_execution_messages_then_warnings(self, executions):
+        non_retry_warnings = []
+        image_messages = []
+        for execution in executions if isinstance(executions, list) else []:
+            self.Message(
+                "tool",
+                execution.cleaned_result,
+                tool_call_id=execution.call_id,
+                name=execution.func_name,
+            )
+            non_retry_warn = self._build_non_retryable_tool_warning(
+                execution.func_name,
+                execution.cleaned_result,
+            )
+            if non_retry_warn:
+                non_retry_warnings.append(non_retry_warn)
+            image_data = getattr(execution, "image_data", None)
+            if image_data:
+                image_messages.append(image_data)
+
+        for non_retry_warn in non_retry_warnings:
+            self.Message("system", non_retry_warn)
+        return image_messages

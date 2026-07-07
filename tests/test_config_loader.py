@@ -12,7 +12,6 @@ def _reset_loader_singleton():
 def _responses_contract(**overrides):
     payload = {
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
         "toolContextCompactionEveryToolCalls": 1,
@@ -121,6 +120,34 @@ def test_get_provider_config_still_accepts_direct_api_key(monkeypatch, tmp_path)
 
     assert payload["apiKey"] == "inline-secret"
     assert payload["type"] == "doubao"
+
+
+def test_doubao_provider_reasoning_effort_xhigh_is_normalized_to_high(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "doubao",
+                        "apiKey": "inline-secret",
+                        "reasoningEffort": "xhigh",
+                        "reasoning_effort": "xhigh",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    payload = ConfigLoader().get_provider_config("demo")
+
+    assert payload["reasoningEffort"] == "high"
+    assert payload["reasoning_effort"] == "high"
 
 
 def test_get_config_rejects_invalid_provider_timeout(monkeypatch, tmp_path):
@@ -365,7 +392,6 @@ def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, 
                         "type": "openai",
                         "apiKey": "openai-key",
                         "responsesApi": True,
-                        "responsesContinuationMode": "explicit_context",
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": True,
                     }

@@ -23,7 +23,7 @@ let graphMemoryRefreshTimer: number | null = null
 let pendingCommittedLiveText = ''
 let pendingCommittedLiveTraceId = ''
 
-const memoryRefreshGraphEvents = new Set(['tool_call_end', 'node_message_done', 'node_output'])
+const memoryRefreshGraphEvents = new Set(['tool_call_end', 'node_message_done', 'node_output', 'node_error'])
 
 function messageText(message: MessageEnvelope): string {
   const parts = Array.isArray(message?.parts) ? message.parts : []

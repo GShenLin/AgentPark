@@ -287,11 +287,9 @@ class GeminiAgent(ServiceHost, BaseAgent):
                                                 },
                                             )
 
-                                if self._operational_memory_gate_completed(executions):
-                                    return json.dumps({"status": "memory_gate_completed"}, ensure_ascii=False)
                                 if self._tool_context_compaction_gate_completed(executions):
                                     return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
-                                self._run_operational_memory_gate_for_failed_executions(executions)
+                                self._notify_companion_about_failed_tool_executions(executions)
                                 self._run_tool_context_compaction_gate_if_needed(executions)
                                 append_mid_turn_user_messages(self)
                                 return self.Send(

@@ -138,13 +138,16 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
         web_search_mode = parse_switch_mode(web_search, default="disabled")
         thinking_mode = parse_switch_mode(thinking, default=None)
+        effort_source = reasoning_effort
+        if effort_source is None or effort_source == "":
+            effort_source = self.config.get("reasoningEffort", self.config.get("reasoning_effort", ""))
         if self._supports_responses_api():
             response_text = self._send_via_responses(
                 messages=messages,
                 active_tools=active_tools,
                 run_tools=run_tools,
                 thinking_mode=thinking_mode,
-                reasoning_effort=reasoning_effort,
+                reasoning_effort=effort_source,
                 web_search_mode=web_search_mode,
                 stream_handler=stream_handler if stream and callable(stream_handler) else None,
                 thinking_stream_handler=thinking_stream_handler if stream and callable(thinking_stream_handler) else None,
@@ -226,33 +229,17 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 self.Message("assistant", message.get("content"), tool_calls=tool_calls)
                 if run_tools:
                     executions = self._execute_tool_calls_parallel(tool_calls)
-                    for execution in executions:
-                        self.Message(
-                            "tool",
-                            execution.cleaned_result,
-                            tool_call_id=execution.call_id,
-                            name=execution.func_name,
+                    image_messages = self._append_tool_execution_messages_then_warnings(executions)
+                    for image_data in image_messages:
+                        self._inject_image_message(
+                            image_data.get("path"),
+                            base64_data=image_data.get("base64"),
+                            mime_type=image_data.get("mime_type", "image/png"),
                         )
-                        non_retry_warn = self._build_non_retryable_tool_warning(
-                            execution.func_name,
-                            execution.cleaned_result,
-                        )
-                        if non_retry_warn:
-                            self.Message("system", non_retry_warn)
 
-                        image_data = execution.image_data
-                        if image_data:
-                            self._inject_image_message(
-                                image_data.get("path"),
-                                base64_data=image_data.get("base64"),
-                                mime_type=image_data.get("mime_type", "image/png"),
-                            )
-
-                    if self._operational_memory_gate_completed(executions):
-                        return json.dumps({"status": "memory_gate_completed"}, ensure_ascii=False)
                     if self._tool_context_compaction_gate_completed(executions):
                         return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
-                    self._run_operational_memory_gate_for_failed_executions(executions)
+                    self._notify_companion_about_failed_tool_executions(executions)
                     self._run_tool_context_compaction_gate_if_needed(executions)
                     append_mid_turn_user_messages(self)
                     return self.Send(

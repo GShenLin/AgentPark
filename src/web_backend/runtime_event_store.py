@@ -242,10 +242,8 @@ def clear_runtime_event(payload: dict[str, Any], *, reset_history: bool = False)
 def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "request_index",
-        "continuation_mode",
         "responses_mode",
         "requested_responses_mode",
-        "previous_response_id_present",
         "instructions_present",
         "instructions_chars",
         "input_item_count",

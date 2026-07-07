@@ -28,6 +28,7 @@ from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
 from src.capabilities.registry import CapabilityRegistry
+from src.companion_notice_settings import companion_tool_failure_memory_enabled
 from src.config_loader import ConfigLoader
 from src.media_resource_utils import resolve_public_base_url
 from src.message_protocol import envelope_text, normalize_envelope
@@ -246,7 +247,7 @@ class Node(BaseNode):
             system_prompt=run_request.system_prompt if isinstance(run_request.system_prompt, str) else None,
             internal_memory_enabled=False,
         )
-        agent.operational_memory_gate_enabled = True
+        agent.tool_failure_memory_notice_enabled = companion_tool_failure_memory_enabled()
         resolved_public_base_url = resolve_public_base_url(run_request.public_base_url, run_request.provider_id)
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
         if cancel_source is not None:

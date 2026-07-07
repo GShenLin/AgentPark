@@ -13,7 +13,7 @@ from src.providers.responses_empty_message import EmptyMessageFeedbackController
 from src.providers.responses_item_runtime import ResponsesItemLevelToolRunner
 from src.providers.responses_runtime_request import build_and_emit_responses_request_payload
 from src.providers.responses_runtime_mode import resolve_responses_runtime_mode
-from src.providers.responses_runtime_protocol import ResponsesStreamText, is_previous_response_missing_error
+from src.providers.responses_runtime_protocol import ResponsesStreamText
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.runtime_cancellation import CancellationRequested
 from src.tool.tool_call_protocol import to_openai_tool_call
@@ -33,8 +33,7 @@ def send_via_responses(
     url, headers = self._responses_request_target()
     tools_payload = self._build_responses_tools(active_tools, web_search_mode)
     current_input = self._build_responses_input(messages)
-    explicit_context_input, previous_response_fallback_input, previous_response_id = list(current_input), None, ""
-    continuation_mode = self._responses_continuation_mode()
+    explicit_context_input = list(current_input)
     stream_text = ResponsesStreamText()
     mode_decision = resolve_responses_runtime_mode(self)
     use_item_level_mode = mode_decision.mode == "item_level"
@@ -96,7 +95,6 @@ def send_via_responses(
 
         stream_text.reset()
         thinking_text.reset()
-        request_previous_response_id = previous_response_id
         request_index += 1
         turn_context = build_responses_turn_context(
             self,
@@ -114,8 +112,7 @@ def send_via_responses(
         self._emit_responses_context_update(context_update)
         input_with_context_history = list(current_input)
         if (
-            not previous_response_id
-            and context_history_items
+            context_history_items
             and turn_context.persistent_update_mode == "unchanged"
             and not runtime_context_history_items(input_with_context_history)
         ):
@@ -126,7 +123,7 @@ def send_via_responses(
             project_instructions_context=turn_context.project_instructions_context,
             project_instructions_notice=turn_context.project_instructions_notice,
             turn_context_update=context_update,
-            include_runtime_context=not bool(previous_response_id),
+            include_runtime_context=True,
         )
         request_input, request_instructions = self._prepare_responses_request_input(request_input)
         if request_instructions:
@@ -135,13 +132,10 @@ def send_via_responses(
             request_instructions = sticky_request_instructions
         if request_index == 1:
             explicit_context_input = list(request_input)
-        if not previous_response_id:
-            context_history_items_to_save = runtime_context_history_items(request_input)
+        context_history_items_to_save = runtime_context_history_items(request_input)
         request_payload = build_and_emit_responses_request_payload(
             self,
             request_index=request_index,
-            continuation_mode=continuation_mode,
-            previous_response_id=previous_response_id,
             request_input=request_input,
             tools_payload=tools_payload,
             use_stream=use_stream,
@@ -167,25 +161,9 @@ def send_via_responses(
             raise
         except RuntimeError as exc:
             _abort_item_tool_runner("stream_failed", exc)
-            if (
-                previous_response_id
-                and previous_response_fallback_input
-                and is_previous_response_missing_error(exc)
-            ):
-                self._emit_responses_previous_response_missing(
-                    previous_response_id=previous_response_id,
-                    fallback_input_item_count=len(previous_response_fallback_input),
-                    stream=use_stream,
-                )
-                previous_response_id = ""
-                current_input = previous_response_fallback_input
-                previous_response_fallback_input = None
-                continue
             if self._replace_recent_tool_result_with_submission_error(str(exc)):
                 current_input = self._build_responses_input(self._get_messages_with_memory())
                 explicit_context_input = list(current_input)
-                previous_response_fallback_input = None
-                previous_response_id = ""
                 continue
             raise
         except Exception as exc:
@@ -213,7 +191,6 @@ def send_via_responses(
                     content=empty_message_action.error_text,
                     function_call_count=0,
                     next_continuation_mode="empty_message_error",
-                    request_previous_response_id=request_previous_response_id,
                     request_input_item_count=request_input_item_count,
                     followup_item_count=0,
                     stream=use_stream,
@@ -240,18 +217,13 @@ def send_via_responses(
                         ],
                     }
                 ]
-                previous_response_fallback_input = None
-                previous_response_id = ""
             else:
-                previous_response_id = ""
                 current_input = empty_message_action.next_input
-                previous_response_fallback_input = None
             _emit_turn_debug(
                 response_id=response_id,
                 content=empty_message_action.feedback_item["content"][0]["text"],
                 function_call_count=0,
                 next_continuation_mode="empty_message_feedback",
-                request_previous_response_id=request_previous_response_id,
                 request_input_item_count=request_input_item_count,
                 followup_item_count=1,
                 stream=use_stream,
@@ -272,7 +244,6 @@ def send_via_responses(
                     content=content,
                     function_call_count=len(function_calls),
                     next_continuation_mode="function_call_returned",
-                    request_previous_response_id=request_previous_response_id,
                     request_input_item_count=request_input_item_count,
                     followup_item_count=0,
                     stream=use_stream,
@@ -301,31 +272,18 @@ def send_via_responses(
             followup_items = self._build_responses_followup_items(executions)
             _close_item_tool_runner()
 
-            if self._operational_memory_gate_completed(executions):
-                _emit_turn_debug(
-                    response_id=response_id,
-                    content=content,
-                    function_call_count=len(function_calls),
-                    next_continuation_mode="operational_memory_gate_completed",
-                    request_previous_response_id=request_previous_response_id,
-                    request_input_item_count=request_input_item_count,
-                    followup_item_count=len(followup_items),
-                    stream=use_stream,
-                )
-                return json.dumps({"status": "memory_gate_completed"}, ensure_ascii=False)
             if self._tool_context_compaction_gate_completed(executions):
                 _emit_turn_debug(
                     response_id=response_id,
                     content=content,
                     function_call_count=len(function_calls),
                     next_continuation_mode="tool_context_compaction_completed",
-                    request_previous_response_id=request_previous_response_id,
                     request_input_item_count=request_input_item_count,
                     followup_item_count=len(followup_items),
                     stream=use_stream,
                 )
                 return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
-            self._run_operational_memory_gate_for_failed_executions(executions)
+            self._notify_companion_about_failed_tool_executions(executions)
 
             if not followup_items or (self._responses_requires_response_id_for_tool_followup() and not response_id):
                 _emit_turn_debug(
@@ -333,7 +291,6 @@ def send_via_responses(
                     content=content,
                     function_call_count=len(function_calls),
                     next_continuation_mode="invalid_no_followup",
-                    request_previous_response_id=request_previous_response_id,
                     request_input_item_count=request_input_item_count,
                     followup_item_count=0,
                     stream=use_stream,
@@ -347,50 +304,26 @@ def send_via_responses(
                     content=content,
                     function_call_count=len(function_calls),
                     next_continuation_mode="tool_context_compaction",
-                    request_previous_response_id=request_previous_response_id,
                     request_input_item_count=request_input_item_count,
                     followup_item_count=len(followup_items),
                     stream=use_stream,
                 )
                 current_input = self._build_responses_input(self._get_messages_with_memory())
                 explicit_context_input = list(current_input)
-                previous_response_fallback_input = None
-                previous_response_id = ""
                 continue
 
             mid_turn_user_items = _consume_mid_turn_user_input_items()
             explicit_context_input = explicit_context_input + continuation_items + followup_items + mid_turn_user_items
-            previous_response_fallback_input = list(explicit_context_input)
-            if response_id and continuation_mode == "previous_response_id":
-                previous_response_id = response_id
-                current_input = self._responses_previous_response_input(
-                    continuation_items,
-                    followup_items,
-                    mid_turn_user_items,
-                )
-                _emit_turn_debug(
-                    response_id=response_id,
-                    content=content,
-                    function_call_count=len(function_calls),
-                    next_continuation_mode="previous_response_id",
-                    request_previous_response_id=request_previous_response_id,
-                    request_input_item_count=request_input_item_count,
-                    followup_item_count=len(followup_items),
-                    stream=use_stream,
-                )
-            else:
-                previous_response_id = ""
-                current_input = list(explicit_context_input)
-                _emit_turn_debug(
-                    response_id=response_id,
-                    content=content,
-                    function_call_count=len(function_calls),
-                    next_continuation_mode="explicit_context",
-                    request_previous_response_id=request_previous_response_id,
-                    request_input_item_count=request_input_item_count,
-                    followup_item_count=len(followup_items),
-                    stream=use_stream,
-                )
+            current_input = list(explicit_context_input)
+            _emit_turn_debug(
+                response_id=response_id,
+                content=content,
+                function_call_count=len(function_calls),
+                next_continuation_mode="explicit_context",
+                request_input_item_count=request_input_item_count,
+                followup_item_count=len(followup_items),
+                stream=use_stream,
+            )
             continue
 
         next_continuation_mode = "final_message"
@@ -403,7 +336,6 @@ def send_via_responses(
             content=content or stream_text.text,
             function_call_count=0,
             next_continuation_mode=next_continuation_mode,
-            request_previous_response_id=request_previous_response_id,
             request_input_item_count=request_input_item_count,
             followup_item_count=0,
             stream=use_stream,

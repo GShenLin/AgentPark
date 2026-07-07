@@ -8,54 +8,23 @@ from src.base_agent import BaseAgent
 from src.operational_memory import build_operational_memory_summary
 from src.operational_memory import OperationalMemoryError
 from src.operational_memory import record_operational_memory_entry
-from src.operational_memory_tool import record_operational_memory
-from src.operational_memory_tool import record_operational_memory_declaration
+from functions.operational_memory_tools import edit_operational_memory
+from functions.operational_memory_tools import edit_operational_memory_declaration
 from src.tool.tool_call_protocol import ToolCallExecution
 
 
 class DummyAgent(BaseAgent):
     def __init__(self, memory_path):
         super().__init__("dummy", memory_file_path=str(memory_path), internal_memory_enabled=False)
-        self.operational_memory_gate_enabled = True
+        self.tool_failure_memory_notice_enabled = True
         self.sent_tools = []
+        self._agentpark_graph_id = "default"
+        self._agentpark_node_id = "Agent1"
+        self._agentpark_node_type_id = "agent_node"
 
     def Send(self, tools=None, run_tools=True, mode="chat", stream=False):
         self.sent_tools.append(tools)
-        result = self.tools.execute_tool(
-            "record_operational_memory",
-            {
-                "action": "upsert",
-                "reason": "The failure exposes a reusable environment constraint.",
-                "kind": "environment_fact",
-                "title": "Use PowerShell-compatible commands",
-                "lesson": "Use PowerShell-compatible commands in this workspace.",
-                "evidence": "A bash-only command failed in the active shell.",
-                "scope": {"project": "C:\\Project\\AgentPark", "shell": "powershell"},
-                "tool_name": "execute_console_command",
-                "error": "bash heredoc syntax failed",
-                "avoid": ["cat <<EOF"],
-                "prefer": ["PowerShell here-strings", "rg"],
-                "confidence": "high",
-            },
-        )
-        self.Message("tool", result, persist=False, tool_call_id="memory-gate", name="record_operational_memory")
-        return result
-
-
-class DummyAgentWithoutMemoryRecord(DummyAgent):
-    def Send(self, tools=None, run_tools=True, mode="chat", stream=False):
-        self.sent_tools.append(tools)
-        self.Message("assistant", "Continuing without recording operational memory.", persist=False)
-        return "Continuing without recording operational memory."
-
-
-class DummyAgentRecordsOnSecondAttempt(DummyAgent):
-    def Send(self, tools=None, run_tools=True, mode="chat", stream=False):
-        if not self.sent_tools:
-            self.sent_tools.append(tools)
-            self.Message("assistant", "Continuing without recording operational memory.", persist=False)
-            return "Continuing without recording operational memory."
-        return super().Send(tools=tools, run_tools=run_tools, mode=mode, stream=stream)
+        return "unexpected"
 
 
 def test_record_operational_memory_upserts_and_summarizes(tmp_path):
@@ -123,7 +92,8 @@ def test_record_operational_memory_does_not_notify_companion_inbox(monkeypatch, 
     agent._agentpark_node_type_id = "agent_node"
 
     result = json.loads(
-        record_operational_memory(
+        edit_operational_memory(
+            memory_path=str(memory_path.parent / "operational_memory.json"),
             action="upsert",
             reason="The failure is reusable.",
             kind="tool_limitation",
@@ -134,7 +104,6 @@ def test_record_operational_memory_does_not_notify_companion_inbox(monkeypatch, 
             tool_name="execute_console_command",
             error="bash heredoc syntax failed",
             confidence="high",
-            agent=agent,
         )
     )
 
@@ -163,12 +132,12 @@ def test_record_operational_memory_skip_does_not_notify_companion(monkeypatch, t
     agent._agentpark_node_id = "Agent1"
 
     result = json.loads(
-        record_operational_memory(
+        edit_operational_memory(
+            memory_path=str(memory_path.parent / "operational_memory.json"),
             action="skip",
             reason="No long-term lesson.",
             tool_name="execute_console_command",
             error="temporary",
-            agent=agent,
         )
     )
 
@@ -196,7 +165,8 @@ def test_companion_operational_memory_does_not_notify_itself(monkeypatch, tmp_pa
     agent._agentpark_node_id = "companion"
 
     result = json.loads(
-        record_operational_memory(
+        edit_operational_memory(
+            memory_path=str(memory_path.parent / "operational_memory.json"),
             action="upsert",
             reason="The failure is reusable.",
             kind="tool_limitation",
@@ -207,7 +177,6 @@ def test_companion_operational_memory_does_not_notify_itself(monkeypatch, tmp_pa
             tool_name="multi_tool_use_parallel",
             error="slow command rejected",
             confidence="high",
-            agent=agent,
         )
     )
 
@@ -233,7 +202,8 @@ def test_companion_operational_memory_path_fallback_does_not_notify_itself(monke
     agent = DummyAgent(memory_path)
 
     result = json.loads(
-        record_operational_memory(
+        edit_operational_memory(
+            memory_path=str(memory_path.parent / "operational_memory.json"),
             action="upsert",
             reason="The failure is reusable.",
             kind="tool_limitation",
@@ -244,7 +214,6 @@ def test_companion_operational_memory_path_fallback_does_not_notify_itself(monke
             tool_name="multi_tool_use_parallel",
             error="slow command rejected",
             confidence="high",
-            agent=agent,
         )
     )
 
@@ -270,7 +239,8 @@ def test_record_operational_memory_without_node_identity_does_not_notify_compani
     agent = DummyAgent(memory_path)
 
     result = json.loads(
-        record_operational_memory(
+        edit_operational_memory(
+            memory_path=str(memory_path.parent / "operational_memory.json"),
             action="upsert",
             reason="The failure is reusable.",
             kind="tool_limitation",
@@ -281,7 +251,6 @@ def test_record_operational_memory_without_node_identity_does_not_notify_compani
             tool_name="execute_console_command",
             error="bash heredoc syntax failed",
             confidence="high",
-            agent=agent,
         )
     )
 
@@ -298,7 +267,8 @@ def test_record_operational_memory_keeps_original_result(tmp_path):
     agent._agentpark_node_id = "Agent1"
 
     result = json.loads(
-        record_operational_memory(
+        edit_operational_memory(
+            memory_path=str(memory_path.parent / "operational_memory.json"),
             action="upsert",
             reason="The failure is reusable.",
             kind="tool_limitation",
@@ -309,7 +279,6 @@ def test_record_operational_memory_keeps_original_result(tmp_path):
             tool_name="demo_tool",
             error="bash heredoc syntax failed",
             confidence="high",
-            agent=agent,
         )
     )
 
@@ -330,12 +299,12 @@ def test_record_operational_memory_without_companion_keeps_original_result(monke
     agent._agentpark_node_id = "Agent1"
 
     result = json.loads(
-        record_operational_memory(
+        edit_operational_memory(
+            memory_path=str(memory_path.parent / "operational_memory.json"),
             action="skip",
             reason="No long-term lesson.",
             tool_name="demo_tool",
             error="temporary",
-            agent=agent,
         )
     )
 
@@ -356,8 +325,8 @@ def test_operational_memory_summary_reports_invalid_file(tmp_path):
         build_operational_memory_summary(str(path))
 
 
-def test_record_operational_memory_declaration_has_action_specific_schema():
-    params = record_operational_memory_declaration["function"]["parameters"]
+def test_edit_operational_memory_declaration_has_action_specific_schema():
+    params = edit_operational_memory_declaration["function"]["parameters"]
     branches = params.get("oneOf")
     assert isinstance(branches, list)
     branch_by_action = {
@@ -372,6 +341,7 @@ def test_record_operational_memory_declaration_has_action_specific_schema():
     assert set(branch_by_action["upsert"]["required"]) >= {
         "action",
         "reason",
+        "memory_path",
         "kind",
         "title",
         "lesson",
@@ -381,7 +351,7 @@ def test_record_operational_memory_declaration_has_action_specific_schema():
     }
     assert "memories" in branch_by_action["replace"]["required"]
     assert branch_by_action["resolve"]["anyOf"] == [{"required": ["key"]}, {"required": ["resolve_key"]}]
-    assert branch_by_action["skip"]["required"] == ["action", "reason"]
+    assert branch_by_action["skip"]["required"] == ["memory_path", "action", "reason"]
 
 
 def test_concurrent_operational_memory_upserts_keep_count(tmp_path):
@@ -416,13 +386,75 @@ def test_concurrent_operational_memory_upserts_keep_count(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_failed_tool_execution_triggers_memory_gate(tmp_path):
+def test_failed_tool_execution_delivers_companion_memory_notice(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
+    from src.web_backend import runtime_paths
+
+    graphs_dir = tmp_path / "memories"
+    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config.parent.mkdir(parents=True)
+    companion_config.write_text(
+        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"reviseToolFailureMemoryWithCompanion": True}},
+    )
+
+    memory_path = tmp_path / "agent" / "agent.md"
+    memory_path.parent.mkdir(parents=True)
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyAgent(memory_path)
+    agent.Message("user", "Please inspect the repo.", persist=False)
+
+    ran = agent._notify_companion_about_failed_tool_executions(
+        [
+            ToolCallExecution(
+                func_name="execute_console_command",
+                call_id="call-1",
+                cleaned_result='{"status":"error","error":"bash heredoc syntax failed"}',
+                status="error",
+                error="bash heredoc syntax failed",
+            )
+        ]
+    )
+
+    assert ran is True
+    assert agent.sent_tools == []
+    assert not (memory_path.parent / "operational_memory.json").exists()
+    inbox_text = (companion_config.parent / "inbox.jsonl").read_text(encoding="utf-8")
+    notice = json.loads(inbox_text.strip())
+    assert notice["type"] == "tool_failure_memory_notice"
+    assert notice["source"]["graph_id"] == "default"
+    assert notice["source"]["node_id"] == "Agent1"
+    assert notice["failure"]["tool_name"] == "execute_console_command"
+    assert notice["memory"]["operational_memory_path"] == str(memory_path.parent / "operational_memory.json")
+    assert notice["context"]["recent_messages"][0]["role"] == "user"
+
+
+def test_failed_tool_execution_notice_respects_default_off(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
+    from src.web_backend import runtime_paths
+
+    graphs_dir = tmp_path / "memories"
+    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config.parent.mkdir(parents=True)
+    companion_config.write_text(
+        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(companion_notice_settings.ConfigLoader, "get_config", lambda _self: {"agentNode": {}})
+
     memory_path = tmp_path / "agent" / "agent.md"
     memory_path.parent.mkdir(parents=True)
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
 
-    ran = agent._run_operational_memory_gate_for_failed_executions(
+    ran = agent._notify_companion_about_failed_tool_executions(
         [
             ToolCallExecution(
                 func_name="execute_console_command",
@@ -430,98 +462,41 @@ def test_failed_tool_execution_triggers_memory_gate(tmp_path):
                 cleaned_result='{"status":"error","error":"bash heredoc syntax failed"}',
                 status="error",
                 error="bash heredoc syntax failed",
-            )
-        ]
-    )
-
-    assert ran is True
-    assert agent.sent_tools
-    declarations = agent.sent_tools[0]
-    assert isinstance(declarations, list)
-    assert [item["function"]["name"] for item in declarations] == ["record_operational_memory"]
-    memory_file = memory_path.parent / "operational_memory.json"
-    payload = json.loads(memory_file.read_text(encoding="utf-8"))
-    assert len(payload["memories"]) == 1
-    item = next(iter(payload["memories"].values()))
-    assert item["tool_name"] == "execute_console_command"
-    assert item["confidence"] == "high"
-
-
-def test_failed_tool_execution_memory_gate_allows_no_record(tmp_path):
-    memory_path = tmp_path / "agent" / "agent.md"
-    memory_path.parent.mkdir(parents=True)
-    memory_path.write_text("", encoding="utf-8")
-    agent = DummyAgentWithoutMemoryRecord(memory_path)
-
-    ran = agent._run_operational_memory_gate_for_failed_executions(
-        [
-            ToolCallExecution(
-                func_name="execute_console_command",
-                call_id="call-1",
-                cleaned_result='{"status":"error","error":"transient failure"}',
-                status="error",
-                error="transient failure",
             )
         ]
     )
 
     assert ran is False
-    assert len(agent.sent_tools) == 2
-    assert any(
-        item.get("role") == "system"
-        and "Error: RuntimeError: operational memory gate did not call record_operational_memory" in item.get("content", "")
-        for item in agent.messages
-        if isinstance(item, dict)
+    assert not (companion_config.parent / "inbox.jsonl").exists()
+    assert agent.sent_tools == []
+
+
+def test_failed_tool_execution_notice_does_not_mutate_existing_tool_map(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
+    from src.web_backend import runtime_paths
+
+    graphs_dir = tmp_path / "memories"
+    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config.parent.mkdir(parents=True)
+    companion_config.write_text(
+        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        encoding="utf-8",
     )
-    assert not (memory_path.parent / "operational_memory.json").exists()
-    assert "record_operational_memory" not in agent.tools.function_map
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"reviseToolFailureMemoryWithCompanion": True}},
+    )
 
-
-def test_failed_tool_execution_memory_gate_retries_after_missing_record_call(tmp_path):
     memory_path = tmp_path / "agent" / "agent.md"
     memory_path.parent.mkdir(parents=True)
     memory_path.write_text("", encoding="utf-8")
-    agent = DummyAgentRecordsOnSecondAttempt(memory_path)
-
-    ran = agent._run_operational_memory_gate_for_failed_executions(
-        [
-            ToolCallExecution(
-                func_name="execute_console_command",
-                call_id="call-1",
-                cleaned_result='{"status":"error","error":"bash heredoc syntax failed"}',
-                status="error",
-                error="bash heredoc syntax failed",
-            )
-        ]
-    )
-
-    assert ran is True
-    assert len(agent.sent_tools) == 2
-    feedback_index = next(
-        index
-        for index, item in enumerate(agent.messages)
-        if isinstance(item, dict)
-        and item.get("role") == "system"
-        and "Error: RuntimeError: operational memory gate did not call record_operational_memory" in item.get("content", "")
-    )
-    tool_index = next(
-        index
-        for index, item in enumerate(agent.messages)
-        if isinstance(item, dict) and item.get("role") == "tool" and item.get("name") == "record_operational_memory"
-    )
-    assert feedback_index < tool_index
-    assert (memory_path.parent / "operational_memory.json").exists()
-
-
-def test_operational_memory_gate_restores_existing_function_map_entry(tmp_path):
-    memory_path = tmp_path / "agent" / "agent.md"
-    memory_path.parent.mkdir(parents=True)
-    memory_path.write_text("", encoding="utf-8")
-    agent = DummyAgentWithoutMemoryRecord(memory_path)
+    agent = DummyAgent(memory_path)
     sentinel = object()
-    agent.tools.function_map["record_operational_memory"] = sentinel
+    agent.tools.function_map["edit_operational_memory"] = sentinel
 
-    ran = agent._run_operational_memory_gate_for_failed_executions(
+    ran = agent._notify_companion_about_failed_tool_executions(
         [
             ToolCallExecution(
                 func_name="execute_console_command",
@@ -533,8 +508,8 @@ def test_operational_memory_gate_restores_existing_function_map_entry(tmp_path):
         ]
     )
 
-    assert ran is False
-    assert agent.tools.function_map["record_operational_memory"] is sentinel
+    assert ran is True
+    assert agent.tools.function_map["edit_operational_memory"] is sentinel
 
 
 def test_operational_memory_replace_rewrites_corrected_set(tmp_path):
@@ -577,7 +552,10 @@ def test_operational_memory_replace_rewrites_corrected_set(tmp_path):
     assert payload["memories"]["corrected-key"]["lesson"] == "Prefer PowerShell-compatible commands."
 
 
-def test_gate_prompt_includes_full_current_operational_memory(tmp_path):
+def test_tool_failure_memory_notice_format_names_exact_file_and_budget(tmp_path):
+    from src.companion_inbox import format_companion_notice
+    from src.tool_failure_companion import build_tool_failure_memory_notice
+
     memory_path = tmp_path / "agent" / "agent.md"
     memory_path.parent.mkdir(parents=True)
     memory_path.write_text("", encoding="utf-8")
@@ -594,8 +572,8 @@ def test_gate_prompt_includes_full_current_operational_memory(tmp_path):
         tool_name="demo_tool",
     )
     agent = DummyAgent(memory_path)
-
-    prompt = agent._build_operational_memory_gate_prompt(
+    notice = build_tool_failure_memory_notice(
+        agent,
         [
             {
                 "tool_name": "demo_tool",
@@ -604,12 +582,13 @@ def test_gate_prompt_includes_full_current_operational_memory(tmp_path):
                 "error": "boom",
                 "result_preview": "{}",
             }
-        ]
+        ],
     )
+    text = format_companion_notice(notice)
 
-    assert "Current operational memory:" in prompt
-    assert "Existing full lesson visible to gate." in prompt
-    assert "record_operational_memory exactly once" in prompt
-    assert "required even when no memory is worth recording" in prompt
-    assert "action=replace" in prompt
-    assert "action=skip" in prompt
+    assert f"Operational memory file to edit: {memory_file}" in text
+    assert "Future injected memory summary budget: max 2000 chars" in text
+    assert "Existing full lesson visible to gate." in text
+    assert "sent back into this node's model input" in text
+    assert "Use the configured operational memory editing tool" in text
+    assert "action=skip" in text

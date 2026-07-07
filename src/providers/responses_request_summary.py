@@ -19,8 +19,6 @@ MAX_TOOLS_INCLUDED = 64
 def build_responses_request_summary(
     *,
     request_index: int,
-    continuation_mode: str,
-    previous_response_id: str,
     current_input: Any,
     tools_payload: Any,
     stream: bool,
@@ -54,10 +52,8 @@ def build_responses_request_summary(
     )
     summary = {
         "request_index": int(request_index or 0),
-        "continuation_mode": str(continuation_mode or "").strip(),
         "responses_mode": str(responses_mode or "").strip(),
         "requested_responses_mode": str(requested_responses_mode or "").strip(),
-        "previous_response_id_present": bool(str(previous_response_id or "").strip()),
         "instructions_present": bool(str(instructions or "").strip()),
         "instructions_chars": len(str(instructions or "")),
         "tool_choice": str(tool_choice or "").strip(),
@@ -124,12 +120,10 @@ def empty_message_diagnostics_from_summary(summary: Any) -> dict[str, Any]:
     diagnostic = {
         "provider_request": {
             "request_index": int(summary.get("request_index") or 0),
-            "continuation_mode": str(summary.get("continuation_mode") or ""),
             "responses_mode": str(summary.get("responses_mode") or ""),
             "input_item_count": int(summary.get("input_item_count") or 0),
             "approx_input_chars": int(summary.get("approx_input_chars") or 0),
             "approx_input_tokens": int(summary.get("approx_input_tokens") or 0),
-            "previous_response_id_present": bool(summary.get("previous_response_id_present")),
             "largest_input_items": largest_input_items[:MAX_LARGEST_INPUT_ITEMS],
             "largest_tool_result": largest_tool if isinstance(largest_tool, dict) else None,
         },

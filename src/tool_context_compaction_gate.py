@@ -7,6 +7,7 @@ from src.value_parsing import parse_optional_int_value
 
 
 TOOL_CONTEXT_SUMMARY_PREFIX = "[Tool Context Summary]"
+INTERNAL_TOOL_NAMES = {"edit_operational_memory", "compact_tool_context"}
 DEFAULT_MAX_GATE_PROMPT_CHARS = 200000
 DEFAULT_MAX_CANDIDATE_CONTENT_CHARS = 50000
 TOOL_CONTEXT_COMPACTION_REQUIRED_ERROR = (
@@ -253,7 +254,7 @@ class ToolContextCompactionGateMixin:
     def _is_tool_context_compaction_candidate(self, message: dict[str, Any]) -> bool:
         role = str(message.get("role") or "").strip().lower()
         name = str(message.get("name") or "").strip()
-        if name in {"record_operational_memory", "compact_tool_context"}:
+        if name in INTERNAL_TOOL_NAMES:
             return False
         if role in {"tool", "function"}:
             return True
@@ -270,7 +271,6 @@ class ToolContextCompactionGateMixin:
     def _tool_calls_are_internal(tool_calls: object) -> bool:
         if not isinstance(tool_calls, list) or not tool_calls:
             return False
-        internal_names = {"record_operational_memory", "compact_tool_context"}
         names: list[str] = []
         for item in tool_calls:
             if not isinstance(item, dict):
@@ -280,7 +280,7 @@ class ToolContextCompactionGateMixin:
                 name = str(function_item.get("name") or "").strip()
                 if name:
                     names.append(name)
-        return bool(names) and all(name in internal_names for name in names)
+        return bool(names) and all(name in INTERNAL_TOOL_NAMES for name in names)
 
     @staticmethod
     def _parts_include_function_call(parts: object) -> bool:
@@ -382,7 +382,7 @@ class ToolContextCompactionGateMixin:
         count = 0
         for item in executions if isinstance(executions, list) else []:
             name = self._execution_tool_name(item)
-            if name and name not in {"record_operational_memory", "compact_tool_context"}:
+            if name and name not in INTERNAL_TOOL_NAMES:
                 count += 1
         return count
 

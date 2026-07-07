@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+﻿import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   cloneNodeInstance,
   controlNodeInstance,
@@ -866,6 +866,7 @@ export function useAgentBoard(): AgentBoardContext {
     refreshNodeConfigs,
     refreshGraphLinks,
     hasActiveNodeWork,
+    requestMemoryRefresh,
   })
   const {
     scheduleActiveNodeRefresh,

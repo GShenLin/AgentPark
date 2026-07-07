@@ -109,23 +109,40 @@ function currentModelValue() {
 
 function setField(key: string, value: unknown) {
   if (!selectedProviderId.value || !selectedProvider.value) return
-  limitWarning.value = unsupportedWarningFor(key, value)
   const provider = { ...selectedProvider.value }
+  const normalizedValue = normalizeProviderFieldValue(provider, key, value)
+  limitWarning.value = unsupportedWarningFor(key, normalizedValue)
   if (value === '' || value === null || value === undefined) {
     delete provider[key]
   } else {
-    provider[key] = value
+    provider[key] = normalizedValue
   }
+  normalizeProviderAliases(provider)
   if (key === 'responsesApi' && value === true) {
     applyResponsesApiDefaults(provider)
   }
   emitProvider(selectedProviderId.value, provider)
 }
 
-function applyResponsesApiDefaults(provider: Record<string, unknown>) {
-  if (!provider.responsesContinuationMode) {
-    provider.responsesContinuationMode = 'explicit_context'
+function isDoubaoProvider(provider: Record<string, unknown> | null) {
+  return String(provider?.type || '').trim().toLowerCase() === 'doubao'
+}
+
+function normalizeProviderFieldValue(provider: Record<string, unknown>, key: string, value: unknown) {
+  if (key === 'reasoningEffort' && isDoubaoProvider(provider) && String(value || '').trim().toLowerCase() === 'xhigh') {
+    return 'high'
   }
+  return value
+}
+
+function normalizeProviderAliases(provider: Record<string, unknown>) {
+  if (!isDoubaoProvider(provider)) return
+  if (String(provider.reasoningEffort || '').trim().toLowerCase() === 'xhigh') {
+    provider.reasoningEffort = 'high'
+  }
+}
+
+function applyResponsesApiDefaults(provider: Record<string, unknown>) {
   if (provider.toolResultSubmissionMaxChars === undefined || provider.toolResultSubmissionMaxChars === null || provider.toolResultSubmissionMaxChars === '') {
     provider.toolResultSubmissionMaxChars = 50000
   }
@@ -175,11 +192,12 @@ function deleteProvider() {
 
 function unsupportedWarningFor(key: string, value: unknown) {
   const limit = selectedLimit.value
+  const provider = selectedProvider.value
   if (!limit) return ''
   if (limit.accessible === false) {
     return `Provider '${selectedProviderId.value}' is unavailable: ${limit.access_error || 'access test failed'}`
   }
-  if (key === 'responsesApi' || key === 'responsesContinuationMode' || key === 'responsesReplayReasoningItems') {
+  if (key === 'responsesApi' || key === 'responsesReplayReasoningItems') {
     if (key !== 'responsesApi' && (value === '' || value === null || value === undefined)) return ''
     if (key === 'responsesApi' && value !== true) return ''
     return featureUnsupportedWarning('responses_api')
@@ -187,7 +205,8 @@ function unsupportedWarningFor(key: string, value: unknown) {
   if (key === 'reasoningEffort') {
     const text = String(value || '').trim()
     if (!text) return ''
-    return valueUnsupportedWarning('reasoning_effort', text)
+    const normalizedText = isDoubaoProvider(provider) && text.toLowerCase() === 'xhigh' ? 'high' : text
+    return valueUnsupportedWarning('reasoning_effort', normalizedText)
   }
   if (key === 'thinking') {
     const text = String(value || '').trim()
@@ -325,14 +344,6 @@ onMounted(loadProviderLimits)
             <option value="enabled">enabled</option>
             <option value="disabled">disabled</option>
             <option value="auto">auto</option>
-          </select>
-        </label>
-        <label>
-          <span>Continuation Mode</span>
-          <select :value="stringValue('responsesContinuationMode')" @change="setField('responsesContinuationMode', ($event.target as HTMLSelectElement).value)">
-            <option value="">Unset</option>
-            <option value="previous_response_id">previous_response_id</option>
-            <option value="explicit_context">explicit_context</option>
           </select>
         </label>
       </div>

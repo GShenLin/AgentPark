@@ -102,7 +102,7 @@ def test_settings_api_rejects_invalid_responses_provider_contract(monkeypatch, t
 
     assert exc.value.status_code == 400
     assert "fable-5-krill" in str(exc.value.detail)
-    assert "responsesContinuationMode" in str(exc.value.detail)
+    assert "toolContextCompactionEnabled" in str(exc.value.detail)
 
 
 def test_settings_api_rejects_invalid_defaults_section(monkeypatch, tmp_path):
@@ -134,6 +134,23 @@ def test_settings_api_rejects_non_boolean_companion_node_review_switch(monkeypat
 
     assert exc.value.status_code == 400
     assert "reviewNodeRunsWithCompanion" in str(exc.value.detail)
+
+
+def test_settings_api_rejects_non_boolean_tool_failure_memory_switch(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    domain = SettingsApiDomain(SimpleNamespace())
+
+    with pytest.raises(HTTPException) as exc:
+        domain.update_settings_section(
+            "defaults",
+            {"content": json.dumps({"agentNode": {"reviseToolFailureMemoryWithCompanion": "yes"}})},
+        )
+
+    assert exc.value.status_code == 400
+    assert "reviseToolFailureMemoryWithCompanion" in str(exc.value.detail)
 
 
 def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):

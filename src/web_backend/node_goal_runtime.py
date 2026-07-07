@@ -22,7 +22,6 @@ COMPLETE_GOAL_STATUS = "complete"
 BLOCKED_GOAL_STATUS = "blocked"
 TERMINAL_GOAL_STATUSES = {COMPLETE_GOAL_STATUS, BLOCKED_GOAL_STATUS}
 INTERNAL_CONTROL_OUTPUT_STATUSES = {
-    "memory_gate_completed",
     "tool_context_compaction_completed",
 }
 

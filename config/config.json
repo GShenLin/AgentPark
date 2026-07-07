@@ -29,7 +29,8 @@
   "agentNode": {
     "minSendDelayMs": 200,
     "historyMessageLimit": 40,
-    "reviewNodeRunsWithCompanion": false
+    "reviewNodeRunsWithCompanion": false,
+    "reviseToolFailureMemoryWithCompanion": false
   },
   "consoleCommand": {
     "timeoutSec": 300

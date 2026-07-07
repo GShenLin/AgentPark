@@ -441,7 +441,7 @@ def test_doubao_responses_runtime_uses_envelopes_for_tool_continuation():
     assert '"type": "function_call_output"' in second_payload
     assert '"call_id": "call-1"' in second_payload
     assert '"status": "completed"' in second_payload
-    assert '"previous_response_id": "resp-1"' in second_payload
+    assert '"previous_response_id"' not in second_payload
 
 
 def test_doubao_responses_invalid_tool_arguments_return_tool_error_and_continue():
@@ -513,11 +513,10 @@ def test_doubao_responses_invalid_tool_arguments_return_tool_error_and_continue(
     tool_payload = json.loads(tool_message["content"])
     assert tool_payload["status"] == "invalid_arguments"
     assert "failed to parse tool arguments JSON" in tool_payload["error"]
-    assert requests[1]["previous_response_id"] == "resp-1"
     continuation_input = _without_environment_context(requests[1]["input"])
-    assert continuation_input[0]["type"] == "function_call_output"
-    assert continuation_input[0]["status"] == "completed"
-    output_payload = json.loads(continuation_input[0]["output"])
+    tool_output = next(item for item in continuation_input if item.get("type") == "function_call_output")
+    assert tool_output["status"] == "completed"
+    output_payload = json.loads(tool_output["output"])
     assert output_payload["status"] == "invalid_arguments"
 
 
@@ -594,7 +593,12 @@ def test_doubao_responses_compacts_oversized_tool_output_before_continuation():
 
     assert out == "narrowing"
     assert len(requests) == 2
-    output_text = _without_environment_context(requests[1]["input"])[0]["output"]
+    output_item = next(
+        item
+        for item in _without_environment_context(requests[1]["input"])
+        if item.get("type") == "function_call_output"
+    )
+    output_text = output_item["output"]
     assert len(output_text) < 1000
     assert "x" * 1000 not in output_text
     compact_payload = json.loads(output_text)
@@ -785,7 +789,7 @@ def test_doubao_responses_recovers_when_provider_rejects_tool_output_size():
 
     assert out == "use a narrower request"
     assert len(requests) == 3
-    assert requests[1]["previous_response_id"] == "resp-1"
+    assert "previous_response_id" not in requests[1]
     assert "previous_response_id" not in requests[2]
     recovered_output = next(item for item in requests[2]["input"] if item.get("type") == "function_call_output")
     recovered_payload = json.loads(recovered_output["output"])
@@ -875,7 +879,7 @@ def test_openai_responses_recovers_when_provider_rejects_tool_output_size():
 
     assert out == "use a narrower request"
     assert len(requests) == 3
-    assert requests[1]["previous_response_id"] == "resp-1"
+    assert "previous_response_id" not in requests[1]
     assert "previous_response_id" not in requests[2]
     recovered_output = next(item for item in requests[2]["input"] if item.get("type") == "function_call_output")
     recovered_payload = json.loads(recovered_output["output"])
@@ -969,10 +973,13 @@ def test_doubao_responses_continuation_includes_tool_image_data():
 
     assert out == "screenshot visible"
     assert len(requests) == 2
-    assert requests[1]["previous_response_id"] == "resp-1"
     continuation_input = _without_environment_context(requests[1]["input"])
-    assert continuation_input[0]["type"] == "function_call_output"
-    image_item = continuation_input[1]
+    tool_output_index = next(
+        index
+        for index, item in enumerate(continuation_input)
+        if item.get("type") == "function_call_output"
+    )
+    image_item = continuation_input[tool_output_index + 1]
     assert image_item["type"] == "message"
     assert image_item["role"] == "user"
     assert image_item["status"] == "completed"
@@ -1030,7 +1037,7 @@ def test_doubao_responses_replays_context_when_previous_response_missing():
                     }
                 ],
             }
-        if len(requests) == 2:
+        if len(requests) == 2 and payload.get("previous_response_id"):
             raise RuntimeError(
                 "HTTP Error 400: InvalidParameter.PreviousResponseNotFound: "
                 "Previous response with id resp-missing not found"
@@ -1058,27 +1065,24 @@ def test_doubao_responses_replays_context_when_previous_response_missing():
 
     assert out == "done"
     assert captured == ["hello"]
-    assert len(requests) == 3
-    assert requests[1]["previous_response_id"] == "resp-missing"
-    assert "previous_response_id" not in requests[2]
-    fallback_input = _without_environment_context(requests[2]["input"])
-    assert fallback_input[0]["type"] == "message"
-    assert fallback_input[0]["role"] == "user"
-    assert fallback_input[0]["status"] == "completed"
-    assert fallback_input[1] == {
+    assert len(requests) == 2
+    assert "previous_response_id" not in requests[1]
+    fallback_input = _without_environment_context(requests[1]["input"])
+    assert any(item.get("type") == "message" and item.get("role") == "user" for item in fallback_input)
+    assert any(item == {
         "type": "function_call",
         "call_id": "call-1",
         "name": "echo_tool",
         "arguments": '{"message":"hello"}',
         "id": "fc-1",
         "status": "completed",
-    }
-    assert fallback_input[2]["type"] == "function_call_output"
-    assert fallback_input[2]["call_id"] == "call-1"
-    assert "echo:hello" in fallback_input[2]["output"]
+    } for item in fallback_input)
+    tool_output = next(item for item in fallback_input if item.get("type") == "function_call_output")
+    assert tool_output["call_id"] == "call-1"
+    assert "echo:hello" in tool_output["output"]
 
 
-def test_doubao_responses_continuation_mode_honors_explicit_context_config():
+def test_doubao_responses_ignores_legacy_continuation_config_and_replays_context():
     from src.providers.doubao_agent import DouBaoAgent
 
     agent = DouBaoAgent.__new__(DouBaoAgent)
@@ -1087,7 +1091,7 @@ def test_doubao_responses_continuation_mode_honors_explicit_context_config():
         "baseUrl": "https://example.test/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
+        "responsesContinuationMode": "previous_response_id",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
@@ -1399,7 +1403,7 @@ def test_openai_stream_does_not_retry_account_quota_exceeded(monkeypatch):
     assert agent.events == []
 
 
-def test_openai_responses_continuation_uses_previous_response_id():
+def test_openai_responses_continuation_replays_explicit_context():
     from src.providers.openai_agent import OpenAIAgent
 
     agent = OpenAIAgent.__new__(OpenAIAgent)
@@ -1478,25 +1482,25 @@ def test_openai_responses_continuation_uses_previous_response_id():
     assert captured == ["hello"]
     assert len(requests) == 2
     second_input = _without_environment_context(requests[1]["input"])
-    assert requests[1]["previous_response_id"] == "resp-1"
-    assert second_input[0] == {
+    assert "previous_response_id" not in requests[1]
+    assert any(item == {
         "type": "function_call",
         "call_id": "call_real_1",
         "name": "echo_tool",
         "arguments": '{"message":"hello"}',
         "id": "fc_real_1",
         "status": "completed",
-    }
-    assert second_input[1] == {
+    } for item in second_input)
+    assert any(item == {
         "type": "function_call_output",
         "call_id": "call_real_1",
         "output": "echo:hello",
         "status": "completed",
-    }
+    } for item in second_input)
     turn_events = _runtime_notice_payloads(agent.events, "openai_responses_turn")
     assert turn_events[0]["response_id_present"] is True
     assert turn_events[0]["response_id"] == "resp-1"
-    assert turn_events[0]["next_continuation_mode"] == "previous_response_id"
+    assert turn_events[0]["next_continuation_mode"] == "explicit_context"
     assert turn_events[0]["followup_item_count"] == 1
     assert turn_events[1]["next_continuation_mode"] == "final_message"
 
@@ -1634,7 +1638,7 @@ def test_openai_responses_replays_context_when_previous_response_missing():
                     }
                 ],
             }
-        if len(requests) == 2:
+        if len(requests) == 2 and payload.get("previous_response_id"):
             raise RuntimeError("responses: HTTP 400 - previous_response_id not found")
         return {
             "id": "resp-final",
@@ -1658,39 +1662,31 @@ def test_openai_responses_replays_context_when_previous_response_missing():
 
     assert out == "done"
     assert captured == ["hello"]
-    assert len(requests) == 3
-    assert requests[1]["previous_response_id"] == "resp-missing"
-    assert "previous_response_id" not in requests[2]
-    fallback_input = _without_environment_context(requests[2]["input"])
-    assert fallback_input[0] == {
+    assert len(requests) == 2
+    assert "previous_response_id" not in requests[1]
+    fallback_input = _without_environment_context(requests[1]["input"])
+    assert any(item == {
         "type": "message",
         "role": "user",
         "content": [{"type": "input_text", "text": "run echo"}],
         "status": "completed",
-    }
-    assert fallback_input[1] == {
+    } for item in fallback_input)
+    assert any(item == {
         "type": "function_call",
         "call_id": "call_real_1",
         "name": "echo_tool",
         "arguments": '{"message":"hello"}',
         "id": "fc_real_1",
         "status": "completed",
-    }
-    assert fallback_input[2] == {
+    } for item in fallback_input)
+    assert any(item == {
         "type": "function_call_output",
         "call_id": "call_real_1",
         "output": "echo:hello",
         "status": "completed",
-    }
+    } for item in fallback_input)
     fallback_events = _runtime_notice_payloads(agent.events, "openai_responses_previous_response_missing")
-    assert fallback_events == [
-        {
-                "fallback": "explicit_context",
-                "fallback_input_item_count": 5,
-                "previous_response_id": "resp-missing",
-                "stream": True,
-        }
-    ]
+    assert fallback_events == []
 
 
 def test_openai_responses_rebuilds_input_after_tool_context_compaction():
@@ -1833,11 +1829,11 @@ def test_gemini_function_response_content_parses_only_json_objects():
 
 
 def test_gemini_tool_schema_preserves_action_specific_composites():
-    from src.operational_memory_tool import record_operational_memory_declaration
+    from functions.operational_memory_tools import edit_operational_memory_declaration
     from src.providers.gemini_agent import GeminiAgent
 
     agent = GeminiAgent.__new__(GeminiAgent)
-    converted = agent._convert_tool_to_gemini(record_operational_memory_declaration)
+    converted = agent._convert_tool_to_gemini(edit_operational_memory_declaration)
     params = converted["parameters"]
 
     assert params["type"] == "OBJECT"

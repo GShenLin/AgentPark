@@ -126,16 +126,10 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
                 tool_call_items=tool_call_items,
                 execute_tool_call_envelopes=self._execute_tool_call_envelopes_parallel,
             )
-            for execution in executions:
-                self.Message("tool", execution.cleaned_result, tool_call_id=execution.call_id, name=execution.func_name)
-                non_retry_warn = self._build_non_retryable_tool_warning(execution.func_name, execution.cleaned_result)
-                if non_retry_warn:
-                    self.Message("system", non_retry_warn)
-            if self._operational_memory_gate_completed(executions):
-                return json.dumps({"status": "memory_gate_completed"}, ensure_ascii=False)
+            self._append_tool_execution_messages_then_warnings(executions)
             if self._tool_context_compaction_gate_completed(executions):
                 return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
-            self._run_operational_memory_gate_for_failed_executions(executions)
+            self._notify_companion_about_failed_tool_executions(executions)
             self._run_tool_context_compaction_gate_if_needed(executions)
             append_mid_turn_user_messages(self)
             return self.Send(

@@ -247,7 +247,7 @@ def test_node_goal_runtime_skips_internal_control_output(tmp_path):
     host = _FakeHost()
     runtime = _FailingGoalRuntime(host)
     wake_event = threading.Event()
-    output_message = build_text_envelope('{"status":"memory_gate_completed"}', role="assistant")
+    output_message = build_text_envelope('{"status":"tool_context_compaction_completed"}', role="assistant")
 
     assert is_internal_control_output(output_message) is True
 

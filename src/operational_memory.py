@@ -20,13 +20,6 @@ class OperationalMemoryError(ValueError):
     pass
 
 
-def operational_memory_path_for_agent(agent: object) -> str:
-    memory_path = str(getattr(agent, "current_memory_path", "") or "").strip()
-    if not memory_path:
-        raise OperationalMemoryError("agent memory path is not available")
-    return os.path.join(os.path.dirname(memory_path), MEMORY_FILENAME)
-
-
 def load_operational_memory(path: str) -> dict[str, Any]:
     return _run_operational_memory_transaction(path, lambda: _load_operational_memory_unlocked(path))
 

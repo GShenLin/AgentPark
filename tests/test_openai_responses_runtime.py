@@ -296,32 +296,15 @@ def test_openai_send_uses_web_search_switch():
     assert payloads[0]["tools"] == [{"type": "web_search"}]
 
 
-def test_openai_responses_requires_explicit_continuation_mode():
+def test_openai_responses_continuation_mode_is_not_provider_configured():
     from src.providers.openai_agent import OpenAIAgent
 
     agent = OpenAIAgent.__new__(OpenAIAgent)
-    agent.config = {
-        "apiKey": "test",
-        "baseUrl": "https://api.openai.test/v1",
-        "model": "gpt-test",
-        "responsesApi": True,
-        "maxRetries": 0,
-        "retryDelaySec": 0,
-        "responsesReplayReasoningItems": False,
-        "toolResultSubmissionMaxChars": 50000,
-        "toolContextCompactionEnabled": False,
-        "toolContextCompactionEveryToolCalls": 1,
-    }
 
-    try:
-        agent._responses_continuation_mode()
-    except ValueError as exc:
-        assert "provider.responsesContinuationMode is required" in str(exc)
-    else:
-        raise AssertionError("missing responsesContinuationMode should fail")
+    assert not hasattr(agent, "_responses_continuation_mode")
 
 
-def test_openai_responses_continuation_mode_rejects_aliases():
+def test_openai_responses_continuation_mode_ignores_legacy_config_values():
     from src.providers.openai_agent import OpenAIAgent
 
     agent = OpenAIAgent.__new__(OpenAIAgent)
@@ -330,23 +313,13 @@ def test_openai_responses_continuation_mode_rejects_aliases():
         "responsesReplayReasoningItems": False,
     }
 
-    try:
-        agent._responses_continuation_mode()
-    except ValueError as exc:
-        assert "provider.responsesContinuationMode is required" in str(exc)
-    else:
-        raise AssertionError("snake_case responses continuation key should fail")
+    assert not hasattr(agent, "_responses_continuation_mode")
 
     agent.config = {
         "responsesContinuationMode": "explicit",
         "responsesReplayReasoningItems": False,
     }
-    try:
-        agent._responses_continuation_mode()
-    except ValueError as exc:
-        assert "must be 'previous_response_id' or 'explicit_context'" in str(exc)
-    else:
-        raise AssertionError("short responses continuation value should fail")
+    assert not hasattr(agent, "_responses_continuation_mode")
 
 
 def test_openai_responses_requires_explicit_reasoning_replay_policy():
@@ -465,13 +438,11 @@ def test_stream_does_not_return_stale_tool_call_intro():
 
     assert out == "rg returned README.md."
     assert len(payloads) == 2
-    assert all(
-        not (
-            item.get("type") == "message"
-            and item.get("role") == "user"
-            and item.get("content")
-            and item["content"][0].get("text", "").startswith("<environment_context>")
-        )
+    assert any(
+        item.get("type") == "message"
+        and item.get("role") == "user"
+        and item.get("content")
+        and item["content"][0].get("text", "").startswith("<environment_context>")
         for item in payloads[1]["input"]
         if isinstance(item, dict)
     )

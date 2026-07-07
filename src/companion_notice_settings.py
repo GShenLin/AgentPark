@@ -8,11 +8,17 @@ from src.value_parsing import parse_optional_bool_value
 
 def companion_node_review_enabled(config: dict[str, Any] | None = None) -> bool:
     payload = ConfigLoader().get_config() if config is None else config
-    parsed = _parse_agent_node_bool_setting(payload)
+    parsed = _parse_agent_node_bool_setting(payload, "reviewNodeRunsWithCompanion")
     return False if parsed is None else parsed
 
 
-def _parse_agent_node_bool_setting(payload: object) -> bool | None:
+def companion_tool_failure_memory_enabled(config: dict[str, Any] | None = None) -> bool:
+    payload = ConfigLoader().get_config() if config is None else config
+    parsed = _parse_agent_node_bool_setting(payload, "reviseToolFailureMemoryWithCompanion")
+    return False if parsed is None else parsed
+
+
+def _parse_agent_node_bool_setting(payload: object, key: str) -> bool | None:
     if not isinstance(payload, dict):
         raise ValueError("config must be a top-level object.")
     agent_node = payload.get("agentNode")
@@ -21,9 +27,9 @@ def _parse_agent_node_bool_setting(payload: object) -> bool | None:
     if not isinstance(agent_node, dict):
         raise ValueError("config.json field 'agentNode' must be an object.")
     return parse_optional_bool_value(
-        "agentNode.reviewNodeRunsWithCompanion",
-        agent_node.get("reviewNodeRunsWithCompanion"),
+        f"agentNode.{key}",
+        agent_node.get(key),
     )
 
 
-__all__ = ["companion_node_review_enabled"]
+__all__ = ["companion_node_review_enabled", "companion_tool_failure_memory_enabled"]

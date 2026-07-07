@@ -9,18 +9,13 @@ from src.providers.openai_transport_errors import OpenAIHttpError, OpenAITranspo
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
-from src.providers.responses_stream_events import ResponsesOutputItemDone
-from src.providers.responses_stream_events import ResponsesOutputTextDelta
-from src.providers.responses_stream_events import ResponsesReasoningDelta
-from src.providers.responses_stream_events import ResponsesResponseCompleted
-from src.providers.responses_stream_events import ResponsesStreamEvent
-from src.providers.responses_stream_events import ResponsesStreamFailure
-from src.runtime_cancellation import CancellationRequested
-from src.runtime_cancellation import sleep_with_cancel
+from src.providers.responses_stream_events import ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesResponseCompleted, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.responses_websocket_transport import ResponsesWebSocketTransportMixin
+from src.runtime_cancellation import CancellationRequested, sleep_with_cancel
 from src.service_host import HostBoundService
 
 
-class OpenAITransport(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundService):
+class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin, OpenAICurlTransport, ProviderRuntimeEventMixin, HostBoundService):
     @staticmethod
     def _http_status_retryable(status_code):
         code = int(status_code or 0)
@@ -258,7 +253,7 @@ class OpenAITransport(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRunt
                 else [],
             }
 
-        for data_text in self._curl_post_sse_data_lines(
+        for data_text in self._responses_stream_data_lines(
             url=url,
             headers=headers,
             payload_json=payload_json,

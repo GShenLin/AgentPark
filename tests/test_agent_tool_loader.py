@@ -2,6 +2,7 @@ import pytest
 
 from nodes.agent_tool_loader import ConfiguredToolLoadError
 from nodes.agent_tool_loader import TOOL_NAME_LIST
+from nodes.agent_tool_loader import list_available_tool_options
 from nodes.agent_tool_loader import load_configured_tools
 from src.capabilities.discovery_cache import invalidate_discovery_cache
 from src.tool.tool_load_errors import ToolLoadError
@@ -27,6 +28,21 @@ def test_load_configured_tools_loads_unique_tools_in_order():
     load_configured_tools(agent, ["read_file", "READ_FILE", "rg_tools"])
 
     assert agent.loaded == ["read_file", "rg_tools"]
+
+
+def test_operational_memory_tool_is_configurable_function_tool():
+    from src.tool.base_tool import BaseTool
+
+    class Agent:
+        pass
+
+    options = {item["value"] for item in list_available_tool_options()}
+    assert "operational_memory_tools" in options
+
+    tools = BaseTool(Agent())
+    tools.addTool("operational_memory_tools")
+
+    assert "edit_operational_memory" in tools.function_map
 
 
 def test_load_configured_tools_aggregates_protocol_and_unexpected_errors():

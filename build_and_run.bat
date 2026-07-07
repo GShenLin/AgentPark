@@ -57,10 +57,6 @@ if /I "%~1"=="chat" (
     set "AGENTPARK_LAUNCH_MODE=cli_web"
     set "AGENTPARK_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
 )
-if /I "%~1"=="pet" (
-    set "AGENTPARK_LAUNCH_MODE=pet"
-    set "AGENTPARK_PET_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-)
 if /I "%~1"=="ask-here" (
     set "AGENTPARK_LAUNCH_MODE=ask_here"
     set "AGENTPARK_ASK_HERE_PATH=%~2"
@@ -120,6 +116,16 @@ echo [INFO] Installing/updating Python dependencies...
 set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install -e ."
 call :run_optional_dependency_update "Python dependency update"
 
+if exist "desktop\pet\package.json" (
+    echo [INFO] Installing/updating Desktop pet dependencies...
+    pushd desktop\pet
+    set "AGENTPARK_UPDATE_COMMAND=npm install"
+    call :run_optional_dependency_update "Desktop pet dependency update"
+    popd
+) else (
+    echo [WARN] Desktop pet package not found: desktop\pet\package.json
+)
+
 if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_web" (
     call :stop_existing_workspace_processes
     if errorlevel 1 (
@@ -131,26 +137,6 @@ if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_web" (
         call :maybe_pause
         exit /b %errorlevel%
     )
-)
-
-if /I "%AGENTPARK_LAUNCH_MODE%"=="pet" (
-    call :start_background_server
-    if errorlevel 1 (
-        call :maybe_pause
-        exit /b %errorlevel%
-    )
-)
-
-if /I "%AGENTPARK_LAUNCH_MODE%"=="pet" (
-    echo [INFO] Starting AgentPark desktop pet: npm start -- !AGENTPARK_PET_ARGS!
-    cd desktop\pet
-    set "AGENTPARK_UPDATE_COMMAND=npm install"
-    call :run_optional_dependency_update "Desktop pet dependency update"
-    call npm start -- !AGENTPARK_PET_ARGS!
-    set "AGENTPARK_PET_EXIT=!errorlevel!"
-    cd ..\..
-    call :maybe_pause
-    exit /b !AGENTPARK_PET_EXIT!
 )
 
 if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_web" (

@@ -179,32 +179,15 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 - `openai` 和 `zhipu` runtime 也兼容旧字段名 `reasoning_effort`，但 `moduleProvider.json` 应统一使用 `reasoningEffort`。
 - Krill 相关问题排查时，`reasoningEffort` 是重点字段之一，不要把它隐藏到默认值里。
 
-### `responsesContinuationMode`
+### Responses continuation
 
-OpenAI Responses 工具调用后，下一轮请求如何延续上下文。
-
-必填于 `responsesApi: true` Provider。
-
-合法取值只有：
-
-- `previous_response_id`: 下一轮请求发送 `previous_response_id`，并只提交本轮 function call 与 tool output。适合标准 Responses 后端持久保存 response item 的场景。
-- `explicit_context`: 下一轮请求不发送 `previous_response_id`，而是回放从用户输入到当前工具结果的完整显式上下文。适合兼容 Provider 对 `previous_response_id` 语义支持不完整，或会丢失用户任务上下文的场景。
-
-当前配置：
-
-- `openai`: `explicit_context`
-- `gpt55_NowCoding_BuyOther`: `explicit_context`
-- `krill_gpt55`: `explicit_context`
-
-注意：
-
-- 某些 OpenAI Responses 兼容服务的 HTTP `/responses` 接口会拒绝 `previous_response_id`，并返回 `previous_response_id is only supported on Responses WebSocket v2`。这类 Provider 应配置为 `explicit_context`。
+OpenAI Responses 工具调用后的逻辑上下文延续固定采用显式回放：每一轮都从本地消息、工具调用、工具结果与运行时上下文构造完整 input，再发送到 HTTP `/responses`。
 
 要求：
 
-- 必须写在 Provider 配置上。
-- 缺失会报错。
-- 不接受 `responses_continuation_mode`、`previous_response`、`response_id`、`explicit`、`full_context` 等别名或缩写。
+- Provider 配置中不再出现 `responsesContinuationMode`。
+- HTTP `/responses` 请求不使用 `previous_response_id` 作为上下文主机制。
+- `previous_response_id` 只允许作为 Responses WebSocket 传输层的内部增量优化：必须先构造完整逻辑请求，并在确认当前 input 是上一轮逻辑请求加服务端 output 的严格延续后，才可以在 WebSocket payload 中发送 delta。
 
 ### `responsesReplayReasoningItems`
 
@@ -315,7 +298,7 @@ Rules:
 
 不计入阈值的内部工具：
 
-- `record_operational_memory`
+- `edit_operational_memory`
 - `compact_tool_context`
 
 ## Claude Messages 字段

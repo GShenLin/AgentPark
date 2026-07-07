@@ -163,6 +163,10 @@ function deleteMcpServer() {
           <span>Review Persisted Node Runs</span>
           <input :checked="fieldBool('agentNode', 'reviewNodeRunsWithCompanion', false)" type="checkbox" @change="setNestedBoolean('agentNode', 'reviewNodeRunsWithCompanion', ($event.target as HTMLInputElement).checked)" />
         </label>
+        <label class="checkbox-label">
+          <span>Revise Tool Failure Memory</span>
+          <input :checked="fieldBool('agentNode', 'reviseToolFailureMemoryWithCompanion', false)" type="checkbox" @change="setNestedBoolean('agentNode', 'reviseToolFailureMemoryWithCompanion', ($event.target as HTMLInputElement).checked)" />
+        </label>
       </div>
     </section>
 

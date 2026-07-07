@@ -3,6 +3,7 @@ import json
 import os
 
 from src.provider_feature_matrix import build_provider_feature_matrix
+from src.doubao_reasoning_effort import normalize_doubao_reasoning_effort
 from src.value_parsing import parse_optional_int_value
 from .workspace_settings import get_workspace_root
 
@@ -96,6 +97,8 @@ class ConfigLoader:
         provider_type = str(provider.get("type") or "").strip().lower()
         if provider_type:
             provider["type"] = provider_type
+        if provider_type == "doubao":
+            self._normalize_doubao_reasoning_effort_fields(provider)
 
         provider["supportmode"] = self._normalize_support_modes(
             provider_name, provider.get("supportmode")
@@ -128,12 +131,21 @@ class ConfigLoader:
 
         return provider
 
+    def _normalize_doubao_reasoning_effort_fields(self, provider):
+        for key in ("reasoningEffort", "reasoning_effort"):
+            if key not in provider:
+                continue
+            effort = normalize_doubao_reasoning_effort(provider.get(key))
+            if effort:
+                provider[key] = effort
+            else:
+                provider[key] = provider.get(key)
+
     def _validate_responses_provider_config(self, provider_name, provider, provider_type):
         if provider.get("responsesApi") is not True:
             return
         required = (
             "toolResultSubmissionMaxChars",
-            "responsesContinuationMode",
             "toolContextCompactionEnabled",
             "toolContextCompactionEveryToolCalls",
         )
@@ -142,13 +154,6 @@ class ConfigLoader:
                 raise ValueError(
                     f"Provider '{provider_name}' has responsesApi=true but missing required field {key}."
                 )
-
-        continuation = str(provider.get("responsesContinuationMode") or "").strip()
-        if continuation not in {"previous_response_id", "explicit_context"}:
-            raise ValueError(
-                f"Provider '{provider_name}' has invalid responsesContinuationMode; "
-                "expected 'previous_response_id' or 'explicit_context'."
-            )
 
         if not isinstance(provider.get("toolContextCompactionEnabled"), bool):
             raise ValueError(

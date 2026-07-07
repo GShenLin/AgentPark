@@ -81,10 +81,8 @@ def sanitize_responses_payload(value: Any) -> Any:
 def _summary_for_payload_log(summary: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "request_index",
-        "continuation_mode",
         "responses_mode",
         "requested_responses_mode",
-        "previous_response_id_present",
         "instructions_present",
         "instructions_chars",
         "tool_choice",

@@ -68,7 +68,90 @@ def test_doubao_send_uses_responses_api_for_plain_chat_when_enabled():
     assert payload["input"][-1]["content"][0]["text"] == "plain chat"
 
 
-def test_doubao_responses_rejects_non_ark_reasoning_effort_before_request():
+def test_doubao_responses_downgrades_xhigh_reasoning_effort_before_request():
+    from src.tool.base_tool import BaseTool
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test-key",
+        "baseUrl": "https://example.com/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "doubao"
+    agent.system_prompt = None
+    agent.messages = [{"role": "user", "content": "plain chat"}]
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.tool_declarations = []
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {
+            "id": "resp-plain",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}],
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent.Send(run_tools=False, web_search="disabled", reasoning_effort="xhigh", stream=False) == "ok"
+    assert payloads[0]["reasoning"] == {"effort": "high"}
+
+
+def test_doubao_send_uses_config_reasoning_effort_when_node_value_empty():
+    from src.tool.base_tool import BaseTool
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {
+        "apiKey": "test-key",
+        "baseUrl": "https://example.com/v1",
+        "model": "doubao-test",
+        "responsesApi": True,
+        "responsesContinuationMode": "explicit_context",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+        "reasoningEffort": "xhigh",
+    }
+    agent.provider_name = "doubao"
+    agent.system_prompt = None
+    agent.messages = [{"role": "user", "content": "plain chat"}]
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.tool_declarations = []
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {
+            "id": "resp-plain",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}],
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent.Send(run_tools=False, web_search="disabled", reasoning_effort="", stream=False) == "ok"
+    assert payloads[0]["reasoning"] == {"effort": "high"}
+
+
+def test_doubao_responses_rejects_unknown_reasoning_effort_before_request():
     import pytest
 
     from src.tool.base_tool import BaseTool
@@ -99,7 +182,7 @@ def test_doubao_responses_rejects_non_ark_reasoning_effort_before_request():
     agent._stream_responses_with_retry = agent._post_json_with_retry
 
     with pytest.raises(ValueError, match="reasoning_effort"):
-        agent.Send(run_tools=False, web_search="disabled", reasoning_effort="xhigh", stream=False)
+        agent.Send(run_tools=False, web_search="disabled", reasoning_effort="max", stream=False)
 
 
 def test_doubao_responses_accepts_base_url_that_already_ends_with_responses():

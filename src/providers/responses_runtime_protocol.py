@@ -18,14 +18,6 @@ class ResponsesStreamText:
             self.text = str(full_text or "")
         return self.text
 
-
-def is_previous_response_missing_error(error: Any) -> bool:
-    text = str(error or "")
-    return "PreviousResponseNotFound" in text or (
-        "previous_response_id" in text and "not found" in text
-    )
-
-
 @dataclass(frozen=True)
 class ResponsesRuntimeModeDecision:
     requested_mode: str

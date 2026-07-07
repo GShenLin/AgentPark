@@ -1,0 +1,364 @@
+{
+  "id": "TestAllProvider",
+  "name": "TestAllProvider",
+  "source_graph_id": "TestAllProvider",
+  "graph": {
+    "id": "TestAllProvider",
+    "name": "TestAllProvider",
+    "working_path": "",
+    "output_routes": {
+      "BasicTrigger": [
+        {
+          "output_index": 0,
+          "targets": [
+            {
+              "node_id": "Claude",
+              "input_index": 0
+            },
+            {
+              "node_id": "GPT",
+              "input_index": 0
+            },
+            {
+              "node_id": "Doubao",
+              "input_index": 0
+            },
+            {
+              "node_id": "DeepSeek",
+              "input_index": 0
+            },
+            {
+              "node_id": "GLM",
+              "input_index": 0
+            },
+            {
+              "node_id": "MiniMax",
+              "input_index": 0
+            },
+            {
+              "node_id": "Kimi",
+              "input_index": 0
+            }
+          ]
+        }
+      ]
+    },
+    "version": 1783402042894967000,
+    "nodes": [
+      {
+        "id": "BasicTrigger",
+        "typeId": "basic_trigger_node",
+        "name": "BasicTrigger",
+        "ui": {
+          "x": 136,
+          "y": 0
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Claude",
+        "typeId": "agent_node",
+        "name": "Claude",
+        "ui": {
+          "x": 846,
+          "y": 342
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "DeepSeek",
+        "typeId": "agent_node",
+        "name": "DeepSeek",
+        "ui": {
+          "x": 1161,
+          "y": 345
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Doubao",
+        "typeId": "agent_node",
+        "name": "Doubao",
+        "ui": {
+          "x": 516,
+          "y": 354
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "GLM",
+        "typeId": "agent_node",
+        "name": "GLM",
+        "ui": {
+          "x": 714,
+          "y": 39
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "GPT",
+        "typeId": "agent_node",
+        "name": "GPT",
+        "ui": {
+          "x": 436,
+          "y": 44
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Kimi",
+        "typeId": "agent_node",
+        "name": "Kimi",
+        "ui": {
+          "x": 1268,
+          "y": 40
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "MiniMax",
+        "typeId": "agent_node",
+        "name": "MiniMax",
+        "ui": {
+          "x": 1004,
+          "y": 42
+        },
+        "input_num": 1,
+        "output_num": 1
+      }
+    ]
+  },
+  "node_configs": [
+    {
+      "node_id": "BasicTrigger",
+      "graph_id": "TestAllProvider",
+      "type_id": "basic_trigger_node",
+      "name": "BasicTrigger",
+      "fields": {
+        "plugins": [],
+        "skills": [],
+        "working_path": "",
+        "OutputText": "浏览项目现状 查看源码梳理架构"
+      },
+      "ui": {
+        "x": 136,
+        "y": 0
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Claude",
+      "graph_id": "TestAllProvider",
+      "type_id": "agent_node",
+      "name": "Claude",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "sonnet-5-krill",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "system_prompt_append": "\nAssetToJson MCP usage rules:\n- CRITICAL: For `asset_to_json_modify_asset` actor/object mutations, never test or retry a string-valued `target`. `target` must be a JSON object. If you are about to write `\"target\":\"...\"`, stop and use `\"target\":{\"actor\":{...}}` instead.\n- CRITICAL: The confirmed successful mutation shape is `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`. Reuse this shape for actor operations unless the tool schema explicitly documents a different operation.\n- For `asset_to_json_modify_asset` object/actor operations, do not pass `target.actor` as a bare string such as `\"BP_SavePoint_C_0\"`.\n- Source-confirmed rule: the plugin code reads `target.actor` with `TryGetObjectField(\"actor\")`. Therefore `target.actor` must be a JSON object. A raw string, a top-level `actor` field, `targetSelection`, or a string-valued `target` will not satisfy this schema.\n- Confirmed successful PIE world mutation format: `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}` or the same nested actor selector with `path`/`label` when those uniquely identify the actor.\n- `target` itself must be a JSON object containing an `actor` field. Do not pass `target` as a string object path, actor name, actor label, or full PIE path.\n- Do not try moving `actor` to the top level of the operation. Top-level `actor` is invalid for object/actor operations; keep the selector under `target.actor`.\n- Valid selector shape: `\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}}`, `\"target\":{\"actor\":{\"label\":\"BP_SavePoint\"}}`, `\"target\":{\"actor\":{\"path\":\"/Game/Level/UEDPIE_0_TestLevel_Player.TestLevel_Player:PersistentLevel.BP_SavePoint_C_0\"}}`, or `\"target\":{\"actor\":{\"class\":\"/Game/..._C\"}}` when it matches exactly one actor.\n- In `worldContext: \"play\"` / PIE, first call `listActors` and then copy the returned actor `name`, `label`, or full `path` into `target.actor` as an object. Prefer exact `path` when available.\n- For PIE mutations, the selector path must copy the full returned path exactly, including the `UEDPIE_0_` package and `:PersistentLevel` segment. Do not shorten it to `BP_SavePoint_C_0`, and do not put the full path directly in `target.actor` as a string.\n- Keep operation arguments at the operation level unless the tool schema says otherwise. For example, use `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`, not `{\"target\":{\"actor\":\"...\",\"offset\":...}}`.\n- For `setActorTransform`, use `{\"op\":\"setActorTransform\",\"target\":{\"actor\":{\"path\":\"...\"}},\"transform\":{\"location\":{\"x\":900,\"y\":-990,\"z\":1020},\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}}`.\n- If a selector returns `matched 0 actors`, immediately relist actors in the same `worldContext` and copy an exact `name`, `label`, or full `path` from that result before retrying. Do not keep guessing selector shapes.\n- Before any editor-world level/actor operation, call `asset_to_json_get_editor_context` and use the returned `editorWorld.assetObjectPath` or `sourceAssetObjectPath`. Do not guess old/default map paths such as `/Game/Maps/GameStartMap.GameStartMap` when the current editor context reports a different map.\n- CRITICAL: For world-level operations such as `listActors`, pass `assetObjectPath` as `editorWorld.assetObjectPath` or `sourceAssetObjectPath` exactly, without `:PersistentLevel`. Do not pass `editorWorld.currentLevelPath` or `persistentLevelPath` by themselves; those are ULevel objects and AssetToJson rejects them. A `:PersistentLevel` path is valid only when it includes an actor instance segment such as `Map.Map:PersistentLevel.ActorName`.\n- If `modify_asset` fails with `Failed to load asset ...`, refresh editor context and retry using the current `editorWorld.assetObjectPath` (or the tool's projectContentID/current-editor workflow if available). Treat a single failed load as an asset-path/context mismatch until proven otherwise; do not record it as a durable project issue.\n- When listing actors in a large map, request the smallest useful limit/filter and summarize the returned sample. Avoid broad large `listActors` calls unless the user explicitly asks for exhaustive output.\n- Do not persist speculative operational memory from a failed schema or asset-path experiment unless the follow-up call confirms the rule. If recording operational memory, include the required `reason` argument.\n\nXYJ Unreal workspace search rules (working_path D:\\Project\\Dev_Intergration\\XYJ):\n- This is a large UE5 project (~42k files, ~39k .uasset). Broad `rg_search_text`/`rg_list_files` calls with no `include_globs` (or regex with many `|` alternatives) over the whole workspace can hit the 5s tool timeout, especially when scanning `Plugins/Makeetplace`, `Plugins/NVIDIA`, `Content`, `Intermediate`, `Saved`, or `DerivedDataCache`.\n- Default code layout: gameplay C++ lives primarily under `Plugins/Cancer/Source/` (CancerAbility, CancerActionCreator, CancerGame, CancerInput, ...) and a small `Source/XYJ/` folder. Start code searches by scoping `include_globs` to `Plugins/Cancer/Source/**/*.h`, `Plugins/Cancer/Source/**/*.cpp`, plus `Source/XYJ/**/*.h`, `Source/XYJ/**/*.cpp`, and `Config/**/*.ini`. Exclude `Binaries/**`, `Intermediate/**`, `Saved/**`, `DerivedDataCache/**`, `.git/**`, and Marketplace/NVIDIA plugin trees unless you specifically need them.\n- For asset discovery, prefer targeted paths (e.g. `Content/ActionData/**`, `Content/Blueprints/**`) rather than the whole `Content/` tree. When looking for a specific named asset (like `DA_Action_YangJian`), narrow to the expected subfolder first; the project already has `Content/ActionData/` as a known container.\n- Regex queries with many `|` alternations over broad globs are the most likely to time out. Prefer fixed-string queries (`fixed_strings: true`) or narrow alternations over scoped paths, and run multiple narrow searches in parallel rather than one mega-query.\n- `Saved/Logs/*.log` files often contain definitive runtime evidence (loaded asset paths, tag names, montage resolutions); they are text and search very fast under a `Saved/Logs/**` glob.\n- The project primary asset type `ActionData` is registered in `Config/DefaultGame.ini` (`+StartupPrimaryAssetTypes=ActionData`); DataAssets live under `Content/ActionData/` and are loaded through the `CancerActionCreator` / `UAction_DataAsset` pipeline described in `Plugins/Cancer/Docs/CancerActionCreator.md`.\n\nPerforce (XYJ workspace at D:\\Project\\Dev_Intergration\\XYJ) editing rules:\n- This workspace uses Perforce; most tracked files are read-only on disk until opened for edit.\n- BEFORE using `apply_patch` or `write_file` on any existing file in this workspace, first run `attrib <file>` to check the R (read-only) attribute, or simply run `p4 -c <correct_client> edit <file>` proactively. The local P4 client for paths under D:\\Project\\Dev_Intergration is `GShenLin_Dev_Integration` (root D:\\Project\\Dev_Intergration).\n- If `apply_patch` fails with PermissionError / WinError 5 / \"拒绝访问\" while renaming the temp file onto the target, that almost always means the target is read-only. Run `p4 -c GShenLin_Dev_Integration edit <file>` (or `attrib -R <file>` for non-P4 files) and retry; do not retry the same patch without fixing the read-only bit.\n- After editing, the file stays open in the default changelist until you (or the user) submit/revert. Do not submit or revert unless explicitly asked.\n\nRemote packaging / SSH notes for this workspace:\n- Remote build host is 192.168.34.24 (CDQN-GAME), SSH user `gameuser` (domain qn\\gameuser). Non-interactive SSH sessions to this host may not have usable credentials for SMB shares like \\\\nas\\projects; drive letters (Z:, etc.) may show Unavailable and UNC access can return \"用户名或密码不正确\" (bad username/password).\n- If a packaging script copies output to a NAS UNC path and fails with credential errors over SSH, treat that as a remote-session credential/mapping problem first. Verify share access separately before modifying the copy logic.\n- `RunRemotePackageUE_Integrative.bat` invokes the remote `C:\\Project\\Gameuser_Integrative\\XYJ\\Scripts\\PackageUE.bat` via SSH with P4 env vars set but does NOT run `p4 sync` on the remote. Local edits to PackageUE.bat won't affect remote runs until the remote `Gameuser_Integrative` workspace is synced (and `Gameuser_Integrative` can only be used from host CDQN-GAME).\n",
+        "plugins": [],
+        "collaboration_mode": "default"
+      },
+      "ui": {
+        "x": 846,
+        "y": 342
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "DeepSeek",
+      "graph_id": "TestAllProvider",
+      "type_id": "agent_node",
+      "name": "DeepSeek",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "deepseek_v4_pro",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "system_prompt_append": "\nAssetToJson MCP usage rules:\n- CRITICAL: For `asset_to_json_modify_asset` actor/object mutations, never test or retry a string-valued `target`. `target` must be a JSON object. If you are about to write `\"target\":\"...\"`, stop and use `\"target\":{\"actor\":{...}}` instead.\n- CRITICAL: The confirmed successful mutation shape is `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`. Reuse this shape for actor operations unless the tool schema explicitly documents a different operation.\n- For `asset_to_json_modify_asset` object/actor operations, do not pass `target.actor` as a bare string such as `\"BP_SavePoint_C_0\"`.\n- Source-confirmed rule: the plugin code reads `target.actor` with `TryGetObjectField(\"actor\")`. Therefore `target.actor` must be a JSON object. A raw string, a top-level `actor` field, `targetSelection`, or a string-valued `target` will not satisfy this schema.\n- Confirmed successful PIE world mutation format: `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}` or the same nested actor selector with `path`/`label` when those uniquely identify the actor.\n- `target` itself must be a JSON object containing an `actor` field. Do not pass `target` as a string object path, actor name, actor label, or full PIE path.\n- Do not try moving `actor` to the top level of the operation. Top-level `actor` is invalid for object/actor operations; keep the selector under `target.actor`.\n- Valid selector shape: `\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}}`, `\"target\":{\"actor\":{\"label\":\"BP_SavePoint\"}}`, `\"target\":{\"actor\":{\"path\":\"/Game/Level/UEDPIE_0_TestLevel_Player.TestLevel_Player:PersistentLevel.BP_SavePoint_C_0\"}}`, or `\"target\":{\"actor\":{\"class\":\"/Game/..._C\"}}` when it matches exactly one actor.\n- In `worldContext: \"play\"` / PIE, first call `listActors` and then copy the returned actor `name`, `label`, or full `path` into `target.actor` as an object. Prefer exact `path` when available.\n- For PIE mutations, the selector path must copy the full returned path exactly, including the `UEDPIE_0_` package and `:PersistentLevel` segment. Do not shorten it to `BP_SavePoint_C_0`, and do not put the full path directly in `target.actor` as a string.\n- Keep operation arguments at the operation level unless the tool schema says otherwise. For example, use `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`, not `{\"target\":{\"actor\":\"...\",\"offset\":...}}`.\n- For `setActorTransform`, use `{\"op\":\"setActorTransform\",\"target\":{\"actor\":{\"path\":\"...\"}},\"transform\":{\"location\":{\"x\":900,\"y\":-990,\"z\":1020},\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}}`.\n- If a selector returns `matched 0 actors`, immediately relist actors in the same `worldContext` and copy an exact `name`, `label`, or full `path` from that result before retrying. Do not keep guessing selector shapes.\n- Before any editor-world level/actor operation, call `asset_to_json_get_editor_context` and use the returned `editorWorld.assetObjectPath` or `sourceAssetObjectPath`. Do not guess old/default map paths such as `/Game/Maps/GameStartMap.GameStartMap` when the current editor context reports a different map.\n- CRITICAL: For world-level operations such as `listActors`, pass `assetObjectPath` as `editorWorld.assetObjectPath` or `sourceAssetObjectPath` exactly, without `:PersistentLevel`. Do not pass `editorWorld.currentLevelPath` or `persistentLevelPath` by themselves; those are ULevel objects and AssetToJson rejects them. A `:PersistentLevel` path is valid only when it includes an actor instance segment such as `Map.Map:PersistentLevel.ActorName`.\n- If `modify_asset` fails with `Failed to load asset ...`, refresh editor context and retry using the current `editorWorld.assetObjectPath` (or the tool's projectContentID/current-editor workflow if available). Treat a single failed load as an asset-path/context mismatch until proven otherwise; do not record it as a durable project issue.\n- When listing actors in a large map, request the smallest useful limit/filter and summarize the returned sample. Avoid broad large `listActors` calls unless the user explicitly asks for exhaustive output.\n- Do not persist speculative operational memory from a failed schema or asset-path experiment unless the follow-up call confirms the rule. If recording operational memory, include the required `reason` argument.\n\nXYJ Unreal workspace search rules (working_path D:\\Project\\Dev_Intergration\\XYJ):\n- This is a large UE5 project (~42k files, ~39k .uasset). Broad `rg_search_text`/`rg_list_files` calls with no `include_globs` (or regex with many `|` alternatives) over the whole workspace can hit the 5s tool timeout, especially when scanning `Plugins/Makeetplace`, `Plugins/NVIDIA`, `Content`, `Intermediate`, `Saved`, or `DerivedDataCache`.\n- Default code layout: gameplay C++ lives primarily under `Plugins/Cancer/Source/` (CancerAbility, CancerActionCreator, CancerGame, CancerInput, ...) and a small `Source/XYJ/` folder. Start code searches by scoping `include_globs` to `Plugins/Cancer/Source/**/*.h`, `Plugins/Cancer/Source/**/*.cpp`, plus `Source/XYJ/**/*.h`, `Source/XYJ/**/*.cpp`, and `Config/**/*.ini`. Exclude `Binaries/**`, `Intermediate/**`, `Saved/**`, `DerivedDataCache/**`, `.git/**`, and Marketplace/NVIDIA plugin trees unless you specifically need them.\n- For asset discovery, prefer targeted paths (e.g. `Content/ActionData/**`, `Content/Blueprints/**`) rather than the whole `Content/` tree. When looking for a specific named asset (like `DA_Action_YangJian`), narrow to the expected subfolder first; the project already has `Content/ActionData/` as a known container.\n- Regex queries with many `|` alternations over broad globs are the most likely to time out. Prefer fixed-string queries (`fixed_strings: true`) or narrow alternations over scoped paths, and run multiple narrow searches in parallel rather than one mega-query.\n- `Saved/Logs/*.log` files often contain definitive runtime evidence (loaded asset paths, tag names, montage resolutions); they are text and search very fast under a `Saved/Logs/**` glob.\n- The project primary asset type `ActionData` is registered in `Config/DefaultGame.ini` (`+StartupPrimaryAssetTypes=ActionData`); DataAssets live under `Content/ActionData/` and are loaded through the `CancerActionCreator` / `UAction_DataAsset` pipeline described in `Plugins/Cancer/Docs/CancerActionCreator.md`.\n\nPerforce (XYJ workspace at D:\\Project\\Dev_Intergration\\XYJ) editing rules:\n- This workspace uses Perforce; most tracked files are read-only on disk until opened for edit.\n- BEFORE using `apply_patch` or `write_file` on any existing file in this workspace, first run `attrib <file>` to check the R (read-only) attribute, or simply run `p4 -c <correct_client> edit <file>` proactively. The local P4 client for paths under D:\\Project\\Dev_Intergration is `GShenLin_Dev_Integration` (root D:\\Project\\Dev_Intergration).\n- If `apply_patch` fails with PermissionError / WinError 5 / \"拒绝访问\" while renaming the temp file onto the target, that almost always means the target is read-only. Run `p4 -c GShenLin_Dev_Integration edit <file>` (or `attrib -R <file>` for non-P4 files) and retry; do not retry the same patch without fixing the read-only bit.\n- After editing, the file stays open in the default changelist until you (or the user) submit/revert. Do not submit or revert unless explicitly asked.\n\nRemote packaging / SSH notes for this workspace:\n- Remote build host is 192.168.34.24 (CDQN-GAME), SSH user `gameuser` (domain qn\\gameuser). Non-interactive SSH sessions to this host may not have usable credentials for SMB shares like \\\\nas\\projects; drive letters (Z:, etc.) may show Unavailable and UNC access can return \"用户名或密码不正确\" (bad username/password).\n- If a packaging script copies output to a NAS UNC path and fails with credential errors over SSH, treat that as a remote-session credential/mapping problem first. Verify share access separately before modifying the copy logic.\n- `RunRemotePackageUE_Integrative.bat` invokes the remote `C:\\Project\\Gameuser_Integrative\\XYJ\\Scripts\\PackageUE.bat` via SSH with P4 env vars set but does NOT run `p4 sync` on the remote. Local edits to PackageUE.bat won't affect remote runs until the remote `Gameuser_Integrative` workspace is synced (and `Gameuser_Integrative` can only be used from host CDQN-GAME).\n",
+        "plugins": [],
+        "collaboration_mode": "default"
+      },
+      "ui": {
+        "x": 1161,
+        "y": 345
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Doubao",
+      "graph_id": "TestAllProvider",
+      "type_id": "agent_node",
+      "name": "Doubao",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "doubao-seed-evolving",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "system_prompt_append": "\nAssetToJson MCP usage rules:\n- CRITICAL: For `asset_to_json_modify_asset` actor/object mutations, never test or retry a string-valued `target`. `target` must be a JSON object. If you are about to write `\"target\":\"...\"`, stop and use `\"target\":{\"actor\":{...}}` instead.\n- CRITICAL: The confirmed successful mutation shape is `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`. Reuse this shape for actor operations unless the tool schema explicitly documents a different operation.\n- For `asset_to_json_modify_asset` object/actor operations, do not pass `target.actor` as a bare string such as `\"BP_SavePoint_C_0\"`.\n- Source-confirmed rule: the plugin code reads `target.actor` with `TryGetObjectField(\"actor\")`. Therefore `target.actor` must be a JSON object. A raw string, a top-level `actor` field, `targetSelection`, or a string-valued `target` will not satisfy this schema.\n- Confirmed successful PIE world mutation format: `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}` or the same nested actor selector with `path`/`label` when those uniquely identify the actor.\n- `target` itself must be a JSON object containing an `actor` field. Do not pass `target` as a string object path, actor name, actor label, or full PIE path.\n- Do not try moving `actor` to the top level of the operation. Top-level `actor` is invalid for object/actor operations; keep the selector under `target.actor`.\n- Valid selector shape: `\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}}`, `\"target\":{\"actor\":{\"label\":\"BP_SavePoint\"}}`, `\"target\":{\"actor\":{\"path\":\"/Game/Level/UEDPIE_0_TestLevel_Player.TestLevel_Player:PersistentLevel.BP_SavePoint_C_0\"}}`, or `\"target\":{\"actor\":{\"class\":\"/Game/..._C\"}}` when it matches exactly one actor.\n- In `worldContext: \"play\"` / PIE, first call `listActors` and then copy the returned actor `name`, `label`, or full `path` into `target.actor` as an object. Prefer exact `path` when available.\n- For PIE mutations, the selector path must copy the full returned path exactly, including the `UEDPIE_0_` package and `:PersistentLevel` segment. Do not shorten it to `BP_SavePoint_C_0`, and do not put the full path directly in `target.actor` as a string.\n- Keep operation arguments at the operation level unless the tool schema says otherwise. For example, use `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`, not `{\"target\":{\"actor\":\"...\",\"offset\":...}}`.\n- For `setActorTransform`, use `{\"op\":\"setActorTransform\",\"target\":{\"actor\":{\"path\":\"...\"}},\"transform\":{\"location\":{\"x\":900,\"y\":-990,\"z\":1020},\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}}`.\n- If a selector returns `matched 0 actors`, immediately relist actors in the same `worldContext` and copy an exact `name`, `label`, or full `path` from that result before retrying. Do not keep guessing selector shapes.\n- Before any editor-world level/actor operation, call `asset_to_json_get_editor_context` and use the returned `editorWorld.assetObjectPath` or `sourceAssetObjectPath`. Do not guess old/default map paths such as `/Game/Maps/GameStartMap.GameStartMap` when the current editor context reports a different map.\n- CRITICAL: For world-level operations such as `listActors`, pass `assetObjectPath` as `editorWorld.assetObjectPath` or `sourceAssetObjectPath` exactly, without `:PersistentLevel`. Do not pass `editorWorld.currentLevelPath` or `persistentLevelPath` by themselves; those are ULevel objects and AssetToJson rejects them. A `:PersistentLevel` path is valid only when it includes an actor instance segment such as `Map.Map:PersistentLevel.ActorName`.\n- If `modify_asset` fails with `Failed to load asset ...`, refresh editor context and retry using the current `editorWorld.assetObjectPath` (or the tool's projectContentID/current-editor workflow if available). Treat a single failed load as an asset-path/context mismatch until proven otherwise; do not record it as a durable project issue.\n- When listing actors in a large map, request the smallest useful limit/filter and summarize the returned sample. Avoid broad large `listActors` calls unless the user explicitly asks for exhaustive output.\n- Do not persist speculative operational memory from a failed schema or asset-path experiment unless the follow-up call confirms the rule. If recording operational memory, include the required `reason` argument.\n\nXYJ Unreal workspace search rules (working_path D:\\Project\\Dev_Intergration\\XYJ):\n- This is a large UE5 project (~42k files, ~39k .uasset). Broad `rg_search_text`/`rg_list_files` calls with no `include_globs` (or regex with many `|` alternatives) over the whole workspace can hit the 5s tool timeout, especially when scanning `Plugins/Makeetplace`, `Plugins/NVIDIA`, `Content`, `Intermediate`, `Saved`, or `DerivedDataCache`.\n- Default code layout: gameplay C++ lives primarily under `Plugins/Cancer/Source/` (CancerAbility, CancerActionCreator, CancerGame, CancerInput, ...) and a small `Source/XYJ/` folder. Start code searches by scoping `include_globs` to `Plugins/Cancer/Source/**/*.h`, `Plugins/Cancer/Source/**/*.cpp`, plus `Source/XYJ/**/*.h`, `Source/XYJ/**/*.cpp`, and `Config/**/*.ini`. Exclude `Binaries/**`, `Intermediate/**`, `Saved/**`, `DerivedDataCache/**`, `.git/**`, and Marketplace/NVIDIA plugin trees unless you specifically need them.\n- For asset discovery, prefer targeted paths (e.g. `Content/ActionData/**`, `Content/Blueprints/**`) rather than the whole `Content/` tree. When looking for a specific named asset (like `DA_Action_YangJian`), narrow to the expected subfolder first; the project already has `Content/ActionData/` as a known container.\n- Regex queries with many `|` alternations over broad globs are the most likely to time out. Prefer fixed-string queries (`fixed_strings: true`) or narrow alternations over scoped paths, and run multiple narrow searches in parallel rather than one mega-query.\n- `Saved/Logs/*.log` files often contain definitive runtime evidence (loaded asset paths, tag names, montage resolutions); they are text and search very fast under a `Saved/Logs/**` glob.\n- The project primary asset type `ActionData` is registered in `Config/DefaultGame.ini` (`+StartupPrimaryAssetTypes=ActionData`); DataAssets live under `Content/ActionData/` and are loaded through the `CancerActionCreator` / `UAction_DataAsset` pipeline described in `Plugins/Cancer/Docs/CancerActionCreator.md`.\n\nPerforce (XYJ workspace at D:\\Project\\Dev_Intergration\\XYJ) editing rules:\n- This workspace uses Perforce; most tracked files are read-only on disk until opened for edit.\n- BEFORE using `apply_patch` or `write_file` on any existing file in this workspace, first run `attrib <file>` to check the R (read-only) attribute, or simply run `p4 -c <correct_client> edit <file>` proactively. The local P4 client for paths under D:\\Project\\Dev_Intergration is `GShenLin_Dev_Integration` (root D:\\Project\\Dev_Intergration).\n- If `apply_patch` fails with PermissionError / WinError 5 / \"拒绝访问\" while renaming the temp file onto the target, that almost always means the target is read-only. Run `p4 -c GShenLin_Dev_Integration edit <file>` (or `attrib -R <file>` for non-P4 files) and retry; do not retry the same patch without fixing the read-only bit.\n- After editing, the file stays open in the default changelist until you (or the user) submit/revert. Do not submit or revert unless explicitly asked.\n\nRemote packaging / SSH notes for this workspace:\n- Remote build host is 192.168.34.24 (CDQN-GAME), SSH user `gameuser` (domain qn\\gameuser). Non-interactive SSH sessions to this host may not have usable credentials for SMB shares like \\\\nas\\projects; drive letters (Z:, etc.) may show Unavailable and UNC access can return \"用户名或密码不正确\" (bad username/password).\n- If a packaging script copies output to a NAS UNC path and fails with credential errors over SSH, treat that as a remote-session credential/mapping problem first. Verify share access separately before modifying the copy logic.\n- `RunRemotePackageUE_Integrative.bat` invokes the remote `C:\\Project\\Gameuser_Integrative\\XYJ\\Scripts\\PackageUE.bat` via SSH with P4 env vars set but does NOT run `p4 sync` on the remote. Local edits to PackageUE.bat won't affect remote runs until the remote `Gameuser_Integrative` workspace is synced (and `Gameuser_Integrative` can only be used from host CDQN-GAME).\n",
+        "plugins": []
+      },
+      "ui": {
+        "x": 516,
+        "y": 354
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "GLM",
+      "graph_id": "TestAllProvider",
+      "type_id": "agent_node",
+      "name": "GLM",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "GLM_CodingPlan",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "system_prompt_append": "\nAssetToJson MCP usage rules:\n- CRITICAL: For `asset_to_json_modify_asset` actor/object mutations, never test or retry a string-valued `target`. `target` must be a JSON object. If you are about to write `\"target\":\"...\"`, stop and use `\"target\":{\"actor\":{...}}` instead.\n- CRITICAL: The confirmed successful mutation shape is `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`. Reuse this shape for actor operations unless the tool schema explicitly documents a different operation.\n- For `asset_to_json_modify_asset` object/actor operations, do not pass `target.actor` as a bare string such as `\"BP_SavePoint_C_0\"`.\n- Source-confirmed rule: the plugin code reads `target.actor` with `TryGetObjectField(\"actor\")`. Therefore `target.actor` must be a JSON object. A raw string, a top-level `actor` field, `targetSelection`, or a string-valued `target` will not satisfy this schema.\n- Confirmed successful PIE world mutation format: `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}` or the same nested actor selector with `path`/`label` when those uniquely identify the actor.\n- `target` itself must be a JSON object containing an `actor` field. Do not pass `target` as a string object path, actor name, actor label, or full PIE path.\n- Do not try moving `actor` to the top level of the operation. Top-level `actor` is invalid for object/actor operations; keep the selector under `target.actor`.\n- Valid selector shape: `\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}}`, `\"target\":{\"actor\":{\"label\":\"BP_SavePoint\"}}`, `\"target\":{\"actor\":{\"path\":\"/Game/Level/UEDPIE_0_TestLevel_Player.TestLevel_Player:PersistentLevel.BP_SavePoint_C_0\"}}`, or `\"target\":{\"actor\":{\"class\":\"/Game/..._C\"}}` when it matches exactly one actor.\n- In `worldContext: \"play\"` / PIE, first call `listActors` and then copy the returned actor `name`, `label`, or full `path` into `target.actor` as an object. Prefer exact `path` when available.\n- For PIE mutations, the selector path must copy the full returned path exactly, including the `UEDPIE_0_` package and `:PersistentLevel` segment. Do not shorten it to `BP_SavePoint_C_0`, and do not put the full path directly in `target.actor` as a string.\n- Keep operation arguments at the operation level unless the tool schema says otherwise. For example, use `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`, not `{\"target\":{\"actor\":\"...\",\"offset\":...}}`.\n- For `setActorTransform`, use `{\"op\":\"setActorTransform\",\"target\":{\"actor\":{\"path\":\"...\"}},\"transform\":{\"location\":{\"x\":900,\"y\":-990,\"z\":1020},\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}}`.\n- If a selector returns `matched 0 actors`, immediately relist actors in the same `worldContext` and copy an exact `name`, `label`, or full `path` from that result before retrying. Do not keep guessing selector shapes.\n- Before any editor-world level/actor operation, call `asset_to_json_get_editor_context` and use the returned `editorWorld.assetObjectPath` or `sourceAssetObjectPath`. Do not guess old/default map paths such as `/Game/Maps/GameStartMap.GameStartMap` when the current editor context reports a different map.\n- CRITICAL: For world-level operations such as `listActors`, pass `assetObjectPath` as `editorWorld.assetObjectPath` or `sourceAssetObjectPath` exactly, without `:PersistentLevel`. Do not pass `editorWorld.currentLevelPath` or `persistentLevelPath` by themselves; those are ULevel objects and AssetToJson rejects them. A `:PersistentLevel` path is valid only when it includes an actor instance segment such as `Map.Map:PersistentLevel.ActorName`.\n- If `modify_asset` fails with `Failed to load asset ...`, refresh editor context and retry using the current `editorWorld.assetObjectPath` (or the tool's projectContentID/current-editor workflow if available). Treat a single failed load as an asset-path/context mismatch until proven otherwise; do not record it as a durable project issue.\n- When listing actors in a large map, request the smallest useful limit/filter and summarize the returned sample. Avoid broad large `listActors` calls unless the user explicitly asks for exhaustive output.\n- Do not persist speculative operational memory from a failed schema or asset-path experiment unless the follow-up call confirms the rule. If recording operational memory, include the required `reason` argument.\n\nXYJ Unreal workspace search rules (working_path D:\\Project\\Dev_Intergration\\XYJ):\n- This is a large UE5 project (~42k files, ~39k .uasset). Broad `rg_search_text`/`rg_list_files` calls with no `include_globs` (or regex with many `|` alternatives) over the whole workspace can hit the 5s tool timeout, especially when scanning `Plugins/Makeetplace`, `Plugins/NVIDIA`, `Content`, `Intermediate`, `Saved`, or `DerivedDataCache`.\n- Default code layout: gameplay C++ lives primarily under `Plugins/Cancer/Source/` (CancerAbility, CancerActionCreator, CancerGame, CancerInput, ...) and a small `Source/XYJ/` folder. Start code searches by scoping `include_globs` to `Plugins/Cancer/Source/**/*.h`, `Plugins/Cancer/Source/**/*.cpp`, plus `Source/XYJ/**/*.h`, `Source/XYJ/**/*.cpp`, and `Config/**/*.ini`. Exclude `Binaries/**`, `Intermediate/**`, `Saved/**`, `DerivedDataCache/**`, `.git/**`, and Marketplace/NVIDIA plugin trees unless you specifically need them.\n- For asset discovery, prefer targeted paths (e.g. `Content/ActionData/**`, `Content/Blueprints/**`) rather than the whole `Content/` tree. When looking for a specific named asset (like `DA_Action_YangJian`), narrow to the expected subfolder first; the project already has `Content/ActionData/` as a known container.\n- Regex queries with many `|` alternations over broad globs are the most likely to time out. Prefer fixed-string queries (`fixed_strings: true`) or narrow alternations over scoped paths, and run multiple narrow searches in parallel rather than one mega-query.\n- `Saved/Logs/*.log` files often contain definitive runtime evidence (loaded asset paths, tag names, montage resolutions); they are text and search very fast under a `Saved/Logs/**` glob.\n- The project primary asset type `ActionData` is registered in `Config/DefaultGame.ini` (`+StartupPrimaryAssetTypes=ActionData`); DataAssets live under `Content/ActionData/` and are loaded through the `CancerActionCreator` / `UAction_DataAsset` pipeline described in `Plugins/Cancer/Docs/CancerActionCreator.md`.\n\nPerforce (XYJ workspace at D:\\Project\\Dev_Intergration\\XYJ) editing rules:\n- This workspace uses Perforce; most tracked files are read-only on disk until opened for edit.\n- BEFORE using `apply_patch` or `write_file` on any existing file in this workspace, first run `attrib <file>` to check the R (read-only) attribute, or simply run `p4 -c <correct_client> edit <file>` proactively. The local P4 client for paths under D:\\Project\\Dev_Intergration is `GShenLin_Dev_Integration` (root D:\\Project\\Dev_Intergration).\n- If `apply_patch` fails with PermissionError / WinError 5 / \"拒绝访问\" while renaming the temp file onto the target, that almost always means the target is read-only. Run `p4 -c GShenLin_Dev_Integration edit <file>` (or `attrib -R <file>` for non-P4 files) and retry; do not retry the same patch without fixing the read-only bit.\n- After editing, the file stays open in the default changelist until you (or the user) submit/revert. Do not submit or revert unless explicitly asked.\n\nRemote packaging / SSH notes for this workspace:\n- Remote build host is 192.168.34.24 (CDQN-GAME), SSH user `gameuser` (domain qn\\gameuser). Non-interactive SSH sessions to this host may not have usable credentials for SMB shares like \\\\nas\\projects; drive letters (Z:, etc.) may show Unavailable and UNC access can return \"用户名或密码不正确\" (bad username/password).\n- If a packaging script copies output to a NAS UNC path and fails with credential errors over SSH, treat that as a remote-session credential/mapping problem first. Verify share access separately before modifying the copy logic.\n- `RunRemotePackageUE_Integrative.bat` invokes the remote `C:\\Project\\Gameuser_Integrative\\XYJ\\Scripts\\PackageUE.bat` via SSH with P4 env vars set but does NOT run `p4 sync` on the remote. Local edits to PackageUE.bat won't affect remote runs until the remote `Gameuser_Integrative` workspace is synced (and `Gameuser_Integrative` can only be used from host CDQN-GAME).\n",
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 714,
+        "y": 39
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "GPT",
+      "graph_id": "TestAllProvider",
+      "type_id": "agent_node",
+      "name": "GPT",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "krill_gpt55",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "system_prompt_append": "\nAssetToJson MCP usage rules:\n- CRITICAL: For `asset_to_json_modify_asset` actor/object mutations, never test or retry a string-valued `target`. `target` must be a JSON object. If you are about to write `\"target\":\"...\"`, stop and use `\"target\":{\"actor\":{...}}` instead.\n- CRITICAL: The confirmed successful mutation shape is `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`. Reuse this shape for actor operations unless the tool schema explicitly documents a different operation.\n- For `asset_to_json_modify_asset` object/actor operations, do not pass `target.actor` as a bare string such as `\"BP_SavePoint_C_0\"`.\n- Source-confirmed rule: the plugin code reads `target.actor` with `TryGetObjectField(\"actor\")`. Therefore `target.actor` must be a JSON object. A raw string, a top-level `actor` field, `targetSelection`, or a string-valued `target` will not satisfy this schema.\n- Confirmed successful PIE world mutation format: `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}` or the same nested actor selector with `path`/`label` when those uniquely identify the actor.\n- `target` itself must be a JSON object containing an `actor` field. Do not pass `target` as a string object path, actor name, actor label, or full PIE path.\n- Do not try moving `actor` to the top level of the operation. Top-level `actor` is invalid for object/actor operations; keep the selector under `target.actor`.\n- Valid selector shape: `\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}}`, `\"target\":{\"actor\":{\"label\":\"BP_SavePoint\"}}`, `\"target\":{\"actor\":{\"path\":\"/Game/Level/UEDPIE_0_TestLevel_Player.TestLevel_Player:PersistentLevel.BP_SavePoint_C_0\"}}`, or `\"target\":{\"actor\":{\"class\":\"/Game/..._C\"}}` when it matches exactly one actor.\n- In `worldContext: \"play\"` / PIE, first call `listActors` and then copy the returned actor `name`, `label`, or full `path` into `target.actor` as an object. Prefer exact `path` when available.\n- For PIE mutations, the selector path must copy the full returned path exactly, including the `UEDPIE_0_` package and `:PersistentLevel` segment. Do not shorten it to `BP_SavePoint_C_0`, and do not put the full path directly in `target.actor` as a string.\n- Keep operation arguments at the operation level unless the tool schema says otherwise. For example, use `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`, not `{\"target\":{\"actor\":\"...\",\"offset\":...}}`.\n- For `setActorTransform`, use `{\"op\":\"setActorTransform\",\"target\":{\"actor\":{\"path\":\"...\"}},\"transform\":{\"location\":{\"x\":900,\"y\":-990,\"z\":1020},\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}}`.\n- If a selector returns `matched 0 actors`, immediately relist actors in the same `worldContext` and copy an exact `name`, `label`, or full `path` from that result before retrying. Do not keep guessing selector shapes.\n- Before any editor-world level/actor operation, call `asset_to_json_get_editor_context` and use the returned `editorWorld.assetObjectPath` or `sourceAssetObjectPath`. Do not guess old/default map paths such as `/Game/Maps/GameStartMap.GameStartMap` when the current editor context reports a different map.\n- CRITICAL: For world-level operations such as `listActors`, pass `assetObjectPath` as `editorWorld.assetObjectPath` or `sourceAssetObjectPath` exactly, without `:PersistentLevel`. Do not pass `editorWorld.currentLevelPath` or `persistentLevelPath` by themselves; those are ULevel objects and AssetToJson rejects them. A `:PersistentLevel` path is valid only when it includes an actor instance segment such as `Map.Map:PersistentLevel.ActorName`.\n- If `modify_asset` fails with `Failed to load asset ...`, refresh editor context and retry using the current `editorWorld.assetObjectPath` (or the tool's projectContentID/current-editor workflow if available). Treat a single failed load as an asset-path/context mismatch until proven otherwise; do not record it as a durable project issue.\n- When listing actors in a large map, request the smallest useful limit/filter and summarize the returned sample. Avoid broad large `listActors` calls unless the user explicitly asks for exhaustive output.\n- Do not persist speculative operational memory from a failed schema or asset-path experiment unless the follow-up call confirms the rule. If recording operational memory, include the required `reason` argument.\n\nXYJ Unreal workspace search rules (working_path D:\\Project\\Dev_Intergration\\XYJ):\n- This is a large UE5 project (~42k files, ~39k .uasset). Broad `rg_search_text`/`rg_list_files` calls with no `include_globs` (or regex with many `|` alternatives) over the whole workspace can hit the 5s tool timeout, especially when scanning `Plugins/Makeetplace`, `Plugins/NVIDIA`, `Content`, `Intermediate`, `Saved`, or `DerivedDataCache`.\n- Default code layout: gameplay C++ lives primarily under `Plugins/Cancer/Source/` (CancerAbility, CancerActionCreator, CancerGame, CancerInput, ...) and a small `Source/XYJ/` folder. Start code searches by scoping `include_globs` to `Plugins/Cancer/Source/**/*.h`, `Plugins/Cancer/Source/**/*.cpp`, plus `Source/XYJ/**/*.h`, `Source/XYJ/**/*.cpp`, and `Config/**/*.ini`. Exclude `Binaries/**`, `Intermediate/**`, `Saved/**`, `DerivedDataCache/**`, `.git/**`, and Marketplace/NVIDIA plugin trees unless you specifically need them.\n- For asset discovery, prefer targeted paths (e.g. `Content/ActionData/**`, `Content/Blueprints/**`) rather than the whole `Content/` tree. When looking for a specific named asset (like `DA_Action_YangJian`), narrow to the expected subfolder first; the project already has `Content/ActionData/` as a known container.\n- Regex queries with many `|` alternations over broad globs are the most likely to time out. Prefer fixed-string queries (`fixed_strings: true`) or narrow alternations over scoped paths, and run multiple narrow searches in parallel rather than one mega-query.\n- `Saved/Logs/*.log` files often contain definitive runtime evidence (loaded asset paths, tag names, montage resolutions); they are text and search very fast under a `Saved/Logs/**` glob.\n- The project primary asset type `ActionData` is registered in `Config/DefaultGame.ini` (`+StartupPrimaryAssetTypes=ActionData`); DataAssets live under `Content/ActionData/` and are loaded through the `CancerActionCreator` / `UAction_DataAsset` pipeline described in `Plugins/Cancer/Docs/CancerActionCreator.md`.\n\nPerforce (XYJ workspace at D:\\Project\\Dev_Intergration\\XYJ) editing rules:\n- This workspace uses Perforce; most tracked files are read-only on disk until opened for edit.\n- BEFORE using `apply_patch` or `write_file` on any existing file in this workspace, first run `attrib <file>` to check the R (read-only) attribute, or simply run `p4 -c <correct_client> edit <file>` proactively. The local P4 client for paths under D:\\Project\\Dev_Intergration is `GShenLin_Dev_Integration` (root D:\\Project\\Dev_Intergration).\n- If `apply_patch` fails with PermissionError / WinError 5 / \"拒绝访问\" while renaming the temp file onto the target, that almost always means the target is read-only. Run `p4 -c GShenLin_Dev_Integration edit <file>` (or `attrib -R <file>` for non-P4 files) and retry; do not retry the same patch without fixing the read-only bit.\n- After editing, the file stays open in the default changelist until you (or the user) submit/revert. Do not submit or revert unless explicitly asked.\n\nRemote packaging / SSH notes for this workspace:\n- Remote build host is 192.168.34.24 (CDQN-GAME), SSH user `gameuser` (domain qn\\gameuser). Non-interactive SSH sessions to this host may not have usable credentials for SMB shares like \\\\nas\\projects; drive letters (Z:, etc.) may show Unavailable and UNC access can return \"用户名或密码不正确\" (bad username/password).\n- If a packaging script copies output to a NAS UNC path and fails with credential errors over SSH, treat that as a remote-session credential/mapping problem first. Verify share access separately before modifying the copy logic.\n- `RunRemotePackageUE_Integrative.bat` invokes the remote `C:\\Project\\Gameuser_Integrative\\XYJ\\Scripts\\PackageUE.bat` via SSH with P4 env vars set but does NOT run `p4 sync` on the remote. Local edits to PackageUE.bat won't affect remote runs until the remote `Gameuser_Integrative` workspace is synced (and `Gameuser_Integrative` can only be used from host CDQN-GAME).\n",
+        "plugins": []
+      },
+      "ui": {
+        "x": 436,
+        "y": 44
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Kimi",
+      "graph_id": "TestAllProvider",
+      "type_id": "agent_node",
+      "name": "Kimi",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "Kimi_CodingPlan",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "system_prompt_append": "\nAssetToJson MCP usage rules:\n- CRITICAL: For `asset_to_json_modify_asset` actor/object mutations, never test or retry a string-valued `target`. `target` must be a JSON object. If you are about to write `\"target\":\"...\"`, stop and use `\"target\":{\"actor\":{...}}` instead.\n- CRITICAL: The confirmed successful mutation shape is `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`. Reuse this shape for actor operations unless the tool schema explicitly documents a different operation.\n- For `asset_to_json_modify_asset` object/actor operations, do not pass `target.actor` as a bare string such as `\"BP_SavePoint_C_0\"`.\n- Source-confirmed rule: the plugin code reads `target.actor` with `TryGetObjectField(\"actor\")`. Therefore `target.actor` must be a JSON object. A raw string, a top-level `actor` field, `targetSelection`, or a string-valued `target` will not satisfy this schema.\n- Confirmed successful PIE world mutation format: `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}` or the same nested actor selector with `path`/`label` when those uniquely identify the actor.\n- `target` itself must be a JSON object containing an `actor` field. Do not pass `target` as a string object path, actor name, actor label, or full PIE path.\n- Do not try moving `actor` to the top level of the operation. Top-level `actor` is invalid for object/actor operations; keep the selector under `target.actor`.\n- Valid selector shape: `\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}}`, `\"target\":{\"actor\":{\"label\":\"BP_SavePoint\"}}`, `\"target\":{\"actor\":{\"path\":\"/Game/Level/UEDPIE_0_TestLevel_Player.TestLevel_Player:PersistentLevel.BP_SavePoint_C_0\"}}`, or `\"target\":{\"actor\":{\"class\":\"/Game/..._C\"}}` when it matches exactly one actor.\n- In `worldContext: \"play\"` / PIE, first call `listActors` and then copy the returned actor `name`, `label`, or full `path` into `target.actor` as an object. Prefer exact `path` when available.\n- For PIE mutations, the selector path must copy the full returned path exactly, including the `UEDPIE_0_` package and `:PersistentLevel` segment. Do not shorten it to `BP_SavePoint_C_0`, and do not put the full path directly in `target.actor` as a string.\n- Keep operation arguments at the operation level unless the tool schema says otherwise. For example, use `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`, not `{\"target\":{\"actor\":\"...\",\"offset\":...}}`.\n- For `setActorTransform`, use `{\"op\":\"setActorTransform\",\"target\":{\"actor\":{\"path\":\"...\"}},\"transform\":{\"location\":{\"x\":900,\"y\":-990,\"z\":1020},\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}}`.\n- If a selector returns `matched 0 actors`, immediately relist actors in the same `worldContext` and copy an exact `name`, `label`, or full `path` from that result before retrying. Do not keep guessing selector shapes.\n- Before any editor-world level/actor operation, call `asset_to_json_get_editor_context` and use the returned `editorWorld.assetObjectPath` or `sourceAssetObjectPath`. Do not guess old/default map paths such as `/Game/Maps/GameStartMap.GameStartMap` when the current editor context reports a different map.\n- CRITICAL: For world-level operations such as `listActors`, pass `assetObjectPath` as `editorWorld.assetObjectPath` or `sourceAssetObjectPath` exactly, without `:PersistentLevel`. Do not pass `editorWorld.currentLevelPath` or `persistentLevelPath` by themselves; those are ULevel objects and AssetToJson rejects them. A `:PersistentLevel` path is valid only when it includes an actor instance segment such as `Map.Map:PersistentLevel.ActorName`.\n- If `modify_asset` fails with `Failed to load asset ...`, refresh editor context and retry using the current `editorWorld.assetObjectPath` (or the tool's projectContentID/current-editor workflow if available). Treat a single failed load as an asset-path/context mismatch until proven otherwise; do not record it as a durable project issue.\n- When listing actors in a large map, request the smallest useful limit/filter and summarize the returned sample. Avoid broad large `listActors` calls unless the user explicitly asks for exhaustive output.\n- Do not persist speculative operational memory from a failed schema or asset-path experiment unless the follow-up call confirms the rule. If recording operational memory, include the required `reason` argument.\n\nXYJ Unreal workspace search rules (working_path D:\\Project\\Dev_Intergration\\XYJ):\n- This is a large UE5 project (~42k files, ~39k .uasset). Broad `rg_search_text`/`rg_list_files` calls with no `include_globs` (or regex with many `|` alternatives) over the whole workspace can hit the 5s tool timeout, especially when scanning `Plugins/Makeetplace`, `Plugins/NVIDIA`, `Content`, `Intermediate`, `Saved`, or `DerivedDataCache`.\n- Default code layout: gameplay C++ lives primarily under `Plugins/Cancer/Source/` (CancerAbility, CancerActionCreator, CancerGame, CancerInput, ...) and a small `Source/XYJ/` folder. Start code searches by scoping `include_globs` to `Plugins/Cancer/Source/**/*.h`, `Plugins/Cancer/Source/**/*.cpp`, plus `Source/XYJ/**/*.h`, `Source/XYJ/**/*.cpp`, and `Config/**/*.ini`. Exclude `Binaries/**`, `Intermediate/**`, `Saved/**`, `DerivedDataCache/**`, `.git/**`, and Marketplace/NVIDIA plugin trees unless you specifically need them.\n- For asset discovery, prefer targeted paths (e.g. `Content/ActionData/**`, `Content/Blueprints/**`) rather than the whole `Content/` tree. When looking for a specific named asset (like `DA_Action_YangJian`), narrow to the expected subfolder first; the project already has `Content/ActionData/` as a known container.\n- Regex queries with many `|` alternations over broad globs are the most likely to time out. Prefer fixed-string queries (`fixed_strings: true`) or narrow alternations over scoped paths, and run multiple narrow searches in parallel rather than one mega-query.\n- `Saved/Logs/*.log` files often contain definitive runtime evidence (loaded asset paths, tag names, montage resolutions); they are text and search very fast under a `Saved/Logs/**` glob.\n- The project primary asset type `ActionData` is registered in `Config/DefaultGame.ini` (`+StartupPrimaryAssetTypes=ActionData`); DataAssets live under `Content/ActionData/` and are loaded through the `CancerActionCreator` / `UAction_DataAsset` pipeline described in `Plugins/Cancer/Docs/CancerActionCreator.md`.\n\nPerforce (XYJ workspace at D:\\Project\\Dev_Intergration\\XYJ) editing rules:\n- This workspace uses Perforce; most tracked files are read-only on disk until opened for edit.\n- BEFORE using `apply_patch` or `write_file` on any existing file in this workspace, first run `attrib <file>` to check the R (read-only) attribute, or simply run `p4 -c <correct_client> edit <file>` proactively. The local P4 client for paths under D:\\Project\\Dev_Intergration is `GShenLin_Dev_Integration` (root D:\\Project\\Dev_Intergration).\n- If `apply_patch` fails with PermissionError / WinError 5 / \"拒绝访问\" while renaming the temp file onto the target, that almost always means the target is read-only. Run `p4 -c GShenLin_Dev_Integration edit <file>` (or `attrib -R <file>` for non-P4 files) and retry; do not retry the same patch without fixing the read-only bit.\n- After editing, the file stays open in the default changelist until you (or the user) submit/revert. Do not submit or revert unless explicitly asked.\n\nRemote packaging / SSH notes for this workspace:\n- Remote build host is 192.168.34.24 (CDQN-GAME), SSH user `gameuser` (domain qn\\gameuser). Non-interactive SSH sessions to this host may not have usable credentials for SMB shares like \\\\nas\\projects; drive letters (Z:, etc.) may show Unavailable and UNC access can return \"用户名或密码不正确\" (bad username/password).\n- If a packaging script copies output to a NAS UNC path and fails with credential errors over SSH, treat that as a remote-session credential/mapping problem first. Verify share access separately before modifying the copy logic.\n- `RunRemotePackageUE_Integrative.bat` invokes the remote `C:\\Project\\Gameuser_Integrative\\XYJ\\Scripts\\PackageUE.bat` via SSH with P4 env vars set but does NOT run `p4 sync` on the remote. Local edits to PackageUE.bat won't affect remote runs until the remote `Gameuser_Integrative` workspace is synced (and `Gameuser_Integrative` can only be used from host CDQN-GAME).\n",
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 1268,
+        "y": 40
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "MiniMax",
+      "graph_id": "TestAllProvider",
+      "type_id": "agent_node",
+      "name": "MiniMax",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "MiniMax_CodingPlan",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "system_prompt_append": "\nAssetToJson MCP usage rules:\n- CRITICAL: For `asset_to_json_modify_asset` actor/object mutations, never test or retry a string-valued `target`. `target` must be a JSON object. If you are about to write `\"target\":\"...\"`, stop and use `\"target\":{\"actor\":{...}}` instead.\n- CRITICAL: The confirmed successful mutation shape is `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`. Reuse this shape for actor operations unless the tool schema explicitly documents a different operation.\n- For `asset_to_json_modify_asset` object/actor operations, do not pass `target.actor` as a bare string such as `\"BP_SavePoint_C_0\"`.\n- Source-confirmed rule: the plugin code reads `target.actor` with `TryGetObjectField(\"actor\")`. Therefore `target.actor` must be a JSON object. A raw string, a top-level `actor` field, `targetSelection`, or a string-valued `target` will not satisfy this schema.\n- Confirmed successful PIE world mutation format: `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}` or the same nested actor selector with `path`/`label` when those uniquely identify the actor.\n- `target` itself must be a JSON object containing an `actor` field. Do not pass `target` as a string object path, actor name, actor label, or full PIE path.\n- Do not try moving `actor` to the top level of the operation. Top-level `actor` is invalid for object/actor operations; keep the selector under `target.actor`.\n- Valid selector shape: `\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}}`, `\"target\":{\"actor\":{\"label\":\"BP_SavePoint\"}}`, `\"target\":{\"actor\":{\"path\":\"/Game/Level/UEDPIE_0_TestLevel_Player.TestLevel_Player:PersistentLevel.BP_SavePoint_C_0\"}}`, or `\"target\":{\"actor\":{\"class\":\"/Game/..._C\"}}` when it matches exactly one actor.\n- In `worldContext: \"play\"` / PIE, first call `listActors` and then copy the returned actor `name`, `label`, or full `path` into `target.actor` as an object. Prefer exact `path` when available.\n- For PIE mutations, the selector path must copy the full returned path exactly, including the `UEDPIE_0_` package and `:PersistentLevel` segment. Do not shorten it to `BP_SavePoint_C_0`, and do not put the full path directly in `target.actor` as a string.\n- Keep operation arguments at the operation level unless the tool schema says otherwise. For example, use `{\"op\":\"addActorWorldOffset\",\"target\":{\"actor\":{\"name\":\"BP_SavePoint_C_0\"}},\"offset\":{\"z\":150}}`, not `{\"target\":{\"actor\":\"...\",\"offset\":...}}`.\n- For `setActorTransform`, use `{\"op\":\"setActorTransform\",\"target\":{\"actor\":{\"path\":\"...\"}},\"transform\":{\"location\":{\"x\":900,\"y\":-990,\"z\":1020},\"rotation\":{\"pitch\":0,\"yaw\":0,\"roll\":0},\"scale\":{\"x\":1,\"y\":1,\"z\":1}}}`.\n- If a selector returns `matched 0 actors`, immediately relist actors in the same `worldContext` and copy an exact `name`, `label`, or full `path` from that result before retrying. Do not keep guessing selector shapes.\n- Before any editor-world level/actor operation, call `asset_to_json_get_editor_context` and use the returned `editorWorld.assetObjectPath` or `sourceAssetObjectPath`. Do not guess old/default map paths such as `/Game/Maps/GameStartMap.GameStartMap` when the current editor context reports a different map.\n- CRITICAL: For world-level operations such as `listActors`, pass `assetObjectPath` as `editorWorld.assetObjectPath` or `sourceAssetObjectPath` exactly, without `:PersistentLevel`. Do not pass `editorWorld.currentLevelPath` or `persistentLevelPath` by themselves; those are ULevel objects and AssetToJson rejects them. A `:PersistentLevel` path is valid only when it includes an actor instance segment such as `Map.Map:PersistentLevel.ActorName`.\n- If `modify_asset` fails with `Failed to load asset ...`, refresh editor context and retry using the current `editorWorld.assetObjectPath` (or the tool's projectContentID/current-editor workflow if available). Treat a single failed load as an asset-path/context mismatch until proven otherwise; do not record it as a durable project issue.\n- When listing actors in a large map, request the smallest useful limit/filter and summarize the returned sample. Avoid broad large `listActors` calls unless the user explicitly asks for exhaustive output.\n- Do not persist speculative operational memory from a failed schema or asset-path experiment unless the follow-up call confirms the rule. If recording operational memory, include the required `reason` argument.\n\nXYJ Unreal workspace search rules (working_path D:\\Project\\Dev_Intergration\\XYJ):\n- This is a large UE5 project (~42k files, ~39k .uasset). Broad `rg_search_text`/`rg_list_files` calls with no `include_globs` (or regex with many `|` alternatives) over the whole workspace can hit the 5s tool timeout, especially when scanning `Plugins/Makeetplace`, `Plugins/NVIDIA`, `Content`, `Intermediate`, `Saved`, or `DerivedDataCache`.\n- Default code layout: gameplay C++ lives primarily under `Plugins/Cancer/Source/` (CancerAbility, CancerActionCreator, CancerGame, CancerInput, ...) and a small `Source/XYJ/` folder. Start code searches by scoping `include_globs` to `Plugins/Cancer/Source/**/*.h`, `Plugins/Cancer/Source/**/*.cpp`, plus `Source/XYJ/**/*.h`, `Source/XYJ/**/*.cpp`, and `Config/**/*.ini`. Exclude `Binaries/**`, `Intermediate/**`, `Saved/**`, `DerivedDataCache/**`, `.git/**`, and Marketplace/NVIDIA plugin trees unless you specifically need them.\n- For asset discovery, prefer targeted paths (e.g. `Content/ActionData/**`, `Content/Blueprints/**`) rather than the whole `Content/` tree. When looking for a specific named asset (like `DA_Action_YangJian`), narrow to the expected subfolder first; the project already has `Content/ActionData/` as a known container.\n- Regex queries with many `|` alternations over broad globs are the most likely to time out. Prefer fixed-string queries (`fixed_strings: true`) or narrow alternations over scoped paths, and run multiple narrow searches in parallel rather than one mega-query.\n- `Saved/Logs/*.log` files often contain definitive runtime evidence (loaded asset paths, tag names, montage resolutions); they are text and search very fast under a `Saved/Logs/**` glob.\n- The project primary asset type `ActionData` is registered in `Config/DefaultGame.ini` (`+StartupPrimaryAssetTypes=ActionData`); DataAssets live under `Content/ActionData/` and are loaded through the `CancerActionCreator` / `UAction_DataAsset` pipeline described in `Plugins/Cancer/Docs/CancerActionCreator.md`.\n\nPerforce (XYJ workspace at D:\\Project\\Dev_Intergration\\XYJ) editing rules:\n- This workspace uses Perforce; most tracked files are read-only on disk until opened for edit.\n- BEFORE using `apply_patch` or `write_file` on any existing file in this workspace, first run `attrib <file>` to check the R (read-only) attribute, or simply run `p4 -c <correct_client> edit <file>` proactively. The local P4 client for paths under D:\\Project\\Dev_Intergration is `GShenLin_Dev_Integration` (root D:\\Project\\Dev_Intergration).\n- If `apply_patch` fails with PermissionError / WinError 5 / \"拒绝访问\" while renaming the temp file onto the target, that almost always means the target is read-only. Run `p4 -c GShenLin_Dev_Integration edit <file>` (or `attrib -R <file>` for non-P4 files) and retry; do not retry the same patch without fixing the read-only bit.\n- After editing, the file stays open in the default changelist until you (or the user) submit/revert. Do not submit or revert unless explicitly asked.\n\nRemote packaging / SSH notes for this workspace:\n- Remote build host is 192.168.34.24 (CDQN-GAME), SSH user `gameuser` (domain qn\\gameuser). Non-interactive SSH sessions to this host may not have usable credentials for SMB shares like \\\\nas\\projects; drive letters (Z:, etc.) may show Unavailable and UNC access can return \"用户名或密码不正确\" (bad username/password).\n- If a packaging script copies output to a NAS UNC path and fails with credential errors over SSH, treat that as a remote-session credential/mapping problem first. Verify share access separately before modifying the copy logic.\n- `RunRemotePackageUE_Integrative.bat` invokes the remote `C:\\Project\\Gameuser_Integrative\\XYJ\\Scripts\\PackageUE.bat` via SSH with P4 env vars set but does NOT run `p4 sync` on the remote. Local edits to PackageUE.bat won't affect remote runs until the remote `Gameuser_Integrative` workspace is synced (and `Gameuser_Integrative` can only be used from host CDQN-GAME).\n",
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 1004,
+        "y": 42
+      },
+      "input_num": 1,
+      "output_num": 1
+    }
+  ],
+  "updated_at": "2026-07-07T14:01:01+08:00",
+  "created_at": "2026-07-07T14:01:01+08:00"
+}

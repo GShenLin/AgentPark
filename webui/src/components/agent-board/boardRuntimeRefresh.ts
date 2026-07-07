@@ -31,6 +31,7 @@ export function createBoardRuntimeRefresh(options: {
   refreshNodeConfigs: () => Promise<void>
   refreshGraphLinks: () => Promise<void>
   hasActiveNodeWork: () => boolean
+  requestMemoryRefresh?: () => void
 }) {
   let activeNodeRefreshTimer: number | null = null
   let activeRefreshSessionId = 0
@@ -72,6 +73,9 @@ export function createBoardRuntimeRefresh(options: {
         await options.refreshNodeConfigs()
       } catch (error) {
         console.error('Failed to refresh node configs from graph event stream.', error)
+      }
+      try {
+        options.requestMemoryRefresh?.()
       } finally {
         graphEventRefreshInFlight = false
       }

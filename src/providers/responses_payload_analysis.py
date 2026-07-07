@@ -79,7 +79,6 @@ def summarize_payload_record(record: dict[str, Any]) -> dict[str, Any]:
         "summary": {
             key: request_summary.get(key)
             for key in (
-                "continuation_mode",
                 "responses_mode",
                 "requested_responses_mode",
                 "context_update_mode",

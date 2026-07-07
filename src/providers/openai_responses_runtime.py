@@ -6,13 +6,7 @@ from src.providers.responses_runtime import ResponsesRuntime
 
 class OpenAIResponsesRuntime(ResponsesRuntime):
     def _send_tool_context_compaction_gate(self, declaration):
-        return self._send_via_responses(
-            messages=self._get_messages_with_memory(),
-            active_tools=[declaration],
-            run_tools=True,
-            reasoning_effort="",
-            web_search_mode="disabled",
-        )
+        return self._send_responses_gate(declaration, reasoning_effort="")
 
     def _responses_payload_extra(self, **provider_options):
         reasoning_effort = provider_options.get("reasoning_effort")
@@ -23,22 +17,6 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
             }
         return {}
 
-    def _responses_continuation_mode(self):
-        if "responsesContinuationMode" not in self.config:
-            raise ValueError(
-                "provider.responsesContinuationMode is required. "
-                "Set it explicitly to 'previous_response_id' or 'explicit_context'."
-            )
-        value = self.config.get("responsesContinuationMode")
-        text = str(value or "").strip()
-        if text == "previous_response_id":
-            return "previous_response_id"
-        if text == "explicit_context":
-            return "explicit_context"
-        raise ValueError(
-            "provider.responsesContinuationMode must be 'previous_response_id' or 'explicit_context'."
-        )
-
     def _responses_continuation_input_items(self, result, function_calls):
         return self._build_responses_continuation_input_items(result, function_calls)
 
@@ -48,23 +26,6 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
                 "OpenAI Responses function_call_output.call_id cannot use an output item id. "
                 "Expected the call_id from the function_call item."
             )
-
-    def _emit_responses_previous_response_missing(
-        self,
-        *,
-        previous_response_id,
-        fallback_input_item_count,
-        stream,
-    ) -> None:
-        self._emit_responses_runtime_notice(
-            stage="openai_responses_previous_response_missing",
-            payload={
-                "previous_response_id": previous_response_id,
-                "fallback": "explicit_context",
-                "fallback_input_item_count": fallback_input_item_count,
-                "stream": stream,
-            },
-        )
 
     def _emit_responses_item_level_abort(self, summary):
         payload = dict(summary) if isinstance(summary, dict) else {"reason": "aborted"}
@@ -78,7 +39,6 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
         content,
         function_call_count,
         next_continuation_mode,
-        request_previous_response_id,
         request_input_item_count,
         followup_item_count,
         stream,
@@ -96,8 +56,6 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
             "content_chars": len(str(content or "")),
             "content_preview": self._preview_responses_debug_text(content),
             "next_continuation_mode": str(next_continuation_mode or "").strip(),
-            "request_previous_response_id_present": bool(str(request_previous_response_id or "").strip()),
-            "request_previous_response_id": str(request_previous_response_id or "").strip(),
             "request_input_item_count": int(request_input_item_count or 0),
             "followup_item_count": int(followup_item_count or 0),
             "stream": bool(stream),

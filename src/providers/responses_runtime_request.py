@@ -19,8 +19,6 @@ def build_and_emit_responses_request_payload(
     runtime,
     *,
     request_index: int,
-    continuation_mode: str,
-    previous_response_id: str,
     request_input: list[Any],
     tools_payload: list[Any],
     use_stream: bool,
@@ -31,7 +29,6 @@ def build_and_emit_responses_request_payload(
 ) -> ResponsesRequestPayload:
     payload = runtime._build_responses_payload(
         current_input=request_input,
-        previous_response_id=previous_response_id,
         tools_payload=tools_payload,
         use_stream=use_stream,
         provider_options=provider_options,
@@ -39,8 +36,6 @@ def build_and_emit_responses_request_payload(
     )
     request_summary = build_responses_request_summary(
         request_index=request_index,
-        continuation_mode=continuation_mode,
-        previous_response_id=previous_response_id,
         current_input=request_input,
         tools_payload=tools_payload,
         stream=use_stream,
@@ -67,7 +62,6 @@ def build_and_emit_responses_request_payload(
     runtime._emit_responses_request_summary(request_summary)
     runtime._emit_responses_request_start(
         request_index=request_index,
-        previous_response_id=previous_response_id,
         input_item_count=len(request_input) if isinstance(request_input, list) else 0,
         stream=use_stream,
         responses_mode=mode_decision.mode,

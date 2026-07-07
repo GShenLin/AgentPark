@@ -194,7 +194,6 @@ def _provider_context(agent: object, config: dict[str, Any]) -> dict[str, Any]:
         "type",
         "model",
         "responsesApi",
-        "responsesContinuationMode",
         "reasoningEffort",
         "responsesReplayReasoningItems",
     )
@@ -233,13 +232,11 @@ def _project_instructions_context(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def _responses_context(config: dict[str, Any], responses_mode: str, requested_responses_mode: str) -> dict[str, str]:
+    _ = config
     context = {
         "responses_mode": str(responses_mode or "").strip(),
         "requested_responses_mode": str(requested_responses_mode or "").strip(),
     }
-    continuation = str(config.get("responsesContinuationMode") or "").strip()
-    if continuation:
-        context["continuation_mode"] = continuation
     return {key: value for key, value in context.items() if value}
 
 
