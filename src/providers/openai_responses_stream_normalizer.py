@@ -10,7 +10,7 @@ class OpenAIResponsesStreamEventNormalizer:
     def __init__(self, *, provider: str = "openai_responses") -> None:
         self.provider = str(provider or "").strip() or "openai_responses"
         self._function_call_buckets: dict[str, dict[str, Any]] = {}
-        self._function_call_key_aliases: dict[str, str] = {}
+        self._function_call_keys_by_id: dict[str, str] = {}
 
     def ingest_sse_data(self, data_text: Any) -> list[ResponsesStreamEvent]:
         text = str(data_text or "")
@@ -319,8 +319,8 @@ class OpenAIResponsesStreamEventNormalizer:
 
     def _bucket_for_identity(self, *, item_id: str, call_id: str) -> dict[str, Any]:
         key = (
-            self._function_call_key_aliases.get(item_id)
-            or self._function_call_key_aliases.get(call_id)
+            self._function_call_keys_by_id.get(item_id)
+            or self._function_call_keys_by_id.get(call_id)
             or item_id
             or call_id
         )
@@ -336,9 +336,9 @@ class OpenAIResponsesStreamEventNormalizer:
             }
             self._function_call_buckets[key] = bucket
         if item_id:
-            self._function_call_key_aliases[item_id] = key
+            self._function_call_keys_by_id[item_id] = key
         if call_id:
-            self._function_call_key_aliases[call_id] = key
+            self._function_call_keys_by_id[call_id] = key
         return bucket
 
     def _function_call_snapshot(
@@ -347,7 +347,7 @@ class OpenAIResponsesStreamEventNormalizer:
         item_id: str,
         call_id: str,
     ) -> ResponsesFunctionCallStreamItem | None:
-        key = self._function_call_key_aliases.get(item_id) or self._function_call_key_aliases.get(call_id)
+        key = self._function_call_keys_by_id.get(item_id) or self._function_call_keys_by_id.get(call_id)
         bucket = self._function_call_buckets.get(key) if key else None
         if not isinstance(bucket, dict):
             return None

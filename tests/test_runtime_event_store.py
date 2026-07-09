@@ -136,10 +136,11 @@ def test_runtime_event_store_persists_bounded_provider_request_summaries():
             payload,
             {
                 "type": "runtime_notice",
-                "stage": "openai_responses_request_summary",
+                "stage": "provider_request_summary",
                 "message": json.dumps(
                     {
                         "request_index": index,
+                        "request_api": "chat_completions",
                         "continuation_mode": "explicit_context",
                         "input_item_count": 3,
                         "approx_input_chars": 1200 + index,
@@ -150,7 +151,10 @@ def test_runtime_event_store_persists_bounded_provider_request_summaries():
                         "payload_log_path": "C:/Project/AgentPark/memories/default/node/responses_payloads.jsonl",
                         "input_items": [{"index": 0, "type": "message", "role": "user", "context_kind": "environment"}],
                         "largest_input_items": [{"index": 0, "type": "message", "chars": 900}],
+                        "tool_call_chars_by_call": [{"call_id": "call-1", "chars": 120}],
+                        "tool_call_chars_total": 120,
                         "tool_result_chars_by_call": [{"call_id": "call-1", "chars": 500}],
+                        "tool_result_chars_total": 500,
                         "tools_included": ["rg_search_text"],
                         "secret": "must be dropped",
                     },
@@ -160,9 +164,16 @@ def test_runtime_event_store_persists_bounded_provider_request_summaries():
         )
 
     summaries = payload["provider_request_summaries"]
+    totals = payload["provider_request_totals"]
     assert len(summaries) == 8
     assert summaries[0]["request_index"] == 2
     assert summaries[-1]["request_index"] == 9
+    assert totals["request_count"] == 10
+    assert totals["approx_input_chars"] == sum(1200 + index for index in range(10))
+    assert totals["tool_call_chars"] == 1200
+    assert totals["tool_result_chars"] == 5000
+    assert totals["last_request_index"] == 9
+    assert summaries[-1]["request_api"] == "chat_completions"
     assert summaries[-1]["environment_context_chars"] == 320
     assert summaries[-1]["permissions_context_chars"] == 120
     assert summaries[-1]["collaboration_context_chars"] == 180
@@ -170,11 +181,15 @@ def test_runtime_event_store_persists_bounded_provider_request_summaries():
     assert summaries[-1]["payload_log_path"].endswith("responses_payloads.jsonl")
     assert summaries[-1]["input_items"][0]["context_kind"] == "environment"
     assert summaries[-1]["tool_result_chars_by_call"][0]["call_id"] == "call-1"
+    assert summaries[-1]["tool_call_chars_by_call"][0]["chars"] == 120
+    assert summaries[-1]["tool_call_chars_total"] == 120
+    assert summaries[-1]["tool_result_chars_total"] == 500
     assert "secret" not in summaries[-1]
 
     clear_runtime_event(payload, reset_history=True)
 
     assert "provider_request_summaries" not in payload
+    assert "provider_request_totals" not in payload
 
 
 def test_runtime_event_store_normalizes_runtime_notice_boundary():

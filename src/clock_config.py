@@ -8,8 +8,6 @@ CLOCK_INTERVAL_HOURS_KEY = "IntervalHours"
 CLOCK_INTERVAL_MINUTES_KEY = "IntervalMinutes"
 CLOCK_INTERVAL_SECONDS_KEY = "IntervalSeconds"
 
-LEGACY_CLOCK_INTERVAL_KEYS = ("interval_seconds",)
-
 DEFAULT_CLOCK_INTERVAL_FIELDS = {
     CLOCK_INTERVAL_DAYS_KEY: "0",
     CLOCK_INTERVAL_HOURS_KEY: "0",
@@ -56,17 +54,11 @@ def build_clock_interval_fields(cfg: dict | None) -> dict[str, str]:
         )
         return _split_total_seconds(total_seconds)
 
-    legacy_value = cfg.get(CLOCK_INTERVAL_SECONDS_KEY)
-    if legacy_value is None:
-        for key in LEGACY_CLOCK_INTERVAL_KEYS:
-            value = cfg.get(key)
-            if value is not None:
-                legacy_value = value
-                break
-    if legacy_value is None:
+    interval_seconds = cfg.get(CLOCK_INTERVAL_SECONDS_KEY)
+    if interval_seconds is None:
         return dict(DEFAULT_CLOCK_INTERVAL_FIELDS)
 
-    return _split_total_seconds(parse_int_value(legacy_value, default=0, minimum=0))
+    return _split_total_seconds(parse_int_value(interval_seconds, default=0, minimum=0))
 
 
 def parse_clock_interval_seconds(cfg: dict | None) -> int:

@@ -9,12 +9,6 @@ from src.tool.tool_call_protocol import to_openai_tool_call
 
 
 class ZhipuChatRuntime(ZhipuHttpTransport):
-    def _read_config_value(self, *keys):
-        for key in keys:
-            if self.config.get(key) is not None:
-                return self.config.get(key)
-        return None
-
     def _build_payload(self, *, messages, active_tools, reasoning_effort, thinking_mode, stream: bool) -> dict:
         payload = {
             "model": self.config["model"],
@@ -29,7 +23,7 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
         if thinking_mode in {"enabled", "disabled"}:
             payload["thinking"] = {"type": thinking_mode}
 
-        clear_thinking = self.config.get("clearThinking", self.config.get("clear_thinking"))
+        clear_thinking = self.config.get("clearThinking")
         if clear_thinking is not None:
             thinking = payload.get("thinking")
             if not isinstance(thinking, dict):
@@ -37,9 +31,11 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
                 payload["thinking"] = thinking
             thinking["clear_thinking"] = require_bool_switch(clear_thinking, "thinking.clear_thinking", prefix="Zhipu")
 
-        max_tokens = self.config.get("maxTokens", self.config.get("max_tokens"))
+        max_tokens = self.config.get("maxTokens")
         if max_tokens not in {None, ""}:
-            payload["max_tokens"] = int(max_tokens)
+            if not isinstance(max_tokens, int) or isinstance(max_tokens, bool):
+                raise ValueError("Zhipu maxTokens must be an integer.")
+            payload["max_tokens"] = max_tokens
         for key in ("temperature", "top_p", "stop"):
             if self.config.get(key) is not None:
                 payload[key] = self.config.get(key)
@@ -48,22 +44,22 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
 
     def _apply_optional_documented_fields(self, payload: dict) -> None:
         bool_fields = (
-            ("do_sample", ("doSample", "do_sample")),
-            ("tool_stream", ("toolStream", "tool_stream")),
+            ("do_sample", "doSample"),
+            ("tool_stream", "toolStream"),
         )
-        for field_name, keys in bool_fields:
-            value = self._read_config_value(*keys)
+        for field_name, key in bool_fields:
+            value = self.config.get(key)
             if value is not None:
                 payload[field_name] = require_bool_switch(value, field_name, prefix="Zhipu")
 
         passthrough_fields = (
-            ("response_format", ("responseFormat", "response_format")),
-            ("tool_choice", ("toolChoice", "tool_choice")),
-            ("request_id", ("requestId", "request_id")),
-            ("user_id", ("userId", "user_id")),
+            ("response_format", "responseFormat"),
+            ("tool_choice", "toolChoice"),
+            ("request_id", "requestId"),
+            ("user_id", "userId"),
         )
-        for field_name, keys in passthrough_fields:
-            value = self._read_config_value(*keys)
+        for field_name, key in passthrough_fields:
+            value = self.config.get(key)
             if value is not None:
                 payload[field_name] = value
 
@@ -89,6 +85,7 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
             thinking_mode=thinking_mode,
             stream=bool(stream),
         )
+        self._emit_provider_payload_request_summary(payload, request_api="chat_completions", stream=bool(stream))
         payload_json = json.dumps(payload, ensure_ascii=False)
         if stream:
             result = self._stream_chat_completions_with_retry(

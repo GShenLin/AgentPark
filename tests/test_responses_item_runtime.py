@@ -19,7 +19,6 @@ def _openai_agent():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -52,7 +51,6 @@ def _without_environment_context(items):
         text = str(first.get("text") or "") if isinstance(first, dict) else ""
         return (
             text.startswith("<environment_context>")
-            or text.startswith("[Agent Environment Context]\n")
             or text.startswith("<permissions instructions>")
         )
 

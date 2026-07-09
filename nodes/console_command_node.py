@@ -78,7 +78,7 @@ class Node(BaseNode):
     @staticmethod
     def _resolve_cwd(context: dict | None = None) -> str | None:
         ctx = context if isinstance(context, dict) else {}
-        cwd = str(ctx.get("working_path") or ctx.get("WorkingDirectory") or "").strip()
+        cwd = str(ctx.get("working_path") or "").strip()
         if not cwd:
             return None
         cwd = os.path.abspath(os.path.expanduser(cwd))

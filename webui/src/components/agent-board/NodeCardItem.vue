@@ -1,9 +1,19 @@
 ﻿<script setup lang="ts">
-import { computed, inject, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { AgentBoardKey, type AgentBoardContext, type NodeCard } from './context'
 import NodeAgentMeta from './NodeAgentMeta.vue'
 import NodeRuntimeDiagnostics from './NodeRuntimeDiagnostics.vue'
 import ToolActivityBadge from './ToolActivityBadge.vue'
+import {
+  NODE_CARD_DEFAULT_HEIGHT,
+  NODE_CARD_DEFAULT_WIDTH,
+  NODE_CARD_MAX_HEIGHT,
+  NODE_CARD_MAX_WIDTH,
+  NODE_CARD_MIN_HEIGHT,
+  NODE_CARD_MIN_WIDTH,
+  nodeCardHeight,
+  nodeCardWidth,
+} from './boardModel'
 
 const injectedCtx = inject(AgentBoardKey)
 if (!injectedCtx) {
@@ -30,6 +40,16 @@ const hasPreview = computed(() => !!String(previewText.value || '').trim())
 const isEditingName = ref(false)
 const editingName = ref('')
 const nameInputRef = ref<HTMLInputElement | null>(null)
+type ResizeHandle = 'right' | 'bottom' | 'corner'
+type ResizeSession = {
+  handle: ResizeHandle
+  pointerId: number
+  startX: number
+  startY: number
+  startWidth: number
+  startHeight: number
+}
+const resizeSession = ref<ResizeSession | null>(null)
 
 watch(
   () => props.node.name || '',
@@ -70,9 +90,63 @@ function selectItemOnly() {
 
 function openNodeFolder(event: MouseEvent) {
   const target = event.target as HTMLElement | null
-  if (target?.closest('button, input, textarea, select, a, .node-title, .port')) return
+  if (target?.closest('button, input, textarea, select, a, .node-title, .port, .node-resize-handle')) return
   ctx.openNodeFolder(endpointId.value).catch(() => null)
 }
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function startNodeResize(handle: ResizeHandle, event: PointerEvent) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  resizeSession.value = {
+    handle,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    startWidth: nodeCardWidth(props.node) || NODE_CARD_DEFAULT_WIDTH,
+    startHeight: nodeCardHeight(props.node) || NODE_CARD_DEFAULT_HEIGHT,
+  }
+  const cursor = handle === 'right' ? 'ew-resize' : handle === 'bottom' ? 'ns-resize' : 'nwse-resize'
+  document.body.style.cursor = cursor
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onNodeResizeMove)
+  window.addEventListener('pointerup', stopNodeResize)
+  window.addEventListener('blur', stopNodeResize)
+}
+
+function onNodeResizeMove(event: PointerEvent) {
+  const session = resizeSession.value
+  if (!session || event.pointerId !== session.pointerId) return
+  const scale = ctx.canvasScale.value || 1
+  const dx = (event.clientX - session.startX) / scale
+  const dy = (event.clientY - session.startY) / scale
+  const width = session.handle === 'bottom' ? session.startWidth : clamp(session.startWidth + dx, NODE_CARD_MIN_WIDTH, NODE_CARD_MAX_WIDTH)
+  const height = session.handle === 'right' ? session.startHeight : clamp(session.startHeight + dy, NODE_CARD_MIN_HEIGHT, NODE_CARD_MAX_HEIGHT)
+  ctx.resizeNodeCard(props.node.id, { width, height }, { persist: false })
+  event.preventDefault()
+}
+
+function stopNodeResize() {
+  if (!resizeSession.value) return
+  resizeSession.value = null
+  ctx.suppressClickUntil.value = Date.now() + 200
+  void ctx.resizeNodeCard(
+    props.node.id,
+    { width: nodeCardWidth(props.node), height: nodeCardHeight(props.node) },
+    { persist: true },
+  )
+  window.removeEventListener('pointermove', onNodeResizeMove)
+  window.removeEventListener('pointerup', stopNodeResize)
+  window.removeEventListener('blur', stopNodeResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
+onBeforeUnmount(stopNodeResize)
 </script>
 
 <template>
@@ -164,6 +238,7 @@ function openNodeFolder(event: MouseEvent) {
           v-if="isAgentNode"
           :events="props.node.runtimeEvents"
           :provider-summaries="props.node.providerRequestSummaries"
+          :provider-totals="props.node.providerRequestTotals"
           :runtime-tool-calls="props.node.runtimeToolCalls"
         />
         <div class="node-message" :class="{ empty: !hasPreview }">
@@ -179,6 +254,9 @@ function openNodeFolder(event: MouseEvent) {
       >
         +
       </button>
+      <div class="node-resize-handle node-resize-right" @pointerdown="startNodeResize('right', $event)"></div>
+      <div class="node-resize-handle node-resize-bottom" @pointerdown="startNodeResize('bottom', $event)"></div>
+      <div class="node-resize-handle node-resize-corner" @pointerdown="startNodeResize('corner', $event)"></div>
     </div>
   </div>
 </template>
@@ -188,8 +266,13 @@ function openNodeFolder(event: MouseEvent) {
   position: absolute;
   width: 230px;
   height: 250px;
-  background: rgba(15, 23, 42, 0.75);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background-color: var(--theme-panel-node-card-background-color, rgba(15, 23, 42, 0.75));
+  background-image: var(--theme-panel-node-card-background-image, none);
+  background-size: var(--theme-panel-node-card-background-size, cover);
+  background-position: var(--theme-panel-node-card-background-position, center);
+  background-repeat: var(--theme-panel-node-card-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-node-card-background-blend-mode, normal);
+  border: 1px solid var(--theme-panel-node-card-border-color, rgba(148, 163, 184, 0.2));
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -207,8 +290,8 @@ function openNodeFolder(event: MouseEvent) {
 }
 
 .node-card.agent-card {
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background-color: var(--theme-panel-node-card-background-color, rgba(30, 41, 59, 0.8));
+  border: 1px solid var(--theme-panel-node-card-border-color, rgba(148, 163, 184, 0.1));
 }
 
 .node-card.agent-card:hover {
@@ -216,7 +299,7 @@ function openNodeFolder(event: MouseEvent) {
 }
 
 .node-card.selected {
-  border: 1px solid rgba(99, 102, 241, 0.5);
+  border: 1px solid var(--theme-panel-node-card-border-selected, rgba(99, 102, 241, 0.5));
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
@@ -258,9 +341,9 @@ function openNodeFolder(event: MouseEvent) {
 }
 
 .node-pause {
-  background: rgba(125, 211, 252, 0.16);
-  border: 1px solid rgba(125, 211, 252, 0.35);
-  color: rgba(224, 242, 254, 0.95);
+  background: var(--theme-panel-node-card-button-background, rgba(125, 211, 252, 0.16));
+  border: 1px solid var(--theme-panel-node-card-button-border, rgba(125, 211, 252, 0.35));
+  color: var(--theme-panel-node-card-button-text, rgba(224, 242, 254, 0.95));
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 6px;
@@ -296,7 +379,7 @@ function openNodeFolder(event: MouseEvent) {
 }
 
 .node-pause:hover {
-  background: rgba(125, 211, 252, 0.26);
+  background: var(--theme-panel-node-card-button-hover-background, rgba(125, 211, 252, 0.26));
 }
 
 .node-header {
@@ -312,7 +395,7 @@ function openNodeFolder(event: MouseEvent) {
   min-width: 0;
   font-weight: 600;
   font-size: 14px;
-  color: #fff;
+  color: var(--theme-panel-node-card-text-title, #fff);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -389,13 +472,15 @@ function openNodeFolder(event: MouseEvent) {
 
 .node-label {
   font-size: 10px;
-  color: rgba(148, 163, 184, 0.5);
+  color: var(--theme-panel-node-card-text-muted, rgba(148, 163, 184, 0.5));
   margin-bottom: 4px;
 }
 
 .node-message {
+  flex: 1 1 auto;
+  min-height: 0;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--theme-panel-node-card-text-body, rgba(255, 255, 255, 0.7));
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -407,7 +492,7 @@ function openNodeFolder(event: MouseEvent) {
 }
 
 .node-message.empty {
-  color: rgba(148, 163, 184, 0.45);
+  color: var(--theme-panel-node-card-text-muted, rgba(148, 163, 184, 0.45));
 }
 
 .node-add-output {
@@ -420,10 +505,10 @@ function openNodeFolder(event: MouseEvent) {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid rgba(125, 211, 252, 0.36);
+  border: 1px solid var(--theme-panel-node-card-button-border, rgba(125, 211, 252, 0.36));
   border-radius: 8px;
-  background: rgba(14, 165, 233, 0.16);
-  color: rgba(224, 242, 254, 0.98);
+  background: var(--theme-panel-node-card-button-background, rgba(14, 165, 233, 0.16));
+  color: var(--theme-panel-node-card-button-text, rgba(224, 242, 254, 0.98));
   font-size: 18px;
   font-weight: 700;
   line-height: 1;
@@ -433,7 +518,37 @@ function openNodeFolder(event: MouseEvent) {
 
 .node-add-output:hover {
   border-color: rgba(125, 211, 252, 0.58);
-  background: rgba(14, 165, 233, 0.28);
+  background: var(--theme-panel-node-card-button-hover-background, rgba(14, 165, 233, 0.28));
+}
+
+.node-resize-handle {
+  position: absolute;
+  z-index: 3;
+  background: transparent;
+}
+
+.node-resize-right {
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.node-resize-bottom {
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 12px;
+  cursor: ns-resize;
+}
+
+.node-resize-corner {
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  height: 28px;
+  cursor: nwse-resize;
 }
 
 @keyframes node-done {

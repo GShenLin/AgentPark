@@ -311,15 +311,15 @@ watch(
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--theme-panel-file-panel-text-primary, rgba(255, 255, 255, 0.92));
 }
 
 .header-group {
   display: flex;
   flex-direction: column;
   padding: 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-  background: rgba(2, 6, 23, 0.55);
+  border-bottom: 1px solid var(--theme-panel-file-panel-header-border, rgba(148, 163, 184, 0.15));
+  background: var(--theme-panel-file-panel-header-background, rgba(2, 6, 23, 0.55));
   gap: 8px;
 }
 
@@ -329,9 +329,9 @@ watch(
 }
 
 .tool-btn {
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.75);
-  color: rgba(226, 232, 240, 0.95);
+  border: 1px solid var(--theme-panel-file-panel-button-border, rgba(148, 163, 184, 0.35));
+  background: var(--theme-panel-file-panel-button-background, rgba(15, 23, 42, 0.75));
+  color: var(--theme-panel-file-panel-button-text, rgba(226, 232, 240, 0.95));
   border-radius: 8px;
   font-size: 11px;
   padding: 4px 8px;
@@ -351,15 +351,15 @@ watch(
   width: 42px;
   flex-shrink: 0;
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.95);
+  color: var(--theme-panel-file-panel-text-muted, rgba(148, 163, 184, 0.95));
 }
 
 .path-input,
 .search-input {
   flex: 1;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(15, 23, 42, 0.55);
-  color: rgba(226, 232, 240, 0.96);
+  border: 1px solid var(--theme-panel-file-panel-input-border, rgba(148, 163, 184, 0.28));
+  background: var(--theme-panel-file-panel-input-background, rgba(15, 23, 42, 0.55));
+  color: var(--theme-panel-file-panel-input-text, rgba(226, 232, 240, 0.96));
   border-radius: 8px;
   padding: 6px 8px;
   font-size: 12px;
@@ -368,12 +368,12 @@ watch(
 
 .path-input:focus,
 .search-input:focus {
-  border-color: rgba(56, 189, 248, 0.7);
+  border-color: var(--theme-panel-file-panel-input-focus-border, rgba(56, 189, 248, 0.7));
 }
 
 .path-hint {
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.88);
+  color: var(--theme-panel-file-panel-text-muted, rgba(148, 163, 184, 0.88));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -390,7 +390,7 @@ watch(
 .empty-state {
   padding: 18px 8px;
   text-align: center;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--theme-panel-file-panel-text-muted, rgba(148, 163, 184, 0.85));
   font-size: 12px;
 }
 
@@ -404,8 +404,8 @@ watch(
 .context-menu {
   position: fixed;
   min-width: 150px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid var(--theme-panel-file-panel-button-border, rgba(148, 163, 184, 0.35));
+  background: var(--theme-panel-file-panel-button-background, rgba(15, 23, 42, 0.96));
   border-radius: 10px;
   padding: 6px;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
@@ -414,9 +414,9 @@ watch(
 
 .menu-title {
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.9);
+  color: var(--theme-panel-file-panel-text-muted, rgba(148, 163, 184, 0.9));
   padding: 4px 8px 6px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid var(--theme-panel-file-panel-border-color, rgba(148, 163, 184, 0.2));
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -428,14 +428,14 @@ watch(
   text-align: left;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(226, 232, 240, 0.95);
+  color: var(--theme-panel-file-panel-button-text, rgba(226, 232, 240, 0.95));
   border-radius: 8px;
   padding: 6px 8px;
   font-size: 12px;
 }
 
 .menu-item:hover {
-  background: rgba(51, 65, 85, 0.7);
+  background: var(--theme-panel-file-panel-button-hover-background, rgba(51, 65, 85, 0.7));
 }
 
 .menu-item.danger:hover {

@@ -8,6 +8,7 @@ import {
   createNodeCardFromConfig,
   nodeConfigRunDelta,
   nodeStateFromConfig,
+  sanitizeBoardPoint,
 } from './boardModel'
 
 export function createBoardNodeConfigRefresh(options: {
@@ -56,28 +57,34 @@ export function createBoardNodeConfigRefresh(options: {
       const nodeId = String(cfg.node_id || '').trim()
       if (!nodeId) continue
       const uiCfg = (cfg as any)?.ui
-      const serverUi = clampBoardPosition({
+      const serverPosition = clampBoardPosition({
         x: Number(uiCfg?.x ?? 0),
         y: Number(uiCfg?.y ?? 0),
+      })
+      const serverUi = sanitizeBoardPoint({
+        x: serverPosition.x,
+        y: serverPosition.y,
+        width: uiCfg?.width,
+        height: uiCfg?.height,
       })
       let ui = serverUi
       const draggingLocally = options.activeDragItemIds.has(nodeId)
       const pendingUi = options.pendingUiPositions.get(nodeId)
+      const existingNode = options.nodes.value.find((n) => n.id === nodeId)
       if (draggingLocally) {
         const localPosition = options.getItemPosition(nodeId)
         const localUi = localPosition ? clampBoardPosition(localPosition) : null
         if (localUi) {
-          ui = localUi
+          ui = sanitizeBoardPoint({ ...serverUi, ...existingNode?.ui, ...localUi })
         }
       } else if (pendingUi) {
-        if (pendingUi.x === serverUi.x && pendingUi.y === serverUi.y) {
+        if (pendingUi.x === serverPosition.x && pendingUi.y === serverPosition.y) {
           options.clearPendingUiPosition(nodeId, 'refresh_confirmed')
         } else {
-          ui = pendingUi
+          ui = sanitizeBoardPoint({ ...serverUi, ...existingNode?.ui, ...pendingUi })
         }
       }
 
-      const existingNode = options.nodes.value.find((n) => n.id === nodeId)
       if (!existingNode) {
         options.nodes.value.push(createNodeCardFromConfig(cfg, ui))
       } else {

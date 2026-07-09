@@ -34,8 +34,6 @@ class GraphMessageDispatch(HostBoundService):
                 graph_dir = os.path.join(graphs_dir, entry)
                 if not os.path.isdir(graph_dir):
                     continue
-                if entry == "companion":
-                    continue
                 safe_entry = self._sanitize_graph_id(entry)
                 if safe_entry and safe_entry not in graph_ids:
                     graph_ids.append(safe_entry)

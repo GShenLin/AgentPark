@@ -19,7 +19,7 @@ def resolve_agent_default_instructions(agent: object) -> str:
         return ""
     if not _default_instructions_enabled(config):
         return ""
-    inline = str(config.get("defaultInstructionsText") or config.get("default_instructions_text") or "").strip()
+    inline = str(config.get("defaultInstructionsText") or "").strip()
     if inline:
         return inline
     return load_default_instructions(
@@ -39,9 +39,8 @@ def load_default_instructions(*, model: str = "") -> str:
 
 
 def _default_instructions_enabled(config: dict[str, Any]) -> bool:
-    for key in ("defaultInstructions", "default_instructions"):
-        if key in config:
-            return config.get(key) is not False
+    if "defaultInstructions" in config:
+        return config.get("defaultInstructions") is not False
     return True
 
 

@@ -16,19 +16,16 @@ def build_agent_permissions_context(agent: object = None, environment_context: d
         "sandbox_mode": _first_non_empty(
             runtime_context.sandbox_mode,
             _config_value(agent, "sandbox_mode"),
-            _config_value(agent, "sandboxMode"),
             "danger-full-access",
         ),
         "network_access": _first_non_empty(
             runtime_context.network_access,
             _config_value(agent, "network_access"),
-            _config_value(agent, "networkAccess"),
             "enabled",
         ),
         "approval_policy": _first_non_empty(
             runtime_context.approval_policy,
             _config_value(agent, "approval_policy"),
-            _config_value(agent, "approvalPolicy"),
             "never",
         ),
     }

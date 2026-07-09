@@ -5,6 +5,7 @@ import DesktopWorkspace from './DesktopWorkspace.vue'
 import MobileWorkspace from './mobile/MobileWorkspace.vue'
 import PetDesktopView from './PetDesktopView.vue'
 import PetPickerView from './PetPickerView.vue'
+import { applyWorkspaceTheme } from './theme'
 
 const MOBILE_QUERY = '(max-width: 760px)'
 const isPetView = ref(
@@ -47,6 +48,9 @@ onMounted(() => {
   mediaQuery = window.matchMedia(MOBILE_QUERY)
   syncViewportMode()
   mediaQuery.addEventListener('change', syncViewportMode)
+  void applyWorkspaceTheme().catch((error) => {
+    console.error('Failed to apply workspace theme:', error)
+  })
   void syncDocumentTitle()
 })
 

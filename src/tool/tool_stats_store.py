@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import shutil
+import sys
+import tempfile
 import threading
 from datetime import datetime
 from typing import Any
@@ -14,6 +17,7 @@ from src.workspace_settings import get_workspace_cache_dir
 TOOL_STATS_DIRNAME = "tool_stats"
 TOOL_CALLS_LOG_FILENAME = "tool_calls.jsonl"
 TOOL_STATS_SUMMARY_FILENAME = "summary.json"
+TOOL_STATS_ERRORS_FILENAME = "errors.jsonl"
 DEFAULT_RECENT_TOOL_CALL_LIMIT = 50
 
 _LOCK = threading.Lock()
@@ -29,6 +33,10 @@ def get_tool_calls_log_path() -> str:
 
 def get_tool_stats_summary_path() -> str:
     return os.path.join(get_tool_stats_dir(), TOOL_STATS_SUMMARY_FILENAME)
+
+
+def get_tool_stats_error_log_path() -> str:
+    return os.path.join(get_tool_stats_dir(), TOOL_STATS_ERRORS_FILENAME)
 
 
 class ToolCallStatsRecorder:
@@ -56,15 +64,18 @@ class ToolCallStatsRecorder:
                 start_event = self._active_calls.pop(call_id, {})
         else:
             start_event = {}
-        append_tool_call_stat(
-            build_tool_call_stat_record(
-                provider_id=self.provider_id,
-                graph_id=self.graph_id,
-                node_id=self.node_id,
-                start_event=start_event,
-                end_event=event,
+        try:
+            append_tool_call_stat(
+                build_tool_call_stat_record(
+                    provider_id=self.provider_id,
+                    graph_id=self.graph_id,
+                    node_id=self.node_id,
+                    start_event=start_event,
+                    end_event=event,
+                )
             )
-        )
+        except Exception as exc:
+            _record_tool_stats_error("recorder_handle", exc, {"event": event})
 
 
 def build_tool_call_stat_record(
@@ -119,9 +130,16 @@ def append_tool_call_stat(record: dict[str, Any]) -> None:
         with open(get_tool_calls_log_path(), "a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
             handle.write("\n")
-        summary = _load_summary_unlocked()
-        _apply_record_to_summary(summary, payload)
-        _write_summary_unlocked(summary)
+        try:
+            summary = _load_summary_unlocked()
+            _apply_record_to_summary(summary, payload)
+            _write_summary_unlocked(summary)
+        except Exception as exc:
+            _write_tool_stats_error_unlocked(
+                "summary_update",
+                exc,
+                {"provider_id": payload.get("provider_id"), "tool_name": payload.get("tool_name")},
+            )
 
 
 def load_tool_stats_summary() -> dict[str, Any]:
@@ -131,7 +149,7 @@ def load_tool_stats_summary() -> dict[str, Any]:
 
 def clear_tool_stats() -> None:
     with _LOCK:
-        for path in (get_tool_calls_log_path(), get_tool_stats_summary_path()):
+        for path in (get_tool_calls_log_path(), get_tool_stats_summary_path(), get_tool_stats_error_log_path()):
             try:
                 os.remove(path)
             except FileNotFoundError:
@@ -172,7 +190,16 @@ def _load_summary_unlocked() -> dict[str, Any]:
     if not os.path.isfile(path):
         return {"providers": {}}
     with open(path, "r", encoding="utf-8") as handle:
-        payload = json.load(handle)
+        try:
+            payload = json.load(handle)
+        except json.JSONDecodeError as exc:
+            archive_path = _preserve_corrupt_summary_unlocked(path, exc)
+            _write_tool_stats_error_unlocked(
+                "summary_recovery",
+                exc,
+                {"summary_path": path, "archive_path": archive_path},
+            )
+            return {"providers": {}}
     if not isinstance(payload, dict):
         raise ValueError("tool stats summary must contain a top-level object")
     providers = payload.get("providers")
@@ -184,11 +211,74 @@ def _load_summary_unlocked() -> dict[str, Any]:
 def _write_summary_unlocked(summary: dict[str, Any]) -> None:
     path = get_tool_stats_summary_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        json.dump(summary, handle, ensure_ascii=False, indent=2, sort_keys=True)
+    fd, tmp_path = tempfile.mkstemp(prefix="summary.", suffix=".tmp", dir=os.path.dirname(path), text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(summary, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _preserve_corrupt_summary_unlocked(path: str, exc: json.JSONDecodeError) -> str:
+    archive_path = _unique_corrupt_summary_path(path)
+    try:
+        shutil.copy2(path, archive_path)
+        return archive_path
+    except Exception as copy_exc:
+        _write_tool_stats_error_unlocked(
+            "summary_recovery_archive",
+            copy_exc,
+            {"summary_path": path, "json_error": str(exc)},
+        )
+        return ""
+
+
+def _unique_corrupt_summary_path(path: str) -> str:
+    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    base = f"{path}.corrupt-{stamp}"
+    candidate = base
+    index = 1
+    while os.path.exists(candidate):
+        candidate = f"{base}.{index}"
+        index += 1
+    return candidate
+
+
+def _record_tool_stats_error(stage: str, exc: Exception, context: dict[str, Any] | None = None) -> None:
+    try:
+        with _LOCK:
+            _write_tool_stats_error_unlocked(stage, exc, context or {})
+    except Exception as log_exc:
+        _write_tool_stats_stderr(stage, log_exc)
+
+
+def _write_tool_stats_error_unlocked(
+    stage: str,
+    exc: Exception,
+    context: dict[str, Any] | None = None,
+) -> None:
+    record = {
+        "recorded_at": _now_iso(),
+        "stage": str(stage or "tool_stats").strip() or "tool_stats",
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+        "context": _json_compatible(context or {}),
+    }
+    path = get_tool_stats_error_log_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
         handle.write("\n")
-    os.replace(tmp_path, path)
+
+
+def _write_tool_stats_stderr(stage: str, exc: Exception) -> None:
+    print(f"[tool_stats] failed to record {stage} error: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 def _apply_record_to_summary(summary: dict[str, Any], record: dict[str, Any]) -> None:

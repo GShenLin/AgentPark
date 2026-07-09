@@ -20,17 +20,17 @@ def _responses_contract(**overrides):
     return payload
 
 
-def test_get_config_returns_normalized_payload_and_supports_explicit_config_path(monkeypatch, tmp_path):
+def test_get_config_returns_validated_payload_and_supports_explicit_config_path(monkeypatch, tmp_path):
     config_path = tmp_path / "moduleProvider.json"
     config_path.write_text(
         json.dumps(
             {
                 "providers": {
                     "demo": {
-                        "type": "Gemini",
+                        "type": "gemini",
                         "apiKey": "inline-secret",
-                        "supportmode": ["chat", "chat", "imagechat"],
-                        "timeoutMs": "1500",
+                        "supportmode": ["chat", "imagechat"],
+                        "timeoutMs": 1500,
                     }
                 },
             },
@@ -64,6 +64,80 @@ def test_get_config_returns_normalized_payload_and_supports_explicit_config_path
     assert payload["providers"]["demo"]["apiKey"] == "inline-secret"
     assert payload["providers"]["demo"]["features"]["web_search"]["supported"] is False
     assert payload["providers"]["demo"]["features"]["thinking"]["supported"] is False
+
+
+def test_get_config_rejects_provider_type_case_normalization(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "Gemini",
+                        "apiKey": "inline-secret",
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="lowercase string"):
+        ConfigLoader().get_config()
+
+
+def test_get_config_rejects_numeric_string_timeout(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "gemini",
+                        "apiKey": "inline-secret",
+                        "timeoutMs": "1500",
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="positive integer"):
+        ConfigLoader().get_config()
+
+
+def test_get_config_rejects_duplicate_support_modes(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "gemini",
+                        "apiKey": "inline-secret",
+                        "supportmode": ["chat", "chat"],
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="duplicate value"):
+        ConfigLoader().get_config()
 
 
 def test_get_provider_config_requires_non_empty_api_key(monkeypatch, tmp_path):
@@ -122,7 +196,7 @@ def test_get_provider_config_still_accepts_direct_api_key(monkeypatch, tmp_path)
     assert payload["type"] == "doubao"
 
 
-def test_doubao_provider_reasoning_effort_xhigh_is_normalized_to_high(monkeypatch, tmp_path):
+def test_doubao_provider_rejects_unsupported_reasoning_effort(monkeypatch, tmp_path):
     config_path = tmp_path / "moduleProvider.json"
     config_path.write_text(
         json.dumps(
@@ -132,6 +206,30 @@ def test_doubao_provider_reasoning_effort_xhigh_is_normalized_to_high(monkeypatc
                         "type": "doubao",
                         "apiKey": "inline-secret",
                         "reasoningEffort": "xhigh",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        ConfigLoader().get_provider_config("demo")
+
+
+def test_doubao_provider_rejects_reasoning_effort_snake_case(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "doubao",
+                        "apiKey": "inline-secret",
                         "reasoning_effort": "xhigh",
                     }
                 }
@@ -144,10 +242,8 @@ def test_doubao_provider_reasoning_effort_xhigh_is_normalized_to_high(monkeypatc
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
-    payload = ConfigLoader().get_provider_config("demo")
-
-    assert payload["reasoningEffort"] == "high"
-    assert payload["reasoning_effort"] == "high"
+    with pytest.raises(ValueError, match="unsupported config field"):
+        ConfigLoader().get_provider_config("demo")
 
 
 def test_get_config_rejects_invalid_provider_timeout(monkeypatch, tmp_path):
@@ -172,6 +268,59 @@ def test_get_config_rejects_invalid_provider_timeout(monkeypatch, tmp_path):
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="Provider 'demo' has invalid timeoutMs"):
+        ConfigLoader().get_config()
+
+
+def test_get_config_accepts_provider_pressure_limits(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "openai",
+                        "apiKey": "inline-secret",
+                        "concurrencyLimit": 2,
+                        "rpmLimit": 30,
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    provider = ConfigLoader().get_all_providers()["demo"]
+
+    assert provider["concurrencyLimit"] == 2
+    assert provider["rpmLimit"] == 30
+
+
+def test_get_config_rejects_invalid_provider_pressure_limits(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "openai",
+                        "apiKey": "inline-secret",
+                        "concurrencyLimit": 0,
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="concurrencyLimit"):
         ConfigLoader().get_config()
 
 

@@ -27,17 +27,17 @@ def read_companion_mcp_config() -> CompanionMcpConfig:
     section = _section(settings)
     return CompanionMcpConfig(
         default_timeout_seconds=_positive_float(
-            section.get("defaultTimeoutSeconds", section.get("default_timeout_seconds")),
+            section.get("defaultTimeoutSeconds"),
             default=DEFAULT_WAIT_TIMEOUT_SECONDS,
             field="companionMcp.defaultTimeoutSeconds",
         ),
         max_timeout_seconds=_positive_float(
-            section.get("maxTimeoutSeconds", section.get("max_timeout_seconds")),
+            section.get("maxTimeoutSeconds"),
             default=DEFAULT_MAX_TIMEOUT_SECONDS,
             field="companionMcp.maxTimeoutSeconds",
         ),
         summary_cache_ttl_seconds=_positive_float(
-            section.get("summaryCacheTtlSeconds", section.get("summary_cache_ttl_seconds")),
+            section.get("summaryCacheTtlSeconds"),
             default=DEFAULT_SUMMARY_CACHE_TTL_SECONDS,
             field="companionMcp.summaryCacheTtlSeconds",
         ),
@@ -47,11 +47,8 @@ def read_companion_mcp_config() -> CompanionMcpConfig:
 def _section(settings: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(settings, dict):
         return {}
-    for key in ("companionMcp", "companion_mcp", "companion"):
-        value = settings.get(key)
-        if isinstance(value, dict):
-            return value
-    return {}
+    value = settings.get("companionMcp")
+    return value if isinstance(value, dict) else {}
 
 
 def _positive_float(value: object, *, default: float, field: str) -> float:

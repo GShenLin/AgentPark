@@ -100,14 +100,13 @@ def _list_available_plugin_options_uncached(root: str) -> list[dict[str, str]]:
         if not _is_valid_plugin_reference(value):
             continue
         try:
-            manifest = read_plugin_manifest(os.path.join(current_dir, manifest_name), fallback_id=value)
+            manifest = read_plugin_manifest(os.path.join(current_dir, manifest_name))
             name = manifest.name
             description = manifest.description
             label = f"{name} - {description}" if description else name
             version = manifest.version
         except Exception:
-            label = value
-            version = ""
+            continue
         option = {"value": value, "label": label}
         if version:
             option["version"] = version
@@ -168,7 +167,7 @@ def _load_plugin(name: str, root: str, *, node_id: object = "") -> PluginDefinit
     plugin_dir = _resolve_plugin_dir(root, name, node_id=node_id)
     manifest_path = resolve_manifest_path(plugin_dir)
     try:
-        manifest = read_plugin_manifest(manifest_path, fallback_id=name)
+        manifest = read_plugin_manifest(manifest_path)
     except PluginManifestError as exc:
         raise PluginLoadError(_format_plugin_error(node_id, name, manifest_path, str(exc))) from exc
 

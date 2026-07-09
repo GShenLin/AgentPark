@@ -9,10 +9,16 @@ const props = defineProps<{
   calls?: RuntimeToolCall[]
 }>()
 
+type Activity = {
+  label: string
+  name: string
+  tone: 'running' | 'done' | 'attention'
+}
+
 const activity = computed(() => {
   const event = props.event
   if (event?.type === 'runtime_notice') {
-    return { label: 'Working', name: event.message, tone: 'running' }
+    return noticeActivity(event)
   }
   const views = buildRuntimeToolCallViews(props.calls, props.events)
   const notice = latestRuntimeNotice(props.events)
@@ -20,7 +26,7 @@ const activity = computed(() => {
     const last = views[views.length - 1]
     if (!last) {
       if (!notice) return null
-      return { label: 'Working', name: notice.message, tone: 'running' }
+      return noticeActivity(notice)
     }
     const label = views.length > 1 ? `${views.length} tools` : last.status === 'completed' ? 'Used' : last.status || 'Used'
     return { label, name: last.name, tone: last.tone }
@@ -33,6 +39,62 @@ const activity = computed(() => {
   const label = status === 'completed' ? 'Done' : status || 'Done'
   return { label, name, tone: status === 'completed' ? 'done' : 'attention' }
 })
+
+function noticeActivity(event: RuntimeEvent): Activity | null {
+  if (event.type !== 'runtime_notice') return null
+  const stage = String(event.stage || '').trim()
+  if (stage === 'node_run_summary') {
+    const payload = parseJsonObject(event.message)
+    const outputChars = numberField(payload, 'output_chars')
+    const durationMs = numberField(payload, 'total_duration_ms') ?? numberField(payload, 'duration_ms')
+    const parts: string[] = []
+    if (outputChars != null) parts.push(formatChars(outputChars))
+    if (durationMs != null) parts.push(formatDuration(durationMs))
+    return { label: 'Done', name: parts.join(' / ') || 'complete', tone: 'done' }
+  }
+  if (stage === 'node_run_start') {
+    return { label: 'Working', name: 'running', tone: 'running' }
+  }
+  if (stage === 'provider_request_summary') {
+    const payload = parseJsonObject(event.message)
+    const api = stringField(payload, 'request_api') || String(event.provider || '').trim()
+    return { label: 'Context', name: api || 'sent', tone: 'running' }
+  }
+  const name = String(event.name || event.provider || event.source || event.message || '').trim()
+  return { label: 'Working', name, tone: 'running' }
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(String(value || ''))
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+function stringField(source: Record<string, unknown> | null, key: string) {
+  const value = source?.[key]
+  return value == null ? '' : String(value).trim()
+}
+
+function numberField(source: Record<string, unknown> | null, key: string) {
+  const value = source?.[key]
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.round(value))
+  return null
+}
+
+function formatChars(value: number) {
+  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M chars`
+  if (value >= 1000) return `${Math.round(value / 1000)}k chars`
+  return `${value} chars`
+}
+
+function formatDuration(value: number) {
+  if (value >= 60000) return `${(value / 60000).toFixed(1)} min`
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}s`
+  return `${value}ms`
+}
 </script>
 
 <template>

@@ -91,7 +91,7 @@ function setInput(routeId: string, value: string) {
 }
 
 .route-title {
-  color: #f8fafc;
+  color: var(--theme-panel-node-output-routes-input-text, #f8fafc);
   font-size: 13px;
   font-weight: 700;
 }
@@ -104,10 +104,10 @@ function setInput(routeId: string, value: string) {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.28);
+  border: 1px solid var(--theme-panel-node-output-routes-button-border, rgba(148, 163, 184, 0.28));
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.9);
-  color: #e2e8f0;
+  background: var(--theme-panel-node-output-routes-button-background, rgba(15, 23, 42, 0.9));
+  color: var(--theme-panel-node-output-routes-button-text, #e2e8f0);
   font-size: 17px;
   font-weight: 700;
   line-height: 1;
@@ -121,10 +121,10 @@ function setInput(routeId: string, value: string) {
 }
 
 .route-icon-btn.danger {
-  color: #fecaca;
+  color: var(--theme-panel-node-output-routes-button-danger-text, #fecaca);
   font-size: 14px;
   border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(127, 29, 29, 0.24);
+  background: var(--theme-panel-node-output-routes-button-danger-background, rgba(127, 29, 29, 0.24));
 }
 
 .route-list {
@@ -148,7 +148,7 @@ label {
 }
 
 span {
-  color: rgba(148, 163, 184, 0.9);
+  color: var(--theme-panel-node-output-routes-button-text, rgba(148, 163, 184, 0.9));
   font-size: 10px;
   line-height: 1;
   text-align: center;
@@ -159,10 +159,10 @@ select {
   min-width: 0;
   height: 20px;
   padding: 0 4px;
-  border: 1px solid rgba(148, 163, 184, 0.26);
+  border: 1px solid var(--theme-panel-node-output-routes-input-border, rgba(148, 163, 184, 0.26));
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
+  background: var(--theme-panel-node-output-routes-input-background, rgba(15, 23, 42, 0.92));
+  color: var(--theme-panel-node-output-routes-input-text, #f8fafc);
   font-size: 11px;
   line-height: 20px;
   text-align: center;

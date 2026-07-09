@@ -14,12 +14,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO] Checking repository before startup...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%WORKSPACE_ROOT%\scripts\sync_before_restart.ps1" -WorkspaceRoot "%WORKSPACE_ROOT%"
-if errorlevel 1 (
-    echo [WARN] Repository update did not complete. Continuing startup.
-)
-
 echo [INFO] Starting AgentPark through build_and_run.bat...
 set "AGENTPARK_NO_PAUSE=1"
 call "%WORKSPACE_ROOT%\build_and_run.bat" %*

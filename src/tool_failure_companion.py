@@ -5,12 +5,14 @@ from typing import Any
 
 from src.companion_inbox import deliver_companion_notice
 from src.companion_notice_settings import companion_tool_failure_memory_enabled
+from src.companion_paths import COMPANION_GRAPH_ID
 from src.operational_memory_notice_context import build_operational_memory_notice_context
 
 
 TOOL_FAILURE_RESULT_PREVIEW_CHARS = 1600
 RECENT_MESSAGE_PREVIEW_CHARS = 600
 RECENT_MESSAGE_LIMIT = 8
+AGENT_NODE_TYPE_ID = "agent_node"
 
 
 def notify_companion_about_tool_failure_memory(
@@ -18,6 +20,8 @@ def notify_companion_about_tool_failure_memory(
     failures: list[dict[str, Any]],
 ) -> bool:
     if not companion_tool_failure_memory_enabled():
+        return False
+    if not _is_agent_node(agent):
         return False
     notice = build_tool_failure_memory_notice(agent, failures)
     if _is_companion_self_notice(notice):
@@ -38,7 +42,7 @@ def build_tool_failure_memory_notice(agent: object, failures: list[dict[str, Any
         "source": {
             "graph_id": context.graph_id,
             "node_id": context.node_id,
-            "node_type_id": context.node_type_id or "agent_node",
+            "node_type_id": context.node_type_id,
             "provider": str(getattr(agent, "provider_name", "") or "").strip(),
         },
         "run": {
@@ -122,8 +126,14 @@ def _is_companion_self_notice(notice: dict[str, Any]) -> bool:
     if not isinstance(source, dict):
         return False
     graph_id = str(source.get("graph_id") or "").strip()
-    node_id = str(source.get("node_id") or "").strip()
-    return graph_id == "companion" and node_id == "companion"
+    return graph_id == COMPANION_GRAPH_ID
+
+
+def _is_agent_node(agent: object) -> bool:
+    from src.providers.agent_runtime_context import get_agent_runtime_context
+
+    context = get_agent_runtime_context(agent)
+    return str(context.node_type_id or "").strip() == AGENT_NODE_TYPE_ID
 
 
 __all__ = [

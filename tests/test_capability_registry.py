@@ -1,6 +1,7 @@
 from nodes.agent_plugin_loader import PluginDefinition
 from nodes.agent_skill_loader import SkillDefinition
 from src.capabilities.registry import CapabilityRegistry
+import pytest
 
 
 def test_capability_registry_reports_skill_mcp_dependencies(monkeypatch):
@@ -102,3 +103,11 @@ def test_capability_registry_reports_mcp_lifecycle_failure(monkeypatch):
     assert descriptor["status"] == "error"
     assert "mcp lifecycle: failed" in descriptor["diagnostics"]
     assert "startup boom" in descriptor["diagnostics"]
+
+
+def test_capability_registry_rejects_malformed_selected_capabilities():
+    with pytest.raises(ValueError, match="tools must be a list"):
+        CapabilityRegistry().discover_payload({"tools": "file_read_tools"})
+
+    with pytest.raises(ValueError, match="duplicate value"):
+        CapabilityRegistry().discover_payload({"tools": ["file_read_tools", "file_read_tools"]})

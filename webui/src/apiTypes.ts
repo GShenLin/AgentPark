@@ -128,6 +128,7 @@ export type GraphInfo = {
   id: string
   name: string
   updated_at?: string
+  readonly?: boolean
 }
 
 export type AgentProfile = {
@@ -156,6 +157,8 @@ export type GraphProfileNodeConfig = {
   ui?: {
     x?: number
     y?: number
+    width?: number
+    height?: number
   }
   input_num?: number
   output_num?: number
@@ -268,19 +271,33 @@ export type RuntimeToolCall = {
 
 export type ProviderRequestSummary = {
   request_index?: number
+  request_api?: string
   continuation_mode?: string
   responses_mode?: string
   requested_responses_mode?: string
   previous_response_id_present?: boolean
   input_item_count?: number
   approx_input_chars?: number
+  approx_input_tokens?: number
   environment_context_chars?: number
   largest_input_items?: Record<string, unknown>[]
+  tool_call_chars_by_call?: Record<string, unknown>[]
+  tool_call_chars_total?: number
   tool_result_chars_by_call?: Record<string, unknown>[]
+  tool_result_chars_total?: number
   largest_tool_result?: Record<string, unknown>
   tools_included?: string[]
   tools_included_count?: number
   stream?: boolean
+}
+
+export type ProviderRequestTotals = {
+  request_count?: number
+  approx_input_chars?: number
+  approx_input_tokens?: number
+  tool_call_chars?: number
+  tool_result_chars?: number
+  last_request_index?: number
 }
 
 export type NodeInstanceConfig = {
@@ -293,6 +310,7 @@ export type NodeInstanceConfig = {
   runtime_events?: RuntimeEvent[]
   runtime_tool_calls?: RuntimeToolCall[]
   provider_request_summaries?: ProviderRequestSummary[]
+  provider_request_totals?: ProviderRequestTotals | null
   ui?: {
     x?: number
     y?: number
@@ -550,4 +568,5 @@ export type MobileNodeConversation = {
   last_message?: string
   live_message?: string
   thinking_message?: string
+  activity_message?: string
 }

@@ -38,12 +38,12 @@ def test_agent_runtime_context_bind_and_read(tmp_path):
     assert calls == [{"role": "assistant"}]
 
 
-def test_agent_runtime_context_reads_legacy_attributes(tmp_path):
+def test_agent_runtime_context_reads_bound_attributes(tmp_path):
     from src.providers.agent_runtime_context import get_agent_runtime_context
 
     agent = SimpleNamespace(
-        _agentpark_graph_id="legacy-graph",
-        _agentpark_node_id="legacy-node",
+        _agentpark_graph_id="graph-1",
+        _agentpark_node_id="node-1",
         _agentpark_node_type_id="agent_node",
         _agentpark_workspace_root=str(tmp_path),
         _agentpark_working_path=str(tmp_path / "work"),
@@ -54,8 +54,8 @@ def test_agent_runtime_context_reads_legacy_attributes(tmp_path):
 
     resolved = get_agent_runtime_context(agent)
 
-    assert resolved.graph_id == "legacy-graph"
-    assert resolved.node_id == "legacy-node"
+    assert resolved.graph_id == "graph-1"
+    assert resolved.node_id == "node-1"
     assert resolved.node_type_id == "agent_node"
     assert resolved.workspace_root == str(tmp_path)
     assert resolved.working_path == str(tmp_path / "work")

@@ -27,7 +27,6 @@ def _without_environment_context(items):
         text = str(first.get("text") or "") if isinstance(first, dict) else ""
         return (
             text.startswith("<environment_context>")
-            or text.startswith("[Agent Environment Context]\n")
             or text.startswith("<permissions instructions>")
         )
 
@@ -285,41 +284,6 @@ def test_provider_blocks_rg_repeat_that_only_increases_max_results():
     assert results[1].status == "blocked"
     payload = json.loads(results[1].cleaned_result)
     assert "max_results" in payload["reason"]
-
-
-def test_provider_ignores_legacy_stage_policy_config():
-    from src.providers.openai_agent import OpenAIAgent
-    from src.tool.tool_call_protocol import ToolCallEnvelope
-
-    agent = OpenAIAgent.__new__(OpenAIAgent)
-    agent.config = {
-        "agentToolStagePolicyEnabled": True,
-        "agentToolStageGatheringAllowedTools": ["rg_search_text"],
-    }
-    agent.provider_name = "openai"
-    agent.events = []
-    agent.tool_event_callback = agent.events.append
-    agent.tools = BaseTool(agent)
-    agent.tools.function_map["read_file"] = lambda **_kwargs: json.dumps(
-        {"status": "success", "content": "hello", "read_lines": "1-1"}
-    )
-    agent._reset_tool_call_loop_guard()
-
-    result = agent._execute_tool_call_envelopes_parallel(
-        [
-            ToolCallEnvelope(
-                name="read_file",
-                call_id="call-1",
-                arguments={"file_path": "src/app.py"},
-                arguments_json='{"file_path":"src/app.py"}',
-                provider="unit",
-            )
-        ]
-    )
-
-    assert result[0].status == "completed"
-    assert not _runtime_notice_payloads(agent.events, "tool_stage_policy_transition")
-    assert not _runtime_notice_payloads(agent.events, "tool_stage_policy_blocked")
 
 
 def test_provider_openai_tool_call_items_preserve_parse_failures_in_order():
@@ -630,7 +594,6 @@ def test_openai_responses_compacts_oversized_tool_output_before_continuation_and
         "baseUrl": "https://api.openai.test/v1",
         "model": "gpt-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "maxRetries": 0,
         "retryDelaySec": 0,
@@ -809,7 +772,6 @@ def test_openai_responses_recovers_when_provider_rejects_tool_output_size():
         "baseUrl": "https://api.openai.test/v1",
         "model": "gpt-test",
         "responsesApi": True,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "responsesMode": "whole_response",
         "maxRetries": 0,
@@ -1082,7 +1044,7 @@ def test_doubao_responses_replays_context_when_previous_response_missing():
     assert "echo:hello" in tool_output["output"]
 
 
-def test_doubao_responses_ignores_legacy_continuation_config_and_replays_context():
+def test_doubao_responses_replays_explicit_context_between_tool_rounds():
     from src.providers.doubao_agent import DouBaoAgent
 
     agent = DouBaoAgent.__new__(DouBaoAgent)
@@ -1091,7 +1053,6 @@ def test_doubao_responses_ignores_legacy_continuation_config_and_replays_context
         "baseUrl": "https://example.test/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "previous_response_id",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
@@ -1178,7 +1139,6 @@ def test_openai_responses_payload_includes_reasoning_effort():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1414,7 +1374,6 @@ def test_openai_responses_continuation_replays_explicit_context():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1516,7 +1475,6 @@ def test_openai_responses_logs_explicit_context_when_response_id_missing():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1598,7 +1556,6 @@ def test_openai_responses_replays_context_when_previous_response_missing():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1702,7 +1659,6 @@ def test_openai_responses_rebuilds_input_after_tool_context_compaction():
         "retryDelaySec": 0,
         "toolContextCompactionEnabled": True,
         "toolContextCompactionEveryToolCalls": 1,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
     }

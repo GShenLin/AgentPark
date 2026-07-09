@@ -7,6 +7,10 @@ import time
 from src.base_agent_manager import BaseAgentManager
 from src.config_loader import ConfigLoader
 from src.base_memory import BaseMemory
+from src.providers.provider_request_summary import build_provider_request_summary
+from src.providers.provider_request_summary import next_provider_request_index
+from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
+from src.providers.provider_runtime_events import emit_provider_runtime_notice
 from src.tool.base_tool import BaseTool
 from src.tool_failure_memory_notice import ToolFailureMemoryNoticeMixin
 from src.tool_context_compaction_gate import ToolContextCompactionGateMixin
@@ -112,8 +116,37 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
         msg = {"role": role, "content": content}
         msg.update(kwargs)
         self.messages.append(msg)
+        if persist:
+            self._persist_assistant_tool_call_note(msg)
         if persist and self.internal_memory_enabled:
             self.memory.on_message(msg)
+
+    def _persist_assistant_tool_call_note(self, message):
+        if not self._is_visible_assistant_tool_call_note(message):
+            return
+        callback = getattr(self, "_agentpark_persist_assistant_tool_call_note", None)
+        if callable(callback):
+            callback(message)
+
+    @staticmethod
+    def _is_visible_assistant_tool_call_note(message):
+        if not isinstance(message, dict):
+            return False
+        if str(message.get("role") or "").strip().lower() != "assistant":
+            return False
+        if not isinstance(message.get("tool_calls"), list) or not message.get("tool_calls"):
+            return False
+        content = message.get("content")
+        if isinstance(content, str):
+            return bool(content.strip())
+        if not isinstance(content, list):
+            return False
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if str(part.get("text") or "").strip():
+                return True
+        return False
 
     def Log(self, line):
         self.memory.Log(line)
@@ -168,6 +201,69 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
 
     def _get_provider_config(self):
         return self.config
+
+    def _emit_provider_request_summary(
+        self,
+        summary: dict | None = None,
+        *,
+        current_input=None,
+        tools_payload=None,
+        stream=False,
+        request_api="",
+        responses_mode="",
+        requested_responses_mode="",
+        context_update=None,
+        instructions="",
+        tool_choice="",
+        parallel_tool_calls=None,
+        include=None,
+    ) -> dict:
+        payload = summary if isinstance(summary, dict) else build_provider_request_summary(
+            request_index=next_provider_request_index(self),
+            current_input=current_input,
+            tools_payload=tools_payload,
+            stream=bool(stream),
+            request_api=request_api,
+            responses_mode=responses_mode,
+            requested_responses_mode=requested_responses_mode,
+            context_update=context_update,
+            instructions=instructions,
+            tool_choice=tool_choice,
+            parallel_tool_calls=parallel_tool_calls,
+            include=include,
+        )
+        emit_provider_runtime_notice(
+            getattr(self, "tool_event_callback", None),
+            provider=getattr(self, "provider_name", "provider"),
+            message=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            stage=PROVIDER_REQUEST_SUMMARY_STAGE,
+        )
+        return payload
+
+    def _emit_provider_payload_request_summary(
+        self,
+        payload: dict,
+        *,
+        request_api: str,
+        stream: bool | None = None,
+    ) -> dict:
+        if not isinstance(payload, dict):
+            raise ValueError("provider request summary payload must be an object.")
+        effective_stream = bool(payload.get("stream")) if stream is None else bool(stream)
+        current_input = payload.get("input") if "input" in payload else payload.get("messages")
+        system_text = str(payload.get("system") or "").strip()
+        if system_text and isinstance(current_input, list):
+            current_input = [{"role": "system", "content": system_text}] + current_input
+        return self._emit_provider_request_summary(
+            current_input=current_input,
+            tools_payload=payload.get("tools"),
+            stream=effective_stream,
+            request_api=request_api,
+            instructions=str(payload.get("instructions") or payload.get("system") or ""),
+            tool_choice=str(payload.get("tool_choice") or ""),
+            parallel_tool_calls=payload.get("parallel_tool_calls"),
+            include=payload.get("include"),
+        )
 
     def _resolve_parallel_workers(self, task_count):
         if not isinstance(task_count, int) or task_count <= 0:

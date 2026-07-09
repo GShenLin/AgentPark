@@ -182,9 +182,9 @@ onMounted(async () => {
   top: 52px;
   z-index: 30;
   padding: 12px;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--theme-panel-topbar-border-color, var(--border-light));
   border-radius: 10px;
-  background: rgba(30, 41, 59, 0.98);
+  background: var(--theme-panel-topbar-background-color, rgba(30, 41, 59, 0.98));
   box-shadow: var(--shadow-xl);
   backdrop-filter: blur(20px);
   animation: fadeIn 0.2s ease;
@@ -203,7 +203,7 @@ onMounted(async () => {
 
 .remote-label,
 .remote-address {
-  color: var(--text-tertiary);
+  color: var(--theme-panel-topbar-text-muted, var(--text-tertiary));
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -213,7 +213,7 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-secondary);
+  color: var(--theme-panel-topbar-text-secondary, var(--text-secondary));
   font-size: 12px;
   white-space: nowrap;
 }
@@ -221,7 +221,7 @@ onMounted(async () => {
 .remote-private input {
   width: 14px;
   height: 14px;
-  accent-color: var(--accent-blue);
+  accent-color: var(--theme-panel-topbar-button-active-text, var(--accent-blue));
 }
 
 .remote-select,
@@ -230,9 +230,9 @@ onMounted(async () => {
   max-width: 220px;
   height: 30px;
   border-radius: 6px;
-  border: 1px solid var(--border-light);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  border: 1px solid var(--theme-panel-topbar-input-border, var(--border-light));
+  background: var(--theme-panel-topbar-input-background, var(--bg-primary));
+  color: var(--theme-panel-topbar-input-text, var(--text-primary));
   font-size: 12px;
   padding: 0 10px;
   transition: all var(--transition-fast);
@@ -240,14 +240,14 @@ onMounted(async () => {
 
 .remote-select:hover,
 .remote-input:hover {
-  border-color: var(--border-medium);
+  border-color: var(--theme-panel-topbar-border-color, var(--border-medium));
 }
 
 .remote-select:focus,
 .remote-input:focus {
-  outline: 2px solid var(--accent-blue);
+  outline: 2px solid var(--theme-panel-topbar-button-active-text, var(--accent-blue));
   outline-offset: -2px;
-  background: var(--bg-secondary);
+  background: var(--theme-panel-topbar-input-background, var(--bg-secondary));
 }
 
 .remote-input.port {
@@ -264,9 +264,9 @@ onMounted(async () => {
 
 /* 顶部按钮基础样式 */
 .topbar-btn {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-secondary);
+  background: var(--theme-panel-topbar-button-background, transparent);
+  border: 1px solid var(--theme-panel-topbar-button-border, transparent);
+  color: var(--theme-panel-topbar-button-text, var(--text-secondary));
   font-size: 12px;
   font-weight: 500;
   padding: 6px 12px;
@@ -275,8 +275,8 @@ onMounted(async () => {
 }
 
 .topbar-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--theme-panel-topbar-button-hover-background, var(--bg-hover));
+  color: var(--theme-panel-topbar-button-hover-text, var(--text-primary));
   border-color: transparent;
   transform: none;
   box-shadow: none;
@@ -284,9 +284,9 @@ onMounted(async () => {
 
 /* 主按钮样式 */
 .topbar-btn.primary {
-  border-color: var(--accent-blue);
-  background: var(--accent-blue-soft);
-  color: var(--text-accent);
+  border-color: var(--theme-panel-topbar-button-active-text, var(--accent-blue));
+  background: var(--theme-panel-topbar-button-active-background, var(--accent-blue-soft));
+  color: var(--theme-panel-topbar-button-active-text, var(--text-accent));
 }
 
 .topbar-btn.primary:hover {
@@ -315,17 +315,17 @@ onMounted(async () => {
 
 /* 设置按钮样式 */
 .topbar-btn.settings {
-  color: var(--text-secondary);
+  color: var(--theme-panel-topbar-button-text, var(--text-secondary));
 }
 
 .topbar-btn.settings:hover {
-  color: var(--text-primary);
+  color: var(--theme-panel-topbar-button-hover-text, var(--text-primary));
 }
 
 .topbar-btn.settings.active {
-  background: var(--accent-blue-soft);
+  background: var(--theme-panel-topbar-button-active-background, var(--accent-blue-soft));
   border-color: transparent;
-  color: var(--text-accent);
+  color: var(--theme-panel-topbar-button-active-text, var(--text-accent));
 }
 
 /* 禁用状态 */

@@ -34,10 +34,6 @@ def test_agent_node_tools_schema_is_multiselect_with_available_tools():
     assert isinstance(schema["mcp_servers"]["options"], list)
     assert schema["collaboration_mode"]["type"] == "select"
     assert [item["value"] for item in schema["collaboration_mode"]["options"]] == ["default", "plan"]
-    assert "agentToolStagePolicyEnabled" not in schema
-    assert "agentToolStageGatheringAllowedTools" not in schema
-    assert "agentToolStageAnalyzingAllowedTools" not in schema
-    assert "agentToolStageFinalizingAllowedTools" not in schema
     assert list(schema.keys())[-4:] == ["tools", "mcp_servers", "skills", "plugins"]
 
 
@@ -1729,7 +1725,8 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
         saw_tool_event_without_message_override = False
         saw_runtime_history = False
         saw_runtime_tool_call = False
-        saw_runtime_event_cleared = False
+        saw_node_run_start = False
+        saw_node_run_summary = False
         saw_final = False
         for _ in range(80):
             cfgs = client.get("/api/nodes/instances/configs?graph_id=default")
@@ -1752,6 +1749,20 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
                 if state == "working" and last_message != str(last_runtime_event.get("message") or ""):
                     saw_tool_event_without_message_override = True
             runtime_events = cfg.get("runtime_events")
+            if isinstance(runtime_events, list):
+                for item in runtime_events:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("type") == "runtime_notice"
+                        and item.get("stage") == "node_run_start"
+                    ):
+                        payload = json.loads(str(item.get("message") or "{}"))
+                        saw_node_run_start = (
+                            payload.get("trace_id")
+                            and payload.get("status") == "running"
+                            and payload.get("input_chars") == 5
+                            and isinstance(payload.get("started_at_epoch_ms"), int)
+                        )
             if isinstance(runtime_events, list) and len(runtime_events) >= 2:
                 names = [item.get("name") for item in runtime_events if isinstance(item, dict)]
                 types = [item.get("type") for item in runtime_events if isinstance(item, dict)]
@@ -1763,7 +1774,18 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
                 if isinstance(call, dict) and call.get("name") == "read_file" and call.get("status") == "completed":
                     saw_runtime_tool_call = True
             if str(cfg.get("last_run_at") or "").strip() and last_message == "Hi":
-                saw_runtime_event_cleared = cfg.get("last_runtime_event") is None
+                last_runtime_event = cfg.get("last_runtime_event")
+                if (
+                    isinstance(last_runtime_event, dict)
+                    and last_runtime_event.get("type") == "runtime_notice"
+                    and last_runtime_event.get("stage") == "node_run_summary"
+                ):
+                    payload = json.loads(str(last_runtime_event.get("message") or "{}"))
+                    saw_node_run_summary = (
+                        payload.get("output_chars") == 2
+                        and isinstance(payload.get("total_duration_ms"), int)
+                        and payload.get("total_duration_ms") >= 0
+                    )
                 runtime_events = cfg.get("runtime_events")
                 if isinstance(runtime_events, list) and len(runtime_events) >= 2:
                     saw_runtime_history = True
@@ -1781,7 +1803,8 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
         assert saw_tool_event_without_message_override, "expected tool lifecycle event to preserve streamed assistant text"
         assert saw_runtime_history, "expected bounded tool lifecycle history in node config"
         assert saw_runtime_tool_call, "expected grouped runtime tool call item in node config"
-        assert saw_runtime_event_cleared, "expected tool lifecycle event to clear after final output"
+        assert saw_node_run_start, "expected run start stats to be visible while node is working"
+        assert saw_node_run_summary, "expected final output stats persisted after node output"
         assert saw_final, "expected final message and last_run_at after completion"
 
         mem = client.get("/api/nodes/instances/agent1/memory?graph_id=default&max_chars=20000")

@@ -57,19 +57,19 @@ def perform_desktop_input(
     keys: Any = None,
     text: Any = "",
 ) -> DesktopInputResult:
-    normalized_action = _normalize_action(action)
+    validated_action = _validate_action(action)
     started_at = time.perf_counter()
     controller = _load_pyautogui()
 
-    if normalized_action == "move_mouse":
+    if validated_action == "move_mouse":
         x_value, y_value = _parse_point(x, y)
         move_duration = _duration_seconds(duration_ms)
         controller.moveTo(x_value, y_value, duration=move_duration)
-        return _result(started_at, normalized_action, x=x_value, y=y_value, duration_ms=int(move_duration * 1000))
+        return _result(started_at, validated_action, x=x_value, y=y_value, duration_ms=int(move_duration * 1000))
 
-    if normalized_action == "click":
+    if validated_action == "click":
         x_value, y_value = _parse_optional_point(x, y)
-        button_value = _normalize_button(button)
+        button_value = _validate_button(button)
         click_count = _parse_clicks(clicks)
         interval_seconds = _interval_seconds(interval_ms)
         if x_value is None:
@@ -78,7 +78,7 @@ def perform_desktop_input(
             controller.click(x=x_value, y=y_value, button=button_value, clicks=click_count, interval=interval_seconds)
         return _result(
             started_at,
-            normalized_action,
+            validated_action,
             x=x_value,
             y=y_value,
             button=button_value,
@@ -86,9 +86,9 @@ def perform_desktop_input(
             interval_ms=int(interval_seconds * 1000),
         )
 
-    if normalized_action == "hold_mouse":
+    if validated_action == "hold_mouse":
         x_value, y_value = _parse_optional_point(x, y)
-        button_value = _normalize_button(button)
+        button_value = _validate_button(button)
         hold_duration = _duration_seconds(duration_ms, default_ms=500)
         if x_value is None:
             controller.mouseDown(button=button_value)
@@ -103,41 +103,41 @@ def perform_desktop_input(
                 controller.mouseUp(x=x_value, y=y_value, button=button_value)
         return _result(
             started_at,
-            normalized_action,
+            validated_action,
             x=x_value,
             y=y_value,
             button=button_value,
             duration_ms=int(hold_duration * 1000),
         )
 
-    if normalized_action == "mouse_down":
+    if validated_action == "mouse_down":
         x_value, y_value = _parse_optional_point(x, y)
-        button_value = _normalize_button(button)
+        button_value = _validate_button(button)
         if x_value is None:
             controller.mouseDown(button=button_value)
         else:
             controller.mouseDown(x=x_value, y=y_value, button=button_value)
-        return _result(started_at, normalized_action, x=x_value, y=y_value, button=button_value)
+        return _result(started_at, validated_action, x=x_value, y=y_value, button=button_value)
 
-    if normalized_action == "mouse_up":
+    if validated_action == "mouse_up":
         x_value, y_value = _parse_optional_point(x, y)
-        button_value = _normalize_button(button)
+        button_value = _validate_button(button)
         if x_value is None:
             controller.mouseUp(button=button_value)
         else:
             controller.mouseUp(x=x_value, y=y_value, button=button_value)
-        return _result(started_at, normalized_action, x=x_value, y=y_value, button=button_value)
+        return _result(started_at, validated_action, x=x_value, y=y_value, button=button_value)
 
-    if normalized_action == "drag":
+    if validated_action == "drag":
         x_value, y_value = _parse_point(x, y)
         end_x_value, end_y_value = _parse_point(end_x, end_y, prefix="end_")
-        button_value = _normalize_button(button)
+        button_value = _validate_button(button)
         drag_duration = _duration_seconds(duration_ms, default_ms=200)
         controller.moveTo(x_value, y_value, duration=0)
         controller.dragTo(end_x_value, end_y_value, duration=drag_duration, button=button_value)
         return _result(
             started_at,
-            normalized_action,
+            validated_action,
             x=x_value,
             y=y_value,
             end_x=end_x_value,
@@ -146,47 +146,47 @@ def perform_desktop_input(
             duration_ms=int(drag_duration * 1000),
         )
 
-    if normalized_action == "press_key":
-        key_value = _normalize_key(key)
+    if validated_action == "press_key":
+        key_value = _validate_key(key)
         press_count = _parse_clicks(clicks)
         interval_seconds = _interval_seconds(interval_ms)
         controller.press(key_value, presses=press_count, interval=interval_seconds)
         return _result(
             started_at,
-            normalized_action,
+            validated_action,
             key=key_value,
             presses=press_count,
             interval_ms=int(interval_seconds * 1000),
         )
 
-    if normalized_action == "hold_key":
-        key_value = _normalize_key(key)
+    if validated_action == "hold_key":
+        key_value = _validate_key(key)
         hold_duration = _duration_seconds(duration_ms, default_ms=500)
         controller.keyDown(key_value)
         try:
             time.sleep(hold_duration)
         finally:
             controller.keyUp(key_value)
-        return _result(started_at, normalized_action, key=key_value, duration_ms=int(hold_duration * 1000))
+        return _result(started_at, validated_action, key=key_value, duration_ms=int(hold_duration * 1000))
 
-    if normalized_action == "hotkey":
-        key_values = _normalize_keys(keys)
+    if validated_action == "hotkey":
+        key_values = _validate_keys(keys)
         interval_seconds = _interval_seconds(interval_ms)
         controller.hotkey(*key_values, interval=interval_seconds)
-        return _result(started_at, normalized_action, keys=key_values, interval_ms=int(interval_seconds * 1000))
+        return _result(started_at, validated_action, keys=key_values, interval_ms=int(interval_seconds * 1000))
 
-    if normalized_action == "type_text":
-        text_value = _normalize_text(text)
+    if validated_action == "type_text":
+        text_value = _validate_text(text)
         interval_seconds = _interval_seconds(interval_ms, default_ms=0)
         controller.write(text_value, interval=interval_seconds)
         return _result(
             started_at,
-            normalized_action,
+            validated_action,
             chars=len(text_value),
             interval_ms=int(interval_seconds * 1000),
         )
 
-    raise DesktopInputError(f"unsupported action: {normalized_action}")
+    raise DesktopInputError(f"unsupported action: {validated_action}")
 
 
 def _load_pyautogui():
@@ -196,42 +196,56 @@ def _load_pyautogui():
     return pyautogui
 
 
-def _normalize_action(value: Any) -> str:
-    text = str(value or "").strip().lower()
+def _validate_action(value: Any) -> str:
+    if not isinstance(value, str):
+        raise DesktopInputError(f"action must be one of: {', '.join(sorted(_ACTIONS))}")
+    text = value.strip()
     if text not in _ACTIONS:
         raise DesktopInputError(f"action must be one of: {', '.join(sorted(_ACTIONS))}")
     return text
 
 
-def _normalize_button(value: Any) -> str:
-    text = str(value or "left").strip().lower()
+def _validate_button(value: Any) -> str:
+    if value is None:
+        text = "left"
+    elif isinstance(value, str):
+        text = value.strip()
+    else:
+        raise DesktopInputError(f"button must be one of: {', '.join(sorted(_BUTTONS))}")
     if text not in _BUTTONS:
         raise DesktopInputError(f"button must be one of: {', '.join(sorted(_BUTTONS))}")
     return text
 
 
-def _normalize_key(value: Any) -> str:
-    text = str(value or "").strip().lower()
+def _validate_key(value: Any) -> str:
+    if not isinstance(value, str):
+        raise DesktopInputError("key is required")
+    text = value.strip()
     if not text:
         raise DesktopInputError("key is required")
     return text
 
 
-def _normalize_keys(value: Any) -> list[str]:
-    if isinstance(value, str):
-        raw_items = [item.strip() for item in value.replace("+", ",").split(",")]
-    elif isinstance(value, (list, tuple)):
-        raw_items = [str(item or "").strip() for item in value]
-    else:
-        raw_items = []
-    keys = [item.lower() for item in raw_items if item]
+def _validate_keys(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        raise DesktopInputError("keys must contain at least two key names")
+    keys: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise DesktopInputError("keys must contain only strings")
+        text = item.strip()
+        if not text:
+            raise DesktopInputError("keys must contain only non-empty strings")
+        keys.append(text)
     if len(keys) < 2:
         raise DesktopInputError("keys must contain at least two key names")
     return keys
 
 
-def _normalize_text(value: Any) -> str:
-    text = str(value or "")
+def _validate_text(value: Any) -> str:
+    if not isinstance(value, str):
+        raise DesktopInputError("text is required")
+    text = value
     if not text:
         raise DesktopInputError("text is required")
     if len(text) > _MAX_TEXT_CHARS:
@@ -244,8 +258,8 @@ def _parse_point(x_value: Any, y_value: Any, *, prefix: str = "") -> tuple[int, 
 
 
 def _parse_optional_point(x_value: Any, y_value: Any) -> tuple[int | None, int | None]:
-    has_x = x_value is not None and str(x_value).strip() != ""
-    has_y = y_value is not None and str(y_value).strip() != ""
+    has_x = x_value is not None
+    has_y = y_value is not None
     if not has_x and not has_y:
         return None, None
     if has_x != has_y:
@@ -254,20 +268,18 @@ def _parse_optional_point(x_value: Any, y_value: Any) -> tuple[int | None, int |
 
 
 def _parse_coordinate(value: Any, name: str) -> int:
-    try:
-        parsed = int(float(value))
-    except Exception as exc:
-        raise DesktopInputError(f"{name} must be a number") from exc
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise DesktopInputError(f"{name} must be an integer")
+    parsed = value
     if parsed < 0:
         raise DesktopInputError(f"{name} must be non-negative")
     return parsed
 
 
 def _parse_clicks(value: Any) -> int:
-    try:
-        parsed = int(float(value))
-    except Exception as exc:
-        raise DesktopInputError("clicks must be a number") from exc
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise DesktopInputError("clicks must be an integer")
+    parsed = value
     if parsed < 1 or parsed > _MAX_CLICKS:
         raise DesktopInputError(f"clicks must be between 1 and {_MAX_CLICKS}")
     return parsed
@@ -282,13 +294,12 @@ def _interval_seconds(value: Any, *, default_ms: int = 80) -> float:
 
 
 def _bounded_milliseconds(value: Any, *, name: str, default_ms: int) -> int:
-    if value is None or value == "":
+    if value is None:
         parsed = default_ms
+    elif isinstance(value, bool) or not isinstance(value, int):
+        raise DesktopInputError(f"{name} must be an integer")
     else:
-        try:
-            parsed = int(float(value))
-        except Exception as exc:
-            raise DesktopInputError(f"{name} must be a number") from exc
+        parsed = value
     if parsed < 0 or parsed > _MAX_DURATION_MS:
         raise DesktopInputError(f"{name} must be between 0 and {_MAX_DURATION_MS}")
     return parsed

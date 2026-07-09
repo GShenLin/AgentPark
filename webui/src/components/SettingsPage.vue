@@ -1,21 +1,38 @@
 ﻿<script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
-import { getNodeTemplate, listProviders, listTools, type ProviderInfo } from '../api'
+import {
+  applyRuntimeEventConfig,
+  getNodeTemplate,
+  listAgentProfiles,
+  listProviders,
+  listTools,
+  type AgentProfile,
+  type ProviderInfo,
+} from '../api'
 import { getSchemaFieldOptions } from '../composables/nodeSchemaFields'
+import { formatRuntimeApplyErrors } from '../runtimeEventsConfig'
 import {
   getSettingsSection,
+  listThemePresets,
+  loadThemePreset,
   listSettingsSections,
+  saveThemePreset,
   updateSettingsSection,
   type SettingsDocument,
   type SettingsSectionInfo,
+  type ThemePresetInfo,
 } from '../settingsApi'
 import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
 import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySelect.vue'
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
 import ModuleProviderSettingsForm from './settings/ModuleProviderSettingsForm.vue'
+import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
+import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
+import ThemeSettingsForm from './settings/ThemeSettingsForm.vue'
 import ToolStatsSettingsPanel from './settings/ToolStatsSettingsPanel.vue'
+import { applyWorkspaceTheme } from '../theme'
 
 const AnimEditor = defineAsyncComponent(() => import('./settings/AnimEditor.vue'))
 const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
@@ -36,6 +53,12 @@ const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
     label: 'Companion',
     path: 'memories/companion/config.json',
     filename: 'config.json',
+  },
+  {
+    id: 'events',
+    label: 'Runtime Events',
+    path: 'config/events.json',
+    filename: 'events.json',
   },
 ]
 
@@ -60,8 +83,11 @@ const saving = ref(false)
 const error = ref('')
 const status = ref('')
 const providers = ref<ProviderInfo[]>([])
+const agentProfiles = ref<AgentProfile[]>([])
 const availableTools = ref<string[]>([])
 const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[]>>({})
+const themePresets = ref<ThemePresetInfo[]>([])
+const activeThemePresetId = ref('default')
 
 const displaySections = computed<SettingsSectionInfo[]>(() => {
   const base = sections.value.slice()
@@ -71,6 +97,14 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
       label: 'Test',
       path: 'config/ProviderLimit.json',
       filename: 'ProviderLimit.json',
+    })
+  }
+  if (!base.some((item) => item.id === 'pressure')) {
+    base.push({
+      id: 'pressure',
+      label: 'Pressure',
+      path: 'config/moduleProvider.json',
+      filename: '',
     })
   }
   if (!base.some((item) => item.id === 'tool-stats')) {
@@ -108,7 +142,9 @@ const activeLabel = computed(() => {
   if (activeSection.value === 'module-provider') return 'moduleProvider'
   if (activeSection.value === 'defaults') return 'Default settings'
   if (activeSection.value === 'companion') return 'Companion'
+  if (activeSection.value === 'events') return 'Runtime Events'
   if (activeSection.value === 'provider-test') return 'Test'
+  if (activeSection.value === 'pressure') return 'Pressure'
   if (activeSection.value === 'tool-stats') return 'Static'
   if (activeSection.value === 'anim-editor') return 'AnimEditor'
   if (activeSection.value === 'exit') return 'Exit'
@@ -116,10 +152,11 @@ const activeLabel = computed(() => {
 })
 
 const isProviderTest = computed(() => activeSection.value === 'provider-test')
+const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
 const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
-const isVirtualSection = computed(() => isProviderTest.value || isToolStats.value || isAnimEditor.value || isExitSection.value)
+const isVirtualSection = computed(() => isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isExitSection.value)
 const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 
 const formData = computed<Record<string, unknown> | null>(() => {
@@ -135,7 +172,9 @@ function labelFor(section: SettingsSectionInfo) {
   if (section.id === 'module-provider') return 'moduleProvider'
   if (section.id === 'defaults') return 'Default settings'
   if (section.id === 'companion') return 'Companion'
+  if (section.id === 'events') return 'Runtime Events'
   if (section.id === 'provider-test') return 'Test'
+  if (section.id === 'pressure') return 'Pressure'
   if (section.id === 'tool-stats') return 'Static'
   if (section.id === 'anim-editor') return 'AnimEditor'
   if (section.id === 'exit') return 'Exit'
@@ -149,12 +188,20 @@ function replaceData(data: Record<string, unknown>) {
 }
 
 async function loadCatalog() {
-  const [nextProviders, nextTools] = await Promise.all([
+  const [nextProviders, nextTools, nextAgentProfiles] = await Promise.all([
     listProviders(),
     listTools(),
+    listAgentProfiles(),
   ])
   providers.value = nextProviders
   availableTools.value = nextTools
+  agentProfiles.value = nextAgentProfiles
+}
+
+function syncThemePresetState(document: SettingsDocument | null) {
+  if (!document || document.section !== 'theme') return
+  activeThemePresetId.value = String(document.active_preset_id || activeThemePresetId.value || 'default')
+  themePresets.value = Array.isArray(document.presets) ? document.presets : themePresets.value
 }
 
 async function loadCatalogForForms() {
@@ -186,7 +233,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'provider-test' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'exit') {
+  if (sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -203,6 +250,7 @@ async function loadSection(sectionId = activeSection.value) {
     const document = await getSettingsSection(sectionId)
     loadedDocument.value = document
     editorContent.value = document.content
+    syncThemePresetState(document)
     advancedMode.value = false
   } catch (e: any) {
     error.value = String(e?.message || e)
@@ -233,16 +281,85 @@ async function saveSection() {
   error.value = ''
   status.value = ''
   try {
+    if (activeSection.value === 'events') {
+      const parsed = JSON.parse(editorContent.value || '{}')
+      const result = await applyRuntimeEventConfig(parsed)
+      if (!result.ok) {
+        throw new Error(formatRuntimeApplyErrors(result.errors))
+      }
+      editorContent.value = `${JSON.stringify(parsed, null, 2)}\n`
+      loadedDocument.value = {
+        section: 'events',
+        label: 'Runtime Events',
+        path: loadedDocument.value?.path || 'config/events.json',
+        content: editorContent.value,
+        data: parsed,
+      }
+      status.value = 'Applied'
+      return
+    }
     const document = await updateSettingsSection(activeSection.value, editorContent.value)
     loadedDocument.value = document
     editorContent.value = document.content
+    syncThemePresetState(document)
     status.value = 'Saved'
     if (activeSection.value === 'module-provider') {
       emit('providersUpdated')
       await loadCatalogForForms()
     } else if (activeSection.value === 'defaults') {
       await loadCompanionCapabilityOptions()
+    } else if (activeSection.value === 'theme') {
+      await applyWorkspaceTheme()
     }
+  } catch (e: any) {
+    error.value = String(e?.message || e)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function refreshThemePresets() {
+  const catalog = await listThemePresets()
+  activeThemePresetId.value = String(catalog.active_preset_id || 'default')
+  themePresets.value = Array.isArray(catalog.presets) ? catalog.presets : []
+}
+
+async function handleLoadThemePreset(presetId: string) {
+  const safeId = String(presetId || '').trim()
+  if (!safeId) return
+  saving.value = true
+  error.value = ''
+  status.value = ''
+  try {
+    const document = await loadThemePreset(safeId)
+    loadedDocument.value = document
+    editorContent.value = document.content
+    syncThemePresetState(document)
+    await applyWorkspaceTheme()
+    status.value = `Loaded ${safeId}`
+  } catch (e: any) {
+    error.value = String(e?.message || e)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleSaveThemePreset(presetId: string) {
+  const safeId = String(presetId || '').trim()
+  if (!safeId) {
+    error.value = 'Theme preset id is required.'
+    return
+  }
+  saving.value = true
+  error.value = ''
+  status.value = ''
+  try {
+    const document = await saveThemePreset(safeId, editorContent.value)
+    loadedDocument.value = document
+    editorContent.value = document.content
+    syncThemePresetState(document)
+    await applyWorkspaceTheme()
+    status.value = `Saved ${safeId}`
   } catch (e: any) {
     error.value = String(e?.message || e)
   } finally {
@@ -266,7 +383,7 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>Settings</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isToolStats ? '.cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? '.cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
         <button type="button" class="settings-btn" @click="emit('back')">{{ props.backLabel }}</button>
@@ -300,13 +417,14 @@ onMounted(async () => {
               {{ advancedMode ? 'Form' : 'Advanced JSON' }}
             </button>
             <button v-if="!isVirtualSection && advancedMode" type="button" class="settings-btn" :disabled="loading || saving" @click="formatJson">Format</button>
-            <button v-if="!isVirtualSection" type="button" class="settings-btn primary" :disabled="loading || saving || !dirty" @click="saveSection">
-              {{ saving ? 'Saving...' : 'Save' }}
+            <button v-if="!isVirtualSection" type="button" class="settings-btn primary" :disabled="loading || saving || (activeSection !== 'events' && !dirty)" @click="saveSection">
+              {{ saving ? (activeSection === 'events' ? 'Applying...' : 'Saving...') : (activeSection === 'events' ? 'Apply' : 'Save') }}
             </button>
           </div>
         </div>
 
         <ProviderTestSettingsPanel v-if="isProviderTest" />
+        <PressureSettingsPanel v-else-if="isPressure" />
         <ToolStatsSettingsPanel v-else-if="isToolStats" />
         <AnimEditor v-else-if="isAnimEditor" @error="error = $event" @status="status = $event" />
         <SystemExitPanel v-else-if="isExitSection" />
@@ -338,6 +456,22 @@ onMounted(async () => {
             :available-tools="availableTools"
             :capability-options="companionCapabilityOptions"
             @update:data="replaceData"
+          />
+          <RuntimeEventsSettingsForm
+            v-else-if="activeSection === 'events' && formData"
+            :data="formData"
+            :agent-profiles="agentProfiles"
+            @update:data="replaceData"
+          />
+          <ThemeSettingsForm
+            v-else-if="activeSection === 'theme' && formData"
+            :data="formData"
+            :presets="themePresets"
+            :active-preset-id="activeThemePresetId"
+            @update:data="replaceData"
+            @load-preset="handleLoadThemePreset"
+            @save-preset="handleSaveThemePreset"
+            @refresh-presets="refreshThemePresets"
           />
           <div v-else class="settings-error">Invalid JSON. Switch to Advanced JSON to fix it.</div>
         </template>

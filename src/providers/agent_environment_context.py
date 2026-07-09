@@ -14,7 +14,6 @@ from src.web_backend import runtime_paths
 
 ENVIRONMENT_CONTEXT_TEXT_PREFIX = "<environment_context>"
 ENVIRONMENT_CONTEXT_TEXT_SUFFIX = "</environment_context>"
-LEGACY_ENVIRONMENT_CONTEXT_TEXT_PREFIX = "[Agent Environment Context]\n"
 MODEL_VISIBLE_ENVIRONMENT_CONTEXT_KEYS = {"current_date", "shell", "timezone", "workspace_path"}
 WINDOWS_TIMEZONE_TO_IANA = {
     "China Standard Time": "Asia/Shanghai",
@@ -133,10 +132,7 @@ def is_agent_environment_context_text(value: object) -> bool:
     if not isinstance(value, str):
         return False
     text = value.strip()
-    return (
-        text.startswith(ENVIRONMENT_CONTEXT_TEXT_PREFIX)
-        and text.endswith(ENVIRONMENT_CONTEXT_TEXT_SUFFIX)
-    ) or value.startswith(LEGACY_ENVIRONMENT_CONTEXT_TEXT_PREFIX)
+    return text.startswith(ENVIRONMENT_CONTEXT_TEXT_PREFIX) and text.endswith(ENVIRONMENT_CONTEXT_TEXT_SUFFIX)
 
 
 def _first_non_empty(*values: object) -> str:

@@ -18,6 +18,7 @@ const props = defineProps<{
   messages: MessageEnvelope[]
   liveMessage: string
   thinkingMessage: string
+  activityMessage: string
   markdownPreview: boolean
   wordWrap: boolean
   showLineNumbers: boolean
@@ -26,6 +27,7 @@ const props = defineProps<{
   graphNameInput: string
   graphWorkingPathInput: string
   graphLoading: boolean
+  graphMemoryClearingId: string
   graphs: GraphInfo[]
   graphProfiles: GraphProfile[]
   selectedGraphProfileId: string
@@ -49,6 +51,7 @@ const emit = defineEmits<{
   (event: 'deleteGraphProfile'): void
   (event: 'refreshGraphs'): void
   (event: 'loadGraphConfig', graph: GraphInfo): void
+  (event: 'clearGraphMemory', graph: GraphInfo): void
   (event: 'deleteGraphConfig', graph: GraphInfo): void
   (event: 'autoScrollChange', value: boolean): void
   (event: 'saveMessage', text: string): void
@@ -68,8 +71,9 @@ const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/)
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
 const renderedLiveMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.liveMessage))
 const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.thinkingMessage))
+const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.activityMessage))
 const showInteractiveBar = computed(() => props.mode === 'agent' && !!props.interactiveSessionId)
-const hasLiveActivity = computed(() => !!props.liveMessage || !!props.thinkingMessage)
+const hasLiveActivity = computed(() => !!props.liveMessage || !!props.thinkingMessage || !!props.activityMessage)
 
 function updateMemoryText(event: Event) {
   emit('update:memoryText', String((event.target as HTMLTextAreaElement | null)?.value || ''))
@@ -206,7 +210,14 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
             </div>
             <div class="graph-item-actions">
               <button class="graph-btn" @click="emit('loadGraphConfig', graph)">Load</button>
-              <button class="graph-btn danger" @click="emit('deleteGraphConfig', graph)">Delete</button>
+              <button
+                class="graph-btn danger"
+                :disabled="graphMemoryClearingId === graph.id"
+                @click="emit('clearGraphMemory', graph)"
+              >
+                {{ graphMemoryClearingId === graph.id ? 'Clearing...' : 'ClearMemory' }}
+              </button>
+              <button v-if="!graph.readonly" class="graph-btn danger" @click="emit('deleteGraphConfig', graph)">Delete</button>
             </div>
           </div>
         </div>
@@ -231,6 +242,16 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
           <span class="live-role">Live</span>
           <span class="live-status">streaming</span>
         </div>
+        <section v-if="activityMessage" class="live-section activity">
+          <div class="live-section-label">Activity</div>
+          <div
+            v-if="markdownPreview"
+            class="live-body live-markdown"
+            v-html="renderedActivityMarkdown"
+            @click="handleMarkdownCodeCopyClick"
+          ></div>
+          <div v-else class="live-body">{{ activityMessage }}</div>
+        </section>
         <section v-if="thinkingMessage" class="live-section thinking">
           <div class="live-section-label">Thinking</div>
           <div
@@ -242,7 +263,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
           <div v-else class="live-body">{{ thinkingMessage }}</div>
         </section>
         <section v-if="liveMessage" class="live-section">
-          <div v-if="thinkingMessage" class="live-section-label">Answer</div>
+          <div v-if="thinkingMessage || activityMessage" class="live-section-label">Answer</div>
         <div
           v-if="markdownPreview"
           class="live-body live-markdown"
@@ -389,6 +410,12 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   gap: 10px;
   padding: 10px;
   overflow: auto;
+  background-color: var(--theme-panel-graph-panel-background-color, transparent);
+  background-image: var(--theme-panel-graph-panel-background-image, none);
+  background-size: var(--theme-panel-graph-panel-background-size, cover);
+  background-position: var(--theme-panel-graph-panel-background-position, center);
+  background-repeat: var(--theme-panel-graph-panel-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-graph-panel-background-blend-mode, normal);
 }
 
 .graph-actions {
@@ -410,9 +437,9 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 
 .graph-input {
   flex: 1;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.7);
-  color: rgba(226, 232, 240, 0.96);
+  border: 1px solid var(--theme-panel-graph-panel-input-border, rgba(148, 163, 184, 0.3));
+  background: var(--theme-panel-graph-panel-input-background, rgba(15, 23, 42, 0.7));
+  color: var(--theme-panel-graph-panel-input-text, rgba(226, 232, 240, 0.96));
   border-radius: 8px;
   font-size: 12px;
   padding: 7px 9px;
@@ -420,13 +447,13 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 }
 
 .graph-input:focus {
-  border-color: rgba(56, 189, 248, 0.7);
+  border-color: var(--theme-panel-graph-panel-input-focus-border, rgba(56, 189, 248, 0.7));
 }
 
 .graph-btn {
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.7);
-  color: rgba(226, 232, 240, 0.94);
+  border: 1px solid var(--theme-panel-graph-panel-button-border, rgba(148, 163, 184, 0.3));
+  background: var(--theme-panel-graph-panel-button-background, rgba(15, 23, 42, 0.7));
+  color: var(--theme-panel-graph-panel-button-text, rgba(226, 232, 240, 0.94));
   border-radius: 8px;
   font-size: 11px;
   padding: 4px 9px;
@@ -443,21 +470,23 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 }
 
 .graph-btn.primary {
-  border-color: rgba(56, 189, 248, 0.7);
-  background: rgba(14, 116, 144, 0.34);
+  border-color: var(--theme-panel-graph-panel-button-primary-border, rgba(56, 189, 248, 0.7));
+  background: var(--theme-panel-graph-panel-button-primary-background, rgba(14, 116, 144, 0.34));
 }
 
 .graph-btn.danger {
-  border-color: rgba(248, 113, 113, 0.7);
-  background: rgba(127, 29, 29, 0.35);
-  color: rgba(254, 226, 226, 0.96);
+  border-color: var(--theme-panel-graph-panel-button-danger-border, rgba(248, 113, 113, 0.7));
+  background: var(--theme-panel-graph-panel-button-danger-background, rgba(127, 29, 29, 0.35));
+  color: var(--theme-panel-graph-panel-button-danger-text, rgba(254, 226, 226, 0.96));
 }
 
 .graph-item-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .graph-list,
@@ -470,9 +499,9 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid var(--theme-panel-graph-panel-item-border, rgba(148, 163, 184, 0.2));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--theme-panel-graph-panel-item-background, rgba(15, 23, 42, 0.45));
   padding: 8px 9px;
 }
 
@@ -482,7 +511,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 
 .graph-name {
   font-size: 13px;
-  color: rgba(248, 250, 252, 0.95);
+  color: var(--theme-panel-graph-panel-item-text, rgba(248, 250, 252, 0.95));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -491,7 +520,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 .graph-meta,
 .graph-empty {
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.9);
+  color: var(--theme-panel-graph-panel-item-muted, rgba(148, 163, 184, 0.9));
 }
 
 .line-gutter {
@@ -520,7 +549,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   padding: 12px;
   border: none;
   background: transparent;
-  color: #e2e8f0;
+  color: var(--theme-panel-memory-panel-text-secondary, #e2e8f0);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   font-size: 13px;
   line-height: 1.5;
@@ -578,6 +607,10 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 
 .live-section.thinking {
   background: rgba(15, 23, 42, 0.24);
+}
+
+.live-section.activity {
+  background: rgba(6, 78, 59, 0.18);
 }
 
 .live-section-label {

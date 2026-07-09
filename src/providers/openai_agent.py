@@ -61,7 +61,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
 
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
-            effort_source = self.config.get("reasoningEffort", self.config.get("reasoning_effort", ""))
+            effort_source = self.config.get("reasoningEffort", "")
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
         web_search_mode = self._effective_feature_switch(
             "web_search",
@@ -81,6 +81,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 reasoning_effort=effort_source,
                 stream=stream,
                 stream_handler=stream_handler,
+                thinking_stream_handler=thinking_stream_handler if stream and callable(thinking_stream_handler) else None,
             )
         return self._send_via_responses(
             messages=messages,

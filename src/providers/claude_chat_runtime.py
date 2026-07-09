@@ -87,7 +87,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
             "x-api-key": str(self.config["apiKey"]),
             "anthropic-version": str(self.config.get("anthropicVersion") or "2023-06-01"),
         }
-        beta = str(self.config.get("anthropicBeta") or self.config.get("anthropic_beta") or "").strip()
+        beta = str(self.config.get("anthropicBeta") or "").strip()
         if beta:
             headers["anthropic-beta"] = beta
         return headers
@@ -107,8 +107,8 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
         payload_json = json.dumps(request_payload, ensure_ascii=False)
         url = self._messages_url()
         if use_stream:
-            max_retries = int(self.config.get("maxRetries", self.config.get("max_retries", 3)))
-            retry_delay = float(self.config.get("retryDelaySec", self.config.get("retry_delay_sec", 1)))
+            max_retries = int(self.config.get("maxRetries", 3))
+            retry_delay = float(self.config.get("retryDelaySec", 1))
             return self._stream_messages_with_retry(
                 endpoint="messages",
                 url=url,
@@ -124,8 +124,8 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
 
     def post_json_with_retry(self, *, endpoint, url, headers, payload_json):
         timeout = self.config.get("timeoutMs", 60000) / 1000
-        max_retries = int(self.config.get("maxRetries", self.config.get("max_retries", 3)))
-        retry_delay = float(self.config.get("retryDelaySec", self.config.get("retry_delay_sec", 1)))
+        max_retries = int(self.config.get("maxRetries", 3))
+        retry_delay = float(self.config.get("retryDelaySec", 1))
         for attempt in range(max(0, max_retries) + 1):
             try:
                 response = self._curl_post_once_raw(
@@ -265,7 +265,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
         return {"type": "image", "source": {"type": "url", "url": url}}
 
     def _claude_max_tokens(self) -> int:
-        value = self.config.get("maxTokens", self.config.get("max_tokens", 4096))
+        value = self.config.get("maxTokens", 4096)
         try:
             parsed = int(value)
         except Exception as exc:
@@ -282,7 +282,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
             return {"type": "adaptive"}
         if mode != "enabled":
             raise ValueError("Claude thinking must be enabled, disabled, or auto.")
-        budget = self.config.get("thinkingBudgetTokens", self.config.get("claudeThinkingBudgetTokens", 1024))
+        budget = self.config.get("thinkingBudgetTokens", 1024)
         try:
             budget_tokens = int(budget)
         except Exception as exc:
@@ -302,27 +302,27 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
 
     def _build_claude_web_search_tool(self) -> dict[str, Any]:
         tool = {
-            "type": str(self.config.get("webSearchToolType") or self.config.get("claudeWebSearchToolType") or "web_search_20260318"),
+            "type": str(self.config.get("webSearchToolType") or "web_search_20260318"),
             "name": "web_search",
         }
-        limit = self.config.get("webSearchLimit", self.config.get("claudeWebSearchMaxUses"))
+        limit = self.config.get("webSearchLimit")
         if limit not in {None, ""}:
             tool["max_uses"] = int(limit)
-        allowed = self._string_list_config("webSearchAllowedDomains", "claudeWebSearchAllowedDomains", "webSearchSources")
-        blocked = self._string_list_config("webSearchBlockedDomains", "claudeWebSearchBlockedDomains")
+        allowed = self._string_list_config("webSearchAllowedDomains")
+        blocked = self._string_list_config("webSearchBlockedDomains")
         if allowed and blocked:
             raise ValueError("Claude web search accepts allowed_domains or blocked_domains, not both.")
         if allowed:
             tool["allowed_domains"] = allowed
         if blocked:
             tool["blocked_domains"] = blocked
-        allowed_callers = self._string_list_config("webSearchAllowedCallers", "claudeWebSearchAllowedCallers")
+        allowed_callers = self._string_list_config("webSearchAllowedCallers")
         if allowed_callers:
             tool["allowed_callers"] = allowed_callers
-        user_location = self.config.get("webSearchUserLocation", self.config.get("claudeWebSearchUserLocation"))
+        user_location = self.config.get("webSearchUserLocation")
         if isinstance(user_location, dict) and user_location:
             tool["user_location"] = dict(user_location)
-        response_inclusion = str(self.config.get("webSearchResponseInclusion", self.config.get("claudeWebSearchResponseInclusion", "")) or "").strip()
+        response_inclusion = str(self.config.get("webSearchResponseInclusion", "") or "").strip()
         if response_inclusion:
             tool["response_inclusion"] = response_inclusion
         return tool

@@ -13,21 +13,13 @@ class PluginMcpLoadError(RuntimeError):
 def read_plugin_mcp_refs(manifest: dict, plugin_dir: str) -> tuple[list[str], dict[str, dict]]:
     refs: list[str] = []
     configs: dict[str, dict] = {}
-    for key in ("mcpServers", "mcp_servers"):
-        value = manifest.get(key)
-        if isinstance(value, list):
-            refs.extend(str(item) for item in value)
-        elif isinstance(value, dict):
-            merge_plugin_mcp_server_configs(configs, _read_mcp_config_map(value, plugin_dir), key)
-        elif isinstance(value, str) and value.strip():
-            merge_plugin_mcp_server_configs(configs, _read_mcp_config_file(plugin_dir, value), key)
-    mcp = manifest.get("mcp")
-    if isinstance(mcp, dict):
-        servers = mcp.get("servers")
-        if isinstance(servers, list):
-            refs.extend(str(item) for item in servers)
-        elif isinstance(servers, dict):
-            merge_plugin_mcp_server_configs(configs, _read_mcp_config_map(servers, plugin_dir), "mcp.servers")
+    value = manifest.get("mcpServers")
+    if isinstance(value, list):
+        refs.extend(str(item) for item in value)
+    elif isinstance(value, dict):
+        merge_plugin_mcp_server_configs(configs, _read_mcp_config_map(value, plugin_dir), "mcpServers")
+    elif isinstance(value, str) and value.strip():
+        merge_plugin_mcp_server_configs(configs, _read_mcp_config_file(plugin_dir, value), "mcpServers")
     return refs, configs
 
 
@@ -61,8 +53,6 @@ def _read_mcp_config_file(plugin_dir: str, value: str) -> dict[str, dict]:
 
 def _read_mcp_config_map(value: dict, base_dir: str) -> dict[str, dict]:
     nested = value.get("mcpServers")
-    if not isinstance(nested, dict):
-        nested = value.get("servers")
     if not isinstance(nested, dict):
         nested = value
     result: dict[str, dict] = {}

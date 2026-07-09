@@ -28,16 +28,22 @@ class Hyper3DRuntimeBase(HostBoundService):
         return float(self.config.get("timeoutMs", 60000)) / 1000.0
 
     def _request_json(self, *, url, method="POST", headers=None, body=None):
-        return request_json(
-            url=url,
-            method=method,
-            headers=headers or {},
-            body=body,
-            timeout_sec=self._timeout_sec(),
-        )
+        from src.providers.provider_pressure import acquire_provider_pressure
+
+        with acquire_provider_pressure(self):
+            return request_json(
+                url=url,
+                method=method,
+                headers=headers or {},
+                body=body,
+                timeout_sec=self._timeout_sec(),
+            )
 
     def _download_bytes(self, url):
-        return download_bytes(url, timeout_sec=self._timeout_sec())
+        from src.providers.provider_pressure import acquire_provider_pressure
+
+        with acquire_provider_pressure(self):
+            return download_bytes(url, timeout_sec=self._timeout_sec())
 
     def _resolve_poll_interval_seconds(self, *keys, default: float) -> float:
         for key in keys:

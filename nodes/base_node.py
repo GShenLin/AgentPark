@@ -70,7 +70,7 @@ class BaseNode:
         if explicit_memory_path:
             return explicit_memory_path
         graph_id = self._sanitize_graph_id(ctx.get("graph_id"))
-        node_id = self._sanitize_node_id(ctx.get("node_instance_id") or ctx.get("agent_id") or ctx.get("node_id"))
+        node_id = self._sanitize_node_id(ctx.get("node_instance_id") or ctx.get("node_id"))
         base_dir = ""
         resolver = _get_runtime_root
         if _runtime_paths is not None and resolver is _ORIGINAL_GET_RUNTIME_ROOT:

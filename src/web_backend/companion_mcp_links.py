@@ -61,7 +61,7 @@ class CompanionMcpLinkTools:
     def _list_link(self, *, graph_id: str) -> dict[str, Any]:
         safe_graph_id = self._sanitize_graph_id(graph_id)
         graph = self._read_graph(safe_graph_id)
-        links = self._normalize_links(graph)
+        links = self._read_links_from_graph(graph)
         return {"ok": True, "graph_id": safe_graph_id, "links": links, "count": len(links)}
 
     def _connect_node(
@@ -86,7 +86,7 @@ class CompanionMcpLinkTools:
         self._validate_endpoint(nodes, to_id, input_index, port_field="input_num", role="to_node")
 
         graph = self._read_graph(safe_graph_id)
-        links = self._normalize_links(graph)
+        links = self._read_links_from_graph(graph)
         endpoint = {
             "from": {"node": from_id, "index": output_index},
             "to": {"node": to_id, "index": input_index},
@@ -118,7 +118,7 @@ class CompanionMcpLinkTools:
     ) -> dict[str, Any]:
         safe_graph_id = self._sanitize_graph_id(graph_id)
         graph = self._read_graph(safe_graph_id)
-        links = self._normalize_links(graph)
+        links = self._read_links_from_graph(graph)
         safe_link_id = str(link_id or "").strip()
         endpoint: dict[str, dict[str, Any]] | None = None
 
@@ -205,7 +205,7 @@ class CompanionMcpLinkTools:
                 f"{role} port index {port_index} is out of range; {port_field}={port_count}",
             )
 
-    def _normalize_links(self, graph: dict[str, Any]) -> list[dict[str, Any]]:
+    def _read_links_from_graph(self, graph: dict[str, Any]) -> list[dict[str, Any]]:
         try:
             outgoing = output_routes_to_outgoing(normalize_output_routes(graph.get("output_routes")))
         except ValueError as exc:
@@ -227,26 +227,6 @@ class CompanionMcpLinkTools:
                     }
                 )
         return links
-
-    def _normalize_link(self, item: dict[str, Any], *, index: int) -> dict[str, Any]:
-        from_endpoint = self._normalize_endpoint(item.get("from"), field=f"links[{index}].from")
-        to_endpoint = self._normalize_endpoint(item.get("to"), field=f"links[{index}].to")
-        link_id = str(item.get("id") or "").strip() or self._new_link_id([])
-        return {"id": link_id, "from": from_endpoint, "to": to_endpoint}
-
-    def _normalize_endpoint(self, value: object, *, field: str) -> dict[str, Any]:
-        if isinstance(value, dict):
-            node_id = str(value.get("node") or "").strip()
-            raw_index = value.get("index")
-        else:
-            node_id = str(value or "").strip()
-            raw_index = 0
-        if not node_id:
-            raise CompanionError("invalid_graph", f"{field}.node is required")
-        port_index = NodeRouteParser.parse_port_index(raw_index)
-        if port_index is None:
-            raise CompanionError("invalid_graph", f"{field}.index must be a non-negative integer")
-        return {"node": node_id, "index": port_index}
 
     def _required_node_id(self, value: object, *, field: str) -> str:
         raw = str(value or "").strip()
@@ -280,15 +260,6 @@ class CompanionMcpLinkTools:
             and int((link.get("from") or {}).get("index") or 0) == endpoint["from"]["index"]
             and str((link.get("to") or {}).get("node") or "") == endpoint["to"]["node"]
             and int((link.get("to") or {}).get("index") or 0) == endpoint["to"]["index"]
-        )
-
-    @staticmethod
-    def _endpoint_key(link: dict[str, Any]) -> tuple[str, int, str, int]:
-        return (
-            str((link.get("from") or {}).get("node") or ""),
-            int((link.get("from") or {}).get("index") or 0),
-            str((link.get("to") or {}).get("node") or ""),
-            int((link.get("to") or {}).get("index") or 0),
         )
 
     @staticmethod

@@ -15,7 +15,6 @@ from .node_memory_errors import NodeMemoryPersistenceFailure
 from .node_memory_errors import raise_if_failures as _raise_if_failures
 from .node_memory_limits import read_max_active_memory_entries as _read_max_active_memory_entries
 from .node_memory_markdown import render_memory_markdown_entry
-from .node_memory_migration import migrate_legacy_node_memory
 from .node_memory_paths import MEMORY_FILENAME
 from .node_memory_paths import MESSAGES_FILENAME
 from .node_memory_paths import active_paths as _active_paths
@@ -37,6 +36,7 @@ __all__ = [
     "NodeMemoryPersistenceError",
     "NodeMemoryPersistenceFailure",
     "append_node_memory_entry",
+    "append_node_memory_entry_once",
     "append_node_tool_call_entry",
     "build_node_memory_record",
     "clear_node_memory",
@@ -60,7 +60,6 @@ def ensure_node_memory_files(memory_path: str, messages_path: str) -> None:
 
 def _ensure_node_memory_files_unlocked(memory_path: str, messages_path: str) -> None:
     failures: list[NodeMemoryPersistenceFailure] = []
-    _migrate_legacy_node_memory(memory_path, messages_path, failures)
     current = current_node_memory_paths(memory_path, messages_path)
     for target, path in (("memory", current["memory_path"]), ("messages", current["messages_path"])):
         if not path:
@@ -88,9 +87,31 @@ def append_node_memory_entry(memory_path: str, messages_path: str, role: str, me
     )
 
 
+def append_node_memory_entry_once(memory_path: str, messages_path: str, role: str, message: object) -> bool:
+    record = build_node_memory_record(role, message)
+    record_id = str(record.get("id") or "").strip()
+    payload = envelope_text(record)
+    if not record_id or (not payload and not (record.get("parts") or [])):
+        return False
+
+    def append_if_missing() -> bool:
+        paths = current_node_memory_paths(memory_path, messages_path)
+        messages_file = paths.get("messages_path") or ""
+        if messages_file and os.path.exists(messages_file):
+            try:
+                for existing in _read_jsonl_records(messages_file):
+                    if str(existing.get("id") or "").strip() == record_id:
+                        return False
+            except Exception:
+                pass
+        _append_node_memory_record_unlocked(memory_path, messages_path, record)
+        return True
+
+    return _run_node_memory_transaction(memory_path, messages_path, append_if_missing)
+
+
 def _append_node_memory_record_unlocked(memory_path: str, messages_path: str, record: dict[str, Any]) -> None:
     failures: list[NodeMemoryPersistenceFailure] = []
-    _migrate_legacy_node_memory(memory_path, messages_path, failures)
     paths = current_node_memory_paths(memory_path, messages_path)
     _append_messages_record(paths["messages_path"], record, failures)
     _append_markdown_record(paths["memory_path"], record, failures)
@@ -115,7 +136,6 @@ def clear_node_memory(memory_path: str, messages_path: str) -> int:
 
 def _clear_node_memory_unlocked(memory_path: str, messages_path: str) -> int:
     failures: list[NodeMemoryPersistenceFailure] = []
-    _migrate_legacy_node_memory(memory_path, messages_path, failures)
     node_dir = _node_memory_dir(memory_path, messages_path)
     if not node_dir:
         failures.append(NodeMemoryPersistenceFailure(target="memory", path="", error="node memory dir is empty"))
@@ -164,7 +184,6 @@ def delete_node_memory_record(memory_path: str, messages_path: str, message_id: 
 
 def _delete_node_memory_record_unlocked(memory_path: str, messages_path: str, message_id: str) -> dict[str, Any]:
     failures: list[NodeMemoryPersistenceFailure] = []
-    _migrate_legacy_node_memory(memory_path, messages_path, failures)
     node_dir = _node_memory_dir(memory_path, messages_path)
     if not node_dir:
         failures.append(NodeMemoryPersistenceFailure(target="memory", path="", error="node memory dir is empty"))
@@ -239,9 +258,6 @@ def read_node_memory_text(memory_path: str, messages_path: str, *, max_chars: in
 
 def _read_node_memory_text_unlocked(memory_path: str, messages_path: str, *, max_chars: int | None = 20000) -> str:
     failures: list[NodeMemoryPersistenceFailure] = []
-    _migrate_legacy_node_memory(memory_path, messages_path, failures)
-    _raise_if_failures(failures)
-
     if max_chars is None:
         limit = None
     else:
@@ -313,8 +329,6 @@ def _load_recent_node_memory_records_unlocked(
     limit: int | None,
 ) -> list[dict[str, Any]]:
     failures: list[NodeMemoryPersistenceFailure] = []
-    _migrate_legacy_node_memory(memory_path, messages_path, failures)
-    _raise_if_failures(failures)
 
     if limit is None:
         remaining = None
@@ -413,19 +427,6 @@ def _append_markdown_record(
                 error=f"{type(exc).__name__}: {exc}",
             )
         )
-
-
-def _migrate_legacy_node_memory(
-    memory_path: str,
-    messages_path: str,
-    failures: list[NodeMemoryPersistenceFailure],
-) -> None:
-    migrate_legacy_node_memory(
-        memory_path,
-        messages_path,
-        failures,
-        enforce_active_memory_limit=_enforce_active_memory_limit,
-    )
 
 
 def _enforce_active_memory_limit(

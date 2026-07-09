@@ -125,7 +125,6 @@ def test_provider_limit_probe_tests_doubao_ark_responses_features(monkeypatch, t
                         "baseUrl": "https://ark.test/api/v3",
                         "model": "doubao-demo-model",
                         "responsesApi": True,
-                        "responsesContinuationMode": "previous_response_id",
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": False,
                         "toolContextCompactionEveryToolCalls": 10,

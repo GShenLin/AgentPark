@@ -14,6 +14,7 @@ from .node_instance_artifacts import rename_node_artifacts
 from .node_instance_artifacts import rename_node_references_in_graph
 from .node_metadata_reader import NodeMetadataError
 from .node_memory_store import NodeMemoryPersistenceError, clear_node_memory
+from .node_runtime_projection import load_node_runtime_projection
 from .node_event_sequence import bump_node_event_seq
 from .node_state_machine import parse_node_state
 from .runtime_state_memory_store import runtime_state_memory_store
@@ -356,6 +357,7 @@ class NodeInstanceRegistry(HostBoundService):
                 cfg = node_config_service.read_strict(config_path)
             except NodeConfigReadError as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
+            self._apply_runtime_projection_if_needed(cfg, os.path.join(base_dir, entry))
             type_id = str(cfg.get("type_id") or "").strip()
             if type_id == "clock_node" or (type_id and "working_path" not in cfg):
                 before = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
@@ -382,6 +384,22 @@ class NodeInstanceRegistry(HostBoundService):
             "version": max_version,
             "partial": min_version > 0,
         }
+
+    @staticmethod
+    def _apply_runtime_projection_if_needed(cfg: dict, node_dir: str) -> None:
+        if (
+            cfg.get("last_runtime_event")
+            and cfg.get("runtime_events")
+            and cfg.get("provider_request_summaries")
+            and cfg.get("provider_request_totals")
+        ):
+            return
+        projection = load_node_runtime_projection(node_dir)
+        if not projection:
+            return
+        for key in ("last_runtime_event", "runtime_events", "provider_request_summaries", "provider_request_totals"):
+            if not cfg.get(key) and projection.get(key):
+                cfg[key] = projection[key]
 
     def update_node_instance_config(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)

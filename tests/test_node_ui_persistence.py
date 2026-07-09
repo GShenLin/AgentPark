@@ -293,12 +293,12 @@ def test_list_node_instance_configs_supports_incremental_refresh():
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
 
-def test_list_node_instance_configs_migrates_missing_working_path():
+def test_list_node_instance_configs_fills_missing_working_path():
     import src.web_backend as backend
     from src.web_backend.runtime_paths import _get_graphs_dir
 
     graph_id = f"ut_working_path_{uuid.uuid4().hex[:8]}"
-    node_id = "legacy_node"
+    node_id = "working_path_node"
     app = backend.create_app()
     from fastapi.testclient import TestClient
 
@@ -614,6 +614,38 @@ def test_delete_node_instance_reports_delete_failures(monkeypatch, tmp_path):
 
     assert response.status_code == 500
     assert "delete boom" in response.json().get("detail", "")
+
+
+def test_delete_node_instance_retries_transient_permission_errors(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": "delete_retry", "type_id": "missing_node", "graph_id": "ut_delete_retry"},
+    )
+    assert created.status_code == 200
+
+    original_rmtree = shutil.rmtree
+    calls = []
+
+    def flaky_rmtree(path):
+        calls.append(path)
+        if len(calls) == 1:
+            raise PermissionError("temporarily locked")
+        return original_rmtree(path)
+
+    monkeypatch.setattr(shutil, "rmtree", flaky_rmtree)
+    response = client.delete("/api/nodes/instances/delete_retry?graph_id=ut_delete_retry")
+
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert not os.path.exists(tmp_path / "memories" / "ut_delete_retry" / "delete_retry")
 
 
 def test_delete_node_instance_waits_for_active_cancellation(tmp_path, monkeypatch):

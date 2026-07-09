@@ -10,6 +10,7 @@ from src.providers.gemini_function_runtime import GeminiFunctionRuntime
 from src.providers.gemini_image_generation import GeminiImageGeneration
 from src.providers.gemini_stream_runtime import GeminiStreamRuntime
 from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
+from src.providers.provider_pressure import acquire_provider_pressure
 from src.service_host import ServiceHost
 
 
@@ -237,11 +238,12 @@ class GeminiAgent(ServiceHost, BaseAgent):
                         headers=headers,
                         method="POST",
                     )
-                    with urllib.request.urlopen(req, timeout=timeout) as response:
-                        if response.status != 200:
-                            return f"Error: {response.status} - {response.read().decode('utf-8')}"
-                        response_data = response.read().decode("utf-8")
-                        result = json.loads(response_data)
+                    with acquire_provider_pressure(self):
+                        with urllib.request.urlopen(req, timeout=timeout) as response:
+                            if response.status != 200:
+                                return f"Error: {response.status} - {response.read().decode('utf-8')}"
+                            response_data = response.read().decode("utf-8")
+                            result = json.loads(response_data)
 
                 if "candidates" in result and len(result["candidates"]) > 0:
                     candidate, candidate_idx = self._pick_candidate_content(result.get("candidates"), run_tools)

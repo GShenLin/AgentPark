@@ -117,8 +117,7 @@ class ProviderSseDebugMixin:
     def _provider_sse_debug_enabled(self) -> bool:
         config = getattr(self, "config", None)
         cfg = config if isinstance(config, dict) else {}
-        value = cfg.get("sseDebug", cfg.get("sse_debug", cfg.get("debugSse", cfg.get("debug_sse"))))
-        return bool(value)
+        return bool(cfg.get("sseDebug"))
 
     def _sse_payload_has_tool_context(self, payload_json) -> bool:
         summary = self._summarize_sse_payload_for_debug(payload_json)
@@ -159,6 +158,11 @@ class ProviderSseDebugMixin:
     def _build_chat_sse_debug_event(self, *, index, raw_data, parsed_event):
         return self._build_sse_debug_event(index=index, raw_data=raw_data, parsed_event=parsed_event)
 
+    def _chat_sse_debug_filename_prefix(self):
+        provider = str(getattr(self, "provider_name", "") or "provider").strip() or "provider"
+        safe = "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in provider)
+        return f"{safe}_sse_chat"
+
     def _write_chat_sse_debug_if_needed(self, *, url, payload_json, events, assembled_message):
         content = assembled_message.get("content") if isinstance(assembled_message, dict) else None
         has_content = isinstance(content, str) and bool(content.strip())
@@ -175,7 +179,7 @@ class ProviderSseDebugMixin:
             payload_json=payload_json,
             events=events,
             final_payload={"assembled_message": assembled_message},
-            filename_prefix="doubao_sse_chat",
+            filename_prefix=self._chat_sse_debug_filename_prefix(),
             force=force,
         )
 

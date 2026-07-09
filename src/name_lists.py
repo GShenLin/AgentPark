@@ -34,7 +34,7 @@ class NameListContract:
             name = str(item or "").strip()
             if not name:
                 continue
-            key = self.key_func(name) if self.key_func is not None else name.casefold()
+            key = self.key_func(name) if self.key_func is not None else name
             if key in seen:
                 continue
             seen.add(key)
@@ -43,4 +43,4 @@ class NameListContract:
 
 
 def path_reference_key(value: str) -> str:
-    return re.sub(r"[\\/]+", "/", value).casefold()
+    return re.sub(r"[\\/]+", "/", value)

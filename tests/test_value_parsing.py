@@ -11,9 +11,11 @@ from src.value_parsing import (
 )
 
 
-def test_parse_bool_value_supports_explicit_aliases():
-    assert parse_bool_value("yes") is True
-    assert parse_bool_value("off") is False
+def test_parse_bool_value_accepts_canonical_values_only():
+    assert parse_bool_value("true") is True
+    assert parse_bool_value("false") is False
+    assert parse_bool_value("yes") is False
+    assert parse_bool_value("off", default=True) is True
     assert parse_bool_value("maybe", default=True) is True
 
 
@@ -36,8 +38,8 @@ def test_parse_json_value_returns_raw_objects_or_fallback():
 
 
 def test_parse_optional_bool_value_rejects_unknown_text():
-    assert parse_optional_bool_value("enabled", "enable") is True
-    assert parse_optional_bool_value("enabled", "disabled") is False
+    assert parse_optional_bool_value("enabled", "true") is True
+    assert parse_optional_bool_value("enabled", "false") is False
     assert parse_optional_bool_value("enabled", "") is None
     with pytest.raises(ValueError, match="enabled must be a boolean value"):
         parse_optional_bool_value("enabled", "maybe")

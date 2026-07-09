@@ -7,6 +7,9 @@ from src.providers.sse_debug import ProviderSseDebugMixin
 from src.tool.tool_event_protocol import RuntimeNoticeEvent
 
 
+PROVIDER_REQUEST_SUMMARY_STAGE = "provider_request_summary"
+
+
 def emit_provider_runtime_notice(
     callback: Callable[[dict[str, Any]], None] | None,
     *,

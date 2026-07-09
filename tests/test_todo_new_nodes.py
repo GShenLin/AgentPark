@@ -71,7 +71,7 @@ def test_clock_node_outputs_config_text_and_defaults():
     assert envelope_text(routes[0].get("payload")) == "clock-fire"
 
 
-def test_clock_node_migrates_legacy_interval_seconds_to_time_parts():
+def test_clock_node_normalizes_interval_seconds_to_time_parts():
     from nodes.clock_node import Node
 
     node = Node()
@@ -422,7 +422,7 @@ def test_clock_trigger_respects_loop_count_and_stops_after_limit(monkeypatch, tm
     assert second == 0
 
 
-def test_clock_control_supports_legacy_interval_seconds(monkeypatch, tmp_path):
+def test_clock_control_normalizes_interval_seconds(monkeypatch, tmp_path):
     from src.web_backend.core import BackendCore
     import src.web_backend.runtime_paths as runtime_paths
 
@@ -430,8 +430,8 @@ def test_clock_control_supports_legacy_interval_seconds(monkeypatch, tmp_path):
 
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
 
-    graph_id = "clock_control_legacy_graph"
-    node_id = "clock_control_legacy_node"
+    graph_id = "clock_control_graph"
+    node_id = "clock_control_node"
     node_dir = tmp_path / "memories" / graph_id / node_id
     node_dir.mkdir(parents=True, exist_ok=True)
     config_path = node_dir / "config.json"

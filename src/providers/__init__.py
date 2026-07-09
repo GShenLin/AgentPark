@@ -11,7 +11,7 @@ def create_agent(provider_id, memory_file_path=None, system_prompt=None, interna
         provider_id = str(provider_id)
 
     config = ConfigLoader().get_provider_config(provider_id)
-    agent_type = str(config.get("type") or "").strip().lower()
+    agent_type = str(config.get("type") or "").strip()
 
     if agent_type == "gemini":
         return GeminiAgent(provider_id=provider_id, memory_file_path=memory_file_path, system_prompt=system_prompt, internal_memory_enabled=internal_memory_enabled)

@@ -128,16 +128,22 @@ def test_execute_console_command_blocks_interactive_npx_skills_find(monkeypatch)
     assert "npx --yes skills find" in result["hint"]
 
 
-def test_execute_console_command_blocks_unix_pwd_in_cmd(monkeypatch):
+def test_execute_console_command_runs_commands_through_powershell_without_shell_true(monkeypatch):
+    popen_args = []
+    popen_kwargs = {}
+
     def _fake_popen(*args, **kwargs):
-        raise AssertionError("blocked command should not start a process")
+        popen_args.extend(args)
+        popen_kwargs.update(kwargs)
+        return _FakePopen(stdout=b"Path\n----\nD:\\Project\\AgentPark\n", stderr=b"", returncode=0)
 
     monkeypatch.setattr(subprocess, "Popen", _fake_popen)
 
-    result = json.loads(execute_console_command("pwd && git status --short"))
+    result = json.loads(execute_console_command("pwd"))
 
-    assert result["status"] == "blocked"
-    assert "'cd'" in result["hint"]
+    assert result["status"] == "success"
+    assert popen_args[0] == ["powershell", "-NoProfile", "-Command", "pwd"]
+    assert "shell" not in popen_kwargs
 
 
 def test_execute_console_command_blocks_high_context_git_diff(monkeypatch):
@@ -288,7 +294,7 @@ def test_execute_console_command_errors_when_agent_working_path_is_missing(tmp_p
 
 
 def test_execute_console_command_drains_large_stdout_without_pipe_deadlock():
-    command = f'"{sys.executable}" -c "import sys; sys.stdout.write(\'x\' * 200000)"'
+    command = f'& "{sys.executable}" -c "import sys; sys.stdout.write(\'x\' * 200000)"'
 
     result = json.loads(execute_console_command(command, timeout_seconds=10))
 

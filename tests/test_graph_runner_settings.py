@@ -5,29 +5,13 @@ import time
 from src.web_backend import state_store
 from src.web_backend.graph_runner_runtime import _GraphRunnerWakeSignal
 from src.web_backend.graph_runner_state import GraphExecutor, GraphRunnerState
-from src.web_backend.graph_runner_settings import find_deprecated_graph_runner_worker_count
 
 
-def test_deprecated_graph_runner_worker_count_is_detected_without_runtime_resolution():
-    assert find_deprecated_graph_runner_worker_count({}) is None
-    assert find_deprecated_graph_runner_worker_count({"graphRunner": {}}) is None
-    assert find_deprecated_graph_runner_worker_count({"graphRunner": {"workerCount": "2"}}) == "2"
-    assert find_deprecated_graph_runner_worker_count({"graph_runner": {"workers": 4}}) == 4
-    assert find_deprecated_graph_runner_worker_count({"graphRunner": {"workerCount": 30}}) == 30
-    assert find_deprecated_graph_runner_worker_count({"graphRunner": {"workerCount": "many"}}) == "many"
-
-
-def test_graph_runner_uses_one_scheduler_even_when_legacy_worker_count_is_configured(monkeypatch):
+def test_graph_runner_uses_one_scheduler():
     import src.web_backend as backend
-    import src.web_backend.graph_runner_runtime as graph_runner_runtime
 
     facade = backend.WebBackendFacade()
     graph_runtime = facade.core.graph_runtime
-    monkeypatch.setattr(
-        graph_runner_runtime.ConfigLoader,
-        "get_config",
-        lambda _self: {"graphRunner": {"workerCount": 30}},
-    )
     graph_runtime._ensure_graph_runner("default")
 
     try:

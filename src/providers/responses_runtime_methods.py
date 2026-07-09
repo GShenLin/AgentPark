@@ -42,24 +42,19 @@ class ResponsesRuntimeMethods:
         return payload
 
     def _responses_tool_choice(self) -> str:
-        value = self.config.get("responsesToolChoice")
-        if value is None:
-            value = self.config.get("responses_tool_choice")
-        text = str(value or "").strip()
+        text = str(self.config.get("responsesToolChoice") or "").strip()
         return text or "auto"
 
     def _responses_parallel_tool_calls(self) -> bool:
         value = self.config.get("responsesParallelToolCalls")
-        if value is None:
-            value = self.config.get("responses_parallel_tool_calls")
         if isinstance(value, bool):
             return value
         if value is None:
             return True
         text = str(value).strip().lower()
-        if text in {"0", "false", "no", "off", "disabled"}:
+        if text == "false":
             return False
-        if text in {"1", "true", "yes", "on", "enabled"}:
+        if text == "true":
             return True
         return True
 
@@ -67,11 +62,6 @@ class ResponsesRuntimeMethods:
         items = list(current_input) if isinstance(current_input, list) else []
         runtime_context = get_agent_runtime_context(self)
         return items, str(runtime_context.responses_instruction or "").strip()
-
-    def _persist_assistant_tool_call_note_if_available(self, message: dict[str, Any]) -> None:
-        callback = get_agent_runtime_context(self).persist_assistant_tool_call_note
-        if callable(callback):
-            callback(message)
 
     def _with_agent_environment_context(
         self,
@@ -227,9 +217,6 @@ class ResponsesRuntimeMethods:
             call_id=execution.call_id,
             content=execution.cleaned_result,
         )
-
-    def _emit_responses_request_summary(self, summary: dict[str, Any]) -> None:
-        self._emit_responses_notice(stage="openai_responses_request_summary", payload=summary, sort_keys=True)
 
     def _emit_responses_context_update(self, update: dict[str, Any]) -> None:
         self._emit_responses_notice(stage="openai_responses_context_update", payload=update, sort_keys=True)

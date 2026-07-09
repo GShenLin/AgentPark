@@ -18,7 +18,7 @@ def test_search_memory_scans_active_root_and_archives(tmp_path):
     second_day = tmp_path / "archive" / "2026-06-21"
     first_day.mkdir(parents=True)
     second_day.mkdir(parents=True)
-    (first_day / "legacy.memory.md").write_text("legacy needle\n", encoding="utf-8")
+    (first_day / "memory.md").write_text("archive needle 1\n", encoding="utf-8")
     (second_day / "memory.md").write_text("archive needle\n", encoding="utf-8")
 
     payload = json.loads(search_memory("needle", max_matches=10, agent=DummyAgent(memory_path)))
@@ -29,7 +29,7 @@ def test_search_memory_scans_active_root_and_archives(tmp_path):
     assert payload["total_matches"] == 3
     assert [item["text"] for item in payload["matches"]] == [
         "active needle",
-        "legacy needle",
+        "archive needle 1",
         "archive needle",
     ]
     assert all("file" in item for item in payload["matches"])

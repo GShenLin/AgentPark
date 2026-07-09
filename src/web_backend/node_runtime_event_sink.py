@@ -11,6 +11,7 @@ from src.node_stream_protocol import NODE_MESSAGE_DELTA
 from src.node_stream_protocol import NODE_MESSAGE_DONE
 from src.node_stream_protocol import NODE_THINKING_DELTA
 from src.node_stream_protocol import normalize_node_message_event
+from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
 
 from .runtime_event_store import normalize_runtime_event
 from .state_store import _preview_text
@@ -22,6 +23,7 @@ from .state_store import _set_node_config_runtime_event
 LogGraphEvent = Callable[..., None]
 AppendRuntimeLog = Callable[..., None]
 AppendToolCallEntry = Callable[[str, str, dict], None]
+RuntimeEventEmit = Callable[..., dict]
 NODE_RUNTIME_EVENTS_FILENAME = "runtime_events.jsonl"
 
 
@@ -68,7 +70,11 @@ class NodeRuntimeEventSink:
     publish_live_event: PublishLiveEvent | None = None
     publish_completion_event: PublishCompletionEvent | None = None
     append_runtime_log: AppendRuntimeLog | None = None
+    emit_runtime_event: RuntimeEventEmit | None = None
     active_tool_calls: dict[str, dict] | None = None
+    stream_output_chars: int = 0
+    stream_thinking_chars: int = 0
+    stream_thinking_text: str = ""
 
     def handle(self, event: object):
         if not isinstance(event, dict):
@@ -92,6 +98,13 @@ class NodeRuntimeEventSink:
 
     def _handle_delta(self, event: dict, *, custom_event: dict | None = None) -> None:
         text = str(event.get("text") or "")
+        previous_text = self.stream_last_text
+        self.stream_output_chars = _advance_stream_chars(
+            current_total=self.stream_output_chars,
+            previous_text=previous_text,
+            next_text=text,
+            delta=event.get("delta"),
+        )
         if text == self.stream_last_text:
             changed = False
         else:
@@ -108,6 +121,13 @@ class NodeRuntimeEventSink:
 
     def _handle_thinking_delta(self, event: dict) -> None:
         text = str(event.get("text") or "")
+        self.stream_thinking_chars = _advance_stream_chars(
+            current_total=self.stream_thinking_chars,
+            previous_text=self.stream_thinking_text,
+            next_text=text,
+            delta=event.get("delta"),
+        )
+        self.stream_thinking_text = text
         if callable(self.update_live_thinking):
             self.update_live_thinking(self.graph_id, self.node_id, text, trace_id=self.trace_id, event=event)
 
@@ -166,6 +186,9 @@ class NodeRuntimeEventSink:
             call_id=str(event.get("call_id") or "").strip() or None,
             provider=str(event.get("provider") or "").strip() or None,
         )
+        self._emit_runtime_event("RuntimeNotice", event)
+        if _looks_like_network_error(event):
+            self._emit_runtime_event("NetError", event)
 
     def _handle_tool_call_event(self, event: dict, event_type: str):
         _set_node_config_runtime_event(self.config_path, event)
@@ -201,6 +224,8 @@ class NodeRuntimeEventSink:
                 merged["memory_persistence_warning"] = persistence_warning
                 _set_node_config_runtime_event(self.config_path, merged)
             self._append_node_runtime_event_record(event_type, merged)
+            if _is_failed_tool_event(merged):
+                self._emit_runtime_event("ToolFailure", merged)
             if callable(self.publish_live_event):
                 self.publish_live_event(self.graph_id, self.node_id, event_type, merged, trace_id=self.trace_id)
             if persistence_warning:
@@ -225,7 +250,7 @@ class NodeRuntimeEventSink:
             payload["runtime_event"] = dict(event)
             if (
                 str(event.get("type") or "").strip() == "runtime_notice"
-                and str(event.get("stage") or "").strip() == "openai_responses_request_summary"
+                and str(event.get("stage") or "").strip() == PROVIDER_REQUEST_SUMMARY_STAGE
             ):
                 summary = self._parse_provider_request_summary(event.get("message"))
                 if summary is not None:
@@ -372,6 +397,24 @@ class NodeRuntimeEventSink:
             )
         return warning
 
+    def _emit_runtime_event(self, event_name: str, payload: dict) -> None:
+        if not callable(self.emit_runtime_event):
+            return
+        try:
+            self.emit_runtime_event(
+                event=event_name,
+                graph_id=self.graph_id,
+                node_id=self.node_id,
+                node_type_id=self.node_type_id,
+                trace_id=self.trace_id,
+                payload={
+                    **dict(payload),
+                    "runtime_events_path": self._node_runtime_events_path(),
+                },
+            )
+        except Exception:
+            return
+
 
 def _persistence_failures(exc: Exception) -> list[dict[str, str]]:
     failures = getattr(exc, "failures", None)
@@ -387,3 +430,33 @@ def _persistence_failures(exc: Exception) -> list[dict[str, str]]:
             }
         )
     return output
+
+
+def _is_failed_tool_event(event: dict) -> bool:
+    status = str(event.get("status") or "").strip().lower()
+    error = str(event.get("error") or "").strip()
+    return bool(error) or status in {"error", "blocked", "timeout", "exception", "stopped", "failed"}
+
+
+def _looks_like_network_error(event: dict) -> bool:
+    text = " ".join(
+        str(event.get(key) or "")
+        for key in ("message", "stage", "source", "error", "status")
+    ).lower()
+    return any(token in text for token in ("network", "timeout", "retry", "connection", "connect", "http", "rate limit"))
+
+
+def _advance_stream_chars(
+    *,
+    current_total: int,
+    previous_text: str,
+    next_text: str,
+    delta: object,
+) -> int:
+    total = max(0, int(current_total or 0))
+    delta_text = str(delta or "")
+    if delta_text:
+        return total + len(delta_text)
+    if next_text.startswith(previous_text):
+        return total + max(0, len(next_text) - len(previous_text))
+    return max(total, len(next_text))

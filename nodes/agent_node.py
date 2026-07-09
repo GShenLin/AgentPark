@@ -28,7 +28,6 @@ from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
 from src.capabilities.registry import CapabilityRegistry
-from src.companion_notice_settings import companion_tool_failure_memory_enabled
 from src.config_loader import ConfigLoader
 from src.media_resource_utils import resolve_public_base_url
 from src.message_protocol import envelope_text, normalize_envelope
@@ -36,6 +35,7 @@ from src.operational_memory import build_operational_memory_summary
 from src.providers import create_agent
 from src.providers.instructions import resolve_agent_default_instructions
 from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
+from src.runtime_events.context_injection import runtime_event_context_from_context
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.switch_utils import parse_switch_mode
 from src.tool.tool_stats_store import ToolCallStatsRecorder
@@ -247,7 +247,6 @@ class Node(BaseNode):
             system_prompt=run_request.system_prompt if isinstance(run_request.system_prompt, str) else None,
             internal_memory_enabled=False,
         )
-        agent.tool_failure_memory_notice_enabled = companion_tool_failure_memory_enabled()
         resolved_public_base_url = resolve_public_base_url(run_request.public_base_url, run_request.provider_id)
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
         if cancel_source is not None:
@@ -348,6 +347,9 @@ class Node(BaseNode):
         goal_context = node_goal_context(run_request.config_data or ctx)
         if goal_context:
             agent.Message("user", goal_context, persist=False)
+        runtime_event_context = runtime_event_context_from_context(ctx)
+        for fragment in runtime_event_context:
+            agent.Message(instruction_role, fragment, persist=False)
 
         for history_message in self._load_node_history_messages(ctx, input_message, run_request.provider_id, resolved_public_base_url):
             agent.Message(history_message["role"], history_message["content"], persist=False)
@@ -426,7 +428,7 @@ def _uses_responses_api_context(agent: object) -> bool:
     config = getattr(agent, "config", None)
     if not isinstance(config, dict):
         return False
-    provider_type = str(config.get("type") or "").strip().lower()
+    provider_type = str(config.get("type") or "").strip()
     return provider_type in {"openai", "doubao"} and config.get("responsesApi") is True
 
 

@@ -13,8 +13,8 @@ class PromptLibrary(HostBoundService):
     }
 
     def _prompt_dir(self, kind: object):
-        normalized = self._normalize_kind(kind)
-        return os.path.join(get_workspace_root(), self._KIND_DIRS[normalized])
+        prompt_kind = self._validate_kind(kind)
+        return os.path.join(get_workspace_root(), self._KIND_DIRS[prompt_kind])
 
     def list_prompts(self, kind: str):
         prompt_dir = self._prompt_dir(kind)
@@ -54,11 +54,13 @@ class PromptLibrary(HostBoundService):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    def _normalize_kind(self, kind: object) -> str:
-        normalized = str(kind or "").strip()
-        if normalized not in self._KIND_DIRS:
+    def _validate_kind(self, kind: object) -> str:
+        if not isinstance(kind, str):
             raise HTTPException(status_code=400, detail="invalid prompt kind")
-        return normalized
+        prompt_kind = kind.strip()
+        if prompt_kind not in self._KIND_DIRS:
+            raise HTTPException(status_code=400, detail="invalid prompt kind")
+        return prompt_kind
 
     def _resolve_prompt_path(self, prompt_dir: str, filename: object) -> str:
         raw = str(filename or "").strip()

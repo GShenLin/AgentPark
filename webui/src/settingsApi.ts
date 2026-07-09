@@ -1,4 +1,4 @@
-import { getActiveApiBase, requestApiJson } from './api'
+import { createApiNetworkError, getActiveApiBase, requestApiJson } from './api'
 
 export type SettingsSectionInfo = {
   id: string
@@ -13,6 +13,26 @@ export type SettingsDocument = {
   path: string
   content: string
   data: Record<string, unknown>
+  active_preset_id?: string
+  presets?: ThemePresetInfo[]
+}
+
+export type ThemePresetInfo = {
+  id: string
+  path: string
+}
+
+export type ThemePresetCatalog = {
+  active_preset_id: string
+  presets: ThemePresetInfo[]
+}
+
+export type ThemeAssetUploadResponse = {
+  ok: boolean
+  preset_id: string
+  asset_path: string
+  path: string
+  size: number
 }
 
 export type ProviderLimitFeature = {
@@ -54,6 +74,29 @@ export type ProviderLimitDocument = {
   model_refresh_current_provider_id?: string
   path: string
   providers: Record<string, ProviderLimitEntry>
+}
+
+export type ProviderPressureEntry = {
+  provider_id: string
+  type: string
+  model: string
+  concurrency_limit: number | null
+  rpm_limit: number | null
+  in_flight: number
+  queued: number
+  rpm_used: number
+  rpm_interval_sec: number | null
+  rpm_next_available_in_sec: number
+  peak_in_flight: number
+  peak_queued: number
+  peak_rpm_used: number
+  rpm_remaining: number | null
+}
+
+export type ProviderPressureDocument = {
+  ok: boolean
+  window_seconds: number
+  providers: ProviderPressureEntry[]
 }
 
 export type ProviderLimitTestJob = {
@@ -125,6 +168,13 @@ export type ToolStatsDocument = {
   recent_calls: ToolCallStatRecord[]
 }
 
+export type DeleteOptionalMemoryResponse = {
+  ok: boolean
+  returncode: number
+  stdout: string
+  stderr: string
+}
+
 async function requestJson(path: string, init?: RequestInit) {
   return requestApiJson(getActiveApiBase(), path, init)
 }
@@ -145,8 +195,68 @@ export async function updateSettingsSection(section: string, content: string): P
   }) as Promise<SettingsDocument>
 }
 
+export async function listThemePresets(): Promise<ThemePresetCatalog> {
+  return requestJson('/api/theme/presets') as Promise<ThemePresetCatalog>
+}
+
+export async function loadThemePreset(presetId: string): Promise<SettingsDocument> {
+  return requestJson('/api/theme/presets/load', {
+    method: 'POST',
+    body: JSON.stringify({ preset_id: presetId }),
+  }) as Promise<SettingsDocument>
+}
+
+export async function saveThemePreset(presetId: string, content: string): Promise<SettingsDocument> {
+  return requestJson('/api/theme/presets/save', {
+    method: 'POST',
+    body: JSON.stringify({ preset_id: presetId, content }),
+  }) as Promise<SettingsDocument>
+}
+
+export async function uploadThemeAsset(file: File, presetId = ''): Promise<ThemeAssetUploadResponse> {
+  const body = new FormData()
+  body.append('file', file)
+  const safePresetId = String(presetId || '').trim()
+  if (safePresetId) {
+    body.append('preset_id', safePresetId)
+  }
+
+  const baseUrl = getActiveApiBase()
+  const path = '/api/theme/assets'
+  const init: RequestInit = {
+    method: 'POST',
+    body,
+  }
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl}${path}`, init)
+  } catch (error) {
+    throw createApiNetworkError(baseUrl, path, init, error)
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    let detail = text.trim()
+    if (detail) {
+      try {
+        const parsed = JSON.parse(detail)
+        if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
+          detail = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail)
+        }
+      } catch {
+        // Keep the raw response body when it is not JSON.
+      }
+    }
+    throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`)
+  }
+  return res.json() as Promise<ThemeAssetUploadResponse>
+}
+
 export async function getProviderLimits(): Promise<ProviderLimitDocument> {
   return requestJson('/api/providers/limits') as Promise<ProviderLimitDocument>
+}
+
+export async function getProviderPressure(): Promise<ProviderPressureDocument> {
+  return requestJson('/api/providers/pressure') as Promise<ProviderPressureDocument>
 }
 
 export async function getToolStats(): Promise<ToolStatsDocument> {
@@ -155,6 +265,10 @@ export async function getToolStats(): Promise<ToolStatsDocument> {
 
 export async function clearToolStats(): Promise<ToolStatsDocument> {
   return requestJson('/api/tool-stats', { method: 'DELETE' }) as Promise<ToolStatsDocument>
+}
+
+export async function deleteOptionalMemory(): Promise<DeleteOptionalMemoryResponse> {
+  return requestJson('/api/operational-memory/delete-optional', { method: 'POST' }) as Promise<DeleteOptionalMemoryResponse>
 }
 
 export async function startProviderLimitTests(timeoutSeconds = 30): Promise<ProviderLimitTestResponse> {

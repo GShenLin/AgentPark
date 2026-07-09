@@ -11,7 +11,6 @@ def test_doubao_send_uses_responses_api_for_plain_chat_when_enabled():
         "baseUrl": "https://example.com/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
@@ -68,7 +67,7 @@ def test_doubao_send_uses_responses_api_for_plain_chat_when_enabled():
     assert payload["input"][-1]["content"][0]["text"] == "plain chat"
 
 
-def test_doubao_responses_downgrades_xhigh_reasoning_effort_before_request():
+def test_doubao_responses_rejects_xhigh_reasoning_effort_before_request():
     from src.tool.base_tool import BaseTool
     from src.providers.doubao_agent import DouBaoAgent
 
@@ -78,7 +77,6 @@ def test_doubao_responses_downgrades_xhigh_reasoning_effort_before_request():
         "baseUrl": "https://example.com/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
@@ -105,8 +103,11 @@ def test_doubao_responses_downgrades_xhigh_reasoning_effort_before_request():
     agent._post_json_with_retry = fake_post
     agent._stream_responses_with_retry = fake_post
 
-    assert agent.Send(run_tools=False, web_search="disabled", reasoning_effort="xhigh", stream=False) == "ok"
-    assert payloads[0]["reasoning"] == {"effort": "high"}
+    import pytest
+
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        agent.Send(run_tools=False, web_search="disabled", reasoning_effort="xhigh", stream=False)
+    assert payloads == []
 
 
 def test_doubao_send_uses_config_reasoning_effort_when_node_value_empty():
@@ -119,13 +120,12 @@ def test_doubao_send_uses_config_reasoning_effort_when_node_value_empty():
         "baseUrl": "https://example.com/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
         "toolContextCompactionEveryToolCalls": 1,
-        "reasoningEffort": "xhigh",
+        "reasoningEffort": "high",
     }
     agent.provider_name = "doubao"
     agent.system_prompt = None
@@ -163,7 +163,6 @@ def test_doubao_responses_rejects_unknown_reasoning_effort_before_request():
         "baseUrl": "https://example.com/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
@@ -195,7 +194,6 @@ def test_doubao_responses_accepts_base_url_that_already_ends_with_responses():
         "baseUrl": "https://example.com/api/v3/responses",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
@@ -233,7 +231,6 @@ def test_doubao_responses_appends_turn_trigger_after_terminal_assistant_context(
         "baseUrl": "https://example.com/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,
@@ -385,7 +382,6 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
             "baseUrl": "https://api.openai.test/v1",
             "model": "gpt-test",
             "responsesApi": True,
-            "responsesContinuationMode": "explicit_context",
             "responsesReplayReasoningItems": False,
             "maxRetries": 0,
             "retryDelaySec": 0,
@@ -403,7 +399,6 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
             "baseUrl": "https://example.com/v1",
             "model": "doubao-test",
             "responsesApi": True,
-            "responsesContinuationMode": "explicit_context",
             "maxRetries": 0,
             "retryDelaySec": 0,
             "toolResultSubmissionMaxChars": 50000,
@@ -478,7 +473,6 @@ def test_doubao_responses_persists_runtime_context_between_sends(tmp_path):
         "baseUrl": "https://example.com/v1",
         "model": "doubao-test",
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "toolResultSubmissionMaxChars": 50000,

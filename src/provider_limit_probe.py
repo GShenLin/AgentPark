@@ -119,7 +119,7 @@ def _provider_probe_crash_payload(provider_id: str, provider: object, exc: Excep
 
 def test_provider_limits(provider_id: str, provider: dict[str, Any], *, timeout_seconds: float) -> dict[str, Any]:
     config = copy.deepcopy(provider)
-    provider_type = str(config.get("type") or "").strip().lower()
+    provider_type = str(config.get("type") or "").strip()
     result: dict[str, Any] = {
         "provider_id": provider_id,
         "type": provider_type,
@@ -319,7 +319,7 @@ def _post_json_probe(url: str, headers: dict[str, str], payload: dict[str, Any],
 
 
 def _web_search_payload(config: dict[str, Any]) -> dict[str, Any]:
-    tool_type = str(config.get("webSearchToolType", config.get("web_search_tool_type", "web_search")) or "").strip()
+    tool_type = str(config.get("webSearchToolType", "web_search") or "").strip()
     return {"tools": [{"type": tool_type or "web_search"}]}
 
 

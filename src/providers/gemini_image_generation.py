@@ -9,6 +9,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
+from src.providers.provider_pressure import acquire_provider_pressure
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.service_host import HostBoundService
 
@@ -84,11 +85,12 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
         last_error = None
         for attempt in range(max_retries + 1):
             try:
-                with urllib.request.urlopen(req, timeout=timeout) as response:
-                    response_data = response.read().decode("utf-8")
-                    if response.status != 200:
-                        last_error = f"Error: {response.status} - {response_data}"
-                        break
+                with acquire_provider_pressure(self):
+                    with urllib.request.urlopen(req, timeout=timeout) as response:
+                        response_data = response.read().decode("utf-8")
+                        if response.status != 200:
+                            last_error = f"Error: {response.status} - {response_data}"
+                            break
 
                 result = json.loads(response_data)
                 candidates = result.get("candidates") or []
@@ -194,9 +196,10 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
 
     def _read_remote_image_part(self, url: str):
         timeout = self.config.get("timeoutMs", 60000) / 1000
-        with urllib.request.urlopen(url, timeout=max(1, float(timeout or 60))) as response:
-            raw = response.read()
-            mime_type = response.headers.get_content_type() or mimetypes.guess_type(url)[0] or "image/png"
+        with acquire_provider_pressure(self):
+            with urllib.request.urlopen(url, timeout=max(1, float(timeout or 60))) as response:
+                raw = response.read()
+                mime_type = response.headers.get_content_type() or mimetypes.guess_type(url)[0] or "image/png"
         if not raw:
             raise ValueError(f"reference image URL returned no data: {url}")
         data_b64 = base64.b64encode(raw).decode("utf-8")

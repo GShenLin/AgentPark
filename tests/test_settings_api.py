@@ -157,15 +157,15 @@ def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_dir = graphs_dir / "companion"
+    companion_dir = graphs_dir / "Companion" / "Companion"
     companion_dir.mkdir(parents=True)
     companion_path = companion_dir / "config.json"
     companion_path.write_text(
         json.dumps(
             {
-                "node_id": "companion",
+                "node_id": "Companion",
                 "type_id": "agent_node",
-                "graph_id": "companion",
+                "graph_id": "Companion",
                 "provider_id": "demo",
                 "tools": [],
             },
@@ -186,9 +186,9 @@ def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
         {
             "content": json.dumps(
                 {
-                    "node_id": "companion",
+                    "node_id": "Companion",
                     "type_id": "agent_node",
-                    "graph_id": "companion",
+                    "graph_id": "Companion",
                     "provider_id": "next",
                     "tools": ["file_read_tools"],
                 },
@@ -215,6 +215,35 @@ def test_settings_api_rejects_invalid_companion_config(monkeypatch, tmp_path):
 
     assert exc.value.status_code == 400
     assert "agent_node" in str(exc.value.detail)
+
+
+def test_settings_api_exposes_events_config_and_validates_updates(monkeypatch, tmp_path):
+    from src.web_backend import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    calls = []
+
+    class Registry:
+        def compile(self, payload, *, strict_sources):
+            calls.append((payload, strict_sources))
+
+    domain = SettingsApiDomain(SimpleNamespace(runtime_events=SimpleNamespace(registry=Registry())))
+
+    loaded = domain.get_settings_section("events")
+
+    assert loaded["path"] == str(tmp_path / "config" / "events.json")
+    assert loaded["data"]["schema_version"] == 1
+    assert (tmp_path / "config" / "events.json").exists()
+
+    payload = dict(loaded["data"])
+    payload["enabled"] = False
+    result = domain.update_settings_section("events", {"content": json.dumps(payload)})
+
+    assert result["ok"] is True
+    assert result["data"]["enabled"] is False
+    assert calls[-1][1] is True
+    saved = json.loads((tmp_path / "config" / "events.json").read_text(encoding="utf-8"))
+    assert saved["enabled"] is False
 
 
 def test_settings_api_reads_tool_stats(monkeypatch, tmp_path):
@@ -261,3 +290,32 @@ def test_settings_api_clears_tool_stats(monkeypatch, tmp_path):
     assert result["ok"] is True
     assert result["summary"] == {"providers": {}}
     assert result["recent_calls"] == []
+
+
+def test_settings_api_delete_optional_memory_runs_bat(monkeypatch, tmp_path):
+    import src.web_backend.settings_api as settings_api
+    from src import workspace_settings
+
+    script_path = tmp_path / "delete_operational_memory.bat"
+    script_path.write_text("@echo off\necho Deleted 2 files. Failed 0 files. Matched 2 files.\n", encoding="utf-8")
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Deleted 2 files. Failed 0 files. Matched 2 files.\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(settings_api.subprocess, "run", fake_run)
+
+    domain = SettingsApiDomain(SimpleNamespace())
+    result = domain.delete_optional_memory()
+
+    assert result["ok"] is True
+    assert result["stdout"] == "Deleted 2 files. Failed 0 files. Matched 2 files."
+    assert calls
+    assert calls[0][1]["cwd"] == str(tmp_path)
+    assert str(script_path) in calls[0][0]

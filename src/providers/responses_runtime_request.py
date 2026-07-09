@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from src.providers.responses_payload_log import write_responses_payload_log
-from src.providers.responses_request_summary import build_responses_request_summary
+from src.providers.provider_request_summary import build_provider_request_summary
 
 
 @dataclass(frozen=True)
@@ -34,11 +34,12 @@ def build_and_emit_responses_request_payload(
         provider_options=provider_options,
         instructions=request_instructions,
     )
-    request_summary = build_responses_request_summary(
+    request_summary = build_provider_request_summary(
         request_index=request_index,
         current_input=request_input,
         tools_payload=tools_payload,
         stream=use_stream,
+        request_api="responses",
         responses_mode=mode_decision.mode,
         requested_responses_mode=mode_decision.requested_mode,
         context_update=context_update,
@@ -59,7 +60,7 @@ def build_and_emit_responses_request_payload(
         if payload_log.get("error"):
             request_summary["payload_log_error"] = str(payload_log.get("error") or "")
         runtime._emit_responses_payload_log(payload_log)
-    runtime._emit_responses_request_summary(request_summary)
+    runtime._emit_provider_request_summary(request_summary)
     runtime._emit_responses_request_start(
         request_index=request_index,
         input_item_count=len(request_input) if isinstance(request_input, list) else 0,

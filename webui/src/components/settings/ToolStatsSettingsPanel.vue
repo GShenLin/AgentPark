@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { clearToolStats, getToolStats, type ToolCallStatRecord, type ToolStatsDocument, type ToolStatsProviderSummary } from '../../settingsApi'
+import {
+  clearToolStats,
+  deleteOptionalMemory,
+  getToolStats,
+  type ToolCallStatRecord,
+  type ToolStatsDocument,
+  type ToolStatsProviderSummary,
+} from '../../settingsApi'
 
 const stats = ref<ToolStatsDocument | null>(null)
 const selectedProviderId = ref('')
 const loading = ref(false)
 const clearing = ref(false)
+const deletingOptionalMemory = ref(false)
 const error = ref('')
+const operationStatus = ref('')
 
 const providers = computed<ToolStatsProviderSummary[]>(() => {
   const source = stats.value?.summary?.providers || {}
@@ -47,6 +56,7 @@ function statusLabel(call: ToolCallStatRecord) {
 async function loadStats() {
   loading.value = true
   error.value = ''
+  operationStatus.value = ''
   try {
     const next = await getToolStats()
     stats.value = next
@@ -65,6 +75,7 @@ async function clearStats() {
   if (!ok) return
   clearing.value = true
   error.value = ''
+  operationStatus.value = ''
   try {
     const next = await clearToolStats()
     stats.value = next
@@ -76,17 +87,41 @@ async function clearStats() {
   }
 }
 
+async function deleteOptionalMemoryFiles() {
+  const ok = window.confirm('Delete every operational_memory.json file under the memories folder?')
+  if (!ok) return
+  deletingOptionalMemory.value = true
+  error.value = ''
+  operationStatus.value = ''
+  try {
+    const result = await deleteOptionalMemory()
+    operationStatus.value = result.stdout || 'DeleteOptionalMemory completed.'
+  } catch (e: any) {
+    error.value = String(e?.message || e)
+  } finally {
+    deletingOptionalMemory.value = false
+  }
+}
+
 onMounted(loadStats)
 </script>
 
 <template>
   <div class="tool-stats">
     <aside class="tool-stats-side">
-      <button type="button" class="tool-stats-action" :disabled="loading || clearing" @click="loadStats">
+      <button type="button" class="tool-stats-action" :disabled="loading || clearing || deletingOptionalMemory" @click="loadStats">
         {{ loading ? 'Loading...' : 'Reload' }}
       </button>
-      <button type="button" class="tool-stats-action danger" :disabled="loading || clearing || !totalCalls" @click="clearStats">
+      <button type="button" class="tool-stats-action danger" :disabled="loading || clearing || deletingOptionalMemory || !totalCalls" @click="clearStats">
         {{ clearing ? 'Clearing...' : 'Clear' }}
+      </button>
+      <button
+        type="button"
+        class="tool-stats-action danger"
+        :disabled="loading || clearing || deletingOptionalMemory"
+        @click="deleteOptionalMemoryFiles"
+      >
+        {{ deletingOptionalMemory ? 'Deleting...' : 'DeleteOptionalMemory' }}
       </button>
 
       <button
@@ -169,6 +204,7 @@ onMounted(loadStats)
         <div v-if="!recentCalls.length && !loading" class="tool-stats-empty">No recent calls</div>
       </div>
 
+      <div v-if="operationStatus" class="tool-stats-status">{{ operationStatus }}</div>
       <div v-if="error" class="tool-stats-error">{{ error }}</div>
     </section>
   </div>
@@ -357,12 +393,18 @@ onMounted(loadStats)
 }
 
 .tool-stats-empty,
-.tool-stats-error {
+.tool-stats-error,
+.tool-stats-status {
   padding: 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   color: var(--text-tertiary);
   background: var(--bg-secondary);
+}
+
+.tool-stats-status {
+  white-space: pre-wrap;
+  color: var(--text-secondary);
 }
 
 .tool-stats-error {

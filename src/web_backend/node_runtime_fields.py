@@ -15,6 +15,7 @@ RUNTIME_STATE_FIELDS = {
     "runtime_events",
     "runtime_tool_calls",
     "provider_request_summaries",
+    "provider_request_totals",
     "completed_requests",
     "last_completed_request",
     "goal",

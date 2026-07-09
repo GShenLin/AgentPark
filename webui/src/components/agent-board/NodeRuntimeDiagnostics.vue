@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { ProviderRequestSummary, RuntimeEvent, RuntimeToolCall } from '../../api'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { ProviderRequestSummary, ProviderRequestTotals, RuntimeEvent, RuntimeToolCall } from '../../api'
 import {
   latestRuntimeNotice,
   normalizeRuntimeEvents,
@@ -9,13 +9,14 @@ import {
 const props = defineProps<{
   events?: RuntimeEvent[]
   providerSummaries?: ProviderRequestSummary[]
+  providerTotals?: ProviderRequestTotals | null
   runtimeToolCalls?: RuntimeToolCall[]
 }>()
 
 type DiagnosticRow = {
   label: string
   value: string
-  tone?: 'attention' | 'ok' | 'muted'
+  tone?: 'attention' | 'ok' | 'muted' | 'running'
 }
 
 const runtimeEvents = computed(() => normalizeRuntimeEvents(props.events))
@@ -23,10 +24,62 @@ const providerSummaries = computed(() => Array.isArray(props.providerSummaries) 
 const latestNotice = computed(() => latestRuntimeNotice(runtimeEvents.value))
 const latestNoticePayload = computed(() => parseJsonObject(latestNotice.value?.message))
 const latestProviderSummary = computed(() => providerSummaries.value[providerSummaries.value.length - 1] || null)
+const providerTotals = computed(() => {
+  if (props.providerTotals && typeof props.providerTotals === 'object') {
+    return {
+      inputChars: numberField(props.providerTotals as Record<string, unknown>, 'approx_input_chars') ?? 0,
+      inputTokens: numberField(props.providerTotals as Record<string, unknown>, 'approx_input_tokens') ?? 0,
+      toolInputChars: numberField(props.providerTotals as Record<string, unknown>, 'tool_call_chars') ?? 0,
+      toolOutputChars: numberField(props.providerTotals as Record<string, unknown>, 'tool_result_chars') ?? 0,
+      requestCount: numberField(props.providerTotals as Record<string, unknown>, 'request_count') ?? providerSummaries.value.length,
+    }
+  }
+  let inputChars = 0
+  let inputTokens = 0
+  let toolInputChars = 0
+  let toolOutputChars = 0
+  for (const summary of providerSummaries.value) {
+    inputChars += numberField(summary, 'approx_input_chars') ?? 0
+    inputTokens += numberField(summary, 'approx_input_tokens') ?? 0
+    toolInputChars += summaryChars(summary, 'tool_call_chars_by_call', 'tool_call_chars_total')
+    toolOutputChars += summaryChars(summary, 'tool_result_chars_by_call', 'tool_result_chars_total')
+  }
+  return { inputChars, inputTokens, toolInputChars, toolOutputChars, requestCount: providerSummaries.value.length }
+})
+const nowMs = ref(Date.now())
+let elapsedTimer: number | null = null
+
+const latestNodeRunStart = computed(() => {
+  for (let index = runtimeEvents.value.length - 1; index >= 0; index -= 1) {
+    const event = runtimeEvents.value[index]
+    if (event?.type !== 'runtime_notice' || event.stage !== 'node_run_start') continue
+    const payload = parseJsonObject(event.message)
+    if (payload) return payload
+  }
+  return null
+})
+const latestNodeRunSummary = computed(() => {
+  for (let index = runtimeEvents.value.length - 1; index >= 0; index -= 1) {
+    const event = runtimeEvents.value[index]
+    if (event?.type !== 'runtime_notice' || event.stage !== 'node_run_summary') continue
+    const payload = parseJsonObject(event.message)
+    if (payload) return payload
+  }
+  return null
+})
+const activeNodeRunStart = computed(() => {
+  const start = latestNodeRunStart.value
+  if (!start) return null
+  const summary = latestNodeRunSummary.value
+  const startTraceId = stringField(start, 'trace_id')
+  const summaryTraceId = stringField(summary, 'trace_id')
+  if (startTraceId && summaryTraceId && startTraceId === summaryTraceId) return null
+  return start
+})
 const runtimeToolCallCount = computed(() => Array.isArray(props.runtimeToolCalls) ? props.runtimeToolCalls.length : null)
 
 const hasDiagnostics = computed(() => {
-  return !!latestNotice.value || !!latestProviderSummary.value
+  return !!latestNotice.value || !!latestProviderSummary.value || !!latestNodeRunSummary.value
 })
 
 const noticeRows = computed<DiagnosticRow[]>(() => {
@@ -43,41 +96,87 @@ const noticeRows = computed<DiagnosticRow[]>(() => {
 
 const requestRows = computed<DiagnosticRow[]>(() => {
   const summary = latestProviderSummary.value
-  if (!summary) return []
   const rows: DiagnosticRow[] = []
-  const inputItems = numberField(summary, 'input_item_count')
-  const approxChars = numberField(summary, 'approx_input_chars')
-  const approxTokens = numberField(summary, 'approx_input_tokens')
-  const environmentChars = numberField(summary, 'environment_context_chars')
-  if (approxTokens != null || inputItems != null || approxChars != null) {
-    rows.push({
-      label: 'Context',
-      value: formatContext(approxTokens, approxChars, inputItems),
-    })
+  const runSummary = latestNodeRunSummary.value
+  const activeRun = activeNodeRunStart.value
+  if (activeRun) {
+    rows.push({ label: 'Run', value: 'running', tone: 'running' })
+    const startedAt = numberField(activeRun, 'started_at_epoch_ms')
+    if (startedAt != null) {
+      rows.push({ label: 'Elapsed', value: formatDuration(Math.max(0, nowMs.value - startedAt)) })
+    }
   }
-  if (environmentChars != null && environmentChars > 0) {
-    rows.push({ label: 'Env', value: formatChars(environmentChars), tone: 'muted' })
+  const outputChars = numberField(runSummary, 'output_chars')
+  if (outputChars != null) {
+    rows.push({ label: 'Output', value: formatChars(outputChars) })
   }
-  const largestToolResult = summary.largest_tool_result
-  if (largestToolResult && typeof largestToolResult === 'object') {
-    const item = largestToolResult as Record<string, unknown>
-    const name = stringField(item, 'name')
-    const callId = stringField(item, 'call_id')
-    const chars = numberField(item, 'chars')
-    rows.push({
-      label: 'Largest Tool',
-      value: `${name || callId || 'tool'}${chars != null ? ` / ${formatChars(chars)}` : ''}`,
-      tone: chars != null && chars > 50000 ? 'attention' : 'muted',
-    })
+  const thinkingChars = numberField(runSummary, 'thinking_output_chars')
+  if (thinkingChars != null && thinkingChars > 0) {
+    rows.push({ label: 'Thinking', value: formatChars(thinkingChars) })
   }
-  const toolsCount = numberField(summary, 'tools_included_count')
-  if (toolsCount != null) rows.push({ label: 'Tools Sent', value: String(toolsCount) })
-  const toolResultCount = Array.isArray(summary.tool_result_chars_by_call) ? summary.tool_result_chars_by_call.length : null
-  if (toolResultCount != null || runtimeToolCallCount.value != null) {
-    const parts: string[] = []
-    if (toolResultCount != null) parts.push(`${toolResultCount} results`)
-    if (runtimeToolCallCount.value != null) parts.push(`${runtimeToolCallCount.value} runtime`)
-    rows.push({ label: 'Tool Calls', value: parts.join(' / ') })
+  const totalDurationMs = numberField(runSummary, 'total_duration_ms') ?? numberField(runSummary, 'duration_ms')
+  if (totalDurationMs != null) {
+    rows.push({ label: 'Total', value: formatDuration(totalDurationMs) })
+  }
+  if (summary) {
+    const inputItems = numberField(summary, 'input_item_count')
+    const approxChars = numberField(summary, 'approx_input_chars')
+    const approxTokens = numberField(summary, 'approx_input_tokens')
+    const environmentChars = numberField(summary, 'environment_context_chars')
+    if (approxTokens != null || inputItems != null || approxChars != null) {
+      rows.push({
+        label: 'Context',
+        value: formatContext(approxTokens, approxChars, inputItems),
+      })
+    }
+    if (providerTotals.value.requestCount > 1 && providerTotals.value.inputChars > 0) {
+      rows.push({
+        label: 'Sent Total',
+        value: formatContext(
+          providerTotals.value.inputTokens || null,
+          providerTotals.value.inputChars,
+          null,
+        ),
+      })
+    }
+    if (environmentChars != null && environmentChars > 0) {
+      rows.push({ label: 'Env', value: formatChars(environmentChars), tone: 'muted' })
+    }
+    const toolInputChars = summaryChars(summary, 'tool_call_chars_by_call', 'tool_call_chars_total')
+    const toolOutputChars = summaryChars(summary, 'tool_result_chars_by_call', 'tool_result_chars_total')
+    if (toolInputChars > 0 || toolOutputChars > 0) {
+      rows.push({ label: 'Tool I/O', value: formatToolIo(toolInputChars, toolOutputChars) })
+    }
+    if (
+      providerTotals.value.requestCount > 1
+      && (providerTotals.value.toolInputChars > toolInputChars || providerTotals.value.toolOutputChars > toolOutputChars)
+    ) {
+      rows.push({
+        label: 'I/O Total',
+        value: formatToolIo(providerTotals.value.toolInputChars, providerTotals.value.toolOutputChars),
+      })
+    }
+    const largestToolResult = summary.largest_tool_result
+    if (largestToolResult && typeof largestToolResult === 'object') {
+      const item = largestToolResult as Record<string, unknown>
+      const name = stringField(item, 'name')
+      const callId = stringField(item, 'call_id')
+      const chars = numberField(item, 'chars')
+      rows.push({
+        label: 'Largest Tool',
+        value: `${name || callId || 'tool'}${chars != null ? ` / ${formatChars(chars)}` : ''}`,
+        tone: chars != null && chars > 50000 ? 'attention' : 'muted',
+      })
+    }
+    const toolsCount = numberField(summary, 'tools_included_count')
+    if (toolsCount != null) rows.push({ label: 'Tools Sent', value: String(toolsCount) })
+    const toolResultCount = Array.isArray(summary.tool_result_chars_by_call) ? summary.tool_result_chars_by_call.length : null
+    if (toolResultCount != null || runtimeToolCallCount.value != null) {
+      const parts: string[] = []
+      if (toolResultCount != null) parts.push(`${toolResultCount} results`)
+      if (runtimeToolCallCount.value != null) parts.push(`${runtimeToolCallCount.value} runtime`)
+      rows.push({ label: 'Tool Calls', value: parts.join(' / ') })
+    }
   }
   return rows
 })
@@ -102,6 +201,17 @@ function numberField(source: Record<string, unknown> | null, key: string) {
   return null
 }
 
+function summaryChars(source: Record<string, unknown> | null, listKey: string, totalKey: string) {
+  const total = numberField(source, totalKey)
+  if (total != null) return total
+  const items = source?.[listKey]
+  if (!Array.isArray(items)) return 0
+  return items.reduce((sum, item) => {
+    if (!item || typeof item !== 'object') return sum
+    return sum + (numberField(item as Record<string, unknown>, 'chars') ?? 0)
+  }, 0)
+}
+
 function formatChars(value: number) {
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M chars`
   if (value >= 1000) return `${Math.round(value / 1000)}k chars`
@@ -114,6 +224,12 @@ function formatTokens(value: number) {
   return `${value} tokens`
 }
 
+function formatDuration(value: number) {
+  if (value >= 60000) return `${(value / 60000).toFixed(1)} min`
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}s`
+  return `${value}ms`
+}
+
 function formatContext(tokens: number | null, chars: number | null, inputItems: number | null) {
   const parts: string[] = []
   if (tokens != null) parts.push(formatTokens(tokens))
@@ -121,6 +237,26 @@ function formatContext(tokens: number | null, chars: number | null, inputItems: 
   if (!parts.length) parts.push(`${inputItems ?? 0} input entries`)
   return parts.join(' / ')
 }
+
+function formatToolIo(inputChars: number, outputChars: number) {
+  const parts: string[] = []
+  if (inputChars > 0) parts.push(`${formatChars(inputChars)} in`)
+  if (outputChars > 0) parts.push(`${formatChars(outputChars)} out`)
+  return parts.join(' / ') || '0 chars'
+}
+
+onMounted(() => {
+  elapsedTimer = window.setInterval(() => {
+    nowMs.value = Date.now()
+  }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (elapsedTimer != null) {
+    window.clearInterval(elapsedTimer)
+    elapsedTimer = null
+  }
+})
 
 </script>
 
@@ -145,6 +281,7 @@ function formatContext(tokens: number | null, chars: number | null, inputItems: 
 .runtime-diagnostics {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 4px;
   margin-bottom: 7px;
   padding: 5px 6px;

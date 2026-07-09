@@ -651,7 +651,7 @@ watch(
 .field-label {
   font-size: 12px;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--theme-panel-node-side-editor-text-secondary, #cbd5e1);
 }
 
 .field-head {
@@ -674,10 +674,10 @@ watch(
   flex: 0 1 150px;
   min-width: 96px;
   max-width: 56%;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
+  color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
   padding: 6px 8px;
   font-size: 11px;
   line-height: 1.2;
@@ -700,10 +700,10 @@ watch(
 }
 
 .field-prompt-btn {
-  border: 1px solid rgba(148, 163, 184, 0.28);
+  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.28));
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.92));
+  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
   cursor: pointer;
   font-size: 11px;
   line-height: 1.2;
@@ -777,16 +777,16 @@ watch(
 
 .field-input {
   width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
+  color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
   padding: 10px 12px;
   outline: none;
 }
 
 .field-input:focus {
-  border-color: rgba(56, 189, 248, 0.7);
+  border-color: var(--theme-panel-node-side-editor-input-focus-border, rgba(56, 189, 248, 0.7));
 }
 
 .field-textarea {
@@ -804,7 +804,7 @@ watch(
 .field-drop-hint,
 .field-prompt-message {
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.78);
+  color: var(--theme-panel-node-side-editor-text-secondary, rgba(148, 163, 184, 0.78));
   line-height: 1.35;
 }
 

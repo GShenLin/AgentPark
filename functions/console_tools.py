@@ -44,13 +44,6 @@ def _classify_console_command(command) -> _ConsoleCommandProfile:
     command_text = str(command or "")
     command_lower = command_text.lower()
 
-    if _looks_like_cmd_unix_pwd(command_lower):
-        return _ConsoleCommandProfile(
-            blocked=True,
-            block_error="Unix 'pwd' is blocked for execute_console_command because this tool runs through Windows cmd semantics.",
-            hint="Use 'cd' for cmd current directory, or run PowerShell explicitly with 'powershell -NoProfile -Command \"Get-Location\"'.",
-        )
-
     if _looks_like_high_context_git_diff(command_lower):
         return _ConsoleCommandProfile(
             blocked=True,
@@ -90,12 +83,6 @@ def _classify_console_command(command) -> _ConsoleCommandProfile:
         return _ConsoleCommandProfile(minimum_timeout_seconds=300, completion_kind="pytest")
 
     return _ConsoleCommandProfile()
-
-
-def _looks_like_cmd_unix_pwd(command_lower: str) -> bool:
-    if "powershell" in command_lower or "pwsh" in command_lower:
-        return False
-    return bool(re.search(r"(^|[&|]\s*)pwd(\s*(&&|\|\||[&|])|\s*$)", command_lower.strip()))
 
 
 def _looks_like_high_context_git_diff(command_lower: str) -> bool:
@@ -513,9 +500,9 @@ def _start_process_pipe_readers(proc: subprocess.Popen) -> tuple[_PipeReader | N
 def _join_pipe_reader(reader: _PipeReader, *, total_timeout: float = 5.0, poll_interval: float = 0.05) -> bool:
     """Wait for a pipe reader thread to finish. Returns True if the thread finished, False on timeout.
 
-    On Windows with shell=True, child cmd.exe processes can delay pipe EOF briefly after the target
-    process has exited (output flushing / handle inheritance). A single short join can race that flush,
-    so we poll with a generous budget instead of failing immediately.
+    Windows child processes can delay pipe EOF briefly after the target process has exited
+    (output flushing / handle inheritance). A single short join can race that flush, so we poll
+    with a generous budget instead of failing immediately.
     """
     deadline = time.monotonic() + total_timeout
     while True:
@@ -600,8 +587,7 @@ def execute_console_command(command, timeout_seconds=None, agent=None):
             command_timeout = _resolve_command_timeout_seconds(timeout_seconds, agent, profile=profile)
             cwd = _resolve_command_cwd(agent)
             proc = subprocess.Popen(
-                command,
-                shell=True,
+                ["powershell", "-NoProfile", "-Command", str(command)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=cwd,
@@ -706,9 +692,9 @@ execute_console_command_declaration = {
         "name": "execute_console_command",
         "description": (
             "Execute a shell command on the local machine. Prefer structured tools "
-            "(rg_search_text/rg_list_files) for file and text search. On Windows, the default shell "
-            "uses cmd-style semantics; use 'cd' for the current directory, 'dir' for directory listing, "
-            "and call powershell -NoProfile -Command \"...\" explicitly when PowerShell syntax is required. "
+            "(rg_search_text/rg_list_files) for file and text search. Commands run through PowerShell "
+            "with powershell -NoProfile -Command, so use PowerShell syntax such as Get-ChildItem, "
+            "Get-Location, pipelines, semicolon-separated statements, and & before quoted executable paths. "
             "Large stdout/stderr values are hard-limited; truncated streams return tail content only with "
             "explicit truncation metadata."
         ),
@@ -717,7 +703,7 @@ execute_console_command_declaration = {
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "The command to execute (e.g., 'dir', 'git status', 'python --version')",
+                    "description": "The PowerShell command to execute (e.g., 'Get-ChildItem', 'git status', 'python --version')",
                 },
                 "timeout_seconds": {
                     "type": "number",

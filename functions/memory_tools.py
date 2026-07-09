@@ -49,10 +49,9 @@ def _default_memory_search_files(memory_path):
     date_dirs.sort()
 
     for date_dir in date_dirs:
-        for filename in ("legacy.memory.md", "memory.md"):
-            candidate = os.path.join(date_dir, filename)
-            if os.path.isfile(candidate):
-                files.append(candidate)
+        candidate = os.path.join(date_dir, "memory.md")
+        if os.path.isfile(candidate):
+            files.append(candidate)
     return files
 
 

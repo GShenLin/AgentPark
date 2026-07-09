@@ -355,13 +355,14 @@ def test_gui_agent_node_parse_action_args_rejects_open_app_positional():
     assert validate_action_args(parsed) == "unsupported action: open_app"
 
 
-def test_gui_agent_node_parse_action_args_supports_type_text_alias():
-    from nodes.gui_agent_actions import parse_action_args
+def test_gui_agent_node_parse_action_args_requires_type_content():
+    from nodes.gui_agent_actions import parse_action_args, validate_action_args
 
     parsed = parse_action_args("type(text='google.com', target='url_bar')", width=1920, height=1080)
     assert parsed.get("name") == "type"
-    assert parsed.get("content") == "google.com"
+    assert "content" not in parsed
     assert parsed.get("target") == "url_bar"
+    assert validate_action_args(parsed) == "type missing content"
 
 
 def test_gui_agent_node_validate_hotkey_is_unsupported():

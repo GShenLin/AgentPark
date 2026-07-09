@@ -25,7 +25,7 @@ class CapabilityRegistry:
     def discover(self, config: dict[str, Any] | None = None) -> dict[str, list[CapabilityDescriptor]]:
         node_config = config if isinstance(config, dict) else {}
         selected = {
-            kind: set(_normalize_selected(node_config.get(field)))
+            kind: set(_validate_selected(node_config.get(field), field))
             for kind, field in FIELD_BY_KIND.items()
         }
         grouped: dict[str, list[CapabilityDescriptor]] = {
@@ -47,7 +47,7 @@ class CapabilityRegistry:
                 "schema_version": CAPABILITY_REGISTRY_SCHEMA_VERSION,
                 "field": field,
                 "selected": enabled,
-                "available": [self._legacy_option(item) for item in descriptors],
+                "available": [self._option_payload(item) for item in descriptors],
                 "descriptors": [item.to_payload() for item in descriptors],
             }
         return payload
@@ -227,7 +227,7 @@ class CapabilityRegistry:
                 for name in missing
             )
 
-    def _legacy_option(self, descriptor: CapabilityDescriptor) -> dict[str, Any]:
+    def _option_payload(self, descriptor: CapabilityDescriptor) -> dict[str, Any]:
         payload = {
             "value": descriptor.id,
             "label": descriptor.label,
@@ -251,21 +251,23 @@ def discover_capabilities(config: dict[str, Any] | None = None) -> dict[str, dic
     return CapabilityRegistry().discover_payload(config)
 
 
-def _normalize_selected(values: object) -> list[str]:
+def _validate_selected(values: object, field: str) -> list[str]:
     if values in (None, ""):
         return []
     if not isinstance(values, list):
-        return []
+        raise ValueError(f"node config field {field} must be a list")
     result: list[str] = []
     seen: set[str] = set()
     for value in values:
         if not isinstance(value, str):
-            continue
+            raise ValueError(f"node config field {field} must contain only strings")
         text = value.strip()
-        key = text.casefold()
-        if text and key not in seen:
-            seen.add(key)
-            result.append(text)
+        if not text:
+            raise ValueError(f"node config field {field} must contain only non-empty strings")
+        if text in seen:
+            raise ValueError(f"node config field {field} contains duplicate value: {text}")
+        seen.add(text)
+        result.append(text)
     return result
 
 

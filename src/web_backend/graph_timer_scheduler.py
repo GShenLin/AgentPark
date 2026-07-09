@@ -20,20 +20,17 @@ from .service_host import HostBoundService
 from .shared import _append_node_pending, build_text_envelope
 
 class GraphTimerScheduler(ScheduleRegistrationMixin, HostBoundService):
-    _OUTPUT_KEYS = ("OutputText", "output_text")
-    _CLOCK_LOOP_KEYS = ("IsLoop", "is_loop")
-    _CLOCK_LOOP_COUNT_KEYS = ("LoopCount", "loop_count")
+    _OUTPUT_KEY = "OutputText"
+    _CLOCK_LOOP_KEY = "IsLoop"
+    _CLOCK_LOOP_COUNT_KEY = "LoopCount"
     _CLOCK_RUNNING_KEY = CLOCK_RUNNING_KEY
     _CLOCK_NEXT_FIRE_AT_KEY = CLOCK_NEXT_FIRE_AT_KEY
     _CLOCK_REMAINING_KEY = CLOCK_REMAINING_KEY
     _CLOCK_TRIGGER_COUNT_KEY = CLOCK_TRIGGER_COUNT_KEY
 
     def _read_output_text(self, cfg: dict) -> str:
-        for key in self._OUTPUT_KEYS:
-            value = cfg.get(key)
-            if value is not None:
-                return str(value)
-        return ""
+        value = cfg.get(self._OUTPUT_KEY)
+        return "" if value is None else str(value)
 
     def _enqueue_scheduled_trigger(
         self,
@@ -70,28 +67,16 @@ class GraphTimerScheduler(ScheduleRegistrationMixin, HostBoundService):
     def _parse_clock_loop_enabled(self, cfg: dict) -> bool:
         if not isinstance(cfg, dict):
             return True
-        raw_value = None
-        for key in self._CLOCK_LOOP_KEYS:
-            value = cfg.get(key)
-            if value is not None:
-                raw_value = value
-                break
+        raw_value = cfg.get(self._CLOCK_LOOP_KEY)
         return parse_bool_value(
             raw_value,
             default=True,
-            true_values=("true", "1", "yes", "on", "enabled"),
-            false_values=("false", "0", "no", "off", "disabled"),
         )
 
     def _parse_clock_loop_count(self, cfg: dict) -> int:
         if not isinstance(cfg, dict):
             return 0
-        raw_value = None
-        for key in self._CLOCK_LOOP_COUNT_KEYS:
-            value = cfg.get(key)
-            if value is not None:
-                raw_value = value
-                break
+        raw_value = cfg.get(self._CLOCK_LOOP_COUNT_KEY)
         return parse_int_value(raw_value, default=0, minimum=0)
 
     def _merge_clock_fields(self, config_path: str, cfg: dict, fields: dict[str, object]) -> None:
@@ -130,7 +115,7 @@ class GraphTimerScheduler(ScheduleRegistrationMixin, HostBoundService):
             payload_text=self._read_output_text(cfg),
             source="timer_trigger",
             event_name="timer_trigger_enqueued",
-            log_fields={"schedule_at": str(cfg.get("ScheduleAt") or cfg.get("schedule_at") or "")},
+            log_fields={"schedule_at": str(cfg.get("ScheduleAt") or "")},
         )
         self.timer_trigger_last_fired[dedupe_key] = minute_key
         return 1
@@ -263,7 +248,6 @@ class GraphTimerScheduler(ScheduleRegistrationMixin, HostBoundService):
         snapshot = self._scheduled_node_config_cache().get_scheduled_config(
             entry.config_path,
             graph_id=entry.graph_id,
-            fallback_node_id=entry.node_id,
             sanitize_node_id=self._sanitize_node_id,
         )
         cfg = snapshot.config if snapshot is not None else {}

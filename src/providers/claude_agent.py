@@ -53,7 +53,7 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         thinking_mode = parse_switch_mode(thinking, default="disabled")
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
-            effort_source = self.config.get("reasoningEffort", self.config.get("reasoning_effort", ""))
+            effort_source = self.config.get("reasoningEffort", "")
 
         messages = self._restore_recent_tool_results(self._get_messages_with_memory())
         if isinstance(self.system_prompt, str) and self.system_prompt.strip():
@@ -72,6 +72,7 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             thinking_mode=thinking_mode,
             reasoning_effort=effort_source,
         )
+        self._emit_provider_payload_request_summary(payload, request_api="claude_messages", stream=bool(stream))
 
         try:
             result = self.send_messages(

@@ -71,7 +71,6 @@ def record_operational_memory_entry(
     tool_name: str = "",
     error: str = "",
     command: str = "",
-    conclusion: str = "",
     avoid: list[Any] | None = None,
     prefer: list[Any] | None = None,
     confidence: str = "medium",
@@ -93,7 +92,6 @@ def record_operational_memory_entry(
             tool_name=tool_name,
             error=error,
             command=command,
-            conclusion=conclusion,
             avoid=avoid,
             prefer=prefer,
             confidence=confidence,
@@ -117,7 +115,6 @@ def _record_operational_memory_entry_unlocked(
     tool_name: str = "",
     error: str = "",
     command: str = "",
-    conclusion: str = "",
     avoid: list[Any] | None = None,
     prefer: list[Any] | None = None,
     confidence: str = "medium",
@@ -125,19 +122,21 @@ def _record_operational_memory_entry_unlocked(
     resolve_key: str = "",
     memories: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    normalized_action = str(action or "").strip().lower()
-    if normalized_action not in {"upsert", "replace", "skip", "resolve"}:
+    if not isinstance(action, str):
+        raise OperationalMemoryError("action must be upsert, replace, skip, or resolve")
+    requested_action = action.strip()
+    if requested_action not in {"upsert", "replace", "skip", "resolve"}:
         raise OperationalMemoryError("action must be upsert, replace, skip, or resolve")
 
     reason_text = _required_text(reason, "reason")
-    if normalized_action == "skip":
+    if requested_action == "skip":
         return {"ok": True, "action": "skip", "reason": reason_text}
 
     data = _load_operational_memory_unlocked(path)
     stored_memories = data["memories"]
     now = _now_text()
 
-    if normalized_action == "replace":
+    if requested_action == "replace":
         if not isinstance(memories, dict):
             raise OperationalMemoryError("replace requires memories object")
         normalized = _normalize_replacement_memories(memories, now)
@@ -150,7 +149,7 @@ def _record_operational_memory_entry_unlocked(
             "reason": reason_text,
         }
 
-    if normalized_action == "resolve":
+    if requested_action == "resolve":
         target_key = str(resolve_key or key or "").strip()
         if not target_key:
             raise OperationalMemoryError("resolve requires key or resolve_key")
@@ -166,7 +165,7 @@ def _record_operational_memory_entry_unlocked(
 
     kind_text = _required_text(kind, "kind")
     title_text = _required_text(title, "title")
-    lesson_text = _required_text(lesson or conclusion, "lesson")
+    lesson_text = _required_text(lesson, "lesson")
     evidence_text = _required_text(evidence, "evidence")
     scope_obj = scope if isinstance(scope, dict) else {}
     tool_text = str(tool_name or "").strip()
@@ -195,7 +194,7 @@ def _record_operational_memory_entry_unlocked(
             "evidence": evidence_text,
             "avoid": _string_list(avoid),
             "prefer": _string_list(prefer),
-            "confidence": _normalize_confidence(confidence),
+            "confidence": _validate_confidence(confidence),
             "status": "active",
             "last_seen_at": now,
             "reason": reason_text,
@@ -281,12 +280,15 @@ def _normalize_replacement_memories(memories: dict[str, Any], now: str) -> dict[
         item["scope"] = item.get("scope") if isinstance(item.get("scope"), dict) else {}
         item["tool_name"] = str(item.get("tool_name") or "").strip()
         item["title"] = str(item.get("title") or "").strip()
-        item["lesson"] = str(item.get("lesson") or item.get("conclusion") or "").strip()
+        item["lesson"] = str(item.get("lesson") or "").strip()
         item["evidence"] = str(item.get("evidence") or "").strip()
         item["avoid"] = _string_list(item.get("avoid"))
         item["prefer"] = _string_list(item.get("prefer"))
-        item["confidence"] = _normalize_confidence(item.get("confidence"))
-        item["status"] = str(item.get("status") or "active").strip().lower() or "active"
+        item["confidence"] = _validate_confidence(item.get("confidence"))
+        status = str(item.get("status") or "active").strip()
+        if status not in {"active", "resolved"}:
+            raise OperationalMemoryError(f"invalid operational memory status for {key}: {status}")
+        item["status"] = status
         item["first_seen_at"] = str(item.get("first_seen_at") or now)
         item["last_seen_at"] = str(item.get("last_seen_at") or now)
         try:
@@ -317,9 +319,15 @@ def _string_list(value: object) -> list[str]:
     return output[:10]
 
 
-def _normalize_confidence(value: object) -> str:
-    text = str(value or "medium").strip().lower()
-    return text if text in {"low", "medium", "high"} else "medium"
+def _validate_confidence(value: object) -> str:
+    if value is None:
+        return "medium"
+    if not isinstance(value, str):
+        raise OperationalMemoryError("confidence must be low, medium, or high")
+    text = value.strip()
+    if text not in {"low", "medium", "high"}:
+        raise OperationalMemoryError("confidence must be low, medium, or high")
+    return text
 
 
 def _failure_sample(*, tool_name: str, command: str, error: str) -> dict[str, str]:

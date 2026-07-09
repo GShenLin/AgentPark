@@ -7,9 +7,7 @@ NODE_CAPABILITY_LIST = NameListContract(
     list_label="node capabilities",
     item_label="capability names",
     error_type=None,
-    allow_loose_items=True,
     accepted_types=(list, tuple),
-    key_func=str.lower,
 )
 
 

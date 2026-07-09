@@ -339,17 +339,18 @@ python -m src.cli capabilities enable --kind skill --name <skill_id> --graph <gr
 python -m src.cli config validate --graph <graph_id> --node <node_id>
 ```
 
-`chat` 会启动专用 companion Agent。它的配置和会话状态位于 `memories/companion/`，并使用与普通节点相同的 Agent-node 配置字段：
+`chat` 会启动专用 Companion Agent。Companion 是一个受保护的普通 graph，里面有一个普通 Agent 节点，使用与其他节点相同的配置字段：
 
 ```text
-memories/companion/config.json
-memories/companion/memory.md
-memories/companion/messages.jsonl
+memories/Companion/config.json
+memories/Companion/Companion/config.json
+memories/Companion/Companion/memory.md
+memories/Companion/Companion/messages.jsonl
 ```
 
 正常构建/安装流程完成后，`build_and_run.bat` 会在后台启动 WebUI 服务，由该服务进程打开浏览器，然后在当前终端启动交互式 companion CLI。`build_and_run.bat cli` 和 `build_and_run.bat chat` 使用相同的 Web + CLI 组合启动方式。只运行 WebUI 服务时使用 `build_and_run.bat server` 或 `build_and_run.bat web`；只运行 CLI 且不启动 WebUI 时使用 `build_and_run.bat cli-only`。
 
-companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/companion/`。如果终端不接受输入，运行 `build_and_run.bat cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
+companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/Companion/Companion/`。如果终端不接受输入，运行 `build_and_run.bat cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
 
 在 companion CLI 中，`/restart` 会启动仓库中的 `Restart.bat` 并退出当前 CLI 会话，确保重启行为仍走标准启动路径。
 

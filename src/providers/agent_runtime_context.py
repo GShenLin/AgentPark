@@ -48,7 +48,7 @@ class AgentRuntimeContext:
 def bind_agent_runtime_context(agent: object, context: AgentRuntimeContext) -> AgentRuntimeContext:
     resolved = context.with_defaults()
     setattr(agent, RUNTIME_CONTEXT_ATTR, resolved)
-    _write_legacy_runtime_attributes(agent, resolved)
+    _write_runtime_attributes(agent, resolved)
     return resolved
 
 
@@ -56,18 +56,16 @@ def get_agent_runtime_context(agent: object = None) -> AgentRuntimeContext:
     existing = getattr(agent, RUNTIME_CONTEXT_ATTR, None)
     if isinstance(existing, AgentRuntimeContext):
         return existing.with_defaults()
-    return _context_from_legacy_agent(agent).with_defaults()
+    return _context_from_agent_attributes(agent).with_defaults()
 
 
-def _context_from_legacy_agent(agent: object = None) -> AgentRuntimeContext:
+def _context_from_agent_attributes(agent: object = None) -> AgentRuntimeContext:
     config = getattr(agent, "config", None)
     cfg = config if isinstance(config, dict) else {}
     return AgentRuntimeContext(
         graph_id=_first_non_empty(getattr(agent, "_agentpark_graph_id", None), cfg.get("graph_id")),
         node_id=_first_non_empty(
             getattr(agent, "_agentpark_node_id", None),
-            cfg.get("node_instance_id"),
-            cfg.get("agent_id"),
             cfg.get("node_id"),
         ),
         node_type_id=_first_non_empty(getattr(agent, "_agentpark_node_type_id", None), cfg.get("node_type_id")),
@@ -79,29 +77,24 @@ def _context_from_legacy_agent(agent: object = None) -> AgentRuntimeContext:
         ),
         collaboration_mode=_first_non_empty(
             getattr(agent, "_agentpark_collaboration_mode", None),
-            cfg.get("collaborationMode"),
             cfg.get("collaboration_mode"),
         ),
         shell=_first_non_empty(getattr(agent, "_agentpark_shell", None), cfg.get("shell")),
         sandbox_mode=_first_non_empty(
             getattr(agent, "_agentpark_sandbox_mode", None),
             cfg.get("sandbox_mode"),
-            cfg.get("sandboxMode"),
         ),
         network_access=_first_non_empty(
             getattr(agent, "_agentpark_network_access", None),
             cfg.get("network_access"),
-            cfg.get("networkAccess"),
         ),
         approval_policy=_first_non_empty(
             getattr(agent, "_agentpark_approval_policy", None),
             cfg.get("approval_policy"),
-            cfg.get("approvalPolicy"),
         ),
         responses_instruction=_first_non_empty(
             getattr(agent, "_agentpark_responses_instruction", None),
             cfg.get("responses_instruction"),
-            cfg.get("instruction"),
         ),
         skill_resource_roots=_mapping_attr(agent, "_agentpark_skill_resource_roots"),
         persist_assistant_tool_call_note=_callable_attr(agent, "_agentpark_persist_assistant_tool_call_note"),
@@ -109,7 +102,7 @@ def _context_from_legacy_agent(agent: object = None) -> AgentRuntimeContext:
     )
 
 
-def _write_legacy_runtime_attributes(agent: object, context: AgentRuntimeContext) -> None:
+def _write_runtime_attributes(agent: object, context: AgentRuntimeContext) -> None:
     values = {
         "_agentpark_graph_id": context.graph_id,
         "_agentpark_node_id": context.node_id,

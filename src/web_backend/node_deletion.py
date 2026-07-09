@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,7 +64,7 @@ def delete_node_directory(
         raise NodeDeletionBlocked(f"node still has {active_count} active task(s)")
 
     wait_for_node_memory_idle(memory_path, messages_path)
-    shutil.rmtree(dir_real)
+    _remove_tree_with_retry(dir_real)
 
     return NodeDeletionResult(
         removed_dir=True,
@@ -121,6 +122,33 @@ def _stop_async_runs_for_node(core: object, config_path: str) -> int:
     if failures:
         raise NodeDeletionBlocked("failed to stop node run(s): " + "; ".join(failures))
     return stopped
+
+
+def _remove_tree_with_retry(path: str) -> None:
+    delays = (0.0, 0.05, 0.1, 0.2, 0.4)
+    last_error: OSError | None = None
+    for index, delay in enumerate(delays):
+        if delay:
+            time.sleep(delay)
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError as exc:
+            if not _is_transient_delete_error(exc):
+                raise
+            last_error = exc
+        if index == len(delays) - 1:
+            break
+    if last_error is not None:
+        raise last_error
+
+
+def _is_transient_delete_error(error: OSError) -> bool:
+    if isinstance(error, PermissionError):
+        return True
+    if os.name != "nt":
+        return False
+    return getattr(error, "winerror", None) in {5, 32}
 
 
 def _path_key(path: str) -> str:

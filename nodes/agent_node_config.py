@@ -41,7 +41,7 @@ def load_agent_node_run_request(
     config_path: str,
 ) -> AgentNodeRunRequest:
     ctx = dict(context or {})
-    agent_id = str(ctx.get("node_instance_id") or ctx.get("agent_id") or "").strip() or "agent"
+    agent_id = str(ctx.get("node_instance_id") or "").strip() or "agent"
     graph_id = str(ctx.get("graph_id") or "default").strip() or "default"
     config_data = _read_config_data(config_path)
 

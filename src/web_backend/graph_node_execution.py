@@ -1,11 +1,10 @@
+import json
 import os
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
-from src.companion_notice_settings import companion_node_review_enabled
 from src.runtime_cancellation import CancellationRequested
-from src.node_run_companion import notify_companion_about_node_run
 
 from .service_host import HostBoundService
 from .route_parser import NodeRouteParser
@@ -106,6 +105,7 @@ class GraphNodeExecution(HostBoundService):
             publish_live_event=self.core.node_live_outputs.publish_event,
             publish_completion_event=self.core.node_live_outputs.publish_completion_event,
             append_runtime_log=self._append_runtime_log,
+            emit_runtime_event=getattr(getattr(self.core, "runtime_events", None), "emit", None),
         )
         cancel_event = self.core.node_cancellations.begin(config_path)
         if _is_node_stop_requested(config_path):
@@ -121,6 +121,9 @@ class GraphNodeExecution(HostBoundService):
             if stop_requested():
                 raise NodeStopRequested()
 
+        started = time.monotonic()
+        started_epoch_ms = int(time.time() * 1000)
+
         def finish_stop_requested() -> bool:
             if not _finish_node_stop_requested(config_path):
                 return False
@@ -135,11 +138,48 @@ class GraphNodeExecution(HostBoundService):
             )
             return True
 
-        started = time.monotonic()
         try:
+            if stop_requested():
+                raise NodeStopRequested()
+            runtime_event_sink.handle(
+                {
+                    "type": "runtime_notice",
+                    "source": "node_runtime",
+                    "stage": "node_run_start",
+                    "message": json.dumps(
+                        {
+                            "trace_id": trace_id,
+                            "status": "running",
+                            "input_chars": len(pending_full),
+                            "started_at_epoch_ms": started_epoch_ms,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                }
+            )
             context["stream_callback"] = handle_runtime_event
             context["cancel_event"] = cancel_event
             context["cancel_check"] = stop_requested
+            self._emit_runtime_event(
+                event="OnInput",
+                graph_id=safe_graph_id,
+                node_id=entry,
+                node_type_id=type_id,
+                trace_id=trace_id,
+                payload={
+                    "pending_preview": _preview_text(envelope_preview(pending_message), 2000),
+                    "config_path": config_path,
+                    "working_path": str(cfg.get("working_path") or ""),
+                },
+            )
+            try:
+                context["runtime_event_context_fragments"] = self.core.runtime_events.consume_context_fragments(
+                    graph_id=safe_graph_id,
+                    node_id=entry,
+                )
+            except Exception:
+                context["runtime_event_context_fragments"] = []
             if stop_requested():
                 raise NodeStopRequested()
             routed = _run_node_logic_with_routes(nodes_dir, type_id, pending_message, context)
@@ -207,6 +247,19 @@ class GraphNodeExecution(HostBoundService):
                 traceback=_preview_text(traceback_text, 4000),
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
+            if safe_graph_id.lower() != "companion" and self._runtime_events_available():
+                self._emit_runtime_event(
+                    event="WorkFailed",
+                    graph_id=safe_graph_id,
+                    node_id=entry,
+                    node_type_id=type_id,
+                    trace_id=trace_id,
+                    payload={
+                        "error": error_text,
+                        "config_path": config_path,
+                        "runtime_events_path": os.path.join(self._node_dir(safe_graph_id, entry), NODE_RUNTIME_EVENTS_FILENAME),
+                    },
+                )
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
         finally:
@@ -249,6 +302,47 @@ class GraphNodeExecution(HostBoundService):
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             raise
         duration_ms = int((time.monotonic() - started) * 1000)
+        output_chars = max(len(output_full), int(runtime_event_sink.stream_output_chars or 0))
+        runtime_event_sink.handle(
+            {
+                "type": "runtime_notice",
+                "source": "node_runtime",
+                "stage": "node_run_summary",
+                "message": json.dumps(
+                    {
+                        "trace_id": trace_id,
+                        "output_chars": output_chars,
+                        "persisted_message_chars": len(final_message),
+                        "stream_output_chars": int(runtime_event_sink.stream_output_chars or 0),
+                        "thinking_output_chars": int(runtime_event_sink.stream_thinking_chars or 0),
+                        "duration_ms": duration_ms,
+                        "total_duration_ms": duration_ms,
+                        "started_at_epoch_ms": started_epoch_ms,
+                        "completed_at_epoch_ms": int(time.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            }
+        )
+        if safe_graph_id.lower() != "companion" and self._runtime_events_available():
+            self._emit_runtime_event(
+                event="WorkPersisted",
+                graph_id=safe_graph_id,
+                node_id=entry,
+                node_type_id=type_id,
+                trace_id=trace_id,
+                payload={
+                    "final_message_preview": _preview_text(final_message, 2000),
+                    "messages_path": self._node_messages_path(entry, safe_graph_id),
+                    "runtime_events_path": os.path.join(self._node_dir(safe_graph_id, entry), NODE_RUNTIME_EVENTS_FILENAME),
+                },
+            )
+        self._schedule_temporary_receiver_cleanup(
+            graph_id=safe_graph_id,
+            node_id=entry,
+            cfg=_read_json_dict(config_path) if os.path.exists(config_path) else cfg,
+        )
         self.core.node_live_outputs.publish_completion_event(
             safe_graph_id,
             entry,
@@ -281,57 +375,6 @@ class GraphNodeExecution(HostBoundService):
             depth=depth,
             wake_event=wake_event,
         )
-        try:
-            review_enabled = companion_node_review_enabled()
-        except Exception as companion_error:
-            review_enabled = False
-            self._log_graph_event(
-                safe_graph_id,
-                "node_run_companion_review_notice",
-                trace_id=trace_id,
-                node_instance_id=entry,
-                node_type_id=type_id,
-                delivered=False,
-                error=str(companion_error),
-            )
-        if review_enabled:
-            try:
-                companion_review_delivered = notify_companion_about_node_run(
-                    graph_id=safe_graph_id,
-                    node_id=entry,
-                    node_type_id=type_id,
-                    trace_id=trace_id,
-                    from_node=from_node,
-                    input_preview=_preview_text(envelope_preview(pending_message), 2000),
-                    output_preview=_preview_text(envelope_preview(output_message), 2000),
-                    duration_ms=duration_ms,
-                    goal_result=goal_result if isinstance(goal_result, dict) else None,
-                    node_dir=self._node_dir(safe_graph_id, entry),
-                    memory_path=self._node_memory_path(entry, safe_graph_id),
-                    messages_path=self._node_messages_path(entry, safe_graph_id),
-                    runtime_events_path=os.path.join(
-                        self._node_dir(safe_graph_id, entry),
-                        NODE_RUNTIME_EVENTS_FILENAME,
-                    ),
-                )
-                self._log_graph_event(
-                    safe_graph_id,
-                    "node_run_companion_review_notice",
-                    trace_id=trace_id,
-                    node_instance_id=entry,
-                    node_type_id=type_id,
-                    delivered=companion_review_delivered,
-                )
-            except Exception as companion_error:
-                self._log_graph_event(
-                    safe_graph_id,
-                    "node_run_companion_review_notice",
-                    trace_id=trace_id,
-                    node_instance_id=entry,
-                    node_type_id=type_id,
-                    delivered=False,
-                    error=str(companion_error),
-                )
         if isinstance(goal_result, dict) and goal_result.get("should_continue"):
             self._log_graph_event(
                 safe_graph_id,
@@ -453,8 +496,62 @@ class GraphNodeExecution(HostBoundService):
                             trace_id=trace_id,
                             from_node=entry,
                             error=str(e),
-                        )
+            )
         wake_event.set()
+
+    def _emit_runtime_event(
+        self,
+        *,
+        event: str,
+        graph_id: str,
+        node_id: str,
+        node_type_id: str,
+        trace_id: str,
+        payload: dict,
+    ) -> None:
+        runtime_events = getattr(self.core, "runtime_events", None)
+        emit = getattr(runtime_events, "emit", None)
+        if not callable(emit):
+            return
+        try:
+            emit(
+                event=event,
+                graph_id=graph_id,
+                node_id=node_id,
+                node_type_id=node_type_id,
+                trace_id=trace_id,
+                payload=payload,
+            )
+        except Exception as exc:
+            self._log_graph_event(
+                graph_id,
+                "runtime_event_emit_failed",
+                trace_id=trace_id,
+                node_instance_id=node_id,
+                node_type_id=node_type_id,
+                runtime_event=event,
+                error=str(exc),
+            )
+
+    def _runtime_events_available(self) -> bool:
+        runtime_events = getattr(self.core, "runtime_events", None)
+        return callable(getattr(runtime_events, "emit", None))
+
+    def _schedule_temporary_receiver_cleanup(self, *, graph_id: str, node_id: str, cfg: dict) -> None:
+        runtime_events = getattr(self.core, "runtime_events", None)
+        cleanup = getattr(runtime_events, "cleanup", None)
+        schedule = getattr(cleanup, "schedule_if_temporary", None)
+        if not callable(schedule):
+            return
+        try:
+            schedule(graph_id=graph_id, node_id=node_id, config=cfg)
+        except Exception as exc:
+            self._log_graph_event(
+                graph_id,
+                "runtime_event_temporary_cleanup_schedule_failed",
+                node_instance_id=node_id,
+                error=str(exc),
+            )
 
     def _log_memory_persistence_error(
         self,

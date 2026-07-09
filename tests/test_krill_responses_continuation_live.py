@@ -16,7 +16,6 @@ def test_krill_responses_explicit_context_preserves_five_tool_call_task():
 
     agent = OpenAIAgent(provider_id="krill_gpt55", internal_memory_enabled=False)
     agent.config = dict(agent.config)
-    agent.config["responsesContinuationMode"] = "explicit_context"
     agent.config["responsesReplayReasoningItems"] = False
     agent.config["toolContextCompactionEnabled"] = False
     agent.config["reasoningEffort"] = "low"

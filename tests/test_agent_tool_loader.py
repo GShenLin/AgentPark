@@ -8,9 +8,10 @@ from src.capabilities.discovery_cache import invalidate_discovery_cache
 from src.tool.tool_load_errors import ToolLoadError
 
 
-def test_tool_name_list_trims_and_deduplicates_case_insensitively():
+def test_tool_name_list_trims_and_deduplicates_exact_names():
     assert TOOL_NAME_LIST.parse([" read_file ", "", None, "READ_FILE", "rg_tools"]) == [
         "read_file",
+        "READ_FILE",
         "rg_tools",
     ]
 
@@ -27,7 +28,7 @@ def test_load_configured_tools_loads_unique_tools_in_order():
 
     load_configured_tools(agent, ["read_file", "READ_FILE", "rg_tools"])
 
-    assert agent.loaded == ["read_file", "rg_tools"]
+    assert agent.loaded == ["read_file", "READ_FILE", "rg_tools"]
 
 
 def test_operational_memory_tool_is_configurable_function_tool():

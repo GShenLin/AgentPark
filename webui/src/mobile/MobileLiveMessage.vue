@@ -5,10 +5,12 @@ import { renderMarkdownTextWithoutKatex } from '../components/memoryMarkdown'
 const props = defineProps<{
   text: string
   thinkingText?: string
+  activityText?: string
 }>()
 
 const renderedMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.text))
 const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.thinkingText || ''))
+const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.activityText || ''))
 </script>
 
 <template>
@@ -17,12 +19,16 @@ const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(p
       <span class="mobile-live-role">Live</span>
       <span class="mobile-live-status">streaming</span>
     </div>
+    <section v-if="activityText" class="mobile-live-section activity">
+      <div class="mobile-live-section-label">Activity</div>
+      <div class="mobile-live-body mobile-live-markdown" v-html="renderedActivityMarkdown"></div>
+    </section>
     <section v-if="thinkingText" class="mobile-live-section thinking">
       <div class="mobile-live-section-label">Thinking</div>
       <div class="mobile-live-body mobile-live-markdown" v-html="renderedThinkingMarkdown"></div>
     </section>
     <section v-if="text" class="mobile-live-section">
-      <div v-if="thinkingText" class="mobile-live-section-label">Answer</div>
+      <div v-if="thinkingText || activityText" class="mobile-live-section-label">Answer</div>
       <div class="mobile-live-body mobile-live-markdown" v-html="renderedMarkdown"></div>
     </section>
   </div>
@@ -63,6 +69,10 @@ const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(p
 
 .mobile-live-section.thinking {
   background: rgba(15, 23, 42, 0.22);
+}
+
+.mobile-live-section.activity {
+  background: rgba(6, 78, 59, 0.18);
 }
 
 .mobile-live-section-label {

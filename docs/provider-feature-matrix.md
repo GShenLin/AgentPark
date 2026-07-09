@@ -1,6 +1,6 @@
 # Provider Feature Matrix
 
-Provider configuration is normalized by `ConfigLoader`. Each provider includes:
+Provider configuration is validated by `ConfigLoader`. Each provider includes:
 
 ```json
 {

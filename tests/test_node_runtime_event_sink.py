@@ -47,7 +47,8 @@ def _read_node_runtime_events(config_path):
 def test_node_runtime_event_sink_updates_stream_text_and_done_log(tmp_path):
     sink, config_path, logs, tool_entries, runtime_logs = _build_sink(tmp_path)
 
-    sink.handle({"type": "node_message_delta", "text": "hello world"})
+    sink.handle({"type": "node_message_delta", "delta": " world", "text": "hello world"})
+    assert sink.stream_output_chars == 6
     sink.handle({"type": "node_message_done", "text": "hello world!"})
 
     payload = _read_config(config_path)
@@ -65,7 +66,7 @@ def test_node_runtime_event_sink_rejects_unknown_event_type(tmp_path):
     sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
 
     with pytest.raises(ValueError, match="unsupported node runtime event type"):
-        sink.handle({"type": "delta", "text": "legacy"})
+        sink.handle({"type": "delta", "text": "unsupported"})
 
 
 def test_node_runtime_event_sink_records_runtime_notice(tmp_path):
@@ -94,6 +95,26 @@ def test_node_runtime_event_sink_records_runtime_notice(tmp_path):
     assert runtime_logs[-1]["tool_name"] == "read_file"
 
 
+def test_node_runtime_event_sink_emits_runtime_notice_and_net_error_events(tmp_path):
+    emitted = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.emit_runtime_event = lambda **kwargs: emitted.append(kwargs)
+
+    sink.handle(
+        {
+            "type": "runtime_notice",
+            "message": "Provider timeout; retrying connection",
+            "source": "provider",
+            "stage": "request_retry",
+            "provider": "unit",
+        }
+    )
+
+    assert [item["event"] for item in emitted] == ["RuntimeNotice", "NetError"]
+    assert emitted[0]["graph_id"] == "default"
+    assert emitted[0]["node_id"] == "agent1"
+
+
 def test_node_runtime_event_sink_persists_provider_request_summary_to_node_log(tmp_path):
     sink, config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
     summary = {
@@ -114,14 +135,14 @@ def test_node_runtime_event_sink_persists_provider_request_summary_to_node_log(t
             "type": "runtime_notice",
             "message": json.dumps(summary, ensure_ascii=False),
             "source": "openai",
-            "stage": "openai_responses_request_summary",
+            "stage": "provider_request_summary",
             "provider": "krill_gpt55",
         }
     )
 
     records = _read_node_runtime_events(config_path)
     assert records[-1]["event"] == "runtime_notice"
-    assert records[-1]["runtime_event"]["stage"] == "openai_responses_request_summary"
+    assert records[-1]["runtime_event"]["stage"] == "provider_request_summary"
     assert records[-1]["provider_request_summary"]["request_index"] == 2
     assert records[-1]["provider_request_summary"]["approx_input_tokens"] == 11111
     assert records[-1]["provider_request_summary"]["largest_input_items"][0]["chars"] == 28784
@@ -192,6 +213,26 @@ def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
     runtime_event_records = _read_node_runtime_events(config_path)
     assert [item["event"] for item in runtime_event_records[-2:]] == ["tool_call_start", "tool_call_end"]
     assert runtime_event_records[-1]["runtime_event"]["result_tail_preview"] == "ok"
+
+
+def test_node_runtime_event_sink_emits_tool_failure_event(tmp_path):
+    emitted = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.emit_runtime_event = lambda **kwargs: emitted.append(kwargs)
+
+    sink.handle({"type": "tool_call_start", "name": "read_file", "call_id": "call-1"})
+    sink.handle(
+        {
+            "type": "tool_call_end",
+            "name": "read_file",
+            "call_id": "call-1",
+            "status": "error",
+            "error": "file missing",
+        }
+    )
+
+    assert [item["event"] for item in emitted] == ["ToolFailure"]
+    assert emitted[0]["payload"].get("tool_name") == "read_file" or emitted[0]["payload"].get("name") == "read_file"
 
 
 def test_node_runtime_event_sink_keeps_tool_end_nonfatal_when_history_persist_fails(tmp_path):

@@ -16,17 +16,22 @@ _FIELD_BY_KIND = {
 _DISCOVER_KINDS = tuple(_FIELD_BY_KIND.keys())
 
 
-def _normalize_action(value):
-    action = str(value or "").strip().lower()
+def _validate_action(value):
+    if not isinstance(value, str):
+        raise ValueError("action must be one of: discover, enable, disable")
+    action = value.strip()
     if action not in {"discover", "enable", "disable"}:
         raise ValueError("action must be one of: discover, enable, disable")
     return action
 
 
-def _normalize_kind(value, *, action):
-    kind = str(value or "all").strip().lower()
-    aliases = {"tools": "tool", "tool_module": "tool", "mcp_server": "mcp", "mcp_servers": "mcp", "skills": "skill", "plugins": "plugin"}
-    kind = aliases.get(kind, kind)
+def _validate_kind(value, *, action):
+    if value is None:
+        kind = "all"
+    elif isinstance(value, str):
+        kind = value.strip()
+    else:
+        raise ValueError("kind must be one of: all, tool, mcp, skill, plugin")
     if action == "discover" and kind == "all":
         return kind
     if kind not in _FIELD_BY_KIND:
@@ -34,7 +39,7 @@ def _normalize_kind(value, *, action):
     return kind
 
 
-def _normalize_names(values):
+def _validate_names(values):
     if not isinstance(values, list):
         raise ValueError("names must be a non-empty list of strings")
     result = []
@@ -44,11 +49,10 @@ def _normalize_names(values):
             raise ValueError("names must contain only strings")
         name = item.strip()
         if not name:
-            continue
-        key = name.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
+            raise ValueError("names must contain only non-empty strings")
+        if name in seen:
+            raise ValueError(f"duplicate capability name: {name}")
+        seen.add(name)
         result.append(name)
     if not result:
         raise ValueError("names must contain at least one non-empty string")
@@ -77,17 +81,22 @@ def _resolve_config_path(config_path, agent):
 
 def _current_values(config, field):
     value = config.get(field)
-    if value in (None, ""):
+    if value is None:
         return []
     if not isinstance(value, list):
         raise ValueError(f"node config field {field} must be a list")
     result = []
+    seen = set()
     for item in value:
         if not isinstance(item, str):
             raise ValueError(f"node config field {field} must contain only strings")
         text = item.strip()
-        if text:
-            result.append(text)
+        if not text:
+            raise ValueError(f"node config field {field} must contain only non-empty strings")
+        if text in seen:
+            raise ValueError(f"node config field {field} contains duplicate value: {text}")
+        seen.add(text)
+        result.append(text)
     return result
 
 
@@ -100,15 +109,14 @@ def _mutate(config, kind, action, names):
     current = _current_values(config, field)
     before = list(current)
     if action == "enable":
-        present = {item.casefold() for item in current}
+        present = set(current)
         for name in names:
-            key = name.casefold()
-            if key not in present:
+            if name not in present:
                 current.append(name)
-                present.add(key)
+                present.add(name)
     elif action == "disable":
-        remove = {name.casefold() for name in names}
-        current = [item for item in current if item.casefold() not in remove]
+        remove = set(names)
+        current = [item for item in current if item not in remove]
     else:
         raise ValueError(f"unsupported mutation action: {action}")
     config[field] = current
@@ -120,8 +128,8 @@ def manage_agent_capabilities(action, kind="all", names=None, config_path="", re
     Discover, enable, or disable node-scoped tool/MCP/skill/plugin capability selections.
     """
     try:
-        normalized_action = _normalize_action(action)
-        normalized_kind = _normalize_kind(kind, action=normalized_action)
+        normalized_action = _validate_action(action)
+        normalized_kind = _validate_kind(kind, action=normalized_action)
         resolved_config_path = _resolve_config_path(config_path, agent)
 
         if normalized_action == "discover":
@@ -143,7 +151,7 @@ def manage_agent_capabilities(action, kind="all", names=None, config_path="", re
 
         if normalized_kind == "all":
             raise ValueError("kind must be specific for enable/disable")
-        normalized_names = _normalize_names(names)
+        normalized_names = _validate_names(names)
         current_config = node_config_service.read_strict(resolved_config_path)
         CapabilityRegistry().validate_requested(normalized_kind, normalized_names, current_config)
         change_box = {}

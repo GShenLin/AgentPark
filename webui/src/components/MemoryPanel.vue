@@ -8,6 +8,7 @@ import {
   deleteNodeInstanceMemoryMessage,
   listGraphProfiles,
   listGraphs,
+  listNodeInstanceConfigs,
   loadGraph,
   saveGraph,
   saveGraphProfileFromGraph,
@@ -30,6 +31,7 @@ const {
   memoryMessages,
   memoryLiveMessage,
   memoryThinkingMessage,
+  memoryActivityMessage,
   memoryInteractiveSessionId,
   memoryInteractiveSending,
   memoryTitle,
@@ -83,6 +85,7 @@ const graphNameInput = ref('')
 const graphWorkingPathInput = ref('')
 const graphStatus = ref<string | null>(null)
 const graphLoading = ref(false)
+const graphMemoryClearingId = ref('')
 
 const structuredMessages = computed(() => (Array.isArray(memoryMessages.value) ? memoryMessages.value : []))
 const canClearMemory = computed(() => memoryMode.value === 'agent' && hasSelectedNodeTarget())
@@ -114,11 +117,19 @@ async function clearSelectedNodeMemory() {
       memoryMessages.value = []
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
+      memoryActivityMessage.value = ''
       await loadAgentMemory()
     }
   } catch (e: any) {
     lastError.value = String(e?.message || e)
   }
+}
+
+function graphNodeIdsFromConfigs(result: Awaited<ReturnType<typeof listNodeInstanceConfigs>>) {
+  const ids = Array.isArray(result.node_ids)
+    ? result.node_ids
+    : (Array.isArray(result.nodes) ? result.nodes.map((node) => node.node_id) : [])
+  return Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean)))
 }
 
 async function handleSendInteractiveInput(options: { appendNewline?: boolean; sendEof?: boolean; sendCtrlC?: boolean } = {}) {
@@ -366,6 +377,41 @@ async function deleteGraphConfig(item: GraphInfo) {
   }
 }
 
+async function clearGraphMemory(item: GraphInfo) {
+  const graphId = String(item.id || '').trim()
+  if (!graphId) return
+  const name = item.name || graphId
+  const ok = window.confirm(`Clear all memory for every node in graph "${name}"?`)
+  if (!ok) return
+
+  graphStatus.value = null
+  graphMemoryClearingId.value = graphId
+  try {
+    const configs = await listNodeInstanceConfigs(graphId)
+    const nodeIds = graphNodeIdsFromConfigs(configs)
+    let clearedFiles = 0
+    for (const nodeId of nodeIds) {
+      const result = await clearNodeInstanceMemory(nodeId, graphId)
+      clearedFiles += Number(result.cleared_files || 0)
+    }
+
+    const selectedNode = String(selectedNodeId.value || '').trim()
+    if (memoryMode.value === 'agent' && (currentGraphId.value || 'default') === graphId && nodeIds.includes(selectedNode)) {
+      memoryText.value = ''
+      memoryMessages.value = []
+      memoryLiveMessage.value = ''
+      memoryThinkingMessage.value = ''
+      memoryActivityMessage.value = ''
+      await loadAgentMemory()
+    }
+    graphStatus.value = `Graph memory cleared: ${name} (${nodeIds.length} nodes, ${clearedFiles} files).`
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  } finally {
+    graphMemoryClearingId.value = ''
+  }
+}
+
 watch(
   () => selectedNodeId.value,
   async () => {
@@ -497,12 +543,14 @@ onBeforeUnmount(() => {
       :messages="structuredMessages"
       :live-message="memoryLiveMessage"
       :thinking-message="memoryThinkingMessage"
+      :activity-message="memoryActivityMessage"
       :markdown-preview="isMarkdownPreview"
       :word-wrap="isWordWrap"
       :show-line-numbers="showLineNumbers"
       :agent-images="agentImages"
       :rendered-markdown="renderedMarkdown"
       :graph-loading="graphLoading"
+      :graph-memory-clearing-id="graphMemoryClearingId"
       :graphs="graphs"
       :graph-profiles="graphProfiles"
       :selected-graph-profile-id="selectedGraphProfileId"
@@ -517,6 +565,7 @@ onBeforeUnmount(() => {
       @delete-graph-profile="deleteSelectedGraphProfile"
       @refresh-graphs="refreshGraphs"
       @load-graph-config="loadGraphConfig"
+      @clear-graph-memory="clearGraphMemory"
       @delete-graph-config="deleteGraphConfig"
       @graph-path-error="graphStatus = $event"
       @update:selected-graph-profile-id="selectedGraphProfileId = $event"
@@ -550,8 +599,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: rgba(2, 6, 23, 0.56);
-  border: 1px solid rgba(148, 163, 184, 0.15);
+  background-color: var(--theme-panel-memory-panel-background-color, rgba(2, 6, 23, 0.56));
+  background-image: var(--theme-panel-memory-panel-background-image, none);
+  background-size: var(--theme-panel-memory-panel-background-size, cover);
+  background-position: var(--theme-panel-memory-panel-background-position, center);
+  background-repeat: var(--theme-panel-memory-panel-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-memory-panel-background-blend-mode, normal);
+  border: 1px solid var(--theme-panel-memory-panel-border-color, rgba(148, 163, 184, 0.15));
   border-radius: 14px;
 }
 

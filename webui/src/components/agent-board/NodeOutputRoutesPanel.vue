@@ -2,15 +2,13 @@
 import { computed, inject, onBeforeUnmount, ref, watchEffect } from 'vue'
 import { AgentBoardKey, type NodeCard } from './context'
 import NodeOutputRoutesSection from './NodeOutputRoutesSection.vue'
+import { NODE_CARD_DEFAULT_WIDTH, nodeCardHeight, nodeCardWidth } from './boardModel'
 
 const props = defineProps<{
   node: NodeCard
 }>()
 
-const CARD_WIDTH = 230
-const CARD_HEIGHT = 250
-const PANEL_WIDTH = CARD_WIDTH
-const PANEL_MIN_WIDTH = CARD_WIDTH
+const PANEL_WIDTH = NODE_CARD_DEFAULT_WIDTH
 const PANEL_MAX_WIDTH = 520
 const PANEL_GAP = 14
 const CANVAS_PADDING = 80
@@ -34,26 +32,30 @@ const resizeSession = ref<ResizeSession | null>(null)
 let resizeObserver: ResizeObserver | null = null
 
 const panelNode = computed(() => props.node)
+const nodeWidth = computed(() => nodeCardWidth(panelNode.value))
+const nodeHeight = computed(() => nodeCardHeight(panelNode.value))
+const effectivePanelWidth = computed(() => Math.max(panelSize.value.width, nodeWidth.value))
 
 const panelPosition = computed(() => {
   const node = panelNode.value
-  const desiredLeft = node.ui.x + CARD_WIDTH / 2 - panelSize.value.width / 2
-  const maxLeft = Math.max(0, ctx.canvasWidth.value - panelSize.value.width - CANVAS_PADDING / 2)
+  const width = effectivePanelWidth.value
+  const desiredLeft = node.ui.x + nodeWidth.value / 2 - width / 2
+  const maxLeft = Math.max(0, ctx.canvasWidth.value - width - CANVAS_PADDING / 2)
   return {
     left: Math.max(0, Math.min(maxLeft, desiredLeft)),
-    top: node.ui.y + CARD_HEIGHT + PANEL_GAP,
+    top: node.ui.y + nodeHeight.value + PANEL_GAP,
   }
 })
 
 const panelStyle = computed(() => ({
   left: `${panelPosition.value.left}px`,
   top: `${panelPosition.value.top}px`,
-  width: `${panelSize.value.width}px`,
+  width: `${effectivePanelWidth.value}px`,
 }))
 
 watchEffect(() => {
   const node = panelNode.value
-  const right = Math.max(node.ui.x + CARD_WIDTH, panelPosition.value.left + panelSize.value.width)
+  const right = Math.max(node.ui.x + nodeWidth.value, panelPosition.value.left + effectivePanelWidth.value)
   const bottom = panelPosition.value.top + measuredPanelHeight.value
   ctx.canvasWidth.value = Math.max(ctx.canvasWidth.value, Math.ceil(right + CANVAS_PADDING))
   ctx.canvasHeight.value = Math.max(ctx.canvasHeight.value, Math.ceil(bottom + CANVAS_PADDING))
@@ -108,7 +110,7 @@ function onPanelResizeMove(event: PointerEvent) {
         : session.startWidth
 
   panelSize.value = {
-    width: clamp(nextWidth, PANEL_MIN_WIDTH, PANEL_MAX_WIDTH),
+    width: clamp(nextWidth, nodeWidth.value, Math.max(PANEL_MAX_WIDTH, nodeWidth.value)),
   }
   event.preventDefault()
 }
@@ -153,9 +155,14 @@ onBeforeUnmount(stopPanelResize)
   box-sizing: border-box;
   pointer-events: auto;
   padding: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid var(--theme-panel-node-output-routes-border-color, rgba(148, 163, 184, 0.24));
   border-radius: 12px;
-  background: rgba(2, 6, 23, 0.96);
+  background-color: var(--theme-panel-node-output-routes-background-color, rgba(2, 6, 23, 0.96));
+  background-image: var(--theme-panel-node-output-routes-background-image, none);
+  background-size: var(--theme-panel-node-output-routes-background-size, cover);
+  background-position: var(--theme-panel-node-output-routes-background-position, center);
+  background-repeat: var(--theme-panel-node-output-routes-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-node-output-routes-background-blend-mode, normal);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.3);
   backdrop-filter: blur(14px);
 }

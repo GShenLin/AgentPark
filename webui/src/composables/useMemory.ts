@@ -9,6 +9,7 @@ import {
   sendNodeInteractiveInput,
   type MessageEnvelope,
 } from '../api'
+import { formatLiveActivity } from '../liveActivity'
 import { useGlobalState } from './useGlobalState'
 
 const isSaving = ref(false)
@@ -64,6 +65,7 @@ export function useMemory() {
     memoryMessages,
     memoryLiveMessage,
     memoryThinkingMessage,
+    memoryActivityMessage,
     memoryInteractiveSessionId,
     memoryInteractiveSending,
     memoryTitle,
@@ -92,6 +94,7 @@ export function useMemory() {
       memoryMessages.value = []
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
+      memoryActivityMessage.value = ''
       clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       memoryTitle.value = ''
@@ -116,6 +119,7 @@ export function useMemory() {
         memoryLiveMessage.value = nextLiveMessage || pendingCommittedLiveText
       }
       memoryThinkingMessage.value = String((res as any)?.thinking_message || '')
+      memoryActivityMessage.value = ''
       memoryTitle.value = `Node ${nodeId}`
       memoryMeta.value = res.memory_path || null
       agentImages.value = []
@@ -128,6 +132,7 @@ export function useMemory() {
       memoryMessages.value = []
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
+      memoryActivityMessage.value = ''
       clearPendingCommittedLive()
       memoryInteractiveSessionId.value = ''
       memoryTitle.value = `Node ${nodeId}`
@@ -145,6 +150,7 @@ export function useMemory() {
       if (requestId !== liveLoadRequestId || memoryMode.value !== 'agent') return
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
+      memoryActivityMessage.value = ''
       clearPendingCommittedLive()
       return
     }
@@ -164,6 +170,7 @@ export function useMemory() {
       if ((currentGraphId.value || 'default') !== graphId) return
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
+      memoryActivityMessage.value = ''
       clearPendingCommittedLive()
     }
   }
@@ -288,6 +295,7 @@ export function useMemory() {
           : null
         const nextLiveMessage = String(payload?.live_message || '')
         const nextThinkingMessage = String(payload?.thinking_message || '')
+        const nextActivityMessage = formatLiveActivity(eventType, eventData)
         memoryThinkingMessage.value = nextThinkingMessage
         if (eventType === 'node_message_done' || eventType === 'node_output') {
           rememberCommittedLiveText(
@@ -296,9 +304,11 @@ export function useMemory() {
           )
           if (pendingCommittedLiveText) memoryLiveMessage.value = pendingCommittedLiveText
           memoryThinkingMessage.value = ''
+          memoryActivityMessage.value = ''
         } else if (nextLiveMessage || !pendingCommittedLiveText) {
           memoryLiveMessage.value = nextLiveMessage
         }
+        if (nextActivityMessage) memoryActivityMessage.value = nextActivityMessage
         // Persistent session_id (set by server on stdin_ready, survives text update races)
         const persistentSessionId = String(payload?.interactive_session_id || '').trim()
         if (persistentSessionId) {

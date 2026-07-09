@@ -11,7 +11,7 @@ from src.mcp.caller_context_headers import encode_caller_header_value
 from src.workspace_settings import load_workspace_settings
 
 
-MCP_SERVERS_CONFIG_KEYS = ("mcpServers", "mcp_servers")
+MCP_SERVERS_CONFIG_KEYS = ("mcpServers",)
 DEFAULT_MCP_SERVER_TOOL_RULES = {
     "asset-to-json": ("find_assets", "read_asset_json", "get_editor_context", "list_actors"),
 }
@@ -181,9 +181,6 @@ def _read_mcp_server_config(settings: dict | None = None) -> dict[str, dict]:
         value = raw_settings.get(key) if isinstance(raw_settings, dict) else None
         if isinstance(value, dict):
             return {str(name): dict(config) for name, config in value.items() if isinstance(config, dict)}
-    mcp = raw_settings.get("mcp") if isinstance(raw_settings, dict) else None
-    if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict):
-        return {str(name): dict(config) for name, config in mcp["servers"].items() if isinstance(config, dict)}
     return {}
 
 

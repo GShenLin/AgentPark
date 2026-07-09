@@ -26,9 +26,7 @@ def resolve_public_base_url(explicit: object, provider_id: object = "") -> str:
     except Exception:
         full_config = {}
     if isinstance(full_config, dict):
-        top_level = normalize_public_base_url(
-            full_config.get("publicBaseUrl") or full_config.get("public_base_url")
-        )
+        top_level = normalize_public_base_url(full_config.get("publicBaseUrl"))
         if top_level:
             return top_level
 
@@ -37,9 +35,7 @@ def resolve_public_base_url(explicit: object, provider_id: object = "") -> str:
     except Exception:
         provider_config = {}
     if isinstance(provider_config, dict):
-        provider_level = normalize_public_base_url(
-            provider_config.get("publicBaseUrl") or provider_config.get("public_base_url")
-        )
+        provider_level = normalize_public_base_url(provider_config.get("publicBaseUrl"))
         if provider_level:
             return provider_level
 

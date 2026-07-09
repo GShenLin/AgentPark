@@ -19,9 +19,6 @@ def _resolve_skill_dir(skill, agent=None):
     roots = _agent_resource_roots(agent)
     if name in roots:
         return roots[name]
-    lowered = {key.casefold(): value for key, value in roots.items()}
-    if name.casefold() in lowered:
-        return lowered[name.casefold()]
 
     root = os.path.realpath(default_skill_root())
     parts = [part for part in name.split("/") if part]

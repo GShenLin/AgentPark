@@ -37,4 +37,4 @@ def test_node_stream_protocol_normalizes_event_type_and_text():
 
 def test_node_stream_protocol_rejects_unknown_event():
     with pytest.raises(ValueError, match="unsupported node message event type"):
-        normalize_node_message_event({"type": "delta", "text": "legacy"})
+        normalize_node_message_event({"type": "delta", "text": "unsupported"})

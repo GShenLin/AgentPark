@@ -301,7 +301,14 @@ class NodeConfigService:
     def _normalize_ui(self, ui: dict[str, Any]) -> dict[str, int]:
         x = self._finite_number(ui.get("x"))
         y = self._finite_number(ui.get("y"))
-        return {"x": max(0, int(round(x))), "y": max(0, int(round(y)))}
+        normalized = {"x": max(0, int(round(x))), "y": max(0, int(round(y)))}
+        width = ui.get("width")
+        height = ui.get("height")
+        if width is not None and str(width).strip():
+            normalized["width"] = max(230, int(round(self._finite_number(width))))
+        if height is not None and str(height).strip():
+            normalized["height"] = max(250, int(round(self._finite_number(height))))
+        return normalized
 
     def _finite_number(self, value: object) -> float:
         try:

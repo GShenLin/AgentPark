@@ -188,7 +188,7 @@ def load_default_target() -> dict:
     if not isinstance(parsed, dict):
         return {}
     account_id = normalize_account_id(parsed.get("accountId"))
-    to_user_id = str(parsed.get("toUserId") or parsed.get("from") or "").strip()
+    to_user_id = str(parsed.get("toUserId") or "").strip()
     if not account_id or not to_user_id:
         return {}
     output = {

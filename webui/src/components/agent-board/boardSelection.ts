@@ -1,4 +1,5 @@
 import type { NodeCard } from './context'
+import { nodeCardHeight, nodeCardWidth } from './boardModel'
 
 export type BoardSelectionSession = {
   startX: number
@@ -42,8 +43,8 @@ export function computeNodeIdsInSelectionRect(options: {
   for (const node of options.nodes) {
     const left = node.ui.x
     const top = node.ui.y
-    const right = node.ui.x + options.cardWidth
-    const bottom = node.ui.y + options.cardHeight
+    const right = node.ui.x + nodeCardWidth(node)
+    const bottom = node.ui.y + nodeCardHeight(node)
     const overlap = !(right < minX || left > maxX || bottom < minY || top > maxY)
     if (overlap) selected.add(node.id)
   }

@@ -37,13 +37,7 @@ class DoubaoVideoGeneration(HostBoundService):
         return tasks_url
 
     def _resolve_video_model(self, model=None):
-        use_model = (
-            model
-            or self.config.get("videoModel")
-            or self.config.get("video_model")
-            or self.config.get("videoModelId")
-            or self.config.get("model")
-        )
+        use_model = model or self.config.get("model")
         if not use_model:
             raise ValueError("DouBao video model is required for video generation.")
         return use_model
@@ -87,22 +81,17 @@ class DoubaoVideoGeneration(HostBoundService):
             "content": self._normalize_content(content),
         }
 
-        resolved_resolution = str(
-            resolution
-            or self.config.get("videoResolution")
-            or self.config.get("resolution")
-            or ""
-        ).strip()
+        resolved_resolution = str(resolution or self.config.get("videoResolution") or "").strip()
         if resolved_resolution:
             payload["resolution"] = resolved_resolution
 
-        resolved_ratio = str(ratio or self.config.get("videoRatio") or self.config.get("ratio") or "").strip()
+        resolved_ratio = str(ratio or self.config.get("videoRatio") or "").strip()
         if resolved_ratio:
             payload["ratio"] = resolved_ratio
 
         resolved_duration = parse_optional_int_value(
             "duration",
-            duration if duration is not None else self.config.get("videoDuration", self.config.get("duration")),
+            duration if duration is not None else self.config.get("videoDuration"),
             allowed_values=(-1,),
             minimum=1,
         )
@@ -111,7 +100,7 @@ class DoubaoVideoGeneration(HostBoundService):
 
         resolved_frames = parse_optional_int_value(
             "frames",
-            frames if frames is not None else self.config.get("videoFrames", self.config.get("frames")),
+            frames if frames is not None else self.config.get("videoFrames"),
             minimum=1,
         )
         if resolved_frames is not None:
@@ -119,7 +108,7 @@ class DoubaoVideoGeneration(HostBoundService):
 
         resolved_seed = parse_optional_int_value(
             "seed",
-            seed if seed is not None else self.config.get("videoSeed", self.config.get("seed")),
+            seed if seed is not None else self.config.get("videoSeed"),
             allowed_values=(-1,),
             minimum=0,
             maximum=4294967295,
@@ -129,14 +118,14 @@ class DoubaoVideoGeneration(HostBoundService):
 
         resolved_camera_fixed = parse_optional_bool_value(
             "camera_fixed",
-            camera_fixed if camera_fixed is not None else self.config.get("videoCameraFixed", self.config.get("cameraFixed")),
+            camera_fixed if camera_fixed is not None else self.config.get("videoCameraFixed"),
         )
         if resolved_camera_fixed is not None:
             payload["camera_fixed"] = resolved_camera_fixed
 
         resolved_watermark = parse_optional_bool_value(
             "watermark",
-            watermark if watermark is not None else self.config.get("videoWatermark", self.config.get("watermark"))
+            watermark if watermark is not None else self.config.get("videoWatermark")
         )
         if resolved_watermark is not None:
             payload["watermark"] = resolved_watermark
@@ -145,17 +134,12 @@ class DoubaoVideoGeneration(HostBoundService):
             "generate_audio",
             generate_audio
             if generate_audio is not None
-            else self.config.get("videoGenerateAudio", self.config.get("generateAudio"))
+            else self.config.get("videoGenerateAudio")
         )
         if resolved_generate_audio is not None:
             payload["generate_audio"] = resolved_generate_audio
 
-        resolved_callback_url = str(
-            callback_url
-            or self.config.get("videoCallbackUrl")
-            or self.config.get("callbackUrl")
-            or ""
-        ).strip()
+        resolved_callback_url = str(callback_url or self.config.get("videoCallbackUrl") or "").strip()
         if resolved_callback_url:
             payload["callback_url"] = resolved_callback_url
 
@@ -163,17 +147,12 @@ class DoubaoVideoGeneration(HostBoundService):
             "return_last_frame",
             return_last_frame
             if return_last_frame is not None
-            else self.config.get("videoReturnLastFrame", self.config.get("returnLastFrame")),
+            else self.config.get("videoReturnLastFrame"),
         )
         if resolved_return_last_frame is not None:
             payload["return_last_frame"] = resolved_return_last_frame
 
-        resolved_service_tier = str(
-            service_tier
-            or self.config.get("videoServiceTier")
-            or self.config.get("serviceTier")
-            or ""
-        ).strip()
+        resolved_service_tier = str(service_tier or self.config.get("videoServiceTier") or "").strip()
         if resolved_service_tier:
             payload["service_tier"] = resolved_service_tier
 
@@ -181,19 +160,14 @@ class DoubaoVideoGeneration(HostBoundService):
             "execution_expires_after",
             execution_expires_after
             if execution_expires_after is not None
-            else self.config.get("videoExecutionExpiresAfter", self.config.get("executionExpiresAfter")),
+            else self.config.get("videoExecutionExpiresAfter"),
             minimum=3600,
             maximum=259200,
         )
         if resolved_execution_expires_after is not None:
             payload["execution_expires_after"] = resolved_execution_expires_after
 
-        resolved_safety_identifier = str(
-            safety_identifier
-            or self.config.get("videoSafetyIdentifier")
-            or self.config.get("safetyIdentifier")
-            or ""
-        ).strip()
+        resolved_safety_identifier = str(safety_identifier or self.config.get("videoSafetyIdentifier") or "").strip()
         if resolved_safety_identifier:
             payload["safety_identifier"] = resolved_safety_identifier
 
@@ -343,7 +317,7 @@ class DoubaoVideoGeneration(HostBoundService):
 
         poll_interval_sec = parse_optional_float_value(
             "videoPollIntervalSec",
-            self.config.get("videoPollIntervalSec", self.config.get("contentGenerationPollIntervalSec", 10)),
+            self.config.get("videoPollIntervalSec", 10),
             minimum_exclusive=0,
         )
         if poll_interval_sec is None:
@@ -351,7 +325,7 @@ class DoubaoVideoGeneration(HostBoundService):
 
         max_wait_sec = parse_optional_float_value(
             "videoMaxWaitSec",
-            self.config.get("videoMaxWaitSec", self.config.get("contentGenerationMaxWaitSec", 900)),
+            self.config.get("videoMaxWaitSec", 900),
             minimum_exclusive=0,
         )
 

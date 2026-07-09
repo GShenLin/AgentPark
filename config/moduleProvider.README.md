@@ -33,7 +33,7 @@ Provider 实现类型。运行时根据它选择具体 Agent / runtime。
 
 - `openai`: OpenAI Responses API 兼容实现。当前 `OpenAIAgent` 固定走 `/responses`。
 - `claude`: Claude 原生 Anthropic Messages API 实现，走 `/messages`，支持 Claude tools、web search tool、thinking 与 `output_config.effort`；不使用 OpenAI Responses API 字段。
-- `doubao`: 火山方舟 Ark Responses 实现，chat/Agent 主路径走 `/responses`；同时包含图片、视频、换人视频等生成能力。旧的 OpenAI-compatible `/chat/completions` 只作为未声明 `responsesApi: true` 的兼容路径。
+- `doubao`: Ark Responses implementation. When `responsesApi: true`, chat/Agent uses `/responses`; otherwise it uses `/chat/completions`.
 - `gemini`: Gemini chat / image generation 实现。
 - `zhipu`: 智谱 GLM chat 实现。
 - `hyper3d`: Hyper3D Rodin 3D 模型和贴图生成实现。
@@ -67,7 +67,7 @@ Provider API 根地址。
 
 - `openai`: runtime 会在去掉末尾 `/` 后请求 `{baseUrl}/responses`。
 - `claude`: runtime 会在去掉末尾 `/` 后请求 `{baseUrl}/messages`；如果 `baseUrl` 已经以 `/messages` 结尾则直接使用。
-- `doubao`: 声明 `responsesApi: true` 时 chat/Agent 路径会请求 `{baseUrl}/responses`；如果 `baseUrl` 已经以 `/responses` 结尾则直接使用。未声明 `responsesApi: true` 的旧兼容路径才会请求 `{baseUrl}/chat/completions`。
+- `doubao`: When `responsesApi: true`, chat/Agent requests `{baseUrl}/responses`; otherwise it requests `{baseUrl}/chat/completions`.
 - `zhipu`: HTTP transport 会基于该地址构造 chat 请求；缺失时使用 Zhipu transport 内部默认地址。
 - `gemini`: 用于 Gemini API 请求。
 - `hyper3d`: 用于 Hyper3D API 请求；缺失时 Hyper3D runtime 有内部默认值 `https://api.hyper3d.com/api/v2`，但实际配置仍建议显式写出。
@@ -103,7 +103,7 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 - `vision_understand`: 视觉理解节点可选。
 - `GUIAgent`: GUI Agent 相关工具可选。
 - `video_generation`: 视频生成节点可选。
-- `video_changePerson`: 换人视频节点可选。
+- `video_change_person`: 换人视频节点可选。
 - `model_generation`: 3D 模型生成节点可选。
 - `model_texture_generation`: 3D 模型贴图生成节点可选。
 
@@ -176,7 +176,7 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 
 注意：
 
-- `openai` 和 `zhipu` runtime 也兼容旧字段名 `reasoning_effort`，但 `moduleProvider.json` 应统一使用 `reasoningEffort`。
+- `moduleProvider.json` only accepts `reasoningEffort`; `reasoning_effort` is rejected.
 - Krill 相关问题排查时，`reasoningEffort` 是重点字段之一，不要把它隐藏到默认值里。
 
 ### Responses continuation
@@ -185,7 +185,7 @@ OpenAI Responses 工具调用后的逻辑上下文延续固定采用显式回放
 
 要求：
 
-- Provider 配置中不再出现 `responsesContinuationMode`。
+- Provider config must not contain `responsesContinuationMode`.
 - HTTP `/responses` 请求不使用 `previous_response_id` 作为上下文主机制。
 - `previous_response_id` 只允许作为 Responses WebSocket 传输层的内部增量优化：必须先构造完整逻辑请求，并在确认当前 input 是上一轮逻辑请求加服务端 output 的严格延续后，才可以在 WebSocket payload 中发送 delta。
 
@@ -212,7 +212,7 @@ OpenAI Responses 工具调用后的逻辑上下文延续固定采用显式回放
 - 必须是布尔值。
 - 必须写在 Provider 配置上。
 - 缺失或非布尔值会报错。
-- 不接受 `responses_replay_reasoning_items` 别名。
+- `moduleProvider.json` only accepts `responsesReplayReasoningItems`; `responses_replay_reasoning_items` is rejected.
 
 ### `toolResultSubmissionMaxChars`
 
@@ -325,16 +325,10 @@ Claude 原生实现会映射为 `output_config.effort`，当前允许：
 
 ### `webSearchToolType`
 
-Claude web search server tool 类型，缺省为 `web_search_20260318`。兼容旧配置名 `claudeWebSearchToolType`。
+Claude web search server tool type. `moduleProvider.json` only accepts `webSearchToolType`; `claudeWebSearchToolType` is rejected.
 
 可选相关字段：
 
-- `webSearchLimit` / `claudeWebSearchMaxUses` -> `max_uses`
-- `webSearchAllowedDomains` / `claudeWebSearchAllowedDomains` -> `allowed_domains`
-- `webSearchBlockedDomains` / `claudeWebSearchBlockedDomains` -> `blocked_domains`
-- `webSearchAllowedCallers` / `claudeWebSearchAllowedCallers` -> `allowed_callers`
-- `webSearchUserLocation` / `claudeWebSearchUserLocation` -> `user_location`
-- `webSearchResponseInclusion` / `claudeWebSearchResponseInclusion` -> `response_inclusion`
 
 `allowed_domains` 和 `blocked_domains` 不能同时配置。
 
@@ -381,7 +375,7 @@ Doubao Ark Responses web search 的最大关键词数量。
 
 注意：
 
-- runtime 仍兼容 `web_search_max_keyword`，但 `moduleProvider.json` 应统一使用 `webSearchMaxKeyword`。
+- `moduleProvider.json` only accepts `webSearchMaxKeyword`; `web_search_max_keyword` is rejected.
 
 ### `webSearchLimit`
 
@@ -394,7 +388,7 @@ Doubao Responses web search 的结果数量限制。
 
 注意：
 
-- runtime 仍兼容 `web_search_limit`，但 `moduleProvider.json` 应统一使用 `webSearchLimit`。
+- `moduleProvider.json` only accepts `webSearchLimit`; `web_search_limit` is rejected.
 
 ### `webSearchSources`
 
@@ -407,7 +401,7 @@ Doubao Responses web search 的来源列表。
 
 注意：
 
-- runtime 仍兼容 `web_search_sources`，但 `moduleProvider.json` 应统一使用 `webSearchSources`。
+- `moduleProvider.json` only accepts `webSearchSources`; `web_search_sources` is rejected.
 
 ## Zhipu 字段
 
@@ -442,7 +436,7 @@ Zhipu chat 请求的最大输出 token 数。
 
 注意：
 
-- runtime 仍兼容 `max_tokens`，但 `moduleProvider.json` 应统一使用 `maxTokens`。
+- `moduleProvider.json` only accepts `maxTokens`; `max_tokens` is rejected.
 
 ## Hyper3D 字段
 

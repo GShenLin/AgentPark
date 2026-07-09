@@ -69,6 +69,15 @@ class WebBackendFacade:
                     f"nodes_reset_to_idle={int(recovery.get('nodes_reset_to_idle', 0))} "
                     f"inflight_requeued={int(recovery.get('inflight_requeued', 0))}"
                 )
+            events = self.core.runtime_events.startup()
+            if isinstance(events, dict):
+                companion = events.get("companion_recovery") if isinstance(events.get("companion_recovery"), dict) else {}
+                print(
+                    "[RuntimeEvents] startup "
+                    f"companion_inbox_cleared={int(companion.get('companion_inbox_cleared', 0))} "
+                    f"temporary_receivers_found={int(companion.get('temporary_receivers_found', 0))} "
+                    f"temporary_receivers_cleaned={int(companion.get('temporary_receivers_cleaned', 0))}"
+                )
             self.core.graph_runtime._ensure_timer_trigger_scheduler()
             channels = self.core.channel_service.start_autostart_receivers()
             if isinstance(channels, dict):

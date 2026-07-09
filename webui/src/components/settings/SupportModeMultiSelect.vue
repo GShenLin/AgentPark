@@ -17,7 +17,7 @@ const options = computed(() => {
     'vision_understand',
     'GUIAgent',
     'video_generation',
-    'video_changePerson',
+    'video_change_person',
     'model_generation',
     'model_texture_generation',
   ]

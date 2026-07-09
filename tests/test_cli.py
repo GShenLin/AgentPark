@@ -109,12 +109,12 @@ def test_cli_chat_uses_companion_config_and_persists_messages(monkeypatch, tmp_p
     import src.cli_commands.chat as chat_command
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "node_id": "companion",
-            "graph_id": "companion",
+            "node_id": "Companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "tools": ["file_read_tools"],
@@ -126,10 +126,10 @@ def test_cli_chat_uses_companion_config_and_persists_messages(monkeypatch, tmp_p
 
     class DummyAgentNode:
         def on_input(self, message, context):
-            assert context["graph_id"] == "companion"
-            assert context["node_instance_id"] == "companion"
-            assert context["memory_path"] == str(tmp_path / "memories" / "companion" / "memory.md")
-            assert context["messages_path"] == str(tmp_path / "memories" / "companion" / "messages.jsonl")
+            assert context["graph_id"] == "Companion"
+            assert context["node_instance_id"] == "Companion"
+            assert context["memory_path"] == str(tmp_path / "memories" / "Companion" / "Companion" / "memory.md")
+            assert context["messages_path"] == str(tmp_path / "memories" / "Companion" / "Companion" / "messages.jsonl")
             assert context["provider_id"] == "unit-provider"
             assert context["tools"] == ["file_read_tools"]
             assert context["working_path"] == str(tmp_path)
@@ -155,7 +155,7 @@ def test_cli_chat_uses_companion_config_and_persists_messages(monkeypatch, tmp_p
 
     assert exit_code == 0
     assert "pong" in output
-    node_dir = tmp_path / "memories" / "companion"
+    node_dir = tmp_path / "memories" / "Companion" / "Companion"
     records = [
         json.loads(line)
         for line in (node_dir / "messages.jsonl").read_text(encoding="utf-8").splitlines()
@@ -170,12 +170,12 @@ def test_cli_chat_renders_assistant_markdown(monkeypatch, tmp_path, capsys):
     import src.cli_commands.chat as chat_command
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "node_id": "companion",
-            "graph_id": "companion",
+            "node_id": "Companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
         },
@@ -216,7 +216,7 @@ def test_cli_chat_renders_assistant_markdown(monkeypatch, tmp_path, capsys):
 
 
 def test_cli_chat_reports_missing_companion_config(tmp_path, capsys):
-    missing_path = tmp_path / "memories" / "companion" / "config.json"
+    missing_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
 
     exit_code = main(["chat", "--config", str(missing_path), "--message", "ping"])
     output = capsys.readouterr().out
@@ -228,11 +228,11 @@ def test_cli_chat_reports_missing_companion_config(tmp_path, capsys):
 def test_cli_chat_interactive_commands_render_shell(monkeypatch, tmp_path, capsys):
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "graph_id": "companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "mode": "chat",
@@ -256,11 +256,11 @@ def test_cli_chat_interactive_commands_render_shell(monkeypatch, tmp_path, capsy
 def test_cli_chat_debug_reports_basic_input_backend(monkeypatch, tmp_path, capsys):
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "graph_id": "companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "mode": "chat",
@@ -282,11 +282,11 @@ def test_cli_chat_default_backend_reports_unavailable(monkeypatch, tmp_path, cap
     import src.cli_commands.chat as chat_command
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "graph_id": "companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "mode": "chat",
@@ -311,11 +311,11 @@ def test_cli_chat_auto_backend_selects_prompt(monkeypatch, tmp_path):
     import src.cli_commands.chat as chat_command
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "graph_id": "companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "mode": "chat",
@@ -344,18 +344,18 @@ def test_cli_chat_auto_backend_selects_prompt(monkeypatch, tmp_path):
     exit_code = main(["chat"])
 
     assert exit_code == 0
-    assert calls == [("companion", False)]
+    assert calls == [("Companion", False)]
 
 
 def test_cli_chat_auto_backend_uses_tui_when_prompt_unavailable(monkeypatch, tmp_path):
     import src.cli_commands.chat as chat_command
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "graph_id": "companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "mode": "chat",
@@ -394,7 +394,7 @@ def test_cli_chat_auto_backend_uses_tui_when_prompt_unavailable(monkeypatch, tmp
     exit_code = main(["chat"])
 
     assert exit_code == 0
-    assert calls == [("companion", False, "win32")]
+    assert calls == [("Companion", False, "win32")]
 
 
 def test_companion_prompt_slash_completer_opens_for_slash_prefix():
@@ -501,7 +501,7 @@ def test_companion_tui_keeps_assistant_fragments_chronological():
 
     target = SimpleNamespace(
         config={"provider_id": "unit", "mode": "chat"},
-        graph_id="companion",
+        graph_id="Companion",
         config_path="config.json",
         memory_path="memory.md",
         messages_path="messages.jsonl",
@@ -534,11 +534,11 @@ def test_cli_chat_plain_restart_launches_restart_and_exits(monkeypatch, tmp_path
     from src.cli_commands.companion_restart import RestartLaunch
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "graph_id": "companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "mode": "chat",
@@ -566,11 +566,11 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
     from src.companion_inbox import deliver_companion_notice
     from src.web_backend import runtime_paths
 
-    config_path = tmp_path / "memories" / "companion" / "config.json"
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     _write_config(
         config_path,
         {
-            "graph_id": "companion",
+            "graph_id": "Companion",
             "type_id": "agent_node",
             "provider_id": "unit-provider",
             "mode": "chat",
@@ -589,8 +589,8 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
         def on_input(self, message, context):
             text = message["parts"][0]["text"]
             seen_inputs.append(text)
-            assert context["graph_id"] == "companion"
-            assert context["node_instance_id"] == "companion"
+            assert context["graph_id"] == "Companion"
+            assert context["node_instance_id"] == "Companion"
             return {
                 "display": "acknowledged",
                 "routes": [
@@ -618,7 +618,6 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
                 "memory_path": str(tmp_path / "memories" / "default" / "Agent1" / "memory.md"),
                 "messages_path": str(tmp_path / "memories" / "default" / "Agent1" / "messages.jsonl"),
                 "runtime_events_path": str(tmp_path / "memories" / "default" / "Agent1" / "runtime_events.jsonl"),
-                "report_path": str(tmp_path / "memories" / "default" / "Agent1" / "reports" / "review.md"),
             },
         },
         config_path=str(config_path),
@@ -629,15 +628,14 @@ def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, c
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "A node run was persisted. Review the full persisted run" in output
+    assert "A node run was persisted." in output
+    assert "Review scope:" in output
     assert "Node: default/Agent1" in output
     assert "Triggered by node: default/Trigger1" in output
-    assert "Write report to:" in output
+    assert "Write report to:" not in output
     assert "acknowledged" in output
     assert len(seen_inputs) == 1
-    assert seen_inputs[0].startswith(
-        "A node run was persisted. Review the full persisted run"
-    )
+    assert seen_inputs[0].startswith("A node run was persisted.")
     assert "Node: default/Agent1" in seen_inputs[0]
     assert (config_path.parent / "inbox.jsonl").read_text(encoding="utf-8") == ""
     records = [
@@ -654,7 +652,7 @@ def test_companion_tui_edits_draft_from_key_events(tmp_path):
     from src.cli_commands.companion_tui import CompanionTui
 
     class Target:
-        graph_id = "companion"
+        graph_id = "Companion"
         config_path = "config.json"
         memory_path = "memory.md"
         messages_path = "messages.jsonl"

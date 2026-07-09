@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ipaddress
-from urllib.parse import urlparse
 
 from fastapi import Request
 
@@ -35,40 +34,37 @@ class RemoteApiDomain(DomainBase):
             raise HTTPException(status_code=500, detail=f"remote config is invalid: {exc}") from exc
         if not isinstance(payload, dict):
             raise HTTPException(status_code=500, detail="remote config must be an object")
-        return self._normalize_config(payload)
+        return self._validate_config(payload)
 
     def _write_remote_config(self, payload: dict) -> None:
         path = self._remote_config_path()
         atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
-    def _normalize_config(self, payload: dict) -> dict:
+    def _validate_config(self, payload: dict) -> dict:
         remotes = payload.get("remotes")
         if not isinstance(remotes, list):
-            remotes = []
-        normalized = [dict(DEFAULT_REMOTE)]
+            raise HTTPException(status_code=500, detail="remote config field 'remotes' must be a list")
+        validated = [dict(DEFAULT_REMOTE)]
         seen = {"default"}
-        for item in remotes:
+        for index, item in enumerate(remotes):
             if not isinstance(item, dict):
-                continue
-            remote = self._normalize_remote(item, allow_default=True)
+                raise HTTPException(status_code=500, detail=f"remote config remotes[{index}] must be an object")
+            remote = self._validate_remote(item, allow_default=True)
             remote_id = str(remote.get("id") or "").strip()
-            if not remote_id or remote_id in seen or remote_id == "default":
+            if remote_id == "default":
                 continue
+            if not remote_id or remote_id in seen:
+                raise HTTPException(status_code=500, detail=f"duplicate remote id: {remote_id}")
             seen.add(remote_id)
-            normalized.append(remote)
-        return {"remotes": normalized}
+            validated.append(remote)
+        return {"remotes": validated}
 
-    def _normalize_remote(self, payload: dict, *, allow_default: bool = False) -> dict:
-        raw_host = str(payload.get("host") or payload.get("ip") or "").strip()
+    def _validate_remote(self, payload: dict, *, allow_default: bool = False) -> dict:
+        raw_host = str(payload.get("host") or "").strip()
         raw_port = payload.get("port")
-        raw_address = str(payload.get("address") or "").strip()
-        if raw_address and (not raw_host or raw_port in (None, "")):
-            parsed_host, parsed_port = self._parse_address(raw_address)
-            raw_host = raw_host or parsed_host
-            raw_port = raw_port if raw_port not in (None, "") else parsed_port
 
-        host = self._normalize_host(raw_host)
-        port = self._normalize_port(raw_port)
+        host = self._validate_host(raw_host)
+        port = self._validate_port(raw_port)
         name = str(payload.get("name") or "").strip()
         if not name:
             name = "Default" if allow_default and host == "127.0.0.1" and port == 8788 else f"{host}:{port}"
@@ -80,10 +76,10 @@ class RemoteApiDomain(DomainBase):
             "name": name,
             "host": host,
             "port": port,
-            "private": self._normalize_private(payload),
+            "private": self._validate_private(payload),
         }
 
-    def _normalize_private(self, payload: dict) -> bool:
+    def _validate_private(self, payload: dict) -> bool:
         if "private" not in payload:
             return False
         value = payload.get("private")
@@ -91,14 +87,7 @@ class RemoteApiDomain(DomainBase):
             raise HTTPException(status_code=400, detail="private must be a boolean")
         return value
 
-    def _parse_address(self, address: str) -> tuple[str, object]:
-        value = address.strip()
-        if not value:
-            return "", ""
-        parsed = urlparse(value if "://" in value else f"http://{value}")
-        return str(parsed.hostname or ""), parsed.port or ""
-
-    def _normalize_host(self, value: object) -> str:
+    def _validate_host(self, value: object) -> str:
         host = str(value or "").strip()
         if not host:
             raise HTTPException(status_code=400, detail="host is required")
@@ -108,11 +97,10 @@ class RemoteApiDomain(DomainBase):
             raise HTTPException(status_code=400, detail="host must not contain whitespace")
         return host
 
-    def _normalize_port(self, value: object) -> int:
-        try:
-            port = int(value)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail="port must be a number") from exc
+    def _validate_port(self, value: object) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise HTTPException(status_code=400, detail="port must be an integer")
+        port = value
         if port < 1 or port > 65535:
             raise HTTPException(status_code=400, detail="port must be between 1 and 65535")
         return port
@@ -154,7 +142,7 @@ class RemoteApiDomain(DomainBase):
         return {"is_local_client": self._is_local_request(request)}
 
     def add_remote(self, payload: dict, request: Request = None):
-        remote = self._normalize_remote(payload or {})
+        remote = self._validate_remote(payload or {})
         if remote.get("private") and not self._is_local_request(request):
             raise HTTPException(status_code=403, detail="private remotes can only be created from a local client")
         config = self._load_remote_config()

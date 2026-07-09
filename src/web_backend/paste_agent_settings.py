@@ -12,28 +12,6 @@ class PasteAgentSettings(HostBoundService):
     def _paste_agent_config_path(self) -> str:
         return os.path.join(runtime_paths._get_runtime_root(), "config", "pastagent.json")
 
-    def _map_provider_alias(self, provider_id: object) -> str:
-        value = str(provider_id or "").strip()
-        if not value:
-            return ""
-
-        try:
-            providers = ConfigLoader().get_all_providers()
-        except Exception:
-            providers = {}
-        if not isinstance(providers, dict) or not providers:
-            return value
-
-        if value in providers:
-            return value
-
-        lowered = value.lower()
-        for key in providers.keys():
-            key_text = str(key or "").strip()
-            if key_text.lower() == lowered:
-                return key_text
-        return value
-
     def _default_provider_id(self) -> str:
         try:
             providers = ConfigLoader().get_all_providers()
@@ -44,7 +22,7 @@ class PasteAgentSettings(HostBoundService):
             if "gemini" in providers:
                 return "gemini"
             first_key = next(iter(providers.keys()), "")
-            return self._map_provider_alias(first_key)
+            return str(first_key or "").strip()
         return "gemini"
 
     def _default_paste_agent_config(self) -> dict:
@@ -65,7 +43,7 @@ class PasteAgentSettings(HostBoundService):
     def _build_paste_agent_config(self, raw: dict | None) -> dict:
         default = self._default_paste_agent_config()
         payload = raw if isinstance(raw, dict) else {}
-        provider_id = self._map_provider_alias(payload.get("provider_id") or default.get("provider_id") or "")
+        provider_id = str(payload.get("provider_id") or default.get("provider_id") or "").strip()
         if not provider_id:
             provider_id = self._default_provider_id()
 
@@ -74,13 +52,14 @@ class PasteAgentSettings(HostBoundService):
         if isinstance(tools, list):
             seen = set()
             for item in tools:
-                value = str(item or "").strip()
+                if not isinstance(item, str):
+                    continue
+                value = item.strip()
                 if not value:
                     continue
-                key = value.lower()
-                if key in seen:
+                if value in seen:
                     continue
-                seen.add(key)
+                seen.add(value)
                 safe_tools.append(value)
         web_search = payload.get("web_search")
         if web_search is None:

@@ -63,7 +63,7 @@ def _claude_headers(config: dict[str, Any]) -> dict[str, str]:
         "x-api-key": str(config.get("apiKey") or ""),
         "anthropic-version": str(config.get("anthropicVersion") or "2023-06-01"),
     }
-    beta = str(config.get("anthropicBeta") or config.get("anthropic_beta") or "").strip()
+    beta = str(config.get("anthropicBeta") or "").strip()
     if beta:
         headers["anthropic-beta"] = beta
     return headers
@@ -78,10 +78,10 @@ def _claude_messages_url(config: dict[str, Any]) -> str:
 
 def _claude_web_search_tool(config: dict[str, Any]) -> dict[str, Any]:
     tool: dict[str, Any] = {
-        "type": str(config.get("webSearchToolType") or config.get("claudeWebSearchToolType") or "web_search_20260318"),
+        "type": str(config.get("webSearchToolType") or "web_search_20260318"),
         "name": "web_search",
     }
-    limit = config.get("webSearchLimit", config.get("claudeWebSearchMaxUses"))
+    limit = config.get("webSearchLimit")
     if isinstance(limit, int) and limit > 0:
         tool["max_uses"] = limit
     return tool

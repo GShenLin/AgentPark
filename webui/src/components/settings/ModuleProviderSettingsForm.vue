@@ -110,36 +110,16 @@ function currentModelValue() {
 function setField(key: string, value: unknown) {
   if (!selectedProviderId.value || !selectedProvider.value) return
   const provider = { ...selectedProvider.value }
-  const normalizedValue = normalizeProviderFieldValue(provider, key, value)
-  limitWarning.value = unsupportedWarningFor(key, normalizedValue)
+  limitWarning.value = unsupportedWarningFor(key, value)
   if (value === '' || value === null || value === undefined) {
     delete provider[key]
   } else {
-    provider[key] = normalizedValue
+    provider[key] = value
   }
-  normalizeProviderAliases(provider)
   if (key === 'responsesApi' && value === true) {
     applyResponsesApiDefaults(provider)
   }
   emitProvider(selectedProviderId.value, provider)
-}
-
-function isDoubaoProvider(provider: Record<string, unknown> | null) {
-  return String(provider?.type || '').trim().toLowerCase() === 'doubao'
-}
-
-function normalizeProviderFieldValue(provider: Record<string, unknown>, key: string, value: unknown) {
-  if (key === 'reasoningEffort' && isDoubaoProvider(provider) && String(value || '').trim().toLowerCase() === 'xhigh') {
-    return 'high'
-  }
-  return value
-}
-
-function normalizeProviderAliases(provider: Record<string, unknown>) {
-  if (!isDoubaoProvider(provider)) return
-  if (String(provider.reasoningEffort || '').trim().toLowerCase() === 'xhigh') {
-    provider.reasoningEffort = 'high'
-  }
 }
 
 function applyResponsesApiDefaults(provider: Record<string, unknown>) {
@@ -192,7 +172,6 @@ function deleteProvider() {
 
 function unsupportedWarningFor(key: string, value: unknown) {
   const limit = selectedLimit.value
-  const provider = selectedProvider.value
   if (!limit) return ''
   if (limit.accessible === false) {
     return `Provider '${selectedProviderId.value}' is unavailable: ${limit.access_error || 'access test failed'}`
@@ -205,8 +184,7 @@ function unsupportedWarningFor(key: string, value: unknown) {
   if (key === 'reasoningEffort') {
     const text = String(value || '').trim()
     if (!text) return ''
-    const normalizedText = isDoubaoProvider(provider) && text.toLowerCase() === 'xhigh' ? 'high' : text
-    return valueUnsupportedWarning('reasoning_effort', normalizedText)
+    return valueUnsupportedWarning('reasoning_effort', text)
   }
   if (key === 'thinking') {
     const text = String(value || '').trim()
@@ -319,6 +297,14 @@ onMounted(loadProviderLimits)
         <label>
           <span>Timeout Ms</span>
           <input :value="numberValue('timeoutMs')" type="number" min="1" @input="setNumberField('timeoutMs', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <label>
+          <span>Concurrency Limit</span>
+          <input :value="numberValue('concurrencyLimit')" type="number" min="1" placeholder="Unlimited" @input="setNumberField('concurrencyLimit', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <label>
+          <span>RPM Limit</span>
+          <input :value="numberValue('rpmLimit')" type="number" min="1" placeholder="Unlimited" @input="setNumberField('rpmLimit', ($event.target as HTMLInputElement).value)" />
         </label>
         <label>
           <span>Max Tokens</span>

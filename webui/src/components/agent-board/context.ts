@@ -9,6 +9,7 @@ import type {
   RuntimeEvent,
   RuntimeToolCall,
   ProviderRequestSummary,
+  ProviderRequestTotals,
 } from '../../api'
 
 export type LinkEndpoint = {
@@ -37,12 +38,13 @@ export type NodeCard = {
   name: string
   inputNum: number
   outputNum: number
-  ui: { x: number; y: number }
+  ui: { x: number; y: number; width?: number; height?: number }
   last_message: string | null
   lastRuntimeEvent?: RuntimeEvent | null
   runtimeEvents?: RuntimeEvent[]
   runtimeToolCalls?: RuntimeToolCall[]
   providerRequestSummaries?: ProviderRequestSummary[]
+  providerRequestTotals?: ProviderRequestTotals | null
   providerId?: string
   mode?: string
   webSearch?: 'enabled' | 'disabled'
@@ -73,6 +75,8 @@ export type PanSession = {
   startPointerY: number
   startScrollLeft: number
   startScrollTop: number
+  startCanvasPaddingLeft: number
+  startCanvasPaddingTop: number
 } | null
 
 export type NodeRunState = {
@@ -102,6 +106,8 @@ export type AgentBoardContext = {
   canvasScale: Ref<number>
   canvasWidth: Ref<number>
   canvasHeight: Ref<number>
+  canvasPaddingLeft: Ref<number>
+  canvasPaddingTop: Ref<number>
   selectionRect: Ref<{ x: number; y: number; width: number; height: number } | null>
   suppressClickUntil: Ref<number>
   dragSession: Ref<DragSession>
@@ -125,7 +131,7 @@ export type AgentBoardContext = {
   createNodeAtPosition: (
     typeId: string,
     nodeName: string,
-    ui: { x: number; y: number },
+    ui: { x: number; y: number; width?: number; height?: number },
     fields?: Record<string, unknown>,
   ) => Promise<string | null>
   previewMessage: (value: string | null) => string
@@ -141,6 +147,11 @@ export type AgentBoardContext = {
   isDragging: (id: string) => boolean
   isNodeSelected: (id: string) => boolean
   itemStyle: (id: string) => Record<string, string | number>
+  resizeNodeCard: (
+    id: string,
+    size: { width: number; height: number },
+    options?: { persist?: boolean },
+  ) => Promise<void> | void
   onItemClick: (id: string, event: MouseEvent) => void
   onItemPointerDown: (id: string, event: PointerEvent) => void
   onItemPointerMove: (event: PointerEvent) => void

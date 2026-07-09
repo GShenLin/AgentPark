@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nodes.agent_node import Node as AgentNode
+from src.companion_paths import COMPANION_GRAPH_ID, COMPANION_NODE_ID, companion_node_config_path
 from src.cli_commands.companion_markdown_render import render_markdown_lines
 from src.cli_commands.companion_prompt import PromptCompanionTerminal
 from src.cli_commands.companion_restart import RESTART_EXIT_CODE
@@ -21,12 +22,10 @@ from src.web_backend.node_config_service import node_config_service
 from src.web_backend.node_memory_store import append_node_memory_entry, append_node_tool_call_entry, ensure_node_memory_files
 
 
-DEFAULT_COMPANION_GRAPH_ID = "companion"
-
-
 @dataclass(frozen=True)
 class ChatTarget:
     graph_id: str
+    node_id: str
     config_path: str
     config: dict[str, Any]
     memory_path: str
@@ -140,10 +139,12 @@ def resolve_chat_target(config_path: object = "") -> ChatTarget:
     type_id = str(cfg.get("type_id") or "agent_node").strip() or "agent_node"
     if type_id != "agent_node":
         raise ValueError(f"companion config type_id must be agent_node: {config_path}")
-    graph_id = _safe_id(cfg.get("graph_id"), DEFAULT_COMPANION_GRAPH_ID)
+    graph_id = _safe_id(cfg.get("graph_id"), COMPANION_GRAPH_ID)
+    node_id = _safe_id(cfg.get("node_id"), COMPANION_NODE_ID)
     node_dir = os.path.dirname(config_path)
     return ChatTarget(
         graph_id=graph_id,
+        node_id=node_id,
         config_path=config_path,
         config=cfg,
         memory_path=os.path.join(node_dir, "memory.md"),
@@ -172,7 +173,7 @@ def _run_one_turn(
         user_message,
         {
             "graph_id": target.graph_id,
-            "node_instance_id": "companion",
+            "node_instance_id": target.node_id,
             "memory_path": target.memory_path,
             "messages_path": target.messages_path,
             "stream_callback": printer.handle,
@@ -190,7 +191,7 @@ def _resolve_companion_config_path(config_path: object = "") -> str:
     text = str(config_path or "").strip()
     if text:
         return os.path.abspath(text)
-    return os.path.join(runtime_paths._get_graphs_dir(), "companion", "config.json")
+    return companion_node_config_path(runtime_paths._get_graphs_dir())
 
 
 def _safe_id(value: object, default: str) -> str:

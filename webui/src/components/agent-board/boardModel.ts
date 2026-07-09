@@ -1,14 +1,20 @@
-import type { GraphConfig, GraphOutputRoutes, MessageEnvelope, NodeInstanceConfig, NodeInstanceState, PasteAgentConfig } from '../../api'
+import type { GraphConfig, GraphOutputRoutes, MessageEnvelope, NodeInstanceConfig, NodeInstanceState, PasteAgentConfig, ProviderRequestTotals } from '../../api'
 import type { LinkEndpoint, LinkItem, NodeCard } from './context'
 import { normalizeRuntimeEvent, normalizeRuntimeEvents, normalizeRuntimeToolCalls } from './toolRuntimeEvents'
 
 export type SwitchState = 'enabled' | 'disabled'
+export const NODE_CARD_DEFAULT_WIDTH = 230
+export const NODE_CARD_DEFAULT_HEIGHT = 250
+export const NODE_CARD_MIN_WIDTH = 230
+export const NODE_CARD_MIN_HEIGHT = 250
+export const NODE_CARD_MAX_WIDTH = 720
+export const NODE_CARD_MAX_HEIGHT = 760
 
 export type BoardNodePlacement =
   | { kind: 'selection-anchor' }
   | {
       kind: 'fixed'
-      ui: { x: number; y: number }
+      ui: { x: number; y: number; width?: number; height?: number }
     }
 
 export function sleep(ms: number) {
@@ -19,10 +25,28 @@ export function clampX(value: number) {
   return Math.max(0, value)
 }
 
-export function sanitizeBoardPoint(ui: { x: number; y: number }) {
+function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+
+export function nodeCardWidth(node: NodeCard | undefined) {
+  return boundedNumber(node?.ui?.width, NODE_CARD_DEFAULT_WIDTH, NODE_CARD_MIN_WIDTH, NODE_CARD_MAX_WIDTH)
+}
+
+export function nodeCardHeight(node: NodeCard | undefined) {
+  return boundedNumber(node?.ui?.height, NODE_CARD_DEFAULT_HEIGHT, NODE_CARD_MIN_HEIGHT, NODE_CARD_MAX_HEIGHT)
+}
+
+export function sanitizeBoardPoint(ui: { x: number; y: number; width?: number; height?: number }) {
+  const width = ui?.width == null ? undefined : Math.round(boundedNumber(ui.width, NODE_CARD_DEFAULT_WIDTH, NODE_CARD_MIN_WIDTH, NODE_CARD_MAX_WIDTH))
+  const height = ui?.height == null ? undefined : Math.round(boundedNumber(ui.height, NODE_CARD_DEFAULT_HEIGHT, NODE_CARD_MIN_HEIGHT, NODE_CARD_MAX_HEIGHT))
   return {
     x: clampX(Number(ui?.x ?? 0)),
     y: Math.max(0, Number(ui?.y ?? 0)),
+    ...(width == null ? {} : { width }),
+    ...(height == null ? {} : { height }),
   }
 }
 
@@ -41,9 +65,9 @@ export function normalizePortIndex(value: unknown, fallback = 0) {
 }
 
 export function normalizeSwitch(value: unknown, fallback: SwitchState): SwitchState {
-  const text = String(value ?? '').trim().toLowerCase()
-  if (['enabled', 'enable', 'on', 'true', '1', 'yes'].includes(text)) return 'enabled'
-  if (['disabled', 'disable', 'off', 'false', '0', 'no'].includes(text)) return 'disabled'
+  const text = String(value ?? '').trim()
+  if (text === 'enabled') return 'enabled'
+  if (text === 'disabled') return 'disabled'
   return fallback
 }
 
@@ -57,9 +81,8 @@ export function normalizePasteAgentConfig(raw: PasteAgentConfig | null | undefin
   for (const item of toolsRaw) {
     const value = String(item || '').trim()
     if (!value) continue
-    const key = value.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (seen.has(value)) continue
+    seen.add(value)
     safeTools.push(value)
   }
   return {
@@ -97,7 +120,20 @@ export function normalizeProviderRequestSummaries(value: unknown) {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : []
 }
 
-export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: number; y: number }): NodeCard {
+export function normalizeProviderRequestTotals(value: unknown): ProviderRequestTotals | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Record<string, unknown>
+  return {
+    request_count: normalizeNonNegativeInt(item.request_count),
+    approx_input_chars: normalizeNonNegativeInt(item.approx_input_chars),
+    approx_input_tokens: normalizeNonNegativeInt(item.approx_input_tokens),
+    tool_call_chars: normalizeNonNegativeInt(item.tool_call_chars),
+    tool_result_chars: normalizeNonNegativeInt(item.tool_result_chars),
+    last_request_index: normalizeNonNegativeInt(item.last_request_index),
+  }
+}
+
+export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: number; y: number; width?: number; height?: number }): NodeCard {
   const nodeId = String(cfg.node_id || '').trim()
   const typeId = String((cfg as any)?.type_id || '').trim()
   return {
@@ -112,6 +148,7 @@ export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: numbe
     runtimeEvents: normalizeRuntimeEvents((cfg as any)?.runtime_events),
     runtimeToolCalls: normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls),
     providerRequestSummaries: normalizeProviderRequestSummaries((cfg as any)?.provider_request_summaries),
+    providerRequestTotals: normalizeProviderRequestTotals((cfg as any)?.provider_request_totals),
     providerId: String((cfg as any)?.provider_id ?? '').trim(),
     mode: String((cfg as any)?.mode ?? '').trim(),
     webSearch: normalizeSwitch((cfg as any)?.web_search, 'disabled'),
@@ -126,7 +163,7 @@ export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: numbe
   }
 }
 
-export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, ui?: { x: number; y: number }) {
+export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, ui?: { x: number; y: number; width?: number; height?: number }) {
   const nodeId = String(cfg.node_id || node.id || '').trim()
   const typeId = String((cfg as any)?.type_id || '').trim()
   node.typeId = typeId || node.typeId || 'echo_node'
@@ -134,8 +171,11 @@ export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, u
   node.inputNum = normalizePortCount((cfg as any)?.input_num, node.inputNum || 1)
   node.outputNum = normalizePortCount((cfg as any)?.output_num, node.outputNum || 1)
   if (ui) {
-    node.ui.x = ui.x
-    node.ui.y = ui.y
+    const normalizedUi = sanitizeBoardPoint(ui)
+    node.ui.x = normalizedUi.x
+    node.ui.y = normalizedUi.y
+    if (normalizedUi.width != null) node.ui.width = normalizedUi.width
+    if (normalizedUi.height != null) node.ui.height = normalizedUi.height
   }
   node.providerId = String((cfg as any)?.provider_id ?? node.providerId ?? '').trim()
   node.mode = String((cfg as any)?.mode ?? node.mode ?? '').trim()
@@ -152,6 +192,7 @@ export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, u
   node.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
   node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
   node.providerRequestSummaries = normalizeProviderRequestSummaries((cfg as any)?.provider_request_summaries)
+  node.providerRequestTotals = normalizeProviderRequestTotals((cfg as any)?.provider_request_totals)
 }
 
 export function applyNodeConfigOutputToCard(node: NodeCard, cfg: NodeInstanceConfig, out: string) {
@@ -160,6 +201,7 @@ export function applyNodeConfigOutputToCard(node: NodeCard, cfg: NodeInstanceCon
   node.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
   node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
   node.providerRequestSummaries = normalizeProviderRequestSummaries((cfg as any)?.provider_request_summaries)
+  node.providerRequestTotals = normalizeProviderRequestTotals((cfg as any)?.provider_request_totals)
 }
 
 export function mergeNodeConfigFields(options: {
@@ -228,7 +270,23 @@ function hasOwn(value: object, key: string) {
 }
 
 function normalizeConfigList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map((item: unknown) => String(item)) : []
+  if (!Array.isArray(value)) return []
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const text = item.trim()
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    result.push(text)
+  }
+  return result
+}
+
+function normalizeNonNegativeInt(value: unknown) {
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue)) return undefined
+  return Math.max(0, Math.round(numberValue))
 }
 
 export function previewMessage(value: string | null) {
@@ -290,7 +348,7 @@ export function buildBoardGraphConfig(options: {
       name: node.name,
       input_num: normalizePortCount(node.inputNum, 1),
       output_num: normalizePortCount(node.outputNum, 1),
-      ui: { x: node.ui.x, y: node.ui.y },
+      ui: sanitizeBoardPoint(node.ui),
       providerId: node.providerId,
       mode: node.mode,
       web_search: node.webSearch,

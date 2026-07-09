@@ -281,9 +281,9 @@ function summarizeDependencies(value: unknown) {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
+  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.72));
   padding: 8px;
   width: 100%;
   min-width: 0;
@@ -295,7 +295,7 @@ function summarizeDependencies(value: unknown) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: rgba(148, 163, 184, 0.9);
+  color: var(--theme-panel-node-side-editor-text-secondary, rgba(148, 163, 184, 0.9));
   font-size: 11px;
   line-height: 1.2;
 }
@@ -306,7 +306,7 @@ function summarizeDependencies(value: unknown) {
 }
 
 .multi-select-group-heading {
-  color: #e2e8f0;
+  color: var(--theme-panel-node-side-editor-text-primary, #e2e8f0);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0;
@@ -353,8 +353,8 @@ function summarizeDependencies(value: unknown) {
 
 .multi-select-empty {
   font-size: 12px;
-  color: rgba(148, 163, 184, 0.78);
-  border: 1px dashed rgba(148, 163, 184, 0.2);
+  color: var(--theme-panel-node-side-editor-text-secondary, rgba(148, 163, 184, 0.78));
+  border: 1px dashed var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.2));
   border-radius: 8px;
   padding: 10px;
 }

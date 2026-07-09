@@ -24,7 +24,7 @@ def _write_skill(root, name, description="Demo skill", body="Use this skill.", v
 
 
 def test_skill_name_list_trims_deduplicates_and_rejects_loose_shapes():
-    assert SKILL_NAME_LIST.parse([" demo ", "", "DEMO", "other"]) == ["demo", "other"]
+    assert SKILL_NAME_LIST.parse([" demo ", "", "DEMO", "other"]) == ["demo", "DEMO", "other"]
     assert SKILL_NAME_LIST.parse(["browser/control", "browser\\control"]) == ["browser/control"]
 
     with pytest.raises(SkillLoadError):
@@ -79,7 +79,7 @@ def test_load_node_skills_reads_agent_yaml_mcp_dependencies(tmp_path):
                 "    - type: mcp",
                 "      value: openaiDeveloperDocs",
                 "      description: OpenAI Developer Docs MCP server",
-                "      transport: streamable_http",
+                "      transport: streamable-http",
                 "      url: https://developers.openai.com/mcp",
             ]
         ),

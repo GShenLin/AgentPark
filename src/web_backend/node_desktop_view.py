@@ -10,7 +10,6 @@ from typing import Any
 from src.file_transaction import atomic_write_text
 
 from .domain_base import DomainBase
-from .mobile_api import COMPANION_GRAPH_ID, COMPANION_NODE_ID
 from .node_config_errors import NodeConfigReadError
 from .node_config_service import node_config_service
 from .node_desktop_pet_launcher import launch_node_desktop_pet_process
@@ -77,8 +76,6 @@ class NodeDesktopViewDomain(DomainBase):
         graphs = self.core.graph_api.list_graphs().get("graphs")
         if not isinstance(graphs, list):
             raise HTTPException(status_code=500, detail="invalid graph list response")
-        if safe_graph_id == COMPANION_GRAPH_ID:
-            return safe_graph_id
         if not any(isinstance(item, dict) and item.get("id") == safe_graph_id for item in graphs):
             raise HTTPException(status_code=404, detail="graph not found")
         return safe_graph_id
@@ -88,11 +85,6 @@ class NodeDesktopViewDomain(DomainBase):
         if not raw:
             raise HTTPException(status_code=400, detail="node_id is required")
         safe_node_id = self.graph_runtime._sanitize_node_id(raw)
-        if graph_id == COMPANION_GRAPH_ID and safe_node_id == COMPANION_NODE_ID:
-            config_path = self.core.mobile_api._companion_config_path()
-            if not os.path.exists(config_path):
-                raise HTTPException(status_code=404, detail="companion node not found")
-            return safe_node_id
         try:
             resolved_node_id = self.graph_runtime._resolve_existing_node_id(graph_id, safe_node_id)
         except HTTPException:
@@ -105,8 +97,6 @@ class NodeDesktopViewDomain(DomainBase):
         return resolved_node_id
 
     def _node_config_path(self, graph_id: str, node_id: str) -> str:
-        if graph_id == COMPANION_GRAPH_ID and node_id == COMPANION_NODE_ID:
-            return self.core.mobile_api._companion_config_path()
         return self.graph_runtime._node_config_path(node_id, graph_id)
 
     def _read_node_snapshot(self, graph_id: str, node_id: str) -> dict[str, Any]:
@@ -142,39 +132,42 @@ class NodeDesktopViewDomain(DomainBase):
             raise HTTPException(status_code=400, detail=f"working_path directory does not exist: {path}")
         return path
 
-    def _normalize_position(self, value: object) -> dict[str, Any] | None:
+    def _validate_position(self, value: object) -> dict[str, Any] | None:
         if value is None:
             return None
         if not isinstance(value, dict):
             raise HTTPException(status_code=400, detail="position must be an object")
         display_id = str(value.get("display_id") or "").strip()
-        try:
-            x = int(value.get("x"))
-            y = int(value.get("y"))
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail="position.x and position.y must be integers") from exc
+        x = value.get("x")
+        y = value.get("y")
+        if isinstance(x, bool) or isinstance(y, bool) or not isinstance(x, int) or not isinstance(y, int):
+            raise HTTPException(status_code=400, detail="position.x and position.y must be integers")
         result: dict[str, Any] = {"x": x, "y": y}
         if display_id:
             result["display_id"] = display_id
         return result
 
-    def _normalize_panel_size(self, value: object) -> dict[str, int] | None:
+    def _validate_panel_size(self, value: object) -> dict[str, int] | None:
         if value is None:
             return None
         if not isinstance(value, dict):
             raise HTTPException(status_code=400, detail="panel_size must be an object")
-        try:
-            width = int(value.get("width"))
-            height = int(value.get("height"))
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail="panel_size.width and panel_size.height must be integers") from exc
+        width = value.get("width")
+        height = value.get("height")
+        if (
+            isinstance(width, bool)
+            or isinstance(height, bool)
+            or not isinstance(width, int)
+            or not isinstance(height, int)
+        ):
+            raise HTTPException(status_code=400, detail="panel_size.width and panel_size.height must be integers")
         if width < MIN_PANEL_SIZE["width"]:
             raise HTTPException(status_code=400, detail="panel_size.width is below the supported minimum")
         if height < MIN_PANEL_SIZE["height"]:
             raise HTTPException(status_code=400, detail="panel_size.height is below the supported minimum")
         return {"width": width, "height": height}
 
-    def _normalize_bool(self, payload: dict[str, Any], key: str, default: bool) -> bool:
+    def _validate_bool(self, payload: dict[str, Any], key: str, default: bool) -> bool:
         value = payload.get(key)
         if value is None:
             return default
@@ -182,7 +175,7 @@ class NodeDesktopViewDomain(DomainBase):
             raise HTTPException(status_code=400, detail=f"{key} must be boolean")
         return value
 
-    def _normalize_avatar_style(self, value: object) -> str:
+    def _validate_avatar_style(self, value: object) -> str:
         if value is not None and not isinstance(value, str):
             raise HTTPException(status_code=400, detail="avatar_style must be string")
         avatar_style = str(value or "").strip()
@@ -243,8 +236,8 @@ class NodeDesktopViewDomain(DomainBase):
             raise HTTPException(status_code=400, detail="payload must be object")
         graph_id = self._require_graph_id(payload.get("graph_id"))
         node_id = self._require_node_id(graph_id, payload.get("node_id"))
-        position = self._normalize_position(payload.get("position"))
-        panel_size = self._normalize_panel_size(payload.get("panel_size")) if "panel_size" in payload else None
+        position = self._validate_position(payload.get("position"))
+        panel_size = self._validate_panel_size(payload.get("panel_size")) if "panel_size" in payload else None
         now = self._now()
         view_id = self._view_id(graph_id, node_id)
 
@@ -266,8 +259,8 @@ class NodeDesktopViewDomain(DomainBase):
             existing["view_id"] = view_id
             existing["graph_id"] = graph_id
             existing["node_id"] = node_id
-            existing["visible"] = self._normalize_bool(payload, "visible", True)
-            existing["pinned"] = self._normalize_bool(payload, "pinned", False)
+            existing["visible"] = self._validate_bool(payload, "visible", True)
+            existing["pinned"] = self._validate_bool(payload, "pinned", False)
             if position is not None:
                 existing["position"] = position
             if "panel_size" in payload:
@@ -276,7 +269,7 @@ class NodeDesktopViewDomain(DomainBase):
                 else:
                     existing["panel_size"] = panel_size
             if "avatar_style" in payload:
-                existing["avatar_style"] = self._normalize_avatar_style(payload.get("avatar_style"))
+                existing["avatar_style"] = self._validate_avatar_style(payload.get("avatar_style"))
             existing["updated_at"] = now
             existing["last_invoked_at"] = now
             store["views"] = views
@@ -380,17 +373,17 @@ class NodeDesktopViewDomain(DomainBase):
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="payload must be object")
         position_supplied = "position" in payload
-        position = self._normalize_position(payload.get("position")) if position_supplied else None
+        position = self._validate_position(payload.get("position")) if position_supplied else None
         panel_size_supplied = "panel_size" in payload
-        panel_size = self._normalize_panel_size(payload.get("panel_size")) if panel_size_supplied else None
+        panel_size = self._validate_panel_size(payload.get("panel_size")) if panel_size_supplied else None
         now = self._now()
         with self._lock:
             store = self._read_store_unlocked()
             view = self._require_view_unlocked(store, view_id)
             if "visible" in payload:
-                view["visible"] = self._normalize_bool(payload, "visible", bool(view.get("visible", True)))
+                view["visible"] = self._validate_bool(payload, "visible", bool(view.get("visible", True)))
             if "pinned" in payload:
-                view["pinned"] = self._normalize_bool(payload, "pinned", bool(view.get("pinned", False)))
+                view["pinned"] = self._validate_bool(payload, "pinned", bool(view.get("pinned", False)))
             if position_supplied:
                 if position is None:
                     view.pop("position", None)
@@ -402,7 +395,7 @@ class NodeDesktopViewDomain(DomainBase):
                 else:
                     view["panel_size"] = panel_size
             if "avatar_style" in payload:
-                view["avatar_style"] = self._normalize_avatar_style(payload.get("avatar_style"))
+                view["avatar_style"] = self._validate_avatar_style(payload.get("avatar_style"))
             view["updated_at"] = now
             self._write_store_unlocked(store)
             projected = self._attach_runtime_projection(view)

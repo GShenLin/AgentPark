@@ -33,10 +33,10 @@ def list_capabilities(args) -> dict[str, Any]:
 
 def mutate_capability(args) -> dict[str, Any]:
     path = node_config_path(args.graph, args.node)
-    kind = str(args.kind or "").strip().lower()
+    kind = str(args.kind or "").strip()
     if kind not in FIELD_BY_KIND:
         raise ValueError("kind must be one of: tool, mcp, skill, plugin")
-    names = [str(item).strip() for item in (args.name or []) if str(item).strip()]
+    names = _requested_names(args.name or [])
     if not names:
         raise ValueError("--name is required")
 
@@ -46,14 +46,16 @@ def mutate_capability(args) -> dict[str, Any]:
 
     def mutate(config: dict[str, Any]) -> None:
         selected = _current_values(config.get(field))
-        selected_keyed = {item.casefold(): item for item in selected}
+        selected_set = set(selected)
         if args.capability_action == "enable":
             for name in names:
-                selected_keyed.setdefault(name.casefold(), name)
-            config[field] = list(selected_keyed.values())
+                if name not in selected_set:
+                    selected.append(name)
+                    selected_set.add(name)
+            config[field] = selected
         elif args.capability_action == "disable":
-            remove = {name.casefold() for name in names}
-            config[field] = [item for item in selected if item.casefold() not in remove]
+            remove = set(names)
+            config[field] = [item for item in selected if item not in remove]
         else:
             raise ValueError(f"unsupported capability action: {args.capability_action}")
 
@@ -61,8 +63,26 @@ def mutate_capability(args) -> dict[str, Any]:
     return {"status": "success", "action": args.capability_action, "kind": kind, "names": names, **result.to_payload()}
 
 
+def _requested_names(values: object) -> list[str]:
+    if not isinstance(values, list):
+        raise ValueError("--name must be provided as repeated string values")
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if not isinstance(item, str):
+            raise ValueError("--name values must be strings")
+        text = item.strip()
+        if not text:
+            raise ValueError("--name values must be non-empty strings")
+        if text in seen:
+            raise ValueError(f"duplicate --name value: {text}")
+        seen.add(text)
+        result.append(text)
+    return result
+
+
 def _current_values(value: object) -> list[str]:
-    if value in (None, ""):
+    if value is None:
         return []
     if not isinstance(value, list):
         raise ValueError("capability field must be a list")
@@ -72,8 +92,10 @@ def _current_values(value: object) -> list[str]:
         if not isinstance(item, str):
             raise ValueError("capability field must contain only strings")
         text = item.strip()
-        key = text.casefold()
-        if text and key not in seen:
-            seen.add(key)
-            result.append(text)
+        if not text:
+            raise ValueError("capability field must contain only non-empty strings")
+        if text in seen:
+            raise ValueError(f"capability field contains duplicate value: {text}")
+        seen.add(text)
+        result.append(text)
     return result

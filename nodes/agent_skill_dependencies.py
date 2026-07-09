@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any
 
 import yaml
 
@@ -104,7 +103,7 @@ def _read_dependency_object(payload: dict, path: str) -> SkillDependencySet:
     for index, item in enumerate(tools):
         if not isinstance(item, dict):
             raise SkillDependencyLoadError(f"dependencies.tools[{index}] must be an object: {path}")
-        dependency_type = str(item.get("type") or "").strip().lower()
+        dependency_type = str(item.get("type") or "").strip()
         if dependency_type != _MCP_DEPENDENCY_TYPE:
             continue
         name = str(item.get("value") or "").strip()
@@ -140,14 +139,16 @@ def _read_mcp_dependency_config(item: dict, path: str, index: int) -> dict:
     if "description" in item and "label" not in result:
         result["label"] = str(item.get("description") or "").strip()
     if "transport" in result:
-        result["transport"] = _normalize_transport(result["transport"])
+        result["transport"] = _validate_transport(result["transport"])
     return result
 
 
-def _normalize_transport(value: Any) -> str:
-    text = str(value or "").strip().lower().replace("_", "-")
-    if text == "http":
-        return "streamable-http"
+def _validate_transport(value: object) -> str:
+    if not isinstance(value, str):
+        raise SkillDependencyLoadError("MCP dependency transport must be a string")
+    text = value.strip()
+    if text not in {"stdio", "sse", "streamable-http"}:
+        raise SkillDependencyLoadError(f"MCP dependency transport is unsupported: {text}")
     return text
 
 

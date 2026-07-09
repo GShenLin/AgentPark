@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 
-PLUGIN_MANIFEST_FILENAMES = ("agentpark.plugin.json", "openclaw.plugin.json", "plugin.json")
+PLUGIN_MANIFEST_FILENAMES = ("agentpark.plugin.json", "plugin.json")
 
 
 @dataclass(frozen=True)
@@ -43,15 +43,10 @@ def first_manifest_filename(filenames: Iterable[str]) -> str:
     return ""
 
 
-def read_plugin_manifest(path: str, *, fallback_id: str = "") -> PluginManifest:
+def read_plugin_manifest(path: str) -> PluginManifest:
     raw = _read_manifest_payload(path)
-    basename = os.path.basename(path)
-    if basename == "openclaw.plugin.json":
-        raw = _adapt_openclaw_manifest(raw)
-        source_format = "openclaw"
-    else:
-        source_format = "agentpark"
-    return _normalize_manifest(raw, path=path, fallback_id=fallback_id, source_format=source_format)
+    source_format = "agentpark"
+    return _validate_manifest(raw, path=path, source_format=source_format)
 
 
 def _read_manifest_payload(path: str) -> dict[str, Any]:
@@ -69,27 +64,13 @@ def _read_manifest_payload(path: str) -> dict[str, Any]:
     return payload
 
 
-def _adapt_openclaw_manifest(payload: dict[str, Any]) -> dict[str, Any]:
-    adapted = dict(payload)
-    contracts = payload.get("contracts")
-    if isinstance(contracts, dict) and "tools" not in adapted and isinstance(contracts.get("tools"), list):
-        adapted["tools"] = contracts.get("tools")
-    mcp = payload.get("mcp")
-    if isinstance(mcp, dict) and "mcpServers" not in adapted and "mcp_servers" not in adapted:
-        servers = mcp.get("servers")
-        if servers is not None:
-            adapted["mcpServers"] = servers
-    return adapted
-
-
-def _normalize_manifest(
+def _validate_manifest(
     payload: dict[str, Any],
     *,
     path: str,
-    fallback_id: str,
     source_format: str,
 ) -> PluginManifest:
-    plugin_id = _required_string(payload.get("id") or fallback_id, "id", path)
+    plugin_id = _required_string(payload.get("id"), "id", path)
     name = _optional_string(payload.get("name"), "name", path) or plugin_id
     description = _optional_string(payload.get("description"), "description", path) or ""
     version = _optional_string(payload.get("version"), "version", path) or ""
@@ -97,8 +78,6 @@ def _normalize_manifest(
     skills = _string_tuple(payload.get("skills"), "skills", path)
     mcp_servers, mcp_server_configs = _mcp_values(payload, path)
     config_schema = payload.get("configSchema")
-    if config_schema is None:
-        config_schema = payload.get("config_schema")
     if config_schema is None:
         config_schema = {}
     if not isinstance(config_schema, dict):
@@ -119,8 +98,6 @@ def _normalize_manifest(
 
 def _mcp_values(payload: dict[str, Any], path: str) -> tuple[tuple[str, ...], dict[str, dict]]:
     value = payload.get("mcpServers")
-    if value is None:
-        value = payload.get("mcp_servers")
     if value is None:
         return (), {}
     if isinstance(value, list):

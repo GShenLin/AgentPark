@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
+
 
 MAX_RUNTIME_EVENTS = 20
 MAX_RUNTIME_TOOL_CALLS = 20
@@ -195,7 +197,7 @@ def upsert_runtime_tool_call(payload: dict[str, Any], event: dict[str, Any]) -> 
 def append_provider_request_summary(payload: dict[str, Any], event: dict[str, Any]) -> None:
     if str(event.get("type") or "").strip() != "runtime_notice":
         return
-    if str(event.get("stage") or "").strip() != "openai_responses_request_summary":
+    if str(event.get("stage") or "").strip() != PROVIDER_REQUEST_SUMMARY_STAGE:
         return
     message = str(event.get("message") or "").strip()
     if not message:
@@ -206,11 +208,40 @@ def append_provider_request_summary(payload: dict[str, Any], event: dict[str, An
         return
     if not isinstance(summary, dict):
         return
+    sanitized = _sanitize_provider_request_summary(summary)
+    update_provider_request_totals(payload, sanitized)
     summaries = payload.get("provider_request_summaries")
     if not isinstance(summaries, list):
         summaries = []
-    summaries.append(_sanitize_provider_request_summary(summary))
+    summaries.append(sanitized)
     payload["provider_request_summaries"] = summaries[-MAX_PROVIDER_REQUEST_SUMMARIES:]
+
+
+def update_provider_request_totals(payload: dict[str, Any], summary: dict[str, Any]) -> None:
+    totals = payload.get("provider_request_totals")
+    if not isinstance(totals, dict):
+        totals = {
+            "request_count": 0,
+            "approx_input_chars": 0,
+            "approx_input_tokens": 0,
+            "tool_call_chars": 0,
+            "tool_result_chars": 0,
+        }
+    totals["request_count"] = _normalize_non_negative_int(totals.get("request_count")) or 0
+    totals["approx_input_chars"] = _normalize_non_negative_int(totals.get("approx_input_chars")) or 0
+    totals["approx_input_tokens"] = _normalize_non_negative_int(totals.get("approx_input_tokens")) or 0
+    totals["tool_call_chars"] = _normalize_non_negative_int(totals.get("tool_call_chars")) or 0
+    totals["tool_result_chars"] = _normalize_non_negative_int(totals.get("tool_result_chars")) or 0
+
+    totals["request_count"] += 1
+    totals["approx_input_chars"] += _summary_chars(summary, "approx_input_chars")
+    totals["approx_input_tokens"] += _summary_chars(summary, "approx_input_tokens")
+    totals["tool_call_chars"] += _summary_chars(summary, "tool_call_chars_total")
+    totals["tool_result_chars"] += _summary_chars(summary, "tool_result_chars_total")
+    request_index = _normalize_non_negative_int(summary.get("request_index"))
+    if request_index is not None:
+        totals["last_request_index"] = request_index
+    payload["provider_request_totals"] = totals
 
 
 def _copy_event_timestamps(normalized: dict[str, Any], event: dict[str, Any]) -> None:
@@ -237,11 +268,13 @@ def clear_runtime_event(payload: dict[str, Any], *, reset_history: bool = False)
         payload.pop("runtime_events", None)
         payload.pop("runtime_tool_calls", None)
         payload.pop("provider_request_summaries", None)
+        payload.pop("provider_request_totals", None)
 
 
 def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "request_index",
+        "request_api",
         "responses_mode",
         "requested_responses_mode",
         "instructions_present",
@@ -260,7 +293,10 @@ def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any
         "project_instructions_context_chars",
         "input_items",
         "largest_input_items",
+        "tool_call_chars_by_call",
+        "tool_call_chars_total",
         "tool_result_chars_by_call",
+        "tool_result_chars_total",
         "largest_tool_result",
         "tools_included",
         "tools_included_count",
@@ -274,8 +310,13 @@ def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any
         "payload_log_error",
     }
     sanitized = {key: summary.get(key) for key in allowed if key in summary}
-    for key in ("input_items", "largest_input_items", "tool_result_chars_by_call", "tools_included"):
+    for key in ("input_items", "largest_input_items", "tool_call_chars_by_call", "tool_result_chars_by_call", "tools_included"):
         value = sanitized.get(key)
         if isinstance(value, list):
             sanitized[key] = value[:20]
     return sanitized
+
+
+def _summary_chars(summary: dict[str, Any], key: str) -> int:
+    value = _normalize_non_negative_int(summary.get(key))
+    return value if value is not None else 0

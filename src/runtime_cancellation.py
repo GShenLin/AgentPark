@@ -35,7 +35,7 @@ def raise_if_cancel_requested(cancel_source: Any) -> None:
 def cancel_source_from_agent(agent: object | None) -> Any:
     if agent is None:
         return None
-    for name in ("cancel_event", "cancellation_event", "cancel_check"):
+    for name in ("cancel_event", "cancel_check"):
         value = getattr(agent, name, None)
         if value is not None:
             return value

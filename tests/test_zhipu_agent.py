@@ -42,11 +42,13 @@ def _make_zhipu_agent():
 
 def test_zhipu_send_uses_chat_completions_payload_and_endpoint():
     agent = _make_zhipu_agent()
+    events = []
+    agent.tool_event_callback = events.append
     agent.config.update(
         {
             "thinking": "enabled",
-            "clearThinking": "false",
-            "maxTokens": "128",
+            "clearThinking": False,
+            "maxTokens": 128,
             "temperature": 0.2,
             "top_p": 0.9,
             "stop": ["END"],
@@ -99,6 +101,17 @@ def test_zhipu_send_uses_chat_completions_payload_and_endpoint():
     assert payload["tool_choice"] == "auto"
     assert payload["request_id"] == "request-123"
     assert payload["user_id"] == "user-123"
+    summaries = [
+        json.loads(event["message"])
+        for event in events
+        if event.get("type") == "runtime_notice" and event.get("stage") == "provider_request_summary"
+    ]
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["request_api"] == "chat_completions"
+    assert summary["input_item_count"] == 1
+    assert summary["tools_included"] == ["echo_tool"]
+    assert summary["stream"] is True
 
 
 def test_zhipu_tool_call_continuation_uses_chat_messages():

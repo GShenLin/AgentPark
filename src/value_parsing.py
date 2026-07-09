@@ -6,8 +6,8 @@ def parse_bool_value(
     value: object,
     default: bool = False,
     *,
-    true_values: tuple[str, ...] = ("1", "true", "yes", "y", "on"),
-    false_values: tuple[str, ...] = ("0", "false", "no", "n", "off"),
+    true_values: tuple[str, ...] = ("true",),
+    false_values: tuple[str, ...] = ("false",),
 ) -> bool:
     if isinstance(value, bool):
         return value
@@ -50,8 +50,8 @@ def parse_optional_bool_value(
     name: str,
     value: object,
     *,
-    true_values: tuple[str, ...] = ("1", "true", "yes", "y", "on", "enabled", "enable"),
-    false_values: tuple[str, ...] = ("0", "false", "no", "n", "off", "disabled", "disable"),
+    true_values: tuple[str, ...] = ("true",),
+    false_values: tuple[str, ...] = ("false",),
 ) -> bool | None:
     if value is None or value == "":
         return None

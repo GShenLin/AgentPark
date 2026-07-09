@@ -43,6 +43,46 @@ def test_claude_agent_uses_native_messages_payload_without_responses_fields():
     assert "include" not in captured
 
 
+def test_claude_agent_emits_provider_request_summary_for_messages_api():
+    import json
+
+    from src.providers.curl_transport import CurlResponse
+
+    agent = _build_agent()
+    agent.messages = [
+        {"role": "system", "content": "<environment_context>env</environment_context>"},
+        {"role": "user", "content": "hello"},
+    ]
+    events = []
+    captured = {}
+    agent.tool_event_callback = events.append
+
+    def fake_curl_post_once_raw(**kwargs):
+        captured["payload"] = json.loads(kwargs["payload_json"])
+        return CurlResponse(
+            body=json.dumps({"content": [{"type": "text", "text": "ok"}]}, ensure_ascii=False),
+            status_code=200,
+        )
+
+    agent._curl_post_once_raw = fake_curl_post_once_raw
+
+    assert agent.Send(web_search="enabled", thinking="disabled", reasoning_effort="") == "ok"
+
+    summaries = [
+        json.loads(event["message"])
+        for event in events
+        if event.get("type") == "runtime_notice" and event.get("stage") == "provider_request_summary"
+    ]
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["request_api"] == "claude_messages"
+    assert summary["input_item_count"] == 2
+    assert summary["environment_context_chars"] > 0
+    assert summary["tools_included"] == ["web_search"]
+    assert summary["stream"] is False
+    assert captured["payload"]["tools"] == [{"type": "web_search_20260318", "name": "web_search"}]
+
+
 def test_claude_agent_maps_reasoning_effort_to_output_config():
     agent = _build_agent()
     captured = {}
@@ -300,4 +340,3 @@ def test_claude_agent_tool_call_preamble_emitted_once_when_not_streaming():
 
     assert result["type"] == "function_call"
     assert emitted == [("Let me check that file first.", "Let me check that file first.")]
-

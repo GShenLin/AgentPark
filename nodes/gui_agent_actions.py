@@ -89,9 +89,6 @@ def parse_action_args(action_text: str, width: int, height: int, coordinate_scal
     content = parse_single_quoted_arg(action, "content")
     if content:
         out["content"] = content
-    text_value = parse_single_quoted_arg(action, "text")
-    if text_value and "content" not in out:
-        out["content"] = text_value
     direction = parse_single_quoted_arg(action, "direction")
     if direction:
         out["direction"] = direction.lower().strip()

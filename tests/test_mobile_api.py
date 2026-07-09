@@ -132,7 +132,7 @@ def test_mobile_api_rejects_unknown_pc():
     assert response.status_code == 404
 
 
-def test_mobile_live_uses_directory_node_id_when_config_node_id_case_differs(monkeypatch, tmp_path):
+def test_mobile_live_keeps_exact_config_node_id_when_config_node_id_case_differs(monkeypatch, tmp_path):
     import src.web_backend as backend
     import src.web_backend.mobile_api as mobile_api_module
     import src.web_backend.node_runtime as node_runtime_module
@@ -181,8 +181,8 @@ def test_mobile_live_uses_directory_node_id_when_config_node_id_case_differs(mon
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
 
-        facade.core.node_live_outputs.update("default", "agent1", "partial stream")
-        facade.core.node_live_outputs.update_thinking("default", "agent1", "checking sources")
+        facade.core.node_live_outputs.update("default", "Agent1", "partial stream")
+        facade.core.node_live_outputs.update_thinking("default", "Agent1", "checking sources")
 
         nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
         assert nodes.status_code == 200
@@ -192,7 +192,7 @@ def test_mobile_live_uses_directory_node_id_when_config_node_id_case_differs(mon
 
         live = client.get("/api/nodes/instances/Agent1/live?graph_id=default")
         assert live.status_code == 200
-        assert live.json()["node_id"] == "agent1"
+        assert live.json()["node_id"] == "Agent1"
         assert live.json()["live_message"] == "partial stream"
         assert live.json()["thinking_message"] == "checking sources"
 
@@ -289,11 +289,14 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
 
     runtime_root = str(tmp_path / "AgentPark")
     resource_root = backend._get_runtime_root()
-    companion_dir = os.path.join(runtime_root, "memories", "companion")
+    companion_graph_dir = os.path.join(runtime_root, "memories", "Companion")
+    companion_dir = os.path.join(companion_graph_dir, "Companion")
     os.makedirs(companion_dir, exist_ok=True)
+    with open(os.path.join(companion_graph_dir, "config.json"), "w", encoding="utf-8") as f:
+        f.write('{"id":"Companion","name":"Companion","output_routes":{}}')
     with open(os.path.join(companion_dir, "config.json"), "w", encoding="utf-8") as f:
         f.write(
-            '{"graph_id":"companion","node_id":"companion","type_id":"agent_node","name":"Companion"}'
+            '{"graph_id":"Companion","node_id":"Companion","type_id":"agent_node","name":"Companion"}'
         )
 
     original_backend_runtime_root = backend._get_runtime_root
@@ -322,17 +325,16 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
         graphs = client.get("/api/mobile/pcs/local/graphs")
         assert graphs.status_code == 200
         graph_items = graphs.json()["instances"][0]["graphs"]
-        companion_graph = next(item for item in graph_items if item["id"] == "companion")
+        companion_graph = next(item for item in graph_items if item["id"] == "Companion")
         assert companion_graph["readonly"] is True
         assert companion_graph["display_name"] == "AgentPark.Companion"
 
-        nodes = client.get("/api/mobile/pcs/local/graphs/companion/nodes")
+        nodes = client.get("/api/mobile/pcs/local/graphs/Companion/nodes")
         assert nodes.status_code == 200
         companion_node = nodes.json()["nodes"][0]
-        assert companion_node["id"] == "companion"
-        assert companion_node["readonly"] is True
+        assert companion_node["id"] == "Companion"
 
-        conversation = client.get("/api/mobile/pcs/local/graphs/companion/nodes/companion/conversation")
+        conversation = client.get("/api/mobile/pcs/local/graphs/Companion/nodes/Companion/conversation")
         assert conversation.status_code == 200
         assert conversation.json()["messages"] == []
     finally:

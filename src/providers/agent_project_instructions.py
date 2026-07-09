@@ -132,8 +132,6 @@ def _project_instructions_enabled(agent: object) -> bool:
     config = getattr(agent, "config", None)
     if isinstance(config, dict) and config.get("projectInstructions") is False:
         return False
-    if isinstance(config, dict) and config.get("project_instructions") is False:
-        return False
     runtime_context = get_agent_runtime_context(agent)
     return bool(
         str(runtime_context.workspace_root or "").strip()
@@ -191,8 +189,6 @@ def _candidate_filenames(agent: object = None) -> tuple[str, ...]:
     candidates = []
     if isinstance(config, dict):
         raw = config.get("projectDocFallbackFilenames")
-        if raw is None:
-            raw = config.get("project_doc_fallback_filenames")
         if isinstance(raw, list):
             candidates = [str(item).strip() for item in raw if str(item or "").strip()]
     for candidate in candidates:
@@ -207,8 +203,6 @@ def _project_root_markers(agent: object = None) -> tuple[str, ...]:
         return DEFAULT_PROJECT_ROOT_MARKERS
     raw = config.get("projectRootMarkers")
     if raw is None:
-        raw = config.get("project_root_markers")
-    if raw is None:
         return DEFAULT_PROJECT_ROOT_MARKERS
     if not isinstance(raw, list):
         return DEFAULT_PROJECT_ROOT_MARKERS
@@ -218,8 +212,6 @@ def _project_root_markers(agent: object = None) -> tuple[str, ...]:
 def _project_doc_max_bytes(agent: object) -> int:
     config = getattr(agent, "config", None)
     raw = config.get("projectDocMaxBytes") if isinstance(config, dict) else None
-    if raw is None and isinstance(config, dict):
-        raw = config.get("project_doc_max_bytes")
     try:
         value = int(raw)
     except (TypeError, ValueError):

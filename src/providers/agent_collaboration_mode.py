@@ -15,7 +15,6 @@ def resolve_agent_collaboration_mode(agent: object = None, config: dict[str, Any
     runtime_context = get_agent_runtime_context(agent)
     value = _first_value(
         runtime_context.collaboration_mode,
-        (config or {}).get("collaborationMode") if isinstance(config, dict) else None,
         (config or {}).get("collaboration_mode") if isinstance(config, dict) else None,
     )
     text = str(value or "").strip().lower()

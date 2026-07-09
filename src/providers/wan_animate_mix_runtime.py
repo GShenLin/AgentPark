@@ -18,11 +18,7 @@ class WanAnimateMixRuntime(HostBoundService):
         return base_url
 
     def _build_task_url(self, task_id: str) -> str:
-        override = str(
-            self.config.get("taskStatusBaseUrl")
-            or self.config.get("task_status_base_url")
-            or ""
-        ).strip().rstrip("/")
+        override = str(self.config.get("taskStatusBaseUrl") or "").strip().rstrip("/")
         if override:
             return f"{override}/{task_id}"
 
@@ -33,14 +29,7 @@ class WanAnimateMixRuntime(HostBoundService):
         return f"{parsed.scheme}://{parsed.netloc}/api/v1/tasks/{task_id}"
 
     def _resolve_mode(self, value):
-        mode = str(
-            value
-            or self.config.get("wanAnimateMixMode")
-            or self.config.get("wan_animate_mix_mode")
-            or self.config.get("videoChangePersonMode")
-            or self.config.get("video_change_person_mode")
-            or "wan-std"
-        ).strip()
+        mode = str(value or self.config.get("wanAnimateMixMode") or "wan-std").strip()
         if mode not in {"wan-std", "wan-pro"}:
             raise ValueError("mode must be either 'wan-std' or 'wan-pro'.")
         return mode
@@ -138,7 +127,7 @@ class WanAnimateMixRuntime(HostBoundService):
             "check_image",
             check_image
             if check_image is not None
-            else self.config.get("wanAnimateMixCheckImage", self.config.get("videoChangePersonCheckImage")),
+            else self.config.get("wanAnimateMixCheckImage"),
         )
         if resolved_check_image is not None:
             payload["parameters"]["check_image"] = resolved_check_image
@@ -166,10 +155,7 @@ class WanAnimateMixRuntime(HostBoundService):
 
         poll_interval = parse_optional_float_value(
             "wanAnimateMixPollIntervalSec",
-            self.config.get(
-                "wanAnimateMixPollIntervalSec",
-                self.config.get("videoChangePersonPollIntervalSec", 15),
-            ),
+            self.config.get("wanAnimateMixPollIntervalSec", 15),
             minimum_exclusive=0,
         )
         if poll_interval is None:
@@ -177,10 +163,7 @@ class WanAnimateMixRuntime(HostBoundService):
 
         max_wait = parse_optional_float_value(
             "wanAnimateMixMaxWaitSec",
-            self.config.get(
-                "wanAnimateMixMaxWaitSec",
-                self.config.get("videoChangePersonMaxWaitSec", 900),
-            ),
+            self.config.get("wanAnimateMixMaxWaitSec", 900),
             minimum_exclusive=0,
         )
         if max_wait is None:

@@ -68,7 +68,6 @@ class BaseTool:
                                     if existing_func is None:
                                         self.tool_declarations.append(declaration)
                                     self.function_map[func_name] = func
-                                    self._register_tool_aliases(module, func_name, func)
                                 else:
                                     raise ToolLoadError(
                                         f"Tool declaration {tool_name}.{attr_name} points to non-callable "
@@ -119,23 +118,6 @@ class BaseTool:
                 f"Tool declaration {tool_name}.{declaration_name} uses invalid function name {func_name!r}. "
                 "Function names must match ^[a-zA-Z0-9_-]+$."
             )
-
-    def _register_tool_aliases(self, module, func_name, func):
-        aliases = getattr(module, "tool_function_aliases", None)
-        if not isinstance(aliases, dict):
-            return
-        raw_aliases = aliases.get(func_name)
-        if not isinstance(raw_aliases, (list, tuple, set)):
-            return
-        for alias in raw_aliases:
-            if isinstance(alias, str) and alias.strip():
-                alias_name = alias.strip()
-                existing_func = self.function_map.get(alias_name)
-                if existing_func is not None and existing_func is not func:
-                    raise ValueError(
-                        f"Tool function alias {alias_name!r} is registered by multiple callables."
-                    )
-                self.function_map[alias_name] = func
 
     def execute_tool(self, name, args):
         return self.execute_tool_result(name, args).model_output()

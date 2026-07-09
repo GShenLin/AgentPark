@@ -299,7 +299,7 @@ def _tool_result_text(result: Any) -> str:
 
 
 def _mcp_tool_result_max_chars(config: dict[str, Any]) -> int:
-    value = (config or {}).get("toolResultMaxChars", (config or {}).get("tool_result_max_chars", 50000))
+    value = (config or {}).get("toolResultMaxChars", 50000)
     if isinstance(value, bool):
         raise McpServerLoadError("MCP field toolResultMaxChars must be a positive integer")
     try:
@@ -385,14 +385,16 @@ def _tool_filter_keys(server_name: str, remote_tool_name: str, function_name: st
 
 
 def _transport_name(config: dict[str, Any]) -> str:
-    value = str(config.get("transport") or config.get("type") or "stdio").strip().lower().replace("_", "-")
-    if value == "http":
-        return "streamable-http"
-    return value
+    value = config.get("transport")
+    if value is None or value == "":
+        return "stdio"
+    if not isinstance(value, str):
+        raise McpServerLoadError("MCP server transport must be a string")
+    return value.strip()
 
 
 def _read_timeout(config: dict[str, Any]) -> timedelta | None:
-    value = config.get("readTimeoutSeconds", config.get("read_timeout_seconds"))
+    value = config.get("readTimeoutSeconds")
     if value in (None, ""):
         return None
     return timedelta(seconds=_positive_float(value, "readTimeoutSeconds"))

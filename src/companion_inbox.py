@@ -6,13 +6,13 @@ import uuid
 from typing import Any
 
 from src.companion_notice_settings import companion_node_review_enabled
+from src.companion_paths import companion_node_config_path
 from src.file_transaction import append_text
 from src.file_transaction import atomic_write_text
 from src.file_transaction import run_with_interprocess_lock
 from src.message_protocol import now_text
 
 
-COMPANION_GRAPH_ID = "companion"
 COMPANION_INBOX_FILENAME = "inbox.jsonl"
 NOTICE_TYPES = {"node_review_notice", "tool_failure_memory_notice"}
 
@@ -20,7 +20,7 @@ NOTICE_TYPES = {"node_review_notice", "tool_failure_memory_notice"}
 def companion_config_path() -> str:
     from src.web_backend import runtime_paths
 
-    return os.path.join(runtime_paths._get_graphs_dir(), COMPANION_GRAPH_ID, "config.json")
+    return companion_node_config_path(runtime_paths._get_graphs_dir())
 
 
 def companion_inbox_path(config_path: str = "") -> str:
@@ -122,7 +122,6 @@ def _format_node_review_notice(payload: dict[str, Any]) -> str:
     memory_path = str(report.get("memory_path") or "").strip()
     messages_path = str(report.get("messages_path") or "").strip()
     runtime_events_path = str(report.get("runtime_events_path") or "").strip()
-    report_path = str(report.get("report_path") or "").strip()
     operational_memory_path = str(memory.get("operational_memory_path") or "").strip()
     memory_summary = str(memory.get("summary") or "").strip()
     memory_summary_error = str(memory.get("summary_error") or "").strip()
@@ -132,7 +131,7 @@ def _format_node_review_notice(payload: dict[str, Any]) -> str:
     snapshot_chars = memory.get("snapshot_chars")
 
     lines = [
-        "A node run was persisted. Review the full persisted run and write a summary analysis report.",
+        "A node run was persisted.",
         f"Node: {graph_id}/{node_id}",
     ]
     if node_type_id:
@@ -155,8 +154,6 @@ def _format_node_review_notice(payload: dict[str, Any]) -> str:
         lines.append(f"Structured messages file: {messages_path}")
     if runtime_events_path:
         lines.append(f"Runtime events file: {runtime_events_path}")
-    if report_path:
-        lines.append(f"Write report to: {report_path}")
     if memory_summary_chars is not None:
         lines.append(f"Current operational memory summary chars: {memory_summary_chars}")
     if snapshot_chars is not None:
@@ -175,15 +172,15 @@ def _format_node_review_notice(payload: dict[str, Any]) -> str:
         lines.append(f"Output preview: {output_preview}")
     lines.extend(
         [
-            "Report scope:",
+            "Review scope:",
             "- Reconstruct the run from the persisted messages and runtime events, including tool calls, tool results, and final answer.",
             "- Judge whether the requested result appears achieved, partially achieved, blocked, or not achieved.",
             "- Analyze optimization space from environment engineering, project code quality, and final answer quality.",
-            "- If the persisted run reveals a reusable behavior correction for this exact node, update the operational memory file above instead of only writing a report.",
+            "- If the persisted run reveals a reusable behavior correction for this exact node, update the operational memory file above.",
             "- Keep operational memory entries short and scoped; they are summarized into future model input for this node.",
             "- Do not record one-off failures, transient network/provider problems, or broad advice that is not grounded in this persisted run.",
             "- Prefer concrete evidence and file paths over speculation. Keep suggestions scoped and actionable.",
-            "- Save the report as Markdown at the report path above. Include a concise verdict, evidence, tool-call review, completion assessment, improvement opportunities, and recommended next actions.",
+            "- Do not write a separate review report unless the user explicitly asks for one.",
         ]
     )
     return "\n".join(lines)

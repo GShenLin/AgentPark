@@ -8,7 +8,7 @@ PROVIDER_FEATURE_SCHEMA_VERSION = 1
 
 def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dict[str, Any]:
     config = provider_config if isinstance(provider_config, dict) else {}
-    provider_type = str(config.get("type") or "").strip().lower()
+    provider_type = str(config.get("type") or "").strip()
     if provider_type == "openai":
         responses_api = config.get("responsesApi") is True
         return _payload(

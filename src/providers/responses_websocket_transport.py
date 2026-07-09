@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from src.providers.openai_transport_errors import OpenAIHttpError, OpenAITransportError
+from src.providers.provider_pressure import acquire_provider_pressure
 
 
 class ResponsesWebSocketUnavailable(RuntimeError):
@@ -149,52 +150,53 @@ class ResponsesWebSocketTransportMixin:
             previous_request_payload=previous_request,
             previous_response=previous_response,
         )
-        connection = self._responses_websocket_connection(url=url, headers=headers, timeout_sec=timeout_sec)
-        try:
-            connection.send(json.dumps(ws_payload, ensure_ascii=False))
-        except Exception as exc:
-            self._close_responses_websocket()
-            raise ResponsesWebSocketUnavailable(f"failed to send websocket request: {exc}") from exc
-
-        self._emit_provider_runtime_notice(
-            message=json.dumps(
-                {
-                    "incremental": bool(incremental),
-                    "previous_response_id_present": bool(ws_payload.get("previous_response_id")),
-                    "input_item_count": len(ws_payload.get("input")) if isinstance(ws_payload.get("input"), list) else 0,
-                },
-                ensure_ascii=False,
-            ),
-            stage="openai_responses_websocket_request",
-        )
-        while True:
+        with acquire_provider_pressure(self):
+            connection = self._responses_websocket_connection(url=url, headers=headers, timeout_sec=timeout_sec)
             try:
-                text = parse_websocket_message(connection.recv(timeout=timeout_sec))
-            except TimeoutError as exc:
-                self._close_responses_websocket()
-                raise OpenAITransportError(f"websocket idle timeout after {timeout_sec}s") from exc
+                connection.send(json.dumps(ws_payload, ensure_ascii=False))
             except Exception as exc:
                 self._close_responses_websocket()
-                raise OpenAITransportError(f"websocket receive failed: {exc}") from exc
-            if not text:
-                continue
-            try:
-                parsed = json.loads(text)
-            except Exception:
-                parsed = None
-            if isinstance(parsed, dict):
-                error = websocket_error_message(parsed)
-                if error is not None:
-                    status_code, message = error
-                    raise OpenAIHttpError(status_code, message)
-                if str(parsed.get("type") or "").strip().lower() in {"response.completed", "response.done"}:
-                    response = parsed.get("response")
-                    if isinstance(response, dict):
-                        self._responses_ws_last_request_payload = json.loads(json.dumps(request_payload, ensure_ascii=False))
-                        self._responses_ws_last_response = json.loads(json.dumps(response, ensure_ascii=False))
-                    yield text
-                    return
-            yield text
+                raise ResponsesWebSocketUnavailable(f"failed to send websocket request: {exc}") from exc
+
+            self._emit_provider_runtime_notice(
+                message=json.dumps(
+                    {
+                        "incremental": bool(incremental),
+                        "previous_response_id_present": bool(ws_payload.get("previous_response_id")),
+                        "input_item_count": len(ws_payload.get("input")) if isinstance(ws_payload.get("input"), list) else 0,
+                    },
+                    ensure_ascii=False,
+                ),
+                stage="openai_responses_websocket_request",
+            )
+            while True:
+                try:
+                    text = parse_websocket_message(connection.recv(timeout=timeout_sec))
+                except TimeoutError as exc:
+                    self._close_responses_websocket()
+                    raise OpenAITransportError(f"websocket idle timeout after {timeout_sec}s") from exc
+                except Exception as exc:
+                    self._close_responses_websocket()
+                    raise OpenAITransportError(f"websocket receive failed: {exc}") from exc
+                if not text:
+                    continue
+                try:
+                    parsed = json.loads(text)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    error = websocket_error_message(parsed)
+                    if error is not None:
+                        status_code, message = error
+                        raise OpenAIHttpError(status_code, message)
+                    if str(parsed.get("type") or "").strip().lower() in {"response.completed", "response.done"}:
+                        response = parsed.get("response")
+                        if isinstance(response, dict):
+                            self._responses_ws_last_request_payload = json.loads(json.dumps(request_payload, ensure_ascii=False))
+                            self._responses_ws_last_response = json.loads(json.dumps(response, ensure_ascii=False))
+                        yield text
+                        return
+                yield text
 
     def _responses_websocket_connection(self, *, url, headers, timeout_sec):
         connection = getattr(self, "_responses_ws_connection", None)

@@ -63,6 +63,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         reasoning_effort,
         stream,
         stream_handler,
+        thinking_stream_handler=None,
     ):
         url = self._chat_completions_url()
         payload = self._build_chat_payload(
@@ -71,6 +72,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             reasoning_effort=reasoning_effort,
             stream=bool(stream),
         )
+        self._emit_provider_payload_request_summary(payload, request_api="chat_completions", stream=bool(stream))
         payload_json = json.dumps(payload, ensure_ascii=False)
         if stream:
             result = self._stream_chat_completions_with_retry(
@@ -79,6 +81,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 headers=self._chat_headers(),
                 payload_json=payload_json,
                 stream_handler=stream_handler if callable(stream_handler) else None,
+                thinking_stream_handler=thinking_stream_handler if callable(thinking_stream_handler) else None,
             )
         else:
             result = self._post_json_with_retry(
@@ -93,9 +96,10 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             reasoning_effort=reasoning_effort,
             stream=stream,
             stream_handler=stream_handler,
+            thinking_stream_handler=thinking_stream_handler,
         )
 
-    def _handle_chat_completions_result(self, result, *, run_tools, reasoning_effort, stream, stream_handler):
+    def _handle_chat_completions_result(self, result, *, run_tools, reasoning_effort, stream, stream_handler, thinking_stream_handler=None):
         message, selected_idx = self._pick_chat_response_message(result.get("choices") if isinstance(result, dict) else None, run_tools)
         if not isinstance(message, dict):
             return f"Error: Invalid message format in choice[{selected_idx}]"
@@ -122,6 +126,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 reasoning_effort=reasoning_effort,
                 stream=stream,
                 stream_handler=stream_handler,
+                thinking_stream_handler=thinking_stream_handler,
             )
 
         content = message.get("content")
@@ -153,7 +158,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 raise
         raise RuntimeError(f"{endpoint}: max retries exceeded")
 
-    def _stream_chat_completions_with_retry(self, *, endpoint, url, headers, payload_json, stream_handler):
+    def _stream_chat_completions_with_retry(self, *, endpoint, url, headers, payload_json, stream_handler, thinking_stream_handler=None):
         timeout = self.config.get("timeoutMs", 60000) / 1000
         max_retries, retry_delay = self._resolve_openai_chat_retry_policy()
         for attempt in range(max_retries + 1):
@@ -164,6 +169,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                     payload_json=payload_json,
                     timeout_sec=timeout,
                     stream_handler=stream_handler,
+                    thinking_stream_handler=thinking_stream_handler,
                 )
             except (OpenAIHttpError, OpenAITransportError) as exc:
                 error_str = str(exc)
@@ -176,32 +182,145 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 raise
         raise RuntimeError(f"{endpoint}: max retries exceeded")
 
-    def _stream_chat_completions_once(self, *, url, headers, payload_json, timeout_sec, stream_handler):
+    def _stream_chat_completions_once(self, *, url, headers, payload_json, timeout_sec, stream_handler, thinking_stream_handler=None):
         text_chunks: list[str] = []
+        thinking_chunks: list[str] = []
         tool_calls_by_index: dict[int, dict] = {}
+        debug_events: list[dict] = []
+        emitted_web_search_signatures: set[str] = set()
         for data_text in self._curl_post_sse_data_lines(
             url=url,
             headers=headers,
             payload_json=payload_json,
             timeout_sec=timeout_sec,
         ):
-            if not data_text or data_text == "[DONE]":
+            if not data_text:
+                continue
+            if data_text == "[DONE]":
+                debug_events.append({"index": len(debug_events), "raw": "[DONE]"})
                 continue
             event = self._parse_sse_json_event(data_text, stage="openai_chat_completions_stream_parse")
+            debug_events.append(
+                self._build_chat_sse_debug_event(
+                    index=len(debug_events),
+                    raw_data=data_text,
+                    parsed_event=event,
+                )
+            )
+            if not isinstance(event, dict):
+                continue
+            for web_search_event in self._extract_native_web_search_events(event, source="event"):
+                self._emit_native_web_search_notice_once(web_search_event, emitted_web_search_signatures)
             for choice in event.get("choices") if isinstance(event, dict) and isinstance(event.get("choices"), list) else []:
                 delta = choice.get("delta") if isinstance(choice, dict) else None
                 if not isinstance(delta, dict):
                     continue
+                for web_search_event in self._extract_native_web_search_events(choice, source="choice"):
+                    self._emit_native_web_search_notice_once(web_search_event, emitted_web_search_signatures)
+                for web_search_event in self._extract_native_web_search_events(delta, source="delta"):
+                    self._emit_native_web_search_notice_once(web_search_event, emitted_web_search_signatures)
                 text = delta.get("content")
                 if isinstance(text, str) and text:
                     text_chunks.append(text)
                     self._emit_stream_text(stream_handler, text, "".join(text_chunks))
+                thinking_text = self._extract_chat_thinking_delta(delta)
+                if thinking_text:
+                    thinking_chunks.append(thinking_text)
+                    self._emit_stream_thinking(
+                        thinking_stream_handler,
+                        thinking_text,
+                        "".join(thinking_chunks),
+                        "openai_chat",
+                    )
                 self._accumulate_chat_tool_call_delta(tool_calls_by_index, delta.get("tool_calls"))
         message: dict[str, Any] = {"role": "assistant", "content": "".join(text_chunks)}
         tool_calls = self._assembled_chat_tool_calls(tool_calls_by_index)
         if tool_calls:
             message["tool_calls"] = tool_calls
+        self._write_chat_sse_debug_if_needed(
+            url=url,
+            payload_json=payload_json,
+            events=debug_events,
+            assembled_message=message,
+        )
         return {"choices": [{"message": message}]}
+
+    @classmethod
+    def _extract_chat_thinking_delta(cls, delta: dict[str, Any]) -> str:
+        for key in ("reasoning_content", "reasoning_text", "thinking_content", "thinking", "reasoning"):
+            text = cls._chat_delta_text_value(delta.get(key))
+            if text:
+                return text
+        return ""
+
+    @classmethod
+    def _chat_delta_text_value(cls, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            for key in ("delta", "text", "content", "reasoning_content", "thinking"):
+                text = cls._chat_delta_text_value(value.get(key))
+                if text:
+                    return text
+        if isinstance(value, list):
+            return "".join(cls._chat_delta_text_value(item) for item in value)
+        return ""
+
+    def _extract_native_web_search_events(self, payload: dict[str, Any], *, source: str) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+        events: list[dict[str, Any]] = []
+        for key in ("web_search", "web_search_call", "web_search_calls", "search_results", "references", "citations"):
+            if key not in payload:
+                continue
+            events.append(self._build_native_web_search_event(source=source, key=key, value=payload.get(key)))
+        annotations = payload.get("annotations")
+        if self._annotations_include_web_citations(annotations):
+            events.append(self._build_native_web_search_event(source=source, key="annotations", value=annotations))
+        return events
+
+    @staticmethod
+    def _annotations_include_web_citations(value: Any) -> bool:
+        if not isinstance(value, list):
+            return False
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type") or "").strip().lower()
+            if item_type in {"url_citation", "web_search", "web_search_result"}:
+                return True
+            if isinstance(item.get("url_citation"), dict):
+                return True
+        return False
+
+    def _build_native_web_search_event(self, *, source: str, key: str, value: Any) -> dict[str, Any]:
+        preview = self._native_web_search_preview(value)
+        return {
+            "event": "native_web_search",
+            "source": str(source or ""),
+            "key": str(key or ""),
+            "preview": preview,
+        }
+
+    @staticmethod
+    def _native_web_search_preview(value: Any, limit: int = 2000) -> str:
+        try:
+            text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            text = str(value)
+        if len(text) <= limit:
+            return text
+        return text[: limit - 3] + "..."
+
+    def _emit_native_web_search_notice_once(self, event: dict[str, Any], emitted_signatures: set[str]) -> None:
+        signature = json.dumps(event, ensure_ascii=False, sort_keys=True)
+        if signature in emitted_signatures:
+            return
+        emitted_signatures.add(signature)
+        self._emit_provider_runtime_notice(
+            message=json.dumps(event, ensure_ascii=False, sort_keys=True),
+            stage="openai_chat_native_web_search",
+        )
 
     @staticmethod
     def _accumulate_chat_tool_call_delta(tool_calls_by_index: dict[int, dict], tool_calls_delta: object) -> None:
@@ -249,8 +368,8 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
 
     def _resolve_openai_chat_retry_policy(self) -> tuple[int, float]:
         return (
-            max(0, int(self.config.get("maxRetries", self.config.get("max_retries", 3)))),
-            max(0.0, float(self.config.get("retryDelaySec", self.config.get("retry_delay_sec", 1)))),
+            max(0, int(self.config.get("maxRetries", 3))),
+            max(0.0, float(self.config.get("retryDelaySec", 1))),
         )
 
     @staticmethod

@@ -347,8 +347,13 @@ defineExpose({
   gap: 10px;
   padding: 12px;
   border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(2, 6, 23, 0.96);
+  border: 1px solid var(--theme-panel-canvas-context-menu-button-border, rgba(148, 163, 184, 0.2));
+  background-color: var(--theme-panel-canvas-context-menu-background-color, rgba(2, 6, 23, 0.96));
+  background-image: var(--theme-panel-canvas-context-menu-background-image, none);
+  background-size: var(--theme-panel-canvas-context-menu-background-size, cover);
+  background-position: var(--theme-panel-canvas-context-menu-background-position, center);
+  background-repeat: var(--theme-panel-canvas-context-menu-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-canvas-context-menu-background-blend-mode, normal);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
 }
 
@@ -369,7 +374,7 @@ defineExpose({
   min-width: 0;
   font-size: 13px;
   font-weight: 700;
-  color: rgba(248, 250, 252, 0.96);
+  color: var(--theme-panel-canvas-context-menu-button-text, rgba(248, 250, 252, 0.96));
 }
 
 .context-menu-sub {
@@ -380,10 +385,10 @@ defineExpose({
 .context-menu-search,
 .field-input {
   width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1px solid var(--theme-panel-canvas-context-menu-button-border, rgba(148, 163, 184, 0.3));
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(226, 232, 240, 0.96);
+  background: var(--theme-panel-canvas-context-menu-button-background, rgba(15, 23, 42, 0.72));
+  color: var(--theme-panel-canvas-context-menu-button-text, rgba(226, 232, 240, 0.96));
   padding: 8px 10px;
   font-size: 12px;
   outline: none;
@@ -407,15 +412,15 @@ defineExpose({
   width: 100%;
   text-align: left;
   border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.7);
-  color: rgba(226, 232, 240, 0.95);
+  border: 1px solid var(--theme-panel-canvas-context-menu-button-border, rgba(148, 163, 184, 0.22));
+  background: var(--theme-panel-canvas-context-menu-button-background, rgba(15, 23, 42, 0.7));
+  color: var(--theme-panel-canvas-context-menu-button-text, rgba(226, 232, 240, 0.95));
   padding: 9px 10px;
 }
 
 .context-menu-item:hover:not(:disabled) {
   border-color: rgba(56, 189, 248, 0.6);
-  background: rgba(14, 116, 144, 0.2);
+  background: var(--theme-panel-canvas-context-menu-button-hover-background, rgba(14, 116, 144, 0.2));
 }
 
 .context-menu-item:disabled {

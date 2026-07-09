@@ -38,7 +38,7 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor.set_defaults(handler=run_doctor)
 
     chat = subcommands.add_parser("chat")
-    chat.add_argument("--config", default="", help="Companion config path. Defaults to memories/companion/config.json.")
+    chat.add_argument("--config", default="", help="Companion config path. Defaults to memories/Companion/Companion/config.json.")
     chat.add_argument("--message", default="", help="Run one prompt and exit. Omit for interactive chat.")
     chat.add_argument("--json", action="store_true", help="Machine-readable output for --message mode.")
     chat.add_argument("--plain", action="store_true", help=argparse.SUPPRESS)

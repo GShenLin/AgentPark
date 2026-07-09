@@ -43,6 +43,7 @@ import {
   type ProviderInfo,
 } from '../api'
 import { useGlobalState } from '../composables/useGlobalState'
+import { formatLiveActivity } from '../liveActivity'
 import { messageText } from './mobileMessageRender'
 
 export type MobileView = 'pcs' | 'graphs' | 'nodes' | 'chat'
@@ -463,7 +464,7 @@ export function useMobileWorkspace() {
     const messages = Array.isArray(nextConversation.messages) ? nextConversation.messages : []
     if (messagesContainCommittedLive(messages, pendingConversationLiveText, pendingConversationLiveTraceId)) {
       clearConversationCommit()
-      return { ...nextConversation, live_message: '', thinking_message: '' }
+      return { ...nextConversation, live_message: '', thinking_message: '', activity_message: '' }
     }
     if (pendingConversationLiveText && !String(nextConversation.live_message || '').trim()) {
       return { ...nextConversation, live_message: pendingConversationLiveText }
@@ -1003,6 +1004,14 @@ export function useMobileWorkspace() {
     }
   }
 
+  function setConversationActivityMessage(text: string) {
+    if (!conversation.value) return
+    conversation.value = {
+      ...conversation.value,
+      activity_message: text,
+    }
+  }
+
   async function selectNode(node: MobileNode) {
     const nodeId = String(node.id || '').trim()
     if (!nodeId) throw new Error('Node id is required')
@@ -1353,6 +1362,7 @@ export function useMobileWorkspace() {
           : null
         const nextLiveMessage = String(payload?.live_message || '')
         const nextThinkingMessage = String(payload?.thinking_message || '')
+        const nextActivityMessage = formatLiveActivity(eventType, eventData)
         setConversationThinkingMessage(nextThinkingMessage)
         if (eventType === 'node_message_done' || eventType === 'node_output') {
           rememberConversationCommit(
@@ -1361,9 +1371,11 @@ export function useMobileWorkspace() {
           )
           if (pendingConversationLiveText) setConversationLiveMessage(pendingConversationLiveText)
           setConversationThinkingMessage('')
+          setConversationActivityMessage('')
         } else if (nextLiveMessage || !pendingConversationLiveText) {
           setConversationLiveMessage(nextLiveMessage)
         }
+        if (nextActivityMessage) setConversationActivityMessage(nextActivityMessage)
         if (chatConversationRefreshEvents.has(eventType)) {
           scheduleGraphRefresh({ includeConversation: true, includeGraphConfig: false })
         }

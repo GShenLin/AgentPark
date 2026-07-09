@@ -157,12 +157,12 @@ function onContextMenu(event: MouseEvent) {
   padding-top: 3px;
   padding-bottom: 3px;
   cursor: pointer;
-  color: rgba(226, 232, 240, 0.9);
+  color: var(--theme-panel-file-panel-item-text, rgba(226, 232, 240, 0.9));
   border-radius: 6px;
 }
 
 .file-row:hover {
-  background: rgba(51, 65, 85, 0.5);
+  background: var(--theme-panel-file-panel-item-hover-background, rgba(51, 65, 85, 0.5));
 }
 
 .expander,
@@ -173,10 +173,10 @@ function onContextMenu(event: MouseEvent) {
 }
 
 .expander {
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 1px solid var(--theme-panel-file-panel-button-border, rgba(148, 163, 184, 0.35));
   border-radius: 4px;
-  background: rgba(15, 23, 42, 0.7);
-  color: rgba(226, 232, 240, 0.95);
+  background: var(--theme-panel-file-panel-button-background, rgba(15, 23, 42, 0.7));
+  color: var(--theme-panel-file-panel-button-text, rgba(226, 232, 240, 0.95));
   font-size: 11px;
   line-height: 16px;
   padding: 0;
@@ -210,7 +210,7 @@ function onContextMenu(event: MouseEvent) {
 .loading {
   margin-left: auto;
   font-size: 10px;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--theme-panel-file-panel-text-muted, rgba(148, 163, 184, 0.85));
 }
 
 .error {
@@ -221,7 +221,7 @@ function onContextMenu(event: MouseEvent) {
 }
 
 .empty {
-  color: rgba(148, 163, 184, 0.7);
+  color: var(--theme-panel-file-panel-text-muted, rgba(148, 163, 184, 0.7));
   font-size: 11px;
   padding-top: 3px;
   padding-bottom: 3px;

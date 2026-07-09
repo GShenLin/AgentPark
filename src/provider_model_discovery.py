@@ -69,7 +69,7 @@ def run_provider_model_discovery(
 
 
 def discover_provider_models(provider: dict[str, Any], *, timeout_seconds: float) -> dict[str, Any]:
-    provider_type = str(provider.get("type") or "").strip().lower()
+    provider_type = str(provider.get("type") or "").strip()
     tested_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     validation_error = _validate_model_config(provider, provider_type)
     if validation_error:
@@ -119,7 +119,7 @@ def _merge_model_result(output: dict[str, Any], provider_id: str, provider: dict
     entry.update(
         {
             "provider_id": provider_id,
-            "type": str(provider.get("type") or entry.get("type") or "").strip().lower(),
+            "type": str(provider.get("type") or entry.get("type") or "").strip(),
             "model": str(provider.get("model") or entry.get("model") or ""),
             "available_model_ids": result["model_ids"],
             "model_discovery": {

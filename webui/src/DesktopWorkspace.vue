@@ -259,8 +259,13 @@ watch(
   width: 280px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-primary);
-  border-right: 1px solid var(--border-subtle);
+  background-color: var(--theme-panel-file-panel-background-color, var(--bg-primary));
+  background-image: var(--theme-panel-file-panel-background-image, none);
+  background-size: var(--theme-panel-file-panel-background-size, cover);
+  background-position: var(--theme-panel-file-panel-background-position, center);
+  background-repeat: var(--theme-panel-file-panel-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-file-panel-background-blend-mode, normal);
+  border-right: 1px solid var(--theme-panel-file-panel-border-color, var(--border-subtle));
   overflow: hidden;
 }
 
@@ -276,7 +281,7 @@ watch(
   letter-spacing: 2px;
   font-size: 11px;
   font-weight: 500;
-  color: var(--text-tertiary);
+  color: var(--theme-panel-memory-panel-text-muted, var(--text-tertiary));
   text-transform: uppercase;
   user-select: none;
 }
@@ -285,7 +290,7 @@ watch(
 .sidebar-resizer {
   width: 3px;
   cursor: col-resize;
-  background: var(--border-subtle);
+  background: var(--theme-panel-app-border-subtle, var(--border-subtle));
   transition: background 0.15s ease;
   flex-shrink: 0;
   position: relative;
@@ -303,13 +308,13 @@ watch(
 
 .sidebar-resizer:hover,
 .sidebar-resizer:active {
-  background: var(--accent-blue);
+  background: var(--theme-panel-app-text-accent, var(--accent-blue));
 }
 
 .memory-resizer {
   width: 3px;
   cursor: col-resize;
-  background: var(--border-subtle);
+  background: var(--theme-panel-app-border-subtle, var(--border-subtle));
   transition: background 0.15s ease;
   flex-shrink: 0;
   z-index: 10;
@@ -328,7 +333,7 @@ watch(
 
 .memory-resizer:hover,
 .memory-resizer:active {
-  background: var(--accent-blue);
+  background: var(--theme-panel-app-text-accent, var(--accent-blue));
 }
 
 /* 右侧记忆面板 */
@@ -337,6 +342,11 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-primary);
+  background-color: var(--theme-panel-memory-panel-background-color, var(--bg-primary));
+  background-image: var(--theme-panel-memory-panel-background-image, none);
+  background-size: var(--theme-panel-memory-panel-background-size, cover);
+  background-position: var(--theme-panel-memory-panel-background-position, center);
+  background-repeat: var(--theme-panel-memory-panel-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-memory-panel-background-blend-mode, normal);
 }
 </style>

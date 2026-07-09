@@ -339,17 +339,18 @@ python -m src.cli capabilities enable --kind skill --name <skill_id> --graph <gr
 python -m src.cli config validate --graph <graph_id> --node <node_id>
 ```
 
-`chat` starts the dedicated companion Agent. Its config and conversation state live under `memories/companion/`, using the same Agent-node config fields as normal nodes:
+`chat` starts the dedicated Companion Agent. Companion is a normal protected graph with a normal Agent node under it, using the same config fields as other nodes:
 
 ```text
-memories/companion/config.json
-memories/companion/memory.md
-memories/companion/messages.jsonl
+memories/Companion/config.json
+memories/Companion/Companion/config.json
+memories/Companion/Companion/memory.md
+memories/Companion/Companion/messages.jsonl
 ```
 
 After the normal build/install flow, `build_and_run.bat` starts the WebUI server in the background, opens the browser from that server process, and then starts the interactive companion CLI in the current terminal. `build_and_run.bat cli` and `build_and_run.bat chat` use the same combined Web + CLI startup. Use `build_and_run.bat server` or `build_and_run.bat web` when only the WebUI server should run, and `build_and_run.bat cli-only` when the CLI should run without starting WebUI.
 
-The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/companion/`. If the terminal does not accept input, run `build_and_run.bat cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
+The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/Companion/Companion/`. If the terminal does not accept input, run `build_and_run.bat cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
 
 Inside the companion CLI, `/restart` launches the repository `Restart.bat` and exits the current CLI session so restart behavior stays on the canonical startup path.
 

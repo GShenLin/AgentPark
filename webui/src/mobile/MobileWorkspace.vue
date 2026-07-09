@@ -69,6 +69,7 @@ const messages = computed(() => workspace.conversation.value?.messages || [])
 const feedEntries = useMemoryFeedEntries(messages)
 const liveMessage = computed(() => String(workspace.conversation.value?.live_message || ''))
 const thinkingMessage = computed(() => String(workspace.conversation.value?.thinking_message || ''))
+const activityMessage = computed(() => String(workspace.conversation.value?.activity_message || ''))
 const messageSignature = computed(() => buildMessageSignature(messages.value))
 const selectedGoalState = computed(() => {
   const state = workspace.selectedNode.value?.goal_state
@@ -433,14 +434,6 @@ async function triggerMobileNode(node: MobileNode) {
   }
 }
 
-async function copyMobileNode(node: MobileNode) {
-  try {
-    await workspace.copyNode(node)
-  } catch (e: any) {
-    workspace.error.value = String(e?.message || e)
-  }
-}
-
 async function clearMemory() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   const nodeId = String(workspace.selectedNode.value.id || '').trim()
@@ -510,6 +503,12 @@ watch(liveMessage, (_next, previous) => {
 })
 
 watch(thinkingMessage, (_next, previous) => {
+  const shouldStick = previous == null || isFeedNearBottom()
+  if (!shouldStick) return
+  void nextTick(scrollFeedToBottom)
+})
+
+watch(activityMessage, (_next, previous) => {
   const shouldStick = previous == null || isFeedNearBottom()
   if (!shouldStick) return
   void nextTick(scrollFeedToBottom)
@@ -614,7 +613,6 @@ onMounted(() => {
           @select="workspace.selectNode"
           @delete="deleteMobileNode"
           @trigger="triggerMobileNode"
-          @copy="copyMobileNode"
         />
         <button v-if="!workspace.selectedGraph.value?.readonly" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
       </section>
@@ -629,7 +627,7 @@ onMounted(() => {
         </div>
 
         <div ref="feedRef" class="chat-feed">
-          <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage" class="empty-chat">暂无消息</div>
+          <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage" class="empty-chat">暂无消息</div>
           <template v-for="entry in feedEntries" :key="entry.key">
             <article v-if="entry.type === 'message'" class="bubble" :class="messageRoleClass(entry.message)">
               <div class="bubble-meta">{{ String(entry.message.role || 'assistant') }}</div>
@@ -669,7 +667,7 @@ onMounted(() => {
               </div>
             </section>
           </template>
-          <MobileLiveMessage v-if="liveMessage || thinkingMessage" :text="liveMessage" :thinking-text="thinkingMessage" />
+          <MobileLiveMessage v-if="liveMessage || thinkingMessage || activityMessage" :text="liveMessage" :thinking-text="thinkingMessage" :activity-text="activityMessage" />
         </div>
 
         <form class="composer" @submit.prevent="sendDraft">

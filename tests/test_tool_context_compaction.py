@@ -237,6 +237,41 @@ def test_tool_context_compaction_gate_replaces_eligible_window(tmp_path):
     assert "compact_tool_context" not in agent.tools.function_map
 
 
+def test_tool_context_compaction_replace_keeps_tool_exchange_atomically(tmp_path):
+    memory_path = tmp_path / "agent.md"
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyCompactionAgent(memory_path)
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        _tool_call_message("call-1", "read_file"),
+        {"role": "tool", "content": "alpha raw file content", "tool_call_id": "call-1", "name": "read_file"},
+        _tool_call_message("call-2", "rg_search_text"),
+        {"role": "tool", "content": "beta raw search result", "tool_call_id": "call-2", "name": "rg_search_text"},
+    ]
+    candidates = agent._collect_tool_context_compaction_candidates()
+    agent._tool_context_compaction_gate_active = True
+    agent._tool_context_compaction_target_messages = agent.messages
+    agent._tool_context_compaction_candidate_map = {
+        str(item["message_id"]): int(item["index"]) for item in candidates
+    }
+
+    result = agent._apply_tool_context_compaction(
+        action="replace",
+        reason="Keep the first exchange for direct follow-up.",
+        summary="The second exchange was summarized.",
+        keep_message_ids=["tc_1"],
+        delete_message_ids=[],
+        rewrites=[],
+    )
+
+    assert result["ok"] is True
+    assert result["removed_count"] == 2
+    assert [item["role"] for item in agent.messages] == ["user", "assistant", "tool", "system"]
+    assert agent.messages[1]["tool_calls"][0]["id"] == "call-1"
+    assert agent.messages[2]["tool_call_id"] == "call-1"
+    assert "call-2" not in json.dumps(agent.messages, ensure_ascii=False)
+
+
 def test_tool_context_compaction_gate_prompt_includes_latest_user_input(tmp_path):
     memory_path = tmp_path / "agent.md"
     memory_path.write_text("", encoding="utf-8")
@@ -291,10 +326,10 @@ def test_tool_context_compaction_patch_deletes_and_rewrites_only_eligible_messag
     )
 
     assert result["ok"] is True
-    assert result["removed_count"] == 1
-    assert result["rewritten_count"] == 1
-    assert [item["role"] for item in agent.messages] == ["user", "system", "tool"]
-    assert agent.messages[2]["content"] == "read_file summary"
+    assert result["removed_count"] == 2
+    assert result["rewritten_count"] == 0
+    assert [item["role"] for item in agent.messages] == ["user", "system"]
+    assert "call-1" not in json.dumps(agent.messages, ensure_ascii=False)
 
 
 def test_tool_context_compaction_gate_retries_with_error_when_compaction_tool_not_called(tmp_path):

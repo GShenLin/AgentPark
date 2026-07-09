@@ -20,9 +20,9 @@ class DoubaoResponsesMapping(ResponsesMapping):
 
     def _build_web_search_tool(self):
         tool = {"type": "web_search"}
-        max_keyword = self.config.get("webSearchMaxKeyword", self.config.get("web_search_max_keyword", 2))
-        limit = self.config.get("webSearchLimit", self.config.get("web_search_limit"))
-        sources = self.config.get("webSearchSources", self.config.get("web_search_sources"))
+        max_keyword = self.config.get("webSearchMaxKeyword", 2)
+        limit = self.config.get("webSearchLimit")
+        sources = self.config.get("webSearchSources")
 
         try:
             mk = int(max_keyword)

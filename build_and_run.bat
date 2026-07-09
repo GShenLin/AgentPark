@@ -4,6 +4,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem Switch to the script directory to ensure relative paths work
 cd /d "%~dp0"
 set "AGENTPARK_WORKSPACE_ROOT=%cd%"
+echo [INFO] Checking repository before startup...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%AGENTPARK_WORKSPACE_ROOT%\scripts\sync_before_restart.ps1" -WorkspaceRoot "%AGENTPARK_WORKSPACE_ROOT%"
+if errorlevel 1 (
+    echo [WARN] Repository update did not complete. Continuing startup.
+)
+
 if not exist "%AGENTPARK_WORKSPACE_ROOT%\.runtime" mkdir "%AGENTPARK_WORKSPACE_ROOT%\.runtime"
 set "AGENTPARK_DEPENDENCY_UPDATE_LOG=%AGENTPARK_WORKSPACE_ROOT%\.runtime\dependency-update.log"
 >>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo.

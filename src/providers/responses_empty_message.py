@@ -83,7 +83,7 @@ def build_empty_message_feedback_item(
     response_id: Any = "",
     request_summary: Any = None,
 ) -> dict[str, Any]:
-    from src.providers.responses_request_summary import empty_message_diagnostics_from_summary
+    from src.providers.provider_request_summary import empty_message_diagnostics_from_summary
 
     payload = {
         "error": "EmptyMessage",
@@ -104,7 +104,7 @@ def build_empty_message_feedback_item(
 
 
 def empty_message_final_error(*, current_input: Any, result: Any, response_id: Any = "", request_summary: Any = None) -> str:
-    from src.providers.responses_request_summary import empty_message_diagnostics_from_summary
+    from src.providers.provider_request_summary import empty_message_diagnostics_from_summary
 
     payload = {
         "error": "EmptyMessage",

@@ -122,6 +122,31 @@ def test_apply_webui_payload_clears_named_fields(tmp_path):
     assert not config_path.with_name("runtime_state.json").exists()
 
 
+def test_apply_webui_payload_preserves_node_ui_size(tmp_path):
+    config_path = tmp_path / "node" / "config.json"
+    node_config_service.write(
+        str(config_path),
+        {
+            "node_id": "n1",
+            "type_id": "agent_node",
+            "ui": {"x": 10, "y": 20},
+        },
+    )
+
+    result = node_config_service.apply_webui_payload(
+        str(config_path),
+        {"ui": {"x": 30, "y": 40, "width": 360, "height": 420}},
+    )
+
+    assert result.after["ui"] == {"x": 30, "y": 40, "width": 360, "height": 420}
+    assert json.loads(config_path.read_text(encoding="utf-8"))["ui"] == {
+        "x": 30,
+        "y": 40,
+        "width": 360,
+        "height": 420,
+    }
+
+
 def test_write_splits_runtime_fields_from_config_json(tmp_path):
     config_path = tmp_path / "node" / "config.json"
 
@@ -149,7 +174,7 @@ def test_write_splits_runtime_fields_from_config_json(tmp_path):
     assert node_config_service.read_strict(str(config_path))["last_message"] == "large runtime output"
 
 
-def test_legacy_config_runtime_fields_are_migrated_on_write(tmp_path):
+def test_config_runtime_fields_are_split_on_write(tmp_path):
     config_path = tmp_path / "node" / "config.json"
     config_path.parent.mkdir()
     config_path.write_text(
@@ -160,7 +185,7 @@ def test_legacy_config_runtime_fields_are_migrated_on_write(tmp_path):
                 "type_id": "agent_node",
                 "state": "working",
                 "pending": [{"id": "queued"}],
-                "last_message": "legacy",
+                "last_message": "runtime output",
                 "goal_state": {"status": "active"},
             },
             ensure_ascii=False,

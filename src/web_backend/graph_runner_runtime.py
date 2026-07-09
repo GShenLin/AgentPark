@@ -5,7 +5,6 @@ import uuid
 
 from . import runtime_paths, state_store
 from .graph_runtime_registry import GraphConfigReadError
-from .graph_runner_settings import find_deprecated_graph_runner_worker_count
 from .graph_runner_state import GraphExecutionTask, GraphExecutor, GraphRunnerState
 from .node_metadata_reader import NodeMetadataError
 from .node_metadata_reader import load_node_instance
@@ -13,7 +12,6 @@ from .node_metadata_reader import read_node_ports
 from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
 from .shared import (
-    ConfigLoader,
     _dequeue_node_pending_to_working,
     _recover_node_config_stale_working,
     _write_json_dict,
@@ -252,13 +250,6 @@ class GraphRunnerRuntime(HostBoundService):
             state.scheduler_thread = scheduler_thread
             self.graph_runners[safe_graph_id] = state
             scheduler_thread.start()
-        deprecated_workers = find_deprecated_graph_runner_worker_count(ConfigLoader().get_config())
-        if deprecated_workers is not None:
-            self._log_graph_event(
-                safe_graph_id,
-                "deprecated_graph_runner_worker_count_ignored",
-                configured_value=str(deprecated_workers),
-            )
         self._log_graph_event(safe_graph_id, "scheduler_thread_started")
 
     def _wake_graph_runner(self, graph_id: str) -> None:

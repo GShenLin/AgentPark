@@ -5,8 +5,10 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from contextlib import contextmanager
 from typing import Iterable
 
+from src.providers.provider_pressure import acquire_provider_pressure
 from src.providers.provider_errors import ProviderTransportError
 from src.runtime_cancellation import CancellationRequested, raise_if_cancel_requested
 
@@ -25,25 +27,31 @@ class CurlHttpTransport:
     def _cancel_source(self):
         return getattr(self, "cancel_event", None) or getattr(self, "cancel_check", None)
 
+    @contextmanager
+    def _provider_pressure_slot(self):
+        with acquire_provider_pressure(self, cancel_source=self._cancel_source()):
+            yield
+
     def _curl_get_bytes_raw(self, *, url: str, timeout_sec: float) -> bytes:
         timeout_val = int(max(1, float(timeout_sec or 60)))
         connect_timeout = max(1, min(15, timeout_val))
         try:
-            proc = subprocess.run(
-                [
-                    "curl.exe",
-                    "--silent",
-                    "--show-error",
-                    "--location",
-                    "--max-time",
-                    str(timeout_val),
-                    "--connect-timeout",
-                    str(connect_timeout),
-                    str(url),
-                ],
-                capture_output=True,
-                timeout=timeout_val + 10,
-            )
+            with self._provider_pressure_slot():
+                proc = subprocess.run(
+                    [
+                        "curl.exe",
+                        "--silent",
+                        "--show-error",
+                        "--location",
+                        "--max-time",
+                        str(timeout_val),
+                        "--connect-timeout",
+                        str(connect_timeout),
+                        str(url),
+                    ],
+                    capture_output=True,
+                    timeout=timeout_val + 10,
+                )
         except subprocess.TimeoutExpired as exc:
             raise CurlTransportError(f"curl timeout: {exc}") from exc
         except Exception as exc:
@@ -72,14 +80,15 @@ class CurlHttpTransport:
             for key, value in (headers or {}).items():
                 cmd.extend(["-H", f"{key}: {value}"])
             cmd.extend(["-w", f"\n{marker}%{{http_code}}"])
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_val + 10,
-            )
+            with self._provider_pressure_slot():
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=timeout_val + 10,
+                )
         except subprocess.TimeoutExpired as exc:
             raise CurlTransportError(f"curl timeout: {exc}") from exc
         except Exception as exc:
@@ -127,14 +136,15 @@ class CurlHttpTransport:
                 marker=marker,
                 no_buffer=no_buffer,
             )
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_val + 10,
-            )
+            with self._provider_pressure_slot():
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=timeout_val + 10,
+                )
         except subprocess.TimeoutExpired as exc:
             raise CurlTransportError(f"curl timeout: {exc}") from exc
         except Exception as exc:
@@ -187,62 +197,63 @@ class CurlHttpTransport:
                 marker=marker,
                 no_buffer=True,
             )
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-            )
-            if proc.stdout is None:
-                raise CurlTransportError("curl stdout pipe is unavailable")
+            with self._provider_pressure_slot():
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                )
+                if proc.stdout is None:
+                    raise CurlTransportError("curl stdout pipe is unavailable")
 
-            line_queue: queue.Queue[str | None] = queue.Queue()
+                line_queue: queue.Queue[str | None] = queue.Queue()
 
-            def _read_stdout() -> None:
-                try:
-                    for raw in proc.stdout:
-                        line_queue.put(raw)
-                finally:
-                    line_queue.put(None)
+                def _read_stdout() -> None:
+                    try:
+                        for raw in proc.stdout:
+                            line_queue.put(raw)
+                    finally:
+                        line_queue.put(None)
 
-            threading.Thread(target=_read_stdout, daemon=True, name="curl-sse-reader").start()
-            last_activity = time.monotonic()
-            while True:
-                raise_if_cancel_requested(cancel_source)
-                if time.monotonic() - last_activity >= timeout_val:
-                    raise CurlTransportError(f"curl idle timeout after {timeout_val}s without stream data")
-                try:
-                    raw_line = line_queue.get(timeout=0.05)
-                except queue.Empty:
-                    continue
-                if raw_line is None:
-                    break
+                threading.Thread(target=_read_stdout, daemon=True, name="curl-sse-reader").start()
                 last_activity = time.monotonic()
-                line = raw_line.rstrip("\r\n")
-                if line.startswith(marker):
-                    status_code = self._parse_curl_status(line[len(marker) :].strip())
-                    continue
-                response_lines.append(line)
-                if line.startswith("data:"):
-                    yield line[5:].strip()
+                while True:
+                    raise_if_cancel_requested(cancel_source)
+                    if time.monotonic() - last_activity >= timeout_val:
+                        raise CurlTransportError(f"curl idle timeout after {timeout_val}s without stream data")
+                    try:
+                        raw_line = line_queue.get(timeout=0.05)
+                    except queue.Empty:
+                        continue
+                    if raw_line is None:
+                        break
+                    last_activity = time.monotonic()
+                    line = raw_line.rstrip("\r\n")
+                    if line.startswith(marker):
+                        status_code = self._parse_curl_status(line[len(marker) :].strip())
+                        continue
+                    response_lines.append(line)
+                    if line.startswith("data:"):
+                        yield line[5:].strip()
 
-            try:
-                return_code = proc.wait(timeout=5)
-            except subprocess.TimeoutExpired as exc:
-                proc.kill()
-                raise CurlTransportError(f"curl timeout: {exc}") from exc
+                try:
+                    return_code = proc.wait(timeout=5)
+                except subprocess.TimeoutExpired as exc:
+                    proc.kill()
+                    raise CurlTransportError(f"curl timeout: {exc}") from exc
 
-            stderr = proc.stderr.read().strip() if proc.stderr is not None else ""
-            if return_code != 0:
-                detail = stderr or "\n".join(response_lines[-20:])
-                raise CurlTransportError(detail or f"curl exit code: {return_code}")
-            if status_code is None:
-                detail = stderr or "\n".join(response_lines[-20:])
-                raise CurlTransportError(f"missing HTTP status from curl: {detail}")
-            yield CurlResponse(body="\n".join(response_lines), status_code=status_code)
+                stderr = proc.stderr.read().strip() if proc.stderr is not None else ""
+                if return_code != 0:
+                    detail = stderr or "\n".join(response_lines[-20:])
+                    raise CurlTransportError(detail or f"curl exit code: {return_code}")
+                if status_code is None:
+                    detail = stderr or "\n".join(response_lines[-20:])
+                    raise CurlTransportError(f"missing HTTP status from curl: {detail}")
+                yield CurlResponse(body="\n".join(response_lines), status_code=status_code)
         except CancellationRequested:
             raise
         except CurlTransportError:

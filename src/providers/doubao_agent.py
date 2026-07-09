@@ -140,7 +140,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         thinking_mode = parse_switch_mode(thinking, default=None)
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
-            effort_source = self.config.get("reasoningEffort", self.config.get("reasoning_effort", ""))
+            effort_source = self.config.get("reasoningEffort", "")
         if self._supports_responses_api():
             response_text = self._send_via_responses(
                 messages=messages,
@@ -166,6 +166,8 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             payload["thinking"] = {"type": thinking_mode}
         if stream:
             payload["stream"] = True
+
+        self._emit_provider_payload_request_summary(payload, request_api="chat_completions", stream=bool(stream))
 
         headers = {
             "Content-Type": "application/json",

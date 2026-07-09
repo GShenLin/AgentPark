@@ -235,9 +235,6 @@ def send_via_responses(
             empty_message_feedback.reset()
             display_tool_calls = [to_openai_tool_call(call) for call in function_calls]
             self.Message("assistant", content, tool_calls=display_tool_calls)
-            self._persist_assistant_tool_call_note_if_available(
-                {"role": "assistant", "content": content, "tool_calls": display_tool_calls}
-            )
             if not run_tools:
                 _emit_turn_debug(
                     response_id=response_id,

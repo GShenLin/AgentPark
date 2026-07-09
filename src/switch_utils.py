@@ -3,18 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 
-TRUE_SWITCH_VALUES = {"enabled", "enable", "on", "true", "1", "yes", "y"}
-FALSE_SWITCH_VALUES = {"disabled", "disable", "off", "false", "0", "no", "n"}
+SWITCH_VALUES = {"enabled", "disabled"}
 
 
 def parse_switch_mode(value: Any, default: str | None = None, *, allow_auto: bool = True) -> str | None:
-    if isinstance(value, bool):
-        return "enabled" if value else "disabled"
-    text = str(value or "").strip().lower()
-    if text in TRUE_SWITCH_VALUES:
-        return "enabled"
-    if text in FALSE_SWITCH_VALUES:
-        return "disabled"
+    if not isinstance(value, str):
+        return default
+    text = value.strip()
+    if text in SWITCH_VALUES:
+        return text
     if allow_auto and text == "auto":
         return "auto"
     return default
@@ -25,11 +22,6 @@ def parse_bool_switch(value: Any, default: bool | None = None) -> bool | None:
         return default
     if isinstance(value, bool):
         return value
-    text = str(value or "").strip().lower()
-    if text in TRUE_SWITCH_VALUES:
-        return True
-    if text in FALSE_SWITCH_VALUES:
-        return False
     return default
 
 

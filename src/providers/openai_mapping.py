@@ -8,10 +8,10 @@ from src.tool.tool_call_protocol import parse_arguments
 
 class OpenAIResponsesMapping(ResponsesMapping):
     def _build_web_search_tool(self):
-        tool_type = str(self.config.get("webSearchToolType", self.config.get("web_search_tool_type", "web_search")) or "").strip()
+        tool_type = str(self.config.get("webSearchToolType", "web_search") or "").strip()
         tool = {"type": tool_type or "web_search"}
 
-        user_location = self.config.get("webSearchUserLocation", self.config.get("web_search_user_location"))
+        user_location = self.config.get("webSearchUserLocation")
         if isinstance(user_location, dict):
             safe_location = {
                 str(key): value
@@ -21,7 +21,7 @@ class OpenAIResponsesMapping(ResponsesMapping):
             if safe_location:
                 tool["user_location"] = safe_location
 
-        context_size = self.config.get("webSearchContextSize", self.config.get("web_search_context_size"))
+        context_size = self.config.get("webSearchContextSize")
         context_size_text = str(context_size or "").strip().lower()
         if context_size_text in {"low", "medium", "high"}:
             tool["search_context_size"] = context_size_text

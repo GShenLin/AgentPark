@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watchEffect } from 'vue'
 import { AgentBoardKey } from './context'
+import { BOARD_CANVAS_PADDING_PX, canvasPointFromClient } from './boardLayout'
 import CanvasContextMenu from './CanvasContextMenu.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
@@ -26,23 +27,28 @@ const nodeContextMenuRef = ref<{
 } | null>(null)
 
 const items = computed(() => ctx.nodes.value)
+const canvasStyle = computed(() => ({
+  width: `${ctx.canvasWidth.value * ctx.canvasScale.value}px`,
+  height: `${ctx.canvasHeight.value * ctx.canvasScale.value}px`,
+  paddingLeft: `${BOARD_CANVAS_PADDING_PX + ctx.canvasPaddingLeft.value}px`,
+  paddingTop: `${BOARD_CANVAS_PADDING_PX + ctx.canvasPaddingTop.value}px`,
+  paddingRight: `${BOARD_CANVAS_PADDING_PX}px`,
+  paddingBottom: `${BOARD_CANVAS_PADDING_PX}px`,
+}))
 const nodesWithOutputRoutes = computed(() => {
   const sourceIds = new Set(ctx.links.value.map((link) => link.from.node))
   return ctx.nodes.value.filter((node) => sourceIds.has(node.id))
 })
 
 function getBoardPoint(event: MouseEvent) {
-  const canvas = canvasEl.value
-  if (!canvas) return { x: 0, y: 0 }
-  const rect = canvas.getBoundingClientRect()
-  const style = window.getComputedStyle(canvas)
-  const paddingLeft = Number.parseFloat(style.paddingLeft || '0') || 0
-  const paddingTop = Number.parseFloat(style.paddingTop || '0') || 0
-  const scale = ctx.canvasScale.value || 1
-  return {
-    x: (event.clientX - rect.left - paddingLeft) / scale,
-    y: (event.clientY - rect.top - paddingTop) / scale,
-  }
+  return canvasPointFromClient({
+    canvas: canvasEl.value,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    scale: ctx.canvasScale.value,
+    contentOffsetLeft: BOARD_CANVAS_PADDING_PX + ctx.canvasPaddingLeft.value,
+    contentOffsetTop: BOARD_CANVAS_PADDING_PX + ctx.canvasPaddingTop.value,
+  })
 }
 
 function onBoardContextMenu(event: MouseEvent) {
@@ -79,7 +85,7 @@ watchEffect(() => {
     <div
       ref="canvasEl"
       class="agent-canvas"
-      :style="{ width: `${ctx.canvasWidth.value * ctx.canvasScale.value}px`, height: `${ctx.canvasHeight.value * ctx.canvasScale.value}px` }"
+      :style="canvasStyle"
     >
       <div class="canvas-content" :style="{ width: `${ctx.canvasWidth.value}px`, height: `${ctx.canvasHeight.value}px`, transform: `scale(${ctx.canvasScale.value})` }">
         <div
@@ -122,6 +128,12 @@ watchEffect(() => {
   min-height: 0;
   overflow: auto;
   cursor: grab;
+  background-color: var(--theme-panel-board-canvas-background-color, transparent);
+  background-image: var(--theme-panel-board-canvas-background-image, none);
+  background-size: var(--theme-panel-board-canvas-background-size, cover);
+  background-position: var(--theme-panel-board-canvas-background-position, center);
+  background-repeat: var(--theme-panel-board-canvas-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-board-canvas-background-blend-mode, normal);
 }
 
 .agent-board.panning {

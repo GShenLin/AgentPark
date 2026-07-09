@@ -54,7 +54,7 @@ class ZhipuAgent(ServiceHost, BaseAgent):
 
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
-            effort_source = self.config.get("reasoningEffort", self.config.get("reasoning_effort", ""))
+            effort_source = self.config.get("reasoningEffort", "")
         thinking_source = thinking if thinking not in {None, ""} else self.config.get("thinking")
         thinking_mode = parse_switch_mode(thinking_source, default=None)
         if thinking_source not in {None, ""} and thinking_mode not in {"enabled", "disabled"}:

@@ -83,10 +83,9 @@ def load_skill_script_manifest(skill_dir: str, *, skill_name: str) -> tuple[Skil
     seen: set[str] = set()
     for index, item in enumerate(scripts):
         definition = _normalize_script_definition(item, root=root, skill_name=skill_name, manifest_path=path, index=index)
-        key = definition.id.casefold()
-        if key in seen:
+        if definition.id in seen:
             raise SkillScriptManifestError(f"duplicate skill script id `{definition.id}`: {path}")
-        seen.add(key)
+        seen.add(definition.id)
         result.append(definition)
     return tuple(result)
 

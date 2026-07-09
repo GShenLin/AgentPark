@@ -1,4 +1,4 @@
-﻿import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+﻿import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   cloneNodeInstance,
   controlNodeInstance,
@@ -40,8 +40,10 @@ import {
 } from './boardDragState'
 import {
   assignMissingNodePositions,
+  BOARD_CANVAS_PADDING_PX,
   canvasPointFromClient,
   computeBoardCanvasSize,
+  expandBoardPanCapacity,
   nodeCardStyle,
 } from './boardLayout'
 import { boardLinkExists, createBoardLink, createBoardLinkSession, createBoardLinkTarget } from './boardLinks'
@@ -68,6 +70,10 @@ import {
 import type { AgentBoardContext, DragSession, LinkItem, LinkSession, NodeCard, NodeRunState, PanSession } from './context'
 import {
   clampX,
+  NODE_CARD_DEFAULT_HEIGHT,
+  NODE_CARD_DEFAULT_WIDTH,
+  nodeCardHeight,
+  nodeCardWidth,
   applyNodeFieldPatchToCard,
   messageToText,
   mergeNodeConfigFields,
@@ -360,7 +366,7 @@ export function useAgentBoard(): AgentBoardContext {
   async function createNodeAtPosition(
     typeId: string,
     nodeName: string,
-    ui: { x: number; y: number },
+    ui: { x: number; y: number; width?: number; height?: number },
     fields?: Record<string, unknown>,
   ) {
     return createNodeOnBoard(typeId, nodeName, fields, { kind: 'fixed', ui })
@@ -416,9 +422,9 @@ export function useAgentBoard(): AgentBoardContext {
     refreshNodeConfigsAndMemory().catch(() => null)
   }
 
-  const CARD_WIDTH = 230
-  const CARD_HEIGHT = 250
-  const BOARD_PADDING = 40
+  const CARD_WIDTH = NODE_CARD_DEFAULT_WIDTH
+  const CARD_HEIGHT = NODE_CARD_DEFAULT_HEIGHT
+  const BOARD_PADDING = BOARD_CANVAS_PADDING_PX
   const BOARD_GAP = 70
 
   const availableNodes = ref<NodeInfo[]>([])
@@ -432,6 +438,8 @@ export function useAgentBoard(): AgentBoardContext {
 
   const canvasWidth = ref(1400)
   const canvasHeight = ref(900)
+  const canvasPaddingLeft = ref(0)
+  const canvasPaddingTop = ref(0)
 
   const nodeRuns = ref<Record<string, NodeRunState>>({})
   const nodeStates = ref<Record<string, NodeInstanceState>>({})
@@ -608,7 +616,7 @@ export function useAgentBoard(): AgentBoardContext {
   function onItemPointerDown(id: string, event: PointerEvent) {
     if (event.button !== 0) return
     const target = event.target as HTMLElement | null
-    if (target?.closest('button, input, textarea, select, a')) return
+    if (target?.closest('button, input, textarea, select, a, .node-resize-handle')) return
 
     dragHoverTargetId.value = null
     const selected = new Set<string>(selectedItemIds.value)
@@ -654,7 +662,10 @@ export function useAgentBoard(): AgentBoardContext {
     if (event.pointerId !== session.pointerId) return
     const dx = event.clientX - session.startPointerX
     const dy = event.clientY - session.startPointerY
-    if (!session.moved && Math.hypot(dx, dy) > 4) session.moved = true
+    if (!session.moved) {
+      if (Math.hypot(dx, dy) <= 4) return
+      session.moved = true
+    }
 
     const movingIds = selectedItemIds.value.length ? selectedItemIds.value : [session.itemId]
     for (const itemId of movingIds) {
@@ -1113,13 +1124,13 @@ export function useAgentBoard(): AgentBoardContext {
 
   async function persistDraggedItemPositions(itemIds?: Iterable<string>) {
     const graphId = currentGraphId.value || 'default'
-    const tasks: Array<{ itemId: string; ui: { x: number; y: number }; request: Promise<{ ok: boolean }> }> = []
+    const tasks: Array<{ itemId: string; ui: { x: number; y: number; width?: number; height?: number }; request: Promise<{ ok: boolean }> }> = []
     const include = itemIds ? new Set(itemIds) : null
 
     for (const node of nodes.value) {
       if (!node?.ui) continue
       if (include && !include.has(node.id)) continue
-      const ui = { x: clampX(node.ui.x), y: Math.max(0, node.ui.y) }
+      const ui = sanitizeBoardPoint(node.ui)
       tasks.push({
         itemId: node.id,
         ui,
@@ -1153,16 +1164,69 @@ export function useAgentBoard(): AgentBoardContext {
     }
   }
 
+  async function resizeNodeCard(id: string, size: { width: number; height: number }, options?: { persist?: boolean }) {
+    const node = nodes.value.find((item) => item.id === id)
+    if (!node) return
+    const normalized = sanitizeBoardPoint({
+      ...node.ui,
+      width: size.width,
+      height: size.height,
+    })
+    node.ui.width = normalized.width
+    node.ui.height = normalized.height
+    updateCanvasSize()
+    syncGraphSnapshot()
+    if (!options?.persist) return
+    rememberPendingUiPositions([id], 'resize_node')
+    try {
+      await persistDraggedItemPositions([id])
+      await persistGraphConfig('resize_node')
+      clearPendingUiPosition(id, 'resize_node_saved')
+    } catch (e: any) {
+      clearPendingUiPosition(id, 'resize_node_failed')
+      lastError.value = String(e?.message || e)
+    }
+  }
+
   function onPanMouseMove(event: MouseEvent) {
     const session = panSession.value
     if (!session) return
     const board = boardRef.value
     if (!board) return
 
-    const dx = event.clientX - session.startPointerX
-    const dy = event.clientY - session.startPointerY
-    board.scrollLeft = session.startScrollLeft - dx
-    board.scrollTop = session.startScrollTop - dy
+    const capacity = expandBoardPanCapacity({
+      startPointerX: session.startPointerX,
+      startPointerY: session.startPointerY,
+      startScrollLeft: session.startScrollLeft,
+      startScrollTop: session.startScrollTop,
+      startCanvasPaddingLeft: session.startCanvasPaddingLeft,
+      startCanvasPaddingTop: session.startCanvasPaddingTop,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      clientWidth: board.clientWidth,
+      clientHeight: board.clientHeight,
+      canvasWidth: canvasWidth.value,
+      canvasHeight: canvasHeight.value,
+      canvasPaddingLeft: canvasPaddingLeft.value,
+      canvasPaddingTop: canvasPaddingTop.value,
+      scale: canvasScale.value,
+    })
+
+    canvasWidth.value = capacity.canvasWidth
+    canvasHeight.value = capacity.canvasHeight
+    canvasPaddingLeft.value = capacity.canvasPaddingLeft
+    canvasPaddingTop.value = capacity.canvasPaddingTop
+
+    const applyScroll = () => {
+      if (panSession.value !== session || boardRef.value !== board) return
+      board.scrollLeft = capacity.scrollLeft
+      board.scrollTop = capacity.scrollTop
+    }
+    if (capacity.expanded) {
+      void nextTick(applyScroll)
+    } else {
+      applyScroll()
+    }
     event.preventDefault()
   }
 
@@ -1220,6 +1284,8 @@ export function useAgentBoard(): AgentBoardContext {
       startPointerY: event.clientY,
       startScrollLeft: board.scrollLeft,
       startScrollTop: board.scrollTop,
+      startCanvasPaddingLeft: canvasPaddingLeft.value,
+      startCanvasPaddingTop: canvasPaddingTop.value,
     }
     window.addEventListener('mousemove', onPanMouseMove)
     window.addEventListener('mouseup', onPanEnd)
@@ -1280,6 +1346,8 @@ export function useAgentBoard(): AgentBoardContext {
       clientX: event.clientX,
       clientY: event.clientY,
       scale: canvasScale.value,
+      contentOffsetLeft: BOARD_CANVAS_PADDING_PX + canvasPaddingLeft.value,
+      contentOffsetTop: BOARD_CANVAS_PADDING_PX + canvasPaddingTop.value,
     })
   }
 
@@ -1428,12 +1496,13 @@ export function useAgentBoard(): AgentBoardContext {
   const PORT_RADIUS = 6
 
   function getPortPosition(id: string, side: 'input' | 'output', portIndex = 0) {
+    const node = nodes.value.find((n) => n.id === id)
     return getNodePortPosition({
-      node: nodes.value.find((n) => n.id === id),
+      node,
       side,
       portIndex,
-      cardWidth: CARD_WIDTH,
-      cardHeight: CARD_HEIGHT,
+      cardWidth: nodeCardWidth(node),
+      cardHeight: nodeCardHeight(node),
       portRadius: PORT_RADIUS,
     })
   }
@@ -1690,6 +1759,8 @@ export function useAgentBoard(): AgentBoardContext {
     canvasScale,
     canvasWidth,
     canvasHeight,
+    canvasPaddingLeft,
+    canvasPaddingTop,
     selectionRect,
     suppressClickUntil,
     dragSession,
@@ -1724,6 +1795,7 @@ export function useAgentBoard(): AgentBoardContext {
     isDragging,
     isNodeSelected,
     itemStyle,
+    resizeNodeCard,
     onItemClick,
     onItemPointerDown,
     onItemPointerMove,

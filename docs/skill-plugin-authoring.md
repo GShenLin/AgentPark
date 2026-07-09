@@ -139,4 +139,4 @@ Stable fields:
 - `mcpServers`: array, inline config object, or relative JSON config file
 - `configSchema`: object reserved for future node UI mapping
 
-`openclaw.plugin.json` remains supported through an explicit adapter. Native AgentPark code should not mix OpenClaw-specific `contracts` fields into the stable schema.
+Only `agentpark.plugin.json` and `plugin.json` are read. OpenClaw-specific `contracts` fields are not part of the AgentPark plugin schema.

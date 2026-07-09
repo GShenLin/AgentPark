@@ -20,6 +20,7 @@ from .settings_api import SettingsApiDomain
 from .user_interaction_api import UserInteractionApiDomain
 from src.channels.service import ChannelService
 from src.provider_limit_jobs import ProviderLimitJobStore
+from src.runtime_events import RuntimeEventDomain
 
 
 class BackendCore:
@@ -63,6 +64,7 @@ class BackendCore:
         self.remote_api = RemoteApiDomain(self)
         self.settings_api = SettingsApiDomain(self)
         self.user_interaction_api = UserInteractionApiDomain(self)
+        self.runtime_events = RuntimeEventDomain(self)
         self.system_api = SystemApiDomain(self, self.agent_domain)
 
 

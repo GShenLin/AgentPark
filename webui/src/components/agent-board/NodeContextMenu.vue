@@ -137,8 +137,13 @@ defineExpose({
   min-width: 180px;
   padding: 6px;
   border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(2, 6, 23, 0.96);
+  border: 1px solid var(--theme-panel-node-context-menu-button-border, rgba(148, 163, 184, 0.22));
+  background-color: var(--theme-panel-node-context-menu-background-color, rgba(2, 6, 23, 0.96));
+  background-image: var(--theme-panel-node-context-menu-background-image, none);
+  background-size: var(--theme-panel-node-context-menu-background-size, cover);
+  background-position: var(--theme-panel-node-context-menu-background-position, center);
+  background-repeat: var(--theme-panel-node-context-menu-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-node-context-menu-background-blend-mode, normal);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
 }
 
@@ -147,8 +152,8 @@ defineExpose({
   text-align: left;
   border: 0;
   border-radius: 6px;
-  background: transparent;
-  color: rgba(226, 232, 240, 0.96);
+  background: var(--theme-panel-node-context-menu-button-background, transparent);
+  color: var(--theme-panel-node-context-menu-button-text, rgba(226, 232, 240, 0.96));
   font-size: 12px;
   padding: 8px 10px;
   cursor: pointer;
@@ -160,7 +165,7 @@ defineExpose({
 }
 
 .node-menu-item:hover {
-  background: rgba(14, 116, 144, 0.28);
+  background: var(--theme-panel-node-context-menu-button-hover-background, rgba(14, 116, 144, 0.28));
 }
 </style>
 

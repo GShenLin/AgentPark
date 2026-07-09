@@ -19,7 +19,7 @@ class Node(BaseNode):
     def getOutputNum(self, context: dict | None = None) -> int:
         return 1
 
-    def _normalize_output_file_name(self, file_name: str) -> str:
+    def _resolve_output_file_name(self, file_name: str) -> str:
         safe_name = str(file_name or "").strip()
         if not safe_name:
             return "output.md"
@@ -40,7 +40,7 @@ class Node(BaseNode):
         if not file_name:
             head = content[:6].strip()
             file_name = head if head else "output"
-        file_name = self._normalize_output_file_name(file_name)
+        file_name = self._resolve_output_file_name(file_name)
 
         os.makedirs(base_dir, exist_ok=True)
         file_path = os.path.join(base_dir, file_name)

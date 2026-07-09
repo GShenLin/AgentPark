@@ -42,11 +42,11 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
 
     def _resolve_retry_policy(self):
         try:
-            max_retries = int(self.config.get("maxRetries", self.config.get("max_retries", 3)))
+            max_retries = int(self.config.get("maxRetries", 3))
         except Exception:
             max_retries = 3
         try:
-            retry_delay = float(self.config.get("retryDelaySec", self.config.get("retry_delay_sec", 1)))
+            retry_delay = float(self.config.get("retryDelaySec", 1))
         except Exception:
             retry_delay = 1
         return max(0, max_retries), max(0, retry_delay)

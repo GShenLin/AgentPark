@@ -107,9 +107,8 @@ def skill_resource_keys(skill_name: str, skill_path: str) -> tuple[str, ...]:
     seen: set[str] = set()
     for key in keys:
         normalized = key.replace("\\", "/").strip()
-        case_key = normalized.casefold()
-        if normalized and case_key not in seen:
-            seen.add(case_key)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
             result.append(normalized)
     return tuple(result)
 

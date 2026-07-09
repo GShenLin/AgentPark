@@ -186,8 +186,13 @@ watch(
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(11, 15, 23, 0.4);
+  border-bottom: 1px solid var(--theme-panel-node-palette-item-border, rgba(148, 163, 184, 0.1));
+  background-color: var(--theme-panel-node-palette-background-color, rgba(11, 15, 23, 0.4));
+  background-image: var(--theme-panel-node-palette-background-image, none);
+  background-size: var(--theme-panel-node-palette-background-size, cover);
+  background-position: var(--theme-panel-node-palette-background-position, center);
+  background-repeat: var(--theme-panel-node-palette-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-node-palette-background-blend-mode, normal);
 }
 
 .node-palette-head {
@@ -198,14 +203,14 @@ watch(
 
 .node-palette-title {
   font-size: 12px;
-  color: rgba(148, 163, 184, 0.7);
+  color: var(--theme-panel-node-palette-item-text, rgba(148, 163, 184, 0.7));
   margin-right: auto;
 }
 
 .graph-entry {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--theme-panel-node-palette-button-background, rgba(15, 23, 42, 0.6));
+  border: 1px solid var(--theme-panel-node-palette-button-border, rgba(148, 163, 184, 0.2));
+  color: var(--theme-panel-node-palette-button-text, rgba(255, 255, 255, 0.85));
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 6px;
@@ -219,8 +224,8 @@ watch(
 }
 
 .node-palette-item {
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--theme-panel-node-palette-item-background, rgba(30, 41, 59, 0.6));
+  border: 1px solid var(--theme-panel-node-palette-item-border, rgba(148, 163, 184, 0.2));
   border-radius: 8px;
   padding: 6px 10px;
   cursor: pointer;
@@ -233,7 +238,7 @@ watch(
 
 .node-palette-name {
   font-size: 12px;
-  color: #fff;
+  color: var(--theme-panel-node-palette-item-text, #fff);
 }
 
 .node-palette-desc {

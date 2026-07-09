@@ -7,6 +7,7 @@ import re
 import shutil
 from typing import Any
 
+from src.companion_paths import companion_node_config_path
 from src.config_loader import ConfigLoader
 from src.workspace_settings import load_workspace_settings
 from src.web_backend.graph_runtime_registry import GraphConfigReadError
@@ -14,7 +15,8 @@ from src.web_backend import runtime_paths
 from src.web_backend.node_config_errors import NodeConfigReadError
 from src.web_backend.node_config_service import node_config_service
 from nodes.agent_mcp_loader import MCP_SERVERS_CONFIG_KEYS
-from nodes.agent_plugin_loader import default_plugin_root, list_available_plugin_options, load_node_plugins
+from nodes.agent_plugin_loader import default_plugin_root, load_node_plugins
+from nodes.agent_plugin_manifest import first_manifest_filename, read_plugin_manifest
 from nodes.agent_skill_loader import default_skill_root, list_available_skill_options, load_node_skills
 
 
@@ -69,7 +71,7 @@ def _check_provider_config() -> dict[str, Any]:
 
 
 def _check_companion_config() -> dict[str, Any]:
-    path = os.path.join(runtime_paths._get_graphs_dir(), "companion", "config.json")
+    path = companion_node_config_path(runtime_paths._get_graphs_dir())
     try:
         payload = node_config_service.read_strict(path)
     except NodeConfigReadError as exc:
@@ -136,19 +138,20 @@ def _check_plugin_manifests() -> list[dict[str, Any]]:
     root = default_plugin_root()
     if not os.path.isdir(root):
         return [{"name": "plugins", "status": "ok", "detail": f"plugin root does not exist: {root}"}]
-    try:
-        options = list_available_plugin_options(root)
-    except Exception as exc:
-        return [{"name": "plugins", "status": "error", "detail": f"{type(exc).__name__}: {exc}", "path": root}]
-    if not options:
+    manifest_paths: list[str] = []
+    for current_dir, _dirnames, filenames in os.walk(root):
+        manifest_name = first_manifest_filename(filenames)
+        if manifest_name:
+            manifest_paths.append(os.path.join(current_dir, manifest_name))
+    if not manifest_paths:
         return [{"name": "plugins", "status": "ok", "detail": "no plugins found", "path": root}]
 
     checks: list[dict[str, Any]] = []
-    for option in options:
-        value = str(option.get("value") or "").strip()
-        if not value:
-            continue
+    for manifest_path in sorted(manifest_paths):
+        value = os.path.basename(os.path.dirname(manifest_path))
         try:
+            manifest = read_plugin_manifest(manifest_path)
+            value = manifest.id
             load_node_plugins([value], plugin_root=root)
             checks.append({"name": f"plugin:{value}", "status": "ok", "detail": "loaded"})
         except Exception as exc:
@@ -157,7 +160,7 @@ def _check_plugin_manifests() -> list[dict[str, Any]]:
                     "name": f"plugin:{value}",
                     "status": "error",
                     "detail": f"{type(exc).__name__}: {exc}",
-                    "path": os.path.join(root, *re.split(r"[\\/]+", value)),
+                    "path": manifest_path,
                 }
             )
     return checks
@@ -170,8 +173,6 @@ def _check_graph_configs() -> list[dict[str, Any]]:
 
     checks: list[dict[str, Any]] = []
     for graph_id in sorted(os.listdir(graphs_dir)):
-        if graph_id == "companion":
-            continue
         graph_dir = os.path.join(graphs_dir, graph_id)
         if not os.path.isdir(graph_dir):
             continue
@@ -240,12 +241,6 @@ def _raw_mcp_server_config(settings: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(value, dict):
                 raise ValueError(f"config/config.json field {key} must be an object")
             return dict(value)
-    mcp = settings.get("mcp")
-    if isinstance(mcp, dict) and mcp.get("servers") is not None:
-        servers = mcp.get("servers")
-        if not isinstance(servers, dict):
-            raise ValueError("config/config.json field mcp.servers must be an object")
-        return dict(servers)
     return {}
 
 
@@ -254,9 +249,13 @@ def _validate_mcp_server_manifest(name: str, config: Any) -> None:
         raise ValueError(f"invalid MCP server name: {name}")
     if not isinstance(config, dict):
         raise ValueError(f"MCP server {name} config must be an object")
-    transport = str(config.get("transport") or config.get("type") or "stdio").strip().lower().replace("_", "-")
-    if transport == "http":
-        transport = "streamable-http"
+    raw_transport = config.get("transport")
+    if raw_transport is None or raw_transport == "":
+        transport = "stdio"
+    elif isinstance(raw_transport, str):
+        transport = raw_transport.strip()
+    else:
+        raise ValueError(f"MCP server {name} field transport must be a string")
     if transport not in {"stdio", "sse", "streamable-http"}:
         raise ValueError(f"MCP server {name} transport is unsupported: {transport}")
     if transport == "stdio" and not str(config.get("command") or "").strip():

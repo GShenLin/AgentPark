@@ -202,7 +202,7 @@ def test_graph_load_supports_version_unchanged_response():
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
 
-def test_graph_config_drops_legacy_links_without_conversion():
+def test_graph_config_drops_links_without_conversion():
     import src.web_backend as backend
 
     graph_id = f"ut_drop_links_{uuid.uuid4().hex[:8]}"
@@ -309,6 +309,114 @@ def test_graph_load_rejects_non_object_config():
         shutil.rmtree(graph_dir, ignore_errors=True)
 
 
+def test_graph_list_includes_companion_and_marks_protected_graphs_readonly(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from src.web_backend import runtime_paths
+    import src.web_backend as backend
+
+    graphs_dir = tmp_path / "memories"
+    for graph_id, name in (("default", "default"), ("Companion", "Companion"), ("work", "Work")):
+        graph_dir = graphs_dir / graph_id
+        graph_dir.mkdir(parents=True)
+        with open(graph_dir / "config.json", "w", encoding="utf-8") as handle:
+            json.dump({"id": graph_id, "name": name, "output_routes": {}}, handle)
+    companion_node_dir = graphs_dir / "Companion" / "Companion"
+    companion_node_dir.mkdir()
+    with open(companion_node_dir / "config.json", "w", encoding="utf-8") as handle:
+        json.dump({"graph_id": "Companion", "node_id": "Companion", "type_id": "agent_node"}, handle)
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    response = TestClient(backend.create_app()).get("/api/graphs")
+
+    assert response.status_code == 200
+    graphs = {item["id"]: item for item in response.json()["graphs"]}
+    assert {"default", "Companion", "work"}.issubset(graphs)
+    assert graphs["default"]["readonly"] is True
+    assert graphs["Companion"]["readonly"] is True
+    assert graphs["work"].get("readonly") is False
+
+
+def test_companion_graph_load_uses_normal_graph_and_node_layout(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from src.web_backend import runtime_paths
+    import src.web_backend as backend
+
+    graphs_dir = tmp_path / "memories"
+    companion_graph_dir = graphs_dir / "Companion"
+    companion_node_dir = companion_graph_dir / "Companion"
+    companion_node_dir.mkdir(parents=True)
+    graph_config = {"id": "Companion", "name": "Companion", "working_path": "", "output_routes": {}}
+    node_config = {
+        "graph_id": "Companion",
+        "node_id": "Companion",
+        "type_id": "agent_node",
+        "name": "Companion",
+        "provider_id": "provider-a",
+        "mode": "chat",
+        "tools": ["system_tools"],
+    }
+    with open(companion_graph_dir / "config.json", "w", encoding="utf-8") as handle:
+        json.dump(graph_config, handle)
+    with open(companion_node_dir / "config.json", "w", encoding="utf-8") as handle:
+        json.dump(node_config, handle)
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    client = TestClient(backend.create_app())
+    response = client.get("/api/graphs/Companion")
+
+    assert response.status_code == 200
+    graph = response.json()["graph"]
+    assert graph["id"] == "Companion"
+    assert graph["output_routes"] == {}
+    saved_graph = json.loads((companion_graph_dir / "config.json").read_text(encoding="utf-8"))
+    saved_node = json.loads((companion_node_dir / "config.json").read_text(encoding="utf-8"))
+    assert saved_graph == graph_config
+    assert saved_node == node_config
+
+
+def test_companion_node_configs_use_normal_node_layout(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from src.web_backend import runtime_paths
+    import src.web_backend as backend
+
+    graphs_dir = tmp_path / "memories"
+    companion_node_dir = graphs_dir / "Companion" / "Companion"
+    companion_node_dir.mkdir(parents=True)
+    with open(graphs_dir / "Companion" / "config.json", "w", encoding="utf-8") as handle:
+        json.dump({"id": "Companion", "name": "Companion", "output_routes": {}}, handle)
+    with open(companion_node_dir / "config.json", "w", encoding="utf-8") as handle:
+        json.dump({"graph_id": "Companion", "node_id": "Companion", "type_id": "agent_node", "name": "Companion"}, handle)
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    response = TestClient(backend.create_app()).get("/api/nodes/instances/configs?graph_id=Companion")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["node_ids"] == ["Companion"]
+    assert payload["nodes"][0]["node_id"] == "Companion"
+    assert payload["nodes"][0]["graph_id"] == "Companion"
+
+
+def test_delete_graph_rejects_protected_graphs(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from src.web_backend import runtime_paths
+    import src.web_backend as backend
+
+    graphs_dir = tmp_path / "memories"
+    graphs_dir.mkdir()
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    client = TestClient(backend.create_app())
+
+    for graph_id in ("default", "Companion"):
+        response = client.delete(f"/api/graphs/{graph_id}")
+        assert response.status_code == 403
+        assert "protected graph cannot be deleted" in response.json().get("detail", "")
+
+
 def test_delete_graph_stops_runner_before_removing_runner_log():
     import src.web_backend as backend
 
@@ -332,6 +440,43 @@ def test_delete_graph_stops_runner_before_removing_runner_log():
         assert not os.path.exists(graph_dir)
     finally:
         shutil.rmtree(graph_dir, ignore_errors=True)
+
+
+def test_delete_graph_resets_startup_graph_when_it_points_to_deleted_graph(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from src import workspace_settings
+    from src.web_backend import runtime_paths
+    import src.web_backend as backend
+
+    runtime_root = tmp_path / "workspace"
+    graphs_dir = runtime_root / "memories"
+    graph_id = "delete_startup_target"
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(runtime_root))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(runtime_root))
+
+    client = TestClient(backend.create_app())
+    saved = client.post(
+        f"/api/graphs/{graph_id}",
+        json={"graph": {"id": graph_id, "name": "Delete Startup Target", "output_routes": {}}},
+    )
+    assert saved.status_code == 200
+    startup = client.post(
+        "/api/graphs/startup/config",
+        json={"graph_id": graph_id, "graph_name": "Delete Startup Target"},
+    )
+    assert startup.status_code == 200
+
+    deleted = client.delete(f"/api/graphs/{graph_id}")
+
+    assert deleted.status_code == 200
+    assert deleted.json().get("deleted") is True
+    assert client.get("/api/graphs/startup/config").json() == {
+        "graph_id": "default",
+        "graph_name": "default",
+    }
+    startup_cache = json.loads((runtime_root / ".cache" / "startup_graph.json").read_text(encoding="utf-8"))
+    assert startup_cache == {"graph_id": "default", "graph_name": "default"}
 
 
 def test_delete_graph_reports_runner_stop_timeout():

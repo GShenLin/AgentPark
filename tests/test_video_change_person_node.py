@@ -126,7 +126,7 @@ def test_video_change_person_node_schema_filters_supported_providers(monkeypatch
                         "apiKey": "secret",
                         "baseUrl": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis",
                         "model": "wan2.2-animate-mix",
-                        "supportmode": ["video_changePerson"],
+                            "supportmode": ["video_change_person"],
                     },
                 }
             },

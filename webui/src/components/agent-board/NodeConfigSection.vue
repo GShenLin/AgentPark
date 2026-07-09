@@ -15,6 +15,7 @@ import { AgentBoardKey, type NodeCard } from './context'
 import { withPersistedCapabilityState } from './capabilitySchemaState'
 import { formatNodeConfigChangeSummary, normalizeApplyError } from './nodeApplySummary'
 import NodeConfigFields from './NodeConfigFields.vue'
+import NodeRuntimeEventsSection from './NodeRuntimeEventsSection.vue'
 
 const injectedCtx = inject(AgentBoardKey, null)
 if (!injectedCtx) {
@@ -387,6 +388,12 @@ watch(
         </div>
       </div>
     </div>
+
+    <NodeRuntimeEventsSection
+      :node="node"
+      :graph-id="currentGraphId()"
+      @error="showError"
+    />
   </section>
 </template>
 
@@ -403,7 +410,7 @@ watch(
   min-height: 0;
   justify-content: flex-start;
   overflow: auto;
-  border-top: 1px solid rgba(148, 163, 184, 0.28);
+  border-top: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.28));
   padding-top: 16px;
   padding-right: 4px;
 }
@@ -426,14 +433,14 @@ watch(
 .section-title {
   font-size: 13px;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--theme-panel-node-side-editor-text-primary, #e2e8f0);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .empty-hint {
   font-size: 12px;
-  color: rgba(148, 163, 184, 0.84);
+  color: var(--theme-panel-node-side-editor-text-secondary, rgba(148, 163, 184, 0.84));
 }
 
 .apply-summary {
@@ -453,10 +460,10 @@ watch(
 }
 
 .apply-btn {
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.9);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.9));
+  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
   cursor: pointer;
   position: relative;
   z-index: 2;
@@ -517,10 +524,10 @@ watch(
 
 .mini-btn,
 .qr-actions .mini-btn {
-  border: 1px solid rgba(148, 163, 184, 0.26);
+  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.26));
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.92));
+  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
   cursor: pointer;
   padding: 6px 9px;
   font-size: 12px;

@@ -31,6 +31,8 @@ def _build_openai_chat_agent():
 def test_openai_responses_api_false_uses_chat_completions():
     agent = _build_openai_chat_agent()
     requests = []
+    events = []
+    agent.tool_event_callback = lambda event: events.append(event)
 
     def fake_post(**kwargs):
         requests.append(kwargs)
@@ -46,6 +48,15 @@ def test_openai_responses_api_false_uses_chat_completions():
     assert payload["messages"] == [{"role": "user", "content": "hello"}]
     assert payload["reasoning_effort"] == "high"
     assert "input" not in payload
+    summaries = [
+        json.loads(event["message"])
+        for event in events
+        if event.get("type") == "runtime_notice" and event.get("stage") == "provider_request_summary"
+    ]
+    assert len(summaries) == 1
+    assert summaries[0]["request_api"] == "chat_completions"
+    assert summaries[0]["input_item_count"] == 1
+    assert summaries[0]["approx_input_chars"] > 0
 
 
 def test_openai_chat_provider_treats_unsupported_web_search_as_disabled():
@@ -79,6 +90,135 @@ def test_openai_chat_provider_treats_unsupported_thinking_as_disabled():
     payload = json.loads(requests[0]["payload_json"])
     assert "thinking" not in payload
     assert "reasoning" not in payload
+
+
+def test_openai_chat_persists_visible_assistant_tool_call_note_before_tool_execution():
+    agent = _build_openai_chat_agent()
+    order = []
+    agent._agentpark_persist_assistant_tool_call_note = lambda message: order.append(
+        ("persist", message.get("content"))
+    )
+
+    def echo_tool(message=None):
+        order.append(("tool", message))
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
+    responses = iter(
+        [
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "I will call the echo tool.",
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {"name": "echo_tool", "arguments": '{"message":"hello"}'},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"message": {"role": "assistant", "content": "done"}}]},
+        ]
+    )
+    agent._curl_post_json_once = lambda **_kwargs: next(responses)
+
+    assert agent.Send(web_search="disabled", thinking="disabled", stream=False) == "done"
+    assert order == [
+        ("persist", "I will call the echo tool."),
+        ("tool", "hello"),
+    ]
+
+
+def test_openai_chat_stream_writes_sse_debug_when_enabled():
+    agent = _build_openai_chat_agent()
+    agent.config["sseDebug"] = True
+    emitted = []
+    debug_records = []
+    raw_events = [
+        '{"choices":[{"delta":{"content":"Hel"}}]}',
+        '{"choices":[{"delta":{"content":"lo"}}]}',
+        "[DONE]",
+    ]
+
+    agent._curl_post_sse_data_lines = lambda **_kwargs: iter(raw_events)
+    agent._write_sse_debug_if_needed = lambda **kwargs: debug_records.append(kwargs)
+
+    result = agent.Send(
+        web_search="disabled",
+        thinking="disabled",
+        stream=True,
+        stream_handler=lambda delta, full: emitted.append((delta, full)),
+    )
+
+    assert result == "Hello"
+    assert emitted == [("Hel", "Hel"), ("lo", "Hello")]
+    assert len(debug_records) == 1
+    assert debug_records[0]["endpoint"] == "chat/completions"
+    assert debug_records[0]["filename_prefix"] == "openai-chat_sse_chat"
+    assert debug_records[0]["force"] is True
+    assert [event["raw"] for event in debug_records[0]["events"]] == raw_events
+    assert debug_records[0]["final_payload"]["assembled_message"]["content"] == "Hello"
+
+
+def test_openai_chat_stream_forwards_compatible_thinking_fields():
+    agent = _build_openai_chat_agent()
+    emitted = []
+    thinking = []
+    raw_events = [
+        '{"choices":[{"delta":{"reasoning_content":"plan ","content":"O"}}]}',
+        '{"choices":[{"delta":{"thinking":{"delta":"then"},"content":"K"}}]}',
+        "[DONE]",
+    ]
+
+    agent._curl_post_sse_data_lines = lambda **_kwargs: iter(raw_events)
+
+    result = agent.Send(
+        web_search="disabled",
+        thinking="enabled",
+        stream=True,
+        stream_handler=lambda delta, full: emitted.append((delta, full)),
+        thinking_stream_handler=lambda delta, full, provider: thinking.append((delta, full, provider)),
+    )
+
+    assert result == "OK"
+    assert emitted == [("O", "O"), ("K", "OK")]
+    assert thinking == [
+        ("plan ", "plan ", "openai_chat"),
+        ("then", "plan then", "openai_chat"),
+    ]
+
+
+def test_openai_chat_stream_emits_native_web_search_runtime_notice():
+    agent = _build_openai_chat_agent()
+    events = []
+    raw_events = [
+        '{"choices":[{"delta":{"web_search":{"query":"agentpark","status":"searching"}}}]}',
+        '{"choices":[{"delta":{"content":"Done"}}]}',
+        "[DONE]",
+    ]
+    agent.tool_event_callback = lambda event: events.append(event)
+    agent._curl_post_sse_data_lines = lambda **_kwargs: iter(raw_events)
+
+    assert agent.Send(web_search="disabled", thinking="disabled", stream=True) == "Done"
+
+    notices = [
+        event
+        for event in events
+        if event.get("type") == "runtime_notice" and event.get("stage") == "openai_chat_native_web_search"
+    ]
+    assert len(notices) == 1
+    assert notices[0]["stage"] == "openai_chat_native_web_search"
+    payload = json.loads(notices[0]["message"])
+    assert payload["event"] == "native_web_search"
+    assert payload["source"] == "delta"
+    assert payload["key"] == "web_search"
+    assert "agentpark" in payload["preview"]
 
 
 def test_openai_chat_compaction_gate_uses_chat_completions_when_responses_api_false():

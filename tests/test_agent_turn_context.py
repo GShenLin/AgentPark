@@ -14,7 +14,6 @@ def test_agent_turn_context_item_excludes_secrets_and_splits_volatile_fields(tmp
             "type": "openai",
             "model": "gpt-test",
             "responsesApi": True,
-            "responsesContinuationMode": "explicit_context",
             "reasoningEffort": "high",
         },
     )

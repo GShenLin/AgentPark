@@ -57,9 +57,11 @@ def dedupe_plugin_tool_definitions(tools: Iterable[PluginToolDefinition]) -> lis
     result: list[PluginToolDefinition] = []
     seen: set[str] = set()
     for tool in tools or []:
-        key = str(tool.name or "").casefold()
+        key = str(tool.name or "").strip()
+        if not key:
+            raise PluginToolLoadError("plugin tool definition is missing a name")
         if key in seen:
-            continue
+            raise PluginToolLoadError(f"duplicate plugin tool definition: {key}")
         seen.add(key)
         result.append(tool)
     return result

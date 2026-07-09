@@ -202,6 +202,11 @@ class ToolContextCompactionGateMixin:
         rewritten_ids: set[str] = set()
 
         if action_text == "replace":
+            keep_ids = self._expand_tool_exchange_message_ids(
+                target_messages,
+                candidate_map,
+                keep_ids | set(normalized_rewrites.keys()),
+            )
             remove_ids = eligible_ids - keep_ids - set(normalized_rewrites.keys())
             insert_at = self._first_candidate_index(candidate_map, remove_ids or eligible_ids)
             rewritten_ids.update(
@@ -212,6 +217,12 @@ class ToolContextCompactionGateMixin:
             if summary_text:
                 self._insert_tool_context_summary(target_messages, insert_at, summary_text, reason_text)
         else:
+            delete_ids = self._expand_tool_exchange_message_ids(target_messages, candidate_map, delete_ids)
+            normalized_rewrites = {
+                message_id: content
+                for message_id, content in normalized_rewrites.items()
+                if message_id not in delete_ids
+            }
             insert_at = self._first_candidate_index(candidate_map, delete_ids or set(normalized_rewrites.keys()))
             rewritten_ids.update(
                 self._apply_message_rewrites(target_messages, candidate_map, normalized_rewrites)
@@ -332,6 +343,8 @@ class ToolContextCompactionGateMixin:
             "The runtime will only modify eligible message ids. Preserve: inspected file paths, line numbers, "
             "state-changing actions, failed attempts that affect next steps, important outputs, and pending decisions. "
             "Do not preserve raw logs, duplicate search results, or large file contents after extracting the useful facts.\n"
+            "Assistant tool-call messages and their matching tool-result messages are protocol-atomic: "
+            "keep or remove the whole exchange together.\n"
             "For replace, provide summary and optional keep_message_ids for raw messages that must remain. "
             "For patch, provide delete_message_ids and/or rewrites, plus optional summary.\n"
             "The resulting summary is working memory for continuation, not a completion signal. "
@@ -463,6 +476,69 @@ class ToolContextCompactionGateMixin:
                 continue
             normalized[message_id] = str(item.get("content") or "")
         return normalized
+
+    def _expand_tool_exchange_message_ids(
+        self,
+        messages: list[dict[str, Any]],
+        candidate_map: dict[str, int],
+        message_ids: set[str],
+    ) -> set[str]:
+        expanded = set(message_ids)
+        if not expanded:
+            return expanded
+        for group in self._tool_exchange_candidate_groups(messages, candidate_map):
+            if expanded.intersection(group):
+                expanded.update(group)
+        return expanded
+
+    def _tool_exchange_candidate_groups(
+        self,
+        messages: list[dict[str, Any]],
+        candidate_map: dict[str, int],
+    ) -> list[set[str]]:
+        groups: list[set[str]] = []
+        for assistant_id, assistant_index in candidate_map.items():
+            if not isinstance(assistant_index, int) or assistant_index < 0 or assistant_index >= len(messages):
+                continue
+            assistant = messages[assistant_index]
+            if not isinstance(assistant, dict):
+                continue
+            if str(assistant.get("role") or "").strip().lower() != "assistant":
+                continue
+            call_ids = self._message_tool_call_ids(assistant)
+            if not call_ids:
+                continue
+            group = {assistant_id}
+            for candidate_id, candidate_index in candidate_map.items():
+                if candidate_id == assistant_id:
+                    continue
+                if not isinstance(candidate_index, int) or candidate_index < 0 or candidate_index >= len(messages):
+                    continue
+                message = messages[candidate_index]
+                if not isinstance(message, dict):
+                    continue
+                role = str(message.get("role") or "").strip().lower()
+                if role not in {"tool", "function"}:
+                    continue
+                tool_call_id = str(message.get("tool_call_id") or message.get("call_id") or "").strip()
+                if tool_call_id in call_ids:
+                    group.add(candidate_id)
+            groups.append(group)
+        return groups
+
+    @staticmethod
+    def _message_tool_call_ids(message: dict[str, Any]) -> set[str]:
+        ids: set[str] = set()
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            return ids
+        for item in tool_calls:
+            if not isinstance(item, dict):
+                continue
+            call_id = str(item.get("id") or "").strip()
+            if call_id:
+                ids.add(call_id)
+        return ids
 
     @staticmethod
     def _first_candidate_index(candidate_map: dict[str, int], message_ids: set[str]) -> int:

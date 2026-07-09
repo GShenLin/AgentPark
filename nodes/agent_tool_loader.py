@@ -26,8 +26,6 @@ TOOL_NAME_LIST = NameListContract(
     list_label="tools",
     item_label="tool names",
     error_type=None,
-    allow_loose_items=True,
-    key_func=str.lower,
 )
 
 

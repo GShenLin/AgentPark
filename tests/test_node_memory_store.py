@@ -78,33 +78,6 @@ def test_append_node_tool_call_entry_writes_structured_tool_history(tmp_path):
     assert "result_chars=2" in markdown
 
 
-def test_legacy_root_messages_rebuild_missing_active_markdown(tmp_path):
-    memory_path = tmp_path / "memory.md"
-    messages_path = tmp_path / "messages.jsonl"
-    messages_path.write_text(
-        json.dumps(
-            {
-                "id": "old-user",
-                "role": "user",
-                "parts": [{"type": "text", "text": "old hello"}],
-                "created_at": "2026-06-20 09:00:00.000000",
-            },
-            ensure_ascii=False,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    records = load_recent_node_memory_records(str(memory_path), str(messages_path), limit=10)
-
-    assert records[0]["id"] == "old-user"
-    assert memory_path.exists()
-    assert messages_path.exists()
-    markdown = memory_path.read_text(encoding="utf-8")
-    assert "<!-- message_id: old-user -->" in markdown
-    assert "**[2026-06-20 09:00:00] user**: old hello" in markdown
-
-
 def test_records_over_limit_archive_old_entries_and_keep_recent_active(tmp_path, monkeypatch):
     memory_path = tmp_path / "memory.md"
     messages_path = tmp_path / "messages.jsonl"
@@ -227,18 +200,6 @@ def test_concurrent_node_memory_appends_with_archive_keep_all_records(tmp_path, 
     assert set(all_ids) == {f"msg-{index}" for index in range(30)}
     assert len(all_ids) == len(set(all_ids))
     assert not list(tmp_path.rglob("*.tmp"))
-
-
-def test_migrates_legacy_named_memory_file_to_active_memory_file(tmp_path):
-    legacy_memory_path = tmp_path / "agent.md"
-    messages_path = tmp_path / "messages.jsonl"
-    legacy_memory_path.write_text("legacy markdown without ids", encoding="utf-8")
-
-    ensure_node_memory_files(str(legacy_memory_path), str(messages_path))
-
-    active_memory_path = tmp_path / "memory.md"
-    assert not legacy_memory_path.exists()
-    assert active_memory_path.read_text(encoding="utf-8") == "legacy markdown without ids"
 
 
 def test_append_node_memory_entry_reports_all_target_failures():

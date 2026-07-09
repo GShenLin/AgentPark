@@ -3,13 +3,59 @@ import json
 import os
 
 from src.provider_feature_matrix import build_provider_feature_matrix
-from src.doubao_reasoning_effort import normalize_doubao_reasoning_effort
-from src.value_parsing import parse_optional_int_value
+from src.doubao_reasoning_effort import require_doubao_reasoning_effort
 from .workspace_settings import get_workspace_root
 
 
 class ConfigLoader:
     CONFIG_PATH_ENV = "AGENTPARK_CONFIG_PATH"
+    PROVIDER_UNSUPPORTED_CONFIG_KEYS = {
+        "anthropic_beta",
+        "claudeThinkingBudgetTokens",
+        "claudeWebSearchAllowedCallers",
+        "claudeWebSearchAllowedDomains",
+        "claudeWebSearchBlockedDomains",
+        "claudeWebSearchMaxUses",
+        "claudeWebSearchResponseInclusion",
+        "claudeWebSearchToolType",
+        "claudeWebSearchUserLocation",
+        "clear_thinking",
+        "debug_sse",
+        "debugSse",
+        "default_instructions",
+        "default_instructions_text",
+        "do_sample",
+        "contentGenerationMaxWaitSec",
+        "contentGenerationPollIntervalSec",
+        "image_model",
+        "image_size",
+        "imageModel",
+        "imageModelId",
+        "max_retries",
+        "max_tokens",
+        "reasoning_effort",
+        "retry_delay_sec",
+        "response_format",
+        "responsesContinuationMode",
+        "responses_continuation_mode",
+        "responses_parallel_tool_calls",
+        "responses_tool_choice",
+        "tool_choice",
+        "tool_stream",
+        "web_search_limit",
+        "web_search_max_keyword",
+        "web_search_sources",
+        "task_status_base_url",
+        "video_change_person_mode",
+        "videoChangePersonCheckImage",
+        "videoChangePersonMaxWaitSec",
+        "videoChangePersonMode",
+        "videoChangePersonPollIntervalSec",
+        "videoModel",
+        "videoModelId",
+        "video_model",
+        "wan_animate_mix_mode",
+    }
 
     def _resolve_provider_config_path(self):
         explicit_path = str(os.environ.get(self.CONFIG_PATH_ENV) or "").strip()
@@ -57,57 +103,93 @@ class ConfigLoader:
             raise ValueError("config/config.json must contain a top-level object.")
         return payload
 
-    def _normalize_support_modes(self, provider_name, value):
+    def _validate_support_modes(self, provider_name, value):
         if value is None:
             return []
-        if not isinstance(value, (list, tuple, set)):
+        if not isinstance(value, list):
             raise ValueError(
                 f"Provider '{provider_name}' has invalid supportmode; expected an array."
             )
         modes = []
         seen = set()
         for item in value:
-            text = str(item or "").strip()
-            if not text:
-                continue
-            key = text.lower()
-            if key in seen:
-                continue
-            seen.add(key)
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid supportmode; expected non-empty strings."
+                )
+            text = item.strip()
+            if text in seen:
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid supportmode; duplicate value: {text}."
+                )
+            seen.add(text)
             modes.append(text)
         return modes
 
-    def _normalize_timeout_ms(self, provider_name, value):
-        if value is None or value == "":
-            return value
-        try:
-            return parse_optional_int_value("timeoutMs", value, minimum=1)
-        except ValueError as exc:
+    def _validate_timeout_ms(self, provider_name, value):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise ValueError(
-                f"Provider '{provider_name}' has invalid timeoutMs: {value!r}"
-            ) from exc
+                f"Provider '{provider_name}' has invalid timeoutMs; expected a positive integer."
+            )
+        return value
 
-    def _normalize_provider_config(self, provider_name, payload, require_api_key):
+    def _validate_optional_positive_int(self, provider_name, field_name, value):
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid {field_name}; expected a positive integer."
+            )
+        return value
+
+    def _validate_provider_config(self, provider_name, payload, require_api_key):
         if not isinstance(payload, dict):
             raise ValueError(
                 f"Provider '{provider_name}' configuration must be an object."
             )
 
         provider = copy.deepcopy(payload)
-        provider_type = str(provider.get("type") or "").strip().lower()
-        if provider_type:
+        unsupported_keys = sorted(key for key in self.PROVIDER_UNSUPPORTED_CONFIG_KEYS if key in provider)
+        if unsupported_keys:
+            joined = ", ".join(unsupported_keys)
+            raise ValueError(
+                f"Provider '{provider_name}' uses unsupported config field(s): {joined}."
+            )
+        raw_provider_type = provider.get("type")
+        provider_type = ""
+        if raw_provider_type not in (None, ""):
+            if not isinstance(raw_provider_type, str):
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid type; expected a lowercase string."
+                )
+            provider_type = raw_provider_type.strip()
+            if not provider_type or provider_type != provider_type.lower():
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid type; expected a lowercase string."
+                )
             provider["type"] = provider_type
         if provider_type == "doubao":
-            self._normalize_doubao_reasoning_effort_fields(provider)
+            self._validate_doubao_reasoning_effort_fields(provider)
 
-        provider["supportmode"] = self._normalize_support_modes(
+        provider["supportmode"] = self._validate_support_modes(
             provider_name, provider.get("supportmode")
         )
 
         if "timeoutMs" in provider:
-            provider["timeoutMs"] = self._normalize_timeout_ms(
+            provider["timeoutMs"] = self._validate_timeout_ms(
                 provider_name, provider.get("timeoutMs")
             )
+        for pressure_key in ("concurrencyLimit", "rpmLimit"):
+            if pressure_key in provider:
+                pressure_value = self._validate_optional_positive_int(
+                    provider_name,
+                    pressure_key,
+                    provider.get(pressure_key),
+                )
+                if pressure_value is None:
+                    provider.pop(pressure_key, None)
+                else:
+                    provider[pressure_key] = pressure_value
         if "responsesApi" in provider and not isinstance(provider.get("responsesApi"), bool):
             raise ValueError(
                 f"Provider '{provider_name}' has invalid responsesApi; expected a boolean."
@@ -131,15 +213,12 @@ class ConfigLoader:
 
         return provider
 
-    def _normalize_doubao_reasoning_effort_fields(self, provider):
-        for key in ("reasoningEffort", "reasoning_effort"):
-            if key not in provider:
-                continue
-            effort = normalize_doubao_reasoning_effort(provider.get(key))
-            if effort:
-                provider[key] = effort
-            else:
-                provider[key] = provider.get(key)
+    def _validate_doubao_reasoning_effort_fields(self, provider):
+        if "reasoningEffort" not in provider:
+            return
+        effort = require_doubao_reasoning_effort(provider.get("reasoningEffort"))
+        if effort:
+            provider["reasoningEffort"] = effort
 
     def _validate_responses_provider_config(self, provider_name, provider, provider_type):
         if provider.get("responsesApi") is not True:
@@ -161,17 +240,15 @@ class ConfigLoader:
             )
 
         for key in ("toolResultSubmissionMaxChars", "toolContextCompactionEveryToolCalls"):
-            try:
-                value = int(provider.get(key))
-            except Exception as exc:
+            value = provider.get(key)
+            if not isinstance(value, int) or isinstance(value, bool):
                 raise ValueError(
                     f"Provider '{provider_name}' has invalid {key}; expected a positive integer."
-                ) from exc
+                )
             if value <= 0:
                 raise ValueError(
                     f"Provider '{provider_name}' has invalid {key}; expected a positive integer."
                 )
-            provider[key] = value
 
         if provider_type == "openai":
             if "responsesReplayReasoningItems" not in provider:
@@ -199,7 +276,7 @@ class ConfigLoader:
 
         normalized = copy.deepcopy(self._load_workspace_config(provider_config_path))
         normalized["providers"] = {
-            str(provider_name): self._normalize_provider_config(
+            str(provider_name): self._validate_provider_config(
                 str(provider_name),
                 provider_payload,
                 require_api_key=False,
@@ -220,7 +297,7 @@ class ConfigLoader:
         if provider_id not in providers:
             raise ValueError(f"Provider '{provider_id}' not found in configuration")
 
-        return self._normalize_provider_config(
+        return self._validate_provider_config(
             provider_id,
             providers[provider_id],
             require_api_key=True,

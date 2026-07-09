@@ -14,14 +14,26 @@ from src.providers.agent_turn_context import is_agent_turn_context_text
 MAX_LARGEST_INPUT_ITEMS = 8
 MAX_INPUT_ITEMS_INCLUDED = 80
 MAX_TOOLS_INCLUDED = 64
+PROVIDER_REQUEST_INDEX_ATTR = "_agentpark_provider_request_index"
 
 
-def build_responses_request_summary(
+def next_provider_request_index(agent: object) -> int:
+    try:
+        current = int(getattr(agent, PROVIDER_REQUEST_INDEX_ATTR, 0) or 0)
+    except Exception:
+        current = 0
+    next_index = current + 1
+    setattr(agent, PROVIDER_REQUEST_INDEX_ATTR, next_index)
+    return next_index
+
+
+def build_provider_request_summary(
     *,
     request_index: int,
     current_input: Any,
     tools_payload: Any,
     stream: bool,
+    request_api: str,
     responses_mode: str,
     requested_responses_mode: str,
     context_update: Any = None,
@@ -34,7 +46,9 @@ def build_responses_request_summary(
     item_summaries = [_summarize_input_item(index, item) for index, item in enumerate(items)]
     _attach_tool_result_names(item_summaries)
     _attach_context_kinds(item_summaries, items)
-    tool_results = [item for item in item_summaries if item.get("type") == "function_call_output"]
+    tool_calls = _tool_call_chars_by_call(items)
+    _attach_tool_result_names_from_calls(item_summaries, tool_calls)
+    tool_results = [item for item in item_summaries if _is_tool_result_summary(item)]
     largest_tool_result = max(tool_results, key=lambda item: int(item.get("chars") or 0), default=None)
     tools_included = _tools_included(tools_payload)
     environment_context_chars = sum(_context_text_chars(raw, is_agent_environment_context_text) for raw in items)
@@ -52,6 +66,7 @@ def build_responses_request_summary(
     )
     summary = {
         "request_index": int(request_index or 0),
+        "request_api": str(request_api or "").strip(),
         "responses_mode": str(responses_mode or "").strip(),
         "requested_responses_mode": str(requested_responses_mode or "").strip(),
         "instructions_present": bool(str(instructions or "").strip()),
@@ -86,6 +101,9 @@ def build_responses_request_summary(
             }
             for item in tool_results
         ],
+        "tool_call_chars_by_call": tool_calls,
+        "tool_call_chars_total": sum(int(item.get("chars") or 0) for item in tool_calls),
+        "tool_result_chars_total": sum(int(item.get("chars") or 0) for item in tool_results),
         "largest_tool_result": largest_tool_result,
         "tools_included": tools_included,
         "tools_included_count": len(tools_included),
@@ -169,6 +187,9 @@ def _summarize_input_item(index: int, item: Any) -> dict[str, Any]:
             value = str(item.get(key) or "").strip()
             if value:
                 summary[key] = value
+        tool_call_id = str(item.get("tool_call_id") or "").strip()
+        if tool_call_id and not summary.get("call_id"):
+            summary["call_id"] = tool_call_id
         if "output" in item:
             summary["output_chars"] = _json_chars(item.get("output"))
             status = _status_from_json_text(item.get("output"))
@@ -176,96 +197,68 @@ def _summarize_input_item(index: int, item: Any) -> dict[str, Any]:
                 summary["output_status"] = status
         if "content" in item:
             summary["content_chars"] = _json_chars(item.get("content"))
+            if str(item.get("role") or "").strip().lower() == "tool":
+                summary["output_chars"] = _json_chars(item.get("content"))
+                status = _status_from_json_text(item.get("content"))
+                if status:
+                    summary["output_status"] = status
     return summary
+
+
+def _is_tool_result_summary(item: dict[str, Any]) -> bool:
+    item_type = str(item.get("type") or "").strip().lower()
+    role = str(item.get("role") or "").strip().lower()
+    return item_type == "function_call_output" or item_type == "tool" or role == "tool"
 
 
 def _is_environment_context_item(item: Any) -> bool:
     if not isinstance(item, dict):
         return False
-    if str(item.get("type") or "").strip().lower() != "message":
+    item_type = str(item.get("type") or "message").strip().lower()
+    if item_type != "message":
         return False
     if str(item.get("role") or "").strip().lower() not in {"system", "user"}:
         return False
-    content = item.get("content")
-    if not isinstance(content, list):
-        return False
-    for part in content:
-        if not isinstance(part, dict):
-            continue
-        if is_agent_environment_context_text(part.get("text")):
-            return True
-    return False
+    return _content_has_text(item.get("content"), is_agent_environment_context_text)
 
 
 def _is_turn_context_item(item: Any) -> bool:
     if not isinstance(item, dict):
         return False
-    if item.get("type") != "message" or item.get("role") != "system":
+    item_type = str(item.get("type") or "message").strip().lower()
+    if item_type != "message" or item.get("role") != "system":
         return False
-    content = item.get("content")
-    if not isinstance(content, list):
-        return False
-    for part in content:
-        if not isinstance(part, dict):
-            continue
-        if is_agent_turn_context_text(part.get("text")):
-            return True
-    return False
+    return _content_has_text(item.get("content"), is_agent_turn_context_text)
 
 
 def _is_collaboration_context_item(item: Any) -> bool:
     if not isinstance(item, dict):
         return False
-    if str(item.get("type") or "").strip().lower() != "message":
+    if str(item.get("type") or "message").strip().lower() != "message":
         return False
     if str(item.get("role") or "").strip().lower() != "developer":
         return False
-    content = item.get("content")
-    if not isinstance(content, list):
-        return False
-    for part in content:
-        if not isinstance(part, dict):
-            continue
-        if is_collaboration_mode_text(part.get("text")):
-            return True
-    return False
+    return _content_has_text(item.get("content"), is_collaboration_mode_text)
 
 
 def _is_permissions_context_item(item: Any) -> bool:
     if not isinstance(item, dict):
         return False
-    if str(item.get("type") or "").strip().lower() != "message":
+    if str(item.get("type") or "message").strip().lower() != "message":
         return False
     if str(item.get("role") or "").strip().lower() != "developer":
         return False
-    content = item.get("content")
-    if not isinstance(content, list):
-        return False
-    for part in content:
-        if not isinstance(part, dict):
-            continue
-        if is_agent_permissions_context_text(part.get("text")):
-            return True
-    return False
+    return _content_has_text(item.get("content"), is_agent_permissions_context_text)
 
 
 def _is_internal_context_item(item: Any) -> bool:
     if not isinstance(item, dict):
         return False
-    if str(item.get("type") or "").strip().lower() != "message":
+    if str(item.get("type") or "message").strip().lower() != "message":
         return False
     if str(item.get("role") or "").strip().lower() != "user":
         return False
-    content = item.get("content")
-    if not isinstance(content, list):
-        return False
-    for part in content:
-        if not isinstance(part, dict):
-            continue
-        text = str(part.get("text") or "").strip()
-        if _is_internal_context_text(text):
-            return True
-    return False
+    return _content_has_text(item.get("content"), _is_internal_context_text)
 
 
 def _is_skills_context_item(item: Any) -> bool:
@@ -306,6 +299,22 @@ def _attach_tool_result_names(item_summaries: list[dict[str, Any]]) -> None:
             item["name"] = name
 
 
+def _attach_tool_result_names_from_calls(item_summaries: list[dict[str, Any]], tool_calls: list[dict[str, Any]]) -> None:
+    names_by_call_id = {
+        str(item.get("call_id") or "").strip(): str(item.get("name") or "").strip()
+        for item in tool_calls
+        if str(item.get("call_id") or "").strip() and str(item.get("name") or "").strip()
+    }
+    if not names_by_call_id:
+        return
+    for item in item_summaries:
+        if not _is_tool_result_summary(item) or item.get("name"):
+            continue
+        name = names_by_call_id.get(str(item.get("call_id") or "").strip())
+        if name:
+            item["name"] = name
+
+
 def _attach_context_kinds(item_summaries: list[dict[str, Any]], raw_items: list[Any]) -> None:
     for summary, raw in zip(item_summaries, raw_items):
         kinds = []
@@ -332,28 +341,95 @@ def _attach_context_kinds(item_summaries: list[dict[str, Any]], raw_items: list[
             summary["context_kinds"] = kinds
 
 
+def _tool_call_chars_by_call(raw_items: list[Any]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "").strip().lower()
+        if item_type == "function_call":
+            chars = _json_chars(item.get("arguments")) if "arguments" in item else 0
+            calls.append(
+                {
+                    "call_id": str(item.get("call_id") or item.get("id") or ""),
+                    "name": str(item.get("name") or ""),
+                    "chars": chars,
+                }
+            )
+            continue
+        tool_calls = item.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                function_payload = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+                arguments = function_payload.get("arguments") if isinstance(function_payload, dict) else tool_call.get("arguments")
+                calls.append(
+                    {
+                        "call_id": str(tool_call.get("id") or tool_call.get("call_id") or ""),
+                        "name": str(
+                            (function_payload.get("name") if isinstance(function_payload, dict) else "")
+                            or tool_call.get("name")
+                            or ""
+                        ),
+                        "chars": _json_chars(arguments),
+                    }
+                )
+        content = item.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if str(part.get("type") or "").strip().lower() != "tool_use":
+                    continue
+                calls.append(
+                    {
+                        "call_id": str(part.get("id") or part.get("call_id") or ""),
+                        "name": str(part.get("name") or ""),
+                        "chars": _json_chars(part.get("input")),
+                    }
+                )
+    return calls
+
+
 def _is_message_with_context_text(item: Any, predicate) -> bool:
     if not isinstance(item, dict):
         return False
-    if str(item.get("type") or "").strip().lower() != "message":
+    if str(item.get("type") or "message").strip().lower() != "message":
         return False
-    content = item.get("content")
-    if not isinstance(content, list):
-        return False
-    for part in content:
-        if isinstance(part, dict) and predicate(part.get("text")):
-            return True
-    return False
+    return _content_has_text(item.get("content"), predicate)
 
 
 def _context_text_chars(item: Any, predicate) -> int:
     if not isinstance(item, dict):
         return 0
-    content = item.get("content")
+    return _content_text_chars(item.get("content"), predicate)
+
+
+def _content_has_text(content: Any, predicate) -> bool:
+    if isinstance(content, str):
+        return bool(predicate(content))
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if isinstance(part, str) and predicate(part):
+            return True
+        if isinstance(part, dict) and predicate(part.get("text")):
+            return True
+    return False
+
+
+def _content_text_chars(content: Any, predicate) -> int:
+    if isinstance(content, str):
+        return len(content) if predicate(content) else 0
     if not isinstance(content, list):
         return 0
     total = 0
     for part in content:
+        if isinstance(part, str):
+            if predicate(part):
+                total += len(part)
+            continue
         if not isinstance(part, dict):
             continue
         text = part.get("text")

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "rules": {},
+  "context_producers": {
+    "builtin.environment_context": {
+      "kind": "builtin",
+      "enabled": true,
+      "priority": "normal"
+    },
+    "builtin.tool_failure_context": {
+      "kind": "builtin",
+      "enabled": true,
+      "priority": "high"
+    },
+    "builtin.runtime_notice_context": {
+      "kind": "builtin",
+      "enabled": true,
+      "priority": "normal"
+    },
+    "builtin.work_persisted_context": {
+      "kind": "builtin",
+      "enabled": true,
+      "priority": "normal"
+    },
+    "builtin.work_failed_context": {
+      "kind": "builtin",
+      "enabled": true,
+      "priority": "high"
+    }
+  },
+  "notice_writers": {
+    "builtin.runtime_event_notice": {
+      "kind": "builtin",
+      "enabled": true
+    }
+  },
+  "receiver_groups": {
+    "companion": {
+      "enabled": true,
+      "graph_id": "Companion",
+      "merge_target": {
+        "graph_id": "Companion",
+        "node_id": "Companion"
+      },
+      "event_profiles": {
+        "ToolFailure": "hy3",
+        "WorkPersisted": "hy3",
+        "WorkFailed": "Companion"
+      },
+      "receivers": []
+    }
+  },
+  "context_policy": {
+    "default_ttl": "next_turn",
+    "max_fragment_chars": 8000,
+    "max_artifacts_per_event": 20,
+    "dedupe_window_ms": 30000
+  }
+}

@@ -1,5 +1,5 @@
 import type { LinkItem, NodeCard } from './context'
-import { clampX } from './boardModel'
+import { clampX, sanitizeBoardPoint } from './boardModel'
 
 export type BoardClipboardSnapshot = {
   graphId: string
@@ -74,7 +74,7 @@ function copyNodeForClipboard(node: NodeCard): NodeCard {
     name: node.name,
     inputNum: node.inputNum,
     outputNum: node.outputNum,
-    ui: { x: node.ui.x, y: node.ui.y },
+    ui: sanitizeBoardPoint(node.ui),
     last_message: node.last_message,
     lastRuntimeEvent: null,
     runtimeEvents: [],
@@ -99,7 +99,11 @@ function createPastedNodeCard(node: NodeCard, nodeId: string, offset: number): N
     name: node.name,
     inputNum: node.inputNum,
     outputNum: node.outputNum,
-    ui: { x: clampX(node.ui.x + offset), y: Math.max(0, node.ui.y + offset) },
+    ui: sanitizeBoardPoint({
+      ...node.ui,
+      x: clampX(node.ui.x + offset),
+      y: Math.max(0, node.ui.y + offset),
+    }),
     last_message: null,
     lastRuntimeEvent: null,
     runtimeEvents: [],

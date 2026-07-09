@@ -63,6 +63,14 @@ def test_plugin_options_list_manifest_directories(tmp_path):
     ]
 
 
+def test_plugin_manifest_requires_explicit_id(tmp_path):
+    from nodes.agent_plugin_loader import list_available_plugin_options
+
+    _write_plugin_manifest(tmp_path / "implicit-id", payload={"name": "Implicit"})
+
+    assert list_available_plugin_options(str(tmp_path)) == []
+
+
 def test_plugin_option_discovery_cache_refreshes_on_explicit_invalidation(tmp_path):
     from nodes.agent_plugin_loader import list_available_plugin_options
 
@@ -114,8 +122,8 @@ def test_resolve_plugin_capabilities_reads_agentpark_manifest(tmp_path):
     assert capabilities.mcp_server_configs == {}
 
 
-def test_resolve_plugin_capabilities_reads_openclaw_style_manifest_and_local_skills(tmp_path):
-    from nodes.agent_plugin_loader import resolve_plugin_capabilities
+def test_resolve_plugin_capabilities_ignores_openclaw_manifest_filename(tmp_path):
+    from nodes.agent_plugin_loader import PluginLoadError, resolve_plugin_capabilities
 
     plugin_dir = tmp_path / "browser"
     _write_skill(plugin_dir / "skills", "inspect")
@@ -131,15 +139,8 @@ def test_resolve_plugin_capabilities_reads_openclaw_style_manifest_and_local_ski
         },
     )
 
-    capabilities = resolve_plugin_capabilities(["browser"], plugin_root=str(tmp_path))
-
-    assert capabilities.tools == ("browser_tools",)
-    assert capabilities.skills == ()
-    assert capabilities.mcp_servers == ("browser-mcp",)
-    assert capabilities.plugins[0].source_format == "openclaw"
-    assert len(capabilities.skill_definitions) == 1
-    assert capabilities.skill_definitions[0].name == "demo"
-    assert "Use demo." in capabilities.skill_definitions[0].content
+    with pytest.raises(PluginLoadError, match="plugin manifest does not exist"):
+        resolve_plugin_capabilities(["browser"], plugin_root=str(tmp_path))
 
 
 def test_resolve_plugin_capabilities_reads_local_tool_definitions(tmp_path):

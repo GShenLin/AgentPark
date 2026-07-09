@@ -1,9 +1,10 @@
 from src.node_capabilities import NODE_CAPABILITY_LIST
 
 
-def test_node_capability_list_trims_and_dedupes_case_insensitively():
+def test_node_capability_list_trims_and_dedupes_exact_names():
     assert NODE_CAPABILITY_LIST.parse([" text ", "TEXT", "", None, "resource:image"]) == [
         "text",
+        "TEXT",
         "resource:image",
     ]
 

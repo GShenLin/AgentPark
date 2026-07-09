@@ -50,7 +50,7 @@ class Node(BaseNode):
         "provider_id": {
             "type": "string",
             "label": "provider_id",
-            "description": "Only providers whose supportmode contains video_changePerson should be selected.",
+            "description": "Only providers whose supportmode contains video_change_person should be selected.",
         },
         "image_path": {
             "type": "string",

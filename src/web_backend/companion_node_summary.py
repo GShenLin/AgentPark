@@ -182,10 +182,11 @@ def _string_list(value: object) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for item in value:
-        text = str(item or "").strip()
-        key = text.casefold()
-        if text and key not in seen:
-            seen.add(key)
+        if not isinstance(item, str):
+            continue
+        text = item.strip()
+        if text and text not in seen:
+            seen.add(text)
             result.append(text)
     return result
 

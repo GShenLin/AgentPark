@@ -68,8 +68,8 @@ function readChecked(event: Event) {
   align-items: center;
   gap: 10px;
   padding: 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(2, 6, 23, 0.65);
+  border-bottom: 1px solid var(--theme-panel-memory-panel-header-border, rgba(148, 163, 184, 0.12));
+  background: var(--theme-panel-memory-panel-header-background, rgba(2, 6, 23, 0.65));
 }
 
 .panel-left {
@@ -83,12 +83,12 @@ function readChecked(event: Event) {
 .panel-title {
   font-size: 13px;
   font-weight: 700;
-  color: rgba(248, 250, 252, 0.96);
+  color: var(--theme-panel-memory-panel-text-primary, rgba(248, 250, 252, 0.96));
 }
 
 .panel-meta {
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.92);
+  color: var(--theme-panel-memory-panel-text-muted, rgba(148, 163, 184, 0.92));
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -107,17 +107,17 @@ function readChecked(event: Event) {
 }
 
 .mode-tab {
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.7);
-  color: rgba(226, 232, 240, 0.94);
+  border: 1px solid var(--theme-panel-memory-panel-button-border, rgba(148, 163, 184, 0.3));
+  background: var(--theme-panel-memory-panel-button-background, rgba(15, 23, 42, 0.7));
+  color: var(--theme-panel-memory-panel-button-text, rgba(226, 232, 240, 0.94));
   border-radius: 8px;
   font-size: 11px;
   padding: 4px 9px;
 }
 
 .mode-tab.active {
-  border-color: rgba(56, 189, 248, 0.65);
-  background: rgba(14, 116, 144, 0.28);
+  border-color: var(--theme-panel-memory-panel-button-active-border, rgba(56, 189, 248, 0.65));
+  background: var(--theme-panel-memory-panel-button-active-background, rgba(14, 116, 144, 0.28));
 }
 
 .mode-tab.clear-memory {
@@ -141,7 +141,7 @@ function readChecked(event: Event) {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: rgba(226, 232, 240, 0.94);
+  color: var(--theme-panel-memory-panel-text-secondary, rgba(226, 232, 240, 0.94));
   user-select: none;
 }
 

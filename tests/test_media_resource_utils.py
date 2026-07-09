@@ -28,7 +28,7 @@ def test_resolve_public_base_url_falls_back_to_provider(monkeypatch):
             return {}
 
         def get_provider_config(self, provider_id):
-            return {"public_base_url": f"https://{provider_id}.example.com/"}
+            return {"publicBaseUrl": f"https://{provider_id}.example.com/"}
 
     import src.media_resource_utils as media_utils
 

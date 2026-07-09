@@ -17,7 +17,6 @@ def _openai_agent():
         "maxRetries": 0,
         "retryDelaySec": 0,
         "responsesApi": True,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
     }
     agent.provider_name = "openai"

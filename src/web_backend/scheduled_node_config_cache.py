@@ -29,7 +29,7 @@ class ScheduledNodeConfigCache:
     """Small read-through cache for scheduler scans.
 
     The scheduler needs static node config plus the process-local runtime
-    projection. It never reads legacy runtime_state.json files.
+    projection. It reads only the canonical config plus in-process runtime state.
     """
 
     def __init__(self) -> None:
@@ -68,7 +68,6 @@ class ScheduledNodeConfigCache:
                 cached = self._read_or_get_cached(
                     config_path,
                     graph_id=safe_graph_id,
-                    fallback_node_id=node_entry,
                     sanitize_node_id=sanitize_node_id,
                 )
                 if cached is not None:
@@ -88,7 +87,6 @@ class ScheduledNodeConfigCache:
         config_path: str,
         *,
         graph_id: str,
-        fallback_node_id: str,
         sanitize_node_id: Callable[[object], str],
     ) -> ScheduledNodeConfigSnapshot | None:
         if not config_path or not os.path.exists(config_path):
@@ -96,7 +94,6 @@ class ScheduledNodeConfigCache:
         return self._read_or_get_cached(
             config_path,
             graph_id=graph_id,
-            fallback_node_id=fallback_node_id,
             sanitize_node_id=sanitize_node_id,
         )
 
@@ -105,7 +102,6 @@ class ScheduledNodeConfigCache:
         config_path: str,
         *,
         graph_id: str,
-        fallback_node_id: str,
         sanitize_node_id: Callable[[object], str],
     ) -> ScheduledNodeConfigSnapshot | None:
         canonical_path = os.path.normcase(os.path.abspath(config_path))
@@ -123,7 +119,6 @@ class ScheduledNodeConfigCache:
         snapshot = self._read_snapshot(
             config_path,
             graph_id=graph_id,
-            fallback_node_id=fallback_node_id,
             sanitize_node_id=sanitize_node_id,
         )
         self._items[canonical_path] = _CachedNodeConfig(
@@ -138,7 +133,6 @@ class ScheduledNodeConfigCache:
         config_path: str,
         *,
         graph_id: str,
-        fallback_node_id: str,
         sanitize_node_id: Callable[[object], str],
     ) -> ScheduledNodeConfigSnapshot | None:
         cfg = self._read_json_object(config_path)
@@ -153,7 +147,12 @@ class ScheduledNodeConfigCache:
         if runtime_cfg:
             cfg = dict(cfg)
             cfg.update(runtime_cfg)
-        safe_node_id = sanitize_node_id(str(cfg.get("node_id") or fallback_node_id))
+        raw_node_id = cfg.get("node_id")
+        if not isinstance(raw_node_id, str) or not raw_node_id.strip():
+            return None
+        safe_node_id = sanitize_node_id(raw_node_id)
+        if not safe_node_id:
+            return None
         return ScheduledNodeConfigSnapshot(
             graph_id=graph_id,
             node_id=safe_node_id,

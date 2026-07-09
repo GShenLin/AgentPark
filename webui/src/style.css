@@ -57,11 +57,16 @@ body,
 }
 
 body {
-  color: var(--text-primary);
-  background: 
+  color: var(--theme-panel-app-text-primary, var(--text-primary));
+  background:
+    var(--theme-panel-app-background-image, none),
     radial-gradient(800px 600px at 20% -10%, rgba(59, 130, 246, 0.08), transparent 60%),
     radial-gradient(600px 500px at 80% 0%, rgba(129, 140, 248, 0.06), transparent 55%),
-    var(--bg-primary);
+    var(--theme-panel-app-background-color, var(--bg-primary));
+  background-size: var(--theme-panel-app-background-size, cover), auto, auto, auto;
+  background-position: var(--theme-panel-app-background-position, center), center, center, center;
+  background-repeat: var(--theme-panel-app-background-repeat, no-repeat), no-repeat, no-repeat, no-repeat;
+  background-blend-mode: var(--theme-panel-app-background-blend-mode, normal), normal, normal, normal;
   background-attachment: fixed;
 }
 
@@ -233,9 +238,14 @@ textarea::placeholder {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--theme-panel-topbar-border-color, var(--border-subtle));
   backdrop-filter: blur(16px);
-  background: rgba(15, 23, 42, 0.75);
+  background-color: var(--theme-panel-topbar-background-color, rgba(15, 23, 42, 0.75));
+  background-image: var(--theme-panel-topbar-background-image, none);
+  background-size: var(--theme-panel-topbar-background-size, cover);
+  background-position: var(--theme-panel-topbar-background-position, center);
+  background-repeat: var(--theme-panel-topbar-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-topbar-background-blend-mode, normal);
 }
 
 .brand {
@@ -243,7 +253,7 @@ textarea::placeholder {
   letter-spacing: 0.3px;
   font-weight: 600;
   white-space: nowrap;
-  color: var(--text-primary);
+  color: var(--theme-panel-topbar-text-primary, var(--text-primary));
 }
 
 /* 主内容区 */
@@ -264,7 +274,7 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   gap: 0;
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 /* Agent 工作区 */

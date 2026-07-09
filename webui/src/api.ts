@@ -81,6 +81,7 @@ export type {
   PasteAgentConfig,
   PendingNodeInput,
   ProviderRequestSummary,
+  ProviderRequestTotals,
   ProviderInfo,
   RemoteEndpoint,
   RemoteStatus,
@@ -276,7 +277,7 @@ export async function createNodeInstance(
   typeId: string,
   name: string,
   graphId: string,
-  ui?: { x: number; y: number },
+  ui?: { x: number; y: number; width?: number; height?: number },
 ): Promise<{ ok: boolean; node_id: string; type_id: string; graph_id: string; config_path: string }> {
   return apiFetch('/api/nodes/instances', {
     method: 'POST',
@@ -314,7 +315,7 @@ export async function cloneNodeInstance(
   sourceGraphId: string,
   newNodeId: string,
   newName?: string,
-  ui?: { x: number; y: number },
+  ui?: { x: number; y: number; width?: number; height?: number },
   targetGraphId?: string,
 ): Promise<{ ok: boolean; source_node_id: string; node_id: string; graph_id: string; type_id: string; config_path: string }> {
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/clone?graph_id=${encodeURIComponent(sourceGraphId)}`, {
@@ -644,6 +645,82 @@ export async function setStartupGraphConfig(graphId: string, graphName?: string)
   })
 }
 
+export type RuntimeEventName = 'OnInput' | 'ToolFailure' | 'RuntimeNotice' | 'NetError' | 'WorkPersisted' | 'WorkFailed'
+export type RuntimeEventAction = 'context.produce' | 'notice.write' | 'node.dispatch'
+
+export type RuntimeEventRule = {
+  enabled?: boolean
+  action: RuntimeEventAction | string
+  target: string
+  params?: {
+    ttl?: 'current_run' | 'next_turn' | 'persistent' | string
+    priority?: 'low' | 'normal' | 'high' | string
+    max_chars?: number
+  }
+}
+
+export type RuntimeEventRules = Record<string, Record<string, Record<string, RuntimeEventRule>>>
+
+export type RuntimeEventReceiver = {
+  graph_id: string
+  node_id: string
+}
+
+export type RuntimeEventReceiverGroup = {
+  enabled?: boolean
+  graph_id?: string
+  merge_target: RuntimeEventReceiver
+  event_profiles: Record<string, string>
+  receivers?: RuntimeEventReceiver[]
+}
+
+export type RuntimeEventConfig = {
+  schema_version: number
+  enabled: boolean
+  rules: RuntimeEventRules
+  context_producers: Record<string, Record<string, unknown>>
+  notice_writers: Record<string, Record<string, unknown>>
+  receiver_groups: Record<string, RuntimeEventReceiverGroup>
+  context_policy?: Record<string, unknown>
+}
+
+export type RuntimeEventApplyResponse = {
+  ok: boolean
+  schema_version?: number
+  compiled?: Record<string, number>
+  warnings?: string[]
+  errors?: Array<Record<string, unknown>>
+}
+
+export type RuntimeEventDiagnostics = {
+  ok: boolean
+  enabled: boolean
+  compiled: Record<string, number>
+  metrics: Record<string, unknown>
+  context_artifacts: Record<string, unknown>
+}
+
+export async function loadRuntimeEventConfig(): Promise<{ config: RuntimeEventConfig; content: string; path: string }> {
+  const res = await apiFetch('/api/settings/events')
+  return {
+    config: res.data as RuntimeEventConfig,
+    content: String(res.content || ''),
+    path: String(res.path || 'config/events.json'),
+  }
+}
+
+export async function applyRuntimeEventConfig(config?: RuntimeEventConfig | Record<string, unknown>): Promise<RuntimeEventApplyResponse> {
+  const body = config ? { config } : {}
+  return apiFetch('/api/events/apply', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as Promise<RuntimeEventApplyResponse>
+}
+
+export async function getRuntimeEventDiagnostics(): Promise<RuntimeEventDiagnostics> {
+  return apiFetch('/api/events/diagnostics') as Promise<RuntimeEventDiagnostics>
+}
+
 export async function getPasteAgentConfig(): Promise<PasteAgentConfig> {
   const baseUrl = getActiveApiBase()
   let res: any
@@ -679,6 +756,7 @@ export async function getNodeInstanceMemory(
   last_message?: string
   live_message?: string
   thinking_message?: string
+  activity_message?: string
 }> {
   const query = graphId ? `&graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}${query}`)
@@ -698,7 +776,7 @@ export async function deleteNodeInstanceMemoryMessage(
 export async function getNodeInstanceLive(
   nodeId: string,
   graphId?: string,
-): Promise<{ node_id: string; graph_id: string; live_message: string; thinking_message?: string }> {
+): Promise<{ node_id: string; graph_id: string; live_message: string; thinking_message?: string; activity_message?: string }> {
   const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/live${query}`)
 }

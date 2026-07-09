@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 
 from src.file_transaction import atomic_write_text
+from ..workspace_settings import read_startup_graph_settings, save_startup_graph_settings
 
 from .graph_runtime_registry import GraphConfigReadError
 from .graph_output_routes import normalize_output_routes
@@ -15,6 +16,12 @@ from . import runtime_paths
 from .node_deletion import NodeDeletionBlocked, delete_node_directory
 from .service_host import HostBoundService
 from .shared import HTTPException
+
+PROTECTED_GRAPH_IDS = {"default", "companion"}
+
+
+def _is_protected_graph_id(graph_id: object) -> bool:
+    return str(graph_id or "").strip().lower() in PROTECTED_GRAPH_IDS
 
 
 def _graph_config_version(config_path: str) -> int:
@@ -68,7 +75,7 @@ class GraphApiStorage(HostBoundService):
         if isinstance(nodes, list):
             for item in nodes:
                 if isinstance(item, dict):
-                    node_id = str(item.get("id") or item.get("node_id") or "").strip()
+                    node_id = str(item.get("id") or "").strip()
                     if node_id:
                         node_ids.add(node_id)
         graph_id = self.graph_runtime._sanitize_graph_id(graph.get("id") or self.default_graph_id)
@@ -86,7 +93,7 @@ class GraphApiStorage(HostBoundService):
         graphs_dir = runtime_paths._get_graphs_dir()
         graphs = []
         if not os.path.isdir(graphs_dir):
-            graphs.append({"id": "default", "name": "default", "updated_at": None})
+            graphs.append({"id": "default", "name": "default", "updated_at": None, "readonly": True})
             return {"graphs": graphs}
 
         default_config = os.path.join(graphs_dir, "default", "config.json")
@@ -103,10 +110,10 @@ class GraphApiStorage(HostBoundService):
                 raise HTTPException(status_code=500, detail=str(exc))
             if payload.get("name"):
                 default_name = str(payload.get("name"))
-        graphs.append({"id": "default", "name": default_name, "updated_at": default_updated})
+        graphs.append({"id": "default", "name": default_name, "updated_at": default_updated, "readonly": True})
 
         for entry in os.listdir(graphs_dir):
-            if entry in {"agents", "companion", "default"}:
+            if entry in {"agents", "default"}:
                 continue
             graph_dir = os.path.join(graphs_dir, entry)
             if not os.path.isdir(graph_dir):
@@ -126,7 +133,12 @@ class GraphApiStorage(HostBoundService):
                 updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
                 updated_at = None
-            graphs.append({"id": entry, "name": name, "updated_at": updated_at})
+            graphs.append({
+                "id": entry,
+                "name": name,
+                "updated_at": updated_at,
+                "readonly": _is_protected_graph_id(entry),
+            })
         graphs.sort(key=lambda item: item["name"].lower())
         return {"graphs": graphs}
 
@@ -244,6 +256,8 @@ class GraphApiStorage(HostBoundService):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
+        if _is_protected_graph_id(safe_id):
+            raise HTTPException(status_code=403, detail=f"protected graph cannot be deleted: {safe_id}")
         self.graph_runtime._unregister_scheduled_graph(safe_id)
 
         graphs_dir = os.path.abspath(runtime_paths._get_graphs_dir())
@@ -270,7 +284,18 @@ class GraphApiStorage(HostBoundService):
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
 
+        self._reset_startup_graph_after_delete(safe_id)
         return {"ok": True, "graph_id": safe_id, "deleted": deleted}
+
+    def _reset_startup_graph_after_delete(self, deleted_graph_id: str) -> None:
+        try:
+            startup = read_startup_graph_settings()
+            startup_graph_id = self.graph_runtime._sanitize_graph_id(startup.get("graph_id"))
+            if startup_graph_id != deleted_graph_id:
+                return
+            save_startup_graph_settings(self.default_graph_id, self.default_graph_id)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to reset startup graph after delete: {exc}") from exc
 
     def _stop_graph_runner_for_delete(self, graph_id: str, wait_timeout_seconds: float) -> None:
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)

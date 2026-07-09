@@ -156,14 +156,14 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 .section-title {
   font-size: 13px;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--theme-panel-node-side-editor-text-primary, #e2e8f0);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .section-hint {
   font-size: 12px;
-  color: rgba(148, 163, 184, 0.84);
+  color: var(--theme-panel-node-side-editor-text-secondary, rgba(148, 163, 184, 0.84));
 }
 
 .attachment-list {
@@ -228,10 +228,10 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 .attachment-clear,
 .goal-btn,
 .primary-btn {
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.9);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.9));
+  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
   padding: 8px 12px;
   cursor: pointer;
   position: relative;
@@ -254,10 +254,10 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
   width: 100%;
   min-height: 92px;
   resize: vertical;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
+  color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
   padding: 10px 12px;
   outline: none;
 }

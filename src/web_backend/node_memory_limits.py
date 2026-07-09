@@ -12,16 +12,10 @@ def read_max_active_memory_entries() -> int:
     except Exception:
         return DEFAULT_MAX_ACTIVE_MEMORY_ENTRIES
     node_memory = payload.get("nodeMemory") if isinstance(payload, dict) else None
-    if node_memory is None and isinstance(payload, dict):
-        node_memory = payload.get("node_memory")
     if not isinstance(node_memory, dict):
         return DEFAULT_MAX_ACTIVE_MEMORY_ENTRIES
 
-    raw = None
-    for key in ("maxEntries", "max_entries", "maxActiveEntries", "max_active_entries"):
-        if key in node_memory:
-            raw = node_memory.get(key)
-            break
+    raw = node_memory.get("maxActiveEntries")
     if raw is None or raw == "":
         return DEFAULT_MAX_ACTIVE_MEMORY_ENTRIES
     try:

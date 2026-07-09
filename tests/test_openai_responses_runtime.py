@@ -1,4 +1,4 @@
-import json
+﻿import json
 
 from src.tool.base_tool import BaseTool
 from src.tool.tool_call_protocol import ToolCallExecution
@@ -144,7 +144,6 @@ def test_openai_responses_payload_includes_web_search_when_enabled():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "webSearchContextSize": "high",
         "webSearchUserLocation": {"type": "approximate", "country": "US", "city": "Seattle"},
@@ -205,7 +204,6 @@ def test_openai_responses_payload_includes_codex_like_tool_and_reasoning_fields(
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -260,7 +258,6 @@ def test_openai_send_uses_web_search_switch():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -296,32 +293,6 @@ def test_openai_send_uses_web_search_switch():
     assert payloads[0]["tools"] == [{"type": "web_search"}]
 
 
-def test_openai_responses_continuation_mode_is_not_provider_configured():
-    from src.providers.openai_agent import OpenAIAgent
-
-    agent = OpenAIAgent.__new__(OpenAIAgent)
-
-    assert not hasattr(agent, "_responses_continuation_mode")
-
-
-def test_openai_responses_continuation_mode_ignores_legacy_config_values():
-    from src.providers.openai_agent import OpenAIAgent
-
-    agent = OpenAIAgent.__new__(OpenAIAgent)
-    agent.config = {
-        "responses_continuation_mode": "explicit_context",
-        "responsesReplayReasoningItems": False,
-    }
-
-    assert not hasattr(agent, "_responses_continuation_mode")
-
-    agent.config = {
-        "responsesContinuationMode": "explicit",
-        "responsesReplayReasoningItems": False,
-    }
-    assert not hasattr(agent, "_responses_continuation_mode")
-
-
 def test_openai_responses_requires_explicit_reasoning_replay_policy():
     from src.providers.openai_agent import OpenAIAgent
 
@@ -333,7 +304,6 @@ def test_openai_responses_requires_explicit_reasoning_replay_policy():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
         "toolContextCompactionEveryToolCalls": 1,
@@ -347,12 +317,11 @@ def test_openai_responses_requires_explicit_reasoning_replay_policy():
         raise AssertionError("missing responsesReplayReasoningItems should fail")
 
 
-def test_openai_responses_reasoning_replay_policy_rejects_alias_key():
+def test_openai_responses_reasoning_replay_policy_rejects_snake_case_key():
     from src.providers.openai_agent import OpenAIAgent
 
     agent = OpenAIAgent.__new__(OpenAIAgent)
     agent.config = {
-        "responsesContinuationMode": "explicit_context",
         "responses_replay_reasoning_items": False,
     }
 
@@ -375,7 +344,6 @@ def test_stream_does_not_return_stale_tool_call_intro():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -462,7 +430,6 @@ def test_openai_responses_empty_output_feeds_back_error_before_returning_final_m
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -525,7 +492,6 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -606,7 +572,7 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
     assert diagnostics["likely_cause"] == "compacted_large_tool_result_context"
     assert diagnostics["largest_tool_result_chars"] > 0
     assert diagnostics["provider_request"]["input_item_count"] == 5
-    request_summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    request_summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
     assert len(request_summaries) == 3
     assert request_summaries[1]["largest_tool_result"]["call_id"] == "call-1"
     assert request_summaries[1]["largest_tool_result"]["name"] == "read_large_asset"
@@ -624,7 +590,6 @@ def test_openai_responses_empty_output_twice_returns_explicit_error():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -679,7 +644,6 @@ def test_openai_responses_continuation_includes_tool_image_data():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -759,7 +723,6 @@ def test_explicit_context_continuation_replays_user_task_across_multi_tool_round
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -846,7 +809,6 @@ def test_explicit_context_continuation_omits_reasoning_items_by_default():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -929,7 +891,6 @@ def test_responses_invalid_tool_arguments_return_tool_error_and_continue():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1008,7 +969,6 @@ def test_explicit_context_continuation_can_replay_reasoning_items_when_enabled()
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": True,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1095,7 +1055,6 @@ def test_stream_continues_after_tool_call_without_response_id():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1194,7 +1153,6 @@ def test_responses_requests_include_fresh_environment_context_without_memory_per
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1274,7 +1232,8 @@ def test_responses_requests_include_fresh_environment_context_without_memory_per
     assert all("<permissions instructions>" not in str(message.get("content")) for message in agent.messages)
     assert all("[Agent Turn Context]" not in str(message.get("content")) for message in agent.messages)
 
-    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
+    assert summaries[-1]["request_api"] == "responses"
     assert summaries[-1]["environment_context_chars"] > 0
     assert summaries[-1]["permissions_context_chars"] > 0
     assert summaries[0]["turn_context_chars"] == 0
@@ -1312,7 +1271,6 @@ def test_responses_turn_context_persists_reference_between_sends(monkeypatch, tm
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1384,7 +1342,6 @@ def test_responses_context_history_replaces_stale_context_on_change(monkeypatch,
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1447,7 +1404,6 @@ def test_responses_context_history_does_not_duplicate_tool_followup_context(tmp_
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1543,7 +1499,6 @@ def test_responses_dedupes_persisted_runtime_context_history(tmp_path):
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1601,7 +1556,6 @@ def test_responses_merges_developer_context_after_persisted_runtime_user_context
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1680,7 +1634,6 @@ def test_responses_context_history_strips_operational_memory_from_persisted_deve
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1746,7 +1699,6 @@ def test_responses_plan_collaboration_mode_injects_developer_context(tmp_path):
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1781,7 +1733,7 @@ def test_responses_plan_collaboration_mode_injects_developer_context(tmp_path):
     assert developer_text.startswith("<collaboration_mode>\n")
     assert "You are in Plan Mode" in developer_text
     assert "<proposed_plan>" in developer_text
-    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
     assert summaries[0]["permissions_context_chars"] > 0
     assert summaries[0]["collaboration_context_chars"] > 0
     assert summaries[0]["input_items"][0]["context_kind"] == "runtime_context"
@@ -1803,7 +1755,6 @@ def test_responses_writes_sanitized_request_payload_log(tmp_path):
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1839,7 +1790,7 @@ def test_responses_writes_sanitized_request_payload_log(tmp_path):
     assert record["payload"]["input"][2]["content"][0]["text"] == "log me"
     assert record["request_summary"]["input_item_count"] == 3
 
-    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
     assert summaries[0]["payload_log_path"] == str(payload_log)
     payload_log_events = _runtime_notice_payloads(agent.events, "openai_responses_request_payload_log")
     assert payload_log_events[0]["path"] == str(payload_log)
@@ -1858,7 +1809,6 @@ def test_responses_sends_instruction_parameter_and_preserves_system_prompt(tmp_p
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1896,7 +1846,7 @@ def test_responses_sends_instruction_parameter_and_preserves_system_prompt(tmp_p
     assert system_item["content"][0]["text"] == "You are the node system prompt."
     assert payloads[0]["input"][-1]["role"] == "user"
     assert payloads[0]["input"][-1]["content"][0]["text"] == "hello"
-    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
     assert summaries[0]["instructions_present"] is True
     assert summaries[0]["instructions_chars"] == len("Use the Responses instructions parameter.")
 
@@ -1914,7 +1864,6 @@ def test_responses_stream_sends_instruction_parameter_and_system_input(tmp_path)
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -1973,7 +1922,6 @@ def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_p
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -2036,7 +1984,7 @@ def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_p
     assert payloads[0]["instructions"] == "Use the Responses instructions parameter."
     assert payloads[1]["instructions"] == "Use the Responses instructions parameter."
     assert any(item.get("role") == "system" for payload in payloads for item in payload["input"])
-    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
     assert [summary["instructions_present"] for summary in summaries] == [True, True]
 
 
@@ -2053,7 +2001,6 @@ def test_responses_merges_initial_developer_context_before_user_context(tmp_path
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -2113,7 +2060,6 @@ def test_responses_injects_codex_like_agents_md_context(tmp_path):
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -2145,7 +2091,7 @@ def test_responses_injects_codex_like_agents_md_context(tmp_path):
     assert contextual_user_item["content"][1]["text"].startswith("# AGENTS.md instructions")
     assert "Use rg before broad file scans." in contextual_user_item["content"][1]["text"]
 
-    summaries = _runtime_notice_payloads(agent.events, "openai_responses_request_summary")
+    summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
     assert summaries[0]["project_instructions_context_chars"] > 0
     assert summaries[0]["input_items"][1]["context_kinds"] == ["environment", "project_instructions"]
     context_updates = _runtime_notice_payloads(agent.events, "openai_responses_context_update")
@@ -2153,6 +2099,7 @@ def test_responses_injects_codex_like_agents_md_context(tmp_path):
 
 
 def test_explicit_context_continuation_preserves_assistant_content_with_function_call():
+    from src.base_agent import BaseAgent
     from src.providers.openai_agent import OpenAIAgent
 
     agent = OpenAIAgent.__new__(OpenAIAgent)
@@ -2163,7 +2110,6 @@ def test_explicit_context_continuation_preserves_assistant_content_with_function
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "explicit_context",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
@@ -2172,9 +2118,8 @@ def test_explicit_context_continuation_preserves_assistant_content_with_function
     agent.provider_name = "openai"
     agent.messages = []
     agent.tools = BaseTool(agent)
-    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
-        {"role": role, "content": content, **kwargs}
-    )
+    agent.internal_memory_enabled = False
+    agent.Message = BaseAgent.Message.__get__(agent, OpenAIAgent)
     payloads = []
     order = []
     agent._agentpark_persist_assistant_tool_call_note = lambda message: order.append(
@@ -2264,7 +2209,6 @@ def test_responses_tool_followup_appends_mid_turn_user_input():
         "responsesApi": True,
         "maxRetries": 0,
         "retryDelaySec": 0,
-        "responsesContinuationMode": "previous_response_id",
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,

@@ -341,8 +341,13 @@ watch(
   gap: 16px;
   padding: 16px;
   border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: rgba(2, 6, 23, 0.96);
+  border: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.24));
+  background-color: var(--theme-panel-node-side-editor-background-color, rgba(2, 6, 23, 0.96));
+  background-image: var(--theme-panel-node-side-editor-background-image, none);
+  background-size: var(--theme-panel-node-side-editor-background-size, cover);
+  background-position: var(--theme-panel-node-side-editor-background-position, center);
+  background-repeat: var(--theme-panel-node-side-editor-background-repeat, no-repeat);
+  background-blend-mode: var(--theme-panel-node-side-editor-background-blend-mode, normal);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.34);
   backdrop-filter: blur(14px);
   isolation: isolate;
@@ -375,19 +380,19 @@ watch(
 .editor-title {
   font-size: 16px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--theme-panel-node-side-editor-text-primary, #f8fafc);
 }
 
 .editor-sub {
   font-size: 12px;
-  color: rgba(148, 163, 184, 0.84);
+  color: var(--theme-panel-node-side-editor-text-secondary, rgba(148, 163, 184, 0.84));
 }
 
 .head-btn {
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.9);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.9));
+  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
   padding: 8px 12px;
   cursor: pointer;
   position: relative;

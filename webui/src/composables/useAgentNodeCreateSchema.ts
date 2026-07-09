@@ -31,16 +31,15 @@ export function dedupeStrings(values: unknown[]): string[] {
   for (const item of values) {
     const value = String(item ?? '').trim()
     if (!value) continue
-    const key = value.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (seen.has(value)) continue
+    seen.add(value)
     result.push(value)
   }
   return result
 }
 
 export function normalizeMode(value: unknown) {
-  return String(value ?? '').trim().toLowerCase()
+  return String(value ?? '').trim()
 }
 
 function normalizeModeList(values: unknown): string[] {
@@ -49,9 +48,9 @@ function normalizeModeList(values: unknown): string[] {
 }
 
 export function normalizeSwitch(value: unknown, fallback: 'enabled' | 'disabled' = 'disabled'): 'enabled' | 'disabled' {
-  const text = String(value ?? '').trim().toLowerCase()
-  if (['enabled', 'enable', 'on', 'true', '1', 'yes'].includes(text)) return 'enabled'
-  if (['disabled', 'disable', 'off', 'false', '0', 'no'].includes(text)) return 'disabled'
+  const text = String(value ?? '').trim()
+  if (text === 'enabled') return 'enabled'
+  if (text === 'disabled') return 'disabled'
   return fallback
 }
 
@@ -63,27 +62,18 @@ export function providerModes(provider: Pick<ProviderInfo, 'supportmode'>) {
 }
 
 export function normalizeToolSelection(value: unknown, allowedTools: string[]): string[] {
-  let list: unknown[] = []
-  if (Array.isArray(value)) {
-    list = value
-  } else if (typeof value === 'string') {
-    const raw = value.trim()
-    if (!raw) {
-      list = []
-    } else {
-      try {
-        const parsed = JSON.parse(raw)
-        list = Array.isArray(parsed) ? parsed : raw.split(',')
-      } catch {
-        list = raw.split(',')
-      }
-    }
-  }
-
+  if (!Array.isArray(value)) return []
   const allowed = new Set(allowedTools)
-  return dedupeStrings(list)
-    .map((item) => item.trim())
-    .filter((item) => allowed.has(item))
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const text = item.trim()
+    if (!text || !allowed.has(text) || seen.has(text)) continue
+    seen.add(text)
+    result.push(text)
+  }
+  return result
 }
 
 export function useAgentNodeCreateSchema(options: {

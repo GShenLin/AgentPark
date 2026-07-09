@@ -14,7 +14,7 @@ class DoubaoImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
         prompt,
         model=None,
         filename_prefix="generated_image",
-        size="2K",
+        size=None,
         response_format="url",
         watermark=False,
         image=None,
@@ -33,16 +33,10 @@ class DoubaoImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
             filename_prefix = f"{agent_id}_{filename_prefix}"
 
         base_url = self.config["baseUrl"].rstrip("/")
-        use_model = (
-            model
-            or self.config.get("imageModel")
-            or self.config.get("image_model")
-            or self.config.get("imageModelId")
-            or self.config.get("model")
-        )
+        use_model = model or self.config.get("model")
         if not use_model:
             raise ValueError("DouBao image model is required for image generation.")
-        use_size = size or image_size or self.config.get("imageSize") or self.config.get("image_size") or "2K"
+        use_size = size or image_size or self.config.get("imageSize") or "2K"
 
         endpoint_suffix = "/images/generations"
         if base_url.endswith(endpoint_suffix):

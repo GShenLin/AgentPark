@@ -48,6 +48,16 @@ def test_provider_runtime_notice_builds_runtime_notice_event():
     assert isinstance(agent.events[0]["monotonic_ns"], int)
 
 
+def test_sse_debug_switch_accepts_only_canonical_sse_debug_key():
+    agent = _build_doubao_agent()
+
+    agent.config = {"sse_debug": True, "debugSse": True, "debug_sse": True}
+    assert agent._provider_sse_debug_enabled() is False
+
+    agent.config = {"sseDebug": True}
+    assert agent._provider_sse_debug_enabled() is True
+
+
 def test_doubao_stream_parse_reports_malformed_sse_event():
     agent = _build_doubao_agent()
 
@@ -109,7 +119,7 @@ def test_doubao_image_generation_start_uses_runtime_notice_instead_of_stdout(tmp
         {
             "apiKey": "test-key",
             "baseUrl": "https://example.test/v1",
-            "imageModel": "seedream-test",
+            "model": "seedream-test",
             "maxRetries": 0,
             "retryDelaySec": 0,
         }

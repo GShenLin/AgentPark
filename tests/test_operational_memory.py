@@ -75,10 +75,10 @@ def test_record_operational_memory_does_not_notify_companion_inbox(monkeypatch, 
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
@@ -116,10 +116,10 @@ def test_record_operational_memory_skip_does_not_notify_companion(monkeypatch, t
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
@@ -150,19 +150,19 @@ def test_companion_operational_memory_does_not_notify_itself(monkeypatch, tmp_pa
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
 
-    memory_path = graphs_dir / "companion" / "memory.md"
+    memory_path = graphs_dir / "Companion" / "Companion" / "memory.md"
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
-    agent._agentpark_graph_id = "companion"
-    agent._agentpark_node_id = "companion"
+    agent._agentpark_graph_id = "Companion"
+    agent._agentpark_node_id = "Companion"
 
     result = json.loads(
         edit_operational_memory(
@@ -189,15 +189,15 @@ def test_companion_operational_memory_path_fallback_does_not_notify_itself(monke
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
 
-    memory_path = graphs_dir / "companion" / "memory.md"
+    memory_path = graphs_dir / "Companion" / "Companion" / "memory.md"
     memory_path.write_text("", encoding="utf-8")
     agent = DummyAgent(memory_path)
 
@@ -226,10 +226,10 @@ def test_record_operational_memory_without_node_identity_does_not_notify_compani
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
@@ -391,10 +391,10 @@ def test_failed_tool_execution_delivers_companion_memory_notice(monkeypatch, tmp
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
@@ -435,15 +435,50 @@ def test_failed_tool_execution_delivers_companion_memory_notice(monkeypatch, tmp
     assert notice["context"]["recent_messages"][0]["role"] == "user"
 
 
+def test_failed_tool_execution_from_companion_graph_does_not_notify(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
+    from src.tool_failure_companion import notify_companion_about_tool_failure_memory
+    from src.web_backend import runtime_paths
+
+    graphs_dir = tmp_path / "memories"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
+    companion_config.parent.mkdir(parents=True)
+    companion_config.write_text(
+        json.dumps({"graph_id": "Companion", "node_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"reviseToolFailureMemoryWithCompanion": True}},
+    )
+
+    memory_path = graphs_dir / "Companion" / "Helper" / "memory.md"
+    memory_path.parent.mkdir(parents=True)
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyAgent(memory_path)
+    agent._agentpark_graph_id = "Companion"
+    agent._agentpark_node_id = "Helper"
+
+    result = notify_companion_about_tool_failure_memory(
+        agent,
+        [{"tool_name": "write_file", "call_id": "call-1", "status": "failed", "error": "boom"}],
+    )
+
+    assert result is False
+    assert not (companion_config.parent / "inbox.jsonl").exists()
+
+
 def test_failed_tool_execution_notice_respects_default_off(monkeypatch, tmp_path):
     import src.companion_notice_settings as companion_notice_settings
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
@@ -471,15 +506,56 @@ def test_failed_tool_execution_notice_respects_default_off(monkeypatch, tmp_path
     assert agent.sent_tools == []
 
 
+def test_failed_tool_execution_notice_only_delivers_for_agent_node(monkeypatch, tmp_path):
+    import src.companion_notice_settings as companion_notice_settings
+    from src.web_backend import runtime_paths
+
+    graphs_dir = tmp_path / "memories"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
+    companion_config.parent.mkdir(parents=True)
+    companion_config.write_text(
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(
+        companion_notice_settings.ConfigLoader,
+        "get_config",
+        lambda _self: {"agentNode": {"reviseToolFailureMemoryWithCompanion": True}},
+    )
+
+    memory_path = tmp_path / "gui" / "agent.md"
+    memory_path.parent.mkdir(parents=True)
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyAgent(memory_path)
+    agent._agentpark_node_id = "GuiAgent1"
+    agent._agentpark_node_type_id = "gui_agent_node"
+
+    ran = agent._notify_companion_about_failed_tool_executions(
+        [
+            ToolCallExecution(
+                func_name="execute_console_command",
+                call_id="call-1",
+                cleaned_result='{"status":"error","error":"tool failed"}',
+                status="error",
+                error="tool failed",
+            )
+        ]
+    )
+
+    assert ran is False
+    assert not (companion_config.parent / "inbox.jsonl").exists()
+
+
 def test_failed_tool_execution_notice_does_not_mutate_existing_tool_map(monkeypatch, tmp_path):
     import src.companion_notice_settings as companion_notice_settings
     from src.web_backend import runtime_paths
 
     graphs_dir = tmp_path / "memories"
-    companion_config = graphs_dir / "companion" / "config.json"
+    companion_config = graphs_dir / "Companion" / "Companion" / "config.json"
     companion_config.parent.mkdir(parents=True)
     companion_config.write_text(
-        json.dumps({"graph_id": "companion", "type_id": "agent_node"}, ensure_ascii=False),
+        json.dumps({"graph_id": "Companion", "type_id": "agent_node"}, ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
