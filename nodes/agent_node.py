@@ -304,7 +304,11 @@ class Node(BaseNode):
                 working_path=run_request.working_path,
                 collaboration_mode=run_request.collaboration_mode,
                 shell="powershell" if os.name == "nt" else "",
-                responses_instruction=_effective_instruction(agent, run_request.instruction)
+                responses_instruction=_effective_responses_instruction(
+                    agent,
+                    run_request.instruction,
+                    run_request.system_prompt,
+                )
                 if _uses_responses_api_context(agent)
                 else "",
                 skill_resource_roots=capability_plan.skill_resource_roots,
@@ -314,6 +318,11 @@ class Node(BaseNode):
         )
         instruction_role = _instruction_role(agent)
         effective_system_prompt = str(run_request.system_prompt or "").strip()
+        if _responses_system_prompt_uses_instructions(agent):
+            try:
+                agent.system_prompt = None
+            except Exception:
+                pass
 
         load_configured_tools(agent, capability_plan.tool_names)
         if capability_plan.plugin_capabilities.tool_definitions:
@@ -330,7 +339,7 @@ class Node(BaseNode):
                 settings=mcp_settings,
             )
 
-        if effective_system_prompt:
+        if effective_system_prompt and not _responses_system_prompt_uses_instructions(agent):
             has_system = any((msg or {}).get("role") == "system" for msg in getattr(agent, "messages", []) or [])
             if not has_system:
                 agent.Message("system", effective_system_prompt)
@@ -440,6 +449,25 @@ def _effective_instruction(agent: object, instruction: object) -> str:
     if _uses_responses_api_context(agent):
         return resolve_agent_default_instructions(agent)
     return ""
+
+
+def _effective_responses_instruction(agent: object, instruction: object, system_prompt: object = "") -> str:
+    parts = [_effective_instruction(agent, instruction)]
+    if _responses_system_prompt_uses_instructions(agent):
+        prompt = str(system_prompt or "").strip()
+        if prompt:
+            parts.append(prompt)
+    return "\n\n".join(part for part in parts if str(part or "").strip())
+
+
+def _responses_system_prompt_uses_instructions(agent: object) -> bool:
+    if not _uses_responses_api_context(agent):
+        return False
+    config = getattr(agent, "config", None)
+    if not isinstance(config, dict):
+        return False
+    value = config.get("responsesSystemPromptMode", config.get("responses_system_prompt_mode", "input"))
+    return str(value or "").strip().lower() in {"instruction", "instructions", "merge", "merged"}
 
 
 def _uses_responses_api_context(agent: object) -> bool:

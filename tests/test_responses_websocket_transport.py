@@ -159,3 +159,59 @@ def test_openai_transport_sends_incremental_payload_over_websocket():
     assert fake.sent[1]["input"] == [
         {"type": "function_call_output", "call_id": "call-1", "output": "ok", "status": "completed"}
     ]
+
+
+def test_openai_transport_falls_back_to_sse_when_websocket_closes_before_first_event():
+    import json
+
+    from src.providers.openai_agent import OpenAIAgent
+
+    class FailingConnection:
+        def send(self, message):
+            _ = message
+
+        def recv(self, timeout=None):
+            _ = timeout
+            raise RuntimeError("received 1013 (try again later) no available account")
+
+        def close(self):
+            return None
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000, "maxRetries": 0, "retryDelaySec": 0}
+    agent.provider_name = "openai"
+    agent.events = []
+    agent.tool_event_callback = agent.events.append
+    agent._responses_websocket_connection = lambda **_kwargs: FailingConnection()
+    agent._curl_post_sse_data_lines = lambda **_kwargs: iter(
+        [
+            json.dumps(
+                {
+                    "type": "response.completed",
+                    "response": {
+                        "id": "resp-fallback",
+                        "output": [{"type": "message", "content": [{"type": "output_text", "text": "fallback ok"}]}],
+                    },
+                }
+            )
+        ]
+    )
+
+    result = agent._stream_responses_with_retry(
+        endpoint="responses",
+        url="https://api.example.test/v1/responses",
+        headers={"Authorization": "Bearer test"},
+        payload_json=json.dumps({"model": "gpt-test", "input": [], "stream": True}),
+        stream_handler=None,
+    )
+
+    assert result["id"] == "resp-fallback"
+    assert agent._responses_websocket_unavailable is True
+    assert any(event.get("stage") == "openai_responses_websocket_fallback" for event in agent.events)
+
+
+def test_responses_websocket_can_be_disabled_by_provider_config():
+    agent = ResponsesWebSocketTransportMixin()
+    agent.config = {"responsesWebSocket": False}
+
+    assert agent._responses_websocket_available() is False

@@ -123,7 +123,18 @@ class ResponsesWebSocketTransportMixin:
         )
 
     def _responses_websocket_available(self) -> bool:
-        return not bool(getattr(self, "_responses_websocket_unavailable", False))
+        return self._responses_websocket_enabled_by_config() and not bool(getattr(self, "_responses_websocket_unavailable", False))
+
+    def _responses_websocket_enabled_by_config(self) -> bool:
+        config = getattr(self, "config", {}) or {}
+        value = True
+        for key in ("responsesWebSocket", "responsesWebsocket", "responses_websocket"):
+            if key in config:
+                value = config.get(key)
+                break
+        if isinstance(value, str):
+            return value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
+        return bool(value)
 
     @staticmethod
     def _responses_payload_requests_stream(payload_json) -> bool:
@@ -169,17 +180,29 @@ class ResponsesWebSocketTransportMixin:
                 ),
                 stage="openai_responses_websocket_request",
             )
+            received_any = False
             while True:
                 try:
                     text = parse_websocket_message(connection.recv(timeout=timeout_sec))
                 except TimeoutError as exc:
                     self._close_responses_websocket()
+                    if not received_any:
+                        self._responses_websocket_unavailable = True
+                        raise ResponsesWebSocketUnavailable(
+                            f"websocket idle timeout before first event after {timeout_sec}s"
+                        ) from exc
                     raise OpenAITransportError(f"websocket idle timeout after {timeout_sec}s") from exc
                 except Exception as exc:
                     self._close_responses_websocket()
+                    if not received_any:
+                        self._responses_websocket_unavailable = True
+                        raise ResponsesWebSocketUnavailable(
+                            f"websocket receive failed before first event: {exc}"
+                        ) from exc
                     raise OpenAITransportError(f"websocket receive failed: {exc}") from exc
                 if not text:
                     continue
+                received_any = True
                 try:
                     parsed = json.loads(text)
                 except Exception:

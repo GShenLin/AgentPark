@@ -594,6 +594,53 @@ def test_agent_node_sse_response_mode_separates_instruction_and_system_prompt(mo
     assert not any("Responses instructions parameter" in str(item.get("content") or "") for item in created_agents[0].messages)
 
 
+def test_agent_node_response_mode_can_merge_system_prompt_into_instructions(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.system_prompt = "Use the system prompt parameter."
+            self.config = {
+                "type": "openai",
+                "responsesApi": True,
+                "responsesSystemPromptMode": "instructions",
+            }
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            return "OK"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "resolve_agent_default_instructions", lambda *_args, **_kwargs: "")
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_response_instruction_merge",
+            "node_instance_id": "n_response_instruction_merge",
+            "provider_id": "openai",
+            "instruction": "Use the Responses instructions parameter.",
+            "system_prompt": "Use the system prompt parameter.",
+        },
+    )
+
+    assert str(result.get("display") or "") == "OK"
+    assert created_agents[0]._agentpark_responses_instruction == (
+        "Use the Responses instructions parameter.\n\nUse the system prompt parameter."
+    )
+    assert created_agents[0].system_prompt is None
+    assert not [item for item in created_agents[0].messages if item.get("role") == "system"]
+
+
 def test_agent_node_sse_chat_mode_keeps_instruction_and_system_prompt_as_messages(monkeypatch):
     import nodes.agent_node as agent_node_module
 
