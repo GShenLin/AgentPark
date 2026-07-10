@@ -4,6 +4,7 @@ import pytest
 
 from src.web_backend.node_config_errors import NodeConfigFormatError, NodeConfigWriteError
 from src.web_backend.node_config_service import NODE_CONFIG_SCHEMA_VERSION, node_config_service
+from src.web_backend.runtime_state_memory_store import RuntimeStateContractError
 from src.web_backend.state_store import _read_json_dict
 
 
@@ -92,6 +93,31 @@ def test_write_preserves_replace_error_after_retries(monkeypatch, tmp_path):
 
     with pytest.raises(NodeConfigWriteError, match="still locked"):
         node_config_service.write(str(config_path), {"node_id": "n1"})
+
+
+def test_write_does_not_overwrite_corrupt_existing_config(tmp_path):
+    config_path = tmp_path / "node" / "config.json"
+    config_path.parent.mkdir()
+    config_path.write_text("{bad", encoding="utf-8")
+
+    with pytest.raises(NodeConfigWriteError, match="failed to read existing node config"):
+        node_config_service.write(str(config_path), {"node_id": "n1"})
+
+    assert config_path.read_text(encoding="utf-8") == "{bad"
+
+
+def test_write_rejects_invalid_runtime_pending_contract(tmp_path):
+    config_path = tmp_path / "node" / "config.json"
+
+    with pytest.raises(RuntimeStateContractError, match="pending must be a list"):
+        node_config_service.write(str(config_path), {"node_id": "n1", "pending": "queued"})
+
+
+def test_write_rejects_positive_pending_count_without_pending(tmp_path):
+    config_path = tmp_path / "node" / "config.json"
+
+    with pytest.raises(RuntimeStateContractError, match="pending_count cannot be positive without pending"):
+        node_config_service.write(str(config_path), {"node_id": "n1", "pending_count": 1})
 
 
 def test_apply_webui_payload_clears_named_fields(tmp_path):

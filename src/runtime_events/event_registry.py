@@ -7,17 +7,9 @@ from typing import Any
 from src.web_backend.profile_storage import AGENT_PROFILE_DIR, get_profile, profile_category_dir, validate_profile_id
 
 from .event_config_store import load_or_create_event_config, write_event_config
-from .event_models import (
-    ACTIONS,
-    EVENTS,
-    PRIORITIES,
-    TTLS,
-    CompiledReceiver,
-    CompiledReceiverGroup,
-    CompiledRule,
-    EMPTY_REGISTRY,
-    RuntimeEventRegistry,
-)
+from .event_models import CompiledReceiver, CompiledReceiverGroup, CompiledRule, EMPTY_REGISTRY, RuntimeEventRegistry
+from .event_rule_config import compile_rules_payload, iter_rules
+from .event_schema import ACTIONS, EVENTS, PRIORITIES, TTLS
 
 
 class EventConfigError(ValueError):
@@ -64,7 +56,7 @@ class RuntimeEventRegistryManager:
         if schema_version != 1:
             errors.append(_error("", "schema_version", "schema_version must be 1"))
         enabled = bool(config.get("enabled", True))
-        rules = _compile_rules_payload(config.get("rules", {}), errors, warnings)
+        rules = compile_rules_payload(config.get("rules", {}), errors)
 
         producer_index = _compile_builtin_map(config.get("context_producers"), "context_producers", errors)
         notice_index = _compile_builtin_map(config.get("notice_writers"), "notice_writers", errors)
@@ -72,7 +64,7 @@ class RuntimeEventRegistryManager:
 
         rule_index: dict[tuple[str, str, str], list[CompiledRule]] = {}
         enabled_count_by_source: dict[tuple[str, str], int] = {}
-        for index, compiled_raw_rule in enumerate(_iter_rules(rules)):
+        for index, compiled_raw_rule in enumerate(iter_rules(rules)):
             raw_rule = compiled_raw_rule["rule"]
             path = str(compiled_raw_rule["path"])
             error_count_before_rule = len(errors)
@@ -260,93 +252,6 @@ class RuntimeEventRegistryManager:
             "notice_writers": len(registry.notice_index),
             "receiver_groups": len(registry.receiver_group_index),
         }
-
-
-def _compile_rules_payload(raw: object, errors: list[dict[str, Any]], warnings: list[str]) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
-    if raw is None:
-        raw = {}
-    if isinstance(raw, list):
-        output: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
-        seen: set[tuple[str, str, str]] = set()
-        for index, item in enumerate(raw):
-            if not isinstance(item, dict):
-                errors.append(_error(f"rules[{index}]", "", "rule must be an object", index))
-                continue
-            source = item.get("source")
-            source = source if isinstance(source, dict) else {}
-            event = _text(item.get("event"))
-            graph_id = _text(source.get("graph_id"))
-            node_id = _text(source.get("node_id"))
-            if not event or not graph_id or not node_id:
-                errors.append(_error(f"rules[{index}]", "rules", "legacy rule requires event and source graph_id/node_id", index))
-                continue
-            key = (event, graph_id, node_id)
-            if key in seen:
-                warnings.append(f"duplicate legacy rule collapsed for {event}/{graph_id}/{node_id}; last rule wins")
-            seen.add(key)
-            output.setdefault(event, {}).setdefault(graph_id, {})[node_id] = _rule_without_keys(item)
-        return output
-    if not isinstance(raw, dict):
-        errors.append(_error("", "rules", "rules must be an object keyed by event"))
-        return {}
-
-    output: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
-    for event_raw, graph_rules_raw in raw.items():
-        event = _text(event_raw)
-        if event not in EVENTS:
-            errors.append(_error("rules", event, f"unsupported event: {event}"))
-            continue
-        if not isinstance(graph_rules_raw, dict):
-            errors.append(_error(f"rules.{event}", "", "event rules must be an object keyed by graph id"))
-            continue
-        event_rules: dict[str, dict[str, dict[str, Any]]] = {}
-        for graph_raw, node_rules_raw in graph_rules_raw.items():
-            graph_id = _text(graph_raw)
-            if not graph_id:
-                errors.append(_error(f"rules.{event}", "graph_id", "graph id is required"))
-                continue
-            if not isinstance(node_rules_raw, dict):
-                errors.append(_error(f"rules.{event}.{graph_id}", "", "graph rules must be an object keyed by node id"))
-                continue
-            graph_rules: dict[str, dict[str, Any]] = {}
-            for node_raw, rule_raw in node_rules_raw.items():
-                node_id = _text(node_raw)
-                if not node_id:
-                    errors.append(_error(f"rules.{event}.{graph_id}", "node_id", "node id is required"))
-                    continue
-                if not isinstance(rule_raw, dict):
-                    errors.append(_error(f"rules.{event}.{graph_id}.{node_id}", "", "rule must be an object"))
-                    continue
-                graph_rules[node_id] = _rule_without_keys(rule_raw)
-            if graph_rules:
-                event_rules[graph_id] = graph_rules
-        if event_rules:
-            output[event] = event_rules
-    return output
-
-
-def _iter_rules(rules: dict[str, dict[str, dict[str, dict[str, Any]]]]) -> list[dict[str, Any]]:
-    output: list[dict[str, Any]] = []
-    for event, event_rules in rules.items():
-        for graph_id, graph_rules in event_rules.items():
-            for node_id, rule in graph_rules.items():
-                output.append(
-                    {
-                        "event": event,
-                        "graph_id": graph_id,
-                        "node_id": node_id,
-                        "rule": rule,
-                        "path": f"rules.{event}.{graph_id}.{node_id}",
-                    }
-                )
-    return output
-
-
-def _rule_without_keys(raw: dict[str, Any]) -> dict[str, Any]:
-    output = dict(raw)
-    output.pop("source", None)
-    output.pop("event", None)
-    return output
 
 
 def _compile_builtin_map(raw: object, field: str, errors: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

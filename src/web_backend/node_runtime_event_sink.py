@@ -347,8 +347,17 @@ class NodeRuntimeEventSink:
                 payload[key] = value
         try:
             self.append_runtime_log(self.graph_id, event_type, **payload)
-        except Exception:
-            return
+        except Exception as exc:
+            warning = f"{type(exc).__name__}: {exc}"
+            self.log_graph_event(
+                self.graph_id,
+                "runtime_event_emit_failed",
+                trace_id=self.trace_id,
+                node_instance_id=self.node_id,
+                node_type_id=self.node_type_id,
+                runtime_event=event_name,
+                error=_preview_text(warning, 1000),
+            )
 
     def _remember_tool_call_event(self, event: dict, event_type: str) -> None:
         call_id = str(event.get("call_id") or "").strip()

@@ -101,6 +101,10 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
                             "supported": True,
                             "values": ["minimal", "low", "medium", "high", "xhigh"],
                         },
+                        "reasoning_summary": {
+                            "supported": True,
+                            "values": ["auto", "concise", "detailed", "disabled"],
+                        },
                     }
                 }
             }
@@ -117,6 +121,8 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
     assert schema["thinking"]["provider_feature"]["values"] == ["enabled", "disabled"]
     assert "Supported values: enabled, disabled" in schema["thinking"]["description"]
     assert schema["reasoning_effort"]["provider_feature"]["supported"] is True
+    assert schema["reasoning_summary"]["type"] == "select"
+    assert schema["reasoning_summary"]["provider_feature"]["values"] == ["auto", "concise", "detailed", "disabled"]
 
 
 def test_agent_node_registers_selected_mcp_servers_before_send(monkeypatch):
@@ -670,6 +676,41 @@ def test_agent_node_forwards_reasoning_effort(monkeypatch):
 
     assert str(result.get("display") or "") == "ok"
     assert captured["reasoning_effort"] == "high"
+
+
+def test_agent_node_forwards_reasoning_summary(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    captured = {}
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **kwargs):
+            captured.update(kwargs)
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_reasoning_summary_unit",
+            "node_instance_id": "n_reasoning_summary_unit",
+            "provider_id": "openai",
+            "reasoning_summary": "concise",
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    assert captured["reasoning_summary"] == "concise"
 
 
 def test_agent_node_forwards_stream_enabled_false_from_provider_config(monkeypatch):

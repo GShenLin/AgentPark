@@ -24,9 +24,10 @@ class ContextArtifact:
 
 
 class RuntimeEventContextStore:
-    def __init__(self, core: object, metrics: object | None = None) -> None:
+    def __init__(self, core: object, metrics: object | None = None, diagnostics: object | None = None) -> None:
         self.core = core
         self.metrics = metrics
+        self.diagnostics = diagnostics
         self._artifacts: dict[tuple[str, str], list[ContextArtifact]] = {}
         self._lock = threading.Lock()
         self._audit_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="runtime-event-audit")
@@ -110,6 +111,13 @@ class RuntimeEventContextStore:
             path = os.path.join(node_dir, "context_artifacts.jsonl")
             line = json.dumps(payload, ensure_ascii=False) + "\n"
             run_with_interprocess_lock(path + ".lock", lambda: append_text(path, line, encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
             if self.metrics is not None and hasattr(self.metrics, "inc"):
                 self.metrics.inc("context_audit_failed")
+            if self.diagnostics is not None and hasattr(self.diagnostics, "record"):
+                self.diagnostics.record(
+                    kind="context_audit_failed",
+                    message="failed to append runtime event context audit",
+                    error=exc,
+                    details={"graph_id": graph_id, "node_id": node_id, "event_id": payload.get("event_id")},
+                )

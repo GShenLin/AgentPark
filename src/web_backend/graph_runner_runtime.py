@@ -66,14 +66,17 @@ class GraphRunnerRuntime(HostBoundService):
                 cfg = state_store._read_json_dict(config_path)
                 if not isinstance(cfg, dict) or not cfg:
                     continue
-            if self._ready_pending_count_for_config(cfg) <= 0:
+            ready_for_node = self._ready_pending_count_for_config(cfg)
+            if ready_for_node <= 0:
                 continue
             item = _dequeue_node_pending_to_working(
                 config_path,
                 runtime_owner_id=getattr(self.core, "runtime_owner_id", ""),
             )
             if not isinstance(item, dict):
+                ready_pending_count += ready_for_node
                 continue
+            ready_pending_count += max(0, ready_for_node - 1)
             self._submit_executor_task(
                 safe_graph_id=safe_graph_id,
                 state=state,

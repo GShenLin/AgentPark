@@ -327,6 +327,8 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
         graph_items = graphs.json()["instances"][0]["graphs"]
         companion_graph = next(item for item in graph_items if item["id"] == "Companion")
         assert companion_graph["readonly"] is True
+        assert companion_graph["deletable"] is False
+        assert companion_graph["editable"] is True
         assert companion_graph["display_name"] == "AgentPark.Companion"
 
         nodes = client.get("/api/mobile/pcs/local/graphs/Companion/nodes")

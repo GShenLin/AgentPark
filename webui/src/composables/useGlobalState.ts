@@ -26,6 +26,7 @@ const memoryLiveRefreshRequest = ref(0)
 const agentImages = ref<string[]>([])
 const graphSnapshot = ref<GraphConfig | null>(null)
 const graphLoadRequest = ref<GraphConfig | null>(null)
+const graphNodeFocusRequest = ref<{ graphId: string; nodeId: string; nonce: number } | null>(null)
 const currentGraphId = ref<string | null>('default')
 const currentGraphName = ref<string | null>('default')
 const currentGraphWorkingPath = ref('')
@@ -55,6 +56,7 @@ export function useGlobalState() {
     agentImages,
     graphSnapshot,
     graphLoadRequest,
+    graphNodeFocusRequest,
     currentGraphId,
     currentGraphName,
     currentGraphWorkingPath,

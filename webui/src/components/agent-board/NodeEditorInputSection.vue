@@ -74,10 +74,6 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 
 <template>
   <section class="editor-section input-section" @drop.prevent="emit('drop-input', $event)">
-    <div class="section-head">
-      <div class="section-title">Input</div>
-    </div>
-
     <div v-if="attachments.length > 0" class="attachment-list">
       <div
         v-for="(file, index) in attachments"
@@ -103,7 +99,7 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 
     <textarea
       class="input-box"
-      rows="4"
+      rows="2"
       placeholder="Type input for this node, or drop files here."
       :value="inputText"
       @input="emit('update:inputText', ($event.target as HTMLTextAreaElement).value)"
@@ -112,7 +108,7 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
     ></textarea>
 
     <div class="input-actions">
-      <div class="section-hint">{{ isUploadingFiles ? 'Uploading files...' : 'Ready to send to this node' }}</div>
+      <div v-if="isUploadingFiles" class="section-hint">Uploading files...</div>
       <div class="send-actions">
         <button
           class="goal-btn"
@@ -134,31 +130,23 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 
 <style scoped>
 .editor-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
   min-height: 0;
+  width: 100%;
 }
 
 .input-section {
-  flex: 0 0 auto;
-  padding-bottom: 2px;
+  flex: 1 1 auto;
 }
 
-.section-head,
 .input-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
-}
-
-.section-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--theme-panel-node-side-editor-text-primary, #e2e8f0);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .section-hint {
@@ -167,6 +155,7 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 }
 
 .attachment-list {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -252,7 +241,8 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 
 .input-box {
   width: 100%;
-  min-height: 92px;
+  min-height: 52px;
+  max-height: 108px;
   resize: vertical;
   border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
@@ -263,7 +253,7 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 }
 
 .input-actions {
-  margin-top: 2px;
+  min-height: 52px;
 }
 
 .send-actions {
@@ -275,7 +265,7 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 
 .goal-btn {
   width: 58px;
-  min-height: 36px;
+  min-height: 34px;
   background: rgba(15, 23, 42, 0.9);
   color: rgba(226, 232, 240, 0.86);
 }
@@ -295,5 +285,16 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
   background: rgba(59, 130, 246, 0.22);
   border-color: rgba(96, 165, 250, 0.42);
   pointer-events: auto;
+}
+
+@media (max-width: 760px) {
+  .editor-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .input-actions {
+    min-height: 0;
+    width: 100%;
+  }
 }
 </style>

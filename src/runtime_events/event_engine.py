@@ -14,8 +14,10 @@ from src.web_backend.state_store import _preview_text
 from .action_results import context_fragment, notice, truncate_text
 from .companion_startup_recovery import CompanionStartupRecovery
 from .context_store import RuntimeEventContextStore
+from .diagnostics import RuntimeEventDiagnostics
 from .event_models import CompiledRule, RuntimeEventEnvelope
 from .event_registry import EventConfigError, RuntimeEventRegistryManager
+from .event_schema import runtime_event_schema
 from .metrics import RuntimeEventMetrics
 from .node_dispatch import RuntimeEventNodeDispatch
 from .temporary_receiver_cleanup import TemporaryReceiverCleanup
@@ -25,9 +27,10 @@ class RuntimeEventDomain:
     def __init__(self, core: object) -> None:
         self.core = core
         self.metrics = RuntimeEventMetrics()
+        self.diagnostics_store = RuntimeEventDiagnostics()
         self.registry = RuntimeEventRegistryManager(core)
-        self.context_store = RuntimeEventContextStore(core, self.metrics)
-        self.dispatch = RuntimeEventNodeDispatch(core, self.metrics)
+        self.context_store = RuntimeEventContextStore(core, self.metrics, self.diagnostics_store)
+        self.dispatch = RuntimeEventNodeDispatch(core, self.metrics, self.diagnostics_store)
         self.cleanup = TemporaryReceiverCleanup(core, self.metrics)
         self.startup_recovery = CompanionStartupRecovery(core, self.cleanup, self.metrics)
         self._dedupe: dict[str, float] = {}
@@ -55,6 +58,19 @@ class RuntimeEventDomain:
             "compiled": RuntimeEventRegistryManager._compiled_counts(active),
             "metrics": self.metrics.snapshot(),
             "context_artifacts": self.context_store.snapshot(),
+            "diagnostics": self.diagnostics_store.snapshot(),
+        }
+
+    def schema(self):
+        active = self.registry.active()
+        return {
+            "ok": True,
+            **runtime_event_schema(),
+            "targets": {
+                "context.produce": list(active.producer_index.keys()),
+                "notice.write": list(active.notice_index.keys()),
+                "node.dispatch": list(active.receiver_group_index.keys()),
+            },
         }
 
     def emit(
@@ -114,6 +130,20 @@ class RuntimeEventDomain:
             except Exception as exc:
                 errors.append(f"rule[{rule.rule_index}] {type(exc).__name__}: {exc}")
                 self.metrics.inc("action_failed", event=event_name, action=rule.action)
+                self.diagnostics_store.record(
+                    kind="action_failed",
+                    message="runtime event action failed",
+                    error=exc,
+                    details={
+                        "event_id": envelope.event_id,
+                        "event": event_name,
+                        "rule_index": rule.rule_index,
+                        "action": rule.action,
+                        "target": rule.target,
+                        "source_graph_id": envelope.source_graph_id,
+                        "source_node_id": envelope.source_node_id,
+                    },
+                )
         return {
             "event_id": envelope.event_id,
             "matched": len(rules),

@@ -80,6 +80,7 @@ class Node(BaseNode):
         "web_search": "disabled",
         "thinking": "disabled",
         "reasoning_effort": "high",
+        "reasoning_summary": "",
     }
     config_schema = {
         "provider_id": {"type": "text", "label": "provider_id"},
@@ -122,6 +123,17 @@ class Node(BaseNode):
                 {"value": "xhigh", "label": "xhigh"},
             ],
         },
+        "reasoning_summary": {
+            "type": "select",
+            "label": "reasoning_summary",
+            "options": [
+                {"value": "", "label": "provider default"},
+                {"value": "auto", "label": "auto"},
+                {"value": "concise", "label": "concise"},
+                {"value": "detailed", "label": "detailed"},
+                {"value": "disabled", "label": "disabled"},
+            ],
+        },
     }
 
     def get_config_schema(self, context: dict | None = None) -> dict:
@@ -145,7 +157,7 @@ class Node(BaseNode):
             field_schema["type"] = "multiselect"
             field_schema["options"] = list((capability_payload.get(kind) or {}).get("available") or [])
             schema[field] = field_schema
-        for field in ("web_search", "thinking", "reasoning_effort", "tools"):
+        for field in ("web_search", "thinking", "reasoning_effort", "reasoning_summary", "tools"):
             if field not in schema:
                 continue
             field_schema = dict(schema.get(field) or {})
@@ -361,6 +373,9 @@ class Node(BaseNode):
         reasoning_effort = run_request.reasoning_effort
         if reasoning_effort is None:
             reasoning_effort = self.config_defaults["reasoning_effort"]
+        reasoning_summary = run_request.reasoning_summary
+        if reasoning_summary is None:
+            reasoning_summary = self.config_defaults["reasoning_summary"]
         tool_stats_recorder = ToolCallStatsRecorder(
             provider_id=run_request.provider_id,
             graph_id=run_request.graph_id,
@@ -381,6 +396,7 @@ class Node(BaseNode):
                 "web_search": web_search_mode,
                 "thinking": thinking_mode,
                 "reasoning_effort": reasoning_effort,
+                "reasoning_summary": reasoning_summary,
                 "stream": _stream_enabled_for_agent(agent),
                 "stream_handler": stream_runtime.on_stream_delta,
                 "thinking_stream_handler": stream_runtime.on_thinking_delta,

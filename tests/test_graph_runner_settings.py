@@ -164,6 +164,64 @@ def test_graph_scheduler_releases_finished_task_and_schedules_next_pending(monke
     assert calls == ["trace-1", "trace-2"]
 
 
+def test_graph_scheduler_reports_remaining_ready_pending_after_submission(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    from src.web_backend import state_store
+
+    facade = backend.WebBackendFacade()
+    graph_runtime = facade.core.graph_runtime
+    graph_id = "default"
+    graph_dir = tmp_path / graph_id
+    graph_dir.mkdir()
+    node_dir = graph_dir / "n1"
+    node_dir.mkdir()
+    config_path = node_dir / "config.json"
+    state_store._write_json_dict(
+        str(config_path),
+        {
+            "node_id": "n1",
+            "type_id": "echo_node",
+            "state": "idle",
+            "input_num": 1,
+            "output_num": 1,
+            "pending": [
+                {"payload": "first", "trace_id": "trace-1"},
+                {"payload": "second", "trace_id": "trace-2"},
+                {"payload": "third", "trace_id": "trace-3"},
+            ],
+            "pending_count": 3,
+        },
+    )
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_run_single_node_iteration(**kwargs):
+        started.set()
+        release.wait(timeout=2)
+
+    monkeypatch.setattr(graph_runtime, "_graph_dir", lambda _graph_id: str(graph_dir))
+    monkeypatch.setattr(graph_runtime, "_read_graph_config", lambda _graph_id: {"nodes": [], "output_routes": {}})
+    monkeypatch.setattr(graph_runtime, "_build_outgoing_routes_map", lambda _graph_cfg: {})
+    monkeypatch.setattr(graph_runtime, "_run_single_node_iteration", fake_run_single_node_iteration)
+
+    state = GraphRunnerState(
+        scheduler_thread=None,
+        stop=threading.Event(),
+        wake=_GraphRunnerWakeSignal(),
+        executor=GraphExecutor(graph_id),
+    )
+    try:
+        graph_runtime._run_scheduler_batch(graph_id, state)
+        assert started.wait(timeout=1.0)
+        with state.active_lock:
+            assert state.ready_pending_count == 2
+    finally:
+        release.set()
+        for task in list(state.active_tasks.values()):
+            task.thread.join(timeout=1.0)
+
+
 def test_graph_scheduler_skips_stop_and_delete_requested_nodes(monkeypatch, tmp_path):
     import src.web_backend as backend
 

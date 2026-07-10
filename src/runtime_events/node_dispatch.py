@@ -15,9 +15,10 @@ from .event_models import CompiledReceiver, CompiledReceiverGroup, RuntimeEventE
 
 
 class RuntimeEventNodeDispatch:
-    def __init__(self, core: object, metrics: object | None = None) -> None:
+    def __init__(self, core: object, metrics: object | None = None, diagnostics: object | None = None) -> None:
         self.core = core
         self.metrics = metrics
+        self.diagnostics = diagnostics
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="runtime-event-dispatch")
 
     def enqueue(self, *, group: CompiledReceiverGroup, envelope: RuntimeEventEnvelope) -> None:
@@ -47,6 +48,19 @@ class RuntimeEventNodeDispatch:
         except Exception as exc:
             if self.metrics is not None and hasattr(self.metrics, "inc"):
                 self.metrics.inc("dispatch_failed", group=group.group_id, event=envelope.event)
+            if self.diagnostics is not None and hasattr(self.diagnostics, "record"):
+                self.diagnostics.record(
+                    kind="dispatch_failed",
+                    message="runtime event dispatch failed",
+                    error=exc,
+                    details={
+                        "event_id": envelope.event_id,
+                        "event": envelope.event,
+                        "source_graph_id": envelope.source_graph_id,
+                        "source_node_id": envelope.source_node_id,
+                        "receiver_group": group.group_id,
+                    },
+                )
             self.core.graph_runtime._log_graph_event(
                 envelope.source_graph_id,
                 "runtime_event_dispatch_failed",

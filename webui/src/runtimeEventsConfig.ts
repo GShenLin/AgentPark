@@ -109,7 +109,8 @@ export function setRuntimeEventRule(
   if (!config.rules) config.rules = {}
   const eventRules = config.rules[payload.event] || {}
   const graphRules = eventRules[payload.graphId] || {}
-  graphRules[payload.nodeId] = payload.rule
+  const existing = normalizeRuleList(graphRules[payload.nodeId])
+  graphRules[payload.nodeId] = [...existing, payload.rule]
   eventRules[payload.graphId] = graphRules
   config.rules[payload.event] = eventRules
 }
@@ -120,12 +121,19 @@ export function deleteRuntimeEventRule(
     graphId: string
     nodeId: string
     event: string
+    ruleIndex?: number
   },
 ) {
   const eventRules = config.rules?.[payload.event]
   const graphRules = eventRules?.[payload.graphId]
   if (!graphRules) return
-  delete graphRules[payload.nodeId]
+  if (typeof payload.ruleIndex === 'number') {
+    const nextRules = normalizeRuleList(graphRules[payload.nodeId]).filter((_rule, index) => index !== payload.ruleIndex)
+    if (nextRules.length) graphRules[payload.nodeId] = nextRules
+    else delete graphRules[payload.nodeId]
+  } else {
+    delete graphRules[payload.nodeId]
+  }
   if (!Object.keys(graphRules).length) delete eventRules[payload.graphId]
   if (eventRules && !Object.keys(eventRules).length) delete config.rules[payload.event]
 }
@@ -136,14 +144,16 @@ export function flattenRules(rules: RuntimeEventRules) {
     graphId: string
     nodeId: string
     rule: RuntimeEventRule
+    ruleIndex: number
   }> = []
   for (const [event, eventRules] of Object.entries(rules || {})) {
     if (!eventRules || typeof eventRules !== 'object' || Array.isArray(eventRules)) continue
     for (const [graphId, graphRules] of Object.entries(eventRules)) {
       if (!graphRules || typeof graphRules !== 'object' || Array.isArray(graphRules)) continue
-      for (const [nodeId, rule] of Object.entries(graphRules)) {
-        if (!rule || typeof rule !== 'object' || Array.isArray(rule)) continue
-        output.push({ event, graphId, nodeId, rule: rule as RuntimeEventRule })
+      for (const [nodeId, nodeRules] of Object.entries(graphRules)) {
+        normalizeRuleList(nodeRules).forEach((rule, ruleIndex) => {
+          output.push({ event, graphId, nodeId, rule, ruleIndex })
+        })
       }
     }
   }
@@ -182,9 +192,33 @@ function normalizeRules(value: unknown): RuntimeEventRules {
       const { source: _source, event: _event, ...rule } = raw
       if (!output[event]) output[event] = {}
       if (!output[event][graphId]) output[event][graphId] = {}
-      output[event][graphId][nodeId] = rule as RuntimeEventRule
+      const existing = normalizeRuleList(output[event][graphId][nodeId])
+      output[event][graphId][nodeId] = [...existing, rule as RuntimeEventRule]
     }
     return output
   }
-  return objectMap(value) as RuntimeEventRules
+  const rawRules = objectMap(value)
+  const output: RuntimeEventRules = {}
+  for (const [event, eventRules] of Object.entries(rawRules)) {
+    if (!eventRules || typeof eventRules !== 'object' || Array.isArray(eventRules)) continue
+    for (const [graphId, graphRules] of Object.entries(eventRules as Record<string, unknown>)) {
+      if (!graphRules || typeof graphRules !== 'object' || Array.isArray(graphRules)) continue
+      for (const [nodeId, nodeRules] of Object.entries(graphRules as Record<string, unknown>)) {
+        const normalized = normalizeRuleList(nodeRules)
+        if (!normalized.length) continue
+        if (!output[event]) output[event] = {}
+        if (!output[event][graphId]) output[event][graphId] = {}
+        output[event][graphId][nodeId] = normalized
+      }
+    }
+  }
+  return output
+}
+
+function normalizeRuleList(value: unknown): RuntimeEventRule[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is RuntimeEventRule => !!item && typeof item === 'object' && !Array.isArray(item))
+  }
+  if (value && typeof value === 'object') return [value as RuntimeEventRule]
+  return []
 }

@@ -260,14 +260,16 @@ class NodeConfigService:
         try:
             payload = self._read_json_payload(path)
             if not isinstance(payload, dict):
-                return None
+                raise NodeConfigFormatError(f"node config must be a JSON object: {path}")
             migrated = self._migrate_config(payload, path)
             config_payload, _runtime_payload = runtime_state_memory_store.split_payload(migrated)
             if "schemaVersion" not in config_payload:
                 config_payload["schemaVersion"] = NODE_CONFIG_SCHEMA_VERSION
             return config_payload
-        except Exception:
-            return None
+        except (json.JSONDecodeError, OSError, NodeConfigFormatError) as exc:
+            raise NodeConfigReadError(
+                f"failed to read existing node config before write {path}: {type(exc).__name__}: {exc}"
+            ) from exc
 
     def _migrate_config(self, payload: dict[str, Any], config_path: str) -> dict[str, Any]:
         version = payload.get("schemaVersion")

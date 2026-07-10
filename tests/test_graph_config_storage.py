@@ -333,8 +333,14 @@ def test_graph_list_includes_companion_and_marks_protected_graphs_readonly(monke
     graphs = {item["id"]: item for item in response.json()["graphs"]}
     assert {"default", "Companion", "work"}.issubset(graphs)
     assert graphs["default"]["readonly"] is True
+    assert graphs["default"]["deletable"] is False
+    assert graphs["default"]["editable"] is True
     assert graphs["Companion"]["readonly"] is True
+    assert graphs["Companion"]["deletable"] is False
+    assert graphs["Companion"]["editable"] is True
     assert graphs["work"].get("readonly") is False
+    assert graphs["work"]["deletable"] is True
+    assert graphs["work"]["editable"] is True
 
 
 def test_companion_graph_load_uses_normal_graph_and_node_layout(monkeypatch, tmp_path):

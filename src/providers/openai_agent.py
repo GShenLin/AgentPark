@@ -45,6 +45,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         web_search=None,
         thinking=None,
         reasoning_effort=None,
+        reasoning_summary=None,
         stream=False,
         stream_handler=None,
         thinking_stream_handler=None,
@@ -62,6 +63,9 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
             effort_source = self.config.get("reasoningEffort", "")
+        summary_source = reasoning_summary
+        if summary_source is None or summary_source == "":
+            summary_source = self.config.get("reasoningSummary", "")
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
         web_search_mode = self._effective_feature_switch(
             "web_search",
@@ -88,6 +92,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             active_tools=active_tools,
             run_tools=run_tools,
             reasoning_effort=effort_source,
+            reasoning_summary=summary_source,
             web_search_mode=web_search_mode,
             stream_handler=stream_handler if stream and callable(stream_handler) else None,
             thinking_stream_handler=thinking_stream_handler if stream and callable(thinking_stream_handler) else None,

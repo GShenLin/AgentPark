@@ -6,7 +6,6 @@ import CanvasContextMenu from './CanvasContextMenu.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
 import NodeOutputRoutesPanel from './NodeOutputRoutesPanel.vue'
-import NodeSideEditor from './NodeSideEditor.vue'
 import UserInteractionDialog from '../UserInteractionDialog.vue'
 
 const injected = inject(AgentBoardKey, null)
@@ -114,7 +113,6 @@ watchEffect(() => {
           :canvas-width="ctx.canvasWidth.value"
           :canvas-height="ctx.canvasHeight.value"
         />
-        <NodeSideEditor />
       </div>
     </div>
     <CanvasContextMenu ref="contextMenuRef" />
@@ -127,6 +125,7 @@ watchEffect(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overflow-anchor: none;
   cursor: grab;
   background-color: var(--theme-panel-board-canvas-background-color, transparent);
   background-image: var(--theme-panel-board-canvas-background-image, none);

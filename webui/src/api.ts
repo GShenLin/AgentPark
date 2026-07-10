@@ -645,8 +645,8 @@ export async function setStartupGraphConfig(graphId: string, graphName?: string)
   })
 }
 
-export type RuntimeEventName = 'OnInput' | 'ToolFailure' | 'RuntimeNotice' | 'NetError' | 'WorkPersisted' | 'WorkFailed'
-export type RuntimeEventAction = 'context.produce' | 'notice.write' | 'node.dispatch'
+export type RuntimeEventName = string
+export type RuntimeEventAction = string
 
 export type RuntimeEventRule = {
   enabled?: boolean
@@ -659,7 +659,7 @@ export type RuntimeEventRule = {
   }
 }
 
-export type RuntimeEventRules = Record<string, Record<string, Record<string, RuntimeEventRule>>>
+export type RuntimeEventRules = Record<string, Record<string, Record<string, RuntimeEventRule[]>>>
 
 export type RuntimeEventReceiver = {
   graph_id: string
@@ -698,6 +698,19 @@ export type RuntimeEventDiagnostics = {
   compiled: Record<string, number>
   metrics: Record<string, unknown>
   context_artifacts: Record<string, unknown>
+  diagnostics?: Array<Record<string, unknown>>
+}
+
+export type RuntimeEventSchema = {
+  ok: boolean
+  schema_version: number
+  events: RuntimeEventName[]
+  actions: RuntimeEventAction[]
+  ttls: string[]
+  priorities: string[]
+  rules_shape: string
+  max_enabled_rules_per_source_node: number
+  targets?: Record<RuntimeEventAction | string, string[]>
 }
 
 export async function loadRuntimeEventConfig(): Promise<{ config: RuntimeEventConfig; content: string; path: string }> {
@@ -707,6 +720,10 @@ export async function loadRuntimeEventConfig(): Promise<{ config: RuntimeEventCo
     content: String(res.content || ''),
     path: String(res.path || 'config/events.json'),
   }
+}
+
+export async function loadRuntimeEventSchema(): Promise<RuntimeEventSchema> {
+  return apiFetch('/api/events/schema') as Promise<RuntimeEventSchema>
 }
 
 export async function applyRuntimeEventConfig(config?: RuntimeEventConfig | Record<string, unknown>): Promise<RuntimeEventApplyResponse> {

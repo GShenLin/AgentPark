@@ -67,7 +67,17 @@ import {
   selectionRectFromSession,
   type BoardSelectionSession,
 } from './boardSelection'
-import type { AgentBoardContext, DragSession, LinkItem, LinkSession, NodeCard, NodeRunState, PanSession } from './context'
+import type {
+  AgentBoardContext,
+  DragSession,
+  LinkItem,
+  LinkSession,
+  NodeCard,
+  NodeRunState,
+  PanSession,
+  SelectAndFocusNodeOptions,
+} from './context'
+import { createWindowPointerDrag, type PointerDragEnd } from './pointerDrag'
 import {
   clampX,
   NODE_CARD_DEFAULT_HEIGHT,
@@ -97,6 +107,7 @@ export function useAgentBoard(): AgentBoardContext {
     memoryRefreshRequest,
     graphSnapshot,
     graphLoadRequest,
+    graphNodeFocusRequest,
     currentGraphId,
     currentGraphName,
     currentGraphWorkingPath,
@@ -114,9 +125,10 @@ export function useAgentBoard(): AgentBoardContext {
 
   const selectedItemIds = ref<string[]>([])
   let selectionSession: BoardSelectionSession | null = null
+  let boardViewportGestureVersion = 0
 
   let dragBatchStart: Record<string, { x: number; y: number }> | null = null
-  let activeDragItemIds = new Set<string>()
+  const activeDragItemIds = new Set<string>()
   const pendingUiPositions = new Map<string, BoardPosition>()
   let nodeConfigRefreshPromise: Promise<void> | null = null
   let pasteCount = 0
@@ -128,6 +140,104 @@ export function useAgentBoard(): AgentBoardContext {
     selectedItemIds.value = [id]
     memoryMode.value = 'agent'
     syncSelectedNodeWorkingPath(id)
+  }
+
+  function measureBoardViewport(board: HTMLElement) {
+    const boardRect = board.getBoundingClientRect()
+    const occlusion = { left: 0, right: 0, top: 0, bottom: 0 }
+    const root = board.closest('.content') || document
+    const overlays = Array.from(root.querySelectorAll<HTMLElement>('[data-board-occlusion]'))
+
+    for (const overlay of overlays) {
+      const side = overlay.dataset.boardOcclusion
+      const rect = overlay.getBoundingClientRect()
+      const intersects =
+        rect.right > boardRect.left &&
+        rect.left < boardRect.right &&
+        rect.bottom > boardRect.top &&
+        rect.top < boardRect.bottom
+      if (!intersects) continue
+
+      if (side === 'left') {
+        occlusion.left = Math.max(occlusion.left, Math.min(rect.right, boardRect.right) - boardRect.left)
+      } else if (side === 'right') {
+        occlusion.right = Math.max(occlusion.right, boardRect.right - Math.max(rect.left, boardRect.left))
+      } else if (side === 'top') {
+        occlusion.top = Math.max(occlusion.top, Math.min(rect.bottom, boardRect.bottom) - boardRect.top)
+      } else if (side === 'bottom') {
+        occlusion.bottom = Math.max(occlusion.bottom, boardRect.bottom - Math.max(rect.top, boardRect.top))
+      }
+    }
+
+    const width = Math.max(1, board.clientWidth - occlusion.left - occlusion.right)
+    const height = Math.max(1, board.clientHeight - occlusion.top - occlusion.bottom)
+    return {
+      centerX: boardRect.left + occlusion.left + width / 2,
+      centerY: boardRect.top + occlusion.top + height / 2,
+    }
+  }
+
+  function cancelBoardViewportScroll() {
+    boardViewportGestureVersion += 1
+    const board = boardRef.value
+    if (!board) return
+    board.scrollTo({ left: board.scrollLeft, top: board.scrollTop, behavior: 'auto' })
+  }
+
+  async function focusNodeInViewport(id: string) {
+    const gestureVersion = boardViewportGestureVersion
+    const board = boardRef.value
+    await nextTick()
+    if (!board) return false
+    if (gestureVersion !== boardViewportGestureVersion) return false
+    const card = Array.from(board.querySelectorAll<HTMLElement>('.node-card')).find(
+      (item) => item.dataset.boardItemId === id,
+    )
+    if (!card) return false
+    const viewport = measureBoardViewport(board)
+    const cardRect = card.getBoundingClientRect()
+    const targetLeft = board.scrollLeft + cardRect.left + cardRect.width / 2 - viewport.centerX
+    const targetTop = board.scrollTop + cardRect.top + cardRect.height / 2 - viewport.centerY
+    board.scrollTo({
+      left: Math.max(0, targetLeft),
+      top: Math.max(0, targetTop),
+      behavior: 'smooth',
+    })
+    return true
+  }
+
+  async function selectAndFocusNode(id: string, options: SelectAndFocusNodeOptions = {}) {
+    const nodeId = String(id || '').trim()
+    if (!nodeId) return false
+    if (!nodes.value.some((node) => node.id === nodeId)) return false
+
+    selectNode(nodeId)
+    const shouldRefresh = options.refreshConfig !== false
+    const shouldFocus = options.focusViewport !== false
+    const refreshPromise = shouldRefresh ? refreshNodeConfig(nodeId).catch(() => null) : Promise.resolve()
+    const focused = shouldFocus ? await focusNodeInViewport(nodeId) : false
+    await refreshPromise
+    return focused
+  }
+
+  async function focusGraphNode(request: { graphId: string; nodeId: string }) {
+    const graphId = String(request.graphId || '').trim()
+    const nodeId = String(request.nodeId || '').trim()
+    if (!graphId || !nodeId) return
+    if ((currentGraphId.value || 'default') !== graphId) return
+
+    if (!nodes.value.some((node) => node.id === nodeId)) {
+      await refreshNodeConfigsAndMemory().catch(() => null)
+    }
+    if (!nodes.value.some((node) => node.id === nodeId)) {
+      lastError.value = `Node not found in graph "${graphId}": ${nodeId}`
+      return
+    }
+
+    const focused = await selectAndFocusNode(nodeId)
+    if (focused && graphNodeFocusRequest.value?.graphId === graphId && graphNodeFocusRequest.value?.nodeId === nodeId) {
+      graphNodeFocusRequest.value = null
+    }
   }
 
   function openGraphPanel() {
@@ -436,6 +546,19 @@ export function useAgentBoard(): AgentBoardContext {
   const dragHoverTargetId = ref<string | null>(null)
   const panSession = ref<PanSession>(null)
 
+  const nodeMoveDrag = createWindowPointerDrag<NonNullable<DragSession>>({
+    session: dragSession,
+    getPointerId: (session) => session.pointerId,
+    getScale: () => canvasScale.value,
+    cursor: 'move',
+    onMove: (event, delta, session) => {
+      moveDraggedNodes(event, delta.dx, delta.dy, session)
+    },
+    onEnd: (end, session) => {
+      finishNodeDrag(end, session)
+    },
+  })
+
   const canvasWidth = ref(1400)
   const canvasHeight = ref(900)
   const canvasPaddingLeft = ref(0)
@@ -607,9 +730,7 @@ export function useAgentBoard(): AgentBoardContext {
     }
 
     if (nodes.value.some((n) => n.id === id)) {
-      selectedItemIds.value = [id]
-      selectNode(id)
-      refreshNodeConfig(id).catch(() => null)
+      selectAndFocusNode(id).catch(() => null)
     }
   }
 
@@ -617,6 +738,7 @@ export function useAgentBoard(): AgentBoardContext {
     if (event.button !== 0) return
     const target = event.target as HTMLElement | null
     if (target?.closest('button, input, textarea, select, a, .node-resize-handle')) return
+    cancelBoardViewportScroll()
 
     dragHoverTargetId.value = null
     const selected = new Set<string>(selectedItemIds.value)
@@ -625,9 +747,11 @@ export function useAgentBoard(): AgentBoardContext {
         selectNode(id)
       }
     }
-    activeDragItemIds = new Set(selectedItemIds.value)
+    const movingIds = selectedItemIds.value.length ? selectedItemIds.value : [id]
+    activeDragItemIds.clear()
+    for (const itemId of movingIds) activeDragItemIds.add(itemId)
     dragBatchStart = {}
-    for (const itemId of selectedItemIds.value) {
+    for (const itemId of movingIds) {
       const pos = getItemPosition(itemId)
       if (!pos) continue
       dragBatchStart[itemId] = { x: pos.x, y: pos.y }
@@ -635,33 +759,24 @@ export function useAgentBoard(): AgentBoardContext {
 
     const node = nodes.value.find((n) => n.id === id)
     if (!node) return
-    let startX = node.ui.x
-    let startY = node.ui.y
-    dragSession.value = {
+    const startX = node.ui.x
+    const startY = node.ui.y
+    nodeMoveDrag.start({
       itemId: id,
       pointerId: event.pointerId,
-      startPointerX: event.clientX,
-      startPointerY: event.clientY,
-      startX,
-      startY,
       moved: false,
-    }
+      centerOnEnd: !(event.ctrlKey || event.metaKey || event.altKey),
+    }, event, { preventDefault: true, stopPropagation: true })
     traceBoardDrag('drag_start', {
       itemId: id,
       pointerId: event.pointerId,
-      selectedIds: [...selectedItemIds.value],
+      selectedIds: movingIds,
       startX,
       startY,
     })
-    ;(event.currentTarget as HTMLElement | null)?.setPointerCapture(event.pointerId)
   }
 
-  function onItemPointerMove(event: PointerEvent) {
-    const session = dragSession.value
-    if (!session) return
-    if (event.pointerId !== session.pointerId) return
-    const dx = event.clientX - session.startPointerX
-    const dy = event.clientY - session.startPointerY
+  function moveDraggedNodes(event: PointerEvent, dx: number, dy: number, session: NonNullable<DragSession>) {
     if (!session.moved) {
       if (Math.hypot(dx, dy) <= 4) return
       session.moved = true
@@ -1066,18 +1181,17 @@ export function useAgentBoard(): AgentBoardContext {
     }
   }
 
-  function endDrag(event: PointerEvent) {
-    const session = dragSession.value
-    if (!session) return
-
+  function finishNodeDrag(end: PointerDragEnd, session: NonNullable<DragSession>) {
     const movingIds = selectedItemIds.value.length ? [...selectedItemIds.value] : [session.itemId]
-    const targetId = getDropTargetItemId(event.clientX, event.clientY, new Set(movingIds))
+    const targetId = getDropTargetItemId(end.clientX, end.clientY, new Set(movingIds))
     const payload = getLastItemPayload(session.itemId)
     const wasMoved = session.moved
-    dragSession.value = null
     dragHoverTargetId.value = null
     activeDragItemIds.clear()
     if (!wasMoved) {
+      if (session.centerOnEnd && nodes.value.some((n) => n.id === session.itemId)) {
+        selectAndFocusNode(session.itemId).catch(() => null)
+      }
       dragBatchStart = null
       traceBoardDrag('drag_end', {
         itemId: session.itemId,
@@ -1107,7 +1221,7 @@ export function useAgentBoard(): AgentBoardContext {
         lastError.value = String(e?.message || e)
       })
       dragBatchStart = null
-      event.preventDefault()
+      if (end.pointerEvent?.cancelable) end.pointerEvent.preventDefault()
       return
     }
 
@@ -1119,7 +1233,7 @@ export function useAgentBoard(): AgentBoardContext {
     })
     void persistGraphConfig('end_drag')
     dragBatchStart = null
-    event.preventDefault()
+    if (end.pointerEvent?.cancelable) end.pointerEvent.preventDefault()
   }
 
   async function persistDraggedItemPositions(itemIds?: Iterable<string>) {
@@ -1176,8 +1290,12 @@ export function useAgentBoard(): AgentBoardContext {
     node.ui.height = normalized.height
     updateCanvasSize()
     syncGraphSnapshot()
-    if (!options?.persist) return
+    if (!options?.persist) {
+      activeDragItemIds.add(id)
+      return
+    }
     rememberPendingUiPositions([id], 'resize_node')
+    activeDragItemIds.delete(id)
     try {
       await persistDraggedItemPositions([id])
       await persistGraphConfig('resize_node')
@@ -1241,6 +1359,10 @@ export function useAgentBoard(): AgentBoardContext {
   }
 
   function onBoardMouseDownCapture(event: MouseEvent) {
+    if (event.button === 0 || event.button === 1) {
+      cancelBoardViewportScroll()
+    }
+
     if (event.button === 0) {
       const target = event.target as HTMLElement | null
       const overItem = !!target?.closest('.node-card, .node-side-editor, .node-output-routes-panel, .modal, .context-menu')
@@ -1470,6 +1592,7 @@ export function useAgentBoard(): AgentBoardContext {
     const canvas = canvasRef.value
     if (!board || !canvas) return
 
+    cancelBoardViewportScroll()
     event.preventDefault()
     const rect = canvas.getBoundingClientRect()
     const pointerX = event.clientX - rect.left
@@ -1708,6 +1831,7 @@ export function useAgentBoard(): AgentBoardContext {
     window.removeEventListener('mousemove', onPanMouseMove)
     window.removeEventListener('mouseup', onPanEnd)
     window.removeEventListener('blur', onPanEnd)
+    nodeMoveDrag.stop()
     window.removeEventListener('pointermove', onLinkPointerMove)
     window.removeEventListener('pointerup', onLinkPointerUp)
     window.removeEventListener('blur', onLinkPointerUp)
@@ -1720,8 +1844,24 @@ export function useAgentBoard(): AgentBoardContext {
       applyGraphConfig(config)
       graphLoadRequest.value = null
       selectedItemIds.value = []
-      refreshNodeConfigsAndMemory().catch(() => null)
+      refreshNodeConfigsAndMemory()
+        .then(async () => {
+          const request = graphNodeFocusRequest.value
+          if (!request) return
+          if (String(request.graphId || '').trim() !== (currentGraphId.value || 'default')) return
+          await focusGraphNode(request)
+        })
+        .catch(() => null)
       startGraphEventStream()
+    },
+  )
+
+  watch(
+    () => graphNodeFocusRequest.value,
+    async (request) => {
+      if (!request) return
+      if (graphLoadRequest.value) return
+      await focusGraphNode(request)
     },
   )
 
@@ -1775,6 +1915,9 @@ export function useAgentBoard(): AgentBoardContext {
     selectedNodeWorkingPathRevision,
 
     selectNode,
+    selectAndFocusNode,
+    focusNodeInViewport,
+    cancelBoardViewportScroll,
     openNodeSettings,
     openNodeFolder,
     openGraphPanel,
@@ -1798,8 +1941,6 @@ export function useAgentBoard(): AgentBoardContext {
     resizeNodeCard,
     onItemClick,
     onItemPointerDown,
-    onItemPointerMove,
-    endDrag,
 
     onBoardMouseDownCapture,
     onBoardWheel,

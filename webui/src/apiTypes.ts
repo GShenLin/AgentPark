@@ -129,6 +129,8 @@ export type GraphInfo = {
   name: string
   updated_at?: string
   readonly?: boolean
+  deletable?: boolean
+  editable?: boolean
 }
 
 export type AgentProfile = {
@@ -423,6 +425,8 @@ export type MobileGraph = {
   instance_path: string
   updated_at?: string | null
   readonly?: boolean
+  deletable?: boolean
+  editable?: boolean
 }
 
 export type MobileGraphInstance = MobilePcInstance & {

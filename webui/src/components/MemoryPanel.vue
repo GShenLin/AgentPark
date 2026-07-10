@@ -17,6 +17,7 @@ import {
   type GraphInfo,
   type GraphProfile,
   type MessageEnvelope,
+  type NodeInstanceConfig,
 } from '../api'
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
@@ -43,6 +44,7 @@ const {
   selectedNodeId,
   graphSnapshot,
   graphLoadRequest,
+  graphNodeFocusRequest,
   currentGraphId,
   currentGraphName,
   currentGraphWorkingPath,
@@ -86,6 +88,9 @@ const graphWorkingPathInput = ref('')
 const graphStatus = ref<string | null>(null)
 const graphLoading = ref(false)
 const graphMemoryClearingId = ref('')
+const expandedGraphId = ref('')
+const graphNodesLoadingId = ref('')
+const graphNodesById = ref<Record<string, NodeInstanceConfig[]>>({})
 
 const structuredMessages = computed(() => (Array.isArray(memoryMessages.value) ? memoryMessages.value : []))
 const canClearMemory = computed(() => memoryMode.value === 'agent' && hasSelectedNodeTarget())
@@ -184,6 +189,34 @@ async function refreshGraphs() {
     graphStatus.value = String(e?.message || e)
   } finally {
     graphLoading.value = false
+  }
+}
+
+async function toggleGraphNodes(item: GraphInfo) {
+  const graphId = String(item.id || '').trim()
+  if (!graphId) return
+  if (expandedGraphId.value === graphId) {
+    expandedGraphId.value = ''
+    return
+  }
+
+  expandedGraphId.value = graphId
+  if (graphNodesById.value[graphId]) return
+
+  graphNodesLoadingId.value = graphId
+  graphStatus.value = null
+  try {
+    const result = await listNodeInstanceConfigs(graphId)
+    graphNodesById.value = {
+      ...graphNodesById.value,
+      [graphId]: Array.isArray(result.nodes) ? result.nodes : [],
+    }
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  } finally {
+    if (graphNodesLoadingId.value === graphId) {
+      graphNodesLoadingId.value = ''
+    }
   }
 }
 
@@ -326,7 +359,8 @@ async function deleteSelectedGraphProfile() {
   }
 }
 
-async function loadGraphConfig(item: GraphInfo) {
+async function loadGraphConfig(item: GraphInfo, focusNodeId = '') {
+  const requestedFocusNodeId = String(focusNodeId || '').trim()
   graphStatus.value = null
   try {
     const current = graphSnapshot.value
@@ -337,6 +371,9 @@ async function loadGraphConfig(item: GraphInfo) {
       currentGraphName.value = item.name || item.id
       graphNameInput.value = item.name || item.id
       await setStartupGraphConfig(item.id, item.name || item.id).catch(() => null)
+      if (requestedFocusNodeId) {
+        graphNodeFocusRequest.value = { graphId: item.id, nodeId: requestedFocusNodeId, nonce: Date.now() }
+      }
       memoryMode.value = 'graph'
       return
     }
@@ -347,10 +384,19 @@ async function loadGraphConfig(item: GraphInfo) {
     graphWorkingPathInput.value = currentGraphWorkingPath.value
     graphLoadRequest.value = res
     await setStartupGraphConfig(res.id, res.name).catch(() => null)
+    if (requestedFocusNodeId) {
+      graphNodeFocusRequest.value = { graphId: res.id, nodeId: requestedFocusNodeId, nonce: Date.now() }
+    }
     memoryMode.value = 'graph'
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
+}
+
+async function navigateToGraphNode(payload: { graph: GraphInfo; nodeId: string }) {
+  const nodeId = String(payload.nodeId || '').trim()
+  if (!nodeId) return
+  await loadGraphConfig(payload.graph, nodeId)
 }
 
 async function deleteGraphConfig(item: GraphInfo) {
@@ -551,7 +597,10 @@ onBeforeUnmount(() => {
       :rendered-markdown="renderedMarkdown"
       :graph-loading="graphLoading"
       :graph-memory-clearing-id="graphMemoryClearingId"
+      :graph-nodes-loading-id="graphNodesLoadingId"
+      :expanded-graph-id="expandedGraphId"
       :graphs="graphs"
+      :graph-nodes-by-id="graphNodesById"
       :graph-profiles="graphProfiles"
       :selected-graph-profile-id="selectedGraphProfileId"
       :interactive-session-id="memoryInteractiveSessionId"
@@ -564,7 +613,9 @@ onBeforeUnmount(() => {
       @create-graph-from-profile="createGraphConfigFromProfile"
       @delete-graph-profile="deleteSelectedGraphProfile"
       @refresh-graphs="refreshGraphs"
+      @toggle-graph-nodes="toggleGraphNodes"
       @load-graph-config="loadGraphConfig"
+      @navigate-graph-node="navigateToGraphNode"
       @clear-graph-memory="clearGraphMemory"
       @delete-graph-config="deleteGraphConfig"
       @graph-path-error="graphStatus = $event"

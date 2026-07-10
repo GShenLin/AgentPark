@@ -4,9 +4,7 @@ import { type MessageEnvelope, type ResourceKind } from '../../api'
 import { resolveDroppedPaths, resolvePastedImagePaths } from '../../composables/droppedPaths'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { AgentBoardKey } from './context'
-import NodeConfigSection from './NodeConfigSection.vue'
 import NodeEditorInputSection from './NodeEditorInputSection.vue'
-import { useNodeSideEditorPanel } from './useNodeSideEditorPanel'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -19,8 +17,6 @@ const {
   nodeEditorInputText,
   nodeEditorAttachments,
   nodeTriggerInputs,
-  providers,
-  availableTools,
 } = useGlobalState()
 
 const isUploadingFiles = ref(false)
@@ -31,17 +27,6 @@ const selectedNode = computed(() => {
   if (!id) return null
   return ctx.nodes.value.find((item) => item.id === id) || null
 })
-
-const {
-  panelStyle,
-  panelPlacement,
-  horizontalResizeHandle,
-  cornerResizeHandle,
-  isResizingPanel,
-  isDraggingPanel,
-  startPanelResize,
-  startPanelDrag,
-} = useNodeSideEditorPanel(ctx, selectedNode)
 
 const selectedConfig = computed(() => {
   const id = selectedNode.value?.id
@@ -118,7 +103,7 @@ async function handleInputDrop(event: DragEvent) {
   event.preventDefault()
   isUploadingFiles.value = true
   try {
-    const dropped = await resolveDroppedPaths(event, 'node-side-editor-input')
+    const dropped = await resolveDroppedPaths(event, 'node-input-dock-input')
     for (const item of dropped) {
       appendAttachment(item.path, item.name)
     }
@@ -138,7 +123,7 @@ async function handleInputPaste(event: ClipboardEvent) {
   event.preventDefault()
   isUploadingFiles.value = true
   try {
-    const pasted = await resolvePastedImagePaths(event, 'node-side-editor-paste')
+    const pasted = await resolvePastedImagePaths(event, 'node-input-dock-paste')
     for (const item of pasted) {
       appendAttachment(item.path, item.name)
     }
@@ -255,10 +240,6 @@ async function sendMessage() {
   }
 }
 
-function showEditorError(message: string) {
-  lastError.value = String(message || '').trim() || null
-}
-
 watch(
   () => ctx.selectedNodeId.value,
   async (nodeId, prevNodeId) => {
@@ -268,29 +249,10 @@ watch(
   },
   { immediate: true },
 )
-
 </script>
 
 <template>
-  <aside
-    v-if="selectedNode"
-    class="node-side-editor"
-    :class="{ resizing: isResizingPanel, dragging: isDraggingPanel }"
-    :style="panelStyle"
-    @pointerdown.stop
-    @click.stop
-    @dragover.prevent
-  >
-    <div class="editor-head" @pointerdown="startPanelDrag">
-      <div class="editor-title-wrap">
-        <div class="editor-title">{{ selectedNode.name }}</div>
-        <div class="editor-sub">{{ selectedNode.typeId }} / {{ selectedNode.id }}</div>
-      </div>
-      <button v-if="isNodeRunning" type="button" class="head-btn danger" @click="ctx.stopNodeWork(selectedNode.id).catch(() => null)">
-        {{ isStopRequested ? 'Stopping' : 'Stop' }}
-      </button>
-    </div>
-
+  <section v-if="selectedNode" class="node-input-dock" data-board-occlusion="bottom" @pointerdown.stop @click.stop>
     <NodeEditorInputSection
       v-model:input-text="nodeEditorInputText"
       :attachments="nodeEditorAttachments"
@@ -306,220 +268,49 @@ watch(
       @toggle-goal="toggleGoal"
       @send="sendMessage"
     />
-
-    <NodeConfigSection
-      :node="selectedNode"
-      :config="selectedConfig"
-      :providers="providers"
-      :available-tools="availableTools"
-      @error="showEditorError"
-    />
-
-    <div
-      class="resize-handle resize-handle-x"
-      :class="panelPlacement === 'right' ? 'resize-handle-right' : 'resize-handle-left'"
-      @pointerdown="startPanelResize(horizontalResizeHandle, $event)"
-    ></div>
-    <div class="resize-handle resize-handle-bottom" @pointerdown="startPanelResize('bottom', $event)"></div>
-    <div
-      class="resize-handle resize-handle-corner"
-      :class="panelPlacement === 'right' ? 'resize-handle-bottom-right' : 'resize-handle-bottom-left'"
-      @pointerdown="startPanelResize(cornerResizeHandle, $event)"
-    ></div>
-  </aside>
+    <button v-if="isNodeRunning" type="button" class="stop-btn" @click="ctx.stopNodeWork(selectedNode.id).catch(() => null)">
+      {{ isStopRequested ? 'Stopping' : 'Stop' }}
+    </button>
+  </section>
 </template>
 
 <style scoped>
-.node-side-editor {
+.node-input-dock {
   position: absolute;
-  z-index: 100;
-  box-sizing: border-box;
-  pointer-events: auto;
-  overflow: hidden;
+  left: 360px;
+  right: var(--right-panel-width, 0px);
+  bottom: 0;
+  z-index: 70;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-  border-radius: 16px;
-  border: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.24));
+  align-items: flex-start;
+  gap: 8px;
+  box-sizing: border-box;
+  max-height: 24vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border-top: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.24));
   background-color: var(--theme-panel-node-side-editor-background-color, rgba(2, 6, 23, 0.96));
   background-image: var(--theme-panel-node-side-editor-background-image, none);
   background-size: var(--theme-panel-node-side-editor-background-size, cover);
   background-position: var(--theme-panel-node-side-editor-background-position, center);
   background-repeat: var(--theme-panel-node-side-editor-background-repeat, no-repeat);
   background-blend-mode: var(--theme-panel-node-side-editor-background-blend-mode, normal);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.34);
-  backdrop-filter: blur(14px);
-  isolation: isolate;
+  box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.24);
 }
 
-.node-side-editor.resizing,
-.node-side-editor.dragging {
-  transition: none;
+.node-input-dock :deep(.input-section) {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
 }
 
-.editor-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  cursor: move;
-  user-select: none;
-}
-
-.editor-head,
-.section-divider {
+.stop-btn {
   flex: 0 0 auto;
-}
-
-.editor-title-wrap {
-  display: flex;
-  flex-direction: column;
-}
-
-.editor-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--theme-panel-node-side-editor-text-primary, #f8fafc);
-}
-
-.editor-sub {
-  font-size: 12px;
-  color: var(--theme-panel-node-side-editor-text-secondary, rgba(148, 163, 184, 0.84));
-}
-
-.head-btn {
-  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.22));
-  border-radius: 10px;
-  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.9));
-  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
-  padding: 8px 12px;
-  cursor: pointer;
-  position: relative;
-  z-index: 2;
-}
-
-.head-btn {
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.head-btn.danger {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 8px;
   background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(248, 113, 113, 0.35);
-}
-
-.resize-handle {
-  position: absolute;
-  z-index: 20;
-  pointer-events: auto;
-}
-
-/* 视觉层 - 细的视觉效果 */
-.resize-handle::before {
-  content: '';
-  position: absolute;
-  background: transparent;
-  transition: background 0.12s ease;
-}
-
-/* 拖拽层 - 宽的触发区域 */
-.resize-handle::after {
-  content: '';
-  position: absolute;
-  background: transparent;
-}
-
-.resize-handle:hover::before,
-.resize-handle:active::before {
-  background: var(--accent-blue);
-}
-
-/* 水平调整手柄 (左右边缘) */
-.resize-handle-x {
-  top: 10px;
-  bottom: 18px;
-  width: 3px;
-  cursor: ew-resize;
-}
-
-/* 视觉层 - 细 */
-.resize-handle-x::before {
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-}
-
-/* 拖拽层 - 宽 */
-.resize-handle-x::after {
-  top: 0;
-  bottom: 0;
-  left: -8px;
-  right: -8px;
-}
-
-.resize-handle-right {
-  right: 0;
-}
-
-.resize-handle-left {
-  left: 0;
-}
-
-/* 底部调整手柄 */
-.resize-handle-bottom {
-  left: 18px;
-  right: 18px;
-  bottom: 0;
-  height: 3px;
-  cursor: ns-resize;
-}
-
-/* 视觉层 - 细 */
-.resize-handle-bottom::before {
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-}
-
-/* 拖拽层 - 宽 */
-.resize-handle-bottom::after {
-  left: 0;
-  right: 0;
-  top: -8px;
-  bottom: -8px;
-}
-
-/* 角落调整手柄 */
-.resize-handle-corner {
-  bottom: 0;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
-}
-
-/* 角落手柄视觉层 - 细边框效果 */
-.resize-handle-corner::before {
-  inset: 2px;
-  border-radius: 2px;
-}
-
-/* 角落手柄拖拽层 - 大区域 */
-.resize-handle-corner::after {
-  top: -8px;
-  bottom: -8px;
-  left: -8px;
-  right: -8px;
-}
-
-.resize-handle-bottom-right {
-  right: 0;
-}
-
-.resize-handle-bottom-left {
-  left: 0;
-  cursor: nesw-resize;
+  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
+  padding: 6px 10px;
+  cursor: pointer;
 }
 </style>

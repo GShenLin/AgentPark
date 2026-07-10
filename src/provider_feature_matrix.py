@@ -27,6 +27,12 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": False, "values": []},
             reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh"]},
+            reasoning_summary={
+                "supported": responses_api,
+                "values": ["auto", "concise", "detailed", "disabled"] if responses_api else [],
+                "requires": "responsesApi=true",
+                "transport": "responses" if responses_api else "",
+            },
         )
     if provider_type == "doubao":
         responses_api = config.get("responsesApi") is True
@@ -56,6 +62,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "requires": "responsesApi=true",
                 "transport": "responses" if responses_api else "",
             },
+            reasoning_summary={"supported": False, "values": []},
         )
     if provider_type == "zhipu":
         return _payload(
@@ -64,6 +71,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": True, "values": ["enabled", "disabled"]},
             reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh"]},
+            reasoning_summary={"supported": False, "values": []},
         )
     if provider_type == "claude":
         return _payload(
@@ -72,6 +80,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": True, "values": ["enabled", "disabled", "auto"], "transport": "messages"},
             reasoning_effort={"supported": True, "values": ["low", "medium", "high", "xhigh", "max"], "transport": "messages"},
+            reasoning_summary={"supported": False, "values": []},
         )
     if provider_type == "gemini":
         return _payload(
@@ -80,6 +89,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": False, "values": []},
             reasoning_effort={"supported": False, "values": []},
+            reasoning_summary={"supported": False, "values": []},
         )
     return _payload(
         responses_api={"supported": False, "values": []},
@@ -87,6 +97,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
         tools={"supported": False, "values": []},
         thinking={"supported": False, "values": []},
         reasoning_effort={"supported": False, "values": []},
+        reasoning_summary={"supported": False, "values": []},
     )
 
 

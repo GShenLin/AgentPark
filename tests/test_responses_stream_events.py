@@ -119,6 +119,26 @@ def test_openai_responses_sse_reasoning_summary_delta_normalizes():
     assert events[0].provider == "openai_responses"
 
 
+def test_openai_responses_sse_reasoning_summary_part_done_normalizes():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": "Need a short plan."},
+            },
+        ]
+    )
+
+    assert len(events) == 1
+    assert isinstance(events[0], ResponsesReasoningDelta)
+    assert events[0].delta == "Need a short plan."
+    assert events[0].item_id == "rs_1"
+    assert events[0].provider == "openai_responses"
+
+
 def test_function_call_arguments_delta_requires_item_or_call_identity():
     events = _ingest_events(
         [

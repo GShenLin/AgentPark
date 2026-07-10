@@ -63,6 +63,8 @@ class MobileApiDomain(DomainBase):
                     "instance_path": instance["path"],
                     "updated_at": item.get("updated_at"),
                     "readonly": bool(item.get("readonly")),
+                    "deletable": bool(item.get("deletable", not item.get("readonly"))),
+                    "editable": bool(item.get("editable", True)),
                 }
             )
         return result

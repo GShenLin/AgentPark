@@ -1,8 +1,10 @@
 ﻿<script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { AgentBoardKey, type AgentBoardContext, type NodeCard } from './context'
+import { edgeResizeCursor, edgeResizeSize, type EdgeResizeHandle } from './edgeResize'
 import NodeAgentMeta from './NodeAgentMeta.vue'
 import NodeRuntimeDiagnostics from './NodeRuntimeDiagnostics.vue'
+import { createWindowPointerDrag } from './pointerDrag'
 import ToolActivityBadge from './ToolActivityBadge.vue'
 import {
   NODE_CARD_DEFAULT_HEIGHT,
@@ -40,12 +42,10 @@ const hasPreview = computed(() => !!String(previewText.value || '').trim())
 const isEditingName = ref(false)
 const editingName = ref('')
 const nameInputRef = ref<HTMLInputElement | null>(null)
-type ResizeHandle = 'right' | 'bottom' | 'corner'
+type ResizeHandle = Extract<EdgeResizeHandle, 'right' | 'bottom' | 'bottom-right'>
 type ResizeSession = {
   handle: ResizeHandle
   pointerId: number
-  startX: number
-  startY: number
   startWidth: number
   startHeight: number
 }
@@ -84,8 +84,7 @@ function cancelEditName() {
 
 function selectItemOnly() {
   if (Date.now() < ctx.suppressClickUntil.value) return
-  ctx.selectNode(props.node.id)
-  ctx.refreshNodeConfig(props.node.id).catch(() => null)
+  ctx.selectAndFocusNode(props.node.id).catch(() => null)
 }
 
 function openNodeFolder(event: MouseEvent) {
@@ -94,56 +93,45 @@ function openNodeFolder(event: MouseEvent) {
   ctx.openNodeFolder(endpointId.value).catch(() => null)
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value))
-}
+const nodeResizeDrag = createWindowPointerDrag<ResizeSession>({
+  session: resizeSession,
+  getPointerId: (session) => session.pointerId,
+  getScale: () => ctx.canvasScale.value,
+  cursor: (session) => edgeResizeCursor(session.handle),
+  onMove: (_event, delta, session) => {
+    const { width, height } = edgeResizeSize(session, delta, {
+      minWidth: NODE_CARD_MIN_WIDTH,
+      maxWidth: NODE_CARD_MAX_WIDTH,
+      minHeight: NODE_CARD_MIN_HEIGHT,
+      maxHeight: NODE_CARD_MAX_HEIGHT,
+    })
+    ctx.resizeNodeCard(props.node.id, { width, height }, { persist: false })
+  },
+  onEnd: () => {
+    ctx.suppressClickUntil.value = Date.now() + 200
+    void ctx.resizeNodeCard(
+      props.node.id,
+      { width: nodeCardWidth(props.node), height: nodeCardHeight(props.node) },
+      { persist: true },
+    )
+  },
+})
 
 function startNodeResize(handle: ResizeHandle, event: PointerEvent) {
   if (event.button !== 0) return
   event.preventDefault()
   event.stopPropagation()
-  resizeSession.value = {
+  ctx.cancelBoardViewportScroll()
+  nodeResizeDrag.start({
     handle,
     pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
     startWidth: nodeCardWidth(props.node) || NODE_CARD_DEFAULT_WIDTH,
     startHeight: nodeCardHeight(props.node) || NODE_CARD_DEFAULT_HEIGHT,
-  }
-  const cursor = handle === 'right' ? 'ew-resize' : handle === 'bottom' ? 'ns-resize' : 'nwse-resize'
-  document.body.style.cursor = cursor
-  document.body.style.userSelect = 'none'
-  window.addEventListener('pointermove', onNodeResizeMove)
-  window.addEventListener('pointerup', stopNodeResize)
-  window.addEventListener('blur', stopNodeResize)
-}
-
-function onNodeResizeMove(event: PointerEvent) {
-  const session = resizeSession.value
-  if (!session || event.pointerId !== session.pointerId) return
-  const scale = ctx.canvasScale.value || 1
-  const dx = (event.clientX - session.startX) / scale
-  const dy = (event.clientY - session.startY) / scale
-  const width = session.handle === 'bottom' ? session.startWidth : clamp(session.startWidth + dx, NODE_CARD_MIN_WIDTH, NODE_CARD_MAX_WIDTH)
-  const height = session.handle === 'right' ? session.startHeight : clamp(session.startHeight + dy, NODE_CARD_MIN_HEIGHT, NODE_CARD_MAX_HEIGHT)
-  ctx.resizeNodeCard(props.node.id, { width, height }, { persist: false })
-  event.preventDefault()
+  }, event)
 }
 
 function stopNodeResize() {
-  if (!resizeSession.value) return
-  resizeSession.value = null
-  ctx.suppressClickUntil.value = Date.now() + 200
-  void ctx.resizeNodeCard(
-    props.node.id,
-    { width: nodeCardWidth(props.node), height: nodeCardHeight(props.node) },
-    { persist: true },
-  )
-  window.removeEventListener('pointermove', onNodeResizeMove)
-  window.removeEventListener('pointerup', stopNodeResize)
-  window.removeEventListener('blur', stopNodeResize)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
+  nodeResizeDrag.stop()
 }
 
 onBeforeUnmount(stopNodeResize)
@@ -158,6 +146,7 @@ onBeforeUnmount(stopNodeResize)
         selected: endpointId === ctx.selectedNodeId.value,
         'multi-selected': ctx.isNodeSelected(endpointId),
         dragging: ctx.isDragging(endpointId),
+        resizing: resizeSession,
         'drop-target': ctx.dragHoverTargetId.value === endpointId,
         working: ctx.isNodeWorking(endpointId),
         running: ctx.isClockRunning(props.node.id),
@@ -170,9 +159,6 @@ onBeforeUnmount(stopNodeResize)
     @click="ctx.onItemClick(endpointId, $event)"
     @dblclick.stop.prevent="openNodeFolder"
     @pointerdown="ctx.onItemPointerDown(endpointId, $event)"
-    @pointermove="ctx.onItemPointerMove"
-    @pointerup="ctx.endDrag"
-    @pointercancel="ctx.endDrag"
     @dragover.prevent.stop="ctx.onNodeCardDragOver(endpointId, $event)"
     @drop.prevent.stop="ctx.onNodeCardDrop(endpointId, $event)"
   >
@@ -256,7 +242,7 @@ onBeforeUnmount(stopNodeResize)
       </button>
       <div class="node-resize-handle node-resize-right" @pointerdown="startNodeResize('right', $event)"></div>
       <div class="node-resize-handle node-resize-bottom" @pointerdown="startNodeResize('bottom', $event)"></div>
-      <div class="node-resize-handle node-resize-corner" @pointerdown="startNodeResize('corner', $event)"></div>
+      <div class="node-resize-handle node-resize-corner" @pointerdown="startNodeResize('bottom-right', $event)"></div>
     </div>
   </div>
 </template>
@@ -318,9 +304,14 @@ onBeforeUnmount(stopNodeResize)
   box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.16);
 }
 
-.node-card.dragging {
+.node-card.dragging,
+.node-card.resizing {
   cursor: grabbing;
   transition: none;
+}
+
+.node-card.resizing:hover {
+  transform: none;
 }
 
 .node-card.drop-target {
@@ -524,31 +515,83 @@ onBeforeUnmount(stopNodeResize)
 .node-resize-handle {
   position: absolute;
   z-index: 3;
+  pointer-events: auto;
+}
+
+.node-resize-handle::before {
+  content: '';
+  position: absolute;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.node-resize-handle::after {
+  content: '';
+  position: absolute;
   background: transparent;
 }
 
+.node-resize-handle:hover::before,
+.node-resize-handle:active::before {
+  background: var(--accent-blue);
+}
+
 .node-resize-right {
-  top: 0;
+  top: 10px;
   right: 0;
-  width: 12px;
-  height: 100%;
+  bottom: 18px;
+  width: 3px;
   cursor: ew-resize;
 }
 
-.node-resize-bottom {
-  left: 0;
+.node-resize-right::before {
+  inset: 0;
+}
+
+.node-resize-right::after {
+  top: 0;
   bottom: 0;
-  width: 100%;
-  height: 12px;
+  left: -8px;
+  right: -8px;
+}
+
+.node-resize-bottom {
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 3px;
   cursor: ns-resize;
+}
+
+.node-resize-bottom::before {
+  inset: 0;
+}
+
+.node-resize-bottom::after {
+  left: 0;
+  right: 0;
+  top: -8px;
+  bottom: -8px;
 }
 
 .node-resize-corner {
   right: 0;
   bottom: 0;
-  width: 28px;
-  height: 28px;
+  width: 16px;
+  height: 16px;
   cursor: nwse-resize;
+}
+
+.node-resize-corner::before {
+  inset: 2px;
+  border-radius: 2px;
+}
+
+.node-resize-corner::after {
+  top: -8px;
+  bottom: -8px;
+  left: -8px;
+  right: -8px;
 }
 
 @keyframes node-done {

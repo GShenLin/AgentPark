@@ -1,17 +1,92 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-07 03:04:38",
+  "generated_at": "2026-07-10 11:49:07",
   "status": "finished",
-  "duration_ms": 294670,
-  "completed_providers": 19,
-  "total_providers": 19,
+  "duration_ms": 365715,
+  "completed_providers": 23,
+  "total_providers": 23,
   "current_provider_id": "",
   "providers": {
     "krill_gpt55": {
       "provider_id": "krill_gpt55",
       "type": "openai",
+      "model": "gpt-5.6-sol",
+      "tested_at": "2026-07-10 11:49:07",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Unsupported value: 'minimal' is not supported with the 'gpt-5.6-sol' model. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"unsupported_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+              "status_code": 400
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": true,
+              "status_code": 200
+            },
+            "max": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Invalid value: 'auto'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"invalid_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+              "status_code": 400
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": "OpenAI provider contract does not send thinking",
+        "reasoning_effort": {
+          "minimal": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Unsupported value: 'minimal' is not supported with the 'gpt-5.6-sol' model. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"unsupported_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}",
+          "auto": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Invalid value: 'auto'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"invalid_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}"
+        }
+      },
+      "status": "ok"
+    },
+    "krill_gpt_Newest": {
+      "provider_id": "krill_gpt_Newest",
+      "type": "openai",
       "model": "gpt-5.5",
-      "tested_at": "2026-07-07 03:04:38",
+      "tested_at": "2026-07-10 11:49:34",
       "accessible": true,
       "features": {
         "access": {
@@ -81,51 +156,13 @@
           "auto": "HTTP 400: {\"error\":{\"message\":\"Request failed with status 400: {\\n  \\\"error\\\": {\\n    \\\"message\\\": \\\"Invalid value: 'auto'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'.\\\",\\n    \\\"type\\\": \\\"invalid_request_error\\\",\\n    \\\"param\\\": \\\"reasoning.effort\\\",\\n    \\\"code\\\": \\\"invalid_value\\\"\\n  }\\n}\",\"type\":\"invalid_request_error\"},\"type\":\"error\"}"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-image-2",
-        "gpt-5.5",
-        "wan2.7-image",
-        "wan2.7-image-pro",
-        "qwen-image-2.0-pro",
-        "qwen-image-2.0",
-        "gpt-5.3-codex-spark",
-        "deepseek-v4-flash:free",
-        "GLM-5.1",
-        "minimax-m2.7-highspeed",
-        "kimi-k2.6",
-        "deepseek-v4-pro",
-        "deepseek-v4-flash",
-        "codex-auto-review",
-        "minimax-m3",
-        "qwen3.7-plus",
-        "GLM-5.2",
-        "kimi-k2.7-code",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.1-pro-preview",
-        "gemini-3.5-flash",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
-        "claude-sonnet-5"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:19:56",
-        "endpoint": "https://api.krill-ai.com/codex/v1/models",
-        "status_code": 200
-      }
+      "status": "ok"
     },
     "gpt55_NowCoding_BuyOther": {
       "provider_id": "gpt55_NowCoding_BuyOther",
       "type": "openai",
       "model": "gpt-5.5",
-      "tested_at": "2026-07-07 03:05:01",
+      "tested_at": "2026-07-10 11:50:00",
       "accessible": true,
       "features": {
         "access": {
@@ -194,145 +231,13 @@
           "auto": "HTTP 502: {\"error\":{\"message\":\"Upstream request failed\",\"type\":\"upstream_error\",\"param\":\"\",\"code\":null}}"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "codex-auto-review",
-        "gpt-5.3-codex-spark",
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5.4-openai-compact",
-        "gpt-5.5",
-        "gpt-5.5-openai-compact"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:19:56",
-        "endpoint": "https://nowcoding.ai/v1/models",
-        "status_code": 200
-      }
-    },
-    "now_code_gpt55_high": {
-      "provider_id": "now_code_gpt55_high",
-      "type": "doubao",
-      "model": "gpt-5.5",
-      "tested_at": "2026-07-07 03:05:31",
-      "accessible": true,
-      "features": {
-        "access": {
-          "supported": false,
-          "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190531336452307DfLtbYwC)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "status_code": 403
-        },
-        "responses_api": {
-          "supported": false,
-          "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190531336452307DfLtbYwC)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "status_code": 403
-        },
-        "web_search": {
-          "supported": false,
-          "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190531893580171ozxyPgcS)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "status_code": 403
-        },
-        "thinking": {
-          "supported": false,
-          "supported_values": [],
-          "values": {
-            "enabled": {
-              "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 202607061905324496934931bltaj4q)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-              "status_code": 403
-            },
-            "disabled": {
-              "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190532987737873whUEOU1Q)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-              "status_code": 403
-            },
-            "auto": {
-              "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190533521214621gAHfRnwU)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-              "status_code": 403
-            }
-          }
-        },
-        "reasoning_effort": {
-          "supported": false,
-          "supported_values": [],
-          "values": {
-            "minimal": {
-              "supported": false,
-              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
-            },
-            "low": {
-              "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 2026070619053465204096A5gDnzJw)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-              "status_code": 403
-            },
-            "medium": {
-              "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190534604745432mCmHRWln)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-              "status_code": 403
-            },
-            "high": {
-              "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190535151874552wkrT8SxH)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-              "status_code": 403
-            },
-            "xhigh": {
-              "supported": false,
-              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
-            },
-            "max": {
-              "supported": false,
-              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
-            },
-            "auto": {
-              "supported": false,
-              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
-            }
-          }
-        }
-      },
-      "unsupported": {
-        "access": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190531336452307DfLtbYwC)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-        "responses_api": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190531336452307DfLtbYwC)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-        "web_search": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190531893580171ozxyPgcS)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-        "thinking": {
-          "enabled": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 202607061905324496934931bltaj4q)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "disabled": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190532987737873whUEOU1Q)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "auto": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190533521214621gAHfRnwU)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}"
-        },
-        "reasoning_effort": {
-          "minimal": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
-          "low": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 2026070619053465204096A5gDnzJw)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "medium": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190534604745432mCmHRWln)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "high": "HTTP 403: {\"error\":{\"message\":\"用户额度不足, 剩余额度: ¥0.000000 (request id: 20260706190535151874552wkrT8SxH)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"insufficient_user_quota\"}}",
-          "xhigh": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
-          "max": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
-          "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
-        }
-      },
-      "status": "ok",
-      "available_model_ids": [
-        "codex-auto-review",
-        "gpt-5.3-codex-spark",
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5.4-openai-compact",
-        "gpt-5.5",
-        "gpt-5.5-openai-compact"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:19:57",
-        "endpoint": "https://nowcoding.ai/v1/models",
-        "status_code": 200
-      }
+      "status": "ok"
     },
     "deepseek_v4_pro": {
       "provider_id": "deepseek_v4_pro",
       "type": "openai",
       "model": "deepseek-v4-pro",
-      "tested_at": "2026-07-07 03:05:35",
+      "tested_at": "2026-07-10 11:50:34",
       "accessible": true,
       "features": {
         "access": {
@@ -409,28 +314,101 @@
           "auto": "HTTP 404:"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "deepseek-v4-flash",
-        "deepseek-v4-pro"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:19:58",
-        "endpoint": "https://api.deepseek.com/models",
-        "status_code": 200
-      }
+      "status": "ok"
+    },
+    "deepseek_v4_flash": {
+      "provider_id": "deepseek_v4_flash",
+      "type": "openai",
+      "model": "deepseek-v4-flash",
+      "tested_at": "2026-07-10 11:50:40",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": false,
+          "reason": "HTTP 404:",
+          "status_code": 404
+        },
+        "web_search": {
+          "supported": false,
+          "reason": "HTTP 404:",
+          "status_code": 404
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "HTTP 404:",
+              "status_code": 404
+            },
+            "low": {
+              "supported": false,
+              "reason": "HTTP 404:",
+              "status_code": 404
+            },
+            "medium": {
+              "supported": false,
+              "reason": "HTTP 404:",
+              "status_code": 404
+            },
+            "high": {
+              "supported": false,
+              "reason": "HTTP 404:",
+              "status_code": 404
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "HTTP 404:",
+              "status_code": 404
+            },
+            "max": {
+              "supported": false,
+              "reason": "HTTP 404:",
+              "status_code": 404
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 404:",
+              "status_code": 404
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "responses_api": "HTTP 404:",
+        "web_search": "HTTP 404:",
+        "thinking": "OpenAI provider contract does not send thinking",
+        "reasoning_effort": {
+          "minimal": "HTTP 404:",
+          "low": "HTTP 404:",
+          "medium": "HTTP 404:",
+          "high": "HTTP 404:",
+          "xhigh": "HTTP 404:",
+          "max": "HTTP 404:",
+          "auto": "HTTP 404:"
+        }
+      },
+      "status": "ok"
     },
     "gemini": {
       "provider_id": "gemini",
       "type": "gemini",
       "model": "gemini-3-pro-preview",
-      "tested_at": "2026-07-07 03:05:38",
+      "tested_at": "2026-07-10 11:50:47",
       "accessible": false,
       "features": {
         "access": {
           "supported": false,
-          "reason": "curl: curl: (28) Connection timed out after 15013 milliseconds"
+          "reason": "curl: curl: (28) Connection timed out after 15009 milliseconds"
         },
         "responses_api": {
           "supported": false,
@@ -480,7 +458,7 @@
         }
       },
       "unsupported": {
-        "access": "curl: curl: (28) Connection timed out after 15013 milliseconds",
+        "access": "curl: curl: (28) Connection timed out after 15009 milliseconds",
         "responses_api": "Gemini provider contract uses generateContent, not Responses API",
         "web_search": "Gemini provider contract does not send web_search",
         "thinking": "Gemini provider contract does not send thinking",
@@ -494,21 +472,14 @@
           "auto": "Gemini provider contract does not send reasoning_effort"
         }
       },
-      "status": "unavailable",
-      "available_model_ids": [],
-      "model_discovery": {
-        "supported": false,
-        "tested_at": "2026-07-08 11:19:58",
-        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
-        "reason": "curl: curl: (28) Connection timed out after 15009 milliseconds"
-      }
+      "status": "unavailable"
     },
     "371NanoBanana": {
       "provider_id": "371NanoBanana",
       "type": "doubao",
       "model": "firefly-nano-banana-4k-16x9",
-      "tested_at": "2026-07-07 03:05:53",
-      "accessible": true,
+      "tested_at": "2026-07-10 11:51:02",
+      "accessible": false,
       "features": {
         "access": {
           "supported": false,
@@ -603,136 +574,18 @@
           "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "agnes-1.5-flash",
-        "agnes-2.0-flash",
-        "agnes-image-2.0-flash",
-        "agnes-image-2.1-flash",
-        "agnes-video-v2.0",
-        "claude-opus-4-6",
-        "claude-sonnet-4-6",
-        "firefly-gpt-image-1k-16x9",
-        "firefly-gpt-image-1k-1x1",
-        "firefly-gpt-image-1k-21x9",
-        "firefly-gpt-image-1k-2x3",
-        "firefly-gpt-image-1k-3x2",
-        "firefly-gpt-image-1k-3x4",
-        "firefly-gpt-image-1k-4x3",
-        "firefly-gpt-image-1k-4x5",
-        "firefly-gpt-image-1k-5x4",
-        "firefly-gpt-image-1k-9x16",
-        "firefly-gpt-image-2k-16x9",
-        "firefly-gpt-image-2k-1x1",
-        "firefly-gpt-image-2k-21x9",
-        "firefly-gpt-image-2k-2x3",
-        "firefly-gpt-image-2k-3x2",
-        "firefly-gpt-image-2k-3x4",
-        "firefly-gpt-image-2k-4x3",
-        "firefly-gpt-image-2k-4x5",
-        "firefly-gpt-image-2k-5x4",
-        "firefly-gpt-image-2k-9x16",
-        "firefly-gpt-image-4k-16x9",
-        "firefly-gpt-image-4k-1x1",
-        "firefly-gpt-image-4k-21x9",
-        "firefly-gpt-image-4k-2x3",
-        "firefly-gpt-image-4k-3x2",
-        "firefly-gpt-image-4k-3x4",
-        "firefly-gpt-image-4k-4x3",
-        "firefly-gpt-image-4k-4x5",
-        "firefly-gpt-image-4k-5x4",
-        "firefly-gpt-image-4k-9x16",
-        "firefly-nano-banana-1k-16x9",
-        "firefly-nano-banana-1k-1x1",
-        "firefly-nano-banana-1k-3x4",
-        "firefly-nano-banana-1k-4x3",
-        "firefly-nano-banana-1k-9x16",
-        "firefly-nano-banana-2k-16x9",
-        "firefly-nano-banana-2k-1x1",
-        "firefly-nano-banana-2k-3x4",
-        "firefly-nano-banana-2k-4x3",
-        "firefly-nano-banana-2k-9x16",
-        "firefly-nano-banana-4k-16x9",
-        "firefly-nano-banana-4k-1x1",
-        "firefly-nano-banana-4k-3x4",
-        "firefly-nano-banana-4k-4x3",
-        "firefly-nano-banana-4k-9x16",
-        "firefly-nano-banana-pro-1k-16x9",
-        "firefly-nano-banana-pro-1k-1x1",
-        "firefly-nano-banana-pro-1k-3x4",
-        "firefly-nano-banana-pro-1k-4x3",
-        "firefly-nano-banana-pro-1k-9x16",
-        "firefly-nano-banana-pro-2k-16x9",
-        "firefly-nano-banana-pro-2k-1x1",
-        "firefly-nano-banana-pro-2k-3x4",
-        "firefly-nano-banana-pro-2k-4x3",
-        "firefly-nano-banana-pro-2k-9x16",
-        "firefly-nano-banana-pro-4k-16x9",
-        "firefly-nano-banana-pro-4k-1x1",
-        "firefly-nano-banana-pro-4k-3x4",
-        "firefly-nano-banana-pro-4k-4x3",
-        "firefly-nano-banana-pro-4k-9x16",
-        "firefly-nano-banana2-1k-16x9",
-        "firefly-nano-banana2-1k-1x1",
-        "firefly-nano-banana2-1k-1x4",
-        "firefly-nano-banana2-1k-1x8",
-        "firefly-nano-banana2-1k-3x4",
-        "firefly-nano-banana2-1k-4x1",
-        "firefly-nano-banana2-1k-4x3",
-        "firefly-nano-banana2-1k-8x1",
-        "firefly-nano-banana2-1k-9x16",
-        "firefly-nano-banana2-2k-16x9",
-        "firefly-nano-banana2-2k-1x1",
-        "firefly-nano-banana2-2k-1x4",
-        "firefly-nano-banana2-2k-1x8",
-        "firefly-nano-banana2-2k-3x4",
-        "firefly-nano-banana2-2k-4x1",
-        "firefly-nano-banana2-2k-4x3",
-        "firefly-nano-banana2-2k-8x1",
-        "firefly-nano-banana2-2k-9x16",
-        "firefly-nano-banana2-4k-16x9",
-        "firefly-nano-banana2-4k-1x1",
-        "firefly-nano-banana2-4k-1x4",
-        "firefly-nano-banana2-4k-1x8",
-        "firefly-nano-banana2-4k-3x4",
-        "firefly-nano-banana2-4k-4x1",
-        "firefly-nano-banana2-4k-4x3",
-        "firefly-nano-banana2-4k-8x1",
-        "firefly-nano-banana2-4k-9x16",
-        "firefly-sora2-pro-12s-9x16",
-        "gemini-3-pro-image-preview",
-        "gemini-3-pro-preview",
-        "gemini-3.0-pro-image-2k",
-        "gemini-3.0-pro-image-4k",
-        "gemini-3.1-flash-image",
-        "gemini-3.1-flash-image-preview",
-        "gemini-3.1-pro-preview",
-        "gpt-5.4",
-        "gpt-5.5",
-        "gpt-image-2",
-        "grok-imagine-image",
-        "grok-imagine-image-edit",
-        "grok-imagine-image-lite",
-        "grok-imagine-image-pro",
-        "grok-imagine-video"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:13",
-        "endpoint": "https://www.371181668.xyz/v1/models",
-        "status_code": 200
-      }
+      "status": "unavailable"
     },
     "gemini-2.5-flash-image": {
       "provider_id": "gemini-2.5-flash-image",
       "type": "gemini",
       "model": "gemini-2.5-flash-image",
-      "tested_at": "2026-07-07 03:06:00",
+      "tested_at": "2026-07-10 11:51:15",
       "accessible": false,
       "features": {
         "access": {
           "supported": false,
-          "reason": "curl: curl: (28) Connection timed out after 15015 milliseconds"
+          "reason": "curl: curl: (28) Connection timed out after 15007 milliseconds"
         },
         "responses_api": {
           "supported": false,
@@ -782,7 +635,7 @@
         }
       },
       "unsupported": {
-        "access": "curl: curl: (28) Connection timed out after 15015 milliseconds",
+        "access": "curl: curl: (28) Connection timed out after 15007 milliseconds",
         "responses_api": "Gemini provider contract uses generateContent, not Responses API",
         "web_search": "Gemini provider contract does not send web_search",
         "thinking": "Gemini provider contract does not send thinking",
@@ -796,20 +649,13 @@
           "auto": "Gemini provider contract does not send reasoning_effort"
         }
       },
-      "status": "unavailable",
-      "available_model_ids": [],
-      "model_discovery": {
-        "supported": false,
-        "tested_at": "2026-07-08 11:20:14",
-        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
-        "reason": "curl: curl: (28) Connection timed out after 15003 milliseconds"
-      }
+      "status": "unavailable"
     },
     "doubao-pro": {
       "provider_id": "doubao-pro",
       "type": "doubao",
       "model": "doubao-seed-2-1-pro-260628",
-      "tested_at": "2026-07-07 03:06:15",
+      "tested_at": "2026-07-10 11:51:30",
       "accessible": true,
       "features": {
         "access": {
@@ -841,7 +687,7 @@
             },
             "auto": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021783364780776b54053b48c1b170753ebd50aa12b37ff2b0df6\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 02178365549871520cfcaf0410bba00355b4c276f44ffedcd42a9\",\"param\":\"\",\"type\":\"BadRequest\"}}",
               "status_code": 400
             }
           }
@@ -887,7 +733,7 @@
       },
       "unsupported": {
         "thinking": {
-          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021783364780776b54053b48c1b170753ebd50aa12b37ff2b0df6\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 02178365549871520cfcaf0410bba00355b4c276f44ffedcd42a9\",\"param\":\"\",\"type\":\"BadRequest\"}}"
         },
         "reasoning_effort": {
           "minimal": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
@@ -896,146 +742,13 @@
           "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:29",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
-        "status_code": 200
-      }
+      "status": "ok"
     },
     "doubao-seed-evolving": {
       "provider_id": "doubao-seed-evolving",
       "type": "doubao",
       "model": "doubao-seed-evolving",
-      "tested_at": "2026-07-07 03:06:27",
+      "tested_at": "2026-07-10 11:51:45",
       "accessible": true,
       "features": {
         "access": {
@@ -1067,7 +780,7 @@
             },
             "auto": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021783364792469b8b2db5ad8d9605f3baecb70a2647fd8ed6c73\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021783655513569dcfe136397decd58ea2a86a2e8711296f7aa75\",\"param\":\"\",\"type\":\"BadRequest\"}}",
               "status_code": 400
             }
           }
@@ -1113,7 +826,7 @@
       },
       "unsupported": {
         "thinking": {
-          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021783364792469b8b2db5ad8d9605f3baecb70a2647fd8ed6c73\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 021783655513569dcfe136397decd58ea2a86a2e8711296f7aa75\",\"param\":\"\",\"type\":\"BadRequest\"}}"
         },
         "reasoning_effort": {
           "minimal": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
@@ -1122,146 +835,106 @@
           "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:30",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
-        "status_code": 200
-      }
+      "status": "ok"
     },
-    "doubao-CodingPlan": {
-      "provider_id": "doubao-CodingPlan",
+    "doubao-code-CodingPlan": {
+      "provider_id": "doubao-code-CodingPlan",
+      "type": "doubao",
+      "model": "doubao-seed-2.0-code",
+      "tested_at": "2026-07-10 11:51:57",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": true,
+          "supported_values": [
+            "enabled",
+            "disabled"
+          ],
+          "values": {
+            "enabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "disabled": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 0217836555258865858a2a297c7b8bf768c59a7f32fbdfefe1bbd\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            }
+          }
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
+            },
+            "max": {
+              "supported": false,
+              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
+            },
+            "auto": {
+              "supported": false,
+              "reason": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": {
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 0217836555258865858a2a297c7b8bf768c59a7f32fbdfefe1bbd\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+        },
+        "reasoning_effort": {
+          "minimal": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
+          "xhigh": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
+          "max": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
+          "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
+        }
+      },
+      "status": "ok"
+    },
+    "GLM_CodingPlan": {
+      "provider_id": "GLM_CodingPlan",
       "type": "zhipu",
-      "model": "glm-5-2-260617",
-      "tested_at": "2026-07-07 03:06:45",
+      "model": "glm-5.2",
+      "tested_at": "2026-07-10 11:52:12",
       "accessible": true,
       "features": {
         "access": {
@@ -1334,7 +1007,7 @@
             },
             "auto": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 0217833648276399d3331a59ba1b3963d68ff5ec76c85c46cc363\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 021783655578570cfcda9ed8a69b2edb3386bd623e2b8f08bf7df\",\"param\":\"\",\"type\":\"BadRequest\"}}",
               "status_code": 400
             }
           }
@@ -1347,7 +1020,157 @@
           "auto": "Zhipu thinking supports enabled/disabled only"
         },
         "reasoning_effort": {
-          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 0217833648276399d3331a59ba1b3963d68ff5ec76c85c46cc363\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 021783655578570cfcda9ed8a69b2edb3386bd623e2b8f08bf7df\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+        }
+      },
+      "status": "ok"
+    },
+    "MiniMax_CodingPlan": {
+      "provider_id": "MiniMax_CodingPlan",
+      "type": "openai",
+      "model": "minimax-m3",
+      "tested_at": "2026-07-10 11:52:57",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": true,
+          "supported_values": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "auto"
+          ],
+          "values": {
+            "minimal": {
+              "supported": true,
+              "status_code": 200
+            },
+            "low": {
+              "supported": true,
+              "status_code": 200
+            },
+            "medium": {
+              "supported": true,
+              "status_code": 200
+            },
+            "high": {
+              "supported": true,
+              "status_code": 200
+            },
+            "xhigh": {
+              "supported": true,
+              "status_code": 200
+            },
+            "max": {
+              "supported": true,
+              "status_code": 200
+            },
+            "auto": {
+              "supported": true,
+              "status_code": 200
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": "OpenAI provider contract does not send thinking"
+      },
+      "status": "ok"
+    },
+    "Kimi_CodingPlan": {
+      "provider_id": "Kimi_CodingPlan",
+      "type": "openai",
+      "model": "kimi-k2.7-code",
+      "tested_at": "2026-07-10 11:53:08",
+      "accessible": true,
+      "features": {
+        "access": {
+          "supported": true,
+          "status_code": 200
+        },
+        "responses_api": {
+          "supported": true,
+          "status_code": 200
+        },
+        "web_search": {
+          "supported": true,
+          "status_code": 200
+        },
+        "thinking": {
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
+        },
+        "reasoning_effort": {
+          "supported": false,
+          "supported_values": [],
+          "values": {
+            "minimal": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655593571a78e4bf9e905a6c19d35dac8ed03e6bedfe819\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "low": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555937581773480a8a8832a2fb78799cf0b427335dc4aa\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "medium": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555939292866bb6cb6b56020dddc7afb20a43995c29303\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "high": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555940950d3bea96652985f3709b7c7ee1b15ac47df50d\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "xhigh": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655594252a78e4bf9e905a6c19d35dac8ed03e6bee2112e\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "max": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555944201c4c28e26c266d30c807e3f14d371f95cd2fa7\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            },
+            "auto": {
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555945951c4c28e26c266d30c807e3f14d371f95b6e4aa\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "status_code": 400
+            }
+          }
+        }
+      },
+      "unsupported": {
+        "thinking": "OpenAI provider contract does not send thinking",
+        "reasoning_effort": {
+          "minimal": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655593571a78e4bf9e905a6c19d35dac8ed03e6bedfe819\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "low": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555937581773480a8a8832a2fb78799cf0b427335dc4aa\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "medium": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555939292866bb6cb6b56020dddc7afb20a43995c29303\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "high": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555940950d3bea96652985f3709b7c7ee1b15ac47df50d\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "xhigh": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655594252a78e4bf9e905a6c19d35dac8ed03e6bee2112e\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "max": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555944201c4c28e26c266d30c807e3f14d371f95cd2fa7\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836555945951c4c28e26c266d30c807e3f14d371f95b6e4aa\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}"
         }
       },
       "status": "ok"
@@ -1356,7 +1179,7 @@
       "provider_id": "doubao-seedream-4-5-251128",
       "type": "doubao",
       "model": "doubao-seedream-4-5-251128",
-      "tested_at": "2026-07-07 03:07:08",
+      "tested_at": "2026-07-10 11:53:13",
       "accessible": false,
       "features": {
         "access": {
@@ -1452,21 +1275,13 @@
           "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
         }
       },
-      "status": "unavailable",
-      "available_model_ids": [],
-      "model_discovery": {
-        "supported": false,
-        "tested_at": "2026-07-08 11:20:32",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021783480832298655dd71e1d01ef51dda793fc89c905734a1308\",\"param\":\"\",\"type\":\"Not Found\"}}",
-        "status_code": 404
-      }
+      "status": "unavailable"
     },
     "tavern_deepseek_v31": {
       "provider_id": "tavern_deepseek_v31",
       "type": "openai",
-      "model": "deepseek-tavern-v2-pro-xhigh",
-      "tested_at": "2026-07-07 03:07:09",
+      "model": "deepseek-tavern-v2-pro-low",
+      "tested_at": "2026-07-10 11:53:16",
       "accessible": true,
       "features": {
         "access": {
@@ -1543,40 +1358,13 @@
           "auto": "HTTP 404: {\"error\":{\"message\":\"openai_error\",\"type\":\"bad_response_status_code\",\"param\":\"\",\"code\":\"bad_response_status_code\"}}"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
-        "deepseek-tavern-v2-pro",
-        "deepseek-tavern-v2-pro-low",
-        "deepseek-tavern-v2-pro-xhigh",
-        "deepseek-v4-flash",
-        "deepseek-v4-pro",
-        "gemini-2.5",
-        "gemini-3",
-        "gemini-3.5",
-        "gpt-image-2",
-        "grok-4.1",
-        "grok-4.2",
-        "nanobanana2",
-        "tavern-v1-tts",
-        "tavern-v1-voiceclone",
-        "tavern-v1-voicedesign"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:32",
-        "endpoint": "https://deepseektavern.com/v1/models",
-        "status_code": 200
-      }
+      "status": "ok"
     },
     "doubao_vision": {
       "provider_id": "doubao_vision",
       "type": "doubao",
       "model": "doubao-seed-1-6-vision-250815",
-      "tested_at": "2026-07-07 03:07:34",
+      "tested_at": "2026-07-10 11:53:28",
       "accessible": true,
       "features": {
         "access": {
@@ -1608,7 +1396,7 @@
             },
             "auto": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 0217833648575863587b81e5d6fed80d7b8fbd8e8cb3fa6c83bdb\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 0217836556139091a075693bd93985ba47542ecd43c1bf6948863\",\"param\":\"\",\"type\":\"BadRequest\"}}",
               "status_code": 400
             }
           }
@@ -1623,17 +1411,17 @@
             },
             "low": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783364857759370bb23d252740693083f3a4ebee927f815c48\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655614125dd4f59ce804f9f0c9fccaca707589494232122\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
               "status_code": 400
             },
             "medium": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783364857896ed9c07a18069cfb59ad66daf7e7bd921f74b9c\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836556143002d60f863e4315e8806c7747df8d22708c0e4dd\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
               "status_code": 400
             },
             "high": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217833648580343587b81e5d6fed80d7b8fbd8e8cb3fa6d8f717\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655614479dd4f59ce804f9f0c9fccaca7075894946c436e\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
               "status_code": 400
             },
             "xhigh": {
@@ -1653,173 +1441,40 @@
       },
       "unsupported": {
         "thinking": {
-          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 0217833648575863587b81e5d6fed80d7b8fbd8e8cb3fa6c83bdb\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Unsupported thinking type for the current model: auto Request id: 0217836556139091a075693bd93985ba47542ecd43c1bf6948863\",\"param\":\"\",\"type\":\"BadRequest\"}}"
         },
         "reasoning_effort": {
           "minimal": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
-          "low": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783364857759370bb23d252740693083f3a4ebee927f815c48\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
-          "medium": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783364857896ed9c07a18069cfb59ad66daf7e7bd921f74b9c\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
-          "high": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217833648580343587b81e5d6fed80d7b8fbd8e8cb3fa6d8f717\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "low": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655614125dd4f59ce804f9f0c9fccaca707589494232122\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "medium": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 0217836556143002d60f863e4315e8806c7747df8d22708c0e4dd\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
+          "high": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"The parameter `reasoning` specified in the request are not valid: reasoning is not supported by current model. Request id: 021783655614479dd4f59ce804f9f0c9fccaca7075894946c436e\",\"param\":\"reasoning\",\"type\":\"BadRequest\"}}",
           "xhigh": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
           "max": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
           "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:32",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
-        "status_code": 200
-      }
+      "status": "ok"
     },
     "doubao-seedance-2-0-260128": {
       "provider_id": "doubao-seedance-2-0-260128",
       "type": "doubao",
       "model": "doubao-seedance-2-0-260128",
-      "tested_at": "2026-07-07 03:07:38",
-      "accessible": true,
+      "tested_at": "2026-07-10 11:53:33",
+      "accessible": false,
       "features": {
         "access": {
           "supported": false,
-          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178336485818106836341896f8585700baa60fd8566b5fffaae\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217836556146592c0832a1486094b2097265cebfefa1c7cf58c5\",\"param\":\"\",\"type\":\"Forbidden\"}}",
           "status_code": 403
         },
         "responses_api": {
           "supported": false,
-          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178336485818106836341896f8585700baa60fd8566b5fffaae\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217836556146592c0832a1486094b2097265cebfefa1c7cf58c5\",\"param\":\"\",\"type\":\"Forbidden\"}}",
           "status_code": 403
         },
         "web_search": {
           "supported": false,
-          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217833648583204b9bc39337c792d38f4e57e23b62aa4a9a59bb\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217836556149605d839246d2861887beb3833f23001027ab75b3\",\"param\":\"\",\"type\":\"Forbidden\"}}",
           "status_code": 403
         },
         "thinking": {
@@ -1828,17 +1483,17 @@
           "values": {
             "enabled": {
               "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364858478006c460d0b2d36d003716bcb3522c0d1def697\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178365561516868d2074cd11e877100f87d4b1716fc6196b5f5\",\"param\":\"\",\"type\":\"Forbidden\"}}",
               "status_code": 403
             },
             "disabled": {
               "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217833648586190990cb8fd451095e55bc9ba984701cdbeef942\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655615333387079dd26c99e87d331bd24b7eb1a4cc6f05e\",\"param\":\"\",\"type\":\"Forbidden\"}}",
               "status_code": 403
             },
             "auto": {
               "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364858776dceccb6eac83fbed179ddd9eacafd80e41b936\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178365561556283b8bf492ee477f1caf0673edb7dbd4335b751\",\"param\":\"\",\"type\":\"Forbidden\"}}",
               "status_code": 403
             }
           }
@@ -1853,17 +1508,17 @@
             },
             "low": {
               "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364858918e9cb5252029dbbd5be23154381b1012b263544\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655615729bdfa50a720874f4e32fe5f9873860118b4fdd0\",\"param\":\"\",\"type\":\"Forbidden\"}}",
               "status_code": 403
             },
             "medium": {
               "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178336485904738e0aa7d8d1d953ef9b4c650948c2338177218\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655615890cf2d23e4a199b9c4bf1f6d914b47619dca42d2\",\"param\":\"\",\"type\":\"Forbidden\"}}",
               "status_code": 403
             },
             "high": {
               "supported": false,
-              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364859188058502d755c26cb6cb15fa4dd1ac2db85cb84f\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+              "reason": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655616061985fcb318f063148379b998f96dcc94e36a628\",\"param\":\"\",\"type\":\"Forbidden\"}}",
               "status_code": 403
             },
             "xhigh": {
@@ -1882,179 +1537,46 @@
         }
       },
       "unsupported": {
-        "access": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178336485818106836341896f8585700baa60fd8566b5fffaae\",\"param\":\"\",\"type\":\"Forbidden\"}}",
-        "responses_api": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178336485818106836341896f8585700baa60fd8566b5fffaae\",\"param\":\"\",\"type\":\"Forbidden\"}}",
-        "web_search": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217833648583204b9bc39337c792d38f4e57e23b62aa4a9a59bb\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+        "access": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217836556146592c0832a1486094b2097265cebfefa1c7cf58c5\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+        "responses_api": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217836556146592c0832a1486094b2097265cebfefa1c7cf58c5\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+        "web_search": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217836556149605d839246d2861887beb3833f23001027ab75b3\",\"param\":\"\",\"type\":\"Forbidden\"}}",
         "thinking": {
-          "enabled": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364858478006c460d0b2d36d003716bcb3522c0d1def697\",\"param\":\"\",\"type\":\"Forbidden\"}}",
-          "disabled": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 0217833648586190990cb8fd451095e55bc9ba984701cdbeef942\",\"param\":\"\",\"type\":\"Forbidden\"}}",
-          "auto": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364858776dceccb6eac83fbed179ddd9eacafd80e41b936\",\"param\":\"\",\"type\":\"Forbidden\"}}"
+          "enabled": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178365561516868d2074cd11e877100f87d4b1716fc6196b5f5\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "disabled": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655615333387079dd26c99e87d331bd24b7eb1a4cc6f05e\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "auto": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178365561556283b8bf492ee477f1caf0673edb7dbd4335b751\",\"param\":\"\",\"type\":\"Forbidden\"}}"
         },
         "reasoning_effort": {
           "minimal": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
-          "low": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364858918e9cb5252029dbbd5be23154381b1012b263544\",\"param\":\"\",\"type\":\"Forbidden\"}}",
-          "medium": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 02178336485904738e0aa7d8d1d953ef9b4c650948c2338177218\",\"param\":\"\",\"type\":\"Forbidden\"}}",
-          "high": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783364859188058502d755c26cb6cb15fa4dd1ac2db85cb84f\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "low": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655615729bdfa50a720874f4e32fe5f9873860118b4fdd0\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "medium": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655615890cf2d23e4a199b9c4bf1f6d914b47619dca42d2\",\"param\":\"\",\"type\":\"Forbidden\"}}",
+          "high": "HTTP 403: {\"error\":{\"code\":\"AccessDenied\",\"message\":\"The request failed because model `doubao-seedance-2-0-260128` does not have access to responses api Request id: 021783655616061985fcb318f063148379b998f96dcc94e36a628\",\"param\":\"\",\"type\":\"Forbidden\"}}",
           "xhigh": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
           "max": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
           "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:33",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
-        "status_code": 200
-      }
+      "status": "unavailable"
     },
     "wan2.2-animate-mix": {
       "provider_id": "wan2.2-animate-mix",
       "type": "doubao",
       "model": "wan2.2-animate-mix",
-      "tested_at": "2026-07-07 03:07:39",
+      "tested_at": "2026-07-10 11:53:35",
       "accessible": false,
       "features": {
         "access": {
           "supported": false,
-          "reason": "HTTP 400: {\"request_id\":\"5fb20662-46a6-9e20-95f3-a180e0c310b7\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "reason": "HTTP 400: {\"request_id\":\"5d5b8784-599d-9922-ad9f-e2fb0e644692\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
           "status_code": 400
         },
         "responses_api": {
           "supported": false,
-          "reason": "HTTP 400: {\"request_id\":\"5fb20662-46a6-9e20-95f3-a180e0c310b7\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "reason": "HTTP 400: {\"request_id\":\"5d5b8784-599d-9922-ad9f-e2fb0e644692\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
           "status_code": 400
         },
         "web_search": {
           "supported": false,
-          "reason": "HTTP 400: {\"request_id\":\"99402c03-395a-9ad3-a702-132332870418\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "reason": "HTTP 400: {\"request_id\":\"38cfe7a3-2e05-98b9-8969-3e8eb85fd7fc\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
           "status_code": 400
         },
         "thinking": {
@@ -2063,17 +1585,17 @@
           "values": {
             "enabled": {
               "supported": false,
-              "reason": "HTTP 400: {\"request_id\":\"6f9e8b93-ee2a-91b5-acf8-e2f1106cd894\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+              "reason": "HTTP 400: {\"request_id\":\"54321dba-5917-9a4b-9757-5f92f4f76c0e\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
               "status_code": 400
             },
             "disabled": {
               "supported": false,
-              "reason": "HTTP 400: {\"request_id\":\"3dadf46c-c51b-9d68-949a-762e1ee33b6e\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+              "reason": "HTTP 400: {\"request_id\":\"ac06eab5-9e83-97e8-ac5b-a7ec90a4140c\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
               "status_code": 400
             },
             "auto": {
               "supported": false,
-              "reason": "HTTP 400: {\"request_id\":\"2d1e8ca5-f641-959c-84f1-8df6c8d0bde5\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+              "reason": "HTTP 400: {\"request_id\":\"0da2db80-6ef6-9bf4-8214-e0dbf3d9ebb2\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
               "status_code": 400
             }
           }
@@ -2088,17 +1610,17 @@
             },
             "low": {
               "supported": false,
-              "reason": "HTTP 400: {\"request_id\":\"67f1f565-fce1-9d20-b2c5-79d3bec09739\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+              "reason": "HTTP 400: {\"request_id\":\"380a3bdb-e159-9f63-b62b-9f6e5f9a4a55\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
               "status_code": 400
             },
             "medium": {
               "supported": false,
-              "reason": "HTTP 400: {\"request_id\":\"bc0180d1-48ba-9b55-a40f-01c0cc69fcf5\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+              "reason": "HTTP 400: {\"request_id\":\"844849fa-2b9e-90ce-960d-832ab1cba69f\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
               "status_code": 400
             },
             "high": {
               "supported": false,
-              "reason": "HTTP 400: {\"request_id\":\"eec45461-eba5-91ba-a2ca-ed71b5f66c42\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+              "reason": "HTTP 400: {\"request_id\":\"7b984f32-00a7-92d3-93f8-cee962d2c05f\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
               "status_code": 400
             },
             "xhigh": {
@@ -2117,39 +1639,31 @@
         }
       },
       "unsupported": {
-        "access": "HTTP 400: {\"request_id\":\"5fb20662-46a6-9e20-95f3-a180e0c310b7\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
-        "responses_api": "HTTP 400: {\"request_id\":\"5fb20662-46a6-9e20-95f3-a180e0c310b7\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
-        "web_search": "HTTP 400: {\"request_id\":\"99402c03-395a-9ad3-a702-132332870418\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+        "access": "HTTP 400: {\"request_id\":\"5d5b8784-599d-9922-ad9f-e2fb0e644692\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+        "responses_api": "HTTP 400: {\"request_id\":\"5d5b8784-599d-9922-ad9f-e2fb0e644692\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+        "web_search": "HTTP 400: {\"request_id\":\"38cfe7a3-2e05-98b9-8969-3e8eb85fd7fc\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
         "thinking": {
-          "enabled": "HTTP 400: {\"request_id\":\"6f9e8b93-ee2a-91b5-acf8-e2f1106cd894\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
-          "disabled": "HTTP 400: {\"request_id\":\"3dadf46c-c51b-9d68-949a-762e1ee33b6e\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
-          "auto": "HTTP 400: {\"request_id\":\"2d1e8ca5-f641-959c-84f1-8df6c8d0bde5\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}"
+          "enabled": "HTTP 400: {\"request_id\":\"54321dba-5917-9a4b-9757-5f92f4f76c0e\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "disabled": "HTTP 400: {\"request_id\":\"ac06eab5-9e83-97e8-ac5b-a7ec90a4140c\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "auto": "HTTP 400: {\"request_id\":\"0da2db80-6ef6-9bf4-8214-e0dbf3d9ebb2\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}"
         },
         "reasoning_effort": {
           "minimal": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
-          "low": "HTTP 400: {\"request_id\":\"67f1f565-fce1-9d20-b2c5-79d3bec09739\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
-          "medium": "HTTP 400: {\"request_id\":\"bc0180d1-48ba-9b55-a40f-01c0cc69fcf5\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
-          "high": "HTTP 400: {\"request_id\":\"eec45461-eba5-91ba-a2ca-ed71b5f66c42\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "low": "HTTP 400: {\"request_id\":\"380a3bdb-e159-9f63-b62b-9f6e5f9a4a55\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "medium": "HTTP 400: {\"request_id\":\"844849fa-2b9e-90ce-960d-832ab1cba69f\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
+          "high": "HTTP 400: {\"request_id\":\"7b984f32-00a7-92d3-93f8-cee962d2c05f\",\"code\":\"BadRequest.IllegalInput\",\"message\":\"The input parameter requires json format.\"}",
           "xhigh": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
           "max": "Doubao Ark Responses reasoning.effort supports low, medium, and high",
           "auto": "Doubao Ark Responses reasoning.effort supports low, medium, and high"
         }
       },
-      "status": "unavailable",
-      "available_model_ids": [],
-      "model_discovery": {
-        "supported": false,
-        "tested_at": "2026-07-08 11:20:33",
-        "endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis/models",
-        "reason": "HTTP 400: {\"requestId\":\"de1cd43b-fa62-998e-9dda-1e06e83a2e09\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
-        "status_code": 400
-      }
+      "status": "unavailable"
     },
     "hyper3d-rodin-gen2": {
       "provider_id": "hyper3d-rodin-gen2",
       "type": "hyper3d",
       "model": "rodin",
-      "tested_at": "2026-07-07 03:07:41",
+      "tested_at": "2026-07-10 11:53:37",
       "accessible": true,
       "features": {
         "access": {
@@ -2217,19 +1731,13 @@
           "auto": "Hyper3D provider is generation-only and has no reasoning_effort"
         }
       },
-      "status": "ok",
-      "available_model_ids": [],
-      "model_discovery": {
-        "supported": false,
-        "tested_at": "2026-07-08 11:20:34",
-        "reason": "provider type 'hyper3d' has no model discovery endpoint"
-      }
+      "status": "ok"
     },
-    "GLM_5.2_HuoShan": {
-      "provider_id": "GLM_5.2_HuoShan",
-      "type": "zhipu",
-      "model": "glm-5.2",
-      "tested_at": "2026-07-07 03:07:41",
+    "hy3": {
+      "provider_id": "hy3",
+      "type": "openai",
+      "model": "hy3",
+      "tested_at": "2026-07-10 11:53:37",
       "accessible": true,
       "features": {
         "access": {
@@ -2237,48 +1745,30 @@
           "status_code": 200
         },
         "responses_api": {
-          "supported": false,
-          "reason": "Zhipu provider contract uses chat/completions, not Responses API"
+          "supported": true,
+          "status_code": 200
         },
         "web_search": {
-          "supported": false,
-          "reason": "Zhipu provider contract does not send web_search"
+          "supported": true,
+          "status_code": 200
         },
         "thinking": {
-          "supported": true,
-          "supported_values": [
-            "enabled",
-            "disabled"
-          ],
-          "values": {
-            "enabled": {
-              "supported": true,
-              "status_code": 200
-            },
-            "disabled": {
-              "supported": true,
-              "status_code": 200
-            },
-            "auto": {
-              "supported": false,
-              "reason": "Zhipu thinking supports enabled/disabled only"
-            }
-          }
+          "supported": false,
+          "reason": "OpenAI provider contract does not send thinking"
         },
         "reasoning_effort": {
           "supported": true,
           "supported_values": [
-            "minimal",
             "low",
             "medium",
             "high",
-            "xhigh",
-            "max"
+            "xhigh"
           ],
           "values": {
             "minimal": {
-              "supported": true,
-              "status_code": 200
+              "supported": false,
+              "reason": "HTTP 429: {\"error\":{\"type\":\"rate_limit_error\",\"code\":\"429001\",\"message\":\"Request rate limit exceeded. Please retry later.\",\"source\":\"gateway\",\"request_id\":\"a89344df-bec7-4b4e-99d8-2fc7a47d34cc\"}}",
+              "status_code": 429
             },
             "low": {
               "supported": true,
@@ -2297,25 +1787,24 @@
               "status_code": 200
             },
             "max": {
-              "supported": true,
-              "status_code": 200
+              "supported": false,
+              "reason": "HTTP 400: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"400001\",\"message\":\"reasoning.effort must be one of: no_think, low, high\",\"source\":\"client\",\"request_id\":\"cbbabed4-f66c-4f7a-bbc8-a14648ba28ff\"}}",
+              "status_code": 400
             },
             "auto": {
               "supported": false,
-              "reason": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 021783364885202b07cf2d4a8878f476632fa07590764666c36dc\",\"param\":\"\",\"type\":\"BadRequest\"}}",
+              "reason": "HTTP 400: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"400001\",\"message\":\"reasoning.effort must be one of: no_think, low, high\",\"source\":\"client\",\"request_id\":\"9f748a9e-4185-443d-9976-3936fa1925d0\"}}",
               "status_code": 400
             }
           }
         }
       },
       "unsupported": {
-        "responses_api": "Zhipu provider contract uses chat/completions, not Responses API",
-        "web_search": "Zhipu provider contract does not send web_search",
-        "thinking": {
-          "auto": "Zhipu thinking supports enabled/disabled only"
-        },
+        "thinking": "OpenAI provider contract does not send thinking",
         "reasoning_effort": {
-          "auto": "HTTP 400: {\"error\":{\"code\":\"InvalidParameter\",\"message\":\"Invalid reasoning_effort Request id: 021783364885202b07cf2d4a8878f476632fa07590764666c36dc\",\"param\":\"\",\"type\":\"BadRequest\"}}"
+          "minimal": "HTTP 429: {\"error\":{\"type\":\"rate_limit_error\",\"code\":\"429001\",\"message\":\"Request rate limit exceeded. Please retry later.\",\"source\":\"gateway\",\"request_id\":\"a89344df-bec7-4b4e-99d8-2fc7a47d34cc\"}}",
+          "max": "HTTP 400: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"400001\",\"message\":\"reasoning.effort must be one of: no_think, low, high\",\"source\":\"client\",\"request_id\":\"cbbabed4-f66c-4f7a-bbc8-a14648ba28ff\"}}",
+          "auto": "HTTP 400: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"400001\",\"message\":\"reasoning.effort must be one of: no_think, low, high\",\"source\":\"client\",\"request_id\":\"9f748a9e-4185-443d-9976-3936fa1925d0\"}}"
         }
       },
       "status": "ok"
@@ -2324,7 +1813,7 @@
       "provider_id": "fable-5-krill",
       "type": "claude",
       "model": "claude-fable-5",
-      "tested_at": "2026-07-07 03:08:06",
+      "tested_at": "2026-07-10 11:53:49",
       "accessible": true,
       "features": {
         "access": {
@@ -2409,51 +1898,13 @@
           "auto": "Claude output_config.effort supports low, medium, high, xhigh, and max"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-image-2",
-        "gpt-5.5",
-        "wan2.7-image",
-        "wan2.7-image-pro",
-        "qwen-image-2.0-pro",
-        "qwen-image-2.0",
-        "gpt-5.3-codex-spark",
-        "deepseek-v4-flash:free",
-        "GLM-5.1",
-        "minimax-m2.7-highspeed",
-        "kimi-k2.6",
-        "deepseek-v4-pro",
-        "deepseek-v4-flash",
-        "codex-auto-review",
-        "minimax-m3",
-        "qwen3.7-plus",
-        "GLM-5.2",
-        "kimi-k2.7-code",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.1-pro-preview",
-        "gemini-3.5-flash",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
-        "claude-sonnet-5"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:34",
-        "endpoint": "https://api.krill-ai.com/v1/models",
-        "status_code": 200
-      }
+      "status": "ok"
     },
     "sonnet-5-krill": {
       "provider_id": "sonnet-5-krill",
       "type": "claude",
       "model": "claude-sonnet-5",
-      "tested_at": "2026-07-07 03:08:53",
+      "tested_at": "2026-07-10 11:54:42",
       "accessible": true,
       "features": {
         "access": {
@@ -2538,639 +1989,7 @@
           "auto": "Claude output_config.effort supports low, medium, high, xhigh, and max"
         }
       },
-      "status": "ok",
-      "available_model_ids": [
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-image-2",
-        "gpt-5.5",
-        "wan2.7-image",
-        "wan2.7-image-pro",
-        "qwen-image-2.0-pro",
-        "qwen-image-2.0",
-        "gpt-5.3-codex-spark",
-        "deepseek-v4-flash:free",
-        "GLM-5.1",
-        "minimax-m2.7-highspeed",
-        "kimi-k2.6",
-        "deepseek-v4-pro",
-        "deepseek-v4-flash",
-        "codex-auto-review",
-        "minimax-m3",
-        "qwen3.7-plus",
-        "GLM-5.2",
-        "kimi-k2.7-code",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.1-pro-preview",
-        "gemini-3.5-flash",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
-        "claude-sonnet-5"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:34",
-        "endpoint": "https://api.krill-ai.com/v1/models",
-        "status_code": 200
-      }
-    },
-    "deepseek_v4_flash": {
-      "provider_id": "deepseek_v4_flash",
-      "type": "openai",
-      "model": "deepseek-v4-flash",
-      "available_model_ids": [
-        "deepseek-v4-flash",
-        "deepseek-v4-pro"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:19:58",
-        "endpoint": "https://api.deepseek.com/models",
-        "status_code": 200
-      },
-      "features": {},
-      "unsupported": {},
-      "accessible": true,
-      "status": "ok"
-    },
-    "doubao-code-CodingPlan": {
-      "provider_id": "doubao-code-CodingPlan",
-      "type": "doubao",
-      "model": "doubao-seed-2.0-code",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:30",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
-        "status_code": 200
-      },
-      "features": {},
-      "unsupported": {},
-      "accessible": true,
-      "status": "ok"
-    },
-    "GLM_CodingPlan": {
-      "provider_id": "GLM_CodingPlan",
-      "type": "zhipu",
-      "model": "glm-5.2",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:31",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
-        "status_code": 200
-      },
-      "features": {},
-      "unsupported": {},
-      "accessible": true,
-      "status": "ok"
-    },
-    "MiniMax_CodingPlan": {
-      "provider_id": "MiniMax_CodingPlan",
-      "type": "openai",
-      "model": "minimax-m3",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:31",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
-        "status_code": 200
-      },
-      "features": {},
-      "unsupported": {},
-      "accessible": true,
-      "status": "ok"
-    },
-    "Kimi_CodingPlan": {
-      "provider_id": "Kimi_CodingPlan",
-      "type": "openai",
-      "model": "kimi-k2.7-code",
-      "available_model_ids": [
-        "doubao-lite-128k-240428",
-        "doubao-pro-128k-240515",
-        "doubao-lite-4k-240328",
-        "doubao-lite-32k-240428",
-        "doubao-pro-4k-240515",
-        "doubao-lite-4k-character-240515",
-        "doubao-embedding-text-240515",
-        "mistral-7b-instruct-v0.2",
-        "doubao-pro-4k-character-240515",
-        "doubao-pro-4k-functioncall-240515",
-        "doubao-lite-4k-pretrain-character-240516",
-        "doubao-pro-32k-character-240528",
-        "doubao-pro-4k-browsing-240524",
-        "doubao-pro-32k-functioncall-240515",
-        "doubao-pro-4k-functioncall-240615",
-        "doubao-pro-32k-browsing-240615",
-        "doubao-pro-32k-240615",
-        "doubao-lite-32k-240628",
-        "doubao-pro-128k-240628",
-        "doubao-embedding-text-240715",
-        "doubao-pro-4k-character-240728",
-        "doubao-pro-32k-functioncall-240815",
-        "doubao-pro-32k-240828",
-        "doubao-lite-4k-character-240828",
-        "doubao-pro-32k-character-240828",
-        "doubao-lite-32k-240828",
-        "doubao-lite-128k-240828",
-        "doubao-pro-32k-browsing-240828",
-        "doubao-pro-32k-functioncall-preview",
-        "doubao-embedding-large-text-240915",
-        "doubao-lite-32k-character-241015",
-        "doubao-pro-32k-functioncall-241028",
-        "doubao-pro-32k-browsing-241115",
-        "doubao-vision-pro-32k-241028",
-        "doubao-vision-lite-32k-241015",
-        "doubao-seaweed-241128",
-        "doubao-pro-256k-241115",
-        "doubao-pro-32k-character-241215",
-        "doubao-pro-32k-241215",
-        "doubao-1-5-lite-32k-250115",
-        "doubao-1-5-pro-32k-250115",
-        "doubao-1-5-vision-pro-32k-250115",
-        "doubao-embedding-vision-241215",
-        "doubao-1-5-pro-256k-250115",
-        "deepseek-v3-241226",
-        "deepseek-r1-distill-qwen-7b-250120",
-        "deepseek-r1-distill-qwen-32b-250120",
-        "deepseek-r1-250120",
-        "doubao-1-5-pro-32k-character-250228",
-        "doubao-1.5-vision-lite-250315",
-        "deepseek-v3-250324",
-        "doubao-1.5-vision-pro-250328",
-        "doubao-lite-32k-character-250228",
-        "doubao-1.5-ui-tars-250328",
-        "doubao-embedding-vision-250328",
-        "doubao-1-5-thinking-pro-250415",
-        "wan2-1-14b-i2v-250225",
-        "wan2-1-14b-t2v-250225",
-        "doubao-1-5-thinking-pro-m-250415",
-        "doubao-seedance-1-0-lite-i2v-250428",
-        "doubao-seedance-1-0-lite-t2v-250428",
-        "doubao-seedream-3-0-t2i-250415",
-        "wan2-1-14b-flf2v-250417",
-        "doubao-1-5-thinking-vision-pro-250428",
-        "doubao-1-5-thinking-pro-m-250428",
-        "doubao-embedding-large-text-250515",
-        "doubao-1-5-ui-tars-250428",
-        "deepseek-r1-250528",
-        "doubao-seed-1-6-flash-250615",
-        "doubao-seed-1-6-250615",
-        "doubao-seed-1-6-thinking-250615",
-        "doubao-seedance-1-0-pro-250528",
-        "doubao-embedding-vision-250615",
-        "doubao-seed-1-6-thinking-250715",
-        "doubao-1-5-pro-32k-character-250715",
-        "doubao-seededit-3-0-i2i-250628",
-        "doubao-seed-1-6-flash-250715",
-        "kimi-k2-250711",
-        "doubao-seed-1-6-vision-250815",
-        "deepseek-v3-1-250821",
-        "doubao-seed-1-6-flash-250828",
-        "glm-4-5-air-20250728",
-        "qwen3-8b-20250429",
-        "qwen3-32b-20250429",
-        "qwen2-5-72b-20240919",
-        "doubao-seedream-4-0-250828",
-        "kimi-k2-250905",
-        "doubao-seed-translation-250915",
-        "deepseek-v3-1-terminus",
-        "doubao-smart-router-250928",
-        "doubao-seed-1-6-251015",
-        "doubao-seedance-1-0-pro-fast-251015",
-        "doubao-seed-1-6-lite-251015",
-        "doubao-seed3d-1-0-250928",
-        "kimi-k2-thinking-251104",
-        "doubao-seed-code-preview-251028",
-        "qwen3-0-6b-20250429",
-        "qwen3-14b-20250429",
-        "doubao-seedream-4-5-251128",
-        "doubao-embedding-vision-251215",
-        "deepseek-v3-2-251201",
-        "doubao-seedance-1-5-pro-251215",
-        "glm-4-7-251222",
-        "doubao-seed-1-8-251228",
-        "doubao-seed-character-251128",
-        "doubao-seed-2-0-lite-260215",
-        "doubao-seedance-2-0-260128",
-        "doubao-seedream-5-0-260128",
-        "doubao-seed-2-0-mini-260215",
-        "doubao-seed-2-0-pro-260215",
-        "doubao-seedance-2-0-fast-260128",
-        "doubao-seed-2-0-code-preview-260215",
-        "hyper3d-gen2-260112",
-        "hitem3d-2-0-251223",
-        "doubao-seed3d-2-0-260328",
-        "doubao-seed-2-0-mini-260428",
-        "doubao-seed-2-0-lite-260428",
-        "deepseek-v4-pro-260425",
-        "deepseek-v4-flash-260425",
-        "doubao-seedance-2-0-mini-260615",
-        "doubao-seed-2-1-pro-260628",
-        "doubao-seed-2-1-turbo-260628",
-        "doubao-seed-character-260628",
-        "doubao-seed-evolving",
-        "glm-5-2-260617"
-      ],
-      "model_discovery": {
-        "supported": true,
-        "tested_at": "2026-07-08 11:20:31",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
-        "status_code": 200
-      },
-      "features": {},
-      "unsupported": {},
-      "accessible": true,
       "status": "ok"
     }
-  },
-  "model_refresh_status": "finished",
-  "model_refresh_completed_providers": 22,
-  "model_refresh_total_providers": 22,
-  "model_refresh_current_provider_id": "",
-  "model_refresh_started_at": "2026-07-08 11:19:56",
-  "model_refresh_duration_ms": 39545,
-  "model_refresh_finished_at": "2026-07-08 11:20:35"
+  }
 }

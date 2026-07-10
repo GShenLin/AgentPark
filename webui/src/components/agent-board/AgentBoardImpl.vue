@@ -3,6 +3,7 @@ import { inject, provide } from 'vue'
 import { AgentBoardKey } from './context'
 import { useAgentBoard } from './useAgentBoard'
 import BoardCanvas from './BoardCanvas.vue'
+import NodeInputDock from './NodeInputDock.vue'
 
 const injected = inject(AgentBoardKey, null)
 const ctx = injected ?? useAgentBoard()
@@ -12,6 +13,7 @@ provide(AgentBoardKey, ctx)
 <template>
   <div class="agent-board-wrapper">
     <BoardCanvas />
+    <NodeInputDock />
   </div>
 </template>
 
@@ -20,7 +22,7 @@ provide(AgentBoardKey, ctx)
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   position: relative;
+  overflow: hidden;
 }
 </style>

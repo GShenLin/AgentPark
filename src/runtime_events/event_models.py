@@ -3,11 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
-EVENTS = {"OnInput", "ToolFailure", "RuntimeNotice", "NetError", "WorkPersisted", "WorkFailed"}
-ACTIONS = {"context.produce", "notice.write", "node.dispatch"}
-TTLS = {"current_run", "next_turn", "persistent"}
-PRIORITIES = {"low", "normal", "high"}
+from .event_schema import ACTIONS, EVENTS, PRIORITIES, TTLS
 
 
 @dataclass(frozen=True)

@@ -24,6 +24,18 @@ def _is_protected_graph_id(graph_id: object) -> bool:
     return str(graph_id or "").strip().lower() in PROTECTED_GRAPH_IDS
 
 
+def _graph_list_item(graph_id: str, name: str, updated_at: str | None) -> dict:
+    protected = _is_protected_graph_id(graph_id)
+    return {
+        "id": graph_id,
+        "name": name,
+        "updated_at": updated_at,
+        "readonly": protected,
+        "deletable": not protected,
+        "editable": True,
+    }
+
+
 def _graph_config_version(config_path: str) -> int:
     try:
         return int(os.stat(config_path).st_mtime_ns)
@@ -93,7 +105,7 @@ class GraphApiStorage(HostBoundService):
         graphs_dir = runtime_paths._get_graphs_dir()
         graphs = []
         if not os.path.isdir(graphs_dir):
-            graphs.append({"id": "default", "name": "default", "updated_at": None, "readonly": True})
+            graphs.append(_graph_list_item("default", "default", None))
             return {"graphs": graphs}
 
         default_config = os.path.join(graphs_dir, "default", "config.json")
@@ -110,7 +122,7 @@ class GraphApiStorage(HostBoundService):
                 raise HTTPException(status_code=500, detail=str(exc))
             if payload.get("name"):
                 default_name = str(payload.get("name"))
-        graphs.append({"id": "default", "name": default_name, "updated_at": default_updated, "readonly": True})
+        graphs.append(_graph_list_item("default", default_name, default_updated))
 
         for entry in os.listdir(graphs_dir):
             if entry in {"agents", "default"}:
@@ -133,12 +145,7 @@ class GraphApiStorage(HostBoundService):
                 updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
                 updated_at = None
-            graphs.append({
-                "id": entry,
-                "name": name,
-                "updated_at": updated_at,
-                "readonly": _is_protected_graph_id(entry),
-            })
+            graphs.append(_graph_list_item(entry, name, updated_at))
         graphs.sort(key=lambda item: item["name"].lower())
         return {"graphs": graphs}
 

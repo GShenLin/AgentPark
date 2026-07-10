@@ -12,6 +12,67 @@ def _runtime_notice_payloads(events, stage):
     ]
 
 
+def test_openai_send_uses_responses_endpoint_when_responses_api_enabled():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test-key",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.system_prompt = None
+    agent.messages = [{"role": "user", "content": "hello"}]
+    agent.internal_memory_enabled = False
+    agent.tools = BaseTool(agent)
+    agent.tool_declarations = []
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(kwargs)
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "responses ok"}],
+                }
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+    agent._stream_chat_completions_with_retry = lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("responsesApi=true must not use chat/completions")
+    )
+
+    result = agent.Send(web_search="disabled", thinking="disabled", reasoning_effort="", stream=False)
+
+    assert result == "responses ok"
+    assert requests[0]["endpoint"] == "responses"
+    assert requests[0]["url"] == "https://api.openai.test/v1/responses"
+    payload = json.loads(requests[0]["payload_json"])
+    assert payload["input"][-1] == {
+        "type": "message",
+        "role": "user",
+        "status": "completed",
+        "content": [{"type": "input_text", "text": "hello"}],
+    }
+    assert "messages" not in payload
+
+
 def test_responses_input_uses_output_text_for_assistant_history():
     from src.providers.openai_agent import OpenAIAgent
 
@@ -243,8 +304,107 @@ def test_openai_responses_payload_includes_codex_like_tool_and_reasoning_fields(
     assert out == "ok"
     assert payloads[0]["tool_choice"] == "auto"
     assert payloads[0]["parallel_tool_calls"] is True
-    assert payloads[0]["reasoning"] == {"effort": "medium"}
+    assert payloads[0]["reasoning"] == {"effort": "medium", "summary": "auto"}
     assert payloads[0]["include"] == ["reasoning.encrypted_content"]
+
+
+def test_openai_responses_payload_uses_config_reasoning_summary():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "reasoningSummary": "detailed",
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.system_prompt = None
+    agent.messages = [{"role": "user", "content": "hello"}]
+    agent.tools = BaseTool(agent)
+    agent.tool_declarations = []
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent.Send(run_tools=False, reasoning_effort="medium")
+
+    assert out == "ok"
+    assert payloads[0]["reasoning"] == {"effort": "medium", "summary": "detailed"}
+
+
+def test_openai_responses_payload_disables_reasoning_summary():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "hello"}],
+        active_tools=[],
+        run_tools=False,
+        reasoning_effort="medium",
+        reasoning_summary="disabled",
+    )
+
+    assert out == "ok"
+    assert payloads[0]["reasoning"] == {"effort": "medium"}
 
 
 def test_openai_send_uses_web_search_switch():

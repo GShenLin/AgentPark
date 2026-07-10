@@ -406,9 +406,16 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
     assert providers["openai"]["features"]["reasoning_effort"]["supported"] is True
     assert providers["openai"]["features"]["thinking"]["supported"] is False
     assert providers["openai"]["features"]["responses_api"]["supported"] is False
+    assert providers["openai"]["features"]["reasoning_summary"]["supported"] is False
     assert providers["openai"]["features"]["web_search"]["requires"] == "responsesApi=true"
     assert providers["openai-responses"]["features"]["responses_api"]["supported"] is True
     assert providers["openai-responses"]["features"]["web_search"]["supported"] is True
+    assert providers["openai-responses"]["features"]["reasoning_summary"]["values"] == [
+        "auto",
+        "concise",
+        "detailed",
+        "disabled",
+    ]
     assert providers["doubao-chat"]["features"]["web_search"]["supported"] is False
     assert providers["doubao-chat"]["features"]["web_search"]["requires"] == "responsesApi=true"
     assert providers["doubao-chat"]["features"]["thinking"]["supported"] is False
@@ -580,6 +587,32 @@ def test_openai_responses_api_provider_requires_reasoning_replay_contract(monkey
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="responsesReplayReasoningItems"):
+        ConfigLoader().get_all_providers()
+
+
+def test_openai_responses_api_provider_validates_reasoning_summary(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openai": {
+                        "type": "openai",
+                        "apiKey": "openai-key",
+                        "reasoningSummary": "verbose",
+                        **_responses_contract(responsesReplayReasoningItems=False),
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="reasoningSummary"):
         ConfigLoader().get_all_providers()
 
 

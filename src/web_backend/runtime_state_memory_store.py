@@ -12,6 +12,10 @@ from .node_runtime_fields import RUNTIME_STATE_FIELDS
 RuntimeMutation = Callable[[dict[str, Any]], None]
 
 
+class RuntimeStateContractError(ValueError):
+    pass
+
+
 class RuntimeStateMemoryStore:
     """Process-local projection for node runtime fields.
 
@@ -62,7 +66,7 @@ class RuntimeStateMemoryStore:
         key = self._key(config_path)
         lock = self._lock_for(key)
         with lock:
-            payload = copy.deepcopy(self._items.get(key) or {})
+            payload = self._normalize(copy.deepcopy(self._items.get(key) or {}))
             before = copy.deepcopy(payload)
             mutate(payload)
             payload = self._normalize(payload)
@@ -126,32 +130,69 @@ class RuntimeStateMemoryStore:
             for key, value in (payload or {}).items()
             if key in RUNTIME_STATE_FIELDS
         }
-        state = str(normalized.get("state") or "").strip().lower()
-        if state:
-            normalized["state"] = state
-        pending = normalized.get("pending")
-        if isinstance(pending, list):
-            normalized["pending"] = list(pending)
-            normalized["pending_count"] = len(pending)
-        elif "pending_count" in normalized:
-            try:
-                normalized["pending_count"] = max(0, int(normalized.get("pending_count") or 0))
-            except Exception:
-                normalized["pending_count"] = 0
+        self._normalize_state(normalized)
+        self._normalize_pending(normalized)
+        self._validate_optional_dict(normalized, "inflight")
+        self._validate_optional_dict(normalized, "last_runtime_event")
+        self._validate_optional_list(normalized, "runtime_events")
+        self._validate_optional_list(normalized, "runtime_tool_calls")
+        self._validate_optional_list(normalized, "provider_request_summaries")
+        self._validate_optional_dict(normalized, "provider_request_totals")
+        self._validate_optional_list(normalized, "completed_requests")
+        self._validate_optional_dict(normalized, "last_completed_request")
+        self._validate_optional_dict(normalized, "goal_state")
+        self._validate_optional_non_negative_int(normalized, "node_event_seq")
         return normalized
 
     def _with_defaults(self, payload: dict[str, Any]) -> dict[str, Any]:
-        result = dict(payload)
-        result["state"] = str(result.get("state") or "idle").strip().lower() or "idle"
-        pending = result.get("pending")
-        if isinstance(pending, list):
-            result["pending_count"] = len(pending)
-        else:
-            try:
-                result["pending_count"] = max(0, int(result.get("pending_count") or 0))
-            except Exception:
-                result["pending_count"] = 0
+        result = self._normalize(dict(payload))
+        result.setdefault("state", "idle")
+        result.setdefault("pending_count", 0)
         return result
+
+    def _normalize_state(self, payload: dict[str, Any]) -> None:
+        if "state" not in payload:
+            return
+        value = payload.get("state")
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeStateContractError("runtime state field state must be a non-empty string")
+        payload["state"] = value.strip().lower()
+
+    def _normalize_pending(self, payload: dict[str, Any]) -> None:
+        has_pending = "pending" in payload
+        pending = payload.get("pending")
+        if has_pending:
+            if not isinstance(pending, list):
+                raise RuntimeStateContractError("runtime state field pending must be a list")
+            for index, item in enumerate(pending):
+                if not isinstance(item, dict):
+                    raise RuntimeStateContractError(f"runtime state field pending[{index}] must be an object")
+            payload["pending"] = list(pending)
+            payload["pending_count"] = len(pending)
+            return
+        if "pending_count" not in payload:
+            return
+        count = self._require_non_negative_int(payload.get("pending_count"), "pending_count")
+        if count != 0:
+            raise RuntimeStateContractError("runtime state field pending_count cannot be positive without pending")
+        payload["pending_count"] = 0
+
+    def _validate_optional_dict(self, payload: dict[str, Any], key: str) -> None:
+        if key in payload and not isinstance(payload.get(key), dict):
+            raise RuntimeStateContractError(f"runtime state field {key} must be an object")
+
+    def _validate_optional_list(self, payload: dict[str, Any], key: str) -> None:
+        if key in payload and not isinstance(payload.get(key), list):
+            raise RuntimeStateContractError(f"runtime state field {key} must be a list")
+
+    def _validate_optional_non_negative_int(self, payload: dict[str, Any], key: str) -> None:
+        if key in payload:
+            payload[key] = self._require_non_negative_int(payload.get(key), key)
+
+    def _require_non_negative_int(self, value: Any, field_name: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RuntimeStateContractError(f"runtime state field {field_name} must be a non-negative integer")
+        return value
 
     def _touch_version(self, key: str) -> None:
         self._versions[key] = time.time_ns()

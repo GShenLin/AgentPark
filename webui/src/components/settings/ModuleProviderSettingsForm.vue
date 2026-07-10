@@ -324,6 +324,16 @@ onMounted(loadProviderLimits)
           </select>
         </label>
         <label>
+          <span>Reasoning Summary</span>
+          <select :value="stringValue('reasoningSummary')" @change="setField('reasoningSummary', ($event.target as HTMLSelectElement).value)">
+            <option value="">Unset</option>
+            <option value="auto">auto</option>
+            <option value="concise">concise</option>
+            <option value="detailed">detailed</option>
+            <option value="disabled">disabled</option>
+          </select>
+        </label>
+        <label>
           <span>Thinking</span>
           <select :value="stringValue('thinking')" @change="setField('thinking', ($event.target as HTMLSelectElement).value)">
             <option value="">Unset</option>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { selectFolder, type GraphInfo, type GraphProfile, type MessageEnvelope } from '../api'
+import { selectFolder, type GraphInfo, type GraphProfile, type MessageEnvelope, type NodeInstanceConfig } from '../api'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
@@ -28,7 +28,10 @@ const props = defineProps<{
   graphWorkingPathInput: string
   graphLoading: boolean
   graphMemoryClearingId: string
+  graphNodesLoadingId: string
+  expandedGraphId: string
   graphs: GraphInfo[]
+  graphNodesById: Record<string, NodeInstanceConfig[]>
   graphProfiles: GraphProfile[]
   selectedGraphProfileId: string
   interactiveSessionId: string
@@ -50,7 +53,9 @@ const emit = defineEmits<{
   (event: 'createGraphFromProfile'): void
   (event: 'deleteGraphProfile'): void
   (event: 'refreshGraphs'): void
+  (event: 'toggleGraphNodes', graph: GraphInfo): void
   (event: 'loadGraphConfig', graph: GraphInfo): void
+  (event: 'navigateGraphNode', payload: { graph: GraphInfo; nodeId: string }): void
   (event: 'clearGraphMemory', graph: GraphInfo): void
   (event: 'deleteGraphConfig', graph: GraphInfo): void
   (event: 'autoScrollChange', value: boolean): void
@@ -74,6 +79,36 @@ const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(p
 const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.activityMessage))
 const showInteractiveBar = computed(() => props.mode === 'agent' && !!props.interactiveSessionId)
 const hasLiveActivity = computed(() => !!props.liveMessage || !!props.thinkingMessage || !!props.activityMessage)
+
+function canDeleteGraph(graph: GraphInfo) {
+  if (typeof graph.deletable === 'boolean') return graph.deletable
+  return !graph.readonly
+}
+
+function graphNodeLabel(node: NodeInstanceConfig) {
+  return String(node.name || node.node_id || '').trim() || 'Unnamed node'
+}
+
+function graphNodeMeta(node: NodeInstanceConfig) {
+  const typeId = String(node.type_id || '').trim()
+  const nodeId = String(node.node_id || '').trim()
+  if (typeId && nodeId && typeId !== nodeId) return `${typeId} - ${nodeId}`
+  return typeId || nodeId
+}
+
+function graphNodes(graphId: string) {
+  return props.graphNodesById[String(graphId || '').trim()] || []
+}
+
+function onGraphInfoClick(graph: GraphInfo) {
+  emit('toggleGraphNodes', graph)
+}
+
+function onGraphInfoKeydown(graph: GraphInfo, event: KeyboardEvent) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  emit('toggleGraphNodes', graph)
+}
 
 function updateMemoryText(event: Event) {
   emit('update:memoryText', String((event.target as HTMLTextAreaElement | null)?.value || ''))
@@ -203,21 +238,49 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         <div v-if="graphLoading" class="graph-empty">Loading graphs...</div>
         <div v-else-if="graphs.length === 0" class="graph-empty">No saved graph found.</div>
         <div v-else class="graph-items">
-          <div v-for="graph in graphs" :key="graph.id" class="graph-item">
-            <div class="graph-info">
-              <div class="graph-name">{{ graph.name }}</div>
-              <div class="graph-meta">{{ graph.updated_at || graph.id }}</div>
-            </div>
-            <div class="graph-item-actions">
-              <button class="graph-btn" @click="emit('loadGraphConfig', graph)">Load</button>
-              <button
-                class="graph-btn danger"
-                :disabled="graphMemoryClearingId === graph.id"
-                @click="emit('clearGraphMemory', graph)"
+          <div v-for="graph in graphs" :key="graph.id" class="graph-item-shell">
+            <div class="graph-item">
+              <div
+                class="graph-info graph-info-clickable"
+                tabindex="0"
+                role="button"
+                :aria-expanded="expandedGraphId === graph.id"
+                @click="onGraphInfoClick(graph)"
+                @keydown="onGraphInfoKeydown(graph, $event)"
               >
-                {{ graphMemoryClearingId === graph.id ? 'Clearing...' : 'ClearMemory' }}
-              </button>
-              <button v-if="!graph.readonly" class="graph-btn danger" @click="emit('deleteGraphConfig', graph)">Delete</button>
+                <div class="graph-name-row">
+                  <span class="graph-expander">{{ expandedGraphId === graph.id ? '-' : '+' }}</span>
+                  <div class="graph-name">{{ graph.name }}</div>
+                </div>
+                <div class="graph-meta">{{ graph.updated_at || graph.id }}</div>
+              </div>
+              <div class="graph-item-actions">
+                <button class="graph-btn" @click="emit('loadGraphConfig', graph)">Load</button>
+                <button
+                  class="graph-btn danger"
+                  :disabled="graphMemoryClearingId === graph.id"
+                  @click="emit('clearGraphMemory', graph)"
+                >
+                  {{ graphMemoryClearingId === graph.id ? 'Clearing...' : 'ClearMemory' }}
+                </button>
+                <button v-if="canDeleteGraph(graph)" class="graph-btn danger" @click="emit('deleteGraphConfig', graph)">Delete</button>
+              </div>
+            </div>
+            <div v-if="expandedGraphId === graph.id" class="graph-node-list">
+              <div v-if="graphNodesLoadingId === graph.id" class="graph-node-empty">Loading nodes...</div>
+              <div v-else-if="graphNodes(graph.id).length === 0" class="graph-node-empty">No node found.</div>
+              <template v-else>
+                <button
+                  v-for="node in graphNodes(graph.id)"
+                  :key="node.node_id"
+                  type="button"
+                  class="graph-node-item"
+                  @click="emit('navigateGraphNode', { graph, nodeId: node.node_id })"
+                >
+                  <span class="graph-node-name">{{ graphNodeLabel(node) }}</span>
+                  <span class="graph-node-meta">{{ graphNodeMeta(node) }}</span>
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -494,6 +557,12 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   gap: 8px;
 }
 
+.graph-item-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .graph-item {
   display: flex;
   align-items: center;
@@ -509,12 +578,93 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   min-width: 0;
 }
 
+.graph-info-clickable {
+  flex: 1;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  outline: none;
+}
+
+.graph-info-clickable:hover,
+.graph-info-clickable:focus-visible {
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.graph-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.graph-expander {
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--theme-panel-graph-panel-item-muted, rgba(148, 163, 184, 0.9));
+  text-align: center;
+  font-size: 12px;
+}
+
 .graph-name {
   font-size: 13px;
   color: var(--theme-panel-graph-panel-item-text, rgba(248, 250, 252, 0.95));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.graph-node-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 16px;
+  padding-left: 10px;
+  border-left: 1px solid var(--theme-panel-graph-panel-item-border, rgba(148, 163, 184, 0.2));
+}
+
+.graph-node-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--theme-panel-graph-panel-item-text, rgba(248, 250, 252, 0.95));
+  border-radius: 7px;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.graph-node-item:hover,
+.graph-node-item:focus-visible {
+  border-color: var(--theme-panel-graph-panel-button-primary-border, rgba(56, 189, 248, 0.55));
+  background: rgba(14, 116, 144, 0.2);
+  outline: none;
+}
+
+.graph-node-name {
+  max-width: 100%;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-node-meta,
+.graph-node-empty {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--theme-panel-graph-panel-item-muted, rgba(148, 163, 184, 0.9));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-node-empty {
+  padding: 6px 8px;
 }
 
 .graph-meta,

@@ -82,6 +82,18 @@ Useful signals:
 
 If a node is stuck in `working` without `inflight`, start or wake the graph runner. It should return the node to `idle` and keep pending work queued. If a node is `working` with `inflight`, do not manually requeue it unless the process is known dead; use node stop/cancel first so the active operation has a chance to finish or observe cancellation.
 
+## Web API Access Boundaries
+
+The file API only resolves paths under the AgentPark workspace root. Relative paths are resolved from the workspace root, and absolute paths or `file://` URLs outside that root return `403`. The workspace root itself cannot be renamed or deleted through `/api/files/*`.
+
+CORS defaults to browser origins on `localhost`, `127.0.0.1`, and `[::1]`. To allow extra origins for a remote WebUI or development proxy, set a comma-separated `AGENTPARK_CORS_ALLOW_ORIGINS` before starting the server:
+
+```bat
+set "AGENTPARK_CORS_ALLOW_ORIGINS=http://devbox.local:5173,https://example.test"
+```
+
+Use `AGENTPARK_CORS_ALLOW_ORIGINS=*` only for a trusted local network. Chrome Private Network Access preflight responses are disabled by default; enable them explicitly with `AGENTPARK_ALLOW_PRIVATE_NETWORK_ACCESS=1`.
+
 ## MCP Startup Failures
 
 MCP materialization records lifecycle diagnostics. To inspect them through the shared descriptor model:

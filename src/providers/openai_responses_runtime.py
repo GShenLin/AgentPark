@@ -5,17 +5,33 @@ from src.providers.responses_runtime import ResponsesRuntime
 
 
 class OpenAIResponsesRuntime(ResponsesRuntime):
+    _REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "disabled"}
+
     def _send_tool_context_compaction_gate(self, declaration):
         return self._send_responses_gate(declaration, reasoning_effort="")
 
     def _responses_payload_extra(self, **provider_options):
-        reasoning_effort = provider_options.get("reasoning_effort")
+        reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
         if reasoning_effort:
+            reasoning = {"effort": reasoning_effort}
+            reasoning_summary = self._resolve_reasoning_summary(provider_options.get("reasoning_summary"))
+            if reasoning_summary != "disabled":
+                reasoning["summary"] = reasoning_summary
             return {
-                "reasoning": {"effort": reasoning_effort},
+                "reasoning": reasoning,
                 "include": ["reasoning.encrypted_content"],
             }
         return {}
+
+    def _resolve_reasoning_summary(self, value):
+        summary = str(value or "").strip().lower()
+        if not summary:
+            summary = str(self.config.get("reasoningSummary") or "").strip().lower()
+        if not summary:
+            summary = "auto"
+        if summary not in self._REASONING_SUMMARY_VALUES:
+            raise ValueError("OpenAI Responses reasoning_summary must be auto, concise, detailed, or disabled.")
+        return summary
 
     def _responses_continuation_input_items(self, result, function_calls):
         return self._build_responses_continuation_input_items(result, function_calls)

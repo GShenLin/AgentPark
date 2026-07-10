@@ -401,6 +401,9 @@ class OpenAIResponsesStreamEventNormalizer:
             value = event.get(key)
             if isinstance(value, str) and value:
                 return value
+        part = event.get("part")
+        if isinstance(part, dict):
+            return cls._extract_reasoning_text(part)
         summary = event.get("summary")
         if isinstance(summary, list):
             parts = []

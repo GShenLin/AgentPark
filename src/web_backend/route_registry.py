@@ -71,6 +71,7 @@ class ApiRouteRegistry:
         ("delete", "/api/profiles/graphs/{profile_id}", lambda core: core.profile_api.delete_graph_profile),
         ("post", "/api/profiles/graphs/{profile_id}/create", lambda core: core.profile_api.create_graph_from_profile),
         ("post", "/api/events/apply", lambda core: core.runtime_events.apply_events_config),
+        ("get", "/api/events/schema", lambda core: core.runtime_events.schema),
         ("get", "/api/events/diagnostics", lambda core: core.runtime_events.diagnostics),
         ("post", "/api/events/emit", lambda core: core.graph_api.emit_event_by_key),
         ("post", "/api/integration/ue/build-success", lambda core: core.graph_api.notify_ue_build_success),

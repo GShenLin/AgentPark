@@ -62,13 +62,15 @@ export type DragSession =
   | {
       itemId: string
       pointerId: number
-      startPointerX: number
-      startPointerY: number
-      startX: number
-      startY: number
       moved: boolean
+      centerOnEnd: boolean
     }
   | null
+
+export type SelectAndFocusNodeOptions = {
+  refreshConfig?: boolean
+  focusViewport?: boolean
+}
 
 export type PanSession = {
   startPointerX: number
@@ -122,6 +124,9 @@ export type AgentBoardContext = {
   selectedNodeWorkingPathRevision: Ref<number>
 
   selectNode: (id: string) => void
+  selectAndFocusNode: (id: string, options?: SelectAndFocusNodeOptions) => Promise<boolean>
+  focusNodeInViewport: (id: string) => Promise<boolean>
+  cancelBoardViewportScroll: () => void
   openNodeSettings: (id: string) => void
   openNodeFolder: (id: string) => Promise<void>
   openGraphPanel: () => void
@@ -154,8 +159,6 @@ export type AgentBoardContext = {
   ) => Promise<void> | void
   onItemClick: (id: string, event: MouseEvent) => void
   onItemPointerDown: (id: string, event: PointerEvent) => void
-  onItemPointerMove: (event: PointerEvent) => void
-  endDrag: (event: PointerEvent) => void
 
   onBoardMouseDownCapture: (event: MouseEvent) => void
   onBoardWheel: (event: WheelEvent) => void

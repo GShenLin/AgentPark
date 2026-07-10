@@ -26,6 +26,7 @@ class AgentNodeRunRequest:
     web_search: object
     thinking: object
     reasoning_effort: object
+    reasoning_summary: object
     public_base_url: object
     working_path: str
 
@@ -68,6 +69,7 @@ def load_agent_node_run_request(
         web_search=setting("web_search"),
         thinking=setting("thinking"),
         reasoning_effort=setting("reasoning_effort"),
+        reasoning_summary=setting("reasoning_summary"),
         public_base_url=setting("public_base_url"),
         working_path=str(setting("working_path", "") or "").strip(),
     )

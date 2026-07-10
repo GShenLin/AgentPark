@@ -9,6 +9,7 @@ from .workspace_settings import get_workspace_root
 
 class ConfigLoader:
     CONFIG_PATH_ENV = "AGENTPARK_CONFIG_PATH"
+    OPENAI_REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "disabled"}
     PROVIDER_UNSUPPORTED_CONFIG_KEYS = {
         "anthropic_beta",
         "claudeThinkingBudgetTokens",
@@ -251,6 +252,7 @@ class ConfigLoader:
                 )
 
         if provider_type == "openai":
+            self._validate_openai_reasoning_summary(provider_name, provider)
             if "responsesReplayReasoningItems" not in provider:
                 raise ValueError(
                     f"Provider '{provider_name}' has responsesApi=true but missing required field responsesReplayReasoningItems."
@@ -259,6 +261,24 @@ class ConfigLoader:
                 raise ValueError(
                     f"Provider '{provider_name}' has invalid responsesReplayReasoningItems; expected a boolean."
                 )
+
+    def _validate_openai_reasoning_summary(self, provider_name, provider):
+        if "reasoningSummary" not in provider:
+            return
+        value = provider.get("reasoningSummary")
+        if value is None or value == "":
+            provider.pop("reasoningSummary", None)
+            return
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid reasoningSummary; expected auto, concise, detailed, or disabled."
+            )
+        summary = value.strip().lower()
+        if summary not in self.OPENAI_REASONING_SUMMARY_VALUES:
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid reasoningSummary; expected auto, concise, detailed, or disabled."
+            )
+        provider["reasoningSummary"] = summary
 
     def _load_config(self):
         provider_config_path = self._resolve_provider_config_path()

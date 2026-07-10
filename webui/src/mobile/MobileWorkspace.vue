@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import type { MessageEnvelope, MobileNode, ResourceKind } from '../api'
+import type { MessageEnvelope, MobileGraph, MobileNode, ResourceKind } from '../api'
 import { restartServer } from '../api'
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemoryToolCallPart from '../components/MemoryToolCallPart.vue'
@@ -120,6 +120,17 @@ function nodeStateClass(node: MobileNode) {
   if (state === 'working') return 'state-working'
   if (state === 'stop') return 'state-stop'
   return 'state-idle'
+}
+
+function canDeleteGraph(graph: MobileGraph) {
+  if (typeof graph.deletable === 'boolean') return graph.deletable
+  return !graph.readonly
+}
+
+function canEditGraph(graph: MobileGraph | null) {
+  if (!graph) return false
+  if (typeof graph.editable === 'boolean') return graph.editable
+  return !graph.readonly
 }
 
 function isToolGroupExpanded(key: string) {
@@ -571,7 +582,7 @@ onMounted(() => {
               </span>
               <span class="row-arrow">&gt;</span>
             </button>
-            <button v-if="!graph.readonly" class="mobile-delete-btn" type="button" @click="deleteMobileGraph(graph)">Delete</button>
+            <button v-if="canDeleteGraph(graph)" class="mobile-delete-btn" type="button" @click="deleteMobileGraph(graph)">Delete</button>
           </div>
         </div>
         <form class="graph-save-panel" @submit.prevent="saveMobileGraph">
@@ -614,7 +625,7 @@ onMounted(() => {
           @delete="deleteMobileNode"
           @trigger="triggerMobileNode"
         />
-        <button v-if="!workspace.selectedGraph.value?.readonly" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
+        <button v-if="canEditGraph(workspace.selectedGraph.value)" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
       </section>
 
         <section v-else class="chat-view">

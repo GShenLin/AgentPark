@@ -1174,7 +1174,57 @@ def test_openai_responses_payload_includes_reasoning_effort():
     )
 
     assert out == "ok"
-    assert payloads[0]["reasoning"] == {"effort": "xhigh"}
+    assert payloads[0]["reasoning"] == {"effort": "xhigh", "summary": "auto"}
+
+
+def test_openai_responses_payload_allows_reasoning_summary_override():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "ok"}],
+                }
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "hello"}],
+        active_tools=[],
+        run_tools=False,
+        reasoning_effort="xhigh",
+        reasoning_summary="concise",
+    )
+
+    assert out == "ok"
+    assert payloads[0]["reasoning"] == {"effort": "xhigh", "summary": "concise"}
 
 
 def test_openai_stream_uses_response_call_id_not_function_item_id(monkeypatch):

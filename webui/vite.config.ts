@@ -37,6 +37,10 @@ export default defineConfig({
         target: serverOrigin,
         changeOrigin: true,
       },
+      '/memories': {
+        target: serverOrigin,
+        changeOrigin: true,
+      },
     },
   },
 })
