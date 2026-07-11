@@ -48,12 +48,15 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         }
         if active_tools:
             payload["tools"] = active_tools
-        effort = str(reasoning_effort or "").strip()
-        if effort:
-            payload["reasoning_effort"] = effort
         thinking_type = str(thinking_mode or "").strip()
-        if thinking_type in {"enabled", "disabled", "auto"}:
+        # When thinking is disabled, omit both thinking and reasoning_effort.
+        # Some OpenAI-compatible gateways (e.g. hy3) keep reasoning on solely
+        # because reasoning_effort is present, even if thinking.type=disabled.
+        if thinking_type in {"enabled", "auto"}:
             payload["thinking"] = {"type": thinking_type}
+            effort = str(reasoning_effort or "").strip()
+            if effort:
+                payload["reasoning_effort"] = effort
         if stream:
             payload["stream"] = True
         return payload
@@ -122,7 +125,11 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             return f"Error: Invalid message format in choice[{selected_idx}]"
         tool_calls = self._extract_openai_chat_tool_calls(message)
         if tool_calls:
-            self.Message("assistant", message.get("content") or "", tool_calls=tool_calls)
+            self.Message(
+                "assistant",
+                message.get("content") or "",
+                **self._assistant_tool_call_message_fields(message, tool_calls),
+            )
             if not run_tools:
                 return {"type": "function_call", "function": tool_calls[0]["function"], "tool_calls": tool_calls}
             executions = execute_tool_call_items_parallel(
@@ -254,6 +261,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         tool_calls = self._assembled_chat_tool_calls(tool_calls_by_index)
         if tool_calls:
             message["tool_calls"] = tool_calls
+        self._attach_stream_thinking_to_message(message, "".join(thinking_chunks))
         self._write_chat_sse_debug_if_needed(
             url=url,
             payload_json=payload_json,
@@ -261,6 +269,13 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             assembled_message=message,
         )
         return {"choices": [{"message": message}]}
+
+    def _assistant_tool_call_message_fields(self, message: dict[str, Any], tool_calls: list[dict]) -> dict[str, Any]:
+        _ = message
+        return {"tool_calls": tool_calls}
+
+    def _attach_stream_thinking_to_message(self, message: dict[str, Any], thinking_text: str) -> None:
+        _ = message, thinking_text
 
     @classmethod
     def _extract_chat_thinking_delta(cls, delta: dict[str, Any]) -> str:

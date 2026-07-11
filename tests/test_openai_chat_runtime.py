@@ -46,8 +46,8 @@ def test_openai_responses_api_false_uses_chat_completions():
     assert requests[0]["url"] == "https://chat.example/v1/chat/completions"
     payload = json.loads(requests[0]["payload_json"])
     assert payload["messages"] == [{"role": "user", "content": "hello"}]
-    assert payload["reasoning_effort"] == "high"
-    assert payload["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in payload
+    assert "thinking" not in payload
     assert "input" not in payload
     summaries = [
         json.loads(event["message"])
@@ -106,6 +106,27 @@ def test_openai_chat_provider_sends_auto_thinking_mode():
     assert agent.Send(web_search="disabled", thinking="auto", stream=False) == "chat ok"
     payload = json.loads(requests[0]["payload_json"])
     assert payload["thinking"] == {"type": "auto"}
+
+
+def test_openai_chat_provider_omits_thinking_fields_when_disabled():
+    agent = _build_openai_chat_agent()
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(kwargs)
+        return {"choices": [{"message": {"role": "assistant", "content": "chat ok"}}]}
+
+    agent._curl_post_json_once = lambda **kwargs: fake_post(**kwargs)
+
+    assert agent.Send(
+        web_search="disabled",
+        thinking="disabled",
+        reasoning_effort="high",
+        stream=False,
+    ) == "chat ok"
+    payload = json.loads(requests[0]["payload_json"])
+    assert "thinking" not in payload
+    assert "reasoning_effort" not in payload
 
 
 def test_openai_chat_persists_visible_assistant_tool_call_note_before_tool_execution():

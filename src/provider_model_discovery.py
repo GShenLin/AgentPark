@@ -199,7 +199,7 @@ def _model_id_from_item(item: Any, provider_type: str) -> str:
 
 
 def _models_endpoint(provider: dict[str, Any], provider_type: str) -> str:
-    if provider_type in {"openai", "claude", "doubao", "zhipu", "gemini"}:
+    if provider_type in {"openai", "deepseek", "claude", "doubao", "zhipu", "gemini"}:
         return f"{_base_url(provider)}/models"
     return ""
 

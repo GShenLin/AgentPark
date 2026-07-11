@@ -172,6 +172,14 @@ class ConfigLoader:
         if provider_type == "doubao":
             self._validate_doubao_reasoning_effort_fields(provider)
 
+        auth_mode = str(provider.get("authMode") or "api_key").strip().lower()
+        if auth_mode not in {"api_key", "codex"}:
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid authMode; expected 'api_key' or 'codex'."
+            )
+        if auth_mode == "codex" and provider_type != "openai":
+            raise ValueError(f"Provider '{provider_name}' can use authMode 'codex' only with type 'openai'.")
+
         provider["supportmode"] = self._validate_support_modes(
             provider_name, provider.get("supportmode")
         )
@@ -195,6 +203,10 @@ class ConfigLoader:
             raise ValueError(
                 f"Provider '{provider_name}' has invalid responsesApi; expected a boolean."
             )
+        if provider_type == "deepseek" and provider.get("responsesApi") is True:
+            raise ValueError(
+                f"Provider '{provider_name}' has type 'deepseek' but responsesApi=true; DeepSeek uses chat completions."
+            )
         if "streamEnabled" not in provider:
             provider["streamEnabled"] = True
         elif not isinstance(provider["streamEnabled"], bool):
@@ -204,10 +216,20 @@ class ConfigLoader:
         self._validate_responses_provider_config(provider_name, provider, provider_type)
 
         provider.pop("apiKeyEnv", None)
-        provider["apiKey"] = str(provider.get("apiKey") or "").strip()
+        if auth_mode == "codex":
+            if provider.get("responsesApi") is not True:
+                raise ValueError(f"Provider '{provider_name}' with authMode 'codex' requires responsesApi=true.")
+            if str(provider.get("apiKey") or "").strip():
+                raise ValueError(f"Provider '{provider_name}' with authMode 'codex' must not contain apiKey.")
+            provider["authMode"] = "codex"
+            provider.pop("apiKey", None)
+            provider["baseUrl"] = "https://chatgpt.com/backend-api/codex"
+        else:
+            provider["authMode"] = "api_key"
+            provider["apiKey"] = str(provider.get("apiKey") or "").strip()
         provider["features"] = build_provider_feature_matrix(provider)
 
-        if require_api_key and not provider["apiKey"]:
+        if require_api_key and auth_mode == "api_key" and not provider["apiKey"]:
             raise ValueError(
                 f"Provider '{provider_name}' requires a non-empty apiKey."
             )

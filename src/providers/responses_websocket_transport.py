@@ -63,12 +63,18 @@ def incremental_request_input(
     current_input = current_request.get("input")
     if not isinstance(previous_input, list) or not isinstance(current_input, list):
         return None
-    baseline = [*copy.deepcopy(previous_input), *_response_output_items(previous_response)]
-    if len(current_input) < len(baseline):
-        return None
-    if current_input[: len(baseline)] != baseline:
-        return None
-    return copy.deepcopy(current_input[len(baseline) :])
+    response_output = _response_output_items(previous_response)
+    normalized_response_output = _response_output_as_request_items(response_output)
+    baselines = [
+        [*copy.deepcopy(previous_input), *response_output],
+        [*copy.deepcopy(previous_input), *normalized_response_output],
+        [*copy.deepcopy(previous_input), *_without_reasoning_items(response_output)],
+        [*copy.deepcopy(previous_input), *_without_reasoning_items(normalized_response_output)],
+    ]
+    for baseline in baselines:
+        if len(current_input) >= len(baseline) and current_input[: len(baseline)] == baseline:
+            return copy.deepcopy(current_input[len(baseline) :])
+    return None
 
 
 def parse_websocket_message(message: Any) -> str:
@@ -152,6 +158,7 @@ class ResponsesWebSocketTransportMixin:
         )
         with acquire_provider_pressure(self):
             connection = self._responses_websocket_connection(url=url, headers=headers, timeout_sec=timeout_sec)
+            streamed_output_items: list[dict[str, Any]] = []
             try:
                 connection.send(json.dumps(ws_payload, ensure_ascii=False))
             except Exception as exc:
@@ -189,11 +196,18 @@ class ResponsesWebSocketTransportMixin:
                     if error is not None:
                         status_code, message = error
                         raise OpenAIHttpError(status_code, message)
+                    if str(parsed.get("type") or "").strip().lower() == "response.output_item.done":
+                        item = parsed.get("item")
+                        if isinstance(item, dict):
+                            _append_unique_response_output_item(streamed_output_items, item)
                     if str(parsed.get("type") or "").strip().lower() in {"response.completed", "response.done"}:
                         response = parsed.get("response")
                         if isinstance(response, dict):
                             self._responses_ws_last_request_payload = json.loads(json.dumps(request_payload, ensure_ascii=False))
-                            self._responses_ws_last_response = json.loads(json.dumps(response, ensure_ascii=False))
+                            self._responses_ws_last_response = _response_with_streamed_output_items(
+                                response,
+                                streamed_output_items,
+                            )
                         yield text
                         return
                 yield text
@@ -248,3 +262,70 @@ def _non_input_fields_match(previous: dict[str, Any], current: dict[str, Any]) -
 def _response_output_items(response: dict[str, Any]) -> list[Any]:
     output = response.get("output")
     return copy.deepcopy(output) if isinstance(output, list) else []
+
+
+def _response_with_streamed_output_items(
+    response: dict[str, Any],
+    streamed_output_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    merged_response = copy.deepcopy(response)
+    merged_output: list[Any] = []
+    for item in streamed_output_items:
+        _append_unique_response_output_item(merged_output, item)
+    for item in _response_output_items(response):
+        if isinstance(item, dict):
+            _append_unique_response_output_item(merged_output, item)
+        else:
+            merged_output.append(item)
+    if merged_output:
+        merged_response["output"] = merged_output
+    return merged_response
+
+
+def _without_reasoning_items(items: list[Any]) -> list[Any]:
+    return [
+        copy.deepcopy(item)
+        for item in items
+        if not (isinstance(item, dict) and str(item.get("type") or "").strip().lower() == "reasoning")
+    ]
+
+
+def _response_output_as_request_items(items: list[Any]) -> list[Any]:
+    normalized: list[Any] = []
+    for item in items:
+        if not isinstance(item, dict) or str(item.get("type") or "").strip().lower() != "message":
+            normalized.append(copy.deepcopy(item))
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        normalized_content = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            part_type = str(part.get("type") or "").strip().lower()
+            if part_type in {"text", "input_text", "output_text"}:
+                text = str(part.get("text") or "").strip()
+                if text:
+                    normalized_content.append({"type": "output_text", "text": text})
+            elif part_type == "refusal":
+                refusal = str(part.get("refusal") or part.get("text") or "").strip()
+                if refusal:
+                    normalized_content.append({"type": "refusal", "refusal": refusal})
+        if normalized_content:
+            normalized.append(
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": normalized_content,
+                    "status": "completed",
+                }
+            )
+    return normalized
+
+
+def _append_unique_response_output_item(output: list[Any], item: dict[str, Any]) -> None:
+    item_id = str(item.get("id") or "").strip()
+    if item_id and any(isinstance(existing, dict) and str(existing.get("id") or "").strip() == item_id for existing in output):
+        return
+    output.append(copy.deepcopy(item))

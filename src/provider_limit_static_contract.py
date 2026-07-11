@@ -6,7 +6,7 @@ from typing import Any
 def record_static_contract_limits(result: dict[str, Any], provider_type: str, *, skip_access: bool) -> None:
     if not skip_access:
         return
-    if provider_type not in {"openai", "claude", "doubao", "zhipu", "gemini", "hyper3d"}:
+    if provider_type not in {"openai", "deepseek", "claude", "doubao", "zhipu", "gemini", "hyper3d"}:
         return
     result.setdefault("features", {})
     result.setdefault("unsupported", {})

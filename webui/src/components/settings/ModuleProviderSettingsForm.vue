@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { getProviderLimits, type ProviderLimitDocument } from '../../settingsApi'
+import ProviderAuthFields from './ProviderAuthFields.vue'
+import { applyResponsesApiDefaults } from './providerConfigDefaults'
 import SupportModeMultiSelect from './SupportModeMultiSelect.vue'
+import { useCodexOfficialAuth } from './useCodexOfficialAuth'
 
 const props = defineProps<{
   data: Record<string, unknown>
@@ -15,6 +18,13 @@ const selectedProviderId = ref('')
 const newProviderId = ref('')
 const providerLimits = ref<ProviderLimitDocument | null>(null)
 const limitWarning = ref('')
+const {
+  status: codexAuthStatus,
+  busy: codexAuthBusy,
+  error: codexAuthError,
+  loadStatus: loadCodexAuthStatus,
+  beginLogin: beginOfficialLogin,
+} = useCodexOfficialAuth()
 
 const providers = computed<Record<string, Record<string, unknown>>>(() => {
   const value = props.data.providers
@@ -44,6 +54,7 @@ const activeLimitWarnings = computed(() => {
   }
   return warnings
 })
+const isOpenAIProvider = computed(() => stringValue('type').trim().toLowerCase() === 'openai')
 
 watch(
   providerIds,
@@ -122,19 +133,21 @@ function setField(key: string, value: unknown) {
   emitProvider(selectedProviderId.value, provider)
 }
 
-function applyResponsesApiDefaults(provider: Record<string, unknown>) {
-  if (provider.toolResultSubmissionMaxChars === undefined || provider.toolResultSubmissionMaxChars === null || provider.toolResultSubmissionMaxChars === '') {
-    provider.toolResultSubmissionMaxChars = 50000
+function setOfficialAuthEnabled(enabled: boolean) {
+  if (!selectedProviderId.value || !selectedProvider.value || !isOpenAIProvider.value) return
+  const provider = { ...selectedProvider.value }
+  if (enabled) {
+    provider.authMode = 'codex'
+    provider.responsesApi = true
+    provider.baseUrl = 'https://chatgpt.com/backend-api/codex'
+    delete provider.apiKey
+    applyResponsesApiDefaults(provider)
+  } else {
+    provider.authMode = 'api_key'
+    delete provider.baseUrl
   }
-  if (provider.toolContextCompactionEnabled === undefined || provider.toolContextCompactionEnabled === null) {
-    provider.toolContextCompactionEnabled = false
-  }
-  if (provider.toolContextCompactionEveryToolCalls === undefined || provider.toolContextCompactionEveryToolCalls === null || provider.toolContextCompactionEveryToolCalls === '') {
-    provider.toolContextCompactionEveryToolCalls = 30
-  }
-  if (String(provider.type || '').trim().toLowerCase() === 'openai' && typeof provider.responsesReplayReasoningItems !== 'boolean') {
-    provider.responsesReplayReasoningItems = false
-  }
+  emitProvider(selectedProviderId.value, provider)
+  if (enabled) void beginOfficialLogin()
 }
 
 function setNumberField(key: string, raw: string) {
@@ -225,7 +238,10 @@ async function loadProviderLimits() {
   }
 }
 
-onMounted(loadProviderLimits)
+onMounted(() => {
+  void loadProviderLimits()
+  void loadCodexAuthStatus()
+})
 </script>
 
 <template>
@@ -254,7 +270,19 @@ onMounted(loadProviderLimits)
           <h2>{{ selectedProviderId }}</h2>
           <span>Provider fields</span>
         </div>
-        <button type="button" class="danger" @click="deleteProvider">Delete</button>
+        <div class="form-head-actions">
+          <button
+            type="button"
+            class="oauth-button"
+            :class="{ active: isOpenAIProvider && stringValue('authMode') === 'codex' }"
+            :disabled="codexAuthBusy || !isOpenAIProvider"
+            :title="isOpenAIProvider ? '切换当前 Provider 的 OpenAI OAuth 授权' : 'OAuth 仅支持 type 为 openai 的 Provider'"
+            @click="setOfficialAuthEnabled(stringValue('authMode') !== 'codex')"
+          >
+            {{ stringValue('authMode') === 'codex' ? 'OAuth ✓' : 'OAuth' }}
+          </button>
+          <button type="button" class="danger" @click="deleteProvider">Delete</button>
+        </div>
       </div>
 
       <div v-if="limitWarning || activeLimitWarnings.length" class="limit-warning">
@@ -263,18 +291,18 @@ onMounted(loadProviderLimits)
       </div>
 
       <div class="form-grid">
-        <label>
-          <span>Type</span>
-          <select :value="stringValue('type')" @change="setField('type', ($event.target as HTMLSelectElement).value)">
-            <option value="">Unset</option>
-            <option value="openai">openai</option>
-            <option value="claude">claude</option>
-            <option value="doubao">doubao</option>
-            <option value="gemini">gemini</option>
-            <option value="zhipu">zhipu</option>
-            <option value="hyper3d">hyper3d</option>
-          </select>
-        </label>
+        <ProviderAuthFields
+          :provider-type="stringValue('type')"
+          :auth-mode="stringValue('authMode') || 'api_key'"
+          :base-url="stringValue('baseUrl')"
+          :api-key="stringValue('apiKey')"
+          :busy="codexAuthBusy"
+          :status="codexAuthStatus"
+          :error="codexAuthError"
+          @field="setField"
+          @official-auth="setOfficialAuthEnabled"
+          @login="beginOfficialLogin"
+        />
         <label>
           <span>Model</span>
           <select
@@ -285,14 +313,6 @@ onMounted(loadProviderLimits)
             <option value="">{{ modelOptions.length ? 'Unset' : 'No discovered models' }}</option>
             <option v-for="modelId in modelOptions" :key="modelId" :value="modelId">{{ modelId }}</option>
           </select>
-        </label>
-        <label>
-          <span>Base URL</span>
-          <input :value="stringValue('baseUrl')" @input="setField('baseUrl', ($event.target as HTMLInputElement).value)" />
-        </label>
-        <label>
-          <span>API Key</span>
-          <input :value="stringValue('apiKey')" type="password" autocomplete="off" @input="setField('apiKey', ($event.target as HTMLInputElement).value)" />
         </label>
         <label>
           <span>Timeout Ms</span>

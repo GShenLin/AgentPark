@@ -1,6 +1,7 @@
 from src.providers.gemini_agent import GeminiAgent
 from src.providers.doubao_agent import DouBaoAgent
 from src.providers.claude_agent import ClaudeAgent
+from src.providers.deepseek_agent import DeepSeekAgent
 from src.providers.hyper3d_agent import Hyper3DAgent
 from src.providers.openai_agent import OpenAIAgent
 from src.providers.zhipu_agent import ZhipuAgent
@@ -19,6 +20,8 @@ def create_agent(provider_id, memory_file_path=None, system_prompt=None, interna
         return DouBaoAgent(provider_id=provider_id, memory_file_path=memory_file_path, system_prompt=system_prompt, internal_memory_enabled=internal_memory_enabled)
     if agent_type == "claude":
         return ClaudeAgent(provider_id=provider_id, memory_file_path=memory_file_path, system_prompt=system_prompt, internal_memory_enabled=internal_memory_enabled)
+    if agent_type == "deepseek":
+        return DeepSeekAgent(provider_id=provider_id, memory_file_path=memory_file_path, system_prompt=system_prompt, internal_memory_enabled=internal_memory_enabled)
     if agent_type == "hyper3d":
         return Hyper3DAgent(provider_id=provider_id, memory_file_path=memory_file_path, system_prompt=system_prompt, internal_memory_enabled=internal_memory_enabled)
     if agent_type == "openai":

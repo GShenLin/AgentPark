@@ -11,6 +11,7 @@ class OpenAIResponsesStreamEventNormalizer:
         self.provider = str(provider or "").strip() or "openai_responses"
         self._function_call_buckets: dict[str, dict[str, Any]] = {}
         self._function_call_keys_by_id: dict[str, str] = {}
+        self._reasoning_text_by_segment: dict[tuple[str, int], str] = {}
 
     def ingest_sse_data(self, data_text: Any) -> list[ResponsesStreamEvent]:
         text = str(data_text or "")
@@ -54,9 +55,7 @@ class OpenAIResponsesStreamEventNormalizer:
         if event_type in {"response.output_text.delta", "output_text.delta"}:
             return self._output_text_delta(raw_event, raw_type)
         if "reasoning" in event_type or "thinking" in event_type:
-            reasoning_delta = self._reasoning_delta(raw_event, raw_type)
-            if reasoning_delta is not None:
-                return [reasoning_delta]
+            return self._reasoning_events(raw_event, raw_type, event_type)
         if event_type in {"response.function_call_arguments.delta", "function_call_arguments.delta"}:
             return self._function_call_arguments_delta(raw_event, raw_type)
         if event_type in {"response.function_call_arguments.done", "function_call_arguments.done"}:
@@ -139,18 +138,55 @@ class OpenAIResponsesStreamEventNormalizer:
             )
         ]
 
-    def _reasoning_delta(self, event: dict[str, Any], raw_type: str) -> ResponsesReasoningDelta | None:
-        delta = self._extract_reasoning_text(event)
+    def _reasoning_events(
+        self,
+        event: dict[str, Any],
+        raw_type: str,
+        event_type: str,
+    ) -> list[ResponsesStreamEvent]:
+        text = self._extract_reasoning_text(event)
+        if not text:
+            return []
+        item_id = str(event.get("item_id") or "").strip()
+        output_index = self._int_or_none(event.get("output_index"))
+        segment_index = self._reasoning_segment_index(event)
+        segment_key = (item_id or f"output:{output_index}", segment_index)
+        previous = self._reasoning_text_by_segment.get(segment_key, "")
+
+        if event_type.endswith(".delta"):
+            delta = text
+            self._reasoning_text_by_segment[segment_key] = previous + delta
+        elif event_type.endswith(".done"):
+            if text == previous:
+                return []
+            if not text.startswith(previous):
+                return [
+                    self._failure(
+                        message=(
+                            "Responses reasoning completion snapshot does not extend the streamed text "
+                            f"for item {item_id or '<unknown>'}, segment {segment_index}"
+                        ),
+                        code="inconsistent_reasoning_snapshot",
+                        event_type=raw_type,
+                    )
+                ]
+            delta = text[len(previous) :]
+            self._reasoning_text_by_segment[segment_key] = text
+        else:
+            return []
+
         if not delta:
-            return None
-        return ResponsesReasoningDelta(
-            delta=delta,
-            item_id=str(event.get("item_id") or "").strip(),
-            output_index=self._int_or_none(event.get("output_index")),
-            content_index=self._int_or_none(event.get("content_index")),
-            provider=self.provider,
-            raw_event_type=raw_type,
-        )
+            return []
+        return [
+            ResponsesReasoningDelta(
+                delta=delta,
+                item_id=item_id,
+                output_index=output_index,
+                content_index=self._int_or_none(event.get("content_index")),
+                provider=self.provider,
+                raw_event_type=raw_type,
+            )
+        ]
 
     def _function_call_arguments_delta(self, event: dict[str, Any], raw_type: str) -> list[ResponsesStreamEvent]:
         delta = event.get("delta")
@@ -240,9 +276,7 @@ class OpenAIResponsesStreamEventNormalizer:
                 )
             ]
             if item_type == "reasoning":
-                reasoning_delta = self._reasoning_delta(event, raw_type)
-                if reasoning_delta is not None:
-                    events.append(reasoning_delta)
+                events.extend(self._reasoning_item_done_events(event, raw_type, item))
             return events
         failure = self._merge_function_call_item(item, event=event, require_arguments=True)
         if failure is not None:
@@ -416,6 +450,37 @@ class OpenAIResponsesStreamEventNormalizer:
         if isinstance(item, dict):
             return cls._extract_reasoning_text(item)
         return ""
+
+    def _reasoning_item_done_events(
+        self,
+        event: dict[str, Any],
+        raw_type: str,
+        item: dict[str, Any],
+    ) -> list[ResponsesStreamEvent]:
+        summary = item.get("summary")
+        if not isinstance(summary, list):
+            return []
+        events: list[ResponsesStreamEvent] = []
+        for summary_index, part in enumerate(summary):
+            if not isinstance(part, dict):
+                continue
+            part_event = {
+                "type": raw_type,
+                "item_id": str(item.get("id") or event.get("item_id") or "").strip(),
+                "output_index": event.get("output_index"),
+                "summary_index": summary_index,
+                "part": part,
+            }
+            events.extend(self._reasoning_events(part_event, raw_type, raw_type.lower()))
+        return events
+
+    @classmethod
+    def _reasoning_segment_index(cls, event: dict[str, Any]) -> int:
+        for key in ("summary_index", "content_index"):
+            value = cls._int_or_none(event.get(key))
+            if value is not None:
+                return value
+        return 0
 
     @staticmethod
     def _int_or_none(value: Any) -> int | None:

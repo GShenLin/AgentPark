@@ -86,13 +86,7 @@ If a node is stuck in `working` without `inflight`, start or wake the graph runn
 
 The file API only resolves paths under the AgentPark workspace root. Relative paths are resolved from the workspace root, and absolute paths or `file://` URLs outside that root return `403`. The workspace root itself cannot be renamed or deleted through `/api/files/*`.
 
-CORS defaults to browser origins on `localhost`, `127.0.0.1`, and `[::1]`. To allow extra origins for a remote WebUI or development proxy, set a comma-separated `AGENTPARK_CORS_ALLOW_ORIGINS` before starting the server:
-
-```bat
-set "AGENTPARK_CORS_ALLOW_ORIGINS=http://devbox.local:5173,https://example.test"
-```
-
-Use `AGENTPARK_CORS_ALLOW_ORIGINS=*` only for a trusted local network. Chrome Private Network Access preflight responses are disabled by default; enable them explicitly with `AGENTPARK_ALLOW_PRIVATE_NETWORK_ACCESS=1`.
+The Web API accepts requests from all browser origins. Chrome Private Network Access preflight requests are also accepted without additional environment configuration so remote WebUIs and devices on the local network can connect directly.
 
 ## MCP Startup Failures
 

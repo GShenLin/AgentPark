@@ -184,9 +184,21 @@ class ResponsesRuntimeMethods:
         )
 
     def _responses_request_target(self) -> tuple[str, dict[str, str]]:
-        base_url = self.config["baseUrl"].rstrip("/")
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.config['apiKey']}"}
-        return f"{base_url}/responses", headers
+        from src.provider_auth import resolve_provider_request_credentials
+
+        credentials = resolve_provider_request_credentials(self.config)
+        headers = {"Content-Type": "application/json", **credentials.headers}
+        return f"{credentials.base_url}/responses", headers
+
+    def _refresh_responses_auth_headers(self, headers: dict[str, str]) -> bool:
+        if str(self.config.get("authMode") or "api_key").strip().lower() != "codex":
+            return False
+        from src.provider_auth import resolve_provider_request_credentials
+
+        credentials = resolve_provider_request_credentials(self.config, force_refresh=True)
+        headers.clear()
+        headers.update({"Content-Type": "application/json", **credentials.headers})
+        return True
 
     def _responses_payload_extra(self, **_provider_options) -> dict[str, Any]:
         return {}

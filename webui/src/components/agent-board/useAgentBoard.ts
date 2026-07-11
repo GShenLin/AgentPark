@@ -201,7 +201,7 @@ export function useAgentBoard(): AgentBoardContext {
     board.scrollTo({
       left: Math.max(0, targetLeft),
       top: Math.max(0, targetTop),
-      behavior: 'smooth',
+      behavior: 'auto',
     })
     return true
   }
@@ -588,7 +588,7 @@ export function useAgentBoard(): AgentBoardContext {
     appendUniqueBoardAttachment(nodeEditorAttachments.value, path, name)
   }
 
-  function updateCanvasSize() {
+  function updateCanvasSize(options: { preserveCurrentExtent?: boolean } = {}) {
     const size = computeBoardCanvasSize({
       nodes: nodes.value,
       cardWidth: CARD_WIDTH,
@@ -599,8 +599,8 @@ export function useAgentBoard(): AgentBoardContext {
       minWidth: 1000,
       minHeight: 700,
     })
-    canvasWidth.value = size.width
-    canvasHeight.value = size.height
+    canvasWidth.value = options.preserveCurrentExtent ? Math.max(canvasWidth.value, size.width) : size.width
+    canvasHeight.value = options.preserveCurrentExtent ? Math.max(canvasHeight.value, size.height) : size.height
   }
 
   function ensurePositions() {
@@ -765,7 +765,7 @@ export function useAgentBoard(): AgentBoardContext {
       itemId: id,
       pointerId: event.pointerId,
       moved: false,
-      centerOnEnd: !(event.ctrlKey || event.metaKey || event.altKey),
+      focusOnClick: !(event.ctrlKey || event.metaKey || event.altKey),
     }, event, { preventDefault: true, stopPropagation: true })
     traceBoardDrag('drag_start', {
       itemId: id,
@@ -791,7 +791,7 @@ export function useAgentBoard(): AgentBoardContext {
       node.ui.x = clampX(startPos.x + dx)
       node.ui.y = Math.max(0, startPos.y + dy)
     }
-    updateCanvasSize()
+    updateCanvasSize({ preserveCurrentExtent: true })
     const payload = getLastItemPayload(session.itemId)
     if (!session.moved || !payload) {
       dragHoverTargetId.value = null
@@ -1189,7 +1189,8 @@ export function useAgentBoard(): AgentBoardContext {
     dragHoverTargetId.value = null
     activeDragItemIds.clear()
     if (!wasMoved) {
-      if (session.centerOnEnd && nodes.value.some((n) => n.id === session.itemId)) {
+      if (session.focusOnClick && nodes.value.some((node) => node.id === session.itemId)) {
+        suppressClickUntil.value = Date.now() + 250
         selectAndFocusNode(session.itemId).catch(() => null)
       }
       dragBatchStart = null
@@ -1213,7 +1214,7 @@ export function useAgentBoard(): AgentBoardContext {
 
     if (targetId && payload) {
       restoreDraggedPreviewPositions(movingIds)
-      updateCanvasSize()
+      updateCanvasSize({ preserveCurrentExtent: true })
       syncGraphSnapshot()
       lastError.value = null
       if (nodes.value.some((n) => n.id === targetId)) selectNode(targetId)
@@ -1225,7 +1226,7 @@ export function useAgentBoard(): AgentBoardContext {
       return
     }
 
-    updateCanvasSize()
+    updateCanvasSize({ preserveCurrentExtent: true })
     syncGraphSnapshot()
     rememberPendingUiPositions(movingIds, 'end_drag')
     void persistDraggedItemPositions(movingIds).catch((e: any) => {

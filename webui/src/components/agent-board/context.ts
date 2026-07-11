@@ -63,7 +63,7 @@ export type DragSession =
       itemId: string
       pointerId: number
       moved: boolean
-      centerOnEnd: boolean
+      focusOnClick: boolean
     }
   | null
 

@@ -249,6 +249,7 @@ def _validate_common_config(config: dict[str, Any], provider_type: str) -> str:
 def _tester_for_type(provider_type: str):
     return {
         "openai": _test_openai_compatible,
+        "deepseek": _test_openai_compatible,
         "claude": _test_claude,
         "doubao": _test_doubao,
         "zhipu": _test_zhipu,

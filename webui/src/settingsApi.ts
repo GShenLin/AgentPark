@@ -184,6 +184,23 @@ export type DeleteOptionalMemoryResponse = {
   stderr: string
 }
 
+export type CodexAuthStatus = {
+  authorized: boolean
+  email: string
+  planType: string
+  accountIdSuffix: string
+  expiresAt: string
+  needsRefresh: boolean
+  authPath: string
+  error: string
+}
+
+export type CodexLoginStart = {
+  started: boolean
+  authUrl: string
+  port: number
+}
+
 async function requestJson(path: string, init?: RequestInit) {
   return requestApiJson(getActiveApiBase(), path, init)
 }
@@ -262,6 +279,14 @@ export async function uploadThemeAsset(file: File, presetId = ''): Promise<Theme
 
 export async function getProviderLimits(): Promise<ProviderLimitDocument> {
   return requestJson('/api/providers/limits') as Promise<ProviderLimitDocument>
+}
+
+export async function getCodexAuthStatus(): Promise<CodexAuthStatus> {
+  return requestJson('/api/provider-auth/codex/status') as Promise<CodexAuthStatus>
+}
+
+export async function startCodexLogin(): Promise<CodexLoginStart> {
+  return requestJson('/api/provider-auth/codex/login', { method: 'POST' }) as Promise<CodexLoginStart>
 }
 
 export async function getProviderPressure(): Promise<ProviderPressureDocument> {

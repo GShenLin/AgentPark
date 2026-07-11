@@ -122,6 +122,48 @@ def test_provider_limit_probe_automatically_tests_openai_chat_and_responses_chan
     assert not any("thinking" in payload for payload in responses_payloads)
 
 
+def test_provider_limit_probe_tests_deepseek_chat_completions_only(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.provider_limit_probe import run_provider_limit_tests
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "moduleProvider.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "deepseek-demo": {
+                        "type": "deepseek",
+                        "apiKey": "test-key",
+                        "baseUrl": "https://api.deepseek.test",
+                        "model": "deepseek-test",
+                        "responsesApi": False,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    observed = []
+
+    def fake_curl_post_once_raw(self, *, url, headers, payload_json, timeout_sec, marker, no_buffer=False):
+        _ = self, headers, timeout_sec, marker, no_buffer
+        observed.append((url, json.loads(payload_json)))
+        return _FakeResponse()
+
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw", fake_curl_post_once_raw)
+
+    result = run_provider_limit_tests(timeout_seconds=1)
+    provider = result["providers"]["deepseek-demo"]
+
+    assert provider["test_channel"] == "chat_completions"
+    assert set(provider["channels"]) == {"chat_completions"}
+    assert {url for url, _payload in observed} == {"https://api.deepseek.test/chat/completions"}
+    assert any(payload.get("thinking") == {"type": "disabled"} for _url, payload in observed)
+
+
 def test_provider_limit_probe_tests_claude_native_messages_features(monkeypatch, tmp_path):
     from src import workspace_settings
     from src.provider_limit_probe import run_provider_limit_tests

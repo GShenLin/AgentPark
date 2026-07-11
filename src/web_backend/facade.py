@@ -2,18 +2,14 @@ import os
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
 
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
-from .cors_policy import configured_cors_allow_origins
-from .cors_policy import cors_allow_origin_regex
-from .cors_policy import is_allowed_private_network_origin
-from .cors_policy import private_network_access_enabled
 from .node_desktop_pet_launcher import terminate_registered_desktop_pet_processes
+from .private_network_access import PrivateNetworkAccessMiddleware
 from .runtime_paths import _get_resource_root, _get_runtime_root
 from .route_registry import ApiRouteRegistry
 
@@ -29,25 +25,13 @@ class WebBackendFacade:
         )
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=configured_cors_allow_origins(),
-            allow_origin_regex=cors_allow_origin_regex(),
+            allow_origins=["*"],
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        self.app.middleware("http")(self._private_network_access_headers)
+        self.app.add_middleware(PrivateNetworkAccessMiddleware)
         self._desktop_pet_restore_timer = None
-
-    async def _private_network_access_headers(self, request: Request, call_next) -> Response:
-        response = await call_next(request)
-        origin = str(request.headers.get("origin") or "").strip()
-        if (
-            private_network_access_enabled()
-            and request.headers.get("access-control-request-private-network") == "true"
-            and is_allowed_private_network_origin(origin)
-        ):
-            response.headers["Access-Control-Allow-Private-Network"] = "true"
-        return response
 
     def register_routes(self) -> None:
         ApiRouteRegistry.register(self.app, self.core)

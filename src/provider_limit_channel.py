@@ -5,7 +5,8 @@ from typing import Any
 
 OPENAI_TEST_CHANNELS = ("chat_completions", "responses")
 PROVIDER_TEST_CHANNELS = ("configured", *OPENAI_TEST_CHANNELS)
-OPENAI_COMPATIBLE_PROVIDER_TYPES = frozenset({"openai", "doubao"})
+OPENAI_COMPATIBLE_PROVIDER_TYPES = frozenset({"openai", "doubao", "deepseek"})
+OPENAI_DUAL_CHANNEL_PROVIDER_TYPES = frozenset({"openai", "doubao"})
 
 
 def normalize_provider_test_channel(value: object) -> str:
@@ -19,7 +20,11 @@ def normalize_provider_test_channel(value: object) -> str:
 def resolve_provider_test_channel(provider_type: str, config: dict[str, Any], requested_channel: str) -> str:
     normalized_type = str(provider_type or "").strip().lower()
     channel = normalize_provider_test_channel(requested_channel)
-    if normalized_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
+    if normalized_type == "deepseek":
+        if channel == "responses":
+            raise ValueError("DeepSeek providers support only the chat_completions test channel")
+        return "chat_completions"
+    if normalized_type in OPENAI_DUAL_CHANNEL_PROVIDER_TYPES:
         if channel != "configured":
             return channel
         return "responses" if config.get("responsesApi") is True else "chat_completions"
@@ -33,7 +38,9 @@ def resolve_provider_test_channel(provider_type: str, config: dict[str, Any], re
 
 def provider_test_channels(provider_type: str, config: dict[str, Any]) -> tuple[str, ...]:
     normalized_type = str(provider_type or "").strip().lower()
-    if normalized_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
+    if normalized_type == "deepseek":
+        return ("chat_completions",)
+    if normalized_type in OPENAI_DUAL_CHANNEL_PROVIDER_TYPES:
         return OPENAI_TEST_CHANNELS
     return (resolve_provider_test_channel(normalized_type, config, "configured"),)
 

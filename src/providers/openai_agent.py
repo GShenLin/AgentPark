@@ -21,6 +21,9 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         self.system_prompt = system_prompt
         self._service_targets_cache = None
 
+    def _create_chat_runtime(self):
+        return OpenAIChatRuntime(self)
+
     def _iter_service_targets(self) -> tuple[object, ...]:
         try:
             cached = object.__getattribute__(self, "_service_targets_cache")
@@ -29,7 +32,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         if cached is None:
             cached = (
                 OpenAITransport(self),
-                OpenAIChatRuntime(self),
+                self._create_chat_runtime(),
                 OpenAIResponsesMapping(self),
                 ToolCallExecutionRuntime(self),
                 OpenAIResponsesRuntime(self),

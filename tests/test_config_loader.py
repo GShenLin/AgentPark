@@ -196,6 +196,46 @@ def test_get_provider_config_still_accepts_direct_api_key(monkeypatch, tmp_path)
     assert payload["type"] == "doubao"
 
 
+def test_openai_codex_auth_does_not_require_api_key(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "official": {
+                    "type": "openai",
+                    "authMode": "codex",
+                    "responsesApi": True,
+                    "model": "gpt-test",
+                    **_responses_contract(),
+                    "responsesReplayReasoningItems": False,
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    provider = ConfigLoader().get_provider_config("official")
+
+    assert provider["authMode"] == "codex"
+    assert provider["baseUrl"] == "https://chatgpt.com/backend-api/codex"
+    assert "apiKey" not in provider
+
+
+def test_codex_auth_rejects_non_openai_provider(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps({"providers": {"bad": {"type": "gemini", "authMode": "codex", "responsesApi": True}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="only with type 'openai'"):
+        ConfigLoader().get_provider_config("bad")
+
+
 def test_doubao_provider_rejects_unsupported_reasoning_effort(monkeypatch, tmp_path):
     config_path = tmp_path / "moduleProvider.json"
     config_path.write_text(
@@ -644,6 +684,33 @@ def test_responses_api_provider_validates_field_types(monkeypatch, tmp_path):
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="toolContextCompactionEnabled"):
+        ConfigLoader().get_all_providers()
+
+
+def test_deepseek_provider_rejects_responses_api(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "deepseek": {
+                        "type": "deepseek",
+                        "apiKey": "deepseek-key",
+                        "baseUrl": "https://api.deepseek.test",
+                        "model": "deepseek-test",
+                        "responsesApi": True,
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="DeepSeek uses chat completions"):
         ConfigLoader().get_all_providers()
 
 

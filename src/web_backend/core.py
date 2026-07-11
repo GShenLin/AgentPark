@@ -15,6 +15,7 @@ from .node_live_output import NodeLiveOutputStore
 from .node_config_service import RUNTIME_STATE_FIELDS
 from .pet_avatar import PetAvatarDomain
 from .profile_api import ProfileApi
+from .provider_auth_api import ProviderAuthApiDomain
 from .remote_api import RemoteApiDomain
 from .settings_api import SettingsApiDomain
 from .user_interaction_api import UserInteractionApiDomain
@@ -58,6 +59,7 @@ class BackendCore:
         self.node_ops = NodeOpsDomain(self, self.graph_runtime)
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
+        self.provider_auth_api = ProviderAuthApiDomain(self)
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
         self.node_desktop_views = NodeDesktopViewDomain(self, self.graph_runtime)
         self.pet_avatars = PetAvatarDomain(self)

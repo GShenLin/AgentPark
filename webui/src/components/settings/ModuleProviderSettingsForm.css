@@ -60,13 +60,52 @@
 
 .form-head {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.form-head > div:first-child {
+  min-width: 0;
 }
 
 .form-head h2 {
   margin: 0;
   font-size: 17px;
+}
+
+.form-head-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.oauth-button {
+  min-width: 74px;
+  border-color: rgba(56, 189, 248, 0.5);
+  color: rgba(224, 242, 254, 0.98);
+  background: rgba(14, 116, 144, 0.28);
+  white-space: nowrap;
+}
+
+.oauth-button:hover:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.82);
+  background: rgba(14, 116, 144, 0.42);
+}
+
+.oauth-button.active {
+  border-color: rgba(34, 197, 94, 0.68);
+  color: rgba(220, 252, 231, 0.98);
+  background: rgba(22, 101, 52, 0.38);
+}
+
+.oauth-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
 }
 
 .limit-warning {
@@ -164,5 +203,16 @@ button.danger {
 
   .provider-add {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .form-head {
+    flex-direction: column;
+  }
+
+  .form-head-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

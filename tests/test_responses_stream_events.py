@@ -119,7 +119,7 @@ def test_openai_responses_sse_reasoning_summary_delta_normalizes():
     assert events[0].provider == "openai_responses"
 
 
-def test_openai_responses_sse_reasoning_summary_part_done_normalizes():
+def test_openai_responses_sse_reasoning_summary_part_done_normalizes_when_no_delta_was_sent():
     events = _ingest_events(
         [
             {
@@ -137,6 +137,86 @@ def test_openai_responses_sse_reasoning_summary_part_done_normalizes():
     assert events[0].delta == "Need a short plan."
     assert events[0].item_id == "rs_1"
     assert events[0].provider == "openai_responses"
+
+
+def test_openai_responses_sse_reasoning_done_snapshots_do_not_repeat_streamed_delta():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "summary_index": 0,
+                "delta": "Need a short plan.",
+            },
+            {
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": "Need a short plan."},
+            },
+            {
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "summary": [{"type": "summary_text", "text": "Need a short plan."}],
+                },
+            },
+        ]
+    )
+
+    reasoning_events = [event for event in events if isinstance(event, ResponsesReasoningDelta)]
+    assert [event.delta for event in reasoning_events] == ["Need a short plan."]
+    assert [event.event for event in events] == ["reasoning_delta", "output_item_done"]
+
+
+def test_openai_responses_sse_reasoning_done_snapshot_emits_only_missing_suffix():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_1",
+                "summary_index": 0,
+                "delta": "Need a ",
+            },
+            {
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "rs_1",
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": "Need a short plan."},
+            },
+        ]
+    )
+
+    assert [event.delta for event in events if isinstance(event, ResponsesReasoningDelta)] == [
+        "Need a ",
+        "short plan.",
+    ]
+
+
+def test_openai_responses_sse_rejects_inconsistent_reasoning_done_snapshot():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_1",
+                "summary_index": 0,
+                "delta": "Need a plan.",
+            },
+            {
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "rs_1",
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": "Use a different plan."},
+            },
+        ]
+    )
+
+    assert isinstance(events[-1], ResponsesStreamFailure)
+    assert events[-1].code == "inconsistent_reasoning_snapshot"
 
 
 def test_function_call_arguments_delta_requires_item_or_call_identity():
@@ -454,3 +534,55 @@ def test_openai_transport_logs_function_call_item_done_before_completed_break(mo
     assert completed["break_after_completed"] is True
     assert completed["completed_function_call_count"] == 1
     assert completed["stream_function_call_item_count"] == 1
+
+
+def test_openai_transport_merges_done_items_when_completed_output_is_empty(monkeypatch):
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    reasoning = {
+        "type": "reasoning",
+        "id": "rs-item-1",
+        "encrypted_content": "encrypted",
+        "summary": [],
+    }
+    function_call = {
+        "type": "function_call",
+        "id": "fc-item-1",
+        "call_id": "call-real-1",
+        "name": "echo_tool",
+        "arguments": "{}",
+        "status": "completed",
+    }
+    message = {
+        "type": "message",
+        "id": "msg-item-1",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "checking"}],
+        "status": "completed",
+    }
+    raw_events = [
+        {"type": "response.output_item.done", "item": reasoning},
+        {"type": "response.output_item.done", "item": message},
+        {"type": "response.output_item.done", "item": function_call},
+        {"type": "response.completed", "response": {"id": "resp-1", "output": []}},
+    ]
+    monkeypatch.setattr(
+        agent,
+        "_curl_post_sse_data_lines",
+        lambda **_kwargs: (json.dumps(event) for event in raw_events),
+    )
+
+    result = agent._stream_responses_once(
+        url="https://api.openai.test/v1/responses",
+        headers={},
+        payload_json="{}",
+        timeout_sec=1,
+        stream_handler=None,
+        item_event_handler=None,
+    )
+
+    assert result["id"] == "resp-1"
+    assert result["output"] == [reasoning, message, function_call]

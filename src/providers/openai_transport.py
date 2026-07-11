@@ -145,7 +145,9 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
     def _post_json_with_retry(self, *, endpoint, url, headers, payload_json):
         timeout = self.config.get("timeoutMs", 60000) / 1000
         max_retries, retry_delay = self._resolve_retry_policy()
-        for attempt in range(max_retries + 1):
+        auth_refreshed = False
+        retry_attempt = 0
+        while True:
             try:
                 return self._curl_post_json_once(
                     url=url,
@@ -156,14 +158,21 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
             except OpenAIHttpError as exc:
                 status_code = int(exc.status_code or 0)
                 error_str = f"{endpoint}: HTTP {status_code} - {exc.response_body}"
-                if self._http_error_retryable(status_code, error_str) and attempt < max_retries:
+                if status_code == 401 and not auth_refreshed:
+                    refresh_auth = getattr(self, "_refresh_responses_auth_headers", None)
+                    if callable(refresh_auth) and refresh_auth(headers):
+                        auth_refreshed = True
+                        continue
+                if self._http_error_retryable(status_code, error_str) and retry_attempt < max_retries:
+                    retry_attempt += 1
                     self._emit_retry_notice(error=error_str, delay=retry_delay, stage="openai_post_json_retry")
                     sleep_with_cancel(retry_delay, self._cancel_source())
                     continue
                 raise RuntimeError(error_str) from exc
             except OpenAITransportError as exc:
                 error_str = str(exc)
-                if attempt < max_retries:
+                if retry_attempt < max_retries:
+                    retry_attempt += 1
                     self._emit_retry_notice(error=error_str, delay=retry_delay, stage="openai_post_json_retry")
                     sleep_with_cancel(retry_delay, self._cancel_source())
                     continue
@@ -189,6 +198,7 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
         thinking_chunks: list[str] = []
         debug_events: list[dict] = []
         normalizer = OpenAIResponsesStreamEventNormalizer(provider="openai_responses")
+        streamed_output_items: list[dict] = []
         function_call_items: list[dict] = []
         function_call_by_item_id: dict[str, dict] = {}
         function_call_by_call_id: dict[str, dict] = {}
@@ -225,6 +235,37 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
                 return response_obj
             merged = dict(response_obj)
             merged["output"] = next_output
+            return merged
+
+        def _append_streamed_output_item(item: dict) -> None:
+            item_id = str(item.get("id") or "").strip()
+            if item_id and any(str(existing.get("id") or "").strip() == item_id for existing in streamed_output_items):
+                return
+            streamed_output_items.append(dict(item))
+
+        def _merge_streamed_output(response_obj: dict) -> dict:
+            completed_output = response_obj.get("output")
+            completed_items = completed_output if isinstance(completed_output, list) else []
+            if not streamed_output_items:
+                return response_obj
+            merged_output = [dict(item) for item in streamed_output_items]
+            seen_ids = {
+                str(item.get("id") or "").strip()
+                for item in merged_output
+                if str(item.get("id") or "").strip()
+            }
+            for item in completed_items:
+                if not isinstance(item, dict):
+                    merged_output.append(item)
+                    continue
+                item_id = str(item.get("id") or "").strip()
+                if item_id and item_id in seen_ids:
+                    continue
+                merged_output.append(dict(item))
+                if item_id:
+                    seen_ids.add(item_id)
+            merged = dict(response_obj)
+            merged["output"] = merged_output
             return merged
 
         def _write_sse_debug(final_payload=None) -> None:
@@ -295,28 +336,30 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
                             event.provider or "openai_responses",
                         )
                     continue
-                if isinstance(event, ResponsesOutputItemDone) and event.function_call is not None:
-                    item = event.function_call.to_response_item()
-                    function_call_items.append(item)
-                    function_call_by_item_id[item["id"]] = item
-                    function_call_by_call_id[item["call_id"]] = item
-                    self._emit_provider_runtime_notice(
-                        message=json.dumps(
-                            {
-                                "event": "response.output_item.done",
-                                "item_type": "function_call",
-                                "item_id": item["id"],
-                                "call_id": item["call_id"],
-                                "name": item["name"],
-                                "function_call_items_seen": len(function_call_items),
-                            },
-                            ensure_ascii=False,
-                        ),
-                        stage="openai_responses_function_call_item_done",
-                    )
+                if isinstance(event, ResponsesOutputItemDone):
+                    item = event.function_call.to_response_item() if event.function_call is not None else dict(event.item)
+                    _append_streamed_output_item(item)
+                    if event.function_call is not None:
+                        function_call_items.append(item)
+                        function_call_by_item_id[item["id"]] = item
+                        function_call_by_call_id[item["call_id"]] = item
+                        self._emit_provider_runtime_notice(
+                            message=json.dumps(
+                                {
+                                    "event": "response.output_item.done",
+                                    "item_type": "function_call",
+                                    "item_id": item["id"],
+                                    "call_id": item["call_id"],
+                                    "name": item["name"],
+                                    "function_call_items_seen": len(function_call_items),
+                                },
+                                ensure_ascii=False,
+                            ),
+                            stage="openai_responses_function_call_item_done",
+                        )
                     continue
                 if isinstance(event, ResponsesResponseCompleted):
-                    completed_response = _merge_stream_call_ids(event.response)
+                    completed_response = _merge_stream_call_ids(_merge_streamed_output(event.response))
                     output = completed_response.get("output")
                     output_items = output if isinstance(output, list) else []
                     completed_function_calls = [
@@ -378,7 +421,9 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
     ):
         timeout = self.config.get("timeoutMs", 60000) / 1000
         max_retries, retry_delay = self._resolve_retry_policy()
-        for attempt in range(max_retries + 1):
+        auth_refreshed = False
+        retry_attempt = 0
+        while True:
             try:
                 return self._stream_responses_once(
                     url=url,
@@ -392,8 +437,14 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
             except (OpenAIHttpError, OpenAITransportError) as exc:
                 status_code = int(getattr(exc, "status_code", 0) or 0)
                 error_str = str(exc)
+                if status_code == 401 and not auth_refreshed:
+                    refresh_auth = getattr(self, "_refresh_responses_auth_headers", None)
+                    if callable(refresh_auth) and refresh_auth(headers):
+                        auth_refreshed = True
+                        continue
                 retryable = isinstance(exc, OpenAITransportError) or self._http_error_retryable(status_code, error_str)
-                if retryable and attempt < max_retries:
+                if retryable and retry_attempt < max_retries:
+                    retry_attempt += 1
                     self._emit_retry_notice(error=error_str, delay=retry_delay, stage="openai_responses_retry")
                     sleep_with_cancel(retry_delay, self._cancel_source())
                     continue
