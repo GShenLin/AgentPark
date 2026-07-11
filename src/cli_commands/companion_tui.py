@@ -22,7 +22,7 @@ TurnRunner = Callable[..., dict[str, Any]]
 HELP_LINES = [
     "/help      show commands",
     "/status    show config and runtime paths",
-    "/restart  run Restart.bat and exit this CLI session",
+    "/restart  run the platform restart script and exit this CLI session",
     "/clear     clear transcript",
     "/exit      quit",
     "Enter      submit",
@@ -320,9 +320,8 @@ class CompanionTui:
             self.state.transcript.append(TranscriptItem(role="error", text=f"restart failed: {type(exc).__name__}: {exc}"))
             self.state.status = "restart failed"
             return
-        self.state.transcript.append(
-            TranscriptItem(role="status", text=f"Started Restart.bat\nscript: {launched.script_path}\npid: {launched.pid}")
-        )
+        label = launched.label or "restart script"
+        self.state.transcript.append(TranscriptItem(role="status", text=f"Started {label}\nscript: {launched.script_path}\npid: {launched.pid}"))
         self.state.status = "restart launched"
         self.state.restart_requested = True
         self.state.should_exit = True

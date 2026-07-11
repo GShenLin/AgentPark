@@ -114,7 +114,8 @@ AgentPark/
 ## Requirements
 
 - Windows is the primary target environment. Some features depend on `.bat`, PowerShell, desktop automation, or PyInstaller packaging paths.
-- Python 3.11+. Project scripts prefer local Python 3.14/3.12/3.11 when available, and can also use `python`.
+- Linux is supported for the WebUI, CLI, provider runtime, and restart flow. Windows-only desktop and packaging features remain Windows-only.
+- Python 3.11+. Windows scripts prefer local Python 3.14/3.12/3.11; Linux scripts prefer `AgnetPark_Linux_env`, `.venv`, `python3`, then `python`.
 - Node.js + npm for installing and building `webui`.
 - ripgrep `rg` is recommended; file search tools and some frontend search paths prefer it.
 
@@ -186,7 +187,13 @@ On Windows, the recommended entry is:
 build_and_run.bat
 ```
 
-This script:
+On Linux, use:
+
+```sh
+./build_and_run.sh
+```
+
+Both platform scripts:
 
 - Checks Python and `rg`.
 - Installs missing frontend dependencies.
@@ -256,7 +263,13 @@ On Windows, run:
 Restart.bat
 ```
 
-The script attempts to stop the current AgentPark service, run `git pull --rebase`, and restart through `build_and_run.bat`.
+On Linux, run:
+
+```sh
+./Restart.sh
+```
+
+The platform restart script attempts to stop the current AgentPark service, update a clean working tree, and restart through the matching build-and-run script.
 
 The WebUI can also call `/api/system/restart` to trigger the restart flow.
 
@@ -348,11 +361,11 @@ memories/Companion/Companion/memory.md
 memories/Companion/Companion/messages.jsonl
 ```
 
-After the normal build/install flow, `build_and_run.bat` starts the WebUI server in the background, opens the browser from that server process, and then starts the interactive companion CLI in the current terminal. `build_and_run.bat cli` and `build_and_run.bat chat` use the same combined Web + CLI startup. Use `build_and_run.bat server` or `build_and_run.bat web` when only the WebUI server should run, and `build_and_run.bat cli-only` when the CLI should run without starting WebUI.
+After the normal build/install flow, `build_and_run.bat` on Windows or `build_and_run.sh` on Linux starts the WebUI server in the background and then starts the interactive companion CLI in the current terminal. The `cli` and `chat` modes use the combined Web + CLI startup. Use `server` or `web` for WebUI only, and `cli-only` for CLI without WebUI.
 
-The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/Companion/Companion/`. If the terminal does not accept input, run `build_and_run.bat cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
+The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/Companion/Companion/`. If the terminal does not accept input, run the platform build-and-run script with `cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
 
-Inside the companion CLI, `/restart` launches the repository `Restart.bat` and exits the current CLI session so restart behavior stays on the canonical startup path.
+Inside the companion CLI, `/restart` launches `Restart.bat` on Windows or `Restart.sh` on Linux and exits the current CLI session so restart behavior stays on the canonical startup path.
 
 Node config reads and writes are documented in `docs/config-contract.md`. Runtime state recovery is documented in `docs/runtime-state-machine.md`. Provider feature support is documented in `docs/provider-feature-matrix.md`. Capability descriptors and dependency reporting are documented in `docs/capability-system.md`. Skill/plugin authoring is documented in `docs/skill-plugin-authoring.md`. Long-term sidecar, caching, and distribution boundaries are documented in `docs/long-term-architecture.md`. Recovery steps are documented in `docs/troubleshooting.md`.
 
