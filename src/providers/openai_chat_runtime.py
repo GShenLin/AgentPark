@@ -39,6 +39,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         messages: list[dict[str, Any]],
         active_tools: list[dict[str, Any]] | None,
         reasoning_effort: object,
+        thinking_mode: object,
         stream: bool,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -50,6 +51,9 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         effort = str(reasoning_effort or "").strip()
         if effort:
             payload["reasoning_effort"] = effort
+        thinking_type = str(thinking_mode or "").strip()
+        if thinking_type in {"enabled", "disabled", "auto"}:
+            payload["thinking"] = {"type": thinking_type}
         if stream:
             payload["stream"] = True
         return payload
@@ -61,6 +65,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         active_tools,
         run_tools,
         reasoning_effort,
+        thinking_mode,
         stream,
         stream_handler,
         thinking_stream_handler=None,
@@ -70,6 +75,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             messages=messages,
             active_tools=active_tools,
             reasoning_effort=reasoning_effort,
+            thinking_mode=thinking_mode,
             stream=bool(stream),
         )
         self._emit_provider_payload_request_summary(payload, request_api="chat_completions", stream=bool(stream))
@@ -94,12 +100,23 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             result,
             run_tools=run_tools,
             reasoning_effort=reasoning_effort,
+            thinking_mode=thinking_mode,
             stream=stream,
             stream_handler=stream_handler,
             thinking_stream_handler=thinking_stream_handler,
         )
 
-    def _handle_chat_completions_result(self, result, *, run_tools, reasoning_effort, stream, stream_handler, thinking_stream_handler=None):
+    def _handle_chat_completions_result(
+        self,
+        result,
+        *,
+        run_tools,
+        reasoning_effort,
+        thinking_mode,
+        stream,
+        stream_handler,
+        thinking_stream_handler=None,
+    ):
         message, selected_idx = self._pick_chat_response_message(result.get("choices") if isinstance(result, dict) else None, run_tools)
         if not isinstance(message, dict):
             return f"Error: Invalid message format in choice[{selected_idx}]"
@@ -122,7 +139,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 run_tools=run_tools,
                 mode="chat",
                 web_search="disabled",
-                thinking="disabled",
+                thinking=thinking_mode,
                 reasoning_effort=reasoning_effort,
                 stream=stream,
                 stream_handler=stream_handler,

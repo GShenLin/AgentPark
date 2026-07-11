@@ -48,6 +48,8 @@ export type ProviderLimitEntry = {
   type: string
   model: string
   tested_at: string
+  test_channel?: ProviderResolvedTestChannel
+  test_endpoint?: string
   accessible: boolean
   status: string
   access_error?: string
@@ -58,11 +60,15 @@ export type ProviderLimitEntry = {
   }
   features: Record<string, ProviderLimitFeature>
   unsupported: Record<string, string | Record<string, string>>
+  channels?: Record<string, ProviderLimitChannelEntry>
 }
+
+export type ProviderLimitChannelEntry = Omit<ProviderLimitEntry, 'channels' | 'available_model_ids' | 'model_discovery'>
 
 export type ProviderLimitDocument = {
   schema_version: number
   generated_at: string
+  test_mode?: 'all_channels'
   status?: 'running' | 'finished'
   duration_ms?: number
   completed_providers?: number
@@ -118,6 +124,9 @@ export type ProviderLimitTestResponse = {
   job: ProviderLimitTestJob
   result: ProviderLimitDocument
 }
+
+export type ProviderTestChannel = 'chat_completions' | 'responses'
+export type ProviderResolvedTestChannel = ProviderTestChannel | 'messages' | 'generate_content' | 'native'
 
 export type ToolStatsToolSummary = {
   tool_name: string
@@ -271,7 +280,9 @@ export async function deleteOptionalMemory(): Promise<DeleteOptionalMemoryRespon
   return requestJson('/api/operational-memory/delete-optional', { method: 'POST' }) as Promise<DeleteOptionalMemoryResponse>
 }
 
-export async function startProviderLimitTests(timeoutSeconds = 30): Promise<ProviderLimitTestResponse> {
+export async function startProviderLimitTests(
+  timeoutSeconds = 30,
+): Promise<ProviderLimitTestResponse> {
   return requestJson('/api/providers/limits/test', {
     method: 'POST',
     body: JSON.stringify({ timeout_seconds: timeoutSeconds }),

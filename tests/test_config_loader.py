@@ -404,11 +404,14 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
 
     assert providers["openai"]["features"]["web_search"]["supported"] is False
     assert providers["openai"]["features"]["reasoning_effort"]["supported"] is True
-    assert providers["openai"]["features"]["thinking"]["supported"] is False
+    assert providers["openai"]["features"]["thinking"]["supported"] is True
+    assert providers["openai"]["features"]["thinking"]["values"] == ["enabled", "disabled", "auto"]
+    assert providers["openai"]["features"]["thinking"]["transport"] == "chat_completions"
     assert providers["openai"]["features"]["responses_api"]["supported"] is False
     assert providers["openai"]["features"]["reasoning_summary"]["supported"] is False
     assert providers["openai"]["features"]["web_search"]["requires"] == "responsesApi=true"
     assert providers["openai-responses"]["features"]["responses_api"]["supported"] is True
+    assert providers["openai-responses"]["features"]["thinking"]["supported"] is False
     assert providers["openai-responses"]["features"]["web_search"]["supported"] is True
     assert providers["openai-responses"]["features"]["reasoning_summary"]["values"] == [
         "auto",

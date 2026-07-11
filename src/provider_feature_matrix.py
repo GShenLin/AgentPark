@@ -25,7 +25,12 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "transport": "responses" if responses_api else "",
             },
             tools={"supported": True, "values": ["enabled", "disabled"]},
-            thinking={"supported": False, "values": []},
+            thinking={
+                "supported": not responses_api,
+                "values": ["enabled", "disabled", "auto"] if not responses_api else [],
+                "requires": "responsesApi=false",
+                "transport": "chat_completions" if not responses_api else "",
+            },
             reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh"]},
             reasoning_summary={
                 "supported": responses_api,

@@ -6,6 +6,7 @@ import {
   startProviderLimitTests,
   startProviderModelDiscovery,
   type ProviderLimitDocument,
+  type ProviderLimitChannelEntry,
   type ProviderLimitEntry,
   type ProviderLimitTestJob,
 } from '../../settingsApi'
@@ -24,6 +25,16 @@ const selectedProvider = computed<ProviderLimitEntry | null>(() => {
   return limits.value?.providers?.[selectedProviderId.value] || null
 })
 const selectedModelIds = computed(() => selectedProvider.value?.available_model_ids || [])
+const selectedChannelResults = computed<Array<{ channel: string; result: ProviderLimitChannelEntry }>>(() => {
+  const provider = selectedProvider.value
+  if (!provider) return []
+  const channels = provider.channels || {}
+  const entries = Object.entries(channels)
+  if (entries.length) {
+    return entries.map(([channel, result]) => ({ channel, result }))
+  }
+  return [{ channel: provider.test_channel || 'native', result: provider }]
+})
 const jobRunning = computed(() => activeJob.value?.status === 'running')
 const progressLine = computed(() => {
   if (activeJob.value?.status === 'running') {
@@ -54,10 +65,9 @@ const progressLine = computed(() => {
   return null
 })
 
-const unsupportedRows = computed(() => {
-  const unsupported = selectedProvider.value?.unsupported || {}
+function unsupportedRows(unsupported: ProviderLimitChannelEntry['unsupported'] | undefined) {
   const rows: Array<{ key: string; value: string }> = []
-  for (const [key, value] of Object.entries(unsupported)) {
+  for (const [key, value] of Object.entries(unsupported || {})) {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       for (const [childKey, childValue] of Object.entries(value as Record<string, string>)) {
         rows.push({ key: `${key}.${childKey}`, value: String(childValue || 'not supported') })
@@ -67,7 +77,7 @@ const unsupportedRows = computed(() => {
     }
   }
   return rows
-})
+}
 
 function updateRunningFlags(job: ProviderLimitTestJob | null) {
   const running = job?.status === 'running'
@@ -193,6 +203,15 @@ function providerSubtitle(provider: ProviderLimitEntry | undefined) {
   return [provider.type, provider.model].filter(Boolean).join(' / ')
 }
 
+function testChannelLabel(channel: string | undefined) {
+  if (channel === 'responses') return 'Responses API'
+  if (channel === 'chat_completions') return 'Chat Completions'
+  if (channel === 'messages') return 'Messages API'
+  if (channel === 'generate_content') return 'Generate Content'
+  if (channel === 'native') return 'Native API'
+  return channel || 'Native API'
+}
+
 onMounted(loadLimits)
 onUnmounted(clearPoll)
 </script>
@@ -246,6 +265,41 @@ onUnmounted(clearPoll)
           <span>{{ selectedProvider.type }} / {{ selectedProvider.model }}</span>
         </div>
 
+        <div class="channel-results">
+          <article
+            v-for="channelResult in selectedChannelResults"
+            :key="channelResult.channel"
+            class="channel-result"
+            :class="providerState(channelResult.result)"
+          >
+            <div class="channel-result-head">
+              <strong>{{ testChannelLabel(channelResult.channel) }}</strong>
+              <span>{{ channelResult.result.accessible ? 'Accessible' : 'Unavailable' }}</span>
+            </div>
+            <div class="channel-summary">
+              <div v-if="channelResult.result.test_endpoint">
+                <span>Endpoint</span>
+                <code>{{ channelResult.result.test_endpoint }}</code>
+              </div>
+              <div v-if="channelResult.result.access_error">
+                <span>Access error</span>
+                <code>{{ channelResult.result.access_error }}</code>
+              </div>
+            </div>
+            <div v-if="unsupportedRows(channelResult.result.unsupported).length" class="channel-unsupported">
+              <div
+                v-for="row in unsupportedRows(channelResult.result.unsupported)"
+                :key="row.key"
+                class="unsupported-row"
+              >
+                <div class="limit-key">{{ row.key }}</div>
+                <div class="limit-value">{{ row.value }}</div>
+              </div>
+            </div>
+            <div v-else class="all-supported">No unsupported tested attributes</div>
+          </article>
+        </div>
+
         <div v-if="selectedModelIds.length" class="model-list">
           <div class="model-list-head">
             <strong>Models</strong>
@@ -256,13 +310,6 @@ onUnmounted(clearPoll)
           </div>
         </div>
 
-        <div v-if="unsupportedRows.length" class="unsupported-list">
-          <div v-for="row in unsupportedRows" :key="row.key" class="unsupported-row">
-            <div class="limit-key">{{ row.key }}</div>
-            <div class="limit-value">{{ row.value }}</div>
-          </div>
-        </div>
-        <div v-else class="all-supported">No unsupported tested attributes</div>
       </template>
 
       <div v-else-if="loading || testing" class="empty-detail">Loading...</div>

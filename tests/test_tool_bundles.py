@@ -49,6 +49,6 @@ def test_system_tools_excludes_curl():
         "rg_search_text",
         "rg_list_files",
         "multi_tool_use_parallel",
-        "write_file",
     }
+    assert "write_file" not in tool.function_map
     assert "execute_curl_command" not in tool.function_map

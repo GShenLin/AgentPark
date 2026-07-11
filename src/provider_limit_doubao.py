@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from src.provider_limit_channel import openai_compatible_endpoint_url
 from src.provider_limit_schema import REASONING_EFFORT_VALUES
 from src.provider_limit_schema import THINKING_VALUES
 from src.provider_limit_schema import ProbeResult
@@ -15,9 +16,13 @@ def test_doubao_limits(
     config: dict[str, Any],
     *,
     timeout_seconds: float,
+    test_channel: str,
     post_json_probe: PostJsonProbe,
 ) -> None:
     _ = timeout_seconds
+    if test_channel == "chat_completions":
+        _test_doubao_chat_limits(result, config, post_json_probe=post_json_probe)
+        return
     access = _probe_doubao_responses(config, {}, post_json_probe=post_json_probe)
     _set_feature(result, "access", access)
     _set_feature(result, "responses_api", access)
@@ -44,6 +49,28 @@ def test_doubao_limits(
     )
 
 
+def _test_doubao_chat_limits(
+    result: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    post_json_probe: PostJsonProbe,
+) -> None:
+    _set_feature(result, "access", _probe_doubao_chat(config, {}, post_json_probe=post_json_probe))
+    _set_feature(result, "responses_api", ProbeResult(False, "not available in the chat_completions test channel"))
+    _set_feature(result, "web_search", ProbeResult(False, "Doubao web_search requires the responses test channel"))
+    _set_feature(result, "thinking", ProbeResult(False, "Doubao thinking requires the responses test channel"))
+    _set_feature(result, "reasoning_effort", ProbeResult(False, "Doubao reasoning_effort requires the responses test channel"))
+
+
+def _probe_doubao_chat(config: dict[str, Any], extra_payload: dict[str, Any], *, post_json_probe: PostJsonProbe) -> ProbeResult:
+    payload = {
+        "model": str(config.get("model") or ""),
+        "messages": [{"role": "user", "content": "Reply exactly OK."}],
+        **extra_payload,
+    }
+    return post_json_probe(openai_compatible_endpoint_url(config, "chat_completions"), _bearer_headers(config), payload)
+
+
 def _probe_doubao_responses(config: dict[str, Any], extra_payload: dict[str, Any], *, post_json_probe: PostJsonProbe) -> ProbeResult:
     payload = {
         "model": str(config.get("model") or ""),
@@ -54,10 +81,7 @@ def _probe_doubao_responses(config: dict[str, Any], extra_payload: dict[str, Any
 
 
 def _doubao_responses_url(config: dict[str, Any]) -> str:
-    base_url = str(config.get("baseUrl") or "").strip().rstrip("/")
-    if base_url.endswith("/responses"):
-        return base_url
-    return f"{base_url}/responses"
+    return openai_compatible_endpoint_url(config, "responses")
 
 
 def _bearer_headers(config: dict[str, Any]) -> dict[str, str]:

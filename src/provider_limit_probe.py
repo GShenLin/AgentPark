@@ -9,24 +9,22 @@ from typing import Any, Callable
 from src.config_loader import ConfigLoader
 from src.file_transaction import atomic_write_text
 from src.provider_limit_claude import test_claude_limits
+from src.provider_limit_channel import OPENAI_COMPATIBLE_PROVIDER_TYPES
+from src.provider_limit_channel import openai_compatible_endpoint_url
+from src.provider_limit_channel import provider_test_channels
+from src.provider_limit_channel import resolve_provider_test_channel
 from src.provider_limit_doubao import test_doubao_limits
 from src.provider_limit_hyper3d import test_hyper3d_limits
-from src.providers.curl_transport import CurlHttpTransport
-from src.providers.curl_transport import CurlTransportError
+from src.provider_limit_http import post_json_probe
+from src.provider_limit_native_chat import test_gemini_limits
+from src.provider_limit_native_chat import test_zhipu_limits
+from src.provider_limit_openai import test_openai_limits
 from src.provider_limit_schema import PROVIDER_LIMIT_SCHEMA_VERSION
-from src.provider_limit_schema import REASONING_EFFORT_VALUES
-from src.provider_limit_schema import THINKING_VALUES
 from src.provider_limit_schema import ProbeResult
 from src.provider_limit_schema import provider_limit_path
 from src.provider_limit_static_contract import record_static_contract_limits
 
 ProgressCallback = Callable[[dict[str, Any]], None]
-
-
-class _ProviderLimitCurl(CurlHttpTransport):
-    pass
-
-_CURL = _ProviderLimitCurl()
 
 
 def run_provider_limit_tests(
@@ -42,6 +40,7 @@ def run_provider_limit_tests(
     output = {
         "schema_version": PROVIDER_LIMIT_SCHEMA_VERSION,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "test_mode": "all_channels",
         "status": "running",
         "duration_ms": 0,
         "completed_providers": 0,
@@ -66,13 +65,17 @@ def run_provider_limit_tests(
             status="running",
         )
         try:
-            output["providers"][safe_provider_id] = test_provider_limits(
+            output["providers"][safe_provider_id] = test_provider_all_channels(
                 safe_provider_id,
                 provider if isinstance(provider, dict) else {},
                 timeout_seconds=timeout_seconds,
             )
         except Exception as exc:
-            output["providers"][safe_provider_id] = _provider_probe_crash_payload(safe_provider_id, provider, exc)
+            output["providers"][safe_provider_id] = _provider_probe_crash_payload(
+                safe_provider_id,
+                provider,
+                exc,
+            )
         output["completed_providers"] = index
         _write_provider_limit_snapshot(path, output, started=started)
         _emit_progress(
@@ -102,33 +105,108 @@ def _emit_progress(callback: ProgressCallback | None, **payload: Any) -> None:
         return
 
 
-def _provider_probe_crash_payload(provider_id: str, provider: object, exc: Exception) -> dict[str, Any]:
+def _provider_probe_crash_payload(
+    provider_id: str,
+    provider: object,
+    exc: Exception,
+) -> dict[str, Any]:
     config = provider if isinstance(provider, dict) else {}
+    provider_type = str(config.get("type") or "")
     reason = f"{type(exc).__name__}: {exc}"
-    return {
+    channels = provider_test_channels(provider_type, config)
+    channel_payloads = {
+        channel: _channel_crash_payload(provider_id, provider_type, config, channel, reason)
+        for channel in channels
+    }
+    primary_channel = resolve_provider_test_channel(provider_type, config, "configured")
+    payload = {
         "provider_id": provider_id,
-        "type": str(config.get("type") or ""),
+        "type": provider_type,
         "model": str(config.get("model") or ""),
         "tested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "test_channel": primary_channel,
+        "accessible": False,
+        "status": "unavailable",
+        "access_error": reason,
+        "features": {"access": {"supported": False, "reason": reason}},
+        "unsupported": {"access": reason},
+        "channels": channel_payloads,
+    }
+    if provider_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
+        payload["test_endpoint"] = openai_compatible_endpoint_url(config, primary_channel)
+    return payload
+
+
+def _channel_crash_payload(
+    provider_id: str,
+    provider_type: str,
+    config: dict[str, Any],
+    channel: str,
+    reason: str,
+) -> dict[str, Any]:
+    payload = {
+        "provider_id": provider_id,
+        "type": provider_type,
+        "model": str(config.get("model") or ""),
+        "tested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "test_channel": channel,
         "accessible": False,
         "status": "unavailable",
         "access_error": reason,
         "features": {"access": {"supported": False, "reason": reason}},
         "unsupported": {"access": reason},
     }
+    if provider_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
+        payload["test_endpoint"] = openai_compatible_endpoint_url(config, channel)
+    return payload
 
-def test_provider_limits(provider_id: str, provider: dict[str, Any], *, timeout_seconds: float) -> dict[str, Any]:
+
+def test_provider_all_channels(
+    provider_id: str,
+    provider: dict[str, Any],
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    provider_type = str(provider.get("type") or "").strip()
+    channels = provider_test_channels(provider_type, provider)
+    channel_results = {
+        channel: test_provider_limits(
+            provider_id,
+            provider,
+            timeout_seconds=timeout_seconds,
+            test_channel=channel if provider_type in OPENAI_COMPATIBLE_PROVIDER_TYPES else "configured",
+        )
+        for channel in channels
+    }
+    primary_channel = resolve_provider_test_channel(provider_type, provider, "configured")
+    primary = copy.deepcopy(channel_results[primary_channel])
+    primary["channels"] = channel_results
+    primary["accessible"] = any(bool(item.get("accessible")) for item in channel_results.values())
+    primary["status"] = "ok" if primary["accessible"] else "unavailable"
+    return primary
+
+def test_provider_limits(
+    provider_id: str,
+    provider: dict[str, Any],
+    *,
+    timeout_seconds: float,
+    test_channel: str = "configured",
+) -> dict[str, Any]:
     config = copy.deepcopy(provider)
     provider_type = str(config.get("type") or "").strip()
+    resolved_channel = resolve_provider_test_channel(provider_type, config, test_channel)
     result: dict[str, Any] = {
         "provider_id": provider_id,
         "type": provider_type,
         "model": str(config.get("model") or ""),
         "tested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "test_channel": resolved_channel,
         "accessible": False,
         "features": {},
         "unsupported": {},
     }
+    if provider_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
+        result["test_endpoint"] = openai_compatible_endpoint_url(config, resolved_channel)
 
     validation_error = _validate_common_config(config, provider_type)
     if validation_error:
@@ -147,7 +225,12 @@ def test_provider_limits(provider_id: str, provider: dict[str, Any], *, timeout_
         record_static_contract_limits(result, provider_type, skip_access=True)
         return result
 
-    tester(result, config, timeout_seconds=max(1.0, float(timeout_seconds or 30.0)))
+    tester(
+        result,
+        config,
+        timeout_seconds=max(1.0, float(timeout_seconds or 30.0)),
+        test_channel=resolved_channel,
+    )
     result["accessible"] = bool((result.get("features") or {}).get("access", {}).get("supported"))
     result["status"] = "ok" if result["accessible"] else "unavailable"
     return result
@@ -173,28 +256,38 @@ def _tester_for_type(provider_type: str):
         "hyper3d": _test_hyper3d,
     }.get(provider_type)
 
-def _test_openai_compatible(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
-    access = _probe_chat_completions(config, {}, timeout_seconds=timeout_seconds)
-    _set_feature(result, "access", access)
-    responses = _probe_responses(config, {}, timeout_seconds=timeout_seconds)
-    _set_feature(result, "responses_api", responses)
-    _set_feature(result, "web_search", _probe_responses(config, _web_search_payload(config), timeout_seconds=timeout_seconds))
-    _set_feature(result, "thinking", ProbeResult(False, "OpenAI provider contract does not send thinking"))
-    _set_value_features(
+def _test_openai_compatible(
+    result: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    timeout_seconds: float,
+    test_channel: str,
+) -> None:
+    test_openai_limits(
         result,
-        "reasoning_effort",
-        {
-            effort: _probe_responses(config, {"reasoning": {"effort": effort}}, timeout_seconds=timeout_seconds)
-            for effort in REASONING_EFFORT_VALUES
-        },
+        config,
+        test_channel=test_channel,
+        post_json_probe=lambda url, headers, payload: post_json_probe(
+            url,
+            headers,
+            payload,
+            timeout_seconds=timeout_seconds,
+        ),
     )
 
-def _test_doubao(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
+def _test_doubao(
+    result: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    timeout_seconds: float,
+    test_channel: str,
+) -> None:
     test_doubao_limits(
         result,
         config,
+        test_channel=test_channel,
         timeout_seconds=timeout_seconds,
-        post_json_probe=lambda url, headers, payload: _post_json_probe(
+        post_json_probe=lambda url, headers, payload: post_json_probe(
             url,
             headers,
             payload,
@@ -203,12 +296,13 @@ def _test_doubao(result: dict[str, Any], config: dict[str, Any], *, timeout_seco
     )
 
 
-def _test_claude(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
+def _test_claude(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float, test_channel: str) -> None:
+    _ = test_channel
     test_claude_limits(
         result,
         config,
         timeout_seconds=timeout_seconds,
-        post_json_probe=lambda url, headers, payload: _post_json_probe(
+        post_json_probe=lambda url, headers, payload: post_json_probe(
             url,
             headers,
             payload,
@@ -217,110 +311,29 @@ def _test_claude(result: dict[str, Any], config: dict[str, Any], *, timeout_seco
     )
 
 
-def _test_zhipu(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
-    access = _probe_chat_completions(config, {}, timeout_seconds=timeout_seconds)
-    _set_feature(result, "access", access)
-    _set_feature(result, "responses_api", ProbeResult(False, "Zhipu provider contract uses chat/completions, not Responses API"))
-    _set_feature(result, "web_search", ProbeResult(False, "Zhipu provider contract does not send web_search"))
-    _set_value_features(
+def _test_zhipu(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float, test_channel: str) -> None:
+    _ = test_channel
+    test_zhipu_limits(
         result,
-        "thinking",
-        {
-            "enabled": _probe_chat_completions(config, {"thinking": {"type": "enabled"}}, timeout_seconds=timeout_seconds),
-            "disabled": _probe_chat_completions(config, {"thinking": {"type": "disabled"}}, timeout_seconds=timeout_seconds),
-            "auto": ProbeResult(False, "Zhipu thinking supports enabled/disabled only"),
-        },
-    )
-    _set_value_features(
-        result,
-        "reasoning_effort",
-        {
-            effort: _probe_chat_completions(config, {"reasoning_effort": effort}, timeout_seconds=timeout_seconds)
-            for effort in REASONING_EFFORT_VALUES
-        },
+        config,
+        post_json_probe=lambda url, headers, payload: post_json_probe(
+            url, headers, payload, timeout_seconds=timeout_seconds
+        ),
     )
 
-def _test_gemini(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
-    _set_feature(result, "access", _probe_gemini_generate_content(config, timeout_seconds=timeout_seconds))
-    _set_feature(result, "responses_api", ProbeResult(False, "Gemini provider contract uses generateContent, not Responses API"))
-    _set_feature(result, "web_search", ProbeResult(False, "Gemini provider contract does not send web_search"))
-    _set_feature(result, "thinking", ProbeResult(False, "Gemini provider contract does not send thinking"))
-    _set_value_features(
+def _test_gemini(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float, test_channel: str) -> None:
+    _ = test_channel
+    test_gemini_limits(
         result,
-        "reasoning_effort",
-        {effort: ProbeResult(False, "Gemini provider contract does not send reasoning_effort") for effort in REASONING_EFFORT_VALUES},
+        config,
+        post_json_probe=lambda url, headers, payload: post_json_probe(
+            url, headers, payload, timeout_seconds=timeout_seconds
+        ),
     )
 
-def _test_hyper3d(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float) -> None:
+def _test_hyper3d(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float, test_channel: str) -> None:
+    _ = test_channel
     test_hyper3d_limits(result, config, timeout_seconds=timeout_seconds)
-
-
-def _probe_chat_completions(config: dict[str, Any], extra_payload: dict[str, Any], *, timeout_seconds: float) -> ProbeResult:
-    payload = {
-        "model": str(config.get("model") or ""),
-        "messages": [{"role": "user", "content": "Reply exactly OK."}],
-        **extra_payload,
-    }
-    url = f"{_base_url(config)}/chat/completions"
-    headers = _bearer_headers(config)
-    return _post_json_probe(url, headers, payload, timeout_seconds=timeout_seconds)
-
-
-def _probe_responses(config: dict[str, Any], extra_payload: dict[str, Any], *, timeout_seconds: float) -> ProbeResult:
-    payload = {
-        "model": str(config.get("model") or ""),
-        "input": [{"role": "user", "content": [{"type": "input_text", "text": "Reply exactly OK."}]}],
-        **extra_payload,
-    }
-    url = f"{_base_url(config)}/responses"
-    headers = _bearer_headers(config)
-    return _post_json_probe(url, headers, payload, timeout_seconds=timeout_seconds)
-
-
-def _probe_gemini_generate_content(config: dict[str, Any], *, timeout_seconds: float) -> ProbeResult:
-    payload = {"contents": [{"role": "user", "parts": [{"text": "Reply exactly OK."}]}]}
-    url = f"{_base_url(config)}/models/{str(config.get('model') or '').strip()}:generateContent"
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": str(config.get("apiKey") or ""),
-    }
-    return _post_json_probe(url, headers, payload, timeout_seconds=timeout_seconds)
-
-
-def _post_json_probe(url: str, headers: dict[str, str], payload: dict[str, Any], *, timeout_seconds: float) -> ProbeResult:
-    payload_json = json.dumps(payload, ensure_ascii=False)
-    try:
-        response = _CURL._curl_post_once_raw(
-            url=url,
-            headers=headers,
-            payload_json=payload_json,
-            timeout_sec=timeout_seconds,
-            marker="__PROVIDER_LIMIT_HTTP_CODE__:",
-        )
-        if response.status_code < 200 or response.status_code >= 300:
-            return ProbeResult(
-                False,
-                _sanitize_error(f"HTTP {response.status_code}: {response.body}", config_api_key=headers),
-                status_code=response.status_code,
-            )
-        try:
-            _ = json.loads(response.body) if response.body.strip() else {}
-        except Exception as exc:
-            return ProbeResult(
-                False,
-                _sanitize_error(f"Invalid JSON response: {exc}; body={response.body[:500]}", config_api_key=headers),
-                status_code=response.status_code,
-            )
-        return ProbeResult(True, status_code=response.status_code)
-    except CurlTransportError as exc:
-        return ProbeResult(False, _sanitize_error(f"curl: {exc}", config_api_key=headers))
-    except Exception as exc:
-        return ProbeResult(False, _sanitize_error(f"{type(exc).__name__}: {exc}", config_api_key=headers))
-
-
-def _web_search_payload(config: dict[str, Any]) -> dict[str, Any]:
-    tool_type = str(config.get("webSearchToolType", "web_search") or "").strip()
-    return {"tools": [{"type": tool_type or "web_search"}]}
 
 
 def _set_feature(result: dict[str, Any], feature_name: str, probe: ProbeResult) -> None:
@@ -351,28 +364,4 @@ def _record_unsupported(result: dict[str, Any], name: str, reason: str) -> None:
     result.setdefault("unsupported", {})[name] = str(reason or "not supported")
 
 
-def _base_url(config: dict[str, Any]) -> str:
-    return str(config.get("baseUrl") or "").strip().rstrip("/")
-
-
-def _bearer_headers(config: dict[str, Any]) -> dict[str, str]:
-    return {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {str(config.get('apiKey') or '')}",
-    }
-
-
-def _sanitize_error(text: str, *, config_api_key: dict[str, str]) -> str:
-    output = str(text or "").strip()
-    auth = str((config_api_key or {}).get("Authorization") or "")
-    if auth.startswith("Bearer "):
-        token = auth.removeprefix("Bearer ").strip()
-        if token:
-            output = output.replace(token, "<redacted>")
-    api_key = str((config_api_key or {}).get("x-goog-api-key") or "")
-    if api_key:
-        output = output.replace(api_key, "<redacted>")
-    anthropic_key = str((config_api_key or {}).get("x-api-key") or "")
-    if anthropic_key:
-        output = output.replace(anthropic_key, "<redacted>")
-    return output[:1200]
+__all__ = ["run_provider_limit_tests", "test_provider_all_channels", "test_provider_limits"]

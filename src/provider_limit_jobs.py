@@ -76,8 +76,13 @@ class ProviderLimitJobStore:
                 job["total"] = int(payload.get("total") or 0)
 
         try:
-            runner = run_provider_model_discovery if kind == "model_refresh" else run_provider_limit_tests
-            result = runner(timeout_seconds=timeout_seconds, progress_callback=on_progress)
+            if kind == "model_refresh":
+                result = run_provider_model_discovery(timeout_seconds=timeout_seconds, progress_callback=on_progress)
+            else:
+                result = run_provider_limit_tests(
+                    timeout_seconds=timeout_seconds,
+                    progress_callback=on_progress,
+                )
         except Exception as exc:
             with self._lock:
                 job = self._jobs.get(job_id)

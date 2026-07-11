@@ -9,7 +9,7 @@ from src import workspace_settings
 from src.config_loader import ConfigLoader
 
 
-PROVIDER_LIMIT_SCHEMA_VERSION = 1
+PROVIDER_LIMIT_SCHEMA_VERSION = 3
 REASONING_EFFORT_VALUES = ("minimal", "low", "medium", "high", "xhigh", "max", "auto")
 THINKING_VALUES = ("enabled", "disabled", "auto")
 

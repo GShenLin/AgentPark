@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from src.config_loader import ConfigLoader
 from src.file_transaction import atomic_write_text
+from src.provider_limit_channel import resolve_provider_test_channel
 from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
 from src.provider_limit_schema import PROVIDER_LIMIT_SCHEMA_VERSION
 from src.provider_limit_schema import provider_limit_path
@@ -37,6 +38,7 @@ def run_provider_model_discovery(
     output.update(
         {
             "schema_version": PROVIDER_LIMIT_SCHEMA_VERSION,
+            "test_mode": "all_channels",
             "model_refresh_status": "running",
             "model_refresh_started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "model_refresh_completed_providers": 0,
@@ -131,6 +133,7 @@ def _merge_model_result(output: dict[str, Any], provider_id: str, provider: dict
             },
         }
     )
+    entry["test_channel"] = _default_provider_test_channel(provider)
     entry.setdefault("features", {})
     entry.setdefault("unsupported", {})
     if result["supported"]:
@@ -140,6 +143,10 @@ def _merge_model_result(output: dict[str, Any], provider_id: str, provider: dict
         entry.setdefault("accessible", False)
         entry.setdefault("status", "unavailable")
     providers[provider_id] = entry
+
+
+def _default_provider_test_channel(provider: dict[str, Any]) -> str:
+    return resolve_provider_test_channel(str(provider.get("type") or ""), provider, "configured")
 
 
 def _model_result(

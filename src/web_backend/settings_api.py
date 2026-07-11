@@ -397,5 +397,4 @@ class SettingsApiDomain(DomainBase):
             raise HTTPException(status_code=400, detail="timeout_seconds must be greater than 0")
         return timeout_seconds
 
-
 __all__ = ["SettingsApiDomain"]

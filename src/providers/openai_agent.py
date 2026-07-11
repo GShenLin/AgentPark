@@ -72,10 +72,10 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             parse_switch_mode(web_search, default="disabled"),
             supported_default=self._supports_responses_api(),
         )
-        _ = self._effective_feature_switch(
+        thinking_mode = self._effective_feature_switch(
             "thinking",
             parse_switch_mode(thinking, default="disabled"),
-            supported_default=False,
+            supported_default=not self._supports_responses_api(),
         )
         if not self._supports_responses_api():
             return self._send_chat_completions(
@@ -83,6 +83,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 active_tools=active_tools,
                 run_tools=run_tools,
                 reasoning_effort=effort_source,
+                thinking_mode=thinking_mode,
                 stream=stream,
                 stream_handler=stream_handler,
                 thinking_stream_handler=thinking_stream_handler if stream and callable(thinking_stream_handler) else None,

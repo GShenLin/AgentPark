@@ -47,6 +47,7 @@ def test_openai_responses_api_false_uses_chat_completions():
     payload = json.loads(requests[0]["payload_json"])
     assert payload["messages"] == [{"role": "user", "content": "hello"}]
     assert payload["reasoning_effort"] == "high"
+    assert payload["thinking"] == {"type": "disabled"}
     assert "input" not in payload
     summaries = [
         json.loads(event["message"])
@@ -76,7 +77,7 @@ def test_openai_chat_provider_treats_unsupported_web_search_as_disabled():
     assert "input" not in payload
 
 
-def test_openai_chat_provider_treats_unsupported_thinking_as_disabled():
+def test_openai_chat_provider_sends_thinking_mode():
     agent = _build_openai_chat_agent()
     requests = []
 
@@ -88,13 +89,29 @@ def test_openai_chat_provider_treats_unsupported_thinking_as_disabled():
 
     assert agent.Send(web_search="disabled", thinking="enabled", stream=False) == "chat ok"
     payload = json.loads(requests[0]["payload_json"])
-    assert "thinking" not in payload
+    assert payload["thinking"] == {"type": "enabled"}
     assert "reasoning" not in payload
+
+
+def test_openai_chat_provider_sends_auto_thinking_mode():
+    agent = _build_openai_chat_agent()
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(kwargs)
+        return {"choices": [{"message": {"role": "assistant", "content": "chat ok"}}]}
+
+    agent._curl_post_json_once = lambda **kwargs: fake_post(**kwargs)
+
+    assert agent.Send(web_search="disabled", thinking="auto", stream=False) == "chat ok"
+    payload = json.loads(requests[0]["payload_json"])
+    assert payload["thinking"] == {"type": "auto"}
 
 
 def test_openai_chat_persists_visible_assistant_tool_call_note_before_tool_execution():
     agent = _build_openai_chat_agent()
     order = []
+    requests = []
     agent._agentpark_persist_assistant_tool_call_note = lambda message: order.append(
         ("persist", message.get("content"))
     )
@@ -126,12 +143,20 @@ def test_openai_chat_persists_visible_assistant_tool_call_note_before_tool_execu
             {"choices": [{"message": {"role": "assistant", "content": "done"}}]},
         ]
     )
-    agent._curl_post_json_once = lambda **_kwargs: next(responses)
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
 
-    assert agent.Send(web_search="disabled", thinking="disabled", stream=False) == "done"
+    agent._curl_post_json_once = fake_post
+
+    assert agent.Send(web_search="disabled", thinking="enabled", stream=False) == "done"
     assert order == [
         ("persist", "I will call the echo tool."),
         ("tool", "hello"),
+    ]
+    assert [payload["thinking"] for payload in requests] == [
+        {"type": "enabled"},
+        {"type": "enabled"},
     ]
 
 

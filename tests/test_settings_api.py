@@ -319,3 +319,24 @@ def test_settings_api_delete_optional_memory_runs_bat(monkeypatch, tmp_path):
     assert calls
     assert calls[0][1]["cwd"] == str(tmp_path)
     assert str(script_path) in calls[0][0]
+
+
+def test_settings_api_starts_automatic_provider_channel_tests():
+    calls = []
+
+    class Jobs:
+        def latest_running(self):
+            return None
+
+        def start(self, *, timeout_seconds):
+            calls.append(timeout_seconds)
+            return {"job_id": "job-1", "status": "running"}
+
+        def read_result(self):
+            return {"providers": {}, "path": "ProviderLimit.json"}
+
+    domain = SettingsApiDomain(SimpleNamespace(provider_limit_jobs=Jobs()))
+    result = domain.start_provider_limit_tests({"timeout_seconds": 12})
+
+    assert result["job"]["status"] == "running"
+    assert calls == [12.0]
