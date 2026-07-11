@@ -16,7 +16,7 @@ EXIT_COMMANDS = {"/exit", "/quit", "exit", "quit"}
 HELP_TEXT = """Commands:
   /help    Show this help
   /status  Show companion runtime paths and provider config
-  /restart Run Restart.bat and exit this CLI session
+  /restart Run the platform restart script and exit this CLI session
   /clear   Clear the terminal
   /exit    Quit
 
@@ -163,7 +163,8 @@ class PlainCompanionTerminal:
         except Exception as exc:
             self._print_error(f"restart failed: {type(exc).__name__}: {exc}")
             return False
-        self._print_block("status", f"Started Restart.bat\nscript: {launched.script_path}\npid: {launched.pid}")
+        label = launched.label or "restart script"
+        self._print_block("status", f"Started {label}\nscript: {launched.script_path}\npid: {launched.pid}")
         return True
 
     def _clear(self) -> None:

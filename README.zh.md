@@ -114,7 +114,8 @@ AgentPark/
 ## 环境要求
 
 - Windows 是主要目标环境。部分功能依赖 `.bat`、PowerShell、桌面自动化或 PyInstaller 打包路径。
-- Python 3.11+。项目脚本会优先使用本地 Python 3.14/3.12/3.11，也可以使用 `python`。
+- Linux 支持 WebUI、CLI、provider runtime 和重启流程；Windows 桌面与打包功能仍仅支持 Windows。
+- Python 3.11+。Windows 脚本优先使用本地 Python 3.14/3.12/3.11；Linux 脚本依次尝试 `AgnetPark_Linux_env`、`.venv`、`python3` 和 `python`。
 - Node.js + npm，用于安装和构建 `webui`。
 - 推荐安装 ripgrep `rg`；文件搜索工具和部分前端搜索路径会优先使用它。
 
@@ -186,7 +187,13 @@ Windows 下推荐入口：
 build_and_run.bat
 ```
 
-该脚本会：
+Linux 下使用：
+
+```sh
+./build_and_run.sh
+```
+
+两个平台脚本都会：
 
 - 检查 Python 和 `rg`。
 - 安装缺失的前端依赖。
@@ -256,7 +263,13 @@ Windows 下运行：
 Restart.bat
 ```
 
-脚本会尝试停止当前 AgentPark 服务，执行 `git pull --rebase`，并通过 `build_and_run.bat` 重启。
+Linux 下运行：
+
+```sh
+./Restart.sh
+```
+
+对应平台的重启脚本会尝试停止当前 AgentPark 服务，在工作区干净时更新代码，并通过对应的构建启动脚本重启。
 
 WebUI 也可以调用 `/api/system/restart` 触发重启流程。
 
@@ -348,11 +361,11 @@ memories/Companion/Companion/memory.md
 memories/Companion/Companion/messages.jsonl
 ```
 
-正常构建/安装流程完成后，`build_and_run.bat` 会在后台启动 WebUI 服务，由该服务进程打开浏览器，然后在当前终端启动交互式 companion CLI。`build_and_run.bat cli` 和 `build_and_run.bat chat` 使用相同的 Web + CLI 组合启动方式。只运行 WebUI 服务时使用 `build_and_run.bat server` 或 `build_and_run.bat web`；只运行 CLI 且不启动 WebUI 时使用 `build_and_run.bat cli-only`。
+正常构建/安装流程完成后，Windows 使用 `build_and_run.bat`，Linux 使用 `build_and_run.sh`；脚本会在后台启动 WebUI 服务，然后在当前终端启动交互式 companion CLI。`cli` 和 `chat` 使用 Web + CLI 组合模式；`server` 或 `web` 只运行 WebUI；`cli-only` 只运行 CLI。
 
-companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/Companion/Companion/`。如果终端不接受输入，运行 `build_and_run.bat cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
+companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/Companion/Companion/`。如果终端不接受输入，使用对应平台的构建启动脚本运行 `cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
 
-在 companion CLI 中，`/restart` 会启动仓库中的 `Restart.bat` 并退出当前 CLI 会话，确保重启行为仍走标准启动路径。
+在 companion CLI 中，`/restart` 会在 Windows 启动 `Restart.bat`，在 Linux 启动 `Restart.sh`，然后退出当前 CLI 会话，确保重启行为仍走标准启动路径。
 
 节点配置读写见 `docs/config-contract.md`。运行时状态恢复见 `docs/runtime-state-machine.md`。服务商功能支持见 `docs/provider-feature-matrix.md`。能力描述符和依赖报告见 `docs/capability-system.md`。Skill/plugin 作者指南见 `docs/skill-plugin-authoring.md`。长期 sidecar、缓存和分发边界见 `docs/long-term-architecture.md`。恢复步骤见 `docs/troubleshooting.md`。
 
