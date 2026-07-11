@@ -3,7 +3,7 @@ import os
 
 from . import runtime_paths, state_store
 from .service_host import HostBoundService
-from .node_config_service import read_node_config_strict, write_node_config
+from .node_config_service import read_node_config_optional, read_node_config_strict, write_node_config
 from .node_state_machine import parse_node_state
 from .shared import (
     _recover_node_config_startup_state,
@@ -104,28 +104,56 @@ class GraphNodeStore(HostBoundService):
     def _node_dir(self, graph_id: str, node_id: str) -> str:
         graph_id = self._sanitize_graph_id(graph_id)
         safe_id = self._sanitize_node_id(node_id)
-        return os.path.join(self._graph_dir(graph_id), safe_id)
+        base_dir = self._graph_dir(graph_id)
+        storage_id, _canonical_id = self._resolve_existing_node_location(graph_id, safe_id)
+        return os.path.join(base_dir, storage_id or safe_id)
 
     def _resolve_existing_node_id(self, graph_id: str, node_id: str) -> str:
         safe_graph_id = self._sanitize_graph_id(graph_id)
         safe_node_id = self._sanitize_node_id(node_id)
         if not safe_node_id:
             return safe_node_id
+        _storage_id, canonical_id = self._resolve_existing_node_location(safe_graph_id, safe_node_id)
+        return canonical_id or safe_node_id
+
+    def _resolve_existing_node_location(self, graph_id: str, node_id: str) -> tuple[str, str]:
+        safe_graph_id = self._sanitize_graph_id(graph_id)
+        safe_node_id = self._sanitize_node_id(node_id)
+        if not safe_node_id:
+            return safe_node_id, safe_node_id
         base_dir = self._graph_dir(safe_graph_id)
         if not base_dir or not os.path.isdir(base_dir):
-            return safe_node_id
+            return safe_node_id, safe_node_id
         try:
-            entries = [entry for entry in os.listdir(base_dir) if entry != "agents"]
+            entries = sorted(entry for entry in os.listdir(base_dir) if entry != "agents")
         except OSError:
-            return safe_node_id
+            return safe_node_id, safe_node_id
 
-        def has_config(entry: str) -> bool:
-            return os.path.exists(os.path.join(base_dir, entry, "config.json"))
-
+        candidates: list[tuple[str, str]] = []
         for entry in entries:
-            if entry == safe_node_id and has_config(entry):
-                return entry
-        return safe_node_id
+            config_path = os.path.join(base_dir, entry, "config.json")
+            if not os.path.isfile(config_path):
+                continue
+            config = read_node_config_optional(config_path)
+            canonical_id = self._sanitize_node_id((config or {}).get("node_id")) or entry
+            candidates.append((entry, canonical_id))
+
+        for storage_id, canonical_id in candidates:
+            if canonical_id == safe_node_id:
+                return storage_id, canonical_id
+        for storage_id, canonical_id in candidates:
+            if storage_id == safe_node_id:
+                return storage_id, canonical_id
+
+        folded_id = safe_node_id.casefold()
+        folded_matches = [
+            (storage_id, canonical_id)
+            for storage_id, canonical_id in candidates
+            if canonical_id.casefold() == folded_id or storage_id.casefold() == folded_id
+        ]
+        if len(folded_matches) == 1:
+            return folded_matches[0]
+        return safe_node_id, safe_node_id
 
     def _node_config_path(self, node_id: str, graph_id: str) -> str:
         node_dir = self._node_dir(graph_id, node_id)
