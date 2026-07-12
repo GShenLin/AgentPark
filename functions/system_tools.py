@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 
+from functions.file_change_details import build_file_change_hunks
 from functions.console_tools import (
     execute_console_command,
     execute_console_command_declaration,
@@ -265,6 +266,31 @@ def _simulate_operations(operations, encoding, *, agent=None):
     return state, changed_paths, summaries
 
 
+def _snapshot_changed_files(state, summaries, encoding):
+    changes = []
+    for summary in summaries:
+        operation = str(summary.get("type") or "update")
+        source_path = str(summary.get("path") or "")
+        destination_path = str(summary.get("move_to") or "")
+        before_exists = os.path.isfile(source_path)
+        before_text = _read_text_file(source_path, encoding) if before_exists else ""
+        after_path = destination_path or source_path
+        after_value = state.get(after_path)
+        after_exists = after_value is not None
+        after_text = str(after_value or "") if after_exists else ""
+        changes.append(
+            {
+                "operation": operation,
+                "path": source_path,
+                **({"move_to": destination_path} if destination_path else {}),
+                "before_exists": before_exists,
+                "after_exists": after_exists,
+                "hunks": build_file_change_hunks(before_text, after_text, context_lines=5),
+            }
+        )
+    return changes
+
+
 def _ensure_parent_dir(file_path):
     parent = os.path.dirname(file_path)
     if parent:
@@ -313,12 +339,14 @@ def apply_patch(patch, encoding="utf-8", agent=None):
             encoding = "utf-8"
         operations = _parse_patch(patch)
         state, changed_paths, summaries = _simulate_operations(operations, encoding.strip(), agent=agent)
+        file_changes = _snapshot_changed_files(state, summaries, encoding.strip())
         _commit_state(state, encoding.strip())
         return json.dumps(
             {
                 "status": "success",
                 "operations": summaries,
                 "files_changed": sorted(changed_paths),
+                "file_changes": file_changes,
                 "operation_count": len(summaries),
                 "message": "Patch applied successfully.",
             },

@@ -88,14 +88,14 @@ class SettingsApiDomain(DomainBase):
             return theme_config_path()
         raise HTTPException(status_code=404, detail=f"unknown settings section: {section}")
 
-    def _read_payload(self, path: str, section: str) -> tuple[str, dict]:
+    def _read_payload(self, path: str, section: str) -> tuple[str, dict, list[str]]:
         if not os.path.isfile(path):
             if section == "events":
                 payload = load_or_create_event_config()
-                return json.dumps(payload, ensure_ascii=False, indent=2) + "\n", payload
+                return json.dumps(payload, ensure_ascii=False, indent=2) + "\n", payload, []
             if section == "theme":
                 payload = load_or_create_theme_config()
-                return json.dumps(payload, ensure_ascii=False, indent=2) + "\n", payload
+                return json.dumps(payload, ensure_ascii=False, indent=2) + "\n", payload, []
             raise HTTPException(status_code=404, detail=f"{section} settings file not found: {path}")
         try:
             with open(path, "r", encoding="utf-8") as handle:
@@ -105,12 +105,38 @@ class SettingsApiDomain(DomainBase):
             raise HTTPException(status_code=500, detail=f"{section} settings JSON is invalid: {exc}") from exc
         except OSError as exc:
             raise HTTPException(status_code=500, detail=f"failed to read {section} settings: {exc}") from exc
+        warnings: list[str] = []
         if section == "events":
             if not isinstance(payload, dict):
                 raise HTTPException(status_code=400, detail="events settings must be a top-level object")
+        elif section == "module-provider":
+            self._validate_module_provider_structure(payload)
+            warnings = self._module_provider_validation_warnings(payload)
         else:
             self._validate_payload(section, payload)
-        return content, payload
+        return content, payload, warnings
+
+    def _validate_module_provider_structure(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="module-provider settings must be a top-level object")
+        if not isinstance(payload.get("providers"), dict):
+            raise HTTPException(status_code=400, detail="moduleProvider.json field 'providers' must be an object")
+
+    def _module_provider_validation_warnings(self, payload: dict) -> list[str]:
+        warnings: list[str] = []
+        config_loader = ConfigLoader()
+        for provider_id, provider in payload["providers"].items():
+            if not str(provider_id or "").strip():
+                warnings.append("provider id must be non-empty")
+                continue
+            if not isinstance(provider, dict):
+                warnings.append(f"provider '{provider_id}' configuration must be an object")
+                continue
+            try:
+                config_loader._validate_provider_config(str(provider_id), provider, require_api_key=False)
+            except ValueError as exc:
+                warnings.append(str(exc))
+        return warnings
 
     def _parse_content(self, section: str, content: object) -> dict:
         if not isinstance(content, str):
@@ -126,9 +152,8 @@ class SettingsApiDomain(DomainBase):
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail=f"{section} settings must be a top-level object")
         if section == "module-provider":
-            providers = payload.get("providers")
-            if not isinstance(providers, dict):
-                raise HTTPException(status_code=400, detail="moduleProvider.json field 'providers' must be an object")
+            self._validate_module_provider_structure(payload)
+            providers = payload["providers"]
             config_loader = ConfigLoader()
             for provider_id, provider in providers.items():
                 if not str(provider_id or "").strip():
@@ -206,13 +231,14 @@ class SettingsApiDomain(DomainBase):
     def get_settings_section(self, section: str):
         meta = self._section_meta(section)
         path = self._settings_path(meta["id"])
-        content, payload = self._read_payload(path, meta["id"])
+        content, payload, warnings = self._read_payload(path, meta["id"])
         return {
             "section": meta["id"],
             "label": meta["label"],
             "path": path,
             "content": content,
             "data": payload,
+            "warnings": warnings,
             **({"active_preset_id": active_theme_preset_id(), **list_theme_presets()} if meta["id"] == "theme" else {}),
         }
 
@@ -232,6 +258,7 @@ class SettingsApiDomain(DomainBase):
             "path": path,
             "content": content,
             "data": parsed,
+            "warnings": [],
             **({"active_preset_id": active_theme_preset_id(), **list_theme_presets()} if meta["id"] == "theme" else {}),
         }
 

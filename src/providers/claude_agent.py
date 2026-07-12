@@ -72,7 +72,11 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             thinking_mode=thinking_mode,
             reasoning_effort=effort_source,
         )
-        self._emit_provider_payload_request_summary(payload, request_api="claude_messages", stream=bool(stream))
+        request_summary = self._emit_provider_payload_request_summary(
+            payload,
+            request_api="claude_messages",
+            stream=bool(stream),
+        )
 
         try:
             result = self.send_messages(
@@ -101,6 +105,7 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 )
             raise
 
+        self._emit_provider_request_completed(request_summary, result)
         message, selected_idx = self.pick_response_message(result.get("choices"), run_tools)
         if not isinstance(message, dict):
             return f"Error: Invalid message format in choice[{selected_idx}]"
@@ -125,8 +130,13 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             native_blocks = message.get("_claude_content_blocks")
             extra = {"tool_calls": tool_calls}
             if isinstance(native_blocks, list):
-                extra["_claude_content_blocks"] = native_blocks
-            self.Message("assistant", message.get("content"), **extra)
+                extra["_claude_content_blocks"] = [
+                    block
+                    for block in native_blocks
+                    if isinstance(block, dict) and str(block.get("type") or "").strip().lower() == "tool_use"
+                ]
+            self.AssistantProgress(message.get("content"), tool_calls=tool_calls)
+            self.Message("assistant", None, persist=False, **extra)
             if run_tools:
                 executions = self.execute_tool_calls_parallel(tool_calls)
                 for execution in executions:

@@ -7,8 +7,13 @@ from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportErro
 from src.providers.doubao_curl_stream_transport import DoubaoCurlStreamTransport
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
+from src.providers.responses_stream_events import ResponsesOutputItemAdded
+from src.providers.responses_stream_events import ResponsesOutputItemDone
 from src.providers.responses_stream_events import ResponsesReasoningDelta
+from src.providers.responses_stream_events import ResponsesServerToolActivity
 from src.providers.responses_stream_events import ResponsesStreamEvent
+from src.providers.server_tool_protocol import build_server_tool_activity
+from src.providers.server_tool_protocol import is_server_tool_item_type
 from src.runtime_cancellation import CancellationRequested
 from src.service_host import HostBoundService
 
@@ -278,27 +283,38 @@ class DoubaoStreamRuntime(DoubaoCurlStreamTransport, ProviderRuntimeEventMixin, 
                 continue
             if not isinstance(event, dict):
                 continue
-            if callable(item_event_handler):
-                for normalized_event in normalizer.ingest_event(event):
+            normalized_events = normalizer.ingest_event(event)
+            for normalized_event in normalized_events:
+                if callable(item_event_handler):
                     item_event_handler(normalized_event)
-                    if isinstance(normalized_event, ResponsesReasoningDelta) and normalized_event.delta:
-                        thinking_chunks.append(normalized_event.delta)
-                        self._emit_stream_thinking(
-                            thinking_stream_handler,
-                            normalized_event.delta,
-                            "".join(thinking_chunks),
-                            normalized_event.provider or "doubao_responses",
-                        )
-            elif callable(thinking_stream_handler):
-                for normalized_event in normalizer.ingest_event(event):
-                    if isinstance(normalized_event, ResponsesReasoningDelta) and normalized_event.delta:
-                        thinking_chunks.append(normalized_event.delta)
-                        self._emit_stream_thinking(
-                            thinking_stream_handler,
-                            normalized_event.delta,
-                            "".join(thinking_chunks),
-                            normalized_event.provider or "doubao_responses",
-                        )
+                if isinstance(normalized_event, ResponsesReasoningDelta) and normalized_event.delta:
+                    thinking_chunks.append(normalized_event.delta)
+                    self._emit_stream_thinking(
+                        thinking_stream_handler,
+                        normalized_event.delta,
+                        "".join(thinking_chunks),
+                        normalized_event.provider or "doubao_responses",
+                    )
+                server_tool_item = None
+                server_tool_status = ""
+                if isinstance(normalized_event, ResponsesOutputItemAdded) and is_server_tool_item_type(normalized_event.item_type):
+                    server_tool_item = normalized_event.item
+                    server_tool_status = str(normalized_event.item.get("status") or "in_progress")
+                elif isinstance(normalized_event, ResponsesOutputItemDone) and is_server_tool_item_type(normalized_event.item_type):
+                    server_tool_item = normalized_event.item
+                    server_tool_status = str(normalized_event.item.get("status") or "completed")
+                elif isinstance(normalized_event, ResponsesServerToolActivity):
+                    server_tool_item = normalized_event.item
+                    server_tool_status = normalized_event.status
+                if server_tool_item is not None:
+                    activity = build_server_tool_activity(
+                        server_tool_item,
+                        status=server_tool_status,
+                        provider=getattr(self, "provider_name", "doubao_responses"),
+                    )
+                    callback = getattr(self, "tool_event_callback", None)
+                    if activity is not None and callable(callback):
+                        callback(activity)
             event_type = str(event.get("type") or "").strip().lower()
             if event_type in {"response.output_text.delta", "output_text.delta"}:
                 delta_text = str(event.get("delta") or "")

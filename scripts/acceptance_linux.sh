@@ -55,7 +55,7 @@ select_python() {
   if [ -n "$PYTHON_BIN" ]; then
     return 0
   fi
-  for candidate in "$ROOT_DIR/AgnetPark_Linux_env/bin/python" "$ROOT_DIR/.venv/bin/python" python3 python; do
+  for candidate in "$ROOT_DIR/AgentPark_Linux_env/bin/python" "$ROOT_DIR/.venv/bin/python" python3 python; do
     if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -m pip --version >/dev/null 2>&1; then
       PYTHON_BIN="$candidate"
       return 0

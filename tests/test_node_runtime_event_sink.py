@@ -95,6 +95,71 @@ def test_node_runtime_event_sink_records_runtime_notice(tmp_path):
     assert runtime_logs[-1]["tool_name"] == "read_file"
 
 
+def test_node_runtime_event_sink_publishes_server_tool_activity(tmp_path):
+    published = []
+    sink, config_path, logs, tool_entries, runtime_logs = _build_sink(tmp_path)
+    sink.publish_live_event = lambda graph_id, node_id, event_type, event, **kwargs: published.append(
+        {"graph_id": graph_id, "node_id": node_id, "event_type": event_type, "event": event, **kwargs}
+    )
+
+    sink.handle(
+        {
+            "type": "server_tool_activity",
+            "call_id": "ws_1",
+            "tool_type": "web_search",
+            "status": "completed",
+            "provider": "openai",
+            "sources": [{"url": "https://example.com"}],
+        }
+    )
+
+    payload = _read_config(config_path)
+    assert payload["last_runtime_event"]["type"] == "server_tool_activity"
+    assert published[-1]["event_type"] == "server_tool_activity"
+    assert logs[-1]["tool_name"] == "web_search"
+    assert runtime_logs[-1]["event"] == "server_tool_activity"
+    assert tool_entries == [
+        {
+            "graph_id": "default",
+            "node_id": "agent1",
+            "event": {
+                "call_id": "ws_1",
+                "name": "web_search",
+                "provider": "openai",
+                "status": "completed",
+                "result_preview": "1 source",
+                "sources": [{"url": "https://example.com"}],
+            },
+        }
+    ]
+
+
+def test_node_runtime_event_sink_persists_server_tool_only_at_terminal_status(tmp_path):
+    sink, _config_path, _logs, tool_entries, _runtime_logs = _build_sink(tmp_path)
+    base_event = {
+        "type": "server_tool_activity",
+        "call_id": "ws_1",
+        "tool_type": "web_search",
+        "provider": "openai",
+        "action": {"query": "AgentPark"},
+    }
+
+    sink.handle({**base_event, "status": "in_progress"})
+    assert tool_entries == []
+
+    sink.handle({**base_event, "status": "completed"})
+    sink.handle({**base_event, "status": "completed"})
+
+    assert len(tool_entries) == 1
+    assert tool_entries[0]["event"] == {
+        "call_id": "ws_1",
+        "name": "web_search",
+        "provider": "openai",
+        "status": "completed",
+        "arguments": {"query": "AgentPark"},
+    }
+
+
 def test_node_runtime_event_sink_emits_runtime_notice_and_net_error_events(tmp_path):
     emitted = []
     sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)

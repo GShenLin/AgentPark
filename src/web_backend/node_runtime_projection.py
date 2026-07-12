@@ -5,12 +5,14 @@ import os
 from typing import Any
 
 from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
+from src.providers.provider_runtime_events import PROVIDER_REQUEST_COMPLETED_STAGE
 
 from .node_runtime_event_sink import NODE_RUNTIME_EVENTS_FILENAME
 from .runtime_event_store import (
     MAX_PROVIDER_REQUEST_SUMMARIES,
     MAX_RUNTIME_EVENTS,
     normalize_runtime_event,
+    append_provider_request_completion,
     update_provider_request_totals,
 )
 
@@ -48,6 +50,22 @@ def load_node_runtime_projection(node_dir: str) -> dict[str, Any]:
             if isinstance(summary, dict):
                 provider_summaries.append(summary)
                 update_provider_request_totals(provider_totals_payload, summary)
+        elif (
+            normalized.get("type") == "runtime_notice"
+            and str(normalized.get("stage") or "").strip() == PROVIDER_REQUEST_COMPLETED_STAGE
+        ):
+            completion = record.get("provider_request_completion")
+            if not isinstance(completion, dict):
+                completion = _parse_summary_from_notice(normalized)
+            if isinstance(completion, dict):
+                normalized["message"] = json.dumps(completion, ensure_ascii=False)
+                append_provider_request_completion(provider_totals_payload, normalized)
+                request_index = completion.get("request_index")
+                usage = completion.get("usage")
+                for summary in reversed(provider_summaries):
+                    if isinstance(summary, dict) and summary.get("request_index") == request_index and isinstance(usage, dict):
+                        summary["usage"] = dict(usage)
+                        break
 
     projection: dict[str, Any] = {}
     if runtime_events:

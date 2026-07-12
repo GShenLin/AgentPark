@@ -86,12 +86,12 @@ def test_internal_memory_disabled_preserves_explicit_message_history():
         assert messages[3]["tool_call_id"] == "call-1"
 
 
-def test_message_persists_visible_assistant_tool_call_note_via_bound_callback():
+def test_assistant_progress_persists_via_bound_callback_without_entering_messages():
     with tempfile.TemporaryDirectory() as d:
         memory_path = Path(d) / "dummy.md"
         agent = DummyAgent("dummy", memory_file_path=str(memory_path), internal_memory_enabled=False)
         calls = []
-        agent._agentpark_persist_assistant_tool_call_note = lambda message: calls.append(dict(message))
+        agent._agentpark_persist_assistant_progress = lambda message: calls.append(dict(message))
 
         tool_calls = [
             {
@@ -100,23 +100,25 @@ def test_message_persists_visible_assistant_tool_call_note_via_bound_callback():
                 "function": {"name": "read_file", "arguments": "{}"},
             }
         ]
-        agent.Message("assistant", "I will inspect that first.", tool_calls=tool_calls)
+        agent.AssistantProgress("I will inspect that first.", tool_calls=tool_calls)
 
         assert calls == [
             {
-                "role": "assistant",
+                "role": "assistant_progress",
                 "content": "I will inspect that first.",
+                "context_policy": "exclude",
                 "tool_calls": tool_calls,
             }
         ]
+        assert agent.messages == []
         assert memory_path.exists() is False
 
 
-def test_message_does_not_persist_blank_or_non_persistent_tool_call_notes():
+def test_assistant_progress_does_not_persist_blank_content():
     with tempfile.TemporaryDirectory() as d:
         agent = DummyAgent("dummy", memory_file_path=str(Path(d) / "dummy.md"), internal_memory_enabled=False)
         calls = []
-        agent._agentpark_persist_assistant_tool_call_note = lambda message: calls.append(dict(message))
+        agent._agentpark_persist_assistant_progress = lambda message: calls.append(dict(message))
         tool_calls = [
             {
                 "id": "call-1",
@@ -125,8 +127,22 @@ def test_message_does_not_persist_blank_or_non_persistent_tool_call_notes():
             }
         ]
 
-        agent.Message("assistant", "", tool_calls=tool_calls)
-        agent.Message("assistant", "hidden note", persist=False, tool_calls=tool_calls)
-        agent.Message("assistant", "final answer")
+        agent.AssistantProgress("", tool_calls=tool_calls)
 
         assert calls == []
+
+
+def test_messages_with_memory_excludes_progress_and_explicit_exclusions():
+    with tempfile.TemporaryDirectory() as d:
+        agent = DummyAgent("dummy", memory_file_path=str(Path(d) / "dummy.md"), internal_memory_enabled=False)
+        agent.messages = [
+            {"role": "user", "content": "question"},
+            {"role": "assistant_progress", "content": "working"},
+            {"role": "assistant", "content": "hidden", "context_policy": "exclude"},
+            {"role": "assistant", "content": "answer"},
+        ]
+
+        assert agent._get_messages_with_memory() == [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "answer"},
+        ]

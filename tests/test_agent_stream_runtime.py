@@ -37,6 +37,51 @@ def test_agent_stream_runtime_emits_thinking_delta_separately():
     ]
 
 
+def test_agent_stream_runtime_carries_server_tool_result_into_done_event():
+    events = []
+    runtime = AgentStreamRuntime(lambda payload: events.append(payload))
+    runtime.on_tool_event(
+        {
+            "type": "server_tool_activity",
+            "call_id": "ws_1",
+            "tool_type": "web_search",
+            "status": "completed",
+            "sources": [{"url": "https://example.com", "title": "Example"}],
+        }
+    )
+
+    runtime.emit_done(
+        "answer",
+        structured_result={
+            "citations": [{"url": "https://example.com"}],
+            "response_metadata": {
+                "protocol": "responses",
+                "response": {"id": "resp_1", "status": "completed"},
+                "output_items": [],
+            },
+        },
+    )
+
+    assert events[-1] == {
+        "type": "node_message_done",
+        "text": "answer",
+        "server_tool_calls": [
+            {
+                "call_id": "ws_1",
+                "tool_type": "web_search",
+                "status": "completed",
+                "sources": [{"url": "https://example.com", "title": "Example"}],
+            }
+        ],
+        "citations": [{"url": "https://example.com"}],
+        "response_metadata": {
+            "protocol": "responses",
+            "response": {"id": "resp_1", "status": "completed"},
+            "output_items": [],
+        },
+    }
+
+
 def test_agent_stream_runtime_restores_tool_callback_after_send():
     previous_events = []
 
@@ -80,6 +125,48 @@ def test_agent_stream_runtime_accepts_tool_event_callback_keyword():
 
     assert tool_events == [{"type": "tool_call_start", "name": "read_file"}]
     assert stream_events == [{"type": "tool_call_start", "name": "read_file"}]
+
+
+def test_agent_stream_runtime_attaches_runtime_tool_call_arguments_and_result():
+    runtime = AgentStreamRuntime(None)
+    runtime.on_tool_event(
+        {
+            "type": "tool_call_start",
+            "name": "execute_console_command",
+            "call_id": "call_1",
+            "provider": "responses",
+            "arguments": {"command": "Get-Location"},
+            "arguments_json": '{"command":"Get-Location"}',
+            "raw_call": {"type": "function_call"},
+        }
+    )
+    runtime.on_tool_event(
+        {
+            "type": "tool_call_end",
+            "name": "execute_console_command",
+            "call_id": "call_1",
+            "provider": "responses",
+            "status": "completed",
+            "duration_ms": 12,
+            "result": '{"stdout":"C:\\\\Project","stderr":"","returncode":0}',
+        }
+    )
+
+    result = runtime.attach_runtime_tool_calls(
+        {"response": "done", "response_metadata": {"protocol": "responses"}}
+    )
+
+    assert result["response_metadata"]["runtime_tool_calls"] == [
+        {
+            "name": "execute_console_command",
+            "call_id": "call_1",
+            "provider": "responses",
+            "arguments": {"command": "Get-Location"},
+            "status": "completed",
+            "duration_ms": 12,
+            "result": '{"stdout":"C:\\\\Project","stderr":"","returncode":0}',
+        }
+    ]
 
 
 def test_agent_stream_runtime_filters_unsupported_kwargs_and_restores_tool_callback():

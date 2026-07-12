@@ -17,6 +17,7 @@ from src.providers.responses_runtime_context import has_environment_context
 from src.providers.responses_runtime_context import has_permissions_context
 from src.providers.responses_runtime_context import has_project_instructions_context
 from src.providers.responses_runtime_context import peel_initial_developer_items
+from src.providers.server_tool_protocol import extract_responses_server_tool_result
 
 
 class ResponsesRuntimeMethods:
@@ -37,9 +38,20 @@ class ResponsesRuntimeMethods:
             payload["tool_choice"] = self._responses_tool_choice()
             payload["parallel_tool_calls"] = self._responses_parallel_tool_calls()
         payload.update(self._responses_payload_extra(**provider_options))
+        required_includes = self._responses_required_includes(tools_payload)
+        if required_includes:
+            existing = payload.get("include") if isinstance(payload.get("include"), list) else []
+            payload["include"] = list(dict.fromkeys([*existing, *required_includes]))
         if use_stream:
             payload["stream"] = True
         return payload
+
+    def _responses_required_includes(self, tools_payload) -> list[str]:
+        _ = tools_payload
+        return []
+
+    def _parse_responses_structured_result(self, result) -> dict[str, Any]:
+        return extract_responses_server_tool_result(result)
 
     def _responses_tool_choice(self) -> str:
         text = str(self.config.get("responsesToolChoice") or "").strip()

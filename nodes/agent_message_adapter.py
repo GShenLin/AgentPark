@@ -126,6 +126,27 @@ def build_agent_output_message(response: object) -> dict:
     return build_text_envelope(text, role="assistant")
 
 
+def build_response_metadata_message(response: object, *, assistant_message_id: object) -> dict | None:
+    if not isinstance(response, dict):
+        return None
+    structured_result = {
+        key: response.get(key)
+        for key in ("server_tool_calls", "citations", "response_metadata", "provider_requests")
+        if (isinstance(response.get(key), list) or isinstance(response.get(key), dict)) and response.get(key)
+    }
+    if not structured_result:
+        return None
+    data = {
+        "kind": "response_metadata",
+        "assistant_message_id": str(assistant_message_id or "").strip(),
+        **structured_result,
+    }
+    return normalize_envelope(
+        {"role": "metadata", "parts": [{"type": "structured", "data": data}]},
+        default_role="metadata",
+    )
+
+
 def extract_channel_meta(message: object) -> list[dict]:
     envelope = normalize_message_envelope(message, default_role="user")
     output: list[dict] = []

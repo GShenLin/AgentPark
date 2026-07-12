@@ -4,6 +4,7 @@ from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStre
 from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta
 from src.providers.responses_stream_events import ResponsesOutputItemDone
 from src.providers.responses_stream_events import ResponsesReasoningDelta
+from src.providers.responses_stream_events import ResponsesServerToolActivity
 from src.providers.responses_stream_events import ResponsesStreamFailure
 
 
@@ -85,6 +86,26 @@ def test_openai_responses_sse_events_normalize_to_typed_runtime_events():
         "arguments": '{"message":"hello"}',
         "status": "completed",
     }
+
+
+def test_openai_responses_server_tool_status_event_normalizes():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.web_search_call.searching",
+                "item_id": "ws_1",
+                "output_index": 0,
+                "action": {"type": "search", "query": "AgentPark"},
+            }
+        ]
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert isinstance(event, ResponsesServerToolActivity)
+    assert event.item_type == "web_search_call"
+    assert event.status == "in_progress"
+    assert event.item["action"] == {"type": "search", "query": "AgentPark"}
 
 
 def test_openai_responses_sse_malformed_json_surfaces_typed_failure():

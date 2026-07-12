@@ -13,6 +13,7 @@ const nodeRuntimeGraphEvents = new Set([
   'node_state_set',
   'node_message_done',
   'runtime_notice',
+  'server_tool_activity',
   'tool_call_start',
   'tool_call_end',
   'node_control',

@@ -6,7 +6,7 @@ WORKSPACE_ROOT="$(pwd)"
 PYTHON_BIN="${PYTHON_BIN:-}"
 
 if [ -z "$PYTHON_BIN" ]; then
-  for candidate in "$WORKSPACE_ROOT/AgnetPark_Linux_env/bin/python" "$WORKSPACE_ROOT/.venv/bin/python" python3 python; do
+  for candidate in "$WORKSPACE_ROOT/AgentPark_Linux_env/bin/python" "$WORKSPACE_ROOT/.venv/bin/python" python3 python; do
     if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -m pip --version >/dev/null 2>&1; then
       PYTHON_BIN="$candidate"
       break
@@ -20,7 +20,7 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 
 echo "[INFO] Restarting AgentPark..."
-"$PYTHON_BIN" scripts/restart_aitools.py --workspace-root "$WORKSPACE_ROOT" --stop-only
+"$PYTHON_BIN" scripts/restart_agentpark.py --workspace-root "$WORKSPACE_ROOT" --stop-only
 
 if git status --porcelain | grep . >/dev/null 2>&1; then
   echo "[WARN] Working tree has local changes; skipping git pull --rebase."
@@ -30,4 +30,4 @@ else
 fi
 
 echo "[INFO] Starting AgentPark through build_and_run.sh..."
-AITOOLS_NO_PAUSE=1 exec "$WORKSPACE_ROOT/build_and_run.sh" "$@"
+AGENTPARK_NO_PAUSE=1 exec "$WORKSPACE_ROOT/build_and_run.sh" "$@"

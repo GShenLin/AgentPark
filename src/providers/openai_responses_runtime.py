@@ -23,6 +23,16 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
             }
         return {}
 
+    def _responses_required_includes(self, tools_payload) -> list[str]:
+        tool_types = {
+            str(item.get("type") or "").strip().lower()
+            for item in (tools_payload if isinstance(tools_payload, list) else [])
+            if isinstance(item, dict)
+        }
+        if tool_types & {"web_search", "web_search_preview"}:
+            return ["web_search_call.action.sources"]
+        return []
+
     def _resolve_reasoning_summary(self, value):
         summary = str(value or "").strip().lower()
         if not summary:

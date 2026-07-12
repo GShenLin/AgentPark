@@ -16,6 +16,10 @@ const props = defineProps<{
   mode: MemoryMode
   memoryText: string
   messages: MessageEnvelope[]
+  historyComplete: boolean
+  progressLoaded: boolean
+  metadataLoaded: boolean
+  loadingSection: 'progress' | 'metadata' | null
   liveMessage: string
   thinkingMessage: string
   activityMessage: string
@@ -61,7 +65,9 @@ const emit = defineEmits<{
   (event: 'autoScrollChange', value: boolean): void
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
-  (event: 'deleteMessage', message: MessageEnvelope): void
+  (event: 'deleteMessage', messages: MessageEnvelope | MessageEnvelope[]): void
+  (event: 'requestHistory'): void
+  (event: 'requestSection', section: 'progress' | 'metadata'): void
   (event: 'sendInteractiveInput', options: InteractiveInputOptions): void
   (event: 'interactiveSubmit'): void
   (event: 'interactiveCtrlC'): void
@@ -296,9 +302,15 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       <MemoryMessageFeed
         :messages="messages"
         :markdown-preview="markdownPreview"
+        :history-complete="historyComplete"
+        :progress-loaded="progressLoaded"
+        :metadata-loaded="metadataLoaded"
+        :loading-section="loadingSection"
         @save-message="emit('saveMessage', $event)"
         @copy-message="emit('copyMessage', $event)"
         @delete-message="emit('deleteMessage', $event)"
+        @request-history="emit('requestHistory')"
+        @request-section="emit('requestSection', $event)"
       />
       <div v-if="hasLiveActivity" class="live-message">
         <div class="live-head">

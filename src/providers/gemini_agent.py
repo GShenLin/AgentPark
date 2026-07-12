@@ -255,7 +255,13 @@ class GeminiAgent(ServiceHost, BaseAgent):
                         has_function_call = bool(function_calls)
 
                         if has_function_call:
-                            self.Message("assistant", text_content if has_text else None, parts=parts)
+                            self.AssistantProgress(text_content if has_text else None)
+                            protocol_parts = [
+                                part
+                                for part in parts
+                                if isinstance(part, dict) and part.get("functionCall")
+                            ]
+                            self.Message("assistant", None, persist=False, parts=protocol_parts)
                             if run_tools:
                                 executions = self._execute_function_calls_parallel(function_calls)
                                 for execution in executions:

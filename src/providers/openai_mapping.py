@@ -4,6 +4,7 @@ from src.tool.tool_call_protocol import from_responses_function_call_parse_failu
 from src.tool.tool_call_protocol import ToolCallEnvelope
 from src.tool.tool_call_protocol import ToolCallParseFailure
 from src.tool.tool_call_protocol import parse_arguments
+from src.providers.server_tool_protocol import extract_responses_server_tool_result
 
 
 class OpenAIResponsesMapping(ResponsesMapping):
@@ -85,9 +86,8 @@ class OpenAIResponsesMapping(ResponsesMapping):
                     items.append(dict(item))
                 continue
             if item_type == "message":
-                message_item = self._responses_message_output_to_input_item(item)
-                if message_item is not None:
-                    items.append(message_item)
+                # Text emitted beside a function call is user-visible progress,
+                # not protocol history for the next model request.
                 continue
             if item_type != "function_call":
                 continue
@@ -148,6 +148,9 @@ class OpenAIResponsesMapping(ResponsesMapping):
                     if text:
                         text_parts.append(text)
         return "\n".join(text_parts).strip(), function_calls, str(result.get("id") or "").strip() if isinstance(result, dict) else ""
+
+    def _parse_responses_structured_result(self, result):
+        return extract_responses_server_tool_result(result)
 
     def _openai_responses_function_call_to_item(self, item):
         if not isinstance(item, dict):

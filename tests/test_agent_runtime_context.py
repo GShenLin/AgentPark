@@ -21,7 +21,7 @@ def test_agent_runtime_context_bind_and_read(tmp_path):
             shell="powershell",
             responses_instruction="Use the Responses instructions field.",
             skill_resource_roots={"demo": str(tmp_path / "skill")},
-            persist_assistant_tool_call_note=lambda message: calls.append(message),
+            persist_assistant_progress=lambda message: calls.append(message),
         ),
     )
 
@@ -33,9 +33,9 @@ def test_agent_runtime_context_bind_and_read(tmp_path):
     assert resolved.collaboration_mode == "plan"
     assert resolved.responses_instruction == "Use the Responses instructions field."
     assert resolved.skill_resource_roots == {"demo": str(tmp_path / "skill")}
-    assert resolved.persist_assistant_tool_call_note is not None
-    resolved.persist_assistant_tool_call_note({"role": "assistant"})
-    assert calls == [{"role": "assistant"}]
+    assert resolved.persist_assistant_progress is not None
+    resolved.persist_assistant_progress({"role": "assistant_progress"})
+    assert calls == [{"role": "assistant_progress"}]
 
 
 def test_agent_runtime_context_reads_bound_attributes(tmp_path):

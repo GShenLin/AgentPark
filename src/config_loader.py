@@ -4,6 +4,7 @@ import os
 
 from src.provider_feature_matrix import build_provider_feature_matrix
 from src.doubao_reasoning_effort import require_doubao_reasoning_effort
+from src.grok_reasoning_effort import require_grok_reasoning_effort
 from .workspace_settings import get_workspace_root
 
 
@@ -171,6 +172,8 @@ class ConfigLoader:
             provider["type"] = provider_type
         if provider_type == "doubao":
             self._validate_doubao_reasoning_effort_fields(provider)
+        if provider_type == "grok":
+            self._validate_grok_reasoning_effort_fields(provider)
 
         auth_mode = str(provider.get("authMode") or "api_key").strip().lower()
         if auth_mode not in {"api_key", "codex"}:
@@ -243,6 +246,18 @@ class ConfigLoader:
         if effort:
             provider["reasoningEffort"] = effort
 
+    def _validate_grok_reasoning_effort_fields(self, provider):
+        if "reasoningSummary" in provider:
+            raise ValueError("Grok providers do not support reasoningSummary.")
+        if "reasoningEffort" not in provider:
+            return
+        effort = require_grok_reasoning_effort(
+            provider.get("model"),
+            provider.get("reasoningEffort"),
+        )
+        if effort:
+            provider["reasoningEffort"] = effort
+
     def _validate_responses_provider_config(self, provider_name, provider, provider_type):
         if provider.get("responsesApi") is not True:
             return
@@ -273,8 +288,9 @@ class ConfigLoader:
                     f"Provider '{provider_name}' has invalid {key}; expected a positive integer."
                 )
 
-        if provider_type == "openai":
-            self._validate_openai_reasoning_summary(provider_name, provider)
+        if provider_type in {"openai", "grok"}:
+            if provider_type == "openai":
+                self._validate_openai_reasoning_summary(provider_name, provider)
             if "responsesReplayReasoningItems" not in provider:
                 raise ValueError(
                     f"Provider '{provider_name}' has responsesApi=true but missing required field responsesReplayReasoningItems."
@@ -302,7 +318,7 @@ class ConfigLoader:
             )
         provider["reasoningSummary"] = summary
 
-    def _load_config(self):
+    def _load_provider_document(self):
         provider_config_path = self._resolve_provider_config_path()
         with open(provider_config_path, "r", encoding="utf-8") as f:
             payload = json.load(f)
@@ -315,6 +331,11 @@ class ConfigLoader:
             providers = {}
         if not isinstance(providers, dict):
             raise ValueError("moduleProvider.json 'providers' must be an object.")
+
+        return provider_config_path, payload, providers
+
+    def _load_config(self):
+        provider_config_path, _, providers = self._load_provider_document()
 
         normalized = copy.deepcopy(self._load_workspace_config(provider_config_path))
         normalized["providers"] = {
@@ -335,7 +356,7 @@ class ConfigLoader:
         if not provider_id:
             raise ValueError("provider_name is required")
 
-        providers = self.get_config().get("providers", {})
+        _, _, providers = self._load_provider_document()
         if provider_id not in providers:
             raise ValueError(f"Provider '{provider_id}' not found in configuration")
 

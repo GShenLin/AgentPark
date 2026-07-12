@@ -49,6 +49,22 @@ function toolCallDiagnostics(part: Record<string, unknown>) {
   if (!Array.isArray(diagnostics)) return []
   return diagnostics.map((item) => String(item)).filter((item) => item.trim())
 }
+
+function toolCallSources(part: Record<string, unknown>) {
+  if (!Array.isArray(part.sources)) return []
+  return part.sources
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .map((item) => ({
+      url: String(item.url || '').trim(),
+      title: String(item.title || '').trim(),
+    }))
+    .filter((item) => /^https?:\/\//i.test(item.url))
+}
+
+function toolCallDetails(part: Record<string, unknown>) {
+  if (!part.details || typeof part.details !== 'object') return ''
+  return JSON.stringify(part.details, null, 2)
+}
 </script>
 
 <template>
@@ -61,6 +77,19 @@ function toolCallDiagnostics(part: Record<string, unknown>) {
     <div v-if="toolCallMeta(part)" class="feed-tool-meta">{{ toolCallMeta(part) }}</div>
     <pre v-if="toolCallArguments(part)" class="feed-tool-arguments">{{ toolCallArguments(part) }}</pre>
     <div v-if="toolCallPreview(part)" class="feed-tool-preview">{{ toolCallPreview(part) }}</div>
+    <div v-if="toolCallSources(part).length" class="feed-tool-sources">
+      <a
+        v-for="source in toolCallSources(part)"
+        :key="source.url"
+        :href="source.url"
+        target="_blank"
+        rel="noreferrer noopener"
+      >{{ source.title || source.url }}</a>
+    </div>
+    <details v-if="toolCallDetails(part)" class="feed-tool-details">
+      <summary>Complete tool result</summary>
+      <pre>{{ toolCallDetails(part) }}</pre>
+    </details>
     <div v-if="toolCallDiagnostics(part).length" class="feed-tool-diagnostics">
       <div v-for="(item, index) in toolCallDiagnostics(part)" :key="index" class="feed-tool-diagnostic">
         {{ item }}
@@ -150,6 +179,48 @@ function toolCallDiagnostics(part: Record<string, unknown>) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.feed-tool-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feed-tool-sources a {
+  color: rgba(125, 211, 252, 0.94);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.feed-tool-details summary {
+  cursor: pointer;
+  color: rgba(203, 213, 225, 0.78);
+  font-size: 11px;
+}
+
+.feed-tool-details[open] > summary {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin: 0 -3px;
+  padding: 5px 3px;
+  border-radius: 5px;
+  background: rgba(44, 20, 40, 0.98);
+  box-shadow: 0 4px 8px rgba(2, 6, 23, 0.22);
+}
+
+.feed-tool-details pre {
+  max-height: 280px;
+  margin: 6px 0 0;
+  padding: 7px 8px;
+  overflow: auto;
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.38);
+  color: rgba(203, 213, 225, 0.9);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 10px;
 }
 
 .feed-tool-diagnostic {

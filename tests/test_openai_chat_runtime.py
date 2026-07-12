@@ -129,11 +129,11 @@ def test_openai_chat_provider_omits_thinking_fields_when_disabled():
     assert "reasoning_effort" not in payload
 
 
-def test_openai_chat_persists_visible_assistant_tool_call_note_before_tool_execution():
+def test_openai_chat_persists_progress_before_tool_execution_without_context_text():
     agent = _build_openai_chat_agent()
     order = []
     requests = []
-    agent._agentpark_persist_assistant_tool_call_note = lambda message: order.append(
+    agent._agentpark_persist_assistant_progress = lambda message: order.append(
         ("persist", message.get("content"))
     )
 
@@ -175,6 +175,9 @@ def test_openai_chat_persists_visible_assistant_tool_call_note_before_tool_execu
         ("persist", "I will call the echo tool."),
         ("tool", "hello"),
     ]
+    assert requests[1]["messages"][-2]["role"] == "assistant"
+    assert requests[1]["messages"][-2].get("content") is None
+    assert "I will call the echo tool." not in json.dumps(requests[1]["messages"], ensure_ascii=False)
     assert [payload["thinking"] for payload in requests] == [
         {"type": "enabled"},
         {"type": "enabled"},

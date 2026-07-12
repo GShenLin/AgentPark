@@ -69,7 +69,7 @@ select_python() {
   if [ -n "$PYTHON_BIN" ]; then
     return 0
   fi
-  for candidate in "./AgnetPark_Linux_env/bin/python" "./.venv/bin/python" "python3" "python"; do
+  for candidate in "./AgentPark_Linux_env/bin/python" "./.venv/bin/python" "python3" "python"; do
     if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -m pip --version >/dev/null 2>&1; then
       PYTHON_BIN="$candidate"
       return 0
@@ -108,11 +108,11 @@ echo "[INFO] Installing/updating Python dependencies..."
 
 if [ "$LAUNCH_MODE" = "cli_web" ]; then
   echo "[INFO] Stopping existing AgentPark processes for this workspace..."
-  "$PYTHON_BIN" scripts/restart_aitools.py --workspace-root "$(pwd)" --stop-only
+  "$PYTHON_BIN" scripts/restart_agentpark.py --workspace-root "$(pwd)" --stop-only
 
   mkdir -p .runtime
   echo "[INFO] Starting AgentPark web server in background."
-  "$PYTHON_BIN" -m src.fast_api --workspace-root "$(pwd)" > .runtime/aitools-server.log 2> .runtime/aitools-server.err.log &
+  "$PYTHON_BIN" -m src.fast_api --workspace-root "$(pwd)" > .runtime/agentpark-server.log 2> .runtime/agentpark-server.err.log &
   SERVER_PID="$!"
   trap stop_background_server EXIT INT TERM
 fi

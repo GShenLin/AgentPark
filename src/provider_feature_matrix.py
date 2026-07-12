@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.grok_reasoning_effort import grok_reasoning_effort_values
+
 
 PROVIDER_FEATURE_SCHEMA_VERSION = 1
 
@@ -38,6 +40,31 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "requires": "responsesApi=true",
                 "transport": "responses" if responses_api else "",
             },
+        )
+    if provider_type == "grok":
+        responses_api = config.get("responsesApi") is True
+        reasoning_effort_values = grok_reasoning_effort_values(config.get("model"))
+        return _payload(
+            responses_api={
+                "supported": responses_api,
+                "values": ["enabled", "disabled"],
+                "requires": "responsesApi=true",
+                "transport": "responses" if responses_api else "",
+            },
+            web_search={
+                "supported": responses_api,
+                "values": ["enabled", "disabled"],
+                "requires": "responsesApi=true",
+                "transport": "responses" if responses_api else "",
+            },
+            tools={"supported": True, "values": ["enabled", "disabled"]},
+            thinking={"supported": False, "values": []},
+            reasoning_effort={
+                "supported": bool(reasoning_effort_values),
+                "values": reasoning_effort_values,
+                "transport": "responses" if responses_api else "chat_completions",
+            },
+            reasoning_summary={"supported": False, "values": []},
         )
     if provider_type == "deepseek":
         return _payload(

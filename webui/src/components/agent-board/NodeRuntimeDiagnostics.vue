@@ -32,6 +32,9 @@ const providerTotals = computed(() => {
       toolInputChars: numberField(props.providerTotals as Record<string, unknown>, 'tool_call_chars') ?? 0,
       toolOutputChars: numberField(props.providerTotals as Record<string, unknown>, 'tool_result_chars') ?? 0,
       requestCount: numberField(props.providerTotals as Record<string, unknown>, 'request_count') ?? providerSummaries.value.length,
+      actualInputTokens: numberField(props.providerTotals as Record<string, unknown>, 'actual_input_tokens'),
+      actualOutputTokens: numberField(props.providerTotals as Record<string, unknown>, 'actual_output_tokens'),
+      actualTotalTokens: numberField(props.providerTotals as Record<string, unknown>, 'actual_total_tokens'),
     }
   }
   let inputChars = 0
@@ -44,7 +47,16 @@ const providerTotals = computed(() => {
     toolInputChars += summaryChars(summary, 'tool_call_chars_by_call', 'tool_call_chars_total')
     toolOutputChars += summaryChars(summary, 'tool_result_chars_by_call', 'tool_result_chars_total')
   }
-  return { inputChars, inputTokens, toolInputChars, toolOutputChars, requestCount: providerSummaries.value.length }
+  return {
+    inputChars,
+    inputTokens,
+    toolInputChars,
+    toolOutputChars,
+    requestCount: providerSummaries.value.length,
+    actualInputTokens: null,
+    actualOutputTokens: null,
+    actualTotalTokens: null,
+  }
 })
 const nowMs = ref(Date.now())
 let elapsedTimer: number | null = null
@@ -138,6 +150,13 @@ const requestRows = computed<DiagnosticRow[]>(() => {
           null,
         ),
       })
+    }
+    if (providerTotals.value.actualTotalTokens != null) {
+      const parts: string[] = []
+      if (providerTotals.value.actualInputTokens != null) parts.push(`${formatTokens(providerTotals.value.actualInputTokens)} in`)
+      if (providerTotals.value.actualOutputTokens != null) parts.push(`${formatTokens(providerTotals.value.actualOutputTokens)} out`)
+      parts.push(`${formatTokens(providerTotals.value.actualTotalTokens)} total`)
+      rows.push({ label: 'Actual Usage', value: parts.join(' / '), tone: 'ok' })
     }
     if (environmentChars != null && environmentChars > 0) {
       rows.push({ label: 'Env', value: formatChars(environmentChars), tone: 'muted' })

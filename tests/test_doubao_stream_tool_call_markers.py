@@ -1,3 +1,6 @@
+import json
+
+
 def _build_agent():
     from src.tool.base_tool import BaseTool
     from src.providers.doubao_agent import DouBaoAgent
@@ -68,6 +71,92 @@ def test_stream_chat_completions_reads_curl_sse_lines():
 
     assert result["choices"][0]["message"]["content"] == "OK"
     assert events == [("O", "O"), ("K", "OK")]
+
+
+def test_doubao_responses_stream_emits_server_tool_activity_with_sources():
+    agent = _build_agent()
+
+    def _fake_sse_lines(**_kwargs):
+        yield json.dumps(
+            {
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "type": "web_search_call",
+                    "id": "ws_1",
+                    "status": "in_progress",
+                    "action": {"type": "search", "query": "AgentPark"},
+                },
+            }
+        )
+        yield json.dumps(
+            {
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "type": "web_search_call",
+                    "id": "ws_1",
+                    "status": "completed",
+                    "action": {
+                        "type": "search",
+                        "query": "AgentPark",
+                        "sources": [{"url": "https://example.com", "title": "Example"}],
+                    },
+                },
+            }
+        )
+        yield json.dumps(
+            {
+                "type": "response.completed",
+                "response": {
+                    "id": "resp_1",
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "web_search_call",
+                            "id": "ws_1",
+                            "status": "completed",
+                            "action": {
+                                "type": "search",
+                                "query": "AgentPark",
+                                "sources": [{"url": "https://example.com", "title": "Example"}],
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+
+    agent._curl_post_sse_data_lines = _fake_sse_lines
+    result = agent._stream_responses_once(
+        url="https://example.com/v1/responses",
+        headers={"Authorization": "Bearer test"},
+        payload_json='{"stream": true}',
+        timeout_sec=60,
+        stream_handler=None,
+    )
+
+    activities = [event for event in agent.events if event.get("type") == "server_tool_activity"]
+    assert [event["status"] for event in activities] == ["in_progress", "completed"]
+    assert activities[-1]["sources"] == [{"url": "https://example.com", "title": "Example"}]
+    assert activities[-1]["details"]["action"]["query"] == "AgentPark"
+    assert result["id"] == "resp_1"
+
+
+def test_doubao_responses_uses_common_complete_response_metadata_parser():
+    agent = _build_agent()
+    response = {
+        "id": "resp_1",
+        "status": "completed",
+        "usage": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+        "output": [{"type": "web_search_call", "id": "ws_1", "status": "completed"}],
+    }
+
+    parsed = agent._parse_responses_structured_result(response)
+
+    assert parsed["server_tool_calls"][0]["details"] == response["output"][0]
+    assert parsed["response_metadata"]["response"]["usage"]["total_tokens"] == 5
+    assert parsed["response_metadata"]["output_items"] == response["output"]
 
 
 def test_stream_chat_completions_forwards_reasoning_content():

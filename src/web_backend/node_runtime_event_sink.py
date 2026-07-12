@@ -12,6 +12,7 @@ from src.node_stream_protocol import NODE_MESSAGE_DONE
 from src.node_stream_protocol import NODE_THINKING_DELTA
 from src.node_stream_protocol import normalize_node_message_event
 from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
+from src.providers.provider_runtime_events import PROVIDER_REQUEST_COMPLETED_STAGE
 
 from .runtime_event_store import normalize_runtime_event
 from .state_store import _preview_text
@@ -72,6 +73,7 @@ class NodeRuntimeEventSink:
     append_runtime_log: AppendRuntimeLog | None = None
     emit_runtime_event: RuntimeEventEmit | None = None
     active_tool_calls: dict[str, dict] | None = None
+    completed_server_tool_calls: set[str] | None = None
     stream_output_chars: int = 0
     stream_thinking_chars: int = 0
     stream_thinking_text: str = ""
@@ -94,6 +96,8 @@ class NodeRuntimeEventSink:
         if event_type in {"tool_call_start", "tool_call_end"}:
             normalized = normalize_runtime_event(event)
             return self._handle_tool_call_event(normalized, str(normalized.get("type") or event_type))
+        if event_type == "server_tool_activity":
+            return self._handle_server_tool_activity(normalize_runtime_event(event))
         raise ValueError(f"unsupported node runtime event type: {event_type or '<empty>'}")
 
     def _handle_delta(self, event: dict, *, custom_event: dict | None = None) -> None:
@@ -190,6 +194,56 @@ class NodeRuntimeEventSink:
         if _looks_like_network_error(event):
             self._emit_runtime_event("NetError", event)
 
+    def _handle_server_tool_activity(self, event: dict) -> None:
+        _set_node_config_runtime_event(self.config_path, event)
+        self._append_node_runtime_event_record("server_tool_activity", event)
+        tool_type = str(event.get("tool_type") or "server_tool").strip() or "server_tool"
+        status = str(event.get("status") or "in_progress").strip() or "in_progress"
+        call_id = str(event.get("call_id") or "").strip()
+        self._append_node_runtime_log(
+            "server_tool_activity",
+            phase=status,
+            message=f"Server tool {status}: {tool_type}",
+            tool_name=tool_type,
+            call_id=str(event.get("call_id") or "").strip() or None,
+            provider=str(event.get("provider") or "").strip() or None,
+            status=status,
+        )
+        self.log_graph_event(
+            self.graph_id,
+            "server_tool_activity",
+            trace_id=self.trace_id,
+            node_instance_id=self.node_id,
+            node_type_id=self.node_type_id,
+            depth=self.depth,
+            tool_name=tool_type,
+            call_id=str(event.get("call_id") or "").strip() or None,
+            provider=str(event.get("provider") or "").strip() or None,
+            status=status,
+        )
+        if status in {"completed", "failed", "error", "cancelled", "timeout"}:
+            if self.completed_server_tool_calls is None:
+                self.completed_server_tool_calls = set()
+            if call_id not in self.completed_server_tool_calls:
+                try:
+                    self.append_tool_call_entry(
+                        self.graph_id,
+                        self.node_id,
+                        _server_tool_history_event(event, tool_type=tool_type, status=status),
+                    )
+                except Exception as exc:
+                    self._handle_tool_history_persistence_failure(exc)
+                else:
+                    self.completed_server_tool_calls.add(call_id)
+        if callable(self.publish_live_event):
+            self.publish_live_event(
+                self.graph_id,
+                self.node_id,
+                "server_tool_activity",
+                event,
+                trace_id=self.trace_id,
+            )
+
     def _handle_tool_call_event(self, event: dict, event_type: str):
         _set_node_config_runtime_event(self.config_path, event)
         self._remember_tool_call_event(event, event_type)
@@ -250,11 +304,17 @@ class NodeRuntimeEventSink:
             payload["runtime_event"] = dict(event)
             if (
                 str(event.get("type") or "").strip() == "runtime_notice"
-                and str(event.get("stage") or "").strip() == PROVIDER_REQUEST_SUMMARY_STAGE
+                and str(event.get("stage") or "").strip()
+                in {PROVIDER_REQUEST_SUMMARY_STAGE, PROVIDER_REQUEST_COMPLETED_STAGE}
             ):
                 summary = self._parse_provider_request_summary(event.get("message"))
                 if summary is not None:
-                    payload["provider_request_summary"] = summary
+                    key = (
+                        "provider_request_summary"
+                        if str(event.get("stage") or "").strip() == PROVIDER_REQUEST_SUMMARY_STAGE
+                        else "provider_request_completion"
+                    )
+                    payload[key] = summary
         _append_jsonl_line(self._node_runtime_events_path(), payload)
 
     def _node_runtime_events_path(self) -> str:
@@ -445,6 +505,28 @@ def _is_failed_tool_event(event: dict) -> bool:
     status = str(event.get("status") or "").strip().lower()
     error = str(event.get("error") or "").strip()
     return bool(error) or status in {"error", "blocked", "timeout", "exception", "stopped", "failed"}
+
+
+def _server_tool_history_event(event: dict, *, tool_type: str, status: str) -> dict:
+    history_event = {
+        "call_id": str(event.get("call_id") or "").strip(),
+        "name": tool_type,
+        "provider": str(event.get("provider") or "").strip(),
+        "status": status,
+    }
+    action = event.get("action")
+    if isinstance(action, dict):
+        history_event["arguments"] = dict(action)
+    sources = event.get("sources")
+    if isinstance(sources, list) and sources:
+        history_event["result_preview"] = f"{len(sources)} source{'s' if len(sources) != 1 else ''}"
+        history_event["sources"] = [dict(item) for item in sources if isinstance(item, dict)]
+    details = event.get("details")
+    if isinstance(details, dict) and details:
+        history_event["details"] = dict(details)
+    if status in {"failed", "error", "cancelled", "timeout"}:
+        history_event["error"] = str(event.get("error") or f"Server tool {status}").strip()
+    return history_event
 
 
 def _looks_like_network_error(event: dict) -> bool:

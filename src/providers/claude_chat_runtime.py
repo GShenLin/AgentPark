@@ -367,7 +367,11 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
             message["_claude_content_blocks"] = native_blocks
         if tool_calls:
             message["tool_calls"] = tool_calls
-        return {"choices": [{"message": message}]}
+        normalized: dict[str, Any] = {"choices": [{"message": message}]}
+        usage = result.get("usage")
+        if isinstance(usage, dict) and usage:
+            normalized["usage"] = dict(usage)
+        return normalized
 
     def extract_tool_calls(self, message):
         if not isinstance(message, dict):

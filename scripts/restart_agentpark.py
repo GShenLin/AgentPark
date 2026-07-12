@@ -7,9 +7,15 @@ import signal
 import sys
 import time
 
+# Keep these in sync with src/server_pid_file.py. This script must stay
+# standalone (it runs before `pip install -e .`), so it cannot import src.*.
+PID_FILE_NAME = "agentpark-server.pid"
+PID_FILE_APP = "AgentPark"
+PID_FILE_KIND = "fast_api_server"
+
 
 def _pid_path(workspace_root: str) -> str:
-    return os.path.join(os.path.abspath(workspace_root), ".runtime", "aitools-server.pid")
+    return os.path.join(os.path.abspath(workspace_root), ".runtime", PID_FILE_NAME)
 
 
 def _read_payload(path: str) -> dict:
@@ -52,6 +58,9 @@ def _read_process_cmdline(pid: int) -> list[str]:
 
 def _is_expected_server_process(pid: int, payload: dict, workspace_root: str) -> bool:
     if not _process_exists(pid):
+        return False
+
+    if payload.get("app") != PID_FILE_APP or payload.get("kind") != PID_FILE_KIND:
         return False
 
     cmdline = _read_process_cmdline(pid)

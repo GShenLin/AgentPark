@@ -36,6 +36,12 @@ def build_tool_call_history_envelope(event: dict[str, Any]) -> dict[str, Any]:
     diagnostics = event.get("diagnostics")
     if isinstance(diagnostics, list):
         part["diagnostics"] = [str(item) for item in diagnostics]
+    sources = event.get("sources")
+    if isinstance(sources, list):
+        part["sources"] = [dict(item) for item in sources if isinstance(item, dict)]
+    details = event.get("details")
+    if isinstance(details, dict) and details:
+        part["details"] = dict(details)
 
     return {
         "id": f"tool-{call_id}",

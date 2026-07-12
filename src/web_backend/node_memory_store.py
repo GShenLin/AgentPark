@@ -44,6 +44,7 @@ __all__ = [
     "delete_node_memory_record",
     "ensure_node_memory_files",
     "load_recent_node_memory_records",
+    "load_latest_node_memory_turn",
     "node_memory_paths_for_record",
     "read_node_memory_text",
     "wait_for_node_memory_idle",
@@ -314,12 +315,73 @@ def load_recent_node_memory_records(
     messages_path: str,
     *,
     limit: int | None,
+    roles: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    normalized_roles = {str(role or "").strip().lower() for role in roles} if roles is not None else None
     return _run_node_memory_transaction(
         memory_path,
         messages_path,
-        lambda: _load_recent_node_memory_records_unlocked(memory_path, messages_path, limit=limit),
+        lambda: _load_recent_node_memory_records_unlocked(
+            memory_path,
+            messages_path,
+            limit=limit,
+            roles=normalized_roles,
+        ),
     )
+
+
+def load_latest_node_memory_turn(
+    memory_path: str,
+    messages_path: str,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Load the newest user turn and report whether it is the complete history."""
+    return _run_node_memory_transaction(
+        memory_path,
+        messages_path,
+        lambda: _load_latest_node_memory_turn_unlocked(memory_path, messages_path),
+    )
+
+
+def _load_latest_node_memory_turn_unlocked(
+    memory_path: str,
+    messages_path: str,
+) -> tuple[list[dict[str, Any]], bool]:
+    failures: list[NodeMemoryPersistenceFailure] = []
+    output_reversed: list[dict[str, Any]] = []
+    found_user = False
+
+    current = current_node_memory_paths(memory_path, messages_path)
+    paths: list[str] = []
+    current_messages_path = current.get("messages_path") or ""
+    if current_messages_path and os.path.exists(current_messages_path):
+        paths.append(current_messages_path)
+    for date_dir in _iter_archive_date_dirs(_node_memory_dir(memory_path, messages_path), reverse=True):
+        path = os.path.join(date_dir, MESSAGES_FILENAME)
+        if os.path.exists(path):
+            paths.append(path)
+
+    for path in paths:
+        try:
+            for record in _read_jsonl_records_reversed(path):
+                if found_user:
+                    return list(reversed(output_reversed)), False
+                output_reversed.append(record)
+                role = str(record.get("role") or "").strip().lower()
+                if role in {"user", "human"}:
+                    found_user = True
+        except Exception as exc:
+            failures.append(
+                NodeMemoryPersistenceFailure(
+                    target="messages",
+                    path=path,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
+
+    _raise_if_failures(failures)
+    if not found_user:
+        return list(reversed(output_reversed)), True
+    return list(reversed(output_reversed)), True
 
 
 def _load_recent_node_memory_records_unlocked(
@@ -327,6 +389,7 @@ def _load_recent_node_memory_records_unlocked(
     messages_path: str,
     *,
     limit: int | None,
+    roles: set[str] | None,
 ) -> list[dict[str, Any]]:
     failures: list[NodeMemoryPersistenceFailure] = []
 
@@ -346,6 +409,8 @@ def _load_recent_node_memory_records_unlocked(
     if current_messages_path and os.path.exists(current_messages_path):
         try:
             for record in _read_jsonl_records_reversed(current_messages_path):
+                if roles is not None and str(record.get("role") or "").strip().lower() not in roles:
+                    continue
                 output_reversed.append(record)
                 if remaining is not None:
                     remaining -= 1
@@ -366,6 +431,8 @@ def _load_recent_node_memory_records_unlocked(
             continue
         try:
             for record in _read_jsonl_records_reversed(path):
+                if roles is not None and str(record.get("role") or "").strip().lower() not in roles:
+                    continue
                 output_reversed.append(record)
                 if remaining is not None:
                     remaining -= 1

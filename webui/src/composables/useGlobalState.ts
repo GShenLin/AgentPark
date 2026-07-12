@@ -13,6 +13,9 @@ const lastError = ref<string | null>(null)
 
 const memoryText = ref('')
 const memoryMessages = ref<MessageEnvelope[]>([])
+const memoryHistoryComplete = ref(true)
+const memoryLatestTurnProgressLoaded = ref(true)
+const memoryLatestTurnMetadataLoaded = ref(true)
 const memoryLiveMessage = ref('')
 const memoryThinkingMessage = ref('')
 const memoryActivityMessage = ref('')
@@ -43,6 +46,9 @@ export function useGlobalState() {
     lastError,
     memoryText,
     memoryMessages,
+    memoryHistoryComplete,
+    memoryLatestTurnProgressLoaded,
+    memoryLatestTurnMetadataLoaded,
     memoryLiveMessage,
     memoryThinkingMessage,
     memoryActivityMessage,

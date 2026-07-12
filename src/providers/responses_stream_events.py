@@ -83,6 +83,16 @@ class ResponsesFunctionCallArgumentsDelta:
 
 
 @dataclass(frozen=True)
+class ResponsesServerToolActivity:
+    item_id: str
+    output_index: int | None
+    item_type: str
+    status: str
+    item: dict[str, Any]
+    event: str = field(default="server_tool_activity", init=False)
+
+
+@dataclass(frozen=True)
 class ResponsesOutputItemDone:
     item_id: str
     output_index: int | None
@@ -106,6 +116,7 @@ ResponsesStreamEvent = (
     | ResponsesOutputTextDelta
     | ResponsesReasoningDelta
     | ResponsesFunctionCallArgumentsDelta
+    | ResponsesServerToolActivity
     | ResponsesOutputItemDone
     | ResponsesResponseCompleted
 )

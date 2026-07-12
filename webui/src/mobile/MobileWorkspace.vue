@@ -3,28 +3,18 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { MessageEnvelope, MobileGraph, MobileNode, ResourceKind } from '../api'
 import { restartServer } from '../api'
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
-import MemoryToolCallPart from '../components/MemoryToolCallPart.vue'
 import MemorySaveDialog from '../components/MemorySaveDialog.vue'
-import {
-  lastToolInstruction,
-  toolDuration,
-  toolGroupLabel,
-  toolGroupParts,
-  toolGroupTime,
-  toolName,
-  toolStatus,
-  useMemoryFeedEntries,
-} from '../components/memoryFeedTools'
+import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
+import { useMemoryTurnEntries } from '../components/memoryFeedTools'
 import MobileLiveMessage from './MobileLiveMessage.vue'
-import MobileMessageText from './MobileMessageText.vue'
+import MobileMemoryMessageCard from './MobileMemoryMessageCard.vue'
 import MobileNodeCreateDialog from './MobileNodeCreateDialog.vue'
 import MobileNodeConfigDialog from './MobileNodeConfigDialog.vue'
 import MobileNodeListItem from './MobileNodeListItem.vue'
 import SettingsPage from '../components/SettingsPage.vue'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { useMobileWorkspace } from './useMobileWorkspace'
-import { buildMessageSignature, messageRoleClass } from './mobileMessageRender'
-import { extractMemoryMessageText } from '../components/memoryMessageText'
+import { buildMessageSignature } from './mobileMessageRender'
 
 const workspace = useMobileWorkspace()
 const {
@@ -54,7 +44,6 @@ const graphStatus = ref('')
 const graphSaving = ref(false)
 const graphProfileCreating = ref(false)
 const goalArmedByNode = ref<Record<string, boolean>>({})
-const expandedToolGroups = ref<Set<string>>(new Set())
 const SCROLL_STICK_THRESHOLD = 48
 
 const headerTitle = computed(() => {
@@ -66,7 +55,33 @@ const headerTitle = computed(() => {
 })
 
 const messages = computed(() => workspace.conversation.value?.messages || [])
-const feedEntries = useMemoryFeedEntries(messages)
+const feedEntries = useMemoryTurnEntries(messages)
+const historyComplete = computed(() => workspace.conversation.value?.history_complete !== false)
+const mobileSectionLoading = ref<'progress' | 'metadata' | null>(null)
+
+function isLatestTurn(index: number) {
+  for (let candidate = feedEntries.value.length - 1; candidate >= 0; candidate -= 1) {
+    if (feedEntries.value[candidate]?.type === 'turn') return candidate === index
+  }
+  return false
+}
+
+async function onMobileTurnToggle(index: number, expanded: boolean) {
+  if (expanded || historyComplete.value || !isLatestTurn(index)) return
+  await workspace.loadConversationHistory()
+}
+
+async function loadMobileTurnSection(section: 'progress' | 'metadata') {
+  if (mobileSectionLoading.value) return
+  mobileSectionLoading.value = section
+  try {
+    await workspace.loadConversationSection(section)
+  } catch {
+    // The workspace exposes the request error; keep the collapsed section available for retry.
+  } finally {
+    mobileSectionLoading.value = null
+  }
+}
 const liveMessage = computed(() => String(workspace.conversation.value?.live_message || ''))
 const thinkingMessage = computed(() => String(workspace.conversation.value?.thinking_message || ''))
 const activityMessage = computed(() => String(workspace.conversation.value?.activity_message || ''))
@@ -108,20 +123,6 @@ type DraftSnapshot = {
   attachments: UploadedFileItem[]
 }
 
-function nodeStateLabel(node: MobileNode) {
-  const state = String(node.state || 'idle')
-  if (state === 'working') return '工作中'
-  if (state === 'stop') return '已停止'
-  return '空闲'
-}
-
-function nodeStateClass(node: MobileNode) {
-  const state = String(node.state || 'idle')
-  if (state === 'working') return 'state-working'
-  if (state === 'stop') return 'state-stop'
-  return 'state-idle'
-}
-
 function canDeleteGraph(graph: MobileGraph) {
   if (typeof graph.deletable === 'boolean') return graph.deletable
   return !graph.readonly
@@ -131,20 +132,6 @@ function canEditGraph(graph: MobileGraph | null) {
   if (!graph) return false
   if (typeof graph.editable === 'boolean') return graph.editable
   return !graph.readonly
-}
-
-function isToolGroupExpanded(key: string) {
-  return expandedToolGroups.value.has(key)
-}
-
-function toggleToolGroup(key: string) {
-  const next = new Set(expandedToolGroups.value)
-  if (next.has(key)) {
-    next.delete(key)
-  } else {
-    next.add(key)
-  }
-  expandedToolGroups.value = next
 }
 
 async function sendDraft() {
@@ -455,17 +442,17 @@ async function clearMemory() {
   scrollFeedToBottom()
 }
 
-function messageTextForActions(message: MessageEnvelope) {
-  return extractMemoryMessageText(message)
-}
-
-async function deleteMobileMessage(message: MessageEnvelope) {
-  const messageId = String((message as any)?.id || '').trim()
-  if (!messageId) return
-  const ok = window.confirm('Delete this conversation entry?')
+async function deleteMobileMessages(target: MessageEnvelope | MessageEnvelope[]) {
+  const messagesToDelete = Array.isArray(target) ? target : [target]
+  const messageIds = Array.from(new Set(
+    messagesToDelete.map((message) => String((message as any)?.id || '').trim()).filter(Boolean),
+  ))
+  if (messageIds.length === 0) return
+  const label = messageIds.length === 1 ? 'this conversation entry' : `these ${messageIds.length} conversation entries`
+  const ok = window.confirm(`Delete ${label}?`)
   if (!ok) return
   try {
-    await workspace.deleteSelectedNodeMessage(messageId)
+    await workspace.deleteSelectedNodeMessages(messageIds)
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
   }
@@ -628,55 +615,32 @@ onMounted(() => {
         <button v-if="canEditGraph(workspace.selectedGraph.value)" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
       </section>
 
-        <section v-else class="chat-view">
-        <div class="node-summary">
-          <span class="node-status" :class="workspace.selectedNode.value ? nodeStateClass(workspace.selectedNode.value) : 'state-idle'"></span>
-          <span>{{ workspace.selectedNode.value ? nodeStateLabel(workspace.selectedNode.value) : '' }}</span>
-          <span v-if="workspace.selectedNode.value?.last_runtime_event" class="activity-text">
-            {{ String(workspace.selectedNode.value.last_runtime_event.name || workspace.selectedNode.value.last_runtime_event.type || '') }}
-          </span>
-        </div>
-
+      <section v-else class="chat-view">
         <div ref="feedRef" class="chat-feed">
           <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage" class="empty-chat">暂无消息</div>
-          <template v-for="entry in feedEntries" :key="entry.key">
-            <article v-if="entry.type === 'message'" class="bubble" :class="messageRoleClass(entry.message)">
-              <div class="bubble-meta">{{ String(entry.message.role || 'assistant') }}</div>
-              <MobileMessageText :message="entry.message" />
-              <div v-if="messageTextForActions(entry.message)" class="mobile-message-actions">
-                <button type="button" class="mobile-message-action save" @click="openSaveMessageDialog(messageTextForActions(entry.message))">Save</button>
-                <button type="button" class="mobile-message-action copy" @click="copyMessageText(messageTextForActions(entry.message))">Copy</button>
-                <button type="button" class="mobile-message-action delete" @click="deleteMobileMessage(entry.message)">Delete</button>
-              </div>
-            </article>
-            <section v-else class="mobile-tool-group" :class="{ expanded: isToolGroupExpanded(entry.key) }">
-              <button class="mobile-tool-group-head" type="button" @click="toggleToolGroup(entry.key)">
-                <span class="mobile-tool-main-row">
-                  <span class="mobile-tool-left">
-                    <span class="mobile-tool-caret">{{ isToolGroupExpanded(entry.key) ? 'v' : '>' }}</span>
-                    <span class="mobile-tool-role">Tool</span>
-                    <span class="mobile-tool-count">{{ toolGroupLabel(entry) }}</span>
-                  </span>
-                  <span class="mobile-tool-time">{{ toolGroupTime(entry) }}</span>
-                </span>
-                <span v-if="lastToolInstruction(entry)" class="mobile-tool-instruction">{{ lastToolInstruction(entry) }}</span>
-              </button>
-              <div v-if="isToolGroupExpanded(entry.key)" class="mobile-tool-list">
-                <div
-                  v-for="(part, index) in toolGroupParts(entry)"
-                  :key="`${entry.key}-${String(part.call_id || index)}`"
-                  class="mobile-tool-row"
-                >
-                  <div class="mobile-tool-row-head">
-                    <span class="mobile-tool-dot" :class="`status-${toolStatus(part)}`"></span>
-                    <span class="mobile-tool-name">{{ toolName(part) }}</span>
-                    <span v-if="toolDuration(part)" class="mobile-tool-duration">{{ toolDuration(part) }}</span>
-                    <span class="mobile-tool-status">{{ toolStatus(part) }}</span>
-                  </div>
-                  <MemoryToolCallPart :part="part" />
-                </div>
-              </div>
-            </section>
+          <template v-for="(entry, index) in feedEntries" :key="entry.key">
+            <MobileMemoryMessageCard
+              v-if="entry.type === 'message'"
+              :message="entry.message"
+              @save="openSaveMessageDialog"
+              @copy="copyMessageText"
+              @delete="deleteMobileMessages"
+            />
+            <MemoryTurnGroup
+              v-else
+              :entry="entry"
+              :markdown-preview="true"
+              compact
+              :default-expanded="isLatestTurn(index)"
+              :progress-deferred="isLatestTurn(index) && workspace.conversation.value?.latest_turn_progress_loaded !== true"
+              :metadata-deferred="isLatestTurn(index) && workspace.conversation.value?.latest_turn_metadata_loaded !== true"
+              :loading-section="isLatestTurn(index) ? mobileSectionLoading : null"
+              @save="openSaveMessageDialog"
+              @copy="copyMessageText"
+              @delete="deleteMobileMessages"
+              @toggle="onMobileTurnToggle(index, $event)"
+              @request-section="loadMobileTurnSection"
+            />
           </template>
           <MobileLiveMessage v-if="liveMessage || thinkingMessage || activityMessage" :text="liveMessage" :thinking-text="thinkingMessage" :activity-text="activityMessage" />
         </div>
@@ -1016,43 +980,12 @@ onMounted(() => {
   font-weight: 700;
 }
 
-.node-status {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.75);
-}
-
-.state-working {
-  background: #22c55e;
-}
-
-.state-stop {
-  background: #f87171;
-}
-
-.state-idle {
-  background: #38bdf8;
-}
-
 .chat-view {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.node-summary {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.58);
-  font-size: 13px;
 }
 
 .chat-feed {

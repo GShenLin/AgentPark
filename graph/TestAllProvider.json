@@ -42,20 +42,26 @@
             {
               "node_id": "hy3",
               "input_index": 0
+            },
+            {
+              "node_id": "Grok",
+              "input_index": 0
             }
           ]
         }
       ]
     },
-    "version": 1783516034775171000,
+    "version": 1783828308118039300,
     "nodes": [
       {
         "id": "BasicTrigger",
         "typeId": "basic_trigger_node",
         "name": "BasicTrigger",
         "ui": {
-          "x": 136,
-          "y": 0
+          "x": 178,
+          "y": 11,
+          "width": 230,
+          "height": 250
         },
         "input_num": 1,
         "output_num": 1
@@ -65,8 +71,10 @@
         "typeId": "agent_node",
         "name": "Claude",
         "ui": {
-          "x": 710,
-          "y": 379
+          "x": 759,
+          "y": 367,
+          "width": 271,
+          "height": 316
         },
         "input_num": 1,
         "output_num": 1
@@ -76,8 +84,10 @@
         "typeId": "agent_node",
         "name": "DeepSeek",
         "ui": {
-          "x": 697,
-          "y": 652
+          "x": 758,
+          "y": 716,
+          "width": 291,
+          "height": 331
         },
         "input_num": 1,
         "output_num": 1
@@ -87,8 +97,10 @@
         "typeId": "agent_node",
         "name": "Doubao",
         "ui": {
-          "x": 466,
-          "y": 47
+          "x": 454,
+          "y": 9,
+          "width": 257,
+          "height": 337
         },
         "input_num": 1,
         "output_num": 1
@@ -98,8 +110,10 @@
         "typeId": "agent_node",
         "name": "GLM",
         "ui": {
-          "x": 423,
-          "y": 638
+          "x": 444,
+          "y": 713,
+          "width": 277,
+          "height": 340
         },
         "input_num": 1,
         "output_num": 1
@@ -109,8 +123,23 @@
         "typeId": "agent_node",
         "name": "GPT",
         "ui": {
-          "x": 731,
-          "y": 45
+          "x": 745,
+          "y": 10,
+          "width": 275,
+          "height": 339
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Grok",
+        "typeId": "agent_node",
+        "name": "Grok",
+        "ui": {
+          "x": 1348,
+          "y": 15,
+          "width": 275,
+          "height": 339
         },
         "input_num": 1,
         "output_num": 1
@@ -120,8 +149,10 @@
         "typeId": "agent_node",
         "name": "Kimi",
         "ui": {
-          "x": 983,
-          "y": 344
+          "x": 1044,
+          "y": 21,
+          "width": 294,
+          "height": 326
         },
         "input_num": 1,
         "output_num": 1
@@ -131,8 +162,10 @@
         "typeId": "agent_node",
         "name": "MiniMax",
         "ui": {
-          "x": 443,
-          "y": 356
+          "x": 450,
+          "y": 366,
+          "width": 272,
+          "height": 328
         },
         "input_num": 1,
         "output_num": 1
@@ -142,8 +175,10 @@
         "typeId": "agent_node",
         "name": "hy3",
         "ui": {
-          "x": 982,
-          "y": 643
+          "x": 1064,
+          "y": 365,
+          "width": 286,
+          "height": 338
         },
         "input_num": 1,
         "output_num": 1
@@ -163,8 +198,10 @@
         "OutputText": "浏览项目现状 查看源码梳理架构"
       },
       "ui": {
-        "x": 136,
-        "y": 0
+        "x": 178,
+        "y": 11,
+        "width": 230,
+        "height": 250
       },
       "input_num": 1,
       "output_num": 1
@@ -191,8 +228,10 @@
         "collaboration_mode": "default"
       },
       "ui": {
-        "x": 710,
-        "y": 379
+        "x": 759,
+        "y": 367,
+        "width": 271,
+        "height": 316
       },
       "input_num": 1,
       "output_num": 1
@@ -220,8 +259,10 @@
         "instruction": ""
       },
       "ui": {
-        "x": 697,
-        "y": 652
+        "x": 758,
+        "y": 716,
+        "width": 291,
+        "height": 331
       },
       "input_num": 1,
       "output_num": 1
@@ -247,8 +288,10 @@
         "plugins": []
       },
       "ui": {
-        "x": 466,
-        "y": 47
+        "x": 454,
+        "y": 9,
+        "width": 257,
+        "height": 337
       },
       "input_num": 1,
       "output_num": 1
@@ -276,8 +319,10 @@
         "instruction": ""
       },
       "ui": {
-        "x": 423,
-        "y": 638
+        "x": 444,
+        "y": 713,
+        "width": 277,
+        "height": 340
       },
       "input_num": 1,
       "output_num": 1
@@ -290,7 +335,7 @@
       "fields": {
         "skills": [],
         "working_path": "",
-        "provider_id": "krill_gpt55",
+        "provider_id": "krill_gpt_Newest",
         "system_prompt": "",
         "mode": "chat",
         "tools": [
@@ -303,8 +348,42 @@
         "plugins": []
       },
       "ui": {
-        "x": 731,
-        "y": 45
+        "x": 745,
+        "y": 10,
+        "width": 275,
+        "height": 339
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Grok",
+      "graph_id": "Test",
+      "type_id": "agent_node",
+      "name": "Grok",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "Grok_krill",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": [],
+        "instruction": "",
+        "collaboration_mode": "default",
+        "reasoning_summary": ""
+      },
+      "ui": {
+        "x": 1348,
+        "y": 15,
+        "width": 275,
+        "height": 339
       },
       "input_num": 1,
       "output_num": 1
@@ -332,8 +411,10 @@
         "instruction": ""
       },
       "ui": {
-        "x": 983,
-        "y": 344
+        "x": 1044,
+        "y": 21,
+        "width": 294,
+        "height": 326
       },
       "input_num": 1,
       "output_num": 1
@@ -361,8 +442,10 @@
         "instruction": ""
       },
       "ui": {
-        "x": 443,
-        "y": 356
+        "x": 450,
+        "y": 366,
+        "width": 272,
+        "height": 328
       },
       "input_num": 1,
       "output_num": 1
@@ -390,13 +473,15 @@
         "instruction": ""
       },
       "ui": {
-        "x": 982,
-        "y": 643
+        "x": 1064,
+        "y": 365,
+        "width": 286,
+        "height": 338
       },
       "input_num": 1,
       "output_num": 1
     }
   ],
-  "updated_at": "2026-07-08T21:08:01+08:00",
-  "created_at": "2026-07-08T21:08:01+08:00"
+  "updated_at": "2026-07-12T14:30:18+08:00",
+  "created_at": "2026-07-12T14:30:18+08:00"
 }

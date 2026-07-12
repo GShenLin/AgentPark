@@ -49,6 +49,40 @@ def send_via_responses(
     if callable(reset_loop_guard := getattr(self, "_reset_tool_call_loop_guard", None)):
         reset_loop_guard()
     last_request_summary: dict[str, Any] | None = None
+    accumulated_structured_result: dict[str, Any] = {}
+    self._last_responses_structured_result = {}
+
+    def _accumulate_structured_result(value: object) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return dict(accumulated_structured_result)
+        for key, identity_key in (("server_tool_calls", "call_id"), ("citations", "url")):
+            incoming = value.get(key)
+            if not isinstance(incoming, list):
+                continue
+            merged = accumulated_structured_result.setdefault(key, [])
+            positions = {
+                str(item.get(identity_key) or "").strip(): index
+                for index, item in enumerate(merged)
+                if isinstance(item, dict) and str(item.get(identity_key) or "").strip()
+            }
+            for item in incoming:
+                if not isinstance(item, dict):
+                    continue
+                identity = str(item.get(identity_key) or "").strip()
+                if identity and identity in positions:
+                    merged[positions[identity]] = dict(item)
+                else:
+                    if identity:
+                        positions[identity] = len(merged)
+                    merged.append(dict(item))
+        response_metadata = value.get("response_metadata")
+        if isinstance(response_metadata, dict) and response_metadata:
+            accumulated_structured_result["response_metadata"] = dict(response_metadata)
+        return {
+            key: (list(items) if isinstance(items, list) else dict(items))
+            for key, items in accumulated_structured_result.items()
+            if items
+        }
 
     def _consume_mid_turn_user_input_items() -> list[dict[str, Any]]:
         messages = consume_mid_turn_user_messages(self)
@@ -170,7 +204,10 @@ def send_via_responses(
             _abort_item_tool_runner("stream_failed", exc)
             raise
 
+        self._emit_provider_request_completed(last_request_summary, result)
         content, function_calls, response_id = self._parse_responses_output_envelopes(result)
+        structured_result = _accumulate_structured_result(self._parse_responses_structured_result(result))
+        self._last_responses_structured_result = dict(structured_result)
         save_agent_turn_context_reference(self, context_item)
         save_agent_context_history(self, context_history_items_to_save)
         empty_message_action = empty_message_feedback.inspect(
@@ -234,7 +271,8 @@ def send_via_responses(
         if function_calls:
             empty_message_feedback.reset()
             display_tool_calls = [to_openai_tool_call(call) for call in function_calls]
-            self.Message("assistant", content, tool_calls=display_tool_calls)
+            self.AssistantProgress(content, tool_calls=display_tool_calls, **structured_result)
+            self.Message("assistant", None, persist=False, tool_calls=display_tool_calls)
             if not run_tools:
                 _emit_turn_debug(
                     response_id=response_id,
@@ -339,14 +377,24 @@ def send_via_responses(
         )
         if content:
             empty_message_feedback.reset()
-            self.Message("assistant", content)
+            self.Message("assistant", content, **structured_result)
             _close_item_tool_runner()
-            return content
+            public_result = {
+                key: value
+                for key, value in structured_result.items()
+                if key in {"server_tool_calls", "citations"} and value
+            }
+            return {"response": content, **public_result} if public_result else content
         if use_stream and stream_text.text:
             empty_message_feedback.reset()
-            self.Message("assistant", stream_text.text)
+            self.Message("assistant", stream_text.text, **structured_result)
             _close_item_tool_runner()
-            return stream_text.text
+            public_result = {
+                key: value
+                for key, value in structured_result.items()
+                if key in {"server_tool_calls", "citations"} and value
+            }
+            return {"response": stream_text.text, **public_result} if public_result else stream_text.text
         self.Message("assistant", content)
         _close_item_tool_runner()
         return json.dumps(result, ensure_ascii=False)

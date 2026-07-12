@@ -13,6 +13,7 @@ export type SettingsDocument = {
   path: string
   content: string
   data: Record<string, unknown>
+  warnings?: string[]
   active_preset_id?: string
   presets?: ThemePresetInfo[]
 }

@@ -26,8 +26,35 @@ from .shared import (
 )
 from .node_memory_store import current_node_memory_paths
 from .node_memory_store import delete_node_memory_record
+from .node_memory_store import load_latest_node_memory_turn
 from .node_memory_store import load_recent_node_memory_records
+from .node_memory_markdown import render_memory_markdown
 from .node_memory_store import read_node_memory_text
+
+
+def _memory_role(record: dict) -> str:
+    return str(record.get("role") or "").strip().lower()
+
+
+def _select_latest_turn_records(records: list[dict], history_mode: str) -> list[dict]:
+    final_assistant_index = -1
+    for index in range(len(records) - 1, -1, -1):
+        if _memory_role(records[index]) in {"assistant", "agent"}:
+            final_assistant_index = index
+            break
+
+    visible: list[dict] = []
+    for index, record in enumerate(records):
+        role = _memory_role(record)
+        if role in {"user", "human"} or index == final_assistant_index:
+            visible.append(record)
+            continue
+        if history_mode == "latest_turn_progress" and (final_assistant_index < 0 or index < final_assistant_index):
+            visible.append(record)
+            continue
+        if history_mode == "latest_turn_metadata" and final_assistant_index >= 0 and index > final_assistant_index:
+            visible.append(record)
+    return visible
 
 
 class NodeInstanceRuntime(HostBoundService):
@@ -126,6 +153,7 @@ class NodeInstanceRuntime(HostBoundService):
         max_chars: int | None = 20000,
         graph_id: str = "",
         messages_limit: int | None = 400,
+        history_mode: str = "recent",
     ):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
@@ -140,6 +168,7 @@ class NodeInstanceRuntime(HostBoundService):
             safe_node_id,
             max_chars=max_chars,
             messages_limit=messages_limit,
+            history_mode=history_mode,
         )
 
     def get_node_instance_memory_from_paths(
@@ -151,17 +180,35 @@ class NodeInstanceRuntime(HostBoundService):
         node_id: str,
         max_chars: int | None = 20000,
         messages_limit: int | None = 400,
+        history_mode: str = "recent",
     ):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
         if bool(cfg.get("_delete_requested")):
             raise HTTPException(status_code=409, detail="node is being deleted")
-        text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
-        messages = [
-            normalize_envelope(item, default_role="assistant")
-            for item in load_recent_node_memory_records(memory_path, messages_path, limit=messages_limit)
-        ]
+        safe_history_mode = str(history_mode or "recent").strip().lower()
+        lazy_turn_modes = {"latest_turn", "latest_turn_progress", "latest_turn_metadata"}
+        if safe_history_mode not in {"recent", "all", *lazy_turn_modes}:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "history_mode must be 'recent', 'all', 'latest_turn', "
+                    "'latest_turn_progress', or 'latest_turn_metadata'"
+                ),
+            )
+        if safe_history_mode in lazy_turn_modes:
+            latest_turn_records, history_complete = load_latest_node_memory_turn(memory_path, messages_path)
+            records = _select_latest_turn_records(latest_turn_records, safe_history_mode)
+            text = render_memory_markdown(records)
+            if max_chars is not None:
+                text = text[-max(0, int(max_chars)):]
+        else:
+            effective_limit = None if safe_history_mode == "all" else messages_limit
+            records = load_recent_node_memory_records(memory_path, messages_path, limit=effective_limit)
+            history_complete = effective_limit is None or len(records) < max(0, int(effective_limit))
+            text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
+        messages = [normalize_envelope(item, default_role="assistant") for item in records]
         current_paths = current_node_memory_paths(memory_path, messages_path)
         live = self.core.node_live_outputs.get(graph_id, node_id) or {}
         return {
@@ -169,6 +216,9 @@ class NodeInstanceRuntime(HostBoundService):
             "messages_path": current_paths.get("messages_path") or messages_path,
             "text": text,
             "messages": messages,
+            "history_complete": history_complete,
+            "latest_turn_progress_loaded": safe_history_mode in {"all", "recent", "latest_turn_progress"},
+            "latest_turn_metadata_loaded": safe_history_mode in {"all", "recent", "latest_turn_metadata"},
             "state": parse_node_state(cfg.get("state")) if isinstance(cfg, dict) else "idle",
             "last_message": str(cfg.get("last_message") or "") if isinstance(cfg, dict) else "",
             "live_message": str(live.get("text") or ""),

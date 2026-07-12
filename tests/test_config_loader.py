@@ -236,6 +236,28 @@ def test_codex_auth_rejects_non_openai_provider(monkeypatch, tmp_path):
         ConfigLoader().get_provider_config("bad")
 
 
+def test_get_provider_config_is_not_blocked_by_another_invalid_provider(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "valid": {"type": "openai", "apiKey": "valid-key"},
+                    "bad": {"type": "gemini", "authMode": "codex", "responsesApi": True},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    provider = ConfigLoader().get_provider_config("valid")
+
+    assert provider["type"] == "openai"
+    assert provider["apiKey"] == "valid-key"
+
+
 def test_doubao_provider_rejects_unsupported_reasoning_effort(monkeypatch, tmp_path):
     config_path = tmp_path / "moduleProvider.json"
     config_path.write_text(
@@ -656,6 +678,61 @@ def test_openai_responses_api_provider_validates_reasoning_summary(monkeypatch, 
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="reasoningSummary"):
+        ConfigLoader().get_all_providers()
+
+
+def test_grok_45_provider_validates_reasoning_effort(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "grok": {
+                        "type": "grok",
+                        "apiKey": "grok-key",
+                        "model": "grok-4.5",
+                        "reasoningEffort": "xhigh",
+                        **_responses_contract(responsesReplayReasoningItems=False),
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="Grok 4.5 reasoning_effort"):
+        ConfigLoader().get_all_providers()
+
+
+def test_grok_provider_rejects_reasoning_summary(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "grok": {
+                        "type": "grok",
+                        "apiKey": "grok-key",
+                        "model": "grok-4.5",
+                        "reasoningEffort": "high",
+                        "reasoningSummary": "auto",
+                        **_responses_contract(responsesReplayReasoningItems=False),
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="do not support reasoningSummary"):
         ConfigLoader().get_all_providers()
 
 

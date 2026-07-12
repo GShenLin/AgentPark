@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { MessageEnvelope, MessagePart } from '../api'
 import MemoryResourcePart from '../components/MemoryResourcePart.vue'
+import MemoryResponseMetadataPart from '../components/MemoryResponseMetadataPart.vue'
 import MemoryToolCallPart from '../components/MemoryToolCallPart.vue'
 import { renderMessageMarkdown, shouldRenderMarkdown } from './mobileMessageRender'
 
@@ -24,6 +25,13 @@ function isToolCallPart(part: MessagePart) {
   return String((part as any)?.type || '') === 'tool_call'
 }
 
+function isStructuredPart(part: MessagePart) {
+  if (String((part as any)?.type || '') !== 'structured') return false
+  const data = (part as any).data
+  if (!data || typeof data !== 'object') return false
+  return !!(data.response_metadata || Array.isArray(data.server_tool_calls) || Array.isArray(data.citations))
+}
+
 function partText(part: MessagePart) {
   return String((part as any)?.text || '')
 }
@@ -41,6 +49,7 @@ function partText(part: MessagePart) {
       <div v-else-if="isTextPart(part)" class="bubble-empty">[empty message]</div>
       <MemoryResourcePart v-else-if="isResourcePart(part)" class="mobile-resource-part" :part="part as Record<string, unknown>" />
       <MemoryToolCallPart v-else-if="isToolCallPart(part)" class="mobile-tool-call-part" :part="part as Record<string, unknown>" />
+      <MemoryResponseMetadataPart v-else-if="isStructuredPart(part)" :data="(part as any).data" />
       <pre v-else class="bubble-structured">{{ JSON.stringify(part, null, 2) }}</pre>
     </template>
     <div v-if="messageParts(message).length === 0" class="bubble-empty">

@@ -4,12 +4,15 @@ import json
 from typing import Any
 
 from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
+from src.providers.provider_runtime_events import PROVIDER_REQUEST_COMPLETED_STAGE
+from src.providers.provider_request_usage import add_provider_usage_totals
+from src.providers.provider_request_usage import sanitize_provider_usage
 
 
 MAX_RUNTIME_EVENTS = 20
 MAX_RUNTIME_TOOL_CALLS = 20
 MAX_PROVIDER_REQUEST_SUMMARIES = 8
-RUNTIME_EVENT_TYPES = {"runtime_notice", "tool_call_start", "tool_call_end"}
+RUNTIME_EVENT_TYPES = {"runtime_notice", "tool_call_start", "tool_call_end", "server_tool_activity"}
 
 
 def normalize_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -33,6 +36,35 @@ def normalize_runtime_event(event: dict[str, Any]) -> dict[str, Any]:
             value = str(event.get(key) or "").strip()
             if value:
                 normalized[key] = value
+        _copy_event_timestamps(normalized, event)
+        return normalized
+
+    if event_type == "server_tool_activity":
+        call_id = str(event.get("call_id") or "").strip()
+        tool_type = str(event.get("tool_type") or "").strip().lower()
+        if not call_id or not tool_type:
+            raise ValueError("server_tool_activity requires call_id and tool_type")
+        normalized = {
+            "type": event_type,
+            "call_id": call_id,
+            "tool_type": tool_type,
+            "status": str(event.get("status") or "in_progress").strip().lower() or "in_progress",
+        }
+        provider = str(event.get("provider") or "").strip()
+        if provider:
+            normalized["provider"] = provider
+        action = event.get("action")
+        if isinstance(action, dict) and action:
+            normalized["action"] = dict(action)
+        sources = event.get("sources")
+        if isinstance(sources, list) and sources:
+            normalized["sources"] = [dict(item) for item in sources if isinstance(item, dict)]
+        details = event.get("details")
+        if isinstance(details, dict) and details:
+            normalized["details"] = dict(details)
+        error = str(event.get("error") or "").strip()
+        if error:
+            normalized["error"] = error
         _copy_event_timestamps(normalized, event)
         return normalized
 
@@ -113,6 +145,7 @@ def append_runtime_event(payload: dict[str, Any], event: dict[str, Any]) -> None
     payload["runtime_events"] = history[-MAX_RUNTIME_EVENTS:]
     upsert_runtime_tool_call(payload, normalized)
     append_provider_request_summary(payload, normalized)
+    append_provider_request_completion(payload, normalized)
 
 
 def upsert_runtime_tool_call(payload: dict[str, Any], event: dict[str, Any]) -> None:
@@ -244,6 +277,43 @@ def update_provider_request_totals(payload: dict[str, Any], summary: dict[str, A
     payload["provider_request_totals"] = totals
 
 
+def append_provider_request_completion(payload: dict[str, Any], event: dict[str, Any]) -> None:
+    if str(event.get("type") or "").strip() != "runtime_notice":
+        return
+    if str(event.get("stage") or "").strip() != PROVIDER_REQUEST_COMPLETED_STAGE:
+        return
+    completion = _parse_provider_request_payload(event.get("message"))
+    if completion is None:
+        return
+    request_index = _normalize_non_negative_int(completion.get("request_index"))
+    usage = sanitize_provider_usage(completion.get("usage"))
+    if request_index is None or not usage:
+        return
+    summaries = payload.get("provider_request_summaries")
+    if isinstance(summaries, list):
+        for summary in reversed(summaries):
+            if isinstance(summary, dict) and _normalize_non_negative_int(summary.get("request_index")) == request_index:
+                summary["usage"] = dict(usage)
+                break
+    totals = payload.get("provider_request_totals")
+    if not isinstance(totals, dict):
+        totals = {}
+    add_provider_usage_totals(totals, usage)
+    totals["last_completed_request_index"] = request_index
+    payload["provider_request_totals"] = totals
+
+
+def _parse_provider_request_payload(value: object) -> dict[str, Any] | None:
+    message = str(value or "").strip()
+    if not message:
+        return None
+    try:
+        payload = json.loads(message)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _copy_event_timestamps(normalized: dict[str, Any], event: dict[str, Any]) -> None:
     event_time = str(event.get("event_time") or "").strip()
     if event_time:
@@ -301,6 +371,7 @@ def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any
         "tools_included",
         "tools_included_count",
         "stream",
+        "usage",
         "context_item_hash",
         "context_update_mode",
         "context_diff_paths",

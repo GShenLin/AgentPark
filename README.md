@@ -115,7 +115,7 @@ AgentPark/
 
 - Windows is the primary target environment. Some features depend on `.bat`, PowerShell, desktop automation, or PyInstaller packaging paths.
 - Linux is supported for the WebUI, CLI, provider runtime, and restart flow. Windows-only desktop and packaging features remain Windows-only.
-- Python 3.11+. Windows scripts prefer local Python 3.14/3.12/3.11; Linux scripts prefer `AgnetPark_Linux_env`, `.venv`, `python3`, then `python`.
+- Python 3.11+. Windows scripts prefer local Python 3.14/3.12/3.11; Linux scripts prefer `AgentPark_Linux_env`, `.venv`, `python3`, then `python`.
 - Node.js + npm for installing and building `webui`.
 - ripgrep `rg` is recommended; file search tools and some frontend search paths prefer it.
 

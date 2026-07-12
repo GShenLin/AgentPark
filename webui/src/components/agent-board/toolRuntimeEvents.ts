@@ -1,4 +1,4 @@
-import type { RuntimeEvent, RuntimeNoticeEvent, RuntimeToolCall, ToolRuntimeEvent } from '../../api'
+import type { RuntimeEvent, RuntimeNoticeEvent, RuntimeToolCall, ServerToolActivityEvent, ToolRuntimeEvent } from '../../api'
 
 export type ToolCallView = {
   id: string
@@ -44,6 +44,22 @@ export function normalizeRuntimeEvent(value: unknown): RuntimeEvent | null {
       provider: event.provider != null ? String(event.provider) : null,
     } satisfies RuntimeNoticeEvent
   }
+  if (type === 'server_tool_activity') {
+    const callId = String(event.call_id || '').trim()
+    const toolType = String(event.tool_type || '').trim()
+    if (!callId || !toolType) return null
+    return {
+      type,
+      call_id: callId,
+      tool_type: toolType,
+      status: String(event.status || 'in_progress').trim() || 'in_progress',
+      provider: event.provider != null ? String(event.provider) : null,
+      action: event.action && typeof event.action === 'object' ? event.action as Record<string, unknown> : undefined,
+      sources: Array.isArray(event.sources)
+        ? event.sources.filter((item): item is { url: string; title?: string; type?: string } => !!item && typeof item === 'object' && typeof item.url === 'string')
+        : undefined,
+    } satisfies ServerToolActivityEvent
+  }
   if (type !== 'tool_call_start' && type !== 'tool_call_end') return null
   return {
     type,
@@ -72,12 +88,12 @@ export function normalizeRuntimeEvents(value: unknown): RuntimeEvent[] {
 
 export function normalizeToolRuntimeEvent(value: unknown): ToolRuntimeEvent | null {
   const event = normalizeRuntimeEvent(value)
-  if (!event || event.type === 'runtime_notice') return null
+  if (!event || event.type === 'runtime_notice' || event.type === 'server_tool_activity') return null
   return event
 }
 
 export function normalizeToolRuntimeEvents(value: unknown): ToolRuntimeEvent[] {
-  return normalizeRuntimeEvents(value).filter((item): item is ToolRuntimeEvent => item.type !== 'runtime_notice')
+  return normalizeRuntimeEvents(value).filter((item): item is ToolRuntimeEvent => item.type === 'tool_call_start' || item.type === 'tool_call_end')
 }
 
 export function latestRuntimeNotice(events: RuntimeEvent[] | undefined | null): RuntimeNoticeEvent | null {

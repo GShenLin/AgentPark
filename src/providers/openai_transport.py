@@ -9,7 +9,8 @@ from src.providers.openai_transport_errors import OpenAIHttpError, OpenAITranspo
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
-from src.providers.responses_stream_events import ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesResponseCompleted, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.responses_stream_events import ResponsesOutputItemAdded, ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesResponseCompleted, ResponsesServerToolActivity, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.server_tool_protocol import build_server_tool_activity, is_server_tool_item_type
 from src.providers.responses_websocket_transport import ResponsesWebSocketTransportMixin
 from src.runtime_cancellation import CancellationRequested, sleep_with_cancel
 from src.service_host import HostBoundService
@@ -197,7 +198,8 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
         text_chunks: list[str] = []
         thinking_chunks: list[str] = []
         debug_events: list[dict] = []
-        normalizer = OpenAIResponsesStreamEventNormalizer(provider="openai_responses")
+        provider_type = str(self.config.get("type") or "openai").strip().lower() or "openai"
+        normalizer = OpenAIResponsesStreamEventNormalizer(provider=f"{provider_type}_responses")
         streamed_output_items: list[dict] = []
         function_call_items: list[dict] = []
         function_call_by_item_id: dict[str, dict] = {}
@@ -336,9 +338,41 @@ class OpenAITransport(ProviderStreamEmitMixin, ResponsesWebSocketTransportMixin,
                             event.provider or "openai_responses",
                         )
                     continue
+                if isinstance(event, ResponsesOutputItemAdded) and is_server_tool_item_type(event.item_type):
+                    activity = build_server_tool_activity(
+                        event.item,
+                        status=str(event.item.get("status") or "in_progress"),
+                        provider=getattr(self, "provider_name", "openai_responses"),
+                    )
+                    if activity is not None:
+                        callback = getattr(self, "tool_event_callback", None)
+                        if callable(callback):
+                            callback(activity)
+                    continue
+                if isinstance(event, ResponsesServerToolActivity):
+                    activity = build_server_tool_activity(
+                        event.item,
+                        status=event.status,
+                        provider=getattr(self, "provider_name", "openai_responses"),
+                    )
+                    if activity is not None:
+                        callback = getattr(self, "tool_event_callback", None)
+                        if callable(callback):
+                            callback(activity)
+                    continue
                 if isinstance(event, ResponsesOutputItemDone):
                     item = event.function_call.to_response_item() if event.function_call is not None else dict(event.item)
                     _append_streamed_output_item(item)
+                    if is_server_tool_item_type(event.item_type):
+                        activity = build_server_tool_activity(
+                            item,
+                            status=str(item.get("status") or "completed"),
+                            provider=getattr(self, "provider_name", "openai_responses"),
+                        )
+                        if activity is not None:
+                            callback = getattr(self, "tool_event_callback", None)
+                            if callable(callback):
+                                callback(activity)
                     if event.function_call is not None:
                         function_call_items.append(item)
                         function_call_by_item_id[item["id"]] = item

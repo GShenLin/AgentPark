@@ -48,6 +48,7 @@ class ClaudeStreamRuntime(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRu
         content_blocks: dict[int, dict] = {}
         tool_input_json: dict[int, list[str]] = {}
         debug_events: list[dict] = []
+        usage: dict = {}
         for data_text in self._curl_post_sse_data_lines(
             url=url,
             headers=headers,
@@ -67,6 +68,14 @@ class ClaudeStreamRuntime(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRu
             if not isinstance(event, dict):
                 continue
             event_type = str(event.get("type") or "").strip()
+            if event_type == "message_start":
+                message_payload = event.get("message")
+                if isinstance(message_payload, dict) and isinstance(message_payload.get("usage"), dict):
+                    usage.update(message_payload["usage"])
+                continue
+            if event_type == "message_delta" and isinstance(event.get("usage"), dict):
+                usage.update(event["usage"])
+                continue
             if event_type == "content_block_start":
                 index = self._event_index(event)
                 block = event.get("content_block")
@@ -128,7 +137,10 @@ class ClaudeStreamRuntime(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRu
             events=debug_events,
             assembled_message=message,
         )
-        return {"choices": [{"message": message}]}
+        result: dict = {"choices": [{"message": message}]}
+        if usage:
+            result["usage"] = usage
+        return result
 
     @staticmethod
     def _native_blocks_from_stream(content_blocks: dict[int, dict], tool_input_json: dict[int, list[str]]) -> list[dict]:

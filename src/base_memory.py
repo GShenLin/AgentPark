@@ -79,7 +79,13 @@ class BaseMemory:
         return appended
 
     def build_messages_with_memory(self, messages):
-        return [msg.copy() for msg in messages]
+        return [
+            msg.copy()
+            for msg in messages
+            if isinstance(msg, dict)
+            and str(msg.get("role") or "").strip().lower() != "assistant_progress"
+            and str(msg.get("context_policy") or "").strip().lower() != "exclude"
+        ]
 
     def read_tail_lines(self, max_lines=100, max_bytes=200000):
         try:

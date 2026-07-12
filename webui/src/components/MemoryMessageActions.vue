@@ -1,7 +1,17 @@
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   disabled?: boolean
-}>()
+  showSave?: boolean
+  showCopy?: boolean
+  showDelete?: boolean
+  deleteTitle?: string
+}>(), {
+  disabled: false,
+  showSave: true,
+  showCopy: true,
+  showDelete: true,
+  deleteTitle: '删除这条对话',
+})
 
 const emit = defineEmits<{
   (event: 'save'): void
@@ -13,6 +23,7 @@ const emit = defineEmits<{
 <template>
   <div class="message-actions">
     <button
+      v-if="showSave"
       class="message-action-btn"
       type="button"
       title="保存为 Markdown"
@@ -28,6 +39,7 @@ const emit = defineEmits<{
       </svg>
     </button>
     <button
+      v-if="showCopy"
       class="message-action-btn"
       type="button"
       title="Copy text"
@@ -43,10 +55,11 @@ const emit = defineEmits<{
       </svg>
     </button>
     <button
+      v-if="showDelete"
       class="message-action-btn danger"
       type="button"
-      title="删除这条对话"
-      aria-label="删除这条对话"
+      :title="deleteTitle"
+      :aria-label="deleteTitle"
       :disabled="disabled"
       @click.stop="emit('delete')"
     >

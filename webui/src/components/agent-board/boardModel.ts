@@ -130,6 +130,14 @@ export function normalizeProviderRequestTotals(value: unknown): ProviderRequestT
     tool_call_chars: normalizeNonNegativeInt(item.tool_call_chars),
     tool_result_chars: normalizeNonNegativeInt(item.tool_result_chars),
     last_request_index: normalizeNonNegativeInt(item.last_request_index),
+    completed_request_count: normalizeNonNegativeInt(item.completed_request_count),
+    last_completed_request_index: normalizeNonNegativeInt(item.last_completed_request_index),
+    actual_input_tokens: normalizeNonNegativeInt(item.actual_input_tokens),
+    actual_output_tokens: normalizeNonNegativeInt(item.actual_output_tokens),
+    actual_total_tokens: normalizeNonNegativeInt(item.actual_total_tokens),
+    actual_cached_input_tokens: normalizeNonNegativeInt(item.actual_cached_input_tokens),
+    actual_cache_write_input_tokens: normalizeNonNegativeInt(item.actual_cache_write_input_tokens),
+    actual_reasoning_output_tokens: normalizeNonNegativeInt(item.actual_reasoning_output_tokens),
   }
 }
 

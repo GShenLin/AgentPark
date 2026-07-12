@@ -33,6 +33,7 @@ import {
   type AgentProfile,
   type GraphProfile,
   type MessageEnvelope,
+  type MemoryHistoryMode,
   type MobileGraph,
   type MobileGraphInstance,
   type MobileNode,
@@ -71,6 +72,7 @@ type MobileChatSelection = MobileGraphSelection & {
 }
 
 const chatConversationRefreshEvents = new Set([
+  'server_tool_activity',
   'tool_call_start',
   'tool_call_end',
   'node_message_done',
@@ -88,6 +90,7 @@ const chatNodeRefreshGraphEvents = new Set([
   'node_message_done',
   'node_stop_completed',
   'runtime_notice',
+  'server_tool_activity',
   'tool_call_start',
   'tool_call_end',
   'node_control',
@@ -108,6 +111,7 @@ const chatNodeRefreshGraphEvents = new Set([
 ])
 
 const chatConversationGraphEvents = new Set([
+  'server_tool_activity',
   'tool_call_start',
   'tool_call_end',
   'node_message_done',
@@ -129,6 +133,7 @@ const chatLightweightGraphEvents = new Set([
   'node_input',
   'node_stop_completed',
   'runtime_notice',
+  'server_tool_activity',
   'node_control',
   'node_goal_evaluated',
   'node_goal_blocked',
@@ -472,8 +477,12 @@ export function useMobileWorkspace() {
     return nextConversation
   }
 
-  async function refreshConversationForSelection(selection: MobileChatSelection) {
-    const nextConversation = await getMobileNodeConversation(selection.pcId, selection.graphId, selection.nodeId)
+  async function refreshConversationForSelection(
+    selection: MobileChatSelection,
+    historyMode?: MemoryHistoryMode,
+  ) {
+    const requestedMode = historyMode || (conversation.value?.history_complete === false ? 'latest_turn' : 'all')
+    const nextConversation = await getMobileNodeConversation(selection.pcId, selection.graphId, selection.nodeId, requestedMode)
     if (!isCurrentChatSelection(selection)) return
     conversation.value = normalizeConversationAfterRefresh(nextConversation)
   }
@@ -988,6 +997,42 @@ export function useMobileWorkspace() {
     await refreshConversationForSelection(requireChatSelection())
   }
 
+  async function loadConversationHistory() {
+    if (conversation.value?.history_complete !== false) return
+    await refreshConversationForSelection(requireChatSelection(), 'all')
+  }
+
+  async function loadConversationSection(section: 'progress' | 'metadata') {
+    const current = conversation.value
+    if (!current) return
+    if (section === 'progress' && current.latest_turn_progress_loaded === true) return
+    if (section === 'metadata' && current.latest_turn_metadata_loaded === true) return
+    const selection = requireChatSelection()
+    const historyMode = section === 'progress' ? 'latest_turn_progress' : 'latest_turn_metadata'
+    try {
+      const response = await getMobileNodeConversation(selection.pcId, selection.graphId, selection.nodeId, historyMode)
+      if (!isCurrentChatSelection(selection)) return
+      const merged = new Map<string, MessageEnvelope>()
+      for (const message of [...(current.messages || []), ...(response.messages || [])]) {
+        const key = String(message?.id || `${message?.role || ''}-${message?.created_at || ''}`)
+        merged.set(key, message)
+      }
+      conversation.value = normalizeConversationAfterRefresh({
+        ...current,
+        ...response,
+        messages: [...merged.values()].sort((left, right) =>
+          String(left?.created_at || '').localeCompare(String(right?.created_at || '')),
+        ),
+        history_complete: current.history_complete,
+        latest_turn_progress_loaded: section === 'progress' ? true : current.latest_turn_progress_loaded,
+        latest_turn_metadata_loaded: section === 'metadata' ? true : current.latest_turn_metadata_loaded,
+      })
+    } catch (e) {
+      setError(e)
+      throw e
+    }
+  }
+
   function setConversationLiveMessage(text: string) {
     if (!conversation.value) return
     conversation.value = {
@@ -1022,7 +1067,7 @@ export function useMobileWorkspace() {
     clearConversationCommit()
     loading.value = true
     try {
-      await refreshConversation()
+      await refreshConversationForSelection(requireChatSelection(), 'latest_turn')
       startChatStreams()
     } catch (e) {
       setError(e)
@@ -1036,7 +1081,8 @@ export function useMobileWorkspace() {
     sending.value = true
     error.value = ''
     try {
-      const response = await sendMobileNodeMessage(selection.pcId, selection.graphId, selection.nodeId, message)
+      const historyMode = conversation.value?.history_complete === false ? 'latest_turn' : 'all'
+      const response = await sendMobileNodeMessage(selection.pcId, selection.graphId, selection.nodeId, message, historyMode)
       applySentMessageSnapshot(selection, response)
       return response
     } catch (e) {
@@ -1109,19 +1155,22 @@ export function useMobileWorkspace() {
     }
   }
 
-  async function deleteSelectedNodeMessage(messageId: string) {
+  async function deleteSelectedNodeMessages(messageIds: string[]) {
     const pcId = String(selectedPc.value?.id || '').trim()
     const graphId = String(selectedGraph.value?.id || '').trim()
     const nodeId = String(selectedNode.value?.id || '').trim()
-    const safeMessageId = String(messageId || '').trim()
-    if (!pcId || !graphId || !nodeId || !safeMessageId) throw new Error('PC, Graph, Node, and Message selection are required')
+    const safeMessageIds = Array.from(new Set(messageIds.map((id) => String(id || '').trim()).filter(Boolean)))
+    if (!pcId || !graphId || !nodeId || safeMessageIds.length === 0) throw new Error('PC, Graph, Node, and Message selection are required')
     error.value = ''
     try {
-      await deleteMobileNodeMessage(pcId, graphId, nodeId, safeMessageId)
+      for (const messageId of safeMessageIds) {
+        await deleteMobileNodeMessage(pcId, graphId, nodeId, messageId)
+      }
       if (conversation.value?.messages) {
+        const deletedIds = new Set(safeMessageIds)
         conversation.value = {
           ...conversation.value,
-          messages: conversation.value.messages.filter((item) => String((item as any)?.id || '') !== safeMessageId),
+          messages: conversation.value.messages.filter((item) => !deletedIds.has(String((item as any)?.id || ''))),
         }
       }
       await refreshConversation()
@@ -1129,6 +1178,10 @@ export function useMobileWorkspace() {
       setError(e)
       throw e
     }
+  }
+
+  async function deleteSelectedNodeMessage(messageId: string) {
+    await deleteSelectedNodeMessages([messageId])
   }
 
   function outputRoutesForNode(sourceNodeId: string) {
@@ -1376,6 +1429,7 @@ export function useMobileWorkspace() {
           setConversationLiveMessage(nextLiveMessage)
         }
         if (nextActivityMessage) setConversationActivityMessage(nextActivityMessage)
+        else if (eventType === 'server_tool_activity') setConversationActivityMessage('')
         if (chatConversationRefreshEvents.has(eventType)) {
           scheduleGraphRefresh({ includeConversation: true, includeGraphConfig: false })
         }
@@ -1509,6 +1563,7 @@ export function useMobileWorkspace() {
     renameSelectedNode,
     clearSelectedNodeMemory,
     deleteSelectedNodeMessage,
+    deleteSelectedNodeMessages,
     refreshGraphConfig,
     addSelectedNodeOutputRoute,
     updateSelectedNodeOutputRoute,
@@ -1522,6 +1577,8 @@ export function useMobileWorkspace() {
     triggerNode,
     copyNode,
     refreshCurrent,
+    loadConversationHistory,
+    loadConversationSection,
     refreshSelectedNodeConfig,
     refreshEditorCatalog,
     refreshAgentProfiles,

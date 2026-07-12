@@ -192,6 +192,48 @@ def test_runtime_event_store_persists_bounded_provider_request_summaries():
     assert "provider_request_totals" not in payload
 
 
+def test_runtime_event_store_merges_provider_request_completion_usage():
+    payload = {}
+    append_runtime_event(
+        payload,
+        {
+            "type": "runtime_notice",
+            "stage": "provider_request_summary",
+            "message": json.dumps(
+                {"request_index": 1, "request_api": "responses", "approx_input_tokens": 90}
+            ),
+        },
+    )
+    append_runtime_event(
+        payload,
+        {
+            "type": "runtime_notice",
+            "stage": "provider_request_completed",
+            "message": json.dumps(
+                {
+                    "request_index": 1,
+                    "request_api": "responses",
+                    "usage": {
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                        "total_tokens": 120,
+                        "cached_input_tokens": 60,
+                    },
+                }
+            ),
+        },
+    )
+
+    assert payload["provider_request_summaries"][0]["usage"]["total_tokens"] == 120
+    totals = payload["provider_request_totals"]
+    assert totals["request_count"] == 1
+    assert totals["completed_request_count"] == 1
+    assert totals["actual_input_tokens"] == 100
+    assert totals["actual_output_tokens"] == 20
+    assert totals["actual_total_tokens"] == 120
+    assert totals["actual_cached_input_tokens"] == 60
+
+
 def test_runtime_event_store_normalizes_runtime_notice_boundary():
     normalized = normalize_runtime_event(
         {

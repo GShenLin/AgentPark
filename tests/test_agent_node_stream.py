@@ -1397,7 +1397,7 @@ def test_agent_node_uses_configured_history_message_limit(monkeypatch):
     ]
 
 
-def test_agent_node_persists_assistant_content_returned_with_tool_calls(monkeypatch, tmp_path):
+def test_agent_node_persists_assistant_progress_as_context_excluded_memory(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
 
     class DummyAgent:
@@ -1411,9 +1411,10 @@ def test_agent_node_persists_assistant_content_returned_with_tool_calls(monkeypa
             self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
 
         def Send(self, **_kwargs):
-            note_message = {
-                "role": "assistant",
+            progress_message = {
+                "role": "assistant_progress",
                 "content": "I will inspect README before answering.",
+                "context_policy": "exclude",
                 "tool_calls": [
                     {
                         "id": "call-1",
@@ -1422,12 +1423,7 @@ def test_agent_node_persists_assistant_content_returned_with_tool_calls(monkeypa
                     }
                 ],
             }
-            self.Message(
-                "assistant",
-                note_message["content"],
-                tool_calls=note_message["tool_calls"],
-            )
-            self._agentpark_persist_assistant_tool_call_note(note_message)
+            self._agentpark_persist_assistant_progress(progress_message)
             assert messages_path.exists()
             self.Message("tool", "README contents", tool_call_id="call-1", name="read_file")
             self.Message("assistant", "Final answer.")
@@ -1455,10 +1451,11 @@ def test_agent_node_persists_assistant_content_returned_with_tool_calls(monkeypa
         if line.strip()
     ]
     assert len(records) == 1
-    assert records[0]["role"] == "assistant"
-    assert records[0]["parts"] == [
-        {"type": "text", "text": "I will inspect README before answering."}
-    ]
+    assert records[0]["role"] == "assistant_progress"
+    assert records[0]["parts"][0] == {"type": "text", "text": "I will inspect README before answering."}
+    assert records[0]["parts"][1]["type"] == "meta"
+    assert records[0]["parts"][1]["meta"]["kind"] == "assistant_progress"
+    assert records[0]["parts"][1]["meta"]["context_policy"] == "exclude"
     assert "I will inspect README before answering." in memory_path.read_text(encoding="utf-8")
     assert "Final answer." not in memory_path.read_text(encoding="utf-8")
 

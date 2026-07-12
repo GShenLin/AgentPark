@@ -46,6 +46,13 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
             self.system_prompt = system_prompt
             self.internal_memory_enabled = internal_memory_enabled
 
+    class DummyGrok:
+        def __init__(self, provider_id=None, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
+            self.provider_id = provider_id
+            self.memory_file_path = memory_file_path
+            self.system_prompt = system_prompt
+            self.internal_memory_enabled = internal_memory_enabled
+
     class DummyZhipu:
         def __init__(self, provider_id=None, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
             self.provider_id = provider_id
@@ -63,6 +70,8 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
                 return {"type": "openai"}
             if provider_name == "p-deepseek":
                 return {"type": "deepseek"}
+            if provider_name == "p-grok":
+                return {"type": "grok"}
             if provider_name == "p-claude":
                 return {"type": "claude"}
             if provider_name == "p-zhipu":
@@ -75,6 +84,7 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
     monkeypatch.setattr(providers, "Hyper3DAgent", DummyHyper3D)
     monkeypatch.setattr(providers, "OpenAIAgent", DummyOpenAI)
     monkeypatch.setattr(providers, "DeepSeekAgent", DummyDeepSeek)
+    monkeypatch.setattr(providers, "GrokAgent", DummyGrok)
     monkeypatch.setattr(providers, "ZhipuAgent", DummyZhipu)
     monkeypatch.setattr(providers, "ConfigLoader", lambda: DummyLoader())
 
@@ -84,6 +94,7 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
     hyper3d_agent = providers.create_agent("p-hyper3d", memory_file_path="m4", system_prompt="s4")
     openai_agent = providers.create_agent("p-openai", memory_file_path="m5", system_prompt="s5")
     deepseek_agent = providers.create_agent("p-deepseek", memory_file_path="m7", system_prompt="s7")
+    grok_agent = providers.create_agent("p-grok", memory_file_path="m8", system_prompt="s8")
     zhipu_agent = providers.create_agent("p-zhipu", memory_file_path="m6", system_prompt="s6")
 
     assert isinstance(gemini_agent, DummyGemini)
@@ -98,6 +109,8 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
     assert openai_agent.provider_id == "p-openai"
     assert isinstance(deepseek_agent, DummyDeepSeek)
     assert deepseek_agent.provider_id == "p-deepseek"
+    assert isinstance(grok_agent, DummyGrok)
+    assert grok_agent.provider_id == "p-grok"
     assert isinstance(zhipu_agent, DummyZhipu)
     assert zhipu_agent.provider_id == "p-zhipu"
 

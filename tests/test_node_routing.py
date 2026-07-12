@@ -47,3 +47,27 @@ def test_parse_node_output_allows_explicit_suppressed_output():
 
     assert out["display_text"] == "waiting 1/2"
     assert out["routes"] == []
+
+
+def test_parse_node_output_preserves_memory_sidecars_outside_display_message():
+    out = NodeRouteParser.parse_node_output(
+        {
+            "display_message": {"role": "assistant", "parts": [{"type": "text", "text": "answer"}]},
+            "routes": [{"output_index": 0, "payload": "answer"}],
+            "memory_sidecars": [
+                {
+                    "role": "metadata",
+                    "parts": [
+                        {
+                            "type": "structured",
+                            "data": {"assistant_message_id": "a1", "response_metadata": {"response": {"id": "r1"}}},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert out["display_message"]["parts"] == [{"type": "text", "text": "answer"}]
+    assert out["memory_sidecars"][0]["role"] == "metadata"
+    assert out["memory_sidecars"][0]["parts"][0]["data"]["response_metadata"]["response"]["id"] == "r1"

@@ -24,6 +24,8 @@ class AgentStreamRuntime:
         self.tool_event_callback = tool_event_callback if callable(tool_event_callback) else None
         self.streamed_text = ""
         self.thinking_text = ""
+        self.server_tool_calls: dict[str, dict] = {}
+        self.runtime_tool_calls: dict[str, dict] = {}
 
     def on_stream_delta(self, delta: object, full_text: object | None = None) -> None:
         delta_text = str(delta or "")
@@ -43,6 +45,26 @@ class AgentStreamRuntime:
 
     def on_tool_event(self, event: object) -> None:
         if isinstance(event, dict):
+            event_type = str(event.get("type") or "").strip().lower()
+            if event_type == "server_tool_activity":
+                call_id = str(event.get("call_id") or "").strip()
+                if call_id:
+                    self.server_tool_calls[call_id] = {
+                        key: value for key, value in event.items() if key not in {"type", "provider"}
+                    }
+            elif event_type in {"tool_call_start", "tool_call_end"}:
+                call_id = str(event.get("call_id") or "").strip()
+                if call_id:
+                    current = dict(self.runtime_tool_calls.get(call_id) or {})
+                    current.update(
+                        {
+                            key: value
+                            for key, value in event.items()
+                            if key not in {"type", "raw_call", "arguments_json", "event_time", "monotonic_ns"}
+                        }
+                    )
+                    current["call_id"] = call_id
+                    self.runtime_tool_calls[call_id] = current
             if callable(self.tool_event_callback):
                 self.tool_event_callback(dict(event))
             self._emit(self._public_tool_event(event))
@@ -58,12 +80,34 @@ class AgentStreamRuntime:
         finally:
             agent.tool_event_callback = previous_tool_event_callback
 
-    def emit_done(self, final_text: object) -> None:
+    def emit_done(self, final_text: object, *, structured_result: object = None) -> None:
         text = str(final_text or "")
         if text and text != self.streamed_text:
             delta_text = text[len(self.streamed_text) :] if text.startswith(self.streamed_text) else text
             self._emit(build_node_message_delta(delta_text, text, force=True))
-        self._emit(build_node_message_done(text))
+        result = structured_result if isinstance(structured_result, dict) else {}
+        calls = result.get("server_tool_calls")
+        if not isinstance(calls, list) or not calls:
+            calls = list(self.server_tool_calls.values())
+        self._emit(
+            build_node_message_done(
+                text,
+                server_tool_calls=calls,
+                citations=result.get("citations"),
+                response_metadata=result.get("response_metadata"),
+            )
+        )
+
+    def attach_runtime_tool_calls(self, structured_result: object) -> object:
+        if not self.runtime_tool_calls:
+            return structured_result
+        result = dict(structured_result) if isinstance(structured_result, dict) else {
+            "response": "" if structured_result is None else str(structured_result)
+        }
+        metadata = dict(result.get("response_metadata") or {})
+        metadata["runtime_tool_calls"] = list(self.runtime_tool_calls.values())
+        result["response_metadata"] = metadata
+        return result
 
     def _emit(self, payload: dict) -> None:
         if not callable(self.stream_callback):

@@ -33,6 +33,17 @@ def test_node_stream_protocol_normalizes_event_type_and_text():
         "type": "node_message_done",
         "text": "",
     }
+    assert normalize_node_message_event(
+        {
+            "type": "NODE_MESSAGE_DONE",
+            "text": "answer",
+            "response_metadata": {"protocol": "responses", "response": {"id": "resp_1"}},
+        }
+    ) == {
+        "type": "node_message_done",
+        "text": "answer",
+        "response_metadata": {"protocol": "responses", "response": {"id": "resp_1"}},
+    }
 
 
 def test_node_stream_protocol_rejects_unknown_event():

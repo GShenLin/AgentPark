@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta, ResponsesFunctionCallStreamItem, ResponsesOutputItemAdded, ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesResponseCompleted, ResponsesResponseCreated, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta, ResponsesFunctionCallStreamItem, ResponsesOutputItemAdded, ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesResponseCompleted, ResponsesResponseCreated, ResponsesServerToolActivity, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.server_tool_protocol import is_server_tool_item_type
 
 
 class OpenAIResponsesStreamEventNormalizer:
@@ -60,6 +61,9 @@ class OpenAIResponsesStreamEventNormalizer:
             return self._function_call_arguments_delta(raw_event, raw_type)
         if event_type in {"response.function_call_arguments.done", "function_call_arguments.done"}:
             return self._function_call_arguments_done(raw_event, raw_type)
+        server_tool_event = self._server_tool_activity(raw_event, event_type)
+        if server_tool_event is not None:
+            return [server_tool_event]
         if event_type in {"response.output_item.done", "output_item.done"}:
             return self._output_item_done(raw_event, raw_type)
         if event_type in {"response.completed", "response.done"}:
@@ -81,6 +85,45 @@ class OpenAIResponsesStreamEventNormalizer:
         if event_type in {"response.failed", "response.error"}:
             return [self._provider_failure(raw_event, raw_type)]
         return []
+
+    def _server_tool_activity(
+        self,
+        event: dict[str, Any],
+        event_type: str,
+    ) -> ResponsesServerToolActivity | None:
+        normalized_type = event_type.removeprefix("response.")
+        parts = normalized_type.rsplit(".", 1)
+        if len(parts) != 2:
+            return None
+        item_type, phase = parts
+        if not is_server_tool_item_type(item_type):
+            return None
+        status_by_phase = {
+            "queued": "queued",
+            "in_progress": "in_progress",
+            "searching": "in_progress",
+            "completed": "completed",
+            "failed": "failed",
+        }
+        status = status_by_phase.get(phase)
+        if status is None:
+            return None
+        item_id = str(event.get("item_id") or event.get("call_id") or "").strip()
+        item: dict[str, Any] = {
+            "type": item_type,
+            "id": item_id,
+            "status": status,
+        }
+        action = event.get("action")
+        if isinstance(action, dict):
+            item["action"] = dict(action)
+        return ResponsesServerToolActivity(
+            item_id=item_id,
+            output_index=self._int_or_none(event.get("output_index")),
+            item_type=item_type,
+            status=status,
+            item=item,
+        )
 
     def _output_item_added(self, event: dict[str, Any], raw_type: str) -> list[ResponsesStreamEvent]:
         item = event.get("item")

@@ -2,10 +2,11 @@ import os
 import time
 from typing import Callable
 
-from nodes.agent_assistant_memory import persist_assistant_tool_call_note
+from nodes.agent_assistant_memory import persist_assistant_progress
 from nodes.agent_message_adapter import (
     append_channel_meta,
     build_agent_output_message,
+    build_response_metadata_message,
     build_agent_user_content,
     extract_channel_meta,
     history_envelope_to_agent_message,
@@ -210,6 +211,7 @@ class Node(BaseNode):
             memory_path,
             messages_path,
             limit=history_message_limit + 1,
+            roles={"user", "assistant"},
         )
 
         history: list[dict] = []
@@ -264,7 +266,7 @@ class Node(BaseNode):
         if cancel_source is not None:
             agent.cancel_event = cancel_source
             agent.cancel_check = ctx.get("cancel_check") or cancel_source
-        persist_tool_call_note = lambda message: persist_assistant_tool_call_note(
+        persist_progress = lambda message: persist_assistant_progress(
             message=message,
             memory_path=memory_path,
             messages_path=self._resolve_messages_path(ctx),
@@ -307,7 +309,7 @@ class Node(BaseNode):
                 if _uses_responses_api_context(agent)
                 else "",
                 skill_resource_roots=capability_plan.skill_resource_roots,
-                persist_assistant_tool_call_note=persist_tool_call_note,
+                persist_assistant_progress=persist_progress,
                 consume_mid_turn_user_inputs=consume_mid_turn_user_inputs,
             ),
         )
@@ -388,6 +390,7 @@ class Node(BaseNode):
 
         start_time = time.monotonic()
         raise_if_cancel_requested(cancel_source)
+        agent._reset_provider_request_tracking()
         response = stream_runtime.send(
             agent,
             {
@@ -415,14 +418,41 @@ class Node(BaseNode):
                         break
                     time.sleep(min(0.05, remaining))
         raise_if_cancel_requested(cancel_source)
-        output_message = build_agent_output_message(response)
+        response_structured_result = getattr(agent, "_last_responses_structured_result", None)
+        response_for_message = _response_with_structured_result(response, response_structured_result)
+        provider_requests = agent._provider_request_snapshot()
+        response_for_message = stream_runtime.attach_runtime_tool_calls(response_for_message)
+        metadata_source = response_for_message
+        if provider_requests:
+            metadata_source = (
+                {**response_for_message, "provider_requests": provider_requests}
+                if isinstance(response_for_message, dict)
+                else {"provider_requests": provider_requests}
+            )
+        output_message = build_agent_output_message(response_for_message)
         output_message = append_channel_meta(output_message, channel_meta_parts)
+        metadata_message = build_response_metadata_message(
+            metadata_source,
+            assistant_message_id=output_message.get("id"),
+        )
         final_text = envelope_text(output_message).strip()
-        stream_runtime.emit_done(final_text)
-        return {
+        stream_runtime.emit_done(final_text, structured_result=response_for_message)
+        result = {
             "display": envelope_text(output_message),
+            "display_message": output_message,
             "routes": [{"output_index": 0, "payload": output_message}],
         }
+        if metadata_message is not None:
+            result["memory_sidecars"] = [metadata_message]
+        return result
+
+
+def _response_with_structured_result(response: object, structured_result: object) -> object:
+    if not isinstance(structured_result, dict) or not structured_result:
+        return response
+    if isinstance(response, dict):
+        return {**response, **structured_result}
+    return {"response": "" if response is None else str(response), **structured_result}
 
 
 def _instruction_role(agent: object) -> str:
@@ -445,7 +475,7 @@ def _uses_responses_api_context(agent: object) -> bool:
     if not isinstance(config, dict):
         return False
     provider_type = str(config.get("type") or "").strip()
-    return provider_type in {"openai", "doubao"} and config.get("responsesApi") is True
+    return provider_type in {"openai", "grok", "doubao"} and config.get("responsesApi") is True
 
 
 def _stream_enabled_for_agent(agent: object) -> bool:

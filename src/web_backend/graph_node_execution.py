@@ -190,6 +190,9 @@ class GraphNodeExecution(HostBoundService):
             routed_items = (routed or {}).get("routes") if isinstance(routed, dict) else []
             if not isinstance(routed_items, list):
                 routed_items = []
+            memory_sidecars = (routed or {}).get("memory_sidecars") if isinstance(routed, dict) else []
+            if not isinstance(memory_sidecars, list):
+                memory_sidecars = []
         except CancellationRequested:
             try:
                 finish_stop_requested()
@@ -290,6 +293,10 @@ class GraphNodeExecution(HostBoundService):
         _touch_node_config_last_run_at(config_path)
         try:
             self._append_node_memory_entry(safe_graph_id, entry, "assistant", output_message)
+            for sidecar in memory_sidecars:
+                metadata_message = normalize_envelope(sidecar, default_role="metadata")
+                metadata_message["trace_id"] = trace_id
+                self._append_node_memory_entry(safe_graph_id, entry, "metadata", metadata_message)
         except NodeMemoryPersistenceError as memory_error:
             self._log_memory_persistence_error(
                 safe_graph_id,

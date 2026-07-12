@@ -81,7 +81,11 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             thinking_mode=thinking_mode,
             stream=bool(stream),
         )
-        self._emit_provider_payload_request_summary(payload, request_api="chat_completions", stream=bool(stream))
+        request_summary = self._emit_provider_payload_request_summary(
+            payload,
+            request_api="chat_completions",
+            stream=bool(stream),
+        )
         payload_json = json.dumps(payload, ensure_ascii=False)
         if stream:
             result = self._stream_chat_completions_with_retry(
@@ -99,6 +103,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 headers=self._chat_headers(),
                 payload_json=payload_json,
             )
+        self._emit_provider_request_completed(request_summary, result)
         return self._handle_chat_completions_result(
             result,
             run_tools=run_tools,
@@ -125,9 +130,11 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             return f"Error: Invalid message format in choice[{selected_idx}]"
         tool_calls = self._extract_openai_chat_tool_calls(message)
         if tool_calls:
+            self.AssistantProgress(message.get("content") or "", tool_calls=tool_calls)
             self.Message(
                 "assistant",
-                message.get("content") or "",
+                None,
+                persist=False,
                 **self._assistant_tool_call_message_fields(message, tool_calls),
             )
             if not run_tools:
@@ -211,6 +218,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         thinking_chunks: list[str] = []
         tool_calls_by_index: dict[int, dict] = {}
         debug_events: list[dict] = []
+        usage: dict[str, Any] = {}
         emitted_web_search_signatures: set[str] = set()
         for data_text in self._curl_post_sse_data_lines(
             url=url,
@@ -233,6 +241,8 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             )
             if not isinstance(event, dict):
                 continue
+            if isinstance(event.get("usage"), dict):
+                usage = dict(event["usage"])
             for web_search_event in self._extract_native_web_search_events(event, source="event"):
                 self._emit_native_web_search_notice_once(web_search_event, emitted_web_search_signatures)
             for choice in event.get("choices") if isinstance(event, dict) and isinstance(event.get("choices"), list) else []:
@@ -268,7 +278,10 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             events=debug_events,
             assembled_message=message,
         )
-        return {"choices": [{"message": message}]}
+        result: dict[str, Any] = {"choices": [{"message": message}]}
+        if usage:
+            result["usage"] = usage
+        return result
 
     def _assistant_tool_call_message_fields(self, message: dict[str, Any], tool_calls: list[dict]) -> dict[str, Any]:
         _ = message

@@ -115,7 +115,7 @@ AgentPark/
 
 - Windows 是主要目标环境。部分功能依赖 `.bat`、PowerShell、桌面自动化或 PyInstaller 打包路径。
 - Linux 支持 WebUI、CLI、provider runtime 和重启流程；Windows 桌面与打包功能仍仅支持 Windows。
-- Python 3.11+。Windows 脚本优先使用本地 Python 3.14/3.12/3.11；Linux 脚本依次尝试 `AgnetPark_Linux_env`、`.venv`、`python3` 和 `python`。
+- Python 3.11+。Windows 脚本优先使用本地 Python 3.14/3.12/3.11；Linux 脚本依次尝试 `AgentPark_Linux_env`、`.venv`、`python3` 和 `python`。
 - Node.js + npm，用于安装和构建 `webui`。
 - 推荐安装 ripgrep `rg`；文件搜索工具和部分前端搜索路径会优先使用它。
 

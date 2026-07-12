@@ -40,11 +40,19 @@ def build_node_message_delta(delta: object, text: object, *, force: bool = False
     ).to_payload()
 
 
-def build_node_message_done(text: object) -> dict[str, Any]:
-    return NodeMessageEvent(
+def build_node_message_done(text: object, **metadata: Any) -> dict[str, Any]:
+    payload = NodeMessageEvent(
         event_type=NODE_MESSAGE_DONE,
         text="" if text is None else str(text),
     ).to_payload()
+    for key in ("server_tool_calls", "citations"):
+        value = metadata.get(key)
+        if isinstance(value, list) and value:
+            payload[key] = value
+    response_metadata = metadata.get("response_metadata")
+    if isinstance(response_metadata, dict) and response_metadata:
+        payload["response_metadata"] = response_metadata
+    return payload
 
 
 def build_node_thinking_delta(delta: object, text: object, *, provider: object = "") -> dict[str, Any]:
@@ -72,4 +80,9 @@ def normalize_node_message_event(event: dict[str, Any]) -> dict[str, Any]:
             text,
             force=bool(event.get("force")),
         )
-    return build_node_message_done(text)
+    return build_node_message_done(
+        text,
+        server_tool_calls=event.get("server_tool_calls"),
+        citations=event.get("citations"),
+        response_metadata=event.get("response_metadata"),
+    )

@@ -10,7 +10,9 @@ from src.web_backend.node_memory_store import append_node_tool_call_entry
 from src.web_backend.node_memory_store import current_node_memory_paths
 from src.web_backend.node_memory_store import ensure_node_memory_files
 from src.web_backend.node_memory_store import load_recent_node_memory_records
+from src.web_backend.node_memory_store import load_latest_node_memory_turn
 from src.web_backend.node_memory_store import read_node_memory_text
+from src.web_backend.node_instance_runtime import _select_latest_turn_records
 
 
 def test_append_node_memory_entry_writes_markdown_and_jsonl(tmp_path):
@@ -76,6 +78,107 @@ def test_append_node_tool_call_entry_writes_structured_tool_history(tmp_path):
     assert "Tool read_file completed call_id=call-1" in markdown
     assert "result_preview=ok" in markdown
     assert "result_chars=2" in markdown
+
+
+def test_load_recent_node_memory_records_filters_roles_before_applying_limit(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    for role, message_id in (("user", "u1"), ("assistant", "a1"), ("metadata", "m1"), ("user", "u2")):
+        append_node_memory_entry(
+            str(memory_path),
+            str(messages_path),
+            role,
+            {"id": message_id, "role": role, "parts": [{"type": "text", "text": message_id}]},
+        )
+
+    records = load_recent_node_memory_records(
+        str(memory_path),
+        str(messages_path),
+        limit=2,
+        roles={"user", "assistant"},
+    )
+
+    assert [record["id"] for record in records] == ["a1", "u2"]
+
+
+def test_load_latest_node_memory_turn_returns_complete_newest_turn(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    for role, message_id in (
+        ("user", "u1"),
+        ("assistant", "a1"),
+        ("user", "u2"),
+        ("assistant_progress", "p2"),
+        ("tool", "t2"),
+        ("assistant", "a2"),
+        ("metadata", "m2"),
+    ):
+        append_node_memory_entry(
+            str(memory_path),
+            str(messages_path),
+            role,
+            {"id": message_id, "role": role, "parts": [{"type": "text", "text": message_id}]},
+        )
+
+    records, history_complete = load_latest_node_memory_turn(str(memory_path), str(messages_path))
+
+    assert [record["id"] for record in records] == ["u2", "p2", "t2", "a2", "m2"]
+    assert history_complete is False
+
+
+def test_load_latest_node_memory_turn_reports_complete_single_turn(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    for role, message_id in (("user", "u1"), ("assistant", "a1")):
+        append_node_memory_entry(
+            str(memory_path),
+            str(messages_path),
+            role,
+            {"id": message_id, "role": role, "parts": [{"type": "text", "text": message_id}]},
+        )
+
+    records, history_complete = load_latest_node_memory_turn(str(memory_path), str(messages_path))
+
+    assert [record["id"] for record in records] == ["u1", "a1"]
+    assert history_complete is True
+
+
+def test_latest_turn_lazy_modes_split_summary_progress_and_metadata():
+    records = [
+        {"id": "u1", "role": "user"},
+        {"id": "p1", "role": "assistant_progress"},
+        {"id": "t1", "role": "tool"},
+        {"id": "a1", "role": "assistant"},
+        {"id": "m1", "role": "metadata"},
+    ]
+
+    assert [item["id"] for item in _select_latest_turn_records(records, "latest_turn")] == ["u1", "a1"]
+    assert [item["id"] for item in _select_latest_turn_records(records, "latest_turn_progress")] == [
+        "u1",
+        "p1",
+        "t1",
+        "a1",
+    ]
+    assert [item["id"] for item in _select_latest_turn_records(records, "latest_turn_metadata")] == [
+        "u1",
+        "a1",
+        "m1",
+    ]
+
+
+def test_latest_turn_progress_mode_keeps_inflight_progress_without_final_assistant():
+    records = [
+        {"id": "u1", "role": "user"},
+        {"id": "p1", "role": "assistant_progress"},
+        {"id": "t1", "role": "tool"},
+    ]
+
+    assert [item["id"] for item in _select_latest_turn_records(records, "latest_turn")] == ["u1"]
+    assert [item["id"] for item in _select_latest_turn_records(records, "latest_turn_progress")] == [
+        "u1",
+        "p1",
+        "t1",
+    ]
 
 
 def test_records_over_limit_archive_old_entries_and_keep_recent_active(tmp_path, monkeypatch):

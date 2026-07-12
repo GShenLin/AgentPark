@@ -7,6 +7,7 @@ import type {
   GraphProfile,
   GraphProfileListResponse,
   MessageEnvelope,
+  MemoryHistoryMode,
   MobileGraphInstance,
   MobileNode,
   MobileNodeConversation,
@@ -50,6 +51,7 @@ export type {
   GraphProfileListResponse,
   GraphProfileNodeConfig,
   MessageEnvelope,
+  MemoryHistoryMode,
   MessagePart,
   MobileGraph,
   MobileGraphInstance,
@@ -89,6 +91,7 @@ export type {
   RuntimeEvent,
   RuntimeNoticeEvent,
   RuntimeToolCall,
+  ServerToolActivityEvent,
   RunInfo,
   ToolRuntimeEvent,
   UserInteractionField,
@@ -764,11 +767,15 @@ export async function getNodeInstanceMemory(
   nodeId: string,
   maxChars = 20000,
   graphId?: string,
+  historyMode: MemoryHistoryMode = 'recent',
 ): Promise<{
   memory_path: string | null
   messages_path?: string | null
   text: string
   messages?: MessageEnvelope[]
+  history_complete?: boolean
+  latest_turn_progress_loaded?: boolean
+  latest_turn_metadata_loaded?: boolean
   state?: NodeInstanceState
   last_message?: string
   live_message?: string
@@ -776,7 +783,9 @@ export async function getNodeInstanceMemory(
   activity_message?: string
 }> {
   const query = graphId ? `&graph_id=${encodeURIComponent(graphId)}` : ''
-  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}${query}`)
+  return apiFetch(
+    `/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}&history_mode=${historyMode}${query}`,
+  )
 }
 
 export async function deleteNodeInstanceMemoryMessage(
@@ -881,9 +890,10 @@ export async function getMobileNodeConversation(
   pcId: string,
   graphId: string,
   nodeId: string,
+  historyMode: MemoryHistoryMode = 'latest_turn',
 ): Promise<MobileNodeConversation> {
   return apiFetch(
-    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/conversation`,
+    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/conversation?history_mode=${historyMode}`,
   ) as Promise<MobileNodeConversation>
 }
 
@@ -892,6 +902,7 @@ export async function sendMobileNodeMessage(
   graphId: string,
   nodeId: string,
   message: string | MessageEnvelope,
+  historyMode: MemoryHistoryMode = 'latest_turn',
 ): Promise<{
   ok: boolean
   queued: boolean
@@ -900,7 +911,7 @@ export async function sendMobileNodeMessage(
   node: MobileNode
   conversation: MobileNodeConversation
 }> {
-  return apiFetch(`/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages`, {
+  return apiFetch(`/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages?history_mode=${historyMode}`, {
     method: 'POST',
     body: JSON.stringify({ message }),
   })

@@ -105,6 +105,33 @@ def test_settings_api_rejects_invalid_responses_provider_contract(monkeypatch, t
     assert "toolContextCompactionEnabled" in str(exc.value.detail)
 
 
+def test_settings_api_reads_invalid_provider_contract_with_warning(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    provider_path = config_dir / "moduleProvider.json"
+    provider_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "bad": {"type": "grok", "authMode": "codex", "responsesApi": True}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    loaded = SettingsApiDomain(SimpleNamespace()).get_settings_section("module-provider")
+
+    assert loaded["data"]["providers"]["bad"]["type"] == "grok"
+    assert loaded["warnings"] == [
+        "Provider 'bad' can use authMode 'codex' only with type 'openai'."
+    ]
+
+
 def test_settings_api_rejects_invalid_defaults_section(monkeypatch, tmp_path):
     from src import workspace_settings
 

@@ -9,6 +9,9 @@ from src.config_loader import ConfigLoader
 from src.base_memory import BaseMemory
 from src.providers.provider_request_summary import build_provider_request_summary
 from src.providers.provider_request_summary import next_provider_request_index
+from src.providers.provider_request_usage import extract_provider_usage
+from src.providers.provider_request_usage import ProviderRequestTracker
+from src.providers.provider_runtime_events import PROVIDER_REQUEST_COMPLETED_STAGE
 from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
 from src.providers.provider_runtime_events import emit_provider_runtime_notice
 from src.tool.base_tool import BaseTool
@@ -27,6 +30,7 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
         self.memory = BaseMemory(provider_name, memory_file_path=memory_file_path)
         self.tools = BaseTool(self)
         self.manager = BaseAgentManager(self)
+        self._provider_request_tracker = ProviderRequestTracker()
         if isinstance(system_prompt, str) and system_prompt.strip():
             self.Message("system", system_prompt.strip())
         if self.internal_memory_enabled:
@@ -116,27 +120,24 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
         msg = {"role": role, "content": content}
         msg.update(kwargs)
         self.messages.append(msg)
-        if persist:
-            self._persist_assistant_tool_call_note(msg)
         if persist and self.internal_memory_enabled:
             self.memory.on_message(msg)
 
-    def _persist_assistant_tool_call_note(self, message):
-        if not self._is_visible_assistant_tool_call_note(message):
+    def AssistantProgress(self, content, **kwargs):
+        if not self._has_visible_text(content):
             return
-        callback = getattr(self, "_agentpark_persist_assistant_tool_call_note", None)
+        progress = {
+            "role": "assistant_progress",
+            "content": content,
+            "context_policy": "exclude",
+        }
+        progress.update(kwargs)
+        callback = getattr(self, "_agentpark_persist_assistant_progress", None)
         if callable(callback):
-            callback(message)
+            callback(progress)
 
     @staticmethod
-    def _is_visible_assistant_tool_call_note(message):
-        if not isinstance(message, dict):
-            return False
-        if str(message.get("role") or "").strip().lower() != "assistant":
-            return False
-        if not isinstance(message.get("tool_calls"), list) or not message.get("tool_calls"):
-            return False
-        content = message.get("content")
+    def _has_visible_text(content):
         if isinstance(content, str):
             return bool(content.strip())
         if not isinstance(content, list):
@@ -173,7 +174,12 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
         pass
 
     def _get_messages_with_memory(self):
-        current_messages = self.memory.build_messages_with_memory(self.messages)
+        current_messages = [
+            message
+            for message in self.memory.build_messages_with_memory(self.messages)
+            if str(message.get("role") or "").strip().lower() != "assistant_progress"
+            and str(message.get("context_policy") or "").strip().lower() != "exclude"
+        ]
         if not self.internal_memory_enabled:
             return current_messages
 
@@ -238,7 +244,37 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
             message=json.dumps(payload, ensure_ascii=False, sort_keys=True),
             stage=PROVIDER_REQUEST_SUMMARY_STAGE,
         )
+        self._provider_request_tracker_instance().record_summary(payload)
         return payload
+
+    def _reset_provider_request_tracking(self) -> None:
+        self._provider_request_tracker_instance().reset()
+
+    def _provider_request_snapshot(self) -> dict:
+        return self._provider_request_tracker_instance().snapshot()
+
+    def _provider_request_tracker_instance(self) -> ProviderRequestTracker:
+        tracker = self.__dict__.get("_provider_request_tracker")
+        if not isinstance(tracker, ProviderRequestTracker):
+            tracker = ProviderRequestTracker()
+            self.__dict__["_provider_request_tracker"] = tracker
+        return tracker
+
+    def _emit_provider_request_completed(self, request_summary: object, result: object) -> dict | None:
+        if not isinstance(request_summary, dict):
+            return None
+        usage = extract_provider_usage(result)
+        completion = self._provider_request_tracker_instance().record_completion(request_summary.get("request_index"), usage)
+        if completion is None:
+            return None
+        completion["request_api"] = str(request_summary.get("request_api") or "").strip()
+        emit_provider_runtime_notice(
+            getattr(self, "tool_event_callback", None),
+            provider=getattr(self, "provider_name", "provider"),
+            message=json.dumps(completion, ensure_ascii=False, sort_keys=True),
+            stage=PROVIDER_REQUEST_COMPLETED_STAGE,
+        )
+        return completion
 
     def _emit_provider_payload_request_summary(
         self,

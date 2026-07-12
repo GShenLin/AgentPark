@@ -250,6 +250,12 @@ def _normalize_part(item: object) -> dict:
         diagnostics = item.get("diagnostics")
         if isinstance(diagnostics, list):
             payload["diagnostics"] = [str(entry) for entry in diagnostics]
+        sources = item.get("sources")
+        if isinstance(sources, list):
+            payload["sources"] = [dict(entry) for entry in sources if isinstance(entry, dict)]
+        details = item.get("details")
+        if isinstance(details, dict) and details:
+            payload["details"] = dict(details)
         if item.get("args") is not None:
             payload["args"] = item.get("args")
         elif item.get("arguments") is not None:

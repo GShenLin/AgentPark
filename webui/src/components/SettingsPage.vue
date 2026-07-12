@@ -158,6 +158,9 @@ const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
 const isVirtualSection = computed(() => isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isExitSection.value)
 const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
+const validationWarnings = computed(() => Array.isArray(loadedDocument.value?.warnings)
+  ? loadedDocument.value.warnings.map((item) => String(item || '').trim()).filter(Boolean)
+  : [])
 
 const formData = computed<Record<string, unknown> | null>(() => {
   try {
@@ -421,6 +424,11 @@ onMounted(async () => {
               {{ saving ? (activeSection === 'events' ? 'Applying...' : 'Saving...') : (activeSection === 'events' ? 'Apply' : 'Save') }}
             </button>
           </div>
+        </div>
+
+        <div v-if="validationWarnings.length" class="settings-warning" role="status">
+          <strong>Configuration warning</strong>
+          <span v-for="warning in validationWarnings" :key="warning">{{ warning }}</span>
         </div>
 
         <ProviderTestSettingsPanel v-if="isProviderTest" />

@@ -43,6 +43,15 @@ def test_provider_feature_matrix_covers_all_supported_provider_transports():
         ),
     )
 
+    assert build_provider_feature_matrix({"type": "grok", "model": "grok-4.5", "responsesApi": True}) == _matrix(
+        responses_api=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
+        web_search=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
+        tools=_feature(True, ["enabled", "disabled"]),
+        thinking=_feature(False, []),
+        reasoning_effort=_feature(True, ["low", "medium", "high"], transport="responses"),
+        reasoning_summary=_feature(False, []),
+    )
+
     assert build_provider_feature_matrix({"type": "deepseek"}) == _matrix(
         responses_api=_feature(False, []),
         web_search=_feature(False, []),
@@ -138,12 +147,12 @@ def test_provider_feature_matrix_ignores_current_configuration_values():
         "features": {"web_search": {"supported": False, "values": ["injected"]}},
     }
 
-    for provider_type in ("openai", "deepseek", "doubao", "zhipu", "claude", "gemini"):
+    for provider_type in ("openai", "grok", "deepseek", "doubao", "zhipu", "claude", "gemini"):
         assert build_provider_feature_matrix({"type": provider_type, **noisy_config}) == build_provider_feature_matrix(
             {"type": provider_type}
         )
 
-    for provider_type in ("openai", "doubao"):
+    for provider_type in ("openai", "grok", "doubao"):
         assert build_provider_feature_matrix(
             {"type": provider_type, "responsesApi": True, **noisy_config}
         ) == build_provider_feature_matrix({"type": provider_type, "responsesApi": True})

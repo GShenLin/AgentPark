@@ -73,6 +73,21 @@ def test_openai_send_uses_responses_endpoint_when_responses_api_enabled():
     assert "messages" not in payload
 
 
+def test_responses_web_search_requests_structured_sources():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"model": "gpt-test"}
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[{"type": "web_search"}],
+        use_stream=True,
+        provider_options={"reasoning_effort": "high", "reasoning_summary": "auto"},
+    )
+
+    assert payload["include"] == ["reasoning.encrypted_content", "web_search_call.action.sources"]
+
+
 def test_responses_input_uses_output_text_for_assistant_history():
     from src.providers.openai_agent import OpenAIAgent
 
@@ -2258,7 +2273,7 @@ def test_responses_injects_codex_like_agents_md_context(tmp_path):
     assert context_updates[0]["context_item"]["project_instructions"]["chars"] > 0
 
 
-def test_explicit_context_continuation_preserves_assistant_content_with_function_call():
+def test_explicit_context_continuation_excludes_assistant_progress_text():
     from src.base_agent import BaseAgent
     from src.providers.openai_agent import OpenAIAgent
 
@@ -2282,7 +2297,7 @@ def test_explicit_context_continuation_preserves_assistant_content_with_function
     agent.Message = BaseAgent.Message.__get__(agent, OpenAIAgent)
     payloads = []
     order = []
-    agent._agentpark_persist_assistant_tool_call_note = lambda message: order.append(
+    agent._agentpark_persist_assistant_progress = lambda message: order.append(
         ("persist", message.get("content"))
     )
 
@@ -2338,13 +2353,13 @@ def test_explicit_context_continuation_preserves_assistant_content_with_function
     ) == "done"
 
     assistant_messages = [message for message in agent.messages if message.get("role") == "assistant"]
-    assert assistant_messages[0]["content"] == "I will inspect the first result."
+    assert assistant_messages[0]["content"] is None
     assert order == [
         ("persist", "I will inspect the first result."),
         ("tool", "hello"),
     ]
     continuation_text = json.dumps(payloads[1]["input"], ensure_ascii=False)
-    assert continuation_text.count("I will inspect the first result.") == 1
+    assert continuation_text.count("I will inspect the first result.") == 0
     preserved = [
         item
         for item in payloads[1]["input"]
@@ -2352,7 +2367,7 @@ def test_explicit_context_continuation_preserves_assistant_content_with_function
         and item.get("role") == "assistant"
         and item.get("content") == [{"type": "output_text", "text": "I will inspect the first result."}]
     ]
-    assert len(preserved) == 1
+    assert len(preserved) == 0
     assert any(item.get("type") == "function_call" and item.get("call_id") == "call-1" for item in payloads[1]["input"])
     assert any(item.get("type") == "function_call_output" and item.get("call_id") == "call-1" for item in payloads[1]["input"])
 

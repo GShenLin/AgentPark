@@ -113,12 +113,13 @@ class MobileApiDomain(DomainBase):
                 return item
         raise HTTPException(status_code=500, detail="sent node is missing from mobile node snapshot")
 
-    def _mobile_node_conversation_snapshot(self, graph_id: str, node_id: str):
+    def _mobile_node_conversation_snapshot(self, graph_id: str, node_id: str, history_mode: str = "latest_turn"):
         return self.core.node_ops.get_node_instance_memory(
             node_id,
             max_chars=None,
             graph_id=graph_id,
             messages_limit=None,
+            history_mode=history_mode,
         )
 
     def _require_graph(self, graph_id: str) -> str:
@@ -160,14 +161,14 @@ class MobileApiDomain(DomainBase):
         safe_graph_id = self._require_graph(graph_id)
         return {"pc_id": LOCAL_PC_ID, "graph_id": safe_graph_id, "nodes": self._list_mobile_nodes_for_graph(safe_graph_id)}
 
-    def get_mobile_node_conversation(self, pc_id: str, graph_id: str, node_id: str):
+    def get_mobile_node_conversation(self, pc_id: str, graph_id: str, node_id: str, history_mode: str = "latest_turn"):
         self._require_local_pc(pc_id)
         safe_graph_id = self._require_graph(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         if not safe_node_id:
             raise HTTPException(status_code=400, detail="invalid node id")
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
-        return self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id)
+        return self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id, history_mode=history_mode)
 
     def delete_mobile_node_message(self, pc_id: str, graph_id: str, node_id: str, message_id: str):
         self._require_local_pc(pc_id)
@@ -182,7 +183,14 @@ class MobileApiDomain(DomainBase):
             graph_id=safe_graph_id,
         )
 
-    def send_mobile_node_message(self, pc_id: str, graph_id: str, node_id: str, payload: dict):
+    def send_mobile_node_message(
+        self,
+        pc_id: str,
+        graph_id: str,
+        node_id: str,
+        payload: dict,
+        history_mode: str = "latest_turn",
+    ):
         self._require_local_pc(pc_id)
         safe_graph_id = self._require_graph(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
@@ -235,7 +243,11 @@ class MobileApiDomain(DomainBase):
             "trace_id": trace_id,
             "pending_count": result.get("pending_count"),
             "node": self._mobile_node_snapshot(safe_graph_id, safe_node_id),
-            "conversation": self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id),
+            "conversation": self._mobile_node_conversation_snapshot(
+                safe_graph_id,
+                safe_node_id,
+                history_mode=history_mode,
+            ),
         }
 
 

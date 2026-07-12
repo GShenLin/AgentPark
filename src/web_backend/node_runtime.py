@@ -114,11 +114,15 @@ def _run_node_logic_with_routes(nodes_dir: str, node_id: str, message: object, c
     if not isinstance(routes, list):
         routes = []
     output_message = normalize_envelope(parsed_output.get("display_message"), default_role="assistant")
+    memory_sidecars = parsed_output.get("memory_sidecars") if isinstance(parsed_output, dict) else []
+    if not isinstance(memory_sidecars, list):
+        memory_sidecars = []
 
     return {
         "text": output_text,
         "message": output_message,
         "routes": routes,
+        "memory_sidecars": memory_sidecars,
     }
 
 

@@ -49,6 +49,22 @@ def test_apply_patch_add_update_delete_file(tmp_path):
     assert file_path.read_text(encoding="utf-8") == "hello\nnew value\nbye\n"
     assert added_path.read_text(encoding="utf-8") == "created\n"
     assert not delete_path.exists()
+    changes = {item["path"]: item for item in payload["file_changes"]}
+    update = changes[str(file_path)]
+    changed_row = next(
+        row
+        for hunk in update["hunks"]
+        for row in hunk["rows"]
+        if row.get("before_text") == "old value"
+    )
+    assert changed_row == {
+        "kind": "change",
+        "before_line": 2,
+        "before_text": "old value",
+        "after_line": 2,
+        "after_text": "new value",
+    }
+    assert update["hunks"][0]["context_lines"] == 5
 
 
 def test_apply_patch_move_file(tmp_path):

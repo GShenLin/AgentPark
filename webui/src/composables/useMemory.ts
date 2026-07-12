@@ -8,6 +8,7 @@ import {
   saveFile,
   sendNodeInteractiveInput,
   type MessageEnvelope,
+  type MemoryHistoryMode,
 } from '../api'
 import { formatLiveActivity } from '../liveActivity'
 import { useGlobalState } from './useGlobalState'
@@ -63,6 +64,9 @@ export function useMemory() {
     selectedNodeId,
     memoryText,
     memoryMessages,
+    memoryHistoryComplete,
+    memoryLatestTurnProgressLoaded,
+    memoryLatestTurnMetadataLoaded,
     memoryLiveMessage,
     memoryThinkingMessage,
     memoryActivityMessage,
@@ -83,7 +87,7 @@ export function useMemory() {
     return nodeId || ''
   }
 
-  async function loadAgentMemory() {
+  async function loadAgentMemory(options: { historyMode?: MemoryHistoryMode } = {}) {
     if (memoryMode.value !== 'agent') return
     const nodeId = resolveSelectedTargetId()
     const graphId = currentGraphId.value || 'default'
@@ -92,6 +96,9 @@ export function useMemory() {
       if (requestId !== agentLoadRequestId || memoryMode.value !== 'agent') return
       memoryText.value = ''
       memoryMessages.value = []
+      memoryHistoryComplete.value = true
+      memoryLatestTurnProgressLoaded.value = true
+      memoryLatestTurnMetadataLoaded.value = true
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
       memoryActivityMessage.value = ''
@@ -103,14 +110,39 @@ export function useMemory() {
       return
     }
     try {
-      const res = await getNodeInstanceMemory(nodeId, 20000, graphId)
+      const historyMode = options.historyMode || (memoryHistoryComplete.value ? 'all' : 'latest_turn')
+      const res = await getNodeInstanceMemory(nodeId, 20000, graphId, historyMode)
       if (requestId !== agentLoadRequestId) return
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
-      memoryText.value = res.text || ''
       const baseMessages = Array.isArray((res as any)?.messages) ? ([...(res as any).messages] as any[]) : []
-      memoryMessages.value = baseMessages
+      const isLazySection = historyMode === 'latest_turn_progress' || historyMode === 'latest_turn_metadata'
+      if (isLazySection) {
+        const merged = new Map<string, MessageEnvelope>()
+        for (const message of [...memoryMessages.value, ...baseMessages]) {
+          const key = String(message?.id || `${message?.role || ''}-${message?.created_at || ''}`)
+          merged.set(key, message)
+        }
+        memoryMessages.value = [...merged.values()].sort((left, right) =>
+          String(left?.created_at || '').localeCompare(String(right?.created_at || '')),
+        )
+      } else {
+        memoryText.value = res.text || ''
+        memoryMessages.value = baseMessages
+      }
+      memoryHistoryComplete.value = res.history_complete !== false
+      if (historyMode === 'latest_turn') {
+        memoryLatestTurnProgressLoaded.value = false
+        memoryLatestTurnMetadataLoaded.value = false
+      } else if (historyMode === 'latest_turn_progress') {
+        memoryLatestTurnProgressLoaded.value = true
+      } else if (historyMode === 'latest_turn_metadata') {
+        memoryLatestTurnMetadataLoaded.value = true
+      } else if (historyMode === 'all') {
+        memoryLatestTurnProgressLoaded.value = true
+        memoryLatestTurnMetadataLoaded.value = true
+      }
       if (messagesContainCommittedLive(baseMessages, pendingCommittedLiveText, pendingCommittedLiveTraceId)) {
         clearPendingCommittedLive()
         memoryLiveMessage.value = ''
@@ -128,8 +160,15 @@ export function useMemory() {
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
+      if (options.historyMode === 'latest_turn_progress' || options.historyMode === 'latest_turn_metadata') {
+        lastError.value = String(e?.message || e)
+        return
+      }
       memoryText.value = ''
       memoryMessages.value = []
+      memoryHistoryComplete.value = true
+      memoryLatestTurnProgressLoaded.value = true
+      memoryLatestTurnMetadataLoaded.value = true
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
       memoryActivityMessage.value = ''
@@ -309,6 +348,7 @@ export function useMemory() {
           memoryLiveMessage.value = nextLiveMessage
         }
         if (nextActivityMessage) memoryActivityMessage.value = nextActivityMessage
+        else if (eventType === 'server_tool_activity') memoryActivityMessage.value = ''
         // Persistent session_id (set by server on stdin_ready, survives text update races)
         const persistentSessionId = String(payload?.interactive_session_id || '').trim()
         if (persistentSessionId) {
@@ -325,6 +365,7 @@ export function useMemory() {
           }
         }
         if (
+          eventType === 'server_tool_activity' ||
           eventType === 'tool_call_start' ||
           eventType === 'tool_call_end' ||
           eventType === 'node_message_done' ||

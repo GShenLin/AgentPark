@@ -30,6 +30,7 @@ class _FakeCancellations:
 class _FakeHost:
     def __init__(self):
         self.events = []
+        self.memory_entries = []
         self.core = SimpleNamespace(
             node_live_outputs=_FakeLiveOutputs(),
             node_cancellations=_FakeCancellations(),
@@ -50,8 +51,8 @@ class _FakeHost:
     def _append_node_tool_call_entry(self, *_args, **_kwargs):
         return None
 
-    def _append_node_memory_entry(self, *_args, **_kwargs):
-        return None
+    def _append_node_memory_entry(self, graph_id, node_id, role, message):
+        self.memory_entries.append((graph_id, node_id, role, message))
 
     def _node_dir(self, graph_id, node_id):
         return f"C:/tmp/{graph_id}/{node_id}"
@@ -208,6 +209,77 @@ def test_graph_node_success_does_not_use_legacy_companion_inbox(monkeypatch, tmp
 
     assert not (companion_config.parent / "inbox.jsonl").exists()
     assert not any(item["event"] == "node_run_companion_review_notice" for item in host.events)
+
+
+def test_graph_node_persists_response_metadata_as_assistant_sidecar(monkeypatch, tmp_path):
+    import src.web_backend.graph_node_execution as graph_node_execution
+    from src.web_backend.graph_node_execution import GraphNodeExecution
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "node_id": "Agent1",
+                "graph_id": "default",
+                "type_id": "agent_node",
+                "state": "working",
+                "pending": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    assistant = {
+        "id": "assistant-1",
+        "role": "assistant",
+        "parts": [{"type": "text", "text": "completed answer"}],
+    }
+    metadata = {
+        "id": "metadata-1",
+        "role": "metadata",
+        "parts": [
+            {
+                "type": "structured",
+                "data": {
+                    "kind": "response_metadata",
+                    "assistant_message_id": "assistant-1",
+                    "response_metadata": {
+                        "protocol": "responses",
+                        "response": {"id": "resp-1", "status": "completed"},
+                        "output_items": [{"type": "message", "id": "output-1"}],
+                    },
+                },
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        graph_node_execution,
+        "_run_node_logic_with_routes",
+        lambda *_args, **_kwargs: {"message": assistant, "routes": [], "memory_sidecars": [metadata]},
+    )
+    host = _FakeHost()
+
+    GraphNodeExecution(host)._run_single_node_iteration(
+        safe_graph_id="default",
+        entry="Agent1",
+        cfg={},
+        config_path=str(config_path),
+        pending_item={"from": "Trigger1"},
+        outgoing={},
+        nodes_dir=str(tmp_path),
+        wake_event=threading.Event(),
+    )
+
+    persisted = [(role, message) for _graph, _node, role, message in host.memory_entries]
+    assert [role for role, _message in persisted] == ["assistant", "metadata"]
+    assert persisted[0][1]["id"] == "assistant-1"
+    assert persisted[0][1]["parts"] == [{"type": "text", "text": "completed answer"}]
+    metadata_data = persisted[1][1]["parts"][0]["data"]
+    assert metadata_data["assistant_message_id"] == "assistant-1"
+    assert metadata_data["response_metadata"]["response"]["id"] == "resp-1"
+    assert metadata_data["response_metadata"]["output_items"] == [{"type": "message", "id": "output-1"}]
 
 
 def test_graph_node_success_skips_review_notice_for_non_agent_node(monkeypatch, tmp_path):

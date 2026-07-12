@@ -167,7 +167,11 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         if stream:
             payload["stream"] = True
 
-        self._emit_provider_payload_request_summary(payload, request_api="chat_completions", stream=bool(stream))
+        request_summary = self._emit_provider_payload_request_summary(
+            payload,
+            request_api="chat_completions",
+            stream=bool(stream),
+        )
 
         headers = {
             "Content-Type": "application/json",
@@ -220,6 +224,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 )
             return str(e)
 
+        self._emit_provider_request_completed(request_summary, result)
         if "choices" in result and len(result["choices"]) > 0:
             message, selected_idx = self._pick_response_message(result.get("choices"), run_tools)
             if not isinstance(message, dict):
@@ -228,7 +233,8 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
 
             tool_calls = self._extract_tool_calls(message)
             if tool_calls:
-                self.Message("assistant", message.get("content"), tool_calls=tool_calls)
+                self.AssistantProgress(message.get("content"), tool_calls=tool_calls)
+                self.Message("assistant", None, persist=False, tool_calls=tool_calls)
                 if run_tools:
                     executions = self._execute_tool_calls_parallel(tool_calls)
                     image_messages = self._append_tool_execution_messages_then_warnings(executions)

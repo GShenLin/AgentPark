@@ -30,6 +30,9 @@ import { renderMemoryMarkdown } from './memoryMarkdown'
 const {
   memoryText,
   memoryMessages,
+  memoryHistoryComplete,
+  memoryLatestTurnProgressLoaded,
+  memoryLatestTurnMetadataLoaded,
   memoryLiveMessage,
   memoryThinkingMessage,
   memoryActivityMessage,
@@ -79,6 +82,7 @@ const showLineNumbers = ref(false)
 const isMarkdownPreview = ref(true)
 const contentViewRef = ref<InstanceType<typeof MemoryContentView> | null>(null)
 const interactiveInputText = ref('')
+const lazySectionLoading = ref<'progress' | 'metadata' | null>(null)
 
 const graphs = ref<GraphInfo[]>([])
 const graphProfiles = ref<GraphProfile[]>([])
@@ -160,15 +164,28 @@ async function onInteractiveEof() {
   await handleSendInteractiveInput({ appendNewline: false, sendEof: true })
 }
 
-async function deleteMemoryMessage(message: MessageEnvelope) {
+async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[]) {
   const nodeId = String(selectedNodeId.value || '').trim()
-  const messageId = String((message as any)?.id || '').trim()
-  if (!nodeId || !messageId) return
-  const ok = window.confirm('Delete this conversation entry?')
+  const messages = Array.isArray(target) ? target : [target]
+  const messageIds = Array.from(new Set(
+    messages
+      .map((message) => String((message as any)?.id || '').trim())
+      .filter(Boolean),
+  ))
+  if (!nodeId || messageIds.length === 0) return
+  const label = messageIds.length === 1
+    ? 'this conversation entry'
+    : `these ${messageIds.length} conversation entries`
+  const ok = window.confirm(`Delete ${label}?`)
   if (!ok) return
   try {
-    await deleteNodeInstanceMemoryMessage(nodeId, messageId, currentGraphId.value || 'default')
-    memoryMessages.value = memoryMessages.value.filter((item) => String((item as any)?.id || '') !== messageId)
+    for (const messageId of messageIds) {
+      await deleteNodeInstanceMemoryMessage(nodeId, messageId, currentGraphId.value || 'default')
+    }
+    const deletedIds = new Set(messageIds)
+    memoryMessages.value = memoryMessages.value.filter(
+      (item) => !deletedIds.has(String((item as any)?.id || '').trim()),
+    )
     await loadAgentMemory()
   } catch (e: any) {
     lastError.value = String(e?.message || e)
@@ -178,6 +195,25 @@ async function deleteMemoryMessage(message: MessageEnvelope) {
 const renderedMarkdown = computed(() => {
   return renderMemoryMarkdown(memoryText.value)
 })
+
+async function loadPreviousTurns() {
+  if (memoryHistoryComplete.value) return
+  await loadAgentMemory({ historyMode: 'all' })
+}
+
+async function loadLatestTurnSection(section: 'progress' | 'metadata') {
+  if (lazySectionLoading.value) return
+  if (section === 'progress' && memoryLatestTurnProgressLoaded.value) return
+  if (section === 'metadata' && memoryLatestTurnMetadataLoaded.value) return
+  lazySectionLoading.value = section
+  try {
+    await loadAgentMemory({
+      historyMode: section === 'progress' ? 'latest_turn_progress' : 'latest_turn_metadata',
+    })
+  } finally {
+    lazySectionLoading.value = null
+  }
+}
 
 async function refreshGraphs() {
   graphLoading.value = true
@@ -464,7 +500,7 @@ watch(
     if (memoryMode.value !== 'agent') return
     stopLoading()
     memoryAutoScroll.value = true
-    await loadAgentMemory()
+    await loadAgentMemory({ historyMode: 'latest_turn' })
     startAgentLiveStream()
   },
 )
@@ -476,7 +512,7 @@ watch(
 
     if (mode === 'agent') {
       memoryAutoScroll.value = true
-      await loadAgentMemory()
+      await loadAgentMemory({ historyMode: 'latest_turn' })
       startAgentLiveStream()
       return
     }
@@ -587,6 +623,10 @@ onBeforeUnmount(() => {
       :graph-working-path-input="graphWorkingPathInput"
       :mode="memoryMode"
       :messages="structuredMessages"
+      :history-complete="memoryHistoryComplete"
+      :progress-loaded="memoryLatestTurnProgressLoaded"
+      :metadata-loaded="memoryLatestTurnMetadataLoaded"
+      :loading-section="lazySectionLoading"
       :live-message="memoryLiveMessage"
       :thinking-message="memoryThinkingMessage"
       :activity-message="memoryActivityMessage"
@@ -625,6 +665,8 @@ onBeforeUnmount(() => {
       @save-message="openSaveMessageDialog"
       @copy-message="copyMessageText"
       @delete-message="deleteMemoryMessage"
+      @request-history="loadPreviousTurns"
+      @request-section="loadLatestTurnSection"
       @update:interactive-input-text="interactiveInputText = $event"
       @send-interactive-input="handleSendInteractiveInput($event)"
       @interactive-submit="onInteractiveSubmit"

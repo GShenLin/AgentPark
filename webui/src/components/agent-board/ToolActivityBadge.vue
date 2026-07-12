@@ -17,6 +17,12 @@ type Activity = {
 
 const activity = computed(() => {
   const event = props.event
+  if (event?.type === 'server_tool_activity') {
+    const status = String(event.status || 'in_progress').trim().toLowerCase()
+    const sourceCount = Array.isArray(event.sources) ? event.sources.length : 0
+    const name = `${event.tool_type}${sourceCount ? ` · ${sourceCount} sources` : ''}`
+    return { label: status === 'completed' ? 'Done' : 'Running', name, tone: status === 'completed' ? 'done' : 'running' }
+  }
   if (event?.type === 'runtime_notice') {
     return noticeActivity(event)
   }

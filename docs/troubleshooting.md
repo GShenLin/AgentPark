@@ -109,4 +109,4 @@ dist\AgentPark.exe doctor --json
 dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
 ```
 
-The package also includes `docs/`, `skills/`, and `plugins/` beside the executable so doctor checks and default capability discovery use the same runtime resources as source checkout runs.
+The package includes `docs/`, `skills/`, and `plugins/` beside the executable. This keeps doctor checks and default capability discovery aligned with the runtime resources used by source checkout runs.

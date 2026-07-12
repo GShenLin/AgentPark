@@ -8,6 +8,7 @@ from src.tool.tool_event_protocol import RuntimeNoticeEvent
 
 
 PROVIDER_REQUEST_SUMMARY_STAGE = "provider_request_summary"
+PROVIDER_REQUEST_COMPLETED_STAGE = "provider_request_completed"
 
 
 def emit_provider_runtime_notice(

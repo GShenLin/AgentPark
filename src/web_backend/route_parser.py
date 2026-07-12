@@ -64,8 +64,18 @@ class NodeRouteParser:
             display_payload = ""
         display_env = normalize_envelope(display_payload, default_role="assistant")
 
+        raw_sidecars = output.get("memory_sidecars")
+        memory_sidecars = []
+        if isinstance(raw_sidecars, list):
+            memory_sidecars = [
+                normalize_envelope(item, default_role="metadata")
+                for item in raw_sidecars
+                if isinstance(item, dict)
+            ]
+
         return {
             "display_text": envelope_preview(display_env),
             "display_message": display_env,
             "routes": deduped_routes,
+            "memory_sidecars": memory_sidecars,
         }

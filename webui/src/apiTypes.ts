@@ -210,7 +210,19 @@ export type ToolRuntimeEvent = {
   diagnostics?: string[]
 }
 
-export type RuntimeEvent = RuntimeNoticeEvent | ToolRuntimeEvent
+export type ServerToolActivityEvent = {
+  type: 'server_tool_activity'
+  call_id: string
+  tool_type: string
+  status: string
+  provider?: string | null
+  action?: Record<string, unknown>
+  sources?: Array<{ url: string; title?: string; type?: string }>
+  details?: Record<string, unknown>
+  error?: string
+}
+
+export type RuntimeEvent = RuntimeNoticeEvent | ToolRuntimeEvent | ServerToolActivityEvent
 
 export type UserInteractionOption = {
   value: string
@@ -291,6 +303,16 @@ export type ProviderRequestSummary = {
   tools_included?: string[]
   tools_included_count?: number
   stream?: boolean
+  usage?: ProviderRequestUsage | null
+}
+
+export type ProviderRequestUsage = {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  cached_input_tokens?: number
+  cache_write_input_tokens?: number
+  reasoning_output_tokens?: number
 }
 
 export type ProviderRequestTotals = {
@@ -300,6 +322,14 @@ export type ProviderRequestTotals = {
   tool_call_chars?: number
   tool_result_chars?: number
   last_request_index?: number
+  completed_request_count?: number
+  last_completed_request_index?: number
+  actual_input_tokens?: number
+  actual_output_tokens?: number
+  actual_total_tokens?: number
+  actual_cached_input_tokens?: number
+  actual_cache_write_input_tokens?: number
+  actual_reasoning_output_tokens?: number
 }
 
 export type NodeInstanceConfig = {
@@ -372,6 +402,8 @@ export type MessagePart =
       result_preview_truncated?: boolean
       diagnostics?: string[]
       args?: unknown
+      sources?: Array<{ url: string; title?: string; type?: string }>
+      details?: Record<string, unknown>
     }
   | { type: 'meta'; meta?: Record<string, unknown> }
 
@@ -382,6 +414,13 @@ export type MessageEnvelope = {
   created_at?: string
   trace_id?: string
 }
+
+export type MemoryHistoryMode =
+  | 'recent'
+  | 'all'
+  | 'latest_turn'
+  | 'latest_turn_progress'
+  | 'latest_turn_metadata'
 
 export type PendingNodeInput = {
   payload: string | MessageEnvelope
@@ -568,6 +607,9 @@ export type MobileNodeConversation = {
   messages_path?: string | null
   text: string
   messages: MessageEnvelope[]
+  history_complete?: boolean
+  latest_turn_progress_loaded?: boolean
+  latest_turn_metadata_loaded?: boolean
   state?: NodeInstanceState
   last_message?: string
   live_message?: string

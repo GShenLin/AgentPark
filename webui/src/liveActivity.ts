@@ -34,6 +34,7 @@ function findStringField(value: unknown, keys: string[], depth = 0): string {
 
 export function formatLiveActivity(eventType: string, eventData: Record<string, unknown> | null): string {
   const safeEventType = String(eventType || '').trim()
+  if (safeEventType === 'server_tool_activity') return ''
   if (safeEventType !== 'runtime_notice' || !eventData) return ''
   const stage = String(eventData.stage || '').trim()
   if (stage !== 'openai_chat_native_web_search') return ''

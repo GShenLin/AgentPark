@@ -85,7 +85,11 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
             thinking_mode=thinking_mode,
             stream=bool(stream),
         )
-        self._emit_provider_payload_request_summary(payload, request_api="chat_completions", stream=bool(stream))
+        request_summary = self._emit_provider_payload_request_summary(
+            payload,
+            request_api="chat_completions",
+            stream=bool(stream),
+        )
         payload_json = json.dumps(payload, ensure_ascii=False)
         if stream:
             result = self._stream_chat_completions_with_retry(
@@ -103,6 +107,7 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
                 payload_json=payload_json,
             )
 
+        self._emit_provider_request_completed(request_summary, result)
         message, finish_reason = self._pick_response_message(result)
         if not isinstance(message, dict):
             if finish_reason == "model_context_window_exceeded":
@@ -112,7 +117,8 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
         tool_call_items = parse_openai_tool_call_items(message.get("tool_calls"), provider="zhipu_chat")
         if tool_call_items:
             display_tool_calls = [to_openai_tool_call(item) for item in tool_call_items]
-            self.Message("assistant", message.get("content") or "", tool_calls=display_tool_calls)
+            self.AssistantProgress(message.get("content") or "", tool_calls=display_tool_calls)
+            self.Message("assistant", None, persist=False, tool_calls=display_tool_calls)
             if not run_tools:
                 return {
                     "type": "function_call",
