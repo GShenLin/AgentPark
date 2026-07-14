@@ -19,7 +19,7 @@ AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 ## 项目前景
 
 长期方向是形成 AgentPark 式生态：用户可以可视化设计 Agent，把它们连接成 Graph，挂载可复用工具和技能，然后发布或交换这些资产。当前项目已经具备本地运行时、可视化编辑器、服务商集成、移动端访问、CLI 恢复路径，以及节点、工具、插件等基础。后续工作应继续把这些基础沉淀为稳定的分享格式、更强的能力元数据、更可靠的运行时恢复和更简单的分发方式。
-  <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/30358f7b-1552-4b54-93b6-72854591d19d" />
+<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/97dce8df-69a3-4531-af14-012d67884f1f" />
 
 ## 主要功能
 
