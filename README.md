@@ -1,8 +1,10 @@
 # AgentPark
 
 [English](./README.md) | [中文](./README.zh.md)
+<img width="1008" height="650" alt="image" src="https://github.com/user-attachments/assets/390bb88d-0e4d-4f86-a534-e2e7cafaaafb" />
 
-AgentPark is an Agent platform for building, running, and sharing Agents, tools, and Graph workflows. It starts from a local-first workspace, but its product direction is broader: make Agents reusable, make tools explicit, and make Graphs portable enough to become shared automation assets instead of one-off local experiments.
+
+AgentPark is an Agent platform for Any work with AI . It starts from a local-first workspace, but its product direction is broader: make Agents reusable, make tools explicit, and make Graphs portable enough to become shared automation assets instead of one-off local experiments.
 
 The backend uses FastAPI to manage nodes, graph execution, providers, files, settings, and runtime state. The frontend uses Vue 3 + Vite to provide visual graph editing, node execution controls, memory browsing, file operations, desktop settings, and a mobile-first workspace for phone access.
 
@@ -19,6 +21,8 @@ AgentPark aims to become a practical Agent creation and sharing platform:
 ## Outlook
 
 The long-term direction is an AgentPark-style ecosystem: users can design Agents visually, connect them into Graphs, attach reusable tools and skills, then publish or exchange those assets with other users. The current project already provides the local runtime, visual editor, provider integrations, mobile access, CLI recovery path, and node/tool/plugin foundations needed for that direction. Future work should continue to turn these foundations into stable sharing formats, stronger capability metadata, safer runtime recovery, and easier distribution.
+<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/97dce8df-69a3-4531-af14-012d67884f1f" />
+
 
 ## Key Features
 
@@ -33,6 +37,10 @@ The long-term direction is an AgentPark-style ecosystem: users can design Agents
 - Mobile support: screens up to 760px automatically use the mobile workspace, with phone-friendly PC/graph/node navigation, chat, streaming responses, attachments, node config, restart, graph editing, and settings access.
 - Remote access: remote endpoint management and mobile APIs make it possible to operate workflows from another device on the same network.
 - Channel nodes: receiver/sender nodes for external channels such as OpenClaw Weixin.
+- Test All Provider key word and get all model.
+- Pet is editable by key frame in settings, I provide an anim editor for custom pet.
+  <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/30358f7b-1552-4b54-93b6-72854591d19d" />
+
 
 ## Node Feature List
 
