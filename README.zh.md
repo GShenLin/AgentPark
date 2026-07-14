@@ -1,7 +1,7 @@
 # AgentPark
 
 [English](./README.md) | [中文](./README.zh.md)
-
+<img width="1008" height="650" alt="image" src="https://github.com/user-attachments/assets/390bb88d-0e4d-4f86-a534-e2e7cafaaafb" />
 AgentPark 是一个用于构建、运行和分享 Agent、工具与 Graph 工作流的 Agent 平台。它从本地优先的工作区出发，但产品方向不止于本地执行：让 Agent 可以复用，让工具能力显式化，让 Graph 成为可以沉淀和分享的自动化资产，而不是一次性的本地实验。
 
 后端使用 FastAPI 管理节点、图执行、模型服务商、文件、设置和运行时状态。前端使用 Vue 3 + Vite，提供可视化图编辑、节点执行控制、记忆浏览、文件操作、桌面端设置，以及适合手机访问的移动端工作区。
@@ -19,6 +19,7 @@ AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 ## 项目前景
 
 长期方向是形成 AgentPark 式生态：用户可以可视化设计 Agent，把它们连接成 Graph，挂载可复用工具和技能，然后发布或交换这些资产。当前项目已经具备本地运行时、可视化编辑器、服务商集成、移动端访问、CLI 恢复路径，以及节点、工具、插件等基础。后续工作应继续把这些基础沉淀为稳定的分享格式、更强的能力元数据、更可靠的运行时恢复和更简单的分发方式。
+  <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/30358f7b-1552-4b54-93b6-72854591d19d" />
 
 ## 主要功能
 
@@ -33,7 +34,9 @@ AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 - 手机端支持：宽度不超过 760px 时自动使用移动端工作区，支持适合手机的 PC/graph/node 导航、聊天、流式回复、附件、节点配置、重启、图编辑和设置入口。
 - 远程访问：远程端点管理和移动端 API 支持在同一网络的其他设备上操作工作流。
 - Channel 节点：用于 OpenClaw Weixin 等外部通道的 receiver/sender 节点。
-
+- 可以很方便的对各种模型的MCP Skill Tool 做AB测试.
+- 宠物是可以在设置里进行自定义的, 并且提供了关键帧的K帧工具，也可以用gif来直接驱动.
+  <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/30358f7b-1552-4b54-93b6-72854591d19d" />
 ## 节点功能列表
 
 节点实现位于 `nodes/`。后端通过 `GET /api/nodes` 暴露节点元数据，并通过 `GET /api/nodes/{type_id}/template` 暴露节点模板，内容包括 schema、端口数量、输入/输出能力和运行时声明。节点的 `type_id` 通常是去掉 `.py` 后缀的节点文件名；例如 `nodes/agent_node.py` 会暴露为 `agent_node`。
