@@ -432,6 +432,14 @@ async function triggerMobileNode(node: MobileNode) {
   }
 }
 
+async function duplicateMobileNode(node: MobileNode) {
+  try {
+    await workspace.copyNode(node)
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  }
+}
+
 async function clearMemory() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   const nodeId = String(workspace.selectedNode.value.id || '').trim()
@@ -611,6 +619,7 @@ onMounted(() => {
           @select="workspace.selectNode"
           @delete="deleteMobileNode"
           @trigger="triggerMobileNode"
+          @duplicate="duplicateMobileNode"
         />
         <button v-if="canEditGraph(workspace.selectedGraph.value)" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
       </section>
@@ -635,6 +644,7 @@ onMounted(() => {
               :progress-deferred="isLatestTurn(index) && workspace.conversation.value?.latest_turn_progress_loaded !== true"
               :metadata-deferred="isLatestTurn(index) && workspace.conversation.value?.latest_turn_metadata_loaded !== true"
               :loading-section="isLatestTurn(index) ? mobileSectionLoading : null"
+              :progress-summary="isLatestTurn(index) ? workspace.conversation.value?.latest_turn_progress_summary : null"
               @save="openSaveMessageDialog"
               @copy="copyMessageText"
               @delete="deleteMobileMessages"

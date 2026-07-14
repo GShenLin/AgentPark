@@ -81,13 +81,13 @@ function readChecked(event: Event) {
 }
 
 .panel-title {
-  font-size: 13px;
+  font-size: var(--theme-panel-memory-panel-font-title, 13px);
   font-weight: 700;
   color: var(--theme-panel-memory-panel-text-primary, rgba(248, 250, 252, 0.96));
 }
 
 .panel-meta {
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-meta, 11px);
   color: var(--theme-panel-memory-panel-text-muted, rgba(148, 163, 184, 0.92));
   max-width: 240px;
   overflow: hidden;
@@ -96,7 +96,7 @@ function readChecked(event: Event) {
 }
 
 .panel-status {
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-meta, 11px);
   color: rgba(56, 189, 248, 0.98);
 }
 
@@ -111,7 +111,7 @@ function readChecked(event: Event) {
   background: var(--theme-panel-memory-panel-button-background, rgba(15, 23, 42, 0.7));
   color: var(--theme-panel-memory-panel-button-text, rgba(226, 232, 240, 0.94));
   border-radius: 8px;
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
   padding: 4px 9px;
 }
 
@@ -140,7 +140,7 @@ function readChecked(event: Event) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
   color: var(--theme-panel-memory-panel-text-secondary, rgba(226, 232, 240, 0.94));
   user-select: none;
 }

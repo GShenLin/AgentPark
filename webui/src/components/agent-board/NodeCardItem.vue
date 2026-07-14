@@ -35,6 +35,7 @@ const isClockNode = computed(() => ctx.isClockNode(props.node.id))
 const isClockRunning = computed(() => ctx.isClockRunning(props.node.id))
 const isNodeRunning = computed(() => ctx.isNodeRunning(endpointId.value))
 const isStopRequested = computed(() => !!ctx.nodeConfigs.value[endpointId.value]?._stop_requested)
+const isPaused = computed(() => ctx.isNodeStopped(endpointId.value))
 const clockStartLabel = computed(() => (ctx.isNodeStopped(endpointId.value) ? 'Resume' : 'Start'))
 const previewText = computed(() => ctx.previewMessage(props.node.last_message))
 const hasPreview = computed(() => !!String(previewText.value || '').trim())
@@ -85,12 +86,6 @@ function cancelEditName() {
 function selectItemOnly() {
   if (Date.now() < ctx.suppressClickUntil.value) return
   ctx.selectAndFocusNode(props.node.id).catch(() => null)
-}
-
-function openNodeFolder(event: MouseEvent) {
-  const target = event.target as HTMLElement | null
-  if (target?.closest('button, input, textarea, select, a, .node-title, .port, .node-resize-handle')) return
-  ctx.openNodeFolder(endpointId.value).catch(() => null)
 }
 
 const nodeResizeDrag = createWindowPointerDrag<ResizeSession>({
@@ -157,7 +152,6 @@ onBeforeUnmount(stopNodeResize)
     :data-board-item-id="endpointId"
     :data-agent-id="isAgentNode ? props.node.id : null"
     @click="ctx.onItemClick(endpointId, $event)"
-    @dblclick.stop.prevent="openNodeFolder"
     @pointerdown="ctx.onItemPointerDown(endpointId, $event)"
     @dragover.prevent.stop="ctx.onNodeCardDragOver(endpointId, $event)"
     @drop.prevent.stop="ctx.onNodeCardDrop(endpointId, $event)"
@@ -196,8 +190,8 @@ onBeforeUnmount(stopNodeResize)
           <button v-if="isClockNode && isClockRunning" type="button" class="node-pause" @pointerdown.stop @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
             Pause
           </button>
-          <button v-if="!isClockNode && !isNodeRunning" type="button" class="node-pause" @pointerdown.stop @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
-            {{ ctx.isNodeStopped(endpointId) ? 'Resume' : 'Pause' }}
+          <button v-if="!isClockNode" type="button" class="node-pause" @pointerdown.stop @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
+            {{ isPaused ? 'Resume' : 'Pause' }}
           </button>
           <button v-if="!isClockNode && isNodeRunning" type="button" class="node-stop" @pointerdown.stop @click.stop="ctx.stopNodeWork(endpointId).catch(() => null)">
             {{ isStopRequested ? 'Stopping' : 'Stop' }}

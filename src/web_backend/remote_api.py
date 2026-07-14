@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import ipaddress
-
 from fastapi import Request
 
 from src.file_transaction import atomic_write_text
 
 from .domain_base import DomainBase
+from .request_access import is_local_request
 from .shared import *
 
 
@@ -110,21 +109,7 @@ class RemoteApiDomain(DomainBase):
         return f"{safe_host}-{port}"
 
     def _is_local_request(self, request: Request = None) -> bool:
-        if request is None:
-            return True
-        client = getattr(request, "client", None)
-        host = str(getattr(client, "host", "") or "").strip()
-        if host.lower() == "localhost":
-            return True
-        try:
-            address = ipaddress.ip_address(host)
-        except ValueError:
-            return False
-        if address.is_loopback:
-            return True
-        if address.version == 6 and address.ipv4_mapped is not None:
-            return address.ipv4_mapped.is_loopback
-        return False
+        return is_local_request(request)
 
     def _filter_remotes_for_request(self, config: dict, request: Request = None) -> dict:
         if self._is_local_request(request):

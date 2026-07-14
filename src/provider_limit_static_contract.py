@@ -6,10 +6,17 @@ from typing import Any
 def record_static_contract_limits(result: dict[str, Any], provider_type: str, *, skip_access: bool) -> None:
     if not skip_access:
         return
-    if provider_type not in {"openai", "deepseek", "claude", "doubao", "zhipu", "gemini", "hyper3d"}:
+    if provider_type not in {"openai", "deepseek", "claude", "doubao", "grok", "zhipu", "gemini", "hyper3d"}:
         return
     result.setdefault("features", {})
-    result.setdefault("unsupported", {})
+    result.setdefault("inconclusive", {})
     for feature in ("responses_api", "web_search", "thinking", "reasoning_effort"):
-        if feature not in result["unsupported"]:
-            result["unsupported"][feature] = "not tested because provider is not accessible"
+        result["features"].setdefault(
+            feature,
+            {
+                "supported": False,
+                "outcome": "not_tested",
+                "reason": "not tested because provider is not accessible",
+            },
+        )
+        result["inconclusive"].setdefault(feature, "not tested because provider is not accessible")

@@ -17,10 +17,12 @@ BLUE = "\x1b[34m"
 
 ROLE_STYLES = {
     "assistant": GREEN,
+    "activity": BLUE,
     "error": RED,
     "help": CYAN,
     "status": BLUE,
     "terminal": MAGENTA,
+    "thinking": MAGENTA,
     "tool": YELLOW,
     "user": CYAN,
 }

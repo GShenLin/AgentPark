@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import type { ProviderInfo, GraphConfig, MessageEnvelope } from '../api'
+import type { ProviderInfo, GraphConfig, LatestTurnProgressSummary, MessageEnvelope } from '../api'
 
 export type NodeEditorAttachment = {
   name: string
@@ -16,6 +16,7 @@ const memoryMessages = ref<MessageEnvelope[]>([])
 const memoryHistoryComplete = ref(true)
 const memoryLatestTurnProgressLoaded = ref(true)
 const memoryLatestTurnMetadataLoaded = ref(true)
+const memoryLatestTurnProgressSummary = ref<LatestTurnProgressSummary | null>(null)
 const memoryLiveMessage = ref('')
 const memoryThinkingMessage = ref('')
 const memoryActivityMessage = ref('')
@@ -49,6 +50,7 @@ export function useGlobalState() {
     memoryHistoryComplete,
     memoryLatestTurnProgressLoaded,
     memoryLatestTurnMetadataLoaded,
+    memoryLatestTurnProgressSummary,
     memoryLiveMessage,
     memoryThinkingMessage,
     memoryActivityMessage,

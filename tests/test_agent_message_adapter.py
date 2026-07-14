@@ -29,7 +29,8 @@ def test_build_agent_output_message_preserves_responses_metadata():
                 "output_items": [{"type": "web_search_call", "id": "ws_1"}],
             },
         },
-        assistant_message_id=message["id"],
+        scope="final_assistant",
+        target_message_id=message["id"],
     )
     assert metadata is not None
     assert metadata["role"] == "metadata"
@@ -37,7 +38,8 @@ def test_build_agent_output_message_preserves_responses_metadata():
         "type": "structured",
         "data": {
             "kind": "response_metadata",
-            "assistant_message_id": message["id"],
+            "scope": "final_assistant",
+            "target": {"type": "message", "message_id": message["id"]},
             "server_tool_calls": [{"call_id": "ws_1", "tool_type": "web_search"}],
             "citations": [{"url": "https://example.com"}],
             "response_metadata": {
@@ -45,6 +47,7 @@ def test_build_agent_output_message_preserves_responses_metadata():
                 "response": {"id": "resp_1", "status": "completed"},
                 "output_items": [{"type": "web_search_call", "id": "ws_1"}],
             },
+            "provider_turn_id": "resp_1",
         },
     }
 
@@ -68,10 +71,14 @@ def test_build_response_metadata_message_preserves_provider_request_totals():
                 },
             }
         },
-        assistant_message_id="assistant-1",
+        scope="agent_run",
+        target_message_id="assistant-1",
+        fields=("provider_requests",),
     )
 
     assert metadata is not None
     data = metadata["parts"][0]["data"]
     assert data["provider_requests"]["totals"]["actual_total_tokens"] == 120
     assert data["provider_requests"]["summaries"][0]["usage"]["output_tokens"] == 20
+    assert data["scope"] == "agent_run"
+    assert data["target"] == {"type": "message", "message_id": "assistant-1"}

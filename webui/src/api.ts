@@ -8,6 +8,7 @@ import type {
   GraphProfileListResponse,
   MessageEnvelope,
   MemoryHistoryMode,
+  LatestTurnProgressSummary,
   MobileGraphInstance,
   MobileNode,
   MobileNodeConversation,
@@ -52,6 +53,7 @@ export type {
   GraphProfileNodeConfig,
   MessageEnvelope,
   MemoryHistoryMode,
+  LatestTurnProgressSummary,
   MessagePart,
   MobileGraph,
   MobileGraphInstance,
@@ -135,9 +137,37 @@ function errorDetail(error: unknown) {
   return String((error as { message?: unknown })?.message || error || 'unknown error')
 }
 
+function networkContext() {
+  try {
+    const connection = (navigator as Navigator & {
+      connection?: {
+        effectiveType?: unknown
+        type?: unknown
+        downlink?: unknown
+        rtt?: unknown
+      }
+    }).connection
+    const parts = [
+      `time=${new Date().toISOString()}`,
+      `page=${window.location.href}`,
+      `online=${navigator.onLine}`,
+      `visibility=${document.visibilityState}`,
+    ]
+    if (connection?.type) parts.push(`connection=${String(connection.type)}`)
+    if (connection?.effectiveType) parts.push(`effectiveType=${String(connection.effectiveType)}`)
+    if (connection?.downlink != null) parts.push(`downlink=${String(connection.downlink)}`)
+    if (connection?.rtt != null) parts.push(`rtt=${String(connection.rtt)}`)
+    return parts.join(', ')
+  } catch {
+    return 'browser network context unavailable'
+  }
+}
+
 export function createApiNetworkError(baseUrl: string, path: string, init: RequestInit | undefined, error: unknown) {
   const method = String(init?.method || 'GET').toUpperCase()
-  return new Error(`Network request failed for ${method} ${apiEndpointLabel(baseUrl, path)}: ${errorDetail(error)}`)
+  return new Error(
+    `Network request failed for ${method} ${apiEndpointLabel(baseUrl, path)}: ${errorDetail(error)} (${networkContext()})`,
+  )
 }
 
 export async function requestApiJson(baseUrl: string, path: string, init?: RequestInit) {
@@ -332,11 +362,20 @@ export async function cloneNodeInstance(
   })
 }
 
-export async function openNodeInstanceFolder(
+export async function openNodeInstanceNodeFolder(
   nodeId: string,
   graphId: string,
-): Promise<{ ok: boolean; node_id: string; graph_id: string; path: string; source: 'working_path' | 'node_folder' }> {
-  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/open-folder?graph_id=${encodeURIComponent(graphId)}`, {
+): Promise<{ ok: boolean; node_id: string; graph_id: string; path: string; source: 'node_folder' }> {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/open-node-folder?graph_id=${encodeURIComponent(graphId)}`, {
+    method: 'POST',
+  })
+}
+
+export async function openNodeInstanceWorkFolder(
+  nodeId: string,
+  graphId: string,
+): Promise<{ ok: boolean; node_id: string; graph_id: string; path: string; source: 'work_folder' }> {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/open-work-folder?graph_id=${encodeURIComponent(graphId)}`, {
     method: 'POST',
   })
 }
@@ -567,6 +606,16 @@ export async function deleteGraph(graphId: string): Promise<{ ok: boolean; graph
   return apiFetch(`/api/graphs/${encodeURIComponent(graphId)}`, { method: 'DELETE' })
 }
 
+export async function setGraphVisibility(
+  graphId: string,
+  privateGraph: boolean,
+): Promise<{ ok: boolean; graph_id: string; private: boolean }> {
+  return apiFetch(`/api/graphs/${encodeURIComponent(graphId)}/visibility`, {
+    method: 'PATCH',
+    body: JSON.stringify({ private: privateGraph }),
+  })
+}
+
 export async function listAgentProfiles(): Promise<AgentProfile[]> {
   const res = await apiFetch('/api/profiles/agents') as AgentProfileListResponse
   return res.profiles || []
@@ -776,6 +825,7 @@ export async function getNodeInstanceMemory(
   history_complete?: boolean
   latest_turn_progress_loaded?: boolean
   latest_turn_metadata_loaded?: boolean
+  latest_turn_progress_summary?: LatestTurnProgressSummary
   state?: NodeInstanceState
   last_message?: string
   live_message?: string

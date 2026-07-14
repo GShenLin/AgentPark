@@ -38,6 +38,7 @@ export type ThemeAssetUploadResponse = {
 
 export type ProviderLimitFeature = {
   supported: boolean
+  outcome?: 'supported' | 'unsupported' | 'unreachable' | 'unauthorized' | 'forbidden' | 'rate_limited' | 'provider_error' | 'invalid_response' | 'error' | 'not_tested'
   reason?: string
   status_code?: number
   supported_values?: string[]
@@ -52,7 +53,7 @@ export type ProviderLimitEntry = {
   test_channel?: ProviderResolvedTestChannel
   test_endpoint?: string
   accessible: boolean
-  status: string
+  status: 'ok' | 'unsupported' | 'unavailable'
   access_error?: string
   available_model_ids?: string[]
   model_discovery?: ProviderLimitFeature & {
@@ -61,6 +62,7 @@ export type ProviderLimitEntry = {
   }
   features: Record<string, ProviderLimitFeature>
   unsupported: Record<string, string | Record<string, string>>
+  inconclusive?: Record<string, string | Record<string, string>>
   channels?: Record<string, ProviderLimitChannelEntry>
 }
 
@@ -169,13 +171,64 @@ export type ToolCallStatRecord = {
   duration_ms: number | null
   started_at: string
   completed_at: string
+  agent_event_provider: string
+  tool_call_raw: unknown
+  tool_call_arguments: Record<string, unknown> | null
+  tool_call_arguments_json: string
+  result: unknown
   result_preview: string
   result_chars: number | null
+  diagnostics: string[]
+}
+
+export type ToolFailureSample = {
+  recorded_at: string
+  call_id: string
+  status: string
+  category: string
+  error: string
+  command: string
+  arguments: Record<string, unknown> | null
+  result_preview: string
+}
+
+export type ToolFailureCategorySummary = {
+  category: string
+  count: number
+  tool_count: number
+  tools: string[]
+}
+
+export type ToolFailureToolSummary = {
+  tool_name: string
+  failure_count: number
+  categories: Record<string, number>
+  statuses: Record<string, number>
+  reasons: Record<string, number>
+  samples: ToolFailureSample[]
+}
+
+export type ToolFailureAnalysis = {
+  analyzed_call_count: number
+  total_failures: number
+  affected_tool_count: number
+  categories: Array<{ category: string; count: number }>
+  statuses: Record<string, number>
+  shared_patterns: ToolFailureCategorySummary[]
+  tools: Record<string, ToolFailureToolSummary>
+}
+
+export type ToolFailureHistory = {
+  tool_name: string
+  analyzed_call_count: number
+  failure_count: number
+  calls: ToolCallStatRecord[]
 }
 
 export type ToolStatsDocument = {
   summary: ToolStatsSummary
   recent_calls: ToolCallStatRecord[]
+  failure_analysis: ToolFailureAnalysis
 }
 
 export type DeleteOptionalMemoryResponse = {
@@ -296,6 +349,10 @@ export async function getProviderPressure(): Promise<ProviderPressureDocument> {
 
 export async function getToolStats(): Promise<ToolStatsDocument> {
   return requestJson('/api/tool-stats') as Promise<ToolStatsDocument>
+}
+
+export async function getToolFailureHistory(toolName: string): Promise<ToolFailureHistory> {
+  return requestJson(`/api/tool-stats/failures/${encodeURIComponent(toolName)}`) as Promise<ToolFailureHistory>
 }
 
 export async function clearToolStats(): Promise<ToolStatsDocument> {

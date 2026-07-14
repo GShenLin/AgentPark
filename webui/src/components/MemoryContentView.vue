@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { selectFolder, type GraphInfo, type GraphProfile, type MessageEnvelope, type NodeInstanceConfig } from '../api'
+import { selectFolder, type GraphInfo, type GraphProfile, type LatestTurnProgressSummary, type MessageEnvelope, type NodeInstanceConfig } from '../api'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
@@ -19,6 +19,7 @@ const props = defineProps<{
   historyComplete: boolean
   progressLoaded: boolean
   metadataLoaded: boolean
+  progressSummary: LatestTurnProgressSummary | null
   loadingSection: 'progress' | 'metadata' | null
   liveMessage: string
   thinkingMessage: string
@@ -62,6 +63,7 @@ const emit = defineEmits<{
   (event: 'navigateGraphNode', payload: { graph: GraphInfo; nodeId: string }): void
   (event: 'clearGraphMemory', graph: GraphInfo): void
   (event: 'deleteGraphConfig', graph: GraphInfo): void
+  (event: 'toggleGraphVisibility', graph: GraphInfo): void
   (event: 'autoScrollChange', value: boolean): void
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
@@ -261,6 +263,13 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
                 <div class="graph-meta">{{ graph.updated_at || graph.id }}</div>
               </div>
               <div class="graph-item-actions">
+                <button
+                  v-if="graph.visibility_editable"
+                  class="graph-btn"
+                  @click="emit('toggleGraphVisibility', graph)"
+                >
+                  {{ graph.private ? 'Public' : 'Private' }}
+                </button>
                 <button class="graph-btn" @click="emit('loadGraphConfig', graph)">Load</button>
                 <button
                   class="graph-btn danger"
@@ -305,6 +314,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         :history-complete="historyComplete"
         :progress-loaded="progressLoaded"
         :metadata-loaded="metadataLoaded"
+        :progress-summary="progressSummary"
         :loading-section="loadingSection"
         @save-message="emit('saveMessage', $event)"
         @copy-message="emit('copyMessage', $event)"
@@ -691,7 +701,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   border-right: 1px solid rgba(148, 163, 184, 0.14);
   color: rgba(148, 163, 184, 0.8);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
   text-align: right;
   padding: 10px 8px;
   overflow: hidden;
@@ -713,7 +723,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   background: transparent;
   color: var(--theme-panel-memory-panel-text-secondary, #e2e8f0);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: 13px;
+  font-size: var(--theme-panel-memory-panel-font-body, 13px);
   line-height: 1.5;
   resize: none;
   outline: none;
@@ -753,13 +763,13 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 }
 
 .live-role {
-  font-size: 12px;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
   font-weight: 700;
   color: rgba(186, 230, 253, 0.96);
 }
 
 .live-status {
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-meta, 11px);
   color: rgba(125, 211, 252, 0.86);
 }
 
@@ -778,7 +788,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 .live-section-label {
   padding: 8px 10px 0;
   color: rgba(125, 211, 252, 0.88);
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
   font-weight: 700;
 }
 
@@ -846,7 +856,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 }
 
 .interactive-label {
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
   font-weight: 700;
   color: rgba(103, 232, 249, 0.96);
   text-transform: uppercase;
@@ -854,7 +864,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 }
 
 .interactive-hint {
-  font-size: 10px;
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
   color: rgba(148, 163, 184, 0.82);
 }
 
@@ -871,7 +881,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   background: rgba(15, 23, 42, 0.82);
   color: rgba(226, 232, 240, 0.96);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   padding: 7px 9px;
   outline: none;
@@ -891,7 +901,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   background: rgba(15, 23, 42, 0.82);
   color: rgba(226, 232, 240, 0.94);
   border-radius: 8px;
-  font-size: 11px;
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
   padding: 6px 10px;
   cursor: pointer;
   white-space: nowrap;
@@ -945,7 +955,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   color: rgba(148, 163, 184, 0.78);
   user-select: none;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
   line-height: 1.5;
 }
 
@@ -955,7 +965,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: 13px;
+  font-size: var(--theme-panel-memory-panel-font-body, 13px);
   line-height: 1.5;
   color: inherit;
 }
@@ -963,7 +973,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 .wrap-empty {
   padding: 10px 60px;
   opacity: 0.6;
-  font-size: 12px;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
 }
 
 @media (max-width: 760px) {

@@ -23,6 +23,7 @@ class AgentRuntimeContext:
     responses_instruction: str = ""
     skill_resource_roots: Mapping[str, str] = field(default_factory=dict)
     persist_assistant_progress: Callable[[dict[str, Any]], None] | None = None
+    persist_provider_turn_metadata: Callable[[dict[str, Any]], None] | None = None
     consume_mid_turn_user_inputs: Callable[[], list[dict[str, Any]]] | None = None
 
     def with_defaults(self) -> "AgentRuntimeContext":
@@ -41,6 +42,7 @@ class AgentRuntimeContext:
             responses_instruction=str(self.responses_instruction or "").strip(),
             skill_resource_roots=dict(self.skill_resource_roots or {}),
             persist_assistant_progress=self.persist_assistant_progress,
+            persist_provider_turn_metadata=self.persist_provider_turn_metadata,
             consume_mid_turn_user_inputs=self.consume_mid_turn_user_inputs,
         )
 
@@ -98,6 +100,7 @@ def _context_from_agent_attributes(agent: object = None) -> AgentRuntimeContext:
         ),
         skill_resource_roots=_mapping_attr(agent, "_agentpark_skill_resource_roots"),
         persist_assistant_progress=_callable_attr(agent, "_agentpark_persist_assistant_progress"),
+        persist_provider_turn_metadata=_callable_attr(agent, "_agentpark_persist_provider_turn_metadata"),
         consume_mid_turn_user_inputs=_callable_attr(agent, "_agentpark_consume_mid_turn_user_inputs"),
     )
 
@@ -124,6 +127,8 @@ def _write_runtime_attributes(agent: object, context: AgentRuntimeContext) -> No
         setattr(agent, "_agentpark_skill_resource_roots", dict(context.skill_resource_roots))
     if context.persist_assistant_progress is not None:
         setattr(agent, "_agentpark_persist_assistant_progress", context.persist_assistant_progress)
+    if context.persist_provider_turn_metadata is not None:
+        setattr(agent, "_agentpark_persist_provider_turn_metadata", context.persist_provider_turn_metadata)
     if context.consume_mid_turn_user_inputs is not None:
         setattr(agent, "_agentpark_consume_mid_turn_user_inputs", context.consume_mid_turn_user_inputs)
 

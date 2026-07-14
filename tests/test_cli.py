@@ -188,10 +188,6 @@ def test_cli_chat_renders_assistant_markdown(monkeypatch, tmp_path, capsys):
 
     class DummyAgentNode:
         def on_input(self, message, context):
-            callback = context.get("stream_callback")
-            if callable(callback):
-                callback({"type": "node_message_delta", "delta": markdown_text, "text": markdown_text})
-                callback({"type": "node_message_done", "text": markdown_text})
             return {
                 "display": markdown_text,
                 "routes": [
@@ -409,10 +405,195 @@ def test_companion_prompt_slash_completer_opens_for_slash_prefix():
     spaced_items = list(completer.get_completions(Document("/ "), None))
     middle_items = list(completer.get_completions(Document("hello /"), None))
 
-    assert [item.text for item in all_items] == ["/help", "/status", "/restart", "/clear", "/exit"]
+    assert [item.text for item in all_items] == [
+        "/help",
+        "/status",
+        "/restart",
+        "/provider",
+        "/resoning",
+        "/tool",
+        "/mcp",
+        "/skill",
+        "/hidden",
+        "/clear",
+        "/exit",
+    ]
     assert [item.text for item in status_items] == ["/status"]
     assert spaced_items == []
     assert middle_items == []
+
+
+def test_companion_prompt_toolbar_only_shows_provider_reasoning_and_working_path(tmp_path):
+    from types import SimpleNamespace
+
+    from src.cli_commands.companion_prompt import PromptCompanionTerminal
+
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "provider_id": "unit-provider",
+            "mode": "chat",
+            "reasoning_effort": "high",
+            "working_path": str(tmp_path),
+        },
+    )
+    target = SimpleNamespace(
+        config_path=str(config_path),
+        config={
+            "provider_id": "unit-provider",
+            "mode": "chat",
+            "reasoning_effort": "high",
+            "working_path": str(tmp_path),
+        },
+    )
+    terminal = PromptCompanionTerminal(target, debug_terminal=False, run_turn=lambda *_args, **_kwargs: {})
+
+    toolbar = terminal._toolbar()
+
+    assert toolbar == f" provider: unit-provider | reasoning: high | WorkingPath: {tmp_path} "
+    assert "AgentPark Companion" not in toolbar
+    assert "mode" not in toolbar
+    assert "turn" not in toolbar
+
+
+def test_companion_prompt_toolbar_refreshes_working_path_from_config(tmp_path):
+    from types import SimpleNamespace
+
+    from src.cli_commands.companion_prompt import PromptCompanionTerminal
+
+    first_path = tmp_path / "first"
+    second_path = tmp_path / "second"
+    first_path.mkdir()
+    second_path.mkdir()
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"provider_id": "unit-provider", "working_path": str(first_path)})
+    target = SimpleNamespace(
+        config_path=str(config_path),
+        config={"provider_id": "unit-provider", "working_path": str(first_path)},
+    )
+    terminal = PromptCompanionTerminal(target, debug_terminal=False, run_turn=lambda *_args, **_kwargs: {})
+    initial_mtime = config_path.stat().st_mtime_ns
+    _write_config(config_path, {"provider_id": "unit-provider", "working_path": str(second_path)})
+    if config_path.stat().st_mtime_ns == initial_mtime:
+        config_path.touch()
+
+    toolbar = terminal._toolbar()
+
+    assert toolbar == f" provider: unit-provider | reasoning: - | WorkingPath: {second_path} "
+
+
+def test_companion_prompt_provider_command_updates_config(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    import src.cli_commands.companion_config_selection as config_selection
+    import src.cli_commands.companion_config_menus as config_menus
+    import src.cli_commands.companion_prompt as companion_prompt
+
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {"provider_id": "provider-a", "mode": "chat", "reasoning_effort": "high"},
+    )
+    target = SimpleNamespace(
+        config_path=str(config_path),
+        config={"provider_id": "provider-a", "mode": "chat", "reasoning_effort": "high"},
+    )
+    terminal = companion_prompt.PromptCompanionTerminal(
+        target,
+        debug_terminal=False,
+        run_turn=lambda *_args, **_kwargs: {},
+    )
+    seen = []
+    monkeypatch.setattr(config_menus, "provider_choices", lambda mode: [("provider-a", "provider-a"), ("provider-b", "provider-b")])
+    monkeypatch.setattr(
+        config_selection.ConfigLoader,
+        "get_all_providers",
+        lambda _self: {
+            "provider-b": {
+                "features": {
+                    "reasoning_effort": {"supported": True, "values": ["low", "medium", "high"]}
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        terminal,
+        "_run_choice_menu",
+        lambda **kwargs: seen.append(kwargs) or "provider-b",
+    )
+
+    terminal._select_provider()
+
+    stored = json.loads(config_path.read_text(encoding="utf-8"))
+    assert stored["provider_id"] == "provider-b"
+    assert target.config["provider_id"] == "provider-b"
+    assert seen[0]["default"] == "provider-a"
+
+
+def test_companion_prompt_resoning_command_uses_provider_values_and_updates_config(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    import src.cli_commands.companion_config_menus as config_menus
+    import src.cli_commands.companion_prompt as companion_prompt
+
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {"provider_id": "provider-a", "mode": "chat", "reasoning_effort": "medium"},
+    )
+    target = SimpleNamespace(
+        config_path=str(config_path),
+        config={"provider_id": "provider-a", "mode": "chat", "reasoning_effort": "medium"},
+    )
+    terminal = companion_prompt.PromptCompanionTerminal(
+        target,
+        debug_terminal=False,
+        run_turn=lambda *_args, **_kwargs: {},
+    )
+    seen = []
+    monkeypatch.setattr(
+        config_menus,
+        "reasoning_choices",
+        lambda provider_id: [("low", "low"), ("medium", "medium"), ("high", "high")],
+    )
+    monkeypatch.setattr(
+        terminal,
+        "_run_choice_menu",
+        lambda **kwargs: seen.append(kwargs) or "high",
+    )
+
+    terminal._select_reasoning()
+
+    stored = json.loads(config_path.read_text(encoding="utf-8"))
+    assert stored["reasoning_effort"] == "high"
+    assert target.config["reasoning_effort"] == "high"
+    assert seen[0]["default"] == "medium"
+
+
+def test_companion_prompt_capability_command_delegates_to_toggle_flow(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    import src.cli_commands.companion_prompt as companion_prompt
+
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"provider_id": "provider-a", "tools": []})
+    target = SimpleNamespace(config_path=str(config_path), config={"provider_id": "provider-a", "tools": []})
+    terminal = companion_prompt.PromptCompanionTerminal(
+        target,
+        debug_terminal=False,
+        run_turn=lambda *_args, **_kwargs: {},
+    )
+    calls = []
+    monkeypatch.setattr(
+        companion_prompt,
+        "toggle_capability",
+        lambda target, kind, run_menu, print_error: calls.append((target, kind)) or True,
+    )
+
+    terminal._toggle_capability("tool")
+
+    assert calls == [(target, "tool")]
 
 
 def test_companion_tool_event_render_hides_result_preview():
@@ -493,6 +674,81 @@ def test_stream_printer_flushes_assistant_text_before_tool_events(tmp_path, caps
     assert first_note < tool_line < final_note
 
 
+def test_stream_printer_flushes_each_sse_delta_once(monkeypatch, tmp_path):
+    import io
+
+    import src.cli_commands.chat as chat_command
+
+    class RecordingStream(io.StringIO):
+        def __init__(self):
+            super().__init__()
+            self.flush_count = 0
+
+        def flush(self):
+            self.flush_count += 1
+            super().flush()
+
+    stream = RecordingStream()
+    printer = chat_command._StreamPrinter(
+        enabled=True,
+        memory_path=str(tmp_path / "memory.md"),
+        messages_path=str(tmp_path / "messages.jsonl"),
+    )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(chat_command.sys, "stdout", stream)
+        printer.handle({"type": "node_message_delta", "delta": "Hello", "text": "Hello"})
+        assert stream.getvalue().endswith("  Hello")
+        assert stream.flush_count == 1
+
+        printer.handle({"type": "node_message_delta", "delta": " world", "text": "Hello world"})
+        assert stream.getvalue().endswith("  Hello world")
+        assert stream.flush_count == 2
+
+        printer.finish("Hello world")
+        assert stream.getvalue().endswith("Hello world\n")
+        assert stream.flush_count == 3
+
+
+def test_stream_printer_renders_thinking_then_answer_in_live_event_order(tmp_path, capsys):
+    import src.cli_commands.chat as chat_command
+
+    printer = chat_command._StreamPrinter(
+        enabled=True,
+        memory_path=str(tmp_path / "memory.md"),
+        messages_path=str(tmp_path / "messages.jsonl"),
+    )
+
+    printer.handle({"type": "node_thinking_delta", "delta": "Checking files", "text": "Checking files"})
+    printer.handle({"type": "node_message_delta", "delta": "Found it", "text": "Found it"})
+    printer.handle({"type": "node_message_done", "text": "Found it"})
+    printer.finish("Found it")
+
+    output = capsys.readouterr().out
+    assert output.index("thinking") < output.index("Checking files")
+    assert output.index("Checking files") < output.index("assistant")
+    assert output.index("assistant") < output.index("Found it")
+
+
+def test_stream_printer_forwards_live_events_without_rendering_when_disabled(tmp_path, capsys):
+    import src.cli_commands.chat as chat_command
+
+    forwarded = []
+    printer = chat_command._StreamPrinter(
+        enabled=False,
+        memory_path=str(tmp_path / "memory.md"),
+        messages_path=str(tmp_path / "messages.jsonl"),
+        stream_handler=forwarded.append,
+    )
+    event = {"type": "node_thinking_delta", "delta": "Checking", "text": "Checking"}
+
+    printer.handle(event)
+    printer.finish("")
+
+    assert forwarded == [event]
+    assert capsys.readouterr().out == ""
+
+
 def test_companion_tui_keeps_assistant_fragments_chronological():
     from types import SimpleNamespace
 
@@ -523,9 +779,39 @@ def test_companion_tui_keeps_assistant_fragments_chronological():
     assert rendered == [
         ("user", "ping", ""),
         ("assistant", "I will inspect first.", "done"),
-        ("tool", "read_file: tool_call_start", ""),
-        ("tool", "read_file: completed", ""),
+        ("tool", "tool read_file: running", ""),
+        ("tool", "tool read_file: completed", ""),
         ("assistant", "Done.", "done"),
+    ]
+
+
+def test_companion_tui_renders_thinking_before_answer_without_reusing_prior_turn():
+    from types import SimpleNamespace
+
+    from src.cli_commands.companion_tui import CompanionTui
+    from src.cli_commands.companion_tui import TranscriptItem
+
+    target = SimpleNamespace(
+        config={"provider_id": "unit", "mode": "chat"},
+        graph_id="Companion",
+        config_path="config.json",
+        memory_path="memory.md",
+        messages_path="messages.jsonl",
+    )
+    tui = CompanionTui(target, debug_terminal=False, run_turn=lambda *_args, **_kwargs: {})
+    tui.state.transcript.append(TranscriptItem(role="assistant", text="prior answer", status="done"))
+    tui.live_transcript.begin_turn()
+
+    tui._handle_stream({"type": "node_thinking_delta", "delta": "Checking", "text": "Checking"})
+    tui._handle_stream({"type": "node_message_delta", "delta": "Current answer", "text": "Current answer"})
+    tui._handle_stream({"type": "node_message_done", "text": "Current answer"})
+    tui._finish_turn({"response": "Current answer"})
+
+    rendered = [(item.role, item.text, item.status) for item in tui.state.transcript]
+    assert rendered == [
+        ("assistant", "prior answer", "done"),
+        ("thinking", "Checking", "done"),
+        ("assistant", "Current answer", "done"),
     ]
 
 
@@ -558,6 +844,81 @@ def test_cli_chat_plain_restart_launches_restart_and_exits(monkeypatch, tmp_path
     assert exit_code == 43
     assert "Started Restart.bat" in output
     assert "1234" in output
+
+
+def test_cli_chat_plain_hidden_command_hides_registered_window(monkeypatch, tmp_path):
+    import src.cli_commands.companion_terminal as companion_terminal
+    from src.web_backend import runtime_paths
+
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
+    _write_config(
+        config_path,
+        {
+            "graph_id": "Companion",
+            "type_id": "agent_node",
+            "provider_id": "unit-provider",
+            "mode": "chat",
+        },
+    )
+    hidden = []
+    inputs = iter(["/hidden", "/exit"])
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
+    monkeypatch.setattr(companion_terminal, "hide_companion_cli_window", lambda: hidden.append(True))
+
+    exit_code = main(["chat", "--plain"])
+
+    assert exit_code == 0
+    assert hidden == [True]
+
+
+def test_managed_cli_registers_window_and_starts_hidden(monkeypatch, tmp_path):
+    import contextlib
+    import src.cli_commands.chat as chat_command
+    from src.web_backend import runtime_paths
+
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
+    _write_config(
+        config_path,
+        {
+            "graph_id": "Companion",
+            "type_id": "agent_node",
+            "provider_id": "unit-provider",
+            "mode": "chat",
+        },
+    )
+    sessions = []
+
+    @contextlib.contextmanager
+    def fake_window_session(*, start_hidden):
+        sessions.append(start_hidden)
+        yield None
+
+    class DummyPrompt:
+        @classmethod
+        def is_available(cls):
+            return True
+
+        @classmethod
+        def availability_report(cls):
+            return "available"
+
+        def __init__(self, target, *, debug_terminal, run_turn):
+            pass
+
+        def run(self):
+            return None
+
+    monkeypatch.setenv("AGENTPARK_CLI_WINDOW_MANAGED", "1")
+    monkeypatch.setenv("AGENTPARK_CLI_START_HIDDEN", "1")
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
+    monkeypatch.setattr(chat_command, "companion_cli_window_session", fake_window_session)
+    monkeypatch.setattr(chat_command, "PromptCompanionTerminal", DummyPrompt)
+
+    exit_code = main(["chat"])
+
+    assert exit_code == 0
+    assert sessions == [True]
 
 
 def test_cli_chat_plain_displays_companion_inbox_notice(monkeypatch, tmp_path, capsys):

@@ -14,6 +14,30 @@ class GraphMessageDispatch(HostBoundService):
         raw_routes = graph_cfg.get("output_routes") if isinstance(graph_cfg, dict) else None
         return output_routes_to_outgoing(normalize_output_routes(raw_routes))
 
+    def _enqueue_graph_tasks(
+        self,
+        tasks: list[dict],
+        safe_graph_id: str,
+        default_from_node: str,
+        trace_id: str,
+        next_visited: list[str],
+        wake_event=None,
+    ) -> int:
+        enqueued = 0
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            self._enqueue_graph_task(
+                task,
+                safe_graph_id,
+                default_from_node,
+                trace_id,
+                next_visited,
+                wake_event,
+            )
+            enqueued += 1
+        return enqueued
+
     def _collect_event_dispatch_tasks(
         self,
         source_graph_id: str,
@@ -181,7 +205,10 @@ class GraphMessageDispatch(HostBoundService):
         _append_node_pending(task["target_cfg_path"], next_item)
         self._ensure_graph_runner(target_graph_id)
         if target_graph_id == safe_graph_id:
-            wake_event.set()
+            if hasattr(wake_event, "set"):
+                wake_event.set()
+            else:
+                self._wake_graph_runner(target_graph_id)
         else:
             self._wake_graph_runner(target_graph_id)
         event_key_for_task = str(task.get("event_key") or "").strip()

@@ -9,9 +9,23 @@ from src import workspace_settings
 from src.config_loader import ConfigLoader
 
 
-PROVIDER_LIMIT_SCHEMA_VERSION = 3
+PROVIDER_LIMIT_SCHEMA_VERSION = 4
 REASONING_EFFORT_VALUES = ("minimal", "low", "medium", "high", "xhigh", "max", "auto")
 THINKING_VALUES = ("enabled", "disabled", "auto")
+PROBE_OUTCOMES = frozenset(
+    {
+        "supported",
+        "unsupported",
+        "unreachable",
+        "unauthorized",
+        "forbidden",
+        "rate_limited",
+        "provider_error",
+        "invalid_response",
+        "error",
+        "not_tested",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -19,9 +33,26 @@ class ProbeResult:
     supported: bool
     reason: str = ""
     status_code: int = 0
+    outcome: str = ""
+
+    def __post_init__(self) -> None:
+        resolved = str(self.outcome or ("supported" if self.supported else "unsupported")).strip().lower()
+        if resolved not in PROBE_OUTCOMES:
+            raise ValueError(f"invalid provider probe outcome: {resolved}")
+        if self.supported != (resolved == "supported"):
+            raise ValueError("provider probe supported flag must agree with outcome")
+        object.__setattr__(self, "outcome", resolved)
+
+    @property
+    def conclusively_unsupported(self) -> bool:
+        return self.outcome == "unsupported"
+
+    @property
+    def inconclusive(self) -> bool:
+        return not self.supported and not self.conclusively_unsupported
 
     def to_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {"supported": self.supported}
+        payload: dict[str, Any] = {"supported": self.supported, "outcome": self.outcome}
         if self.reason:
             payload["reason"] = self.reason
         if self.status_code:

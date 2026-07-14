@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 from contextlib import contextmanager
+from urllib.parse import urlparse
 from typing import Iterable
 
 from src.providers.provider_pressure import acquire_provider_pressure
@@ -24,9 +25,78 @@ class CurlTransportError(ProviderTransportError):
 
 
 class CurlHttpTransport:
+    _WINDOWS_PROXY_CACHE: str | None = None
+
     @staticmethod
     def _curl_executable() -> str:
         return "curl.exe" if os.name == "nt" else "curl"
+
+    @classmethod
+    def _curl_proxy_args(cls, url: str) -> list[str]:
+        if cls._url_is_loopback(url):
+            return []
+        proxy_url = cls._fallback_proxy_url()
+        return ["--proxy", proxy_url] if proxy_url else []
+
+    @staticmethod
+    def _url_is_loopback(url: str) -> bool:
+        try:
+            host = (urlparse(str(url or "")).hostname or "").strip().lower()
+        except Exception:
+            host = ""
+        if not host:
+            return False
+        return host == "localhost" or host == "::1" or host.startswith("127.")
+
+    @classmethod
+    def _fallback_proxy_url(cls) -> str:
+        for name in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy"):
+            value = str(os.environ.get(name) or "").strip()
+            if value:
+                return ""
+        if os.name != "nt":
+            return ""
+        if cls._WINDOWS_PROXY_CACHE is not None:
+            return cls._WINDOWS_PROXY_CACHE
+        cls._WINDOWS_PROXY_CACHE = cls._read_windows_user_proxy()
+        return cls._WINDOWS_PROXY_CACHE
+
+    @staticmethod
+    def _read_windows_user_proxy() -> str:
+        try:
+            import winreg
+
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as key:
+                proxy_enabled = int(winreg.QueryValueEx(key, "ProxyEnable")[0] or 0)
+                if not proxy_enabled:
+                    return ""
+                raw_proxy = str(winreg.QueryValueEx(key, "ProxyServer")[0] or "").strip()
+        except Exception:
+            return ""
+        return CurlHttpTransport._normalize_windows_proxy(raw_proxy)
+
+    @staticmethod
+    def _normalize_windows_proxy(raw_proxy: str) -> str:
+        text = str(raw_proxy or "").strip()
+        if not text:
+            return ""
+        selected = ""
+        if ";" in text or "=" in text:
+            parts = [part.strip() for part in text.split(";") if part.strip()]
+            parsed: dict[str, str] = {}
+            for part in parts:
+                if "=" not in part:
+                    continue
+                key, value = part.split("=", 1)
+                parsed[key.strip().lower()] = value.strip()
+            selected = parsed.get("https") or parsed.get("http") or parsed.get("socks") or ""
+        else:
+            selected = text
+        if not selected:
+            return ""
+        if "://" not in selected:
+            selected = f"http://{selected}"
+        return selected
 
     def _cancel_source(self):
         return getattr(self, "cancel_event", None) or getattr(self, "cancel_check", None)
@@ -41,18 +111,22 @@ class CurlHttpTransport:
         connect_timeout = max(1, min(15, timeout_val))
         try:
             with self._provider_pressure_slot():
+                cmd = [
+                    self._curl_executable(),
+                    "--silent",
+                    "--show-error",
+                    "--location",
+                    "--max-time",
+                    str(timeout_val),
+                    "--connect-timeout",
+                    str(connect_timeout),
+                    str(url),
+                ]
+                proxy_args = self._curl_proxy_args(str(url))
+                if proxy_args:
+                    cmd[1:1] = proxy_args
                 proc = subprocess.run(
-                    [
-                        self._curl_executable(),
-                        "--silent",
-                        "--show-error",
-                        "--location",
-                        "--max-time",
-                        str(timeout_val),
-                        "--connect-timeout",
-                        str(connect_timeout),
-                        str(url),
-                    ],
+                    cmd,
                     capture_output=True,
                     timeout=timeout_val + 10,
                 )
@@ -81,6 +155,9 @@ class CurlHttpTransport:
                 str(connect_timeout),
                 str(url),
             ]
+            proxy_args = self._curl_proxy_args(str(url))
+            if proxy_args:
+                cmd[1:1] = proxy_args
             for key, value in (headers or {}).items():
                 cmd.extend(["-H", f"{key}: {value}"])
             cmd.extend(["-w", f"\n{marker}%{{http_code}}"])
@@ -302,6 +379,9 @@ class CurlHttpTransport:
             "POST",
             str(url),
         ]
+        proxy_args = cls._curl_proxy_args(str(url))
+        if proxy_args:
+            cmd[1:1] = proxy_args
         if no_buffer:
             cmd.insert(3, "--no-buffer")
         if timeout_val is not None:

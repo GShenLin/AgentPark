@@ -1,17 +1,20 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { MessageEnvelope, MessagePart } from '../api'
+import MemoryMetadataDisclosure from '../components/MemoryMetadataDisclosure.vue'
 import MemoryResourcePart from '../components/MemoryResourcePart.vue'
 import MemoryResponseMetadataPart from '../components/MemoryResponseMetadataPart.vue'
 import MemoryToolCallPart from '../components/MemoryToolCallPart.vue'
+import {
+  isResponseMetadataPart,
+  memoryMessageDisplayParts,
+  responseMetadataPartData,
+} from '../components/memoryFeedTools'
 import { renderMessageMarkdown, shouldRenderMarkdown } from './mobileMessageRender'
 
-defineProps<{
+const props = defineProps<{
   message: MessageEnvelope
 }>()
-
-function messageParts(message: MessageEnvelope) {
-  return Array.isArray(message.parts) ? message.parts : []
-}
 
 function isTextPart(part: MessagePart) {
   return String((part as any)?.type || '') === 'text'
@@ -25,34 +28,45 @@ function isToolCallPart(part: MessagePart) {
   return String((part as any)?.type || '') === 'tool_call'
 }
 
-function isStructuredPart(part: MessagePart) {
-  if (String((part as any)?.type || '') !== 'structured') return false
-  const data = (part as any).data
-  if (!data || typeof data !== 'object') return false
-  return !!(data.response_metadata || Array.isArray(data.server_tool_calls) || Array.isArray(data.citations))
-}
-
 function partText(part: MessagePart) {
   return String((part as any)?.text || '')
 }
+
+const displayParts = computed(() => memoryMessageDisplayParts(props.message))
 </script>
 
 <template>
   <div class="bubble-parts">
-    <template v-for="(part, index) in messageParts(message)" :key="`${String(part.type || 'part')}-${index}`">
-      <div
-        v-if="isTextPart(part) && partText(part).trim().length > 0 && shouldRenderMarkdown(message)"
-        class="bubble-text bubble-markdown"
-        v-html="renderMessageMarkdown({ ...message, parts: [part] })"
-      ></div>
-      <div v-else-if="isTextPart(part) && partText(part).trim().length > 0" class="bubble-text">{{ partText(part) }}</div>
-      <div v-else-if="isTextPart(part)" class="bubble-empty">[empty message]</div>
-      <MemoryResourcePart v-else-if="isResourcePart(part)" class="mobile-resource-part" :part="part as Record<string, unknown>" />
-      <MemoryToolCallPart v-else-if="isToolCallPart(part)" class="mobile-tool-call-part" :part="part as Record<string, unknown>" />
-      <MemoryResponseMetadataPart v-else-if="isStructuredPart(part)" :data="(part as any).data" />
-      <pre v-else class="bubble-structured">{{ JSON.stringify(part, null, 2) }}</pre>
+    <template v-for="entry in displayParts" :key="entry.key">
+      <MemoryMetadataDisclosure
+        v-if="entry.kind === 'associated_metadata'"
+        :created-at="entry.createdAt"
+        default-expanded
+      >
+        <MemoryResponseMetadataPart
+          v-for="(part, index) in entry.parts"
+          :key="index"
+          :data="responseMetadataPartData(part)"
+        />
+      </MemoryMetadataDisclosure>
+      <template v-else>
+        <div
+          v-if="isTextPart(entry.part as MessagePart) && partText(entry.part as MessagePart).trim().length > 0 && shouldRenderMarkdown(message)"
+          class="bubble-text bubble-markdown"
+          v-html="renderMessageMarkdown({ ...message, parts: [entry.part as MessagePart] })"
+        ></div>
+        <div v-else-if="isTextPart(entry.part as MessagePart) && partText(entry.part as MessagePart).trim().length > 0" class="bubble-text">{{ partText(entry.part as MessagePart) }}</div>
+        <div v-else-if="isTextPart(entry.part as MessagePart)" class="bubble-empty">[empty message]</div>
+        <MemoryResourcePart v-else-if="isResourcePart(entry.part as MessagePart)" class="mobile-resource-part" :part="entry.part as Record<string, unknown>" />
+        <MemoryToolCallPart v-else-if="isToolCallPart(entry.part as MessagePart)" class="mobile-tool-call-part" :part="entry.part as Record<string, unknown>" />
+        <MemoryResponseMetadataPart
+          v-else-if="isResponseMetadataPart(entry.part)"
+          :data="responseMetadataPartData(entry.part)"
+        />
+        <pre v-else class="bubble-structured">{{ JSON.stringify(entry.part, null, 2) }}</pre>
+      </template>
     </template>
-    <div v-if="messageParts(message).length === 0" class="bubble-empty">
+    <div v-if="displayParts.length === 0" class="bubble-empty">
       [empty message]
     </div>
   </div>

@@ -13,6 +13,7 @@ import webbrowser
 from datetime import datetime
 from typing import Any
 
+from src.ask_here_companion import dispatch_to_companion_cli
 from src.server_pid_file import get_server_pid_file_path
 from src.workspace_settings import get_workspace_root, read_server_settings, resolve_local_client_host
 
@@ -35,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "ping":
-            _request_json("GET", _node_views_url(resolve_server_base_url()))
+            _request_json("GET", _health_url(resolve_server_base_url()))
             _debug_log("main-success", command=args.command)
             return 0
         if args.command == "wait":
@@ -65,7 +66,7 @@ def wait_for_server(timeout_seconds: float) -> str:
         attempts += 1
         try:
             base_url = resolve_server_base_url()
-            _request_json("GET", _node_views_url(base_url), timeout=1.5)
+            _request_json("GET", _health_url(base_url), timeout=1.5)
             _debug_log("wait-success", base_url=base_url, attempts=attempts)
             return base_url
         except Exception as exc:
@@ -105,6 +106,22 @@ def dispatch_folder(folder_path: str) -> dict[str, Any]:
         return {"mode": "matching_picker", "path": path, "working_path": working_path, "url": picker_url, "pet_count": len(matching_views)}
     if len(views) == 1:
         return _launch_pet_for_path(base_url, views[0], target, "single_pet")
+    if not views:
+        companion_working_path = working_path or os.path.dirname(path)
+        try:
+            result = dispatch_to_companion_cli(companion_working_path)
+        except Exception as exc:
+            raise AskHereError(f"failed to route folder to Companion CLI: {exc}") from exc
+        _debug_log(
+            "dispatch-companion-cli",
+            path=path,
+            working_path=companion_working_path,
+            target_kind=target["kind"],
+            mode=result.get("mode"),
+            pid=result.get("pid"),
+        )
+        print(f"[AskHere] routed {path} to Companion CLI")
+        return {"path": path, **result}
 
     picker_url = _ask_here_picker_url(base_url, target)
     opened = webbrowser.open_new_tab(picker_url)
@@ -235,6 +252,10 @@ def _node_views_url(base_url: str) -> str:
     return f"{base_url}/api/node-desktop-views"
 
 
+def _health_url(base_url: str) -> str:
+    return f"{base_url}/api/graphs"
+
+
 def _request_json(method: str, url: str, payload: dict[str, Any] | None = None, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
     data = None
     headers = {"Content-Type": "application/json"}
@@ -263,6 +284,8 @@ def _running_pet_views(value: object) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for item in value:
         if not isinstance(item, dict):
+            continue
+        if item.get("available") is False:
             continue
         if item.get("visible") is False:
             continue

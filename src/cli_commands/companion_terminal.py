@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from src.companion_inbox import drain_companion_notices
 from src.companion_inbox import format_companion_notice
+from src.companion_cli_window import hide_companion_cli_window
 from src.cli_commands.companion_debug import build_terminal_debug_text
 from src.cli_commands.companion_inbox_watcher import CompanionInboxWatcher
 from src.cli_commands.companion_restart import launch_restart_bat
@@ -17,6 +18,7 @@ HELP_TEXT = """Commands:
   /help    Show this help
   /status  Show companion runtime paths and provider config
   /restart Run the platform restart script and exit this CLI session
+  /hidden  Hide this CLI window; use ToggleConsole.bat or folder right-click to show it
   /clear   Clear the terminal
   /exit    Quit
 
@@ -71,6 +73,9 @@ class PlainCompanionTerminal:
                 if command == "/restart":
                     if self._restart():
                         return "restart"
+                    continue
+                if command == "/hidden":
+                    self._hide_window()
                     continue
                 if command == "/clear":
                     self._clear()
@@ -166,6 +171,12 @@ class PlainCompanionTerminal:
         label = launched.label or "restart script"
         self._print_block("status", f"Started {label}\nscript: {launched.script_path}\npid: {launched.pid}")
         return True
+
+    def _hide_window(self) -> None:
+        try:
+            hide_companion_cli_window()
+        except Exception as exc:
+            self._print_error(f"hide failed: {type(exc).__name__}: {exc}")
 
     def _clear(self) -> None:
         os = __import__("os")

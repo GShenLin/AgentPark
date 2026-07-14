@@ -12,8 +12,10 @@ from .node_runtime_event_sink import NODE_RUNTIME_EVENTS_FILENAME
 from .node_runtime_event_sink import NodeRuntimeEventSink
 from .node_memory_store import NodeMemoryPersistenceError
 from .node_request_tracking import record_node_request_completion_or_log
+from .node_state_machine import parse_node_state
 from .shared import (
     _preview_text,
+    _complete_node_config_work_with_held_output,
     _finish_node_stop_requested,
     _is_node_stop_requested,
     _set_node_config_inflight,
@@ -138,6 +140,7 @@ class GraphNodeExecution(HostBoundService):
             )
             return True
 
+        work_completed = False
         try:
             if stop_requested():
                 raise NodeStopRequested()
@@ -183,6 +186,7 @@ class GraphNodeExecution(HostBoundService):
             if stop_requested():
                 raise NodeStopRequested()
             routed = _run_node_logic_with_routes(nodes_dir, type_id, pending_message, context)
+            work_completed = True
             if finish_stop_requested():
                 return
             output_message = normalize_envelope((routed or {}).get("message"), default_role="assistant")
@@ -271,7 +275,6 @@ class GraphNodeExecution(HostBoundService):
         if finish_stop_requested():
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
-
         output_full = envelope_text(output_message).strip()
         final_message = output_full or pending_full or envelope_preview(output_message) or envelope_preview(pending_message)
         record_node_request_completion_or_log(
@@ -287,7 +290,6 @@ class GraphNodeExecution(HostBoundService):
             node_type_id=type_id,
         )
         _set_node_config_inflight(config_path, None)
-        _transition_node_config_to_idle(config_path)
         _set_node_config_runtime_event(config_path, None)
         _set_node_config_last_message(config_path, final_message)
         _touch_node_config_last_run_at(config_path)
@@ -370,19 +372,25 @@ class GraphNodeExecution(HostBoundService):
             output_preview=_preview_text(envelope_preview(output_message)),
             skip_propagation=skip_propagation,
         )
-        goal_result = self._evaluate_node_goal_after_persist(
-            graph_id=safe_graph_id,
-            node_id=entry,
-            node_type_id=type_id,
-            config_path=config_path,
-            config=cfg,
-            input_message=pending_message,
-            output_message=output_message,
-            trace_id=trace_id,
-            depth=depth,
-            wake_event=wake_event,
+        paused_before_goal = parse_node_state(_read_json_dict(config_path).get("state")) == "stop"
+        goal_result = (
+            {"active": False, "should_continue": False, "paused": True}
+            if paused_before_goal
+            else self._evaluate_node_goal_after_persist(
+                graph_id=safe_graph_id,
+                node_id=entry,
+                node_type_id=type_id,
+                config_path=config_path,
+                config=cfg,
+                input_message=pending_message,
+                output_message=output_message,
+                trace_id=trace_id,
+                depth=depth,
+                wake_event=wake_event,
+            )
         )
         if isinstance(goal_result, dict) and goal_result.get("should_continue"):
+            _complete_node_config_work_with_held_output(config_path, {})
             self._log_graph_event(
                 safe_graph_id,
                 "propagate_skipped",
@@ -395,6 +403,7 @@ class GraphNodeExecution(HostBoundService):
             return
 
         if skip_propagation:
+            _complete_node_config_work_with_held_output(config_path, {})
             self._log_graph_event(
                 safe_graph_id,
                 "propagate_skipped",
@@ -473,6 +482,30 @@ class GraphNodeExecution(HostBoundService):
                         )
 
         if not propagation_tasks:
+            _complete_node_config_work_with_held_output(config_path, {})
+            return
+
+        final_state, held_count = _complete_node_config_work_with_held_output(
+            config_path,
+            {
+                "trace_id": trace_id,
+                "from_node": entry,
+                "next_visited": next_visited,
+                "tasks": propagation_tasks,
+            },
+        )
+        if final_state == "stop":
+            self._set_node_config_last_message(config_path, f"Paused. {held_count} completed output(s) waiting to send.")
+            self._log_graph_event(
+                safe_graph_id,
+                "propagation_paused",
+                trace_id=trace_id,
+                node_instance_id=entry,
+                node_type_id=type_id,
+                depth=depth,
+                held_output_count=held_count,
+                held_task_count=len(propagation_tasks),
+            )
             return
 
         worker_count = min(8, len(propagation_tasks))

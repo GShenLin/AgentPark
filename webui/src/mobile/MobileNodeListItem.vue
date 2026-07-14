@@ -9,6 +9,7 @@ const emit = defineEmits<{
   (event: 'select', node: MobileNode): void
   (event: 'delete', node: MobileNode): void
   (event: 'trigger', node: MobileNode): void
+  (event: 'duplicate', node: MobileNode): void
 }>()
 
 function nodeStateLabel(node: MobileNode) {
@@ -36,6 +37,10 @@ function deleteNode(node: MobileNode) {
 function triggerNode(node: MobileNode) {
   emit('trigger', node)
 }
+
+function duplicateNode(node: MobileNode) {
+  emit('duplicate', node)
+}
 </script>
 
 <template>
@@ -56,6 +61,7 @@ function triggerNode(node: MobileNode) {
     </button>
     <div v-if="!node.readonly" class="node-actions">
       <button class="node-action" type="button" @click="triggerNode(node)">Trigger</button>
+      <button class="node-action" type="button" @click="duplicateNode(node)">Duplicate</button>
       <button class="node-action danger" type="button" @click="deleteNode(node)">Delete</button>
     </div>
   </div>
@@ -192,7 +198,7 @@ function triggerNode(node: MobileNode) {
 
 .node-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 

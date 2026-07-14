@@ -35,7 +35,8 @@
 }
 
 .provider-item small,
-.form-head span {
+.provider-id-field > span,
+.provider-id-field > small {
   color: rgba(148, 163, 184, 0.9);
   font-size: 11px;
 }
@@ -65,13 +66,23 @@
   gap: 12px;
 }
 
-.form-head > div:first-child {
+.provider-id-field {
+  flex: 1 1 280px;
   min-width: 0;
+  max-width: 520px;
 }
 
-.form-head h2 {
-  margin: 0;
+.provider-id-field input {
   font-size: 17px;
+  font-weight: 600;
+}
+
+.provider-id-field input.invalid {
+  border-color: rgba(248, 113, 113, 0.72);
+}
+
+.provider-id-field > small.field-error {
+  color: rgba(254, 202, 202, 0.96);
 }
 
 .form-head-actions {

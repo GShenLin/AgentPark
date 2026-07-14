@@ -93,3 +93,44 @@ def test_mark_all_desktop_pets_hidden_clears_stale_visible_views(monkeypatch, tm
     assert result["updated"] == 1
     assert stored["views"][0]["visible"] is False
     assert stored["views"][1]["visible"] is False
+
+
+def test_list_desktop_views_marks_missing_node_unavailable(monkeypatch, tmp_path):
+    cache_dir = tmp_path / ".cache"
+    cache_dir.mkdir()
+    (cache_dir / "node_desktop_views.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "views": [
+                    {
+                        "view_id": "stale-view",
+                        "graph_id": "missing-graph",
+                        "node_id": "missing-node",
+                        "visible": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = []
+    graph_runtime = FakeGraphRuntime(tmp_path, events)
+    live_outputs = SimpleNamespace(get=lambda _graph_id, _node_id: None)
+    core = SimpleNamespace(graph_runtime=graph_runtime, node_live_outputs=live_outputs)
+    monkeypatch.setattr(node_desktop_view, "_get_runtime_root", lambda: str(tmp_path))
+
+    result = NodeDesktopViewDomain(core, graph_runtime).list_node_desktop_views()
+
+    assert result["views"] == [
+        {
+            "view_id": "stale-view",
+            "graph_id": "missing-graph",
+            "node_id": "missing-node",
+            "visible": False,
+            "node": None,
+            "available": False,
+            "unavailable_reason": "node instance not found",
+            "live": {},
+        }
+    ]

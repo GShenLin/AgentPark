@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from src.provider_limit_channel import openai_compatible_endpoint_url
+from src.provider_limit_result import set_feature, set_value_features
 from src.provider_limit_schema import ProbeResult, REASONING_EFFORT_VALUES
 
 
@@ -16,10 +17,10 @@ def test_zhipu_limits(
     post_json_probe: PostJsonProbe,
 ) -> None:
     access = _probe_chat_completions(config, {}, post_json_probe=post_json_probe)
-    _set_feature(result, "access", access)
-    _set_feature(result, "responses_api", ProbeResult(False, "Zhipu provider contract uses chat/completions, not Responses API"))
-    _set_feature(result, "web_search", ProbeResult(False, "Zhipu provider contract does not send web_search"))
-    _set_value_features(
+    set_feature(result, "access", access)
+    set_feature(result, "responses_api", ProbeResult(False, "Zhipu provider contract uses chat/completions, not Responses API"))
+    set_feature(result, "web_search", ProbeResult(False, "Zhipu provider contract does not send web_search"))
+    set_value_features(
         result,
         "thinking",
         {
@@ -28,7 +29,7 @@ def test_zhipu_limits(
             "auto": ProbeResult(False, "Zhipu thinking supports enabled/disabled only"),
         },
     )
-    _set_value_features(
+    set_value_features(
         result,
         "reasoning_effort",
         {
@@ -44,11 +45,11 @@ def test_gemini_limits(
     *,
     post_json_probe: PostJsonProbe,
 ) -> None:
-    _set_feature(result, "access", _probe_gemini_generate_content(config, post_json_probe=post_json_probe))
-    _set_feature(result, "responses_api", ProbeResult(False, "Gemini provider contract uses generateContent, not Responses API"))
-    _set_feature(result, "web_search", ProbeResult(False, "Gemini provider contract does not send web_search"))
-    _set_feature(result, "thinking", ProbeResult(False, "Gemini provider contract does not send thinking"))
-    _set_value_features(
+    set_feature(result, "access", _probe_gemini_generate_content(config, post_json_probe=post_json_probe))
+    set_feature(result, "responses_api", ProbeResult(False, "Gemini provider contract uses generateContent, not Responses API"))
+    set_feature(result, "web_search", ProbeResult(False, "Gemini provider contract does not send web_search"))
+    set_feature(result, "thinking", ProbeResult(False, "Gemini provider contract does not send thinking"))
+    set_value_features(
         result,
         "reasoning_effort",
         {effort: ProbeResult(False, "Gemini provider contract does not send reasoning_effort") for effort in REASONING_EFFORT_VALUES},
@@ -88,25 +89,3 @@ def _bearer_headers(config: dict[str, Any]) -> dict[str, str]:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {str(config.get('apiKey') or '')}",
     }
-
-
-def _set_feature(result: dict[str, Any], feature_name: str, probe: ProbeResult) -> None:
-    result.setdefault("features", {})[feature_name] = probe.to_payload()
-    if not probe.supported:
-        result.setdefault("unsupported", {})[feature_name] = str(probe.reason or "not supported")
-
-
-def _set_value_features(result: dict[str, Any], feature_name: str, probes: dict[str, ProbeResult]) -> None:
-    supported_values = [value for value, probe in probes.items() if probe.supported]
-    result.setdefault("features", {})[feature_name] = {
-        "supported": bool(supported_values),
-        "supported_values": supported_values,
-        "values": {value: probe.to_payload() for value, probe in probes.items()},
-    }
-    unsupported_values = {
-        value: probe.reason or "not supported"
-        for value, probe in probes.items()
-        if not probe.supported
-    }
-    if unsupported_values:
-        result.setdefault("unsupported", {})[feature_name] = unsupported_values

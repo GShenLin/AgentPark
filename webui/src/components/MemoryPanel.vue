@@ -12,6 +12,7 @@ import {
   loadGraph,
   saveGraph,
   saveGraphProfileFromGraph,
+  setGraphVisibility,
   setStartupGraphConfig,
   type GraphConfig,
   type GraphInfo,
@@ -33,6 +34,7 @@ const {
   memoryHistoryComplete,
   memoryLatestTurnProgressLoaded,
   memoryLatestTurnMetadataLoaded,
+  memoryLatestTurnProgressSummary,
   memoryLiveMessage,
   memoryThinkingMessage,
   memoryActivityMessage,
@@ -459,6 +461,20 @@ async function deleteGraphConfig(item: GraphInfo) {
   }
 }
 
+async function toggleGraphVisibility(item: GraphInfo) {
+  const graphId = String(item.id || '').trim()
+  if (!graphId) return
+  const nextPrivate = !item.private
+  graphStatus.value = null
+  try {
+    await setGraphVisibility(graphId, nextPrivate)
+    await refreshGraphs()
+    graphStatus.value = `Graph is now ${nextPrivate ? 'private' : 'public'}: ${item.name || graphId}`
+  } catch (e: any) {
+    graphStatus.value = String(e?.message || e)
+  }
+}
+
 async function clearGraphMemory(item: GraphInfo) {
   const graphId = String(item.id || '').trim()
   if (!graphId) return
@@ -626,6 +642,7 @@ onBeforeUnmount(() => {
       :history-complete="memoryHistoryComplete"
       :progress-loaded="memoryLatestTurnProgressLoaded"
       :metadata-loaded="memoryLatestTurnMetadataLoaded"
+      :progress-summary="memoryLatestTurnProgressSummary"
       :loading-section="lazySectionLoading"
       :live-message="memoryLiveMessage"
       :thinking-message="memoryThinkingMessage"
@@ -658,6 +675,7 @@ onBeforeUnmount(() => {
       @navigate-graph-node="navigateToGraphNode"
       @clear-graph-memory="clearGraphMemory"
       @delete-graph-config="deleteGraphConfig"
+      @toggle-graph-visibility="toggleGraphVisibility"
       @graph-path-error="graphStatus = $event"
       @update:selected-graph-profile-id="selectedGraphProfileId = $event"
       @update:graph-working-path-input="updateGraphWorkingPath"
@@ -692,6 +710,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  font-size: var(--theme-panel-memory-panel-font-body, 13px);
   background-color: var(--theme-panel-memory-panel-background-color, rgba(2, 6, 23, 0.56));
   background-image: var(--theme-panel-memory-panel-background-image, none);
   background-size: var(--theme-panel-memory-panel-background-size, cover);
@@ -706,7 +725,7 @@ onBeforeUnmount(() => {
   padding: 16px;
   overflow-y: auto;
   line-height: 1.6;
-  font-size: 13px;
+  font-size: var(--theme-panel-memory-panel-font-body, 13px);
   white-space: normal !important;
   word-wrap: break-word;
 }
@@ -751,7 +770,7 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   background: rgba(0, 0, 0, 0.18);
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-  font-size: 12px;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
 }
 
 :deep(.markdown-body .mem-role) {

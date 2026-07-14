@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
+from .network_diagnostics import NetworkDiagnosticsMiddleware
 from .node_desktop_pet_launcher import terminate_registered_desktop_pet_processes
 from .private_network_access import PrivateNetworkAccessMiddleware
 from .runtime_paths import _get_resource_root, _get_runtime_root
@@ -31,6 +32,7 @@ class WebBackendFacade:
             allow_headers=["*"],
         )
         self.app.add_middleware(PrivateNetworkAccessMiddleware)
+        self.app.add_middleware(NetworkDiagnosticsMiddleware)
         self._desktop_pet_restore_timer = None
 
     def register_routes(self) -> None:

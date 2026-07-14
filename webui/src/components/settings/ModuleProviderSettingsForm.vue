@@ -15,6 +15,8 @@ const emit = defineEmits<{
 }>()
 
 const selectedProviderId = ref('')
+const editableProviderId = ref('')
+const providerIdError = ref('')
 const newProviderId = ref('')
 const providerLimits = ref<ProviderLimitDocument | null>(null)
 const limitWarning = ref('')
@@ -62,6 +64,15 @@ watch(
     if (!ids.includes(selectedProviderId.value)) {
       selectedProviderId.value = ids[0] || ''
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  selectedProviderId,
+  (providerId) => {
+    editableProviderId.value = providerId
+    providerIdError.value = ''
   },
   { immediate: true },
 )
@@ -172,6 +183,58 @@ function addProvider() {
   newProviderId.value = ''
 }
 
+function setProviderId(rawProviderId: string) {
+  editableProviderId.value = rawProviderId
+  const currentId = selectedProviderId.value
+  const nextId = rawProviderId.trim()
+  if (!currentId || !selectedProvider.value) return
+  if (!nextId) {
+    providerIdError.value = 'Provider ID is required.'
+    return
+  }
+  if (nextId === currentId) {
+    providerIdError.value = ''
+    return
+  }
+  if (providers.value[nextId]) {
+    providerIdError.value = `Provider ID '${nextId}' already exists.`
+    return
+  }
+
+  const next = cloneData()
+  next.providers = Object.fromEntries(
+    Object.entries(providers.value).map(([providerId, provider]) => (
+      providerId === currentId ? [nextId, provider] : [providerId, provider]
+    )),
+  )
+  emit('update:data', next)
+  selectedProviderId.value = nextId
+}
+
+function normalizeProviderId() {
+  editableProviderId.value = selectedProviderId.value
+  providerIdError.value = ''
+}
+
+function duplicateProvider() {
+  const sourceId = selectedProviderId.value
+  const sourceProvider = selectedProvider.value
+  if (!sourceId || !sourceProvider) return
+
+  let duplicateId = `${sourceId}1`
+  while (providers.value[duplicateId]) {
+    duplicateId += '1'
+  }
+
+  const next = cloneData()
+  next.providers = {
+    ...providers.value,
+    [duplicateId]: JSON.parse(JSON.stringify(sourceProvider)) as Record<string, unknown>,
+  }
+  emit('update:data', next)
+  selectedProviderId.value = duplicateId
+}
+
 function deleteProvider() {
   const id = selectedProviderId.value
   if (!id) return
@@ -266,10 +329,19 @@ onMounted(() => {
 
     <section v-if="selectedProvider" class="provider-form">
       <div class="form-head">
-        <div>
-          <h2>{{ selectedProviderId }}</h2>
-          <span>Provider fields</span>
-        </div>
+        <label class="provider-id-field">
+          <span>Provider ID</span>
+          <input
+            :value="editableProviderId"
+            :class="{ invalid: providerIdError }"
+            autocomplete="off"
+            spellcheck="false"
+            @input="setProviderId(($event.target as HTMLInputElement).value)"
+            @blur="normalizeProviderId"
+          />
+          <small v-if="providerIdError" class="field-error">{{ providerIdError }}</small>
+          <small v-else>Provider fields</small>
+        </label>
         <div class="form-head-actions">
           <button
             type="button"
@@ -281,6 +353,7 @@ onMounted(() => {
           >
             {{ stringValue('authMode') === 'codex' ? 'OAuth ✓' : 'OAuth' }}
           </button>
+          <button type="button" @click="duplicateProvider">Duplicate</button>
           <button type="button" class="danger" @click="deleteProvider">Delete</button>
         </div>
       </div>

@@ -3,17 +3,18 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from src.companion_inbox import drain_companion_notices
 from src.companion_inbox import format_companion_notice
+from src.companion_cli_window import hide_companion_cli_window
 from src.cli_commands.companion_console import ConsoleEvent, ConsoleEventReader, MsvcrtConsole, TerminalScreen, WindowsConsole
 from src.cli_commands.companion_debug import build_terminal_debug_text
 from src.cli_commands.companion_restart import launch_restart_bat
 from src.cli_commands.companion_tui_render import render_tui_text
+from src.cli_commands.companion_tui_state import CompanionTuiLiveTranscript, TranscriptItem, TuiState
 
 
 TurnRunner = Callable[..., dict[str, Any]]
@@ -23,6 +24,7 @@ HELP_LINES = [
     "/help      show commands",
     "/status    show config and runtime paths",
     "/restart  run the platform restart script and exit this CLI session",
+    "/hidden    hide this CLI window",
     "/clear     clear transcript",
     "/exit      quit",
     "Enter      submit",
@@ -30,31 +32,6 @@ HELP_LINES = [
     "Ctrl+U     clear draft",
     "Up/Down    recall prompt history",
 ]
-
-
-@dataclass
-class TranscriptItem:
-    role: str
-    text: str = ""
-    status: str = ""
-
-
-@dataclass
-class TuiState:
-    transcript: list[TranscriptItem] = field(default_factory=list)
-    draft: str = ""
-    cursor: int = 0
-    prompt_history: list[str] = field(default_factory=list)
-    history_index: int | None = None
-    queued: list[str] = field(default_factory=list)
-    running: bool = False
-    status: str = "ready"
-    should_exit: bool = False
-    last_ctrl_c_at: float = 0.0
-    active_assistant_index: int | None = None
-    key_events_seen: int = 0
-    last_key: str = ""
-    restart_requested: bool = False
 
 
 class CompanionTui:
@@ -73,6 +50,7 @@ class CompanionTui:
         self.backend = backend
         self.log_path = log_path
         self.state = TuiState()
+        self.live_transcript = CompanionTuiLiveTranscript(self.state)
         self.worker_events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.spinner_index = 0
         self.started_at = time.monotonic()
@@ -291,6 +269,9 @@ class CompanionTui:
         if text == "/restart":
             self._restart()
             return
+        if text == "/hidden":
+            self._hide_window()
+            return
         if text == "/clear":
             self.state.transcript.clear()
             self.state.status = "transcript cleared"
@@ -301,13 +282,18 @@ class CompanionTui:
             return
         self._start_turn(text)
 
+    def _hide_window(self) -> None:
+        try:
+            hide_companion_cli_window()
+            self.state.status = "window hidden"
+        except Exception as exc:
+            self.state.status = f"hide failed: {type(exc).__name__}: {exc}"
+
     def _start_turn(self, text: str) -> None:
         self._log("submit", text[:200])
         self.state.prompt_history.append(text)
         self.state.transcript.append(TranscriptItem(role="user", text=text))
-        assistant = TranscriptItem(role="assistant", text="", status="working")
-        self.state.transcript.append(assistant)
-        self.state.active_assistant_index = len(self.state.transcript) - 1
+        self.live_transcript.begin_turn()
         self.state.running = True
         self.state.status = "working"
         thread = threading.Thread(target=self._run_worker, args=(text,), name="companion-agent-turn", daemon=True)
@@ -378,18 +364,7 @@ class CompanionTui:
             self._start_turn(text)
 
     def _handle_stream(self, payload: object) -> None:
-        if not isinstance(payload, dict):
-            return
-        event_type = str(payload.get("type") or "")
-        if event_type == "node_message_delta":
-            self._append_assistant_text(str(payload.get("delta") or ""))
-        elif event_type == "node_message_done":
-            self._set_assistant_text(str(payload.get("text") or ""))
-        elif event_type in {"tool_call_start", "tool_call_end"}:
-            self._close_active_assistant_fragment()
-            name = str(payload.get("name") or "tool")
-            status = str(payload.get("status") or event_type)
-            self.state.transcript.append(TranscriptItem(role="tool", text=f"{name}: {status}"))
+        self.live_transcript.handle(payload)
 
     def _finish_turn(self, result: object) -> None:
         response = ""
@@ -397,79 +372,12 @@ class CompanionTui:
         if isinstance(result, dict):
             response = str(result.get("response") or "")
             is_error = bool(result.get("error"))
-        if response and not self._active_assistant_text():
-            self._set_assistant_text(response)
-        if not response and not self._active_assistant_text():
-            self._remove_empty_active_assistant()
-        self._set_assistant_status("error" if is_error else "done")
+        self.live_transcript.finish(response, is_error=is_error)
         self.state.running = False
         self.state.status = "ready" if not is_error else "error"
-        self.state.active_assistant_index = None
         if self.state.queued:
             next_text = self.state.queued.pop(0)
             self._start_turn(next_text)
-
-    def _append_assistant_text(self, text: str) -> None:
-        if not text:
-            return
-        index = self._ensure_active_assistant()
-        self.state.transcript[index].text += text
-
-    def _set_assistant_text(self, text: str) -> None:
-        if not text:
-            return
-        index = self._ensure_active_assistant()
-        self.state.transcript[index].text = text
-
-    def _active_assistant_text(self) -> str:
-        index = self.state.active_assistant_index
-        if index is None:
-            return ""
-        if index < 0 or index >= len(self.state.transcript):
-            return ""
-        return self.state.transcript[index].text
-
-    def _set_assistant_status(self, status: str) -> None:
-        index = self.state.active_assistant_index
-        if index is not None and 0 <= index < len(self.state.transcript):
-            self.state.transcript[index].status = status
-
-    def _ensure_active_assistant(self) -> int:
-        index = self.state.active_assistant_index
-        if (
-            index is not None
-            and 0 <= index < len(self.state.transcript)
-            and self.state.transcript[index].role == "assistant"
-        ):
-            return index
-        self.state.transcript.append(TranscriptItem(role="assistant", text="", status="working"))
-        self.state.active_assistant_index = len(self.state.transcript) - 1
-        return self.state.active_assistant_index
-
-    def _close_active_assistant_fragment(self) -> None:
-        index = self.state.active_assistant_index
-        if index is None or index < 0 or index >= len(self.state.transcript):
-            self.state.active_assistant_index = None
-            return
-        item = self.state.transcript[index]
-        if item.role != "assistant":
-            self.state.active_assistant_index = None
-            return
-        if not item.text.strip():
-            self._remove_empty_active_assistant()
-            return
-        item.status = "done"
-        self.state.active_assistant_index = None
-
-    def _remove_empty_active_assistant(self) -> None:
-        index = self.state.active_assistant_index
-        if index is None or index < 0 or index >= len(self.state.transcript):
-            self.state.active_assistant_index = None
-            return
-        item = self.state.transcript[index]
-        if item.role == "assistant" and not item.text.strip() and index == len(self.state.transcript) - 1:
-            self.state.transcript.pop()
-        self.state.active_assistant_index = None
 
     def _status_text(self) -> str:
         fields = [

@@ -5,6 +5,21 @@ import pytest
 from src import ask_here_launcher
 
 
+def test_ping_uses_lightweight_graph_health_endpoint(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ask_here_launcher, "resolve_server_base_url", lambda: "http://127.0.0.1:8788")
+    monkeypatch.setattr(
+        ask_here_launcher,
+        "_request_json",
+        lambda method, url, payload=None, **kwargs: calls.append((method, url)) or {"graphs": []},
+    )
+
+    exit_code = ask_here_launcher.main(["ping"])
+
+    assert exit_code == 0
+    assert calls == [("GET", "http://127.0.0.1:8788/api/graphs")]
+
+
 def test_dispatch_folder_launches_single_running_pet(monkeypatch, tmp_path):
     calls = []
 
@@ -138,3 +153,86 @@ def test_dispatch_folder_rejects_missing_path(tmp_path):
 
     with pytest.raises(ask_here_launcher.AskHereError):
         ask_here_launcher.dispatch_folder(str(missing))
+
+
+def test_dispatch_folder_routes_to_companion_cli_when_no_pet(monkeypatch, tmp_path):
+    routed = []
+
+    monkeypatch.setattr(ask_here_launcher, "resolve_server_base_url", lambda: "http://127.0.0.1:8788")
+    monkeypatch.setattr(
+        ask_here_launcher,
+        "_request_json",
+        lambda method, url, payload=None, **kwargs: {"views": []},
+    )
+    monkeypatch.setattr(
+        ask_here_launcher,
+        "dispatch_to_companion_cli",
+        lambda working_path: routed.append(working_path)
+        or {"mode": "companion_cli_shown", "working_path": working_path, "pid": 123},
+    )
+    monkeypatch.setattr(
+        ask_here_launcher.webbrowser,
+        "open_new_tab",
+        lambda _url: (_ for _ in ()).throw(AssertionError("picker must not open without pets")),
+    )
+
+    result = ask_here_launcher.dispatch_folder(str(tmp_path))
+
+    assert result["mode"] == "companion_cli_shown"
+    assert routed == [str(tmp_path)]
+
+
+def test_dispatch_file_routes_parent_folder_to_companion_cli_when_no_pet(monkeypatch, tmp_path):
+    target_file = tmp_path / "sample.txt"
+    target_file.write_text("hello", encoding="utf-8")
+    routed = []
+
+    monkeypatch.setattr(ask_here_launcher, "resolve_server_base_url", lambda: "http://127.0.0.1:8788")
+    monkeypatch.setattr(
+        ask_here_launcher,
+        "_request_json",
+        lambda method, url, payload=None, **kwargs: {"views": []},
+    )
+    monkeypatch.setattr(
+        ask_here_launcher,
+        "dispatch_to_companion_cli",
+        lambda working_path: routed.append(working_path)
+        or {"mode": "companion_cli_path_updated", "working_path": working_path, "pid": 123},
+    )
+
+    result = ask_here_launcher.dispatch_folder(str(target_file))
+
+    assert result["mode"] == "companion_cli_path_updated"
+    assert routed == [str(tmp_path)]
+
+
+def test_dispatch_ignores_unavailable_stale_pet_view(monkeypatch, tmp_path):
+    routed = []
+
+    monkeypatch.setattr(ask_here_launcher, "resolve_server_base_url", lambda: "http://127.0.0.1:8788")
+    monkeypatch.setattr(
+        ask_here_launcher,
+        "_request_json",
+        lambda method, url, payload=None, **kwargs: {
+            "views": [
+                {
+                    "view_id": "stale-view",
+                    "graph_id": "missing-graph",
+                    "node_id": "missing-node",
+                    "visible": True,
+                    "available": False,
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        ask_here_launcher,
+        "dispatch_to_companion_cli",
+        lambda working_path: routed.append(working_path)
+        or {"mode": "companion_cli_shown", "working_path": working_path, "pid": 123},
+    )
+
+    result = ask_here_launcher.dispatch_folder(str(tmp_path))
+
+    assert result["mode"] == "companion_cli_shown"
+    assert routed == [str(tmp_path)]

@@ -4,7 +4,7 @@ import shutil
 import subprocess
 from types import SimpleNamespace
 
-from src.providers.agent_environment_context import resolve_agent_configured_working_path
+from src.providers.agent_environment_context import resolve_agent_model_workspace_path
 
 from . import runtime_paths
 from .node_config_errors import NodeConfigWriteError
@@ -296,39 +296,67 @@ class NodeInstanceRegistry(HostBoundService):
 
         return node_config_service.update(config_path, mutate, effective="immediate")
 
-    def open_node_instance_folder(self, node_id: str, graph_id: str = ""):
+    def _resolve_node_instance_folder(self, node_id: str, graph_id: str = "") -> tuple[str, str, str, str]:
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         if not node_dir or not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
+        return safe_graph_id, safe_node_id, node_dir, config_path
 
-        try:
-            cfg = node_config_service.read_strict(config_path)
-        except NodeConfigReadError as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
-        working_path = resolve_agent_configured_working_path(
-            SimpleNamespace(
-                _agentpark_graph_id=safe_graph_id,
-                config={"working_path": str((cfg if isinstance(cfg, dict) else {}).get("working_path") or "").strip()},
-            )
-        )
-        target_dir = working_path or node_dir
-        source = "working_path" if working_path else "node_folder"
-
+    def _open_folder_in_explorer(self, target_dir: str, folder_label: str) -> None:
         if not os.path.isdir(target_dir):
-            raise HTTPException(status_code=404, detail=f"{source} is not an existing folder: {target_dir}")
+            raise HTTPException(status_code=404, detail=f"{folder_label} is not an existing folder: {target_dir}")
 
         try:
             if os.name == "nt":
-                subprocess.Popen(["explorer.exe", os.path.normpath(target_dir)], close_fds=True)
+                self._launch_folder_explorer(target_dir)
             else:
                 raise RuntimeError("opening folders is only supported on Windows")
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to open folder: {str(exc)}")
 
-        return {"ok": True, "node_id": safe_node_id, "graph_id": safe_graph_id, "path": target_dir, "source": source}
+    @staticmethod
+    def _launch_folder_explorer(target_dir: str) -> None:
+        subprocess.Popen(["explorer.exe", os.path.normpath(target_dir)], close_fds=True)
+
+    def open_node_instance_node_folder(self, node_id: str, graph_id: str = ""):
+        safe_graph_id, safe_node_id, node_dir, _config_path = self._resolve_node_instance_folder(node_id, graph_id)
+        self._open_folder_in_explorer(node_dir, "node folder")
+        return {
+            "ok": True,
+            "node_id": safe_node_id,
+            "graph_id": safe_graph_id,
+            "path": node_dir,
+            "source": "node_folder",
+        }
+
+    def open_node_instance_work_folder(self, node_id: str, graph_id: str = ""):
+        safe_graph_id, safe_node_id, _node_dir, config_path = self._resolve_node_instance_folder(node_id, graph_id)
+
+        try:
+            cfg = node_config_service.read_strict(config_path)
+        except NodeConfigReadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        try:
+            working_path = resolve_agent_model_workspace_path(
+                SimpleNamespace(
+                    _agentpark_graph_id=safe_graph_id,
+                    config={"working_path": str((cfg if isinstance(cfg, dict) else {}).get("working_path") or "").strip()},
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+        self._open_folder_in_explorer(working_path, "work folder")
+        return {
+            "ok": True,
+            "node_id": safe_node_id,
+            "graph_id": safe_graph_id,
+            "path": working_path,
+            "source": "work_folder",
+        }
 
     def list_node_instance_configs(self, graph_id: str = "", since_version: int = 0):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)

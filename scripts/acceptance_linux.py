@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-SUPPORTED_PROVIDER_TYPES = {"openai", "doubao", "claude", "gemini", "zhipu", "hyper3d"}
+SUPPORTED_PROVIDER_TYPES = {"openai", "doubao", "claude", "gemini", "grok", "zhipu", "hyper3d", "deepseek"}
 
 
 def _repo_root() -> Path:

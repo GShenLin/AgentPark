@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
 from nodes.agent_node import Node as AgentNode
 from src.companion_paths import COMPANION_GRAPH_ID, COMPANION_NODE_ID, companion_node_config_path
+from src.companion_cli_window import companion_cli_window_session
+from src.cli_commands.companion_live_events import CompanionLiveEventReducer
 from src.cli_commands.companion_markdown_render import render_markdown_lines
 from src.cli_commands.companion_prompt import PromptCompanionTerminal
 from src.cli_commands.companion_restart import RESTART_EXIT_CODE
@@ -15,7 +18,6 @@ from src.cli_commands.companion_terminal import PlainCompanionTerminal
 from src.cli_commands.companion_tool_render import render_tool_event_lines
 from src.cli_commands.companion_tui import CompanionTui
 from src.message_protocol import build_text_envelope
-from src.node_stream_protocol import NODE_MESSAGE_DELTA, NODE_MESSAGE_DONE
 from src.web_backend import runtime_paths
 from src.web_backend.node_config_errors import NodeConfigReadError
 from src.web_backend.node_config_service import node_config_service
@@ -57,40 +59,59 @@ def run_chat(args) -> dict[str, Any]:
     if not backend:
         backend = "auto"
 
-    session_result = ""
+    window_managed = str(os.environ.get("AGENTPARK_CLI_WINDOW_MANAGED") or "").strip() == "1"
+    start_hidden = str(os.environ.get("AGENTPARK_CLI_START_HIDDEN") or "").strip() == "1"
+    window_session = companion_cli_window_session(start_hidden=start_hidden) if window_managed else nullcontext()
+    with window_session:
+        session_result = _run_interactive_session(
+            target,
+            backend=backend,
+            debug_terminal=debug_terminal,
+            log_path=log_path,
+        )
+    payload = {"status": "success", "_printed": True, "graph": target.graph_id}
+    if session_result == "restart":
+        payload["_exit_code"] = RESTART_EXIT_CODE
+    return payload
+
+
+def _run_interactive_session(
+    target: ChatTarget,
+    *,
+    backend: str,
+    debug_terminal: bool,
+    log_path: str,
+) -> str:
     if backend == "plain":
-        session_result = PlainCompanionTerminal(target, debug_terminal=debug_terminal, run_turn=_run_one_turn).run() or ""
-    elif backend == "prompt":
+        return PlainCompanionTerminal(target, debug_terminal=debug_terminal, run_turn=_run_one_turn).run() or ""
+    if backend == "prompt":
         if not PromptCompanionTerminal.is_available():
             detail = PromptCompanionTerminal.availability_report()
             raise RuntimeError(f"prompt backend is not available in this terminal: {detail}")
-        session_result = PromptCompanionTerminal(target, debug_terminal=debug_terminal, run_turn=_run_one_turn).run() or ""
-    elif backend in {"msvcrt", "win32"}:
+        return PromptCompanionTerminal(target, debug_terminal=debug_terminal, run_turn=_run_one_turn).run() or ""
+    if backend in {"msvcrt", "win32"}:
         if not CompanionTui.backend_available(backend):
             detail = CompanionTui.backend_report(backend)
             raise RuntimeError(f"{backend} TUI backend is not available in this terminal: {detail}")
-        session_result = CompanionTui(
+        return CompanionTui(
             target,
             debug_terminal=debug_terminal,
             run_turn=_run_one_turn,
             backend=backend,
             log_path=log_path,
         ).run() or ""
-    elif backend == "auto":
+    if backend == "auto":
         selected_backend = _select_interactive_backend()
         if not selected_backend:
             detail = _interactive_availability_report()
             raise RuntimeError(f"no interactive backend is available in this terminal: {detail}")
-        session_result = (
-            _run_selected_interactive_backend(target, selected_backend, debug_terminal=debug_terminal, log_path=log_path)
-            or ""
-        )
-    else:
-        raise ValueError(f"unsupported chat backend: {backend}")
-    payload = {"status": "success", "_printed": True, "graph": target.graph_id}
-    if session_result == "restart":
-        payload["_exit_code"] = RESTART_EXIT_CODE
-    return payload
+        return _run_selected_interactive_backend(
+            target,
+            selected_backend,
+            debug_terminal=debug_terminal,
+            log_path=log_path,
+        ) or ""
+    raise ValueError(f"unsupported chat backend: {backend}")
 
 
 def _select_interactive_backend() -> str:
@@ -159,6 +180,9 @@ def _run_one_turn(
     print_stream: bool,
     stream_handler=None,
 ) -> dict[str, Any]:
+    latest_config = node_config_service.read_strict(target.config_path)
+    target.config.clear()
+    target.config.update(latest_config)
     ensure_node_memory_files(target.memory_path, target.messages_path)
     user_message = build_text_envelope(prompt, role="user")
     append_node_memory_entry(target.memory_path, target.messages_path, "user", user_message)
@@ -225,11 +249,9 @@ class _StreamPrinter:
         self.memory_path = memory_path
         self.messages_path = messages_path
         self.stream_handler = stream_handler
-        self.last_text = ""
-        self.buffered_text = ""
-        self.printed_assistant_text = ""
+        self.live_events = CompanionLiveEventReducer()
         self.printed_any = False
-        self.done = False
+        self.active_stream_channel = ""
 
     def handle(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload, dict):
@@ -237,14 +259,6 @@ class _StreamPrinter:
         if callable(self.stream_handler):
             self.stream_handler(payload)
         event_type = str(payload.get("type") or "").strip()
-        if event_type == NODE_MESSAGE_DELTA:
-            self._print_delta(str(payload.get("delta") or ""))
-            self.last_text = str(payload.get("text") or self.last_text)
-            return
-        if event_type == NODE_MESSAGE_DONE:
-            self.last_text = str(payload.get("text") or self.last_text)
-            self.done = True
-            return
         if event_type in {"tool_call_start", "tool_call_end"}:
             try:
                 append_node_tool_call_entry(self.memory_path, self.messages_path, payload)
@@ -253,45 +267,67 @@ class _StreamPrinter:
                     error(f"[tool-history-error] {type(exc).__name__}: {exc}", stream=sys.stderr),
                     stream=sys.stderr,
                 )
-            self._flush_buffered_assistant_text()
-            self._print_tool_event(payload)
+        actions = self.live_events.consume(payload)
+        if not self.enabled:
+            return
+        for action in actions:
+            if action.kind == "delta":
+                self._write_stream_delta(action.channel, action.text)
+            elif action.kind == "close":
+                self._close_live_stream()
+            elif action.kind == "activity":
+                self._close_live_stream()
+                print(muted(f"activity {action.text}"), flush=True)
+                self.printed_any = True
+            elif action.kind == "tool" and action.event is not None:
+                self._close_live_stream()
+                self._print_tool_event(action.event)
+            elif action.kind == "server_tool" and action.event is not None:
+                self._close_live_stream()
+                self._print_server_tool_event(action.event)
 
     def finish(self, final_text: str) -> None:
-        text = self.buffered_text
-        if not text:
-            candidate = str(final_text or self.last_text or "")
-            if candidate and candidate != self.printed_assistant_text:
-                text = (
-                    candidate[len(self.printed_assistant_text) :]
-                    if self.printed_assistant_text and candidate.startswith(self.printed_assistant_text)
-                    else candidate
-                )
-        if self.enabled and text:
-            self._print_assistant_block(text)
-            self.buffered_text = ""
+        if not self.enabled:
+            return
+        candidate = str(final_text or self.live_events.answer_text or "")
+        if self.active_stream_channel:
+            if candidate.startswith(self.live_events.answer_text):
+                self._write_stream_delta("assistant", candidate[len(self.live_events.answer_text) :])
+            self._close_live_stream()
+            return
+        if candidate and not self.live_events.answer_text:
+            self._print_assistant_block(candidate)
             self.printed_any = True
             return
-        if self.enabled and self.printed_any:
+        if self.printed_any:
             print("", flush=True)
 
-    def _print_delta(self, delta: str) -> None:
-        if not self.enabled or not delta:
+    def _write_stream_delta(self, channel: str, delta: str) -> None:
+        if not delta:
             return
-        self.buffered_text += delta
-
-    def _flush_buffered_assistant_text(self) -> None:
-        if not self.enabled or not self.buffered_text:
-            return
-        self._print_assistant_block(self.buffered_text)
-        self.buffered_text = ""
+        prefix = ""
+        if self.active_stream_channel != channel:
+            if self.active_stream_channel:
+                prefix = "\n"
+            prefix += f"\n{role_label(channel)}\n  "
+            self.active_stream_channel = channel
+        rendered_delta = delta.replace("\n", "\n  ")
+        sys.stdout.write(prefix + rendered_delta)
+        sys.stdout.flush()
         self.printed_any = True
+
+    def _close_live_stream(self) -> None:
+        if not self.active_stream_channel:
+            return
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        self.active_stream_channel = ""
 
     def _print_assistant_block(self, text: str) -> None:
         print("")
         print(role_label("assistant"))
         for line in render_markdown_lines(text, indent="  "):
             print(line, flush=True)
-        self.printed_assistant_text += text
 
     def _print_tool_event(self, payload: dict[str, Any]) -> None:
         if not self.enabled:
@@ -301,6 +337,12 @@ class _StreamPrinter:
         for line in render_tool_event_lines(payload):
             print(muted(line), flush=True)
         self.printed_any = False
+
+    def _print_server_tool_event(self, payload: dict[str, Any]) -> None:
+        tool_type = str(payload.get("tool_type") or "server_tool").strip() or "server_tool"
+        status = str(payload.get("status") or "in_progress").strip() or "in_progress"
+        print(muted(f"server tool {tool_type}: {status}"), flush=True)
+        self.printed_any = True
 
     def _print_line(self, text: str, *, stream=None) -> None:
         if not self.enabled:

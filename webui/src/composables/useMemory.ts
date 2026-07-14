@@ -67,6 +67,7 @@ export function useMemory() {
     memoryHistoryComplete,
     memoryLatestTurnProgressLoaded,
     memoryLatestTurnMetadataLoaded,
+    memoryLatestTurnProgressSummary,
     memoryLiveMessage,
     memoryThinkingMessage,
     memoryActivityMessage,
@@ -99,6 +100,7 @@ export function useMemory() {
       memoryHistoryComplete.value = true
       memoryLatestTurnProgressLoaded.value = true
       memoryLatestTurnMetadataLoaded.value = true
+      memoryLatestTurnProgressSummary.value = null
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
       memoryActivityMessage.value = ''
@@ -132,6 +134,7 @@ export function useMemory() {
         memoryMessages.value = baseMessages
       }
       memoryHistoryComplete.value = res.history_complete !== false
+      memoryLatestTurnProgressSummary.value = res.latest_turn_progress_summary || null
       if (historyMode === 'latest_turn') {
         memoryLatestTurnProgressLoaded.value = false
         memoryLatestTurnMetadataLoaded.value = false
@@ -169,6 +172,7 @@ export function useMemory() {
       memoryHistoryComplete.value = true
       memoryLatestTurnProgressLoaded.value = true
       memoryLatestTurnMetadataLoaded.value = true
+      memoryLatestTurnProgressSummary.value = null
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
       memoryActivityMessage.value = ''

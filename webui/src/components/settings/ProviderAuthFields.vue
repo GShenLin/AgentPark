@@ -28,6 +28,7 @@ const emit = defineEmits<{
       <option value="claude">claude</option>
       <option value="doubao">doubao</option>
       <option value="gemini">gemini</option>
+      <option value="grok">grok</option>
       <option value="zhipu">zhipu</option>
       <option value="hyper3d">hyper3d</option>
     </select>

@@ -35,20 +35,51 @@ def post_json_probe(
                 False,
                 sanitize_probe_error(f"HTTP {response.status_code}: {response.body}", headers=headers),
                 status_code=response.status_code,
+                outcome=_http_error_outcome(response.status_code),
             )
         try:
             _ = json.loads(response.body) if response.body.strip() else {}
         except Exception as exc:
+            if payload.get("stream") is True and _looks_like_sse_response(response.body):
+                return ProbeResult(True, status_code=response.status_code)
             return ProbeResult(
                 False,
                 sanitize_probe_error(f"Invalid JSON response: {exc}; body={response.body[:500]}", headers=headers),
                 status_code=response.status_code,
+                outcome="invalid_response",
             )
         return ProbeResult(True, status_code=response.status_code)
     except CurlTransportError as exc:
-        return ProbeResult(False, sanitize_probe_error(f"curl: {exc}", headers=headers))
+        return ProbeResult(
+            False,
+            sanitize_probe_error(f"curl: {exc}", headers=headers),
+            outcome="unreachable",
+        )
     except Exception as exc:
-        return ProbeResult(False, sanitize_probe_error(f"{type(exc).__name__}: {exc}", headers=headers))
+        return ProbeResult(
+            False,
+            sanitize_probe_error(f"{type(exc).__name__}: {exc}", headers=headers),
+            outcome="error",
+        )
+
+
+def _http_error_outcome(status_code: int) -> str:
+    if status_code == 400 or status_code == 404 or status_code == 405 or status_code == 422:
+        return "unsupported"
+    if status_code == 401:
+        return "unauthorized"
+    if status_code == 403:
+        return "forbidden"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code >= 500:
+        return "provider_error"
+    return "error"
+
+
+def _looks_like_sse_response(body: str) -> bool:
+    text = str(body or "").lstrip()
+    return text.startswith("event:") or text.startswith("data:")
 
 
 def sanitize_probe_error(text: str, *, headers: dict[str, str]) -> str:

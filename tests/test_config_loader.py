@@ -223,6 +223,32 @@ def test_openai_codex_auth_does_not_require_api_key(monkeypatch, tmp_path):
     assert "apiKey" not in provider
 
 
+def test_openai_codex_auth_allows_chat_completions_configuration(monkeypatch, tmp_path):
+    config_path = tmp_path / "moduleProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "official-chat": {
+                    "type": "openai",
+                    "authMode": "codex",
+                    "responsesApi": False,
+                    "model": "gpt-test",
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    provider = ConfigLoader().get_provider_config("official-chat")
+
+    assert provider["authMode"] == "codex"
+    assert provider["responsesApi"] is False
+    assert provider["baseUrl"] == "https://chatgpt.com/backend-api/codex"
+    assert "apiKey" not in provider
+
+
 def test_codex_auth_rejects_non_openai_provider(monkeypatch, tmp_path):
     config_path = tmp_path / "moduleProvider.json"
     config_path.write_text(

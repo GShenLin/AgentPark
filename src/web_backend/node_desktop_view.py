@@ -188,7 +188,15 @@ class NodeDesktopViewDomain(DomainBase):
         graph_id = str(view.get("graph_id") or "").strip()
         node_id = str(view.get("node_id") or "").strip()
         projected = dict(view)
-        projected["node"] = self._read_node_snapshot(graph_id, node_id)
+        try:
+            projected["node"] = self._read_node_snapshot(graph_id, node_id)
+            projected["available"] = True
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            projected["node"] = None
+            projected["available"] = False
+            projected["unavailable_reason"] = str(exc.detail or "node instance not found")
         live = self.core.node_live_outputs.get(graph_id, node_id)
         projected["live"] = live if isinstance(live, dict) else {}
         return projected

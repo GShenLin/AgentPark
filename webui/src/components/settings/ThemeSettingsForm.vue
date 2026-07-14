@@ -207,6 +207,7 @@ function setPanelField(groupId: string, key: string, value: unknown) {
 
 function isColorField(groupId: string, key: string, value: unknown) {
   if (NON_COLOR_KEYS.has(key)) return false
+  if (groupId === 'font' || /font(?:size)?$/i.test(key)) return false
   const text = String(value ?? '').trim()
   return Boolean(parseColor(text) || COLOR_FIELD_RE.test(`${groupId} ${key}`))
 }

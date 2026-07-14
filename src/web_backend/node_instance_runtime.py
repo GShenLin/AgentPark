@@ -20,6 +20,7 @@ from .shared import (
     _touch_node_config_last_run_at,
     _update_node_config_state,
     _write_json_dict,
+    _resume_node_config_with_held_outputs,
     envelope_preview,
     envelope_text,
     normalize_envelope,
@@ -37,24 +38,51 @@ def _memory_role(record: dict) -> str:
 
 
 def _select_latest_turn_records(records: list[dict], history_mode: str) -> list[dict]:
-    final_assistant_index = -1
+    final_response_index = -1
     for index in range(len(records) - 1, -1, -1):
-        if _memory_role(records[index]) in {"assistant", "agent"}:
-            final_assistant_index = index
+        if _memory_role(records[index]) in {"assistant", "agent", "system"}:
+            final_response_index = index
             break
 
     visible: list[dict] = []
     for index, record in enumerate(records):
         role = _memory_role(record)
-        if role in {"user", "human"} or index == final_assistant_index:
+        if role in {"user", "human"} or index == final_response_index:
             visible.append(record)
             continue
-        if history_mode == "latest_turn_progress" and (final_assistant_index < 0 or index < final_assistant_index):
+        if history_mode == "latest_turn_progress" and (final_response_index < 0 or index < final_response_index):
             visible.append(record)
             continue
-        if history_mode == "latest_turn_metadata" and final_assistant_index >= 0 and index > final_assistant_index:
+        if history_mode == "latest_turn_metadata" and final_response_index >= 0 and index > final_response_index:
             visible.append(record)
     return visible
+
+
+def _latest_turn_progress_summary(records: list[dict]) -> dict[str, int]:
+    turn_start = -1
+    for index in range(len(records) - 1, -1, -1):
+        if _memory_role(records[index]) in {"user", "human"}:
+            turn_start = index
+            break
+    turn_records = records[turn_start:] if turn_start >= 0 else []
+    final_response_index = -1
+    for index in range(len(turn_records) - 1, 0, -1):
+        if _memory_role(turn_records[index]) in {"assistant", "agent", "system"}:
+            final_response_index = index
+            break
+    progress_end = final_response_index if final_response_index >= 0 else len(turn_records)
+    visible_records = turn_records[1:progress_end]
+    tool_count = 0
+    for record in visible_records:
+        parts = record.get("parts")
+        if not isinstance(parts, list):
+            continue
+        tool_count += sum(
+            1
+            for part in parts
+            if isinstance(part, dict) and str(part.get("type") or "").strip() == "tool_call"
+        )
+    return {"item_count": len(visible_records), "tool_count": tool_count}
 
 
 class NodeInstanceRuntime(HostBoundService):
@@ -209,6 +237,9 @@ class NodeInstanceRuntime(HostBoundService):
             history_complete = effective_limit is None or len(records) < max(0, int(effective_limit))
             text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
         messages = [normalize_envelope(item, default_role="assistant") for item in records]
+        progress_summary = _latest_turn_progress_summary(
+            latest_turn_records if safe_history_mode in lazy_turn_modes else records
+        )
         current_paths = current_node_memory_paths(memory_path, messages_path)
         live = self.core.node_live_outputs.get(graph_id, node_id) or {}
         return {
@@ -219,6 +250,7 @@ class NodeInstanceRuntime(HostBoundService):
             "history_complete": history_complete,
             "latest_turn_progress_loaded": safe_history_mode in {"all", "recent", "latest_turn_progress"},
             "latest_turn_metadata_loaded": safe_history_mode in {"all", "recent", "latest_turn_metadata"},
+            "latest_turn_progress_summary": progress_summary,
             "state": parse_node_state(cfg.get("state")) if isinstance(cfg, dict) else "idle",
             "last_message": str(cfg.get("last_message") or "") if isinstance(cfg, dict) else "",
             "live_message": str(live.get("text") or ""),
@@ -331,12 +363,46 @@ class NodeInstanceRuntime(HostBoundService):
         if bool((current or {}).get("_delete_requested")):
             raise HTTPException(status_code=409, detail="node is being deleted")
         mapped = parse_node_state((payload or {}).get("state"))
-        _update_node_config_state(config_path, mapped)
+        released_groups = _resume_node_config_with_held_outputs(config_path) if mapped == "idle" else []
+        if mapped != "idle":
+            _update_node_config_state(config_path, mapped)
         self.graph_runtime._log_graph_event(safe_graph_id, "node_state_set", node_id=safe_node_id, state=mapped)
         if mapped == "idle":
+            released_tasks = 0
+            for group in released_groups:
+                tasks = group.get("tasks")
+                if not isinstance(tasks, list):
+                    continue
+                trace_id = str(group.get("trace_id") or "").strip()
+                from_node = str(group.get("from_node") or safe_node_id).strip() or safe_node_id
+                visited = group.get("next_visited")
+                next_visited = [str(item) for item in visited if item is not None][-50:] if isinstance(visited, list) else [safe_node_id]
+                released_tasks += self.graph_runtime._enqueue_graph_tasks(
+                    tasks,
+                    safe_graph_id,
+                    from_node,
+                    trace_id,
+                    next_visited,
+                )
+            if released_groups:
+                self.graph_runtime._log_graph_event(
+                    safe_graph_id,
+                    "propagation_resumed",
+                    node_id=safe_node_id,
+                    held_output_count=len(released_groups),
+                    released_task_count=released_tasks,
+                )
             self.graph_runtime._ensure_graph_runner(safe_graph_id)
             self.graph_runtime._wake_graph_runner(safe_graph_id)
-        return {"ok": True, "state": mapped}
+        else:
+            released_groups = []
+            released_tasks = 0
+        return {
+            "ok": True,
+            "state": mapped,
+            "released_output_count": len(released_groups),
+            "released_task_count": released_tasks,
+        }
 
     def control_node_instance(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)

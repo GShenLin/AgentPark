@@ -19,6 +19,7 @@ TOOL_CALLS_LOG_FILENAME = "tool_calls.jsonl"
 TOOL_STATS_SUMMARY_FILENAME = "summary.json"
 TOOL_STATS_ERRORS_FILENAME = "errors.jsonl"
 DEFAULT_RECENT_TOOL_CALL_LIMIT = 50
+DEFAULT_FAILURE_ANALYSIS_LIMIT = 2000
 
 _LOCK = threading.Lock()
 
@@ -157,10 +158,14 @@ def clear_tool_stats() -> None:
 
 
 def load_recent_tool_call_stats(limit: int = DEFAULT_RECENT_TOOL_CALL_LIMIT) -> list[dict[str, Any]]:
+    return load_tool_call_stats(limit=limit)
+
+
+def load_tool_call_stats(limit: int = DEFAULT_FAILURE_ANALYSIS_LIMIT) -> list[dict[str, Any]]:
     try:
         safe_limit = int(limit)
     except (TypeError, ValueError) as exc:
-        raise ValueError("recent tool call limit must be an integer") from exc
+        raise ValueError("tool call stat limit must be an integer") from exc
     if safe_limit <= 0:
         return []
 

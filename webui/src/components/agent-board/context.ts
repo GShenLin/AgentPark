@@ -129,6 +129,7 @@ export type AgentBoardContext = {
   cancelBoardViewportScroll: () => void
   openNodeSettings: (id: string) => void
   openNodeFolder: (id: string) => Promise<void>
+  openWorkFolder: (id: string) => Promise<void>
   openGraphPanel: () => void
   triggerNode: (nodeId: string) => Promise<void>
   startClockNode: (nodeId: string) => Promise<void>

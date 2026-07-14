@@ -15,6 +15,7 @@ const menuLeft = ref(0)
 const menuTop = ref(0)
 const targetNodeId = ref('')
 const launchingPet = ref(false)
+const openingFolder = ref<'node' | 'work' | null>(null)
 
 function closeMenu() {
   showMenu.value = false
@@ -50,6 +51,22 @@ async function showPet() {
     ctx.lastError.value = String(error?.message || error)
   } finally {
     launchingPet.value = false
+  }
+}
+
+async function openFolder(kind: 'node' | 'work') {
+  const nodeId = String(targetNodeId.value || '').trim()
+  if (!nodeId || openingFolder.value) return
+  openingFolder.value = kind
+  try {
+    if (kind === 'node') {
+      await ctx.openNodeFolder(nodeId)
+    } else {
+      await ctx.openWorkFolder(nodeId)
+    }
+    closeMenu()
+  } finally {
+    openingFolder.value = null
   }
 }
 
@@ -116,10 +133,16 @@ defineExpose({
         @pointerdown.stop
         @contextmenu.prevent
       >
-        <button class="node-menu-item" :disabled="launchingPet" @click="showPet">
+        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="showPet">
           {{ launchingPet ? 'ShowingPet...' : 'ShowPet' }}
         </button>
-        <button class="node-menu-item" :disabled="launchingPet" @click="saveToProfile">SaveToProfile</button>
+        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="openFolder('node')">
+          {{ openingFolder === 'node' ? 'OpeningNodeFolder...' : 'OpenNodeFolder' }}
+        </button>
+        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="openFolder('work')">
+          {{ openingFolder === 'work' ? 'OpeningWorkFolder...' : 'OpenWorkFolder' }}
+        </button>
+        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="saveToProfile">SaveToProfile</button>
       </section>
     </div>
   </Teleport>

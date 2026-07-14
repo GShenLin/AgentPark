@@ -30,6 +30,11 @@ import {
   normalizeSchemaFieldValue,
 } from '../../composables/nodeSchemaFields'
 import FieldMultiSelect from './FieldMultiSelect.vue'
+import {
+  createNodeConfigFieldSections,
+  type NodeConfigFieldGroupId,
+  type NodeConfigFieldSection,
+} from './nodeConfigFieldGroups'
 import WorkingPathField from './WorkingPathField.vue'
 
 type NodeFields = Record<string, any>
@@ -70,6 +75,12 @@ const promptLibraryField = ref('')
 const promptLibraryFiles = ref<string[]>([])
 const promptSaveFilename = ref('system_prompt.txt')
 const schemaKeys = computed(() => Object.keys(props.schema || {}).filter((key) => shouldShowField(key)))
+const fieldSections = computed(() => createNodeConfigFieldSections(props.typeId, schemaKeys.value))
+const fieldGroupOpen = ref<Record<NodeConfigFieldGroupId, boolean>>({
+  environment: true,
+  behavior: false,
+  ability: false,
+})
 const modeOptions = computed(() => {
   const discovered = props.providers.flatMap((provider) => providerModes(provider))
   const merged = dedupeStrings([...defaultModeOrder, ...discovered].map((mode) => normalizeMode(mode)))
@@ -405,10 +416,34 @@ function getReasoningEffortValue() {
   return props.fields.reasoning_effort ?? 'high'
 }
 
+function resetFieldGroups() {
+  fieldGroupOpen.value = {
+    environment: true,
+    behavior: false,
+    ability: false,
+  }
+}
+
+function isFieldGroupOpen(section: NodeConfigFieldSection) {
+  if (!section.collapsible) return true
+  return fieldGroupOpen.value[section.id as NodeConfigFieldGroupId]
+}
+
+function onFieldGroupToggle(section: NodeConfigFieldSection, event: Event) {
+  if (!section.collapsible) return
+  const target = event.currentTarget
+  if (!(target instanceof HTMLDetailsElement)) return
+  fieldGroupOpen.value = {
+    ...fieldGroupOpen.value,
+    [section.id]: target.open,
+  }
+}
+
 watch(
-  () => props.resetKey,
+  () => [props.resetKey, props.typeId],
   () => {
     multiSelectSearchQueries.value = {}
+    resetFieldGroups()
   },
 )
 
@@ -416,47 +451,61 @@ watch(
 
 <template>
   <div class="node-config-fields">
-    <label
-      v-for="key in schemaKeys"
-      :key="key"
-      class="field"
-      :class="{
-        'field-check': getFieldType(key) === 'boolean',
-        'field-drop-target': dropTargetKey === key,
-        'field-busy': uploadingKey === key,
-      }"
+    <component
+      :is="section.collapsible ? 'details' : 'div'"
+      v-for="section in fieldSections"
+      :key="section.id"
+      :class="section.collapsible ? 'config-field-group' : 'config-field-ungrouped'"
+      :open="section.collapsible ? isFieldGroupOpen(section) : undefined"
+      @toggle="onFieldGroupToggle(section, $event)"
     >
-      <span class="field-head" :class="{ 'field-head-search': isDropdownMultiSelectField(key) }">
-        <span class="field-label">{{ getFieldLabel(key) }}</span>
-        <span v-if="isPromptLibraryField(key)" class="field-prompt-actions">
-          <button
-            class="field-prompt-btn field-prompt-save"
-            type="button"
-            :disabled="!!promptActionBusy"
-            @click.prevent.stop="openPromptLibraryForField('save', key)"
-          >
-            Save
-          </button>
-          <button
-            class="field-prompt-btn field-prompt-load"
-            type="button"
-            :disabled="!!promptActionBusy"
-            @click.prevent.stop="openPromptLibraryForField('load', key)"
-          >
-            {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
-          </button>
-        </span>
-        <input
-          v-if="isDropdownMultiSelectField(key)"
-          class="field-search-input"
-          type="search"
-          :placeholder="getMultiSelectSearchPlaceholder(key)"
-          :value="getMultiSelectSearchQuery(key)"
-          @click.stop
-          @keydown.stop
-          @input="setMultiSelectSearchQuery(key, ($event.target as HTMLInputElement).value)"
-        />
-      </span>
+      <summary v-if="section.collapsible" class="config-field-group-summary">
+        <span>{{ section.label }}</span>
+        <span class="config-field-group-chevron" aria-hidden="true">›</span>
+      </summary>
+
+      <div class="config-field-group-fields">
+        <label
+          v-for="key in section.keys"
+          :key="key"
+          class="field"
+          :class="{
+            'field-check': getFieldType(key) === 'boolean',
+            'field-drop-target': dropTargetKey === key,
+            'field-busy': uploadingKey === key,
+          }"
+        >
+          <span class="field-head" :class="{ 'field-head-search': isDropdownMultiSelectField(key) }">
+            <span class="field-label">{{ getFieldLabel(key) }}</span>
+            <span v-if="isPromptLibraryField(key)" class="field-prompt-actions">
+              <button
+                class="field-prompt-btn field-prompt-save"
+                type="button"
+                :disabled="!!promptActionBusy"
+                @click.prevent.stop="openPromptLibraryForField('save', key)"
+              >
+                Save
+              </button>
+              <button
+                class="field-prompt-btn field-prompt-load"
+                type="button"
+                :disabled="!!promptActionBusy"
+                @click.prevent.stop="openPromptLibraryForField('load', key)"
+              >
+                {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
+              </button>
+            </span>
+            <input
+              v-if="isDropdownMultiSelectField(key)"
+              class="field-search-input"
+              type="search"
+              :placeholder="getMultiSelectSearchPlaceholder(key)"
+              :value="getMultiSelectSearchQuery(key)"
+              @click.stop
+              @keydown.stop
+              @input="setMultiSelectSearchQuery(key, ($event.target as HTMLInputElement).value)"
+            />
+          </span>
 
       <select
         v-if="isModeField(key)"
@@ -620,10 +669,12 @@ watch(
         </template>
       </div>
 
-      <span v-if="getFieldHint(key)" class="field-hint">{{ getFieldHint(key) }}</span>
-      <span v-if="isPromptLibraryField(key) && promptLibraryField === key && promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
-      <span v-if="enableAssetDrop && isAssetFieldKey(key)" class="field-drop-hint">Drop files here to upload and fill this asset field.</span>
-    </label>
+          <span v-if="getFieldHint(key)" class="field-hint">{{ getFieldHint(key) }}</span>
+          <span v-if="isPromptLibraryField(key) && promptLibraryField === key && promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
+          <span v-if="enableAssetDrop && isAssetFieldKey(key)" class="field-drop-hint">Drop files here to upload and fill this asset field.</span>
+        </label>
+      </div>
+    </component>
   </div>
 </template>
 
@@ -636,6 +687,58 @@ watch(
 
 .node-config-fields {
   gap: 12px;
+}
+
+.config-field-ungrouped,
+.config-field-group-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-field-group {
+  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+
+.config-field-group-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--theme-panel-node-side-editor-text-secondary, #cbd5e1);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+  user-select: none;
+}
+
+.config-field-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.config-field-group-summary:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.config-field-group-chevron {
+  color: rgba(148, 163, 184, 0.82);
+  font-size: 18px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.16s ease;
+}
+
+.config-field-group[open] .config-field-group-chevron {
+  transform: rotate(90deg);
+}
+
+.config-field-group-fields {
+  padding: 2px 12px 12px;
 }
 
 .field {
@@ -679,7 +782,7 @@ watch(
   background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
   color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
   line-height: 1.2;
   outline: none;
 }
@@ -750,7 +853,7 @@ watch(
   flex: 1 1 auto;
   min-width: 0;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
 }
 
 .field-prompt-select,
@@ -782,6 +885,7 @@ watch(
   background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
   color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
   padding: 10px 12px;
+  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
   outline: none;
 }
 

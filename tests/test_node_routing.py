@@ -60,7 +60,12 @@ def test_parse_node_output_preserves_memory_sidecars_outside_display_message():
                     "parts": [
                         {
                             "type": "structured",
-                            "data": {"assistant_message_id": "a1", "response_metadata": {"response": {"id": "r1"}}},
+                            "data": {
+                                "kind": "response_metadata",
+                                "scope": "final_assistant",
+                                "target": {"type": "message", "message_id": "a1"},
+                                "response_metadata": {"response": {"id": "r1"}},
+                            },
                         }
                     ],
                 }

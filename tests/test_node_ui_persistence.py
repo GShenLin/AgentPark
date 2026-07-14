@@ -476,6 +476,60 @@ def test_get_node_instance_memory_returns_empty_payload_before_any_history_exist
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
 
+def test_latest_turn_memory_returns_progress_counts_without_loading_progress_details():
+    import src.web_backend as backend
+    from fastapi.testclient import TestClient
+    from src.web_backend.node_memory_store import append_node_memory_entry
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graph_id = f"ut_lazy_progress_{uuid.uuid4().hex[:8]}"
+    node_id = "agent1"
+    facade = backend.WebBackendFacade()
+    app = facade.build()
+
+    try:
+        client = TestClient(app)
+        created = client.post(
+            "/api/nodes/instances",
+            json={"node_id": node_id, "type_id": "agent_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+        )
+        assert created.status_code == 200
+        node_dir = os.path.join(_get_graphs_dir(), graph_id, node_id)
+        memory_path = os.path.join(node_dir, "memory.md")
+        messages_path = os.path.join(node_dir, "messages.jsonl")
+        append_node_memory_entry(memory_path, messages_path, "user", {"role": "user", "parts": [{"type": "text", "text": "start"}]})
+        append_node_memory_entry(
+            memory_path,
+            messages_path,
+            "assistant_progress",
+            {"role": "assistant_progress", "parts": [{"type": "text", "text": "checking"}]},
+        )
+        append_node_memory_entry(
+            memory_path,
+            messages_path,
+            "tool",
+            {"role": "tool", "parts": [{"type": "tool_call", "name": "read_file", "status": "completed"}]},
+        )
+        append_node_memory_entry(
+            memory_path,
+            messages_path,
+            "assistant",
+            {"role": "assistant", "parts": [{"type": "text", "text": "done"}]},
+        )
+
+        response = client.get(
+            f"/api/nodes/instances/{node_id}/memory?graph_id={graph_id}&history_mode=latest_turn"
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert [message["role"] for message in payload["messages"]] == ["user", "assistant"]
+        assert payload["latest_turn_progress_loaded"] is False
+        assert payload["latest_turn_progress_summary"] == {"item_count": 2, "tool_count": 1}
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
 def test_clear_node_instance_memory_resets_visible_runtime_summary():
     import src.web_backend as backend
     from fastapi.testclient import TestClient

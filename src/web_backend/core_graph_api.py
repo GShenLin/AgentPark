@@ -1,8 +1,10 @@
 from .domain_base import DomainBase
 from .shared import *
 from .graph_api_storage import GraphApiStorage
+from .graph_visibility import GraphVisibilityService
 from .graph_runtime_registry import GraphConfigReadError
 from .node_state_machine import parse_node_state
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 from ..workspace_settings import (
     read_startup_graph_settings,
@@ -33,23 +35,35 @@ class GraphApiDomain(DomainBase):
         except AttributeError:
             cached = None
         if cached is None:
-            cached = (GraphApiStorage(self),)
+            cached = (GraphVisibilityService(self), GraphApiStorage(self))
             object.__setattr__(self, "_service_targets_cache", cached)
         return cached
 
-    def get_startup_graph_config(self):
+    def get_startup_graph_config(self, request: Request = None):
         cfg = read_startup_graph_settings()
         graph_id = self.graph_runtime._sanitize_graph_id(cfg.get("graph_id") or self.default_graph_id)
         graph_name = str(cfg.get("graph_name") or "").strip() or graph_id
+        try:
+            self.require_graph_visible(graph_id, request)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            visible_graphs = self.list_graphs(request).get("graphs", [])
+            if not visible_graphs:
+                raise HTTPException(status_code=404, detail="no public graph found") from exc
+            first_graph = visible_graphs[0]
+            graph_id = str(first_graph.get("id") or "").strip()
+            graph_name = str(first_graph.get("name") or graph_id).strip() or graph_id
         return {"graph_id": graph_id, "graph_name": graph_name}
 
-    def set_startup_graph_config(self, payload: dict):
+    def set_startup_graph_config(self, payload: dict, request: Request = None):
         graph_id = str((payload or {}).get("graph_id") or "").strip()
         graph_name = str((payload or {}).get("graph_name") or "").strip()
         if not graph_id:
             raise HTTPException(status_code=400, detail="graph_id is required")
 
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        self.require_graph_visible(safe_graph_id, request)
         try:
             save_startup_graph_settings(safe_graph_id, graph_name or safe_graph_id)
         except Exception:
@@ -186,18 +200,21 @@ class GraphApiDomain(DomainBase):
                 _transition_node_config_to_idle(cfg_path)
         return {"status": run["status"]}
 
-    def start_graph_runner(self, graph_id: str):
+    def start_graph_runner(self, graph_id: str, request: Request = None):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        self.require_graph_visible(safe_id, request)
         self.graph_runtime._ensure_graph_runner(safe_id)
         self.graph_runtime._log_graph_event(safe_id, "runner_start_api")
         return {"ok": True, "graph_id": safe_id}
 
-    def get_graph_runner_status(self, graph_id: str):
+    def get_graph_runner_status(self, graph_id: str, request: Request = None):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        self.require_graph_visible(safe_id, request)
         return self.graph_runtime._runner_status(safe_id)
 
-    def stream_graph_events(self, graph_id: str):
+    def stream_graph_events(self, graph_id: str, request: Request = None):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        self.require_graph_visible(safe_id, request)
 
         def encode_event(item: dict) -> str:
             payload = dict(item or {})
@@ -224,8 +241,9 @@ class GraphApiDomain(DomainBase):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    def emit_graph(self, graph_id: str, payload: dict):
+    def emit_graph(self, graph_id: str, payload: dict, request: Request = None):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        self.require_graph_visible(safe_graph_id, request)
         trace_id = (payload or {}).get("trace_id")
         if not isinstance(trace_id, str) or not trace_id.strip():
             trace_id = uuid.uuid4().hex

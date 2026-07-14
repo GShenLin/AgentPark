@@ -122,6 +122,7 @@ export type GraphConfig = {
   source_graph_id?: string
   version?: number
   unchanged?: boolean
+  private?: boolean
 }
 
 export type GraphInfo = {
@@ -131,6 +132,8 @@ export type GraphInfo = {
   readonly?: boolean
   deletable?: boolean
   editable?: boolean
+  private?: boolean
+  visibility_editable?: boolean
 }
 
 export type AgentProfile = {
@@ -422,6 +425,11 @@ export type MemoryHistoryMode =
   | 'latest_turn_progress'
   | 'latest_turn_metadata'
 
+export type LatestTurnProgressSummary = {
+  item_count: number
+  tool_count: number
+}
+
 export type PendingNodeInput = {
   payload: string | MessageEnvelope
   depth: number
@@ -610,6 +618,7 @@ export type MobileNodeConversation = {
   history_complete?: boolean
   latest_turn_progress_loaded?: boolean
   latest_turn_metadata_loaded?: boolean
+  latest_turn_progress_summary?: LatestTurnProgressSummary
   state?: NodeInstanceState
   last_message?: string
   live_message?: string

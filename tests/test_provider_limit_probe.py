@@ -164,6 +164,210 @@ def test_provider_limit_probe_tests_deepseek_chat_completions_only(monkeypatch, 
     assert any(payload.get("thinking") == {"type": "disabled"} for _url, payload in observed)
 
 
+def test_provider_limit_probe_tests_grok_chat_and_responses_contracts(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.provider_limit_probe import run_provider_limit_tests
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "moduleProvider.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "grok-demo": {
+                        "type": "grok",
+                        "apiKey": "test-key",
+                        "baseUrl": "https://api.x.ai/v1/responses",
+                        "model": "grok-4.5",
+                        "responsesApi": True,
+                        "reasoningEffort": "high",
+                        "responsesReplayReasoningItems": False,
+                        "toolResultSubmissionMaxChars": 50000,
+                        "toolContextCompactionEnabled": False,
+                        "toolContextCompactionEveryToolCalls": 10,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    observed = []
+
+    def fake_curl_post_once_raw(self, *, url, headers, payload_json, timeout_sec, marker, no_buffer=False):
+        _ = self, headers, timeout_sec, marker, no_buffer
+        observed.append((url, json.loads(payload_json)))
+        return _FakeResponse()
+
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw", fake_curl_post_once_raw)
+
+    result = run_provider_limit_tests(timeout_seconds=1)
+    provider = result["providers"]["grok-demo"]
+    chat = provider["channels"]["chat_completions"]
+    responses = provider["channels"]["responses"]
+
+    assert provider["accessible"] is True
+    assert provider["test_channel"] == "responses"
+    assert set(provider["channels"]) == {"chat_completions", "responses"}
+    assert chat["test_endpoint"] == "https://api.x.ai/v1/chat/completions"
+    assert responses["test_endpoint"] == "https://api.x.ai/v1/responses"
+    assert chat["features"]["responses_api"]["supported"] is False
+    assert responses["features"]["responses_api"]["supported"] is True
+    assert responses["features"]["web_search"]["supported"] is True
+    assert responses["features"]["thinking"]["supported"] is False
+    assert chat["features"]["reasoning_effort"]["supported_values"] == ["low", "medium", "high"]
+    assert responses["features"]["reasoning_effort"]["supported_values"] == ["low", "medium", "high"]
+    assert responses["features"]["reasoning_effort"]["values"]["xhigh"]["supported"] is False
+
+    chat_payloads = [payload for url, payload in observed if url.endswith("/chat/completions")]
+    responses_payloads = [payload for url, payload in observed if url.endswith("/responses")]
+    assert all("messages" in payload and "input" not in payload for payload in chat_payloads)
+    assert all("input" in payload and "messages" not in payload for payload in responses_payloads)
+    assert {payload["reasoning_effort"] for payload in chat_payloads if "reasoning_effort" in payload} == {
+        "low",
+        "medium",
+        "high",
+    }
+    assert {payload["reasoning"]["effort"] for payload in responses_payloads if "reasoning" in payload} == {
+        "low",
+        "medium",
+        "high",
+    }
+    assert any(payload.get("tools") == [{"type": "web_search"}] for payload in responses_payloads)
+    assert not any("thinking" in payload for _url, payload in observed)
+
+
+def test_provider_limit_probe_uses_codex_oauth_for_responses_channel(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.provider_auth.credentials import ProviderRequestCredentials
+    from src.provider_limit_probe import run_provider_limit_tests
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "moduleProvider.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "oauth-demo": {
+                        "type": "openai",
+                        "authMode": "codex",
+                        "baseUrl": "https://chatgpt.com/backend-api/codex",
+                        "model": "gpt-test",
+                        "responsesApi": True,
+                        "responsesReplayReasoningItems": True,
+                        "toolResultSubmissionMaxChars": 50000,
+                        "toolContextCompactionEnabled": False,
+                        "toolContextCompactionEveryToolCalls": 10,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        "src.provider_limit_probe.resolve_provider_request_credentials",
+        lambda _config: ProviderRequestCredentials(
+            base_url="https://chatgpt.com/backend-api/codex",
+            headers={
+                "Authorization": "Bearer oauth-token",
+                "ChatGPT-Account-ID": "account-id",
+            },
+        ),
+    )
+    observed = []
+
+    def fake_curl_post_once_raw(self, *, url, headers, payload_json, timeout_sec, marker, no_buffer=False):
+        _ = self, timeout_sec, marker, no_buffer
+        observed.append((url, headers, json.loads(payload_json)))
+        return _FakeResponse()
+
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw", fake_curl_post_once_raw)
+
+    result = run_provider_limit_tests(timeout_seconds=1)
+    provider = result["providers"]["oauth-demo"]
+
+    assert provider["accessible"] is True
+    assert provider["test_channel"] == "responses"
+    assert set(provider["channels"]) == {"responses"}
+    assert {url for url, _headers, _payload in observed} == {
+        "https://chatgpt.com/backend-api/codex/responses",
+    }
+    assert all(headers["Authorization"] == "Bearer oauth-token" for _url, headers, _payload in observed)
+    assert all(headers["ChatGPT-Account-ID"] == "account-id" for _url, headers, _payload in observed)
+    assert all("input" in payload for url, _headers, payload in observed if url.endswith("/responses"))
+
+
+def test_provider_limit_probe_keeps_network_failures_out_of_unsupported(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.provider_limit_probe import run_provider_limit_tests
+    from src.providers.curl_transport import CurlTransportError
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "moduleProvider.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "openai",
+                        "apiKey": "test-key",
+                        "baseUrl": "https://example.test/v1",
+                        "model": "demo-model",
+                        "responsesApi": True,
+                        "responsesReplayReasoningItems": False,
+                        "toolResultSubmissionMaxChars": 50000,
+                        "toolContextCompactionEnabled": False,
+                        "toolContextCompactionEveryToolCalls": 10,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    def fail_curl(*_args, **_kwargs):
+        raise CurlTransportError("connection timed out")
+
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw", fail_curl)
+
+    result = run_provider_limit_tests(timeout_seconds=1)
+    provider = result["providers"]["demo"]
+
+    assert provider["accessible"] is False
+    assert provider["status"] == "unavailable"
+    for channel in provider["channels"].values():
+        assert channel["features"]["access"]["outcome"] == "unreachable"
+        assert "access" not in channel["unsupported"]
+        assert "access" in channel["inconclusive"]
+        assert channel["features"]["reasoning_effort"]["outcome"] == "not_tested"
+        assert "reasoning_effort" not in channel["unsupported"]
+
+
+def test_provider_limit_http_classifies_http_failures(monkeypatch):
+    from src.provider_limit_http import post_json_probe
+
+    monkeypatch.setattr(
+        "src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw",
+        lambda *_args, **_kwargs: _FakeResponse('{"error":"busy"}', 429),
+    )
+    rate_limited = post_json_probe("https://example.test", {}, {}, timeout_seconds=1)
+    monkeypatch.setattr(
+        "src.providers.curl_transport.CurlHttpTransport._curl_post_once_raw",
+        lambda *_args, **_kwargs: _FakeResponse('{"error":"bad field"}', 400),
+    )
+    unsupported = post_json_probe("https://example.test", {}, {}, timeout_seconds=1)
+
+    assert rate_limited.outcome == "rate_limited"
+    assert rate_limited.conclusively_unsupported is False
+    assert unsupported.outcome == "unsupported"
+    assert unsupported.conclusively_unsupported is True
+
+
 def test_provider_limit_probe_tests_claude_native_messages_features(monkeypatch, tmp_path):
     from src import workspace_settings
     from src.provider_limit_probe import run_provider_limit_tests
@@ -418,3 +622,42 @@ def test_provider_model_discovery_strips_gemini_model_prefix(monkeypatch, tmp_pa
     result = run_provider_model_discovery(timeout_seconds=1)
 
     assert result["providers"]["gem"]["available_model_ids"] == ["gemini-3-pro-preview"]
+
+
+def test_provider_model_discovery_supports_grok_models_endpoint(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.provider_model_discovery import run_provider_model_discovery
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "moduleProvider.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "grok": {
+                        "type": "grok",
+                        "apiKey": "test-key",
+                        "baseUrl": "https://api.x.ai/v1",
+                        "model": "grok-4.5",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    def fake_curl_get_text_once_raw(self, *, url, headers, timeout_sec, marker):
+        _ = self, headers, timeout_sec, marker
+        assert url == "https://api.x.ai/v1/models"
+        return _FakeResponse(json.dumps({"data": [{"id": "grok-4.5"}]}))
+
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport._curl_get_text_once_raw", fake_curl_get_text_once_raw)
+
+    result = run_provider_model_discovery(timeout_seconds=1)
+
+    provider = result["providers"]["grok"]
+    assert provider["available_model_ids"] == ["grok-4.5"]
+    assert provider["model_discovery"]["supported"] is True
+    assert provider["test_channel"] == "chat_completions"

@@ -14,11 +14,13 @@ from src.provider_limit_channel import openai_compatible_endpoint_url
 from src.provider_limit_channel import provider_test_channels
 from src.provider_limit_channel import resolve_provider_test_channel
 from src.provider_limit_doubao import test_doubao_limits
+from src.provider_limit_grok import test_grok_limits
 from src.provider_limit_hyper3d import test_hyper3d_limits
 from src.provider_limit_http import post_json_probe
 from src.provider_limit_native_chat import test_gemini_limits
 from src.provider_limit_native_chat import test_zhipu_limits
 from src.provider_limit_openai import test_openai_limits
+from src.provider_auth import resolve_provider_request_credentials
 from src.provider_limit_schema import PROVIDER_LIMIT_SCHEMA_VERSION
 from src.provider_limit_schema import ProbeResult
 from src.provider_limit_schema import provider_limit_path
@@ -128,12 +130,13 @@ def _provider_probe_crash_payload(
         "accessible": False,
         "status": "unavailable",
         "access_error": reason,
-        "features": {"access": {"supported": False, "reason": reason}},
-        "unsupported": {"access": reason},
+        "features": {"access": {"supported": False, "outcome": "error", "reason": reason}},
+        "unsupported": {},
+        "inconclusive": {"access": reason},
         "channels": channel_payloads,
     }
     if provider_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
-        payload["test_endpoint"] = openai_compatible_endpoint_url(config, primary_channel)
+        payload["test_endpoint"] = _openai_probe_endpoint(config, primary_channel)
     return payload
 
 
@@ -153,11 +156,12 @@ def _channel_crash_payload(
         "accessible": False,
         "status": "unavailable",
         "access_error": reason,
-        "features": {"access": {"supported": False, "reason": reason}},
-        "unsupported": {"access": reason},
+        "features": {"access": {"supported": False, "outcome": "error", "reason": reason}},
+        "unsupported": {},
+        "inconclusive": {"access": reason},
     }
     if provider_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
-        payload["test_endpoint"] = openai_compatible_endpoint_url(config, channel)
+        payload["test_endpoint"] = _openai_probe_endpoint(config, channel)
     return payload
 
 
@@ -182,8 +186,17 @@ def test_provider_all_channels(
     primary = copy.deepcopy(channel_results[primary_channel])
     primary["channels"] = channel_results
     primary["accessible"] = any(bool(item.get("accessible")) for item in channel_results.values())
-    primary["status"] = "ok" if primary["accessible"] else "unavailable"
+    primary["status"] = _aggregate_provider_status(channel_results)
     return primary
+
+
+def _aggregate_provider_status(channel_results: dict[str, dict[str, Any]]) -> str:
+    if any(bool(item.get("accessible")) for item in channel_results.values()):
+        return "ok"
+    statuses = {str(item.get("status") or "unavailable") for item in channel_results.values()}
+    if statuses == {"unsupported"}:
+        return "unsupported"
+    return "unavailable"
 
 def test_provider_limits(
     provider_id: str,
@@ -204,15 +217,21 @@ def test_provider_limits(
         "accessible": False,
         "features": {},
         "unsupported": {},
+        "inconclusive": {},
     }
     if provider_type in OPENAI_COMPATIBLE_PROVIDER_TYPES:
-        result["test_endpoint"] = openai_compatible_endpoint_url(config, resolved_channel)
+        result["test_endpoint"] = _openai_probe_endpoint(config, resolved_channel)
 
     validation_error = _validate_common_config(config, provider_type)
     if validation_error:
         result["status"] = "unavailable"
         result["access_error"] = validation_error
-        _record_unsupported(result, "access", validation_error)
+        result["features"]["access"] = {
+            "supported": False,
+            "outcome": "not_tested",
+            "reason": validation_error,
+        }
+        result["inconclusive"]["access"] = validation_error
         record_static_contract_limits(result, provider_type, skip_access=True)
         return result
 
@@ -221,7 +240,12 @@ def test_provider_limits(
         reason = f"provider type '{provider_type or '<empty>'}' has no provider-limit probe"
         result["status"] = "unavailable"
         result["access_error"] = reason
-        _record_unsupported(result, "access", reason)
+        result["features"]["access"] = {
+            "supported": False,
+            "outcome": "not_tested",
+            "reason": reason,
+        }
+        result["inconclusive"]["access"] = reason
         record_static_contract_limits(result, provider_type, skip_access=True)
         return result
 
@@ -231,15 +255,28 @@ def test_provider_limits(
         timeout_seconds=max(1.0, float(timeout_seconds or 30.0)),
         test_channel=resolved_channel,
     )
-    result["accessible"] = bool((result.get("features") or {}).get("access", {}).get("supported"))
-    result["status"] = "ok" if result["accessible"] else "unavailable"
+    access = (result.get("features") or {}).get("access", {})
+    result["accessible"] = bool(access.get("supported"))
+    if result["accessible"]:
+        result["status"] = "ok"
+    elif access.get("outcome") == "unsupported":
+        result["status"] = "unsupported"
+    else:
+        result["status"] = "unavailable"
+    if not result["accessible"] and access.get("reason"):
+        result["access_error"] = str(access["reason"])
     return result
 
 def _validate_common_config(config: dict[str, Any], provider_type: str) -> str:
     if not provider_type:
         return "provider.type is required"
-    if not str(config.get("apiKey") or "").strip():
+    auth_mode = str(config.get("authMode") or "api_key").strip().lower()
+    if auth_mode == "codex" and provider_type != "openai":
+        return "provider.authMode 'codex' requires provider.type 'openai'"
+    if auth_mode == "api_key" and not str(config.get("apiKey") or "").strip():
         return "provider.apiKey is required"
+    if auth_mode not in {"api_key", "codex"}:
+        return f"unsupported provider.authMode: {auth_mode}"
     if provider_type != "hyper3d" and not str(config.get("model") or "").strip():
         return "provider.model is required"
     if not str(config.get("baseUrl") or "").strip():
@@ -252,6 +289,7 @@ def _tester_for_type(provider_type: str):
         "deepseek": _test_openai_compatible,
         "claude": _test_claude,
         "doubao": _test_doubao,
+        "grok": _test_grok,
         "zhipu": _test_zhipu,
         "gemini": _test_gemini,
         "hyper3d": _test_hyper3d,
@@ -274,7 +312,32 @@ def _test_openai_compatible(
             payload,
             timeout_seconds=timeout_seconds,
         ),
+        request_target=_openai_probe_request_target,
     )
+
+
+def _openai_probe_request_target(config: dict[str, Any], channel: str) -> tuple[str, dict[str, str]]:
+    auth_mode = str(config.get("authMode") or "api_key").strip().lower()
+    if auth_mode == "codex":
+        credentials = resolve_provider_request_credentials(config)
+        return (
+            openai_compatible_endpoint_url({"baseUrl": credentials.base_url}, channel),
+            {"Content-Type": "application/json", **credentials.headers},
+        )
+    return (
+        openai_compatible_endpoint_url(config, channel),
+        {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {str(config.get('apiKey') or '')}",
+        },
+    )
+
+
+def _openai_probe_endpoint(config: dict[str, Any], channel: str) -> str:
+    auth_mode = str(config.get("authMode") or "api_key").strip().lower()
+    if auth_mode == "codex":
+        return openai_compatible_endpoint_url({"baseUrl": "https://chatgpt.com/backend-api/codex"}, channel)
+    return openai_compatible_endpoint_url(config, channel)
 
 def _test_doubao(
     result: dict[str, Any],
@@ -288,6 +351,26 @@ def _test_doubao(
         config,
         test_channel=test_channel,
         timeout_seconds=timeout_seconds,
+        post_json_probe=lambda url, headers, payload: post_json_probe(
+            url,
+            headers,
+            payload,
+            timeout_seconds=timeout_seconds,
+        ),
+    )
+
+
+def _test_grok(
+    result: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    timeout_seconds: float,
+    test_channel: str,
+) -> None:
+    test_grok_limits(
+        result,
+        config,
+        test_channel=test_channel,
         post_json_probe=lambda url, headers, payload: post_json_probe(
             url,
             headers,
@@ -335,34 +418,6 @@ def _test_gemini(result: dict[str, Any], config: dict[str, Any], *, timeout_seco
 def _test_hyper3d(result: dict[str, Any], config: dict[str, Any], *, timeout_seconds: float, test_channel: str) -> None:
     _ = test_channel
     test_hyper3d_limits(result, config, timeout_seconds=timeout_seconds)
-
-
-def _set_feature(result: dict[str, Any], feature_name: str, probe: ProbeResult) -> None:
-    features = result.setdefault("features", {})
-    features[feature_name] = probe.to_payload()
-    if not probe.supported:
-        _record_unsupported(result, feature_name, probe.reason)
-
-
-def _set_value_features(result: dict[str, Any], feature_name: str, probes: dict[str, ProbeResult]) -> None:
-    supported_values = [value for value, probe in probes.items() if probe.supported]
-    values_payload = {value: probe.to_payload() for value, probe in probes.items()}
-    result.setdefault("features", {})[feature_name] = {
-        "supported": bool(supported_values),
-        "supported_values": supported_values,
-        "values": values_payload,
-    }
-    unsupported_values = {
-        value: probe.reason or "not supported"
-        for value, probe in probes.items()
-        if not probe.supported
-    }
-    if unsupported_values:
-        result.setdefault("unsupported", {})[feature_name] = unsupported_values
-
-
-def _record_unsupported(result: dict[str, Any], name: str, reason: str) -> None:
-    result.setdefault("unsupported", {})[name] = str(reason or "not supported")
 
 
 __all__ = ["run_provider_limit_tests", "test_provider_all_channels", "test_provider_limits"]

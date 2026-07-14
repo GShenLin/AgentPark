@@ -3,6 +3,7 @@ import time
 from typing import Callable
 
 from nodes.agent_assistant_memory import persist_assistant_progress
+from nodes.agent_assistant_memory import persist_provider_turn_metadata
 from nodes.agent_message_adapter import (
     append_channel_meta,
     build_agent_output_message,
@@ -271,6 +272,11 @@ class Node(BaseNode):
             memory_path=memory_path,
             messages_path=self._resolve_messages_path(ctx),
         )
+        persist_turn_metadata = lambda message: persist_provider_turn_metadata(
+            message=message,
+            memory_path=memory_path,
+            messages_path=self._resolve_messages_path(ctx),
+        )
 
         def consume_mid_turn_user_inputs() -> list[dict]:
             messages: list[dict] = []
@@ -310,6 +316,7 @@ class Node(BaseNode):
                 else "",
                 skill_resource_roots=capability_plan.skill_resource_roots,
                 persist_assistant_progress=persist_progress,
+                persist_provider_turn_metadata=persist_turn_metadata,
                 consume_mid_turn_user_inputs=consume_mid_turn_user_inputs,
             ),
         )
@@ -431,9 +438,17 @@ class Node(BaseNode):
             )
         output_message = build_agent_output_message(response_for_message)
         output_message = append_channel_meta(output_message, channel_meta_parts)
-        metadata_message = build_response_metadata_message(
+        final_metadata_message = build_response_metadata_message(
             metadata_source,
-            assistant_message_id=output_message.get("id"),
+            scope="final_assistant",
+            target_message_id=output_message.get("id"),
+            fields=("server_tool_calls", "citations", "response_metadata"),
+        )
+        run_metadata_message = build_response_metadata_message(
+            metadata_source,
+            scope="agent_run",
+            target_message_id=output_message.get("id"),
+            fields=("provider_requests",),
         )
         final_text = envelope_text(output_message).strip()
         stream_runtime.emit_done(final_text, structured_result=response_for_message)
@@ -442,8 +457,9 @@ class Node(BaseNode):
             "display_message": output_message,
             "routes": [{"output_index": 0, "payload": output_message}],
         }
-        if metadata_message is not None:
-            result["memory_sidecars"] = [metadata_message]
+        memory_sidecars = [item for item in (final_metadata_message, run_metadata_message) if item is not None]
+        if memory_sidecars:
+            result["memory_sidecars"] = memory_sidecars
         return result
 
 

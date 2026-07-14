@@ -180,6 +180,13 @@ DEFAULT_THEME_CONFIG = {
                 "secondary": "rgba(226, 232, 240, 0.94)",
                 "muted": "rgba(148, 163, 184, 0.92)",
             },
+            "font": {
+                "body": "13px",
+                "title": "13px",
+                "ui": "12px",
+                "meta": "11px",
+                "small": "11px",
+            },
             "border": {
                 "color": "rgba(148, 163, 184, 0.15)",
             },
@@ -329,6 +336,7 @@ DEFAULT_THEME_CONFIG = {
                 "text": "#f8fafc",
                 "border": "rgba(148, 163, 184, 0.22)",
                 "focusBorder": "rgba(56, 189, 248, 0.7)",
+                "fontSize": "13px",
             },
         },
         "canvasContextMenu": {

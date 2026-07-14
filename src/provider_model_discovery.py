@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import time
+import os
 from datetime import datetime
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 from src.config_loader import ConfigLoader
 from src.file_transaction import atomic_write_text
@@ -12,6 +14,7 @@ from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
 from src.provider_limit_schema import PROVIDER_LIMIT_SCHEMA_VERSION
 from src.provider_limit_schema import provider_limit_path
 from src.provider_limit_schema import read_provider_limit_file
+from src.provider_auth import resolve_provider_request_credentials
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -190,7 +193,7 @@ def _model_id_from_item(item: Any, provider_type: str) -> str:
     if isinstance(item, str):
         value = item
     elif isinstance(item, dict):
-        value = str(item.get("id") or item.get("name") or "").strip()
+        value = str(item.get("id") or item.get("slug") or item.get("name") or "").strip()
     else:
         value = ""
     if provider_type == "gemini" and value.startswith("models/"):
@@ -199,12 +202,17 @@ def _model_id_from_item(item: Any, provider_type: str) -> str:
 
 
 def _models_endpoint(provider: dict[str, Any], provider_type: str) -> str:
-    if provider_type in {"openai", "deepseek", "claude", "doubao", "zhipu", "gemini"}:
+    if _is_codex_auth_provider(provider):
+        query = urlencode({"client_version": _codex_client_version(provider)})
+        return f"{_base_url(provider)}/models?{query}"
+    if provider_type in {"openai", "deepseek", "claude", "doubao", "grok", "zhipu", "gemini"}:
         return f"{_base_url(provider)}/models"
     return ""
 
 
 def _model_headers(provider: dict[str, Any], provider_type: str) -> dict[str, str]:
+    if _is_codex_auth_provider(provider):
+        return dict(resolve_provider_request_credentials(provider).headers)
     if provider_type == "gemini":
         return {"x-goog-api-key": str(provider.get("apiKey") or "")}
     if provider_type == "claude":
@@ -218,7 +226,10 @@ def _model_headers(provider: dict[str, Any], provider_type: str) -> dict[str, st
 def _validate_model_config(provider: dict[str, Any], provider_type: str) -> str:
     if not provider_type:
         return "provider.type is required"
-    if not str(provider.get("apiKey") or "").strip():
+    if _is_codex_auth_provider(provider):
+        if provider_type != "openai":
+            return "provider.authMode 'codex' requires provider.type 'openai'"
+    elif not str(provider.get("apiKey") or "").strip():
         return "provider.apiKey is required"
     if not str(provider.get("baseUrl") or "").strip():
         return "provider.baseUrl is required"
@@ -227,6 +238,15 @@ def _validate_model_config(provider: dict[str, Any], provider_type: str) -> str:
 
 def _base_url(provider: dict[str, Any]) -> str:
     return str(provider.get("baseUrl") or "").strip().rstrip("/")
+
+
+def _is_codex_auth_provider(provider: dict[str, Any]) -> bool:
+    return str((provider or {}).get("authMode") or "api_key").strip().lower() == "codex"
+
+
+def _codex_client_version(provider: dict[str, Any]) -> str:
+    value = str(provider.get("codexClientVersion") or os.environ.get("CODEX_CLIENT_VERSION") or "").strip()
+    return value or "0.0.0"
 
 
 def _write_snapshot(path: str, output: dict[str, Any], *, started: float) -> None:

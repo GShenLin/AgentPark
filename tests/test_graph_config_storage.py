@@ -606,3 +606,81 @@ def test_runtime_graph_read_rejects_non_object_config(tmp_path, monkeypatch):
         assert "JSON object" in str(exc)
     else:
         raise AssertionError("non-object graph config was not rejected")
+
+
+def test_private_graph_visibility_is_local_only(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from src.web_backend import runtime_paths
+    import src.web_backend as backend
+
+    graphs_dir = tmp_path / "memories"
+    for graph_id in ("public", "secret"):
+        graph_dir = graphs_dir / graph_id
+        graph_dir.mkdir(parents=True)
+        (graph_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "id": graph_id,
+                    "name": graph_id.title(),
+                    "output_routes": {},
+                    "private": graph_id == "secret",
+                }
+            ),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    app = backend.create_app()
+    local_client = TestClient(app, client=("127.0.0.1", 12345))
+    remote_client = TestClient(app, client=("10.0.0.9", 12345))
+
+    local_graphs = {item["id"]: item for item in local_client.get("/api/graphs").json()["graphs"]}
+    assert local_graphs["public"]["private"] is False
+    assert local_graphs["secret"]["private"] is True
+    assert local_graphs["secret"]["visibility_editable"] is True
+
+    remote_graphs = {item["id"]: item for item in remote_client.get("/api/graphs").json()["graphs"]}
+    assert "public" in remote_graphs
+    assert "secret" not in remote_graphs
+    assert remote_graphs["public"]["visibility_editable"] is False
+    assert remote_client.get("/api/graphs/secret").status_code == 404
+    assert remote_client.get("/api/graphs/secret/runner/status").status_code == 404
+    assert remote_client.post("/api/graphs/secret/emit", json={}).status_code == 404
+    assert remote_client.patch("/api/graphs/public/visibility", json={"private": True}).status_code == 403
+
+    saved = local_client.post(
+        "/api/graphs/secret",
+        json={"graph": {"id": "secret", "name": "Secret renamed", "output_routes": {}}},
+    )
+    assert saved.status_code == 200
+    stored = json.loads((graphs_dir / "secret" / "config.json").read_text(encoding="utf-8"))
+    assert stored["private"] is True
+
+    made_public = local_client.patch("/api/graphs/secret/visibility", json={"private": False})
+    assert made_public.status_code == 200
+    assert made_public.json()["private"] is False
+    assert remote_client.get("/api/graphs/secret").status_code == 200
+
+
+def test_graph_visibility_requires_boolean(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from src.web_backend import runtime_paths
+    import src.web_backend as backend
+
+    graph_dir = tmp_path / "memories" / "work"
+    graph_dir.mkdir(parents=True)
+    (graph_dir / "config.json").write_text(
+        json.dumps({"id": "work", "name": "Work", "output_routes": {}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    response = TestClient(backend.create_app(), client=("127.0.0.1", 12345)).patch(
+        "/api/graphs/work/visibility",
+        json={"private": "true"},
+    )
+
+    assert response.status_code == 400
+    assert "boolean" in response.json()["detail"]

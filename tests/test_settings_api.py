@@ -291,8 +291,11 @@ def test_settings_api_reads_tool_stats(monkeypatch, tmp_path):
             "type": "tool_call_end",
             "name": "read_file",
             "call_id": "call-1",
-            "status": "completed",
-            "result_preview": "ok",
+            "status": "failed",
+            "error": "file not found",
+            "result": {"status": "failed", "error": "file not found"},
+            "result_preview": '{"status":"failed","error":"file not found"}',
+            "diagnostics": ["resolved path does not exist"],
         }
     )
 
@@ -301,6 +304,44 @@ def test_settings_api_reads_tool_stats(monkeypatch, tmp_path):
 
     assert result["summary"]["providers"]["demo"]["total"] == 1
     assert result["recent_calls"][0]["tool_name"] == "read_file"
+    assert result["recent_calls"][0]["tool_call_arguments"] == {"path": "notes.txt"}
+    assert result["recent_calls"][0]["error"] == "file not found"
+    assert result["recent_calls"][0]["result"] == {"status": "failed", "error": "file not found"}
+    assert result["recent_calls"][0]["diagnostics"] == ["resolved path does not exist"]
+    assert result["failure_analysis"]["total_failures"] == 1
+    assert result["failure_analysis"]["categories"][0]["category"] == "read_failed"
+
+
+def test_settings_api_reads_complete_failure_history_for_tool(monkeypatch, tmp_path):
+    from src.tool import tool_stats_store
+
+    monkeypatch.setattr(tool_stats_store, "get_workspace_cache_dir", lambda: str(tmp_path / ".cache"))
+    recorder = tool_stats_store.ToolCallStatsRecorder(provider_id="demo")
+    for call_id, status in (("call-1", "failed"), ("call-2", "completed"), ("call-3", "timeout")):
+        recorder.handle(
+            {
+                "type": "tool_call_start",
+                "name": "read_file",
+                "call_id": call_id,
+                "arguments": {"file_path": f"{call_id}.txt"},
+            }
+        )
+        recorder.handle(
+            {
+                "type": "tool_call_end",
+                "name": "read_file",
+                "call_id": call_id,
+                "status": status,
+                "error": "read failed" if status != "completed" else "",
+            }
+        )
+
+    result = SettingsApiDomain(SimpleNamespace()).get_tool_failure_history("read_file")
+
+    assert result["tool_name"] == "read_file"
+    assert result["failure_count"] == 2
+    assert [call["call_id"] for call in result["calls"]] == ["call-3", "call-1"]
+    assert result["calls"][0]["tool_call_arguments"] == {"file_path": "call-3.txt"}
 
 
 def test_settings_api_clears_tool_stats(monkeypatch, tmp_path):
@@ -317,6 +358,7 @@ def test_settings_api_clears_tool_stats(monkeypatch, tmp_path):
     assert result["ok"] is True
     assert result["summary"] == {"providers": {}}
     assert result["recent_calls"] == []
+    assert result["failure_analysis"]["total_failures"] == 0
 
 
 def test_settings_api_delete_optional_memory_runs_bat(monkeypatch, tmp_path):

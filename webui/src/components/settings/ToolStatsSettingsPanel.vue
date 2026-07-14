@@ -8,9 +8,20 @@ import {
   type ToolStatsDocument,
   type ToolStatsProviderSummary,
 } from '../../settingsApi'
+import ToolFailurePatternsPanel from './ToolFailurePatternsPanel.vue'
+import {
+  callKey,
+  failureReason,
+  formatStructuredValue,
+  invocationLabel,
+  invocationText,
+  shortText,
+  statusLabel,
+} from './toolStatsFormatting'
 
 const stats = ref<ToolStatsDocument | null>(null)
 const selectedProviderId = ref('')
+const selectedCallKey = ref('')
 const loading = ref(false)
 const clearing = ref(false)
 const deletingOptionalMemory = ref(false)
@@ -32,6 +43,18 @@ const providerTools = computed(() => {
 })
 
 const recentCalls = computed<ToolCallStatRecord[]>(() => stats.value?.recent_calls || [])
+const providerRecentCalls = computed<ToolCallStatRecord[]>(() => {
+  if (!selectedProvider.value) return recentCalls.value
+  return recentCalls.value.filter((call) => call.provider_id === selectedProvider.value?.provider_id)
+})
+const providerFailureCalls = computed(() => providerRecentCalls.value.filter((call) => !call.success))
+const failureAnalysis = computed(() => stats.value?.failure_analysis || null)
+const selectedCall = computed<ToolCallStatRecord | null>(() => {
+  return providerRecentCalls.value.find((call) => callKey(call) === selectedCallKey.value)
+    || providerFailureCalls.value[0]
+    || providerRecentCalls.value[0]
+    || null
+})
 const totalCalls = computed(() => providers.value.reduce((sum, provider) => sum + provider.total, 0))
 const successCalls = computed(() => providers.value.reduce((sum, provider) => sum + provider.success, 0))
 const failureCalls = computed(() => providers.value.reduce((sum, provider) => sum + provider.failure, 0))
@@ -42,15 +65,17 @@ const successRate = computed(() => {
 
 function selectProvider(providerId: string) {
   selectedProviderId.value = providerId
+  selectDefaultCall(providerId)
 }
 
-function shortText(value: string, fallback = '-') {
-  const text = String(value || '').trim()
-  return text || fallback
+function selectCall(call: ToolCallStatRecord) {
+  selectedCallKey.value = callKey(call)
 }
 
-function statusLabel(call: ToolCallStatRecord) {
-  return call.success ? 'success' : shortText(call.status, 'failed')
+function selectDefaultCall(providerId = selectedProviderId.value, calls = recentCalls.value) {
+  const providerCalls = calls.filter((call) => call.provider_id === providerId)
+  const next = providerCalls.find((call) => !call.success) || providerCalls[0]
+  selectedCallKey.value = next ? callKey(next) : ''
 }
 
 async function loadStats() {
@@ -63,6 +88,7 @@ async function loadStats() {
     if (!selectedProviderId.value || !next.summary.providers?.[selectedProviderId.value]) {
       selectedProviderId.value = Object.keys(next.summary.providers || {})[0] || ''
     }
+    selectDefaultCall(selectedProviderId.value, next.recent_calls || [])
   } catch (e: any) {
     error.value = String(e?.message || e)
   } finally {
@@ -80,6 +106,7 @@ async function clearStats() {
     const next = await clearToolStats()
     stats.value = next
     selectedProviderId.value = ''
+    selectedCallKey.value = ''
   } catch (e: any) {
     error.value = String(e?.message || e)
   } finally {
@@ -142,7 +169,7 @@ onMounted(loadStats)
     <section class="tool-stats-main">
       <div class="tool-stats-head">
         <div>
-          <h2>{{ selectedProvider?.provider_id || 'Tool Static' }}</h2>
+          <h2>{{ selectedProvider?.provider_id || 'Tool Statistics' }}</h2>
           <span>{{ stats?.summary.updated_at || '' }}</span>
         </div>
       </div>
@@ -172,6 +199,8 @@ onMounted(loadStats)
         <span>{{ selectedProvider.last_call_at }}</span>
       </div>
 
+      <ToolFailurePatternsPanel v-if="failureAnalysis?.total_failures" :analysis="failureAnalysis" />
+
       <div class="tool-section-title">Tools</div>
       <div class="tool-summary-list">
         <div v-for="tool in providerTools" :key="tool.tool_name" class="tool-summary-row">
@@ -187,22 +216,70 @@ onMounted(loadStats)
         <div v-if="selectedProvider && !providerTools.length" class="tool-stats-empty">No tools</div>
       </div>
 
-      <div class="tool-section-title">Recent Calls</div>
+      <div class="tool-section-title">
+        Recent Calls
+        <span v-if="selectedProvider">{{ providerFailureCalls.length }} failures in recent records</span>
+      </div>
       <div class="recent-call-list">
-        <div v-for="call in recentCalls" :key="`${call.recorded_at}-${call.call_id}`" class="recent-call-row">
+        <button
+          v-for="call in providerRecentCalls"
+          :key="callKey(call)"
+          type="button"
+          class="recent-call-row"
+          :class="{ selected: callKey(call) === selectedCallKey, failed: !call.success }"
+          @click="selectCall(call)"
+        >
           <div class="recent-call-main">
             <strong>{{ call.tool_name }}</strong>
             <span>{{ call.provider_id }} / {{ shortText(call.node_id) }}</span>
-            <small>{{ shortText(call.result_preview) }}</small>
+            <small>{{ !call.success && call.error ? call.error : shortText(call.result_preview) }}</small>
           </div>
           <div class="recent-call-meta">
             <span :class="{ bad: !call.success }">{{ statusLabel(call) }}</span>
             <small>{{ call.duration_ms ?? '-' }} ms</small>
             <small>{{ call.recorded_at }}</small>
           </div>
-        </div>
-        <div v-if="!recentCalls.length && !loading" class="tool-stats-empty">No recent calls</div>
+        </button>
+        <div v-if="!providerRecentCalls.length && !loading" class="tool-stats-empty">No recent calls for this provider</div>
       </div>
+
+      <section v-if="selectedCall" class="call-review" :class="{ failed: !selectedCall.success }">
+        <div class="call-review-head">
+          <div>
+            <div class="tool-section-title">{{ selectedCall.success ? 'Call Review' : 'Failure Review' }}</div>
+            <h3>{{ selectedCall.tool_name }}</h3>
+          </div>
+          <span class="call-review-status" :class="{ bad: !selectedCall.success }">{{ statusLabel(selectedCall) }}</span>
+        </div>
+
+        <dl class="call-review-meta">
+          <div><dt>Provider</dt><dd>{{ selectedCall.provider_id }}</dd></div>
+          <div><dt>Graph / Node</dt><dd>{{ shortText(selectedCall.graph_id) }} / {{ shortText(selectedCall.node_id) }}</dd></div>
+          <div><dt>Call ID</dt><dd>{{ shortText(selectedCall.call_id) }}</dd></div>
+          <div><dt>Recorded</dt><dd>{{ selectedCall.recorded_at }}</dd></div>
+        </dl>
+
+        <div class="call-review-grid">
+          <article>
+            <h4>{{ invocationLabel(selectedCall) }}</h4>
+            <pre>{{ invocationText(selectedCall) }}</pre>
+          </article>
+          <article :class="{ failure: !selectedCall.success }">
+            <h4>Failure reason</h4>
+            <pre>{{ failureReason(selectedCall) }}</pre>
+          </article>
+        </div>
+
+        <article class="call-result">
+          <h4>Complete tool result</h4>
+          <pre>{{ formatStructuredValue(selectedCall.result, shortText(selectedCall.result_preview)) }}</pre>
+        </article>
+
+        <article v-if="selectedCall.diagnostics?.length" class="call-result diagnostics">
+          <h4>Diagnostics</h4>
+          <pre>{{ selectedCall.diagnostics.join('\n') }}</pre>
+        </article>
+      </section>
 
       <div v-if="operationStatus" class="tool-stats-status">{{ operationStatus }}</div>
       <div v-if="error" class="tool-stats-error">{{ error }}</div>
@@ -210,238 +287,4 @@ onMounted(loadStats)
   </div>
 </template>
 
-<style scoped>
-.tool-stats {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  background: var(--bg-primary);
-}
-
-.tool-stats-side {
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border-right: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-}
-
-.tool-stats-action,
-.tool-provider-item {
-  width: 100%;
-  min-height: 36px;
-  border-radius: 6px;
-}
-
-.tool-stats-action.danger {
-  border-color: rgba(239, 68, 68, 0.32);
-  color: #fca5a5;
-}
-
-.tool-provider-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  padding: 8px 10px;
-  color: var(--text-secondary);
-  text-align: left;
-}
-
-.tool-provider-item.active {
-  border-color: rgba(59, 130, 246, 0.28);
-  background: var(--accent-blue-soft);
-  color: var(--text-primary);
-}
-
-.tool-provider-item span,
-.recent-call-main strong,
-.tool-summary-row strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-provider-item small {
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-}
-
-.tool-stats-main {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px;
-}
-
-.tool-stats-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.tool-stats-head h2 {
-  margin: 0;
-  font-size: 18px;
-  color: var(--text-primary);
-}
-
-.tool-stats-head span,
-.provider-summary-line span,
-.tool-summary-row span,
-.recent-call-main span,
-.recent-call-main small,
-.recent-call-meta small {
-  color: var(--text-tertiary);
-  font-size: 12px;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 10px;
-}
-
-.metric-item {
-  min-height: 72px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 12px;
-  background: var(--bg-secondary);
-}
-
-.metric-item span,
-.tool-section-title {
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.metric-item strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 24px;
-  color: var(--text-primary);
-}
-
-.provider-summary-line {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 36px;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-primary);
-}
-
-.tool-summary-list,
-.recent-call-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tool-summary-row,
-.recent-call-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  min-height: 64px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: var(--bg-secondary);
-}
-
-.tool-summary-row > div:first-child,
-.recent-call-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.tool-summary-counts,
-.recent-call-meta {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--text-secondary);
-}
-
-.tool-summary-counts small,
-.recent-call-meta span {
-  color: #86efac;
-  font-size: 12px;
-}
-
-.tool-summary-counts small.bad,
-.recent-call-meta span.bad {
-  color: #fca5a5;
-}
-
-.tool-stats-empty,
-.tool-stats-error,
-.tool-stats-status {
-  padding: 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  color: var(--text-tertiary);
-  background: var(--bg-secondary);
-}
-
-.tool-stats-status {
-  white-space: pre-wrap;
-  color: var(--text-secondary);
-}
-
-.tool-stats-error {
-  border-color: rgba(239, 68, 68, 0.25);
-  color: #fca5a5;
-  background: rgba(127, 29, 29, 0.24);
-}
-
-@media (max-width: 960px) {
-  .tool-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .tool-stats-side {
-    flex-direction: row;
-    border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .tool-stats-action,
-  .tool-provider-item {
-    width: auto;
-    flex: 0 0 auto;
-  }
-
-  .metric-grid {
-    grid-template-columns: repeat(2, minmax(120px, 1fr));
-  }
-
-  .tool-summary-row,
-  .recent-call-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .tool-summary-counts,
-  .recent-call-meta {
-    align-items: flex-start;
-  }
-}
-</style>
+<style scoped src="./ToolStatsSettingsPanel.css"></style>

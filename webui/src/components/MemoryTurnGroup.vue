@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import type { MessageEnvelope } from '../api'
+import { ref } from 'vue'
+import type { LatestTurnProgressSummary, MessageEnvelope } from '../api'
+import MemoryMetadataMessage from './MemoryMetadataMessage.vue'
 import MemoryMessageActions from './MemoryMessageActions.vue'
 import MemoryMessageParts from './MemoryMessageParts.vue'
 import MemoryProgressGroup from './MemoryProgressGroup.vue'
@@ -8,6 +9,7 @@ import { extractMemoryMessageText } from './memoryMessageText'
 import {
   feedRoleClass,
   memoryRoleLabel,
+  associatedMessages,
   type FeedProgressGroupEntry,
   type FeedTurnEntry,
 } from './memoryFeedTools'
@@ -20,12 +22,14 @@ const props = withDefaults(defineProps<{
   progressDeferred?: boolean
   metadataDeferred?: boolean
   loadingSection?: 'progress' | 'metadata' | null
+  progressSummary?: LatestTurnProgressSummary | null
 }>(), {
   compact: false,
   defaultExpanded: true,
   progressDeferred: false,
   metadataDeferred: false,
   loadingSection: null,
+  progressSummary: null,
 })
 
 const emit = defineEmits<{
@@ -37,18 +41,6 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(props.defaultExpanded)
-const metadataOpenAfterLoad = ref(false)
-const metadataExpanded = ref(false)
-
-watch(
-  () => props.metadataDeferred,
-  (deferred) => {
-    if (!deferred && metadataOpenAfterLoad.value) {
-      metadataOpenAfterLoad.value = false
-      metadataExpanded.value = true
-    }
-  },
-)
 
 function toggleTurn() {
   expanded.value = !expanded.value
@@ -64,7 +56,7 @@ function userSummary() {
 
 function turnTime() {
   const start = String((props.entry.userMessage as any)?.created_at || '')
-  const lastMessage = props.entry.finalMessages[props.entry.finalMessages.length - 1] || props.entry.finalAssistant
+  const lastMessage = props.entry.finalMessages[props.entry.finalMessages.length - 1] || props.entry.finalResponse
   const end = String((lastMessage as any)?.created_at || '')
   if (!end || start === end) return start
   return `${start} - ${end}`
@@ -80,12 +72,13 @@ function progressEntry(): FeedProgressGroupEntry {
 }
 
 function turnMessages() {
-  return [
+  const messages = [
     props.entry.userMessage,
     ...props.entry.progressMessages,
-    ...(props.entry.finalAssistant ? [props.entry.finalAssistant] : []),
+    ...(props.entry.finalResponse ? [props.entry.finalResponse] : []),
     ...props.entry.finalMessages,
   ]
+  return messages.flatMap((message) => [message, ...associatedMessages(message)])
 }
 
 function regularFinalMessages() {
@@ -100,19 +93,7 @@ function requestProgress() {
   emit('requestSection', 'progress')
 }
 
-function toggleMetadata() {
-  if (props.metadataDeferred) {
-    if (props.loadingSection === 'metadata') return
-    metadataOpenAfterLoad.value = true
-    emit('requestSection', 'metadata')
-    return
-  }
-  metadataExpanded.value = !metadataExpanded.value
-}
-
 function requestDeferredMetadata() {
-  if (props.loadingSection === 'metadata') return
-  metadataOpenAfterLoad.value = true
   emit('requestSection', 'metadata')
 }
 </script>
@@ -159,19 +140,24 @@ function requestDeferredMetadata() {
         :compact="compact"
         :lazy-load="progressDeferred"
         :loading="loadingSection === 'progress'"
+        :summary="progressSummary"
         @save="emit('save', $event)"
         @copy="emit('copy', $event)"
         @delete="emit('delete', $event)"
         @request-load="requestProgress"
       />
 
-      <article v-if="entry.finalAssistant" class="turn-message role-assistant">
+      <article
+        v-if="entry.finalResponse"
+        class="turn-message"
+        :class="`role-${feedRoleClass(String((entry.finalResponse as any)?.role || ''))}`"
+      >
         <div class="turn-message-head">
-          <span>Assistant</span>
-          <span>{{ String((entry.finalAssistant as any)?.created_at || '') }}</span>
+          <span>{{ memoryRoleLabel(feedRoleClass(String((entry.finalResponse as any)?.role || '')), String((entry.finalResponse as any)?.role || '')) }}</span>
+          <span>{{ String((entry.finalResponse as any)?.created_at || '') }}</span>
         </div>
         <MemoryMessageParts
-          :message="entry.finalAssistant"
+          :message="entry.finalResponse"
           :markdown-preview="markdownPreview"
           @save="emit('save', $event)"
           @copy="emit('copy', $event)"
@@ -179,7 +165,7 @@ function requestDeferredMetadata() {
         />
       </article>
 
-      <div v-else class="turn-pending">Waiting for final Assistant message…</div>
+      <div v-else class="turn-pending">Waiting for final response…</div>
 
       <article
         v-for="(message, index) in regularFinalMessages()"
@@ -200,49 +186,23 @@ function requestDeferredMetadata() {
         />
       </article>
 
-      <section
+      <MemoryMetadataMessage
         v-for="(message, index) in finalMetadataMessages()"
         :key="String((message as any)?.id || `final-metadata-${index}`)"
-        class="turn-message turn-final-metadata role-metadata"
-      >
-        <button
-          class="turn-message-head turn-final-metadata-head"
-          type="button"
-          :aria-expanded="metadataExpanded"
-          @click="toggleMetadata"
-        >
-          <span class="turn-final-metadata-title">
-            <span class="turn-final-metadata-caret">{{ metadataExpanded ? 'v' : '>' }}</span>
-            <span>{{ memoryRoleLabel('metadata', String((message as any)?.role || '')) }}</span>
-          </span>
-          <span>{{ String((message as any)?.created_at || '') }}</span>
-        </button>
-        <MemoryMessageParts
-          v-if="metadataExpanded"
-          :message="message"
-          :markdown-preview="markdownPreview"
-          @save="emit('save', $event)"
-          @copy="emit('copy', $event)"
-          @delete="emit('delete', $event)"
-        />
-      </section>
-      <section
+        :message="message"
+        :markdown-preview="markdownPreview"
+        @save="emit('save', $event)"
+        @copy="emit('copy', $event)"
+        @delete="emit('delete', $event)"
+      />
+      <MemoryMetadataMessage
         v-if="metadataDeferred"
-        class="turn-message turn-final-metadata role-metadata"
-      >
-        <button
-          class="turn-message-head turn-final-metadata-head"
-          type="button"
-          aria-expanded="false"
-          @click="requestDeferredMetadata"
-        >
-          <span class="turn-final-metadata-title">
-            <span class="turn-final-metadata-caret">></span>
-            <span>Metadata</span>
-          </span>
-          <span>{{ loadingSection === 'metadata' ? 'Loading…' : '' }}</span>
-        </button>
-      </section>
+        :message="null"
+        :markdown-preview="markdownPreview"
+        deferred
+        :loading="loadingSection === 'metadata'"
+        @request-load="requestDeferredMetadata"
+      />
     </div>
   </section>
 </template>
@@ -263,15 +223,11 @@ function requestDeferredMetadata() {
 .turn-message { border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px; background: rgba(15, 23, 42, 0.48); overflow: visible; }
 .turn-message.role-user { border-left: 4px solid rgba(56, 189, 248, 0.65); }
 .turn-message.role-assistant { border-left: 4px solid rgba(34, 197, 94, 0.65); }
+.turn-message.role-system { border-left: 4px solid rgba(248, 113, 113, 0.72); }
 .turn-message.role-metadata { border-left: 4px solid rgba(167, 139, 250, 0.72); background: rgba(76, 29, 149, 0.1); }
 .turn-message.role-tool { border-left: 4px solid rgba(244, 114, 182, 0.68); }
 .turn-message-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.14); background: rgba(0, 0, 0, 0.18); color: rgba(226, 232, 240, 0.94); font-size: 12px; font-weight: 700; }
 .turn-message-head span:last-child { color: rgba(148, 163, 184, 0.9); font-size: 11px; font-weight: 400; }
-.turn-final-metadata { overflow: visible; }
-.turn-final-metadata-head { position: sticky; top: 0; z-index: 20; width: 100%; cursor: pointer; border: 0; border-bottom: 0; border-radius: 7px; color: inherit; background: rgba(46, 16, 101, 0.98); box-shadow: 0 4px 10px rgba(2, 6, 23, 0.24); text-align: left; }
-.turn-final-metadata-head[aria-expanded='true'] { border-bottom: 1px solid rgba(167, 139, 250, 0.22); border-radius: 7px 7px 0 0; }
-.turn-final-metadata-title { display: inline-flex; align-items: center; gap: 8px; }
-.turn-final-metadata-caret { color: rgba(196, 181, 253, 0.96); font: 11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .turn-pending { padding: 9px 10px; border: 1px dashed rgba(148, 163, 184, 0.28); border-radius: 8px; color: rgba(148, 163, 184, 0.86); font-size: 12px; }
 .turn-group.compact { min-width: 0; }
 .turn-group.compact .turn-head { align-items: stretch; }

@@ -9,7 +9,8 @@ import {
   listNodeInstanceConfigs,
   listNodes,
   loadGraph,
-  openNodeInstanceFolder,
+  openNodeInstanceNodeFolder,
+  openNodeInstanceWorkFolder,
   renameNodeInstance,
   saveGraph,
   setNodeInstanceState,
@@ -264,10 +265,28 @@ export function useAgentBoard(): AgentBoardContext {
     if (!targetId) return
     if (!nodes.value.some((node) => node.id === targetId)) return
     selectNode(targetId)
+    lastError.value = null
     try {
-      await openNodeInstanceFolder(targetId, currentGraphId.value || 'default')
+      await openNodeInstanceNodeFolder(targetId, currentGraphId.value || 'default')
     } catch (e: any) {
-      lastError.value = `Failed to open node folder: ${String(e?.message || e)}`
+      const message = `Failed to open node folder: ${String(e?.message || e)}`
+      lastError.value = message
+      throw new Error(message)
+    }
+  }
+
+  async function openWorkFolder(id: string) {
+    const targetId = String(id || '').trim()
+    if (!targetId) return
+    if (!nodes.value.some((node) => node.id === targetId)) return
+    selectNode(targetId)
+    lastError.value = null
+    try {
+      await openNodeInstanceWorkFolder(targetId, currentGraphId.value || 'default')
+    } catch (e: any) {
+      const message = `Failed to open work folder: ${String(e?.message || e)}`
+      lastError.value = message
+      throw new Error(message)
     }
   }
 
@@ -1059,21 +1078,6 @@ export function useAgentBoard(): AgentBoardContext {
       nodeId: id,
     })
     if (!typeId) return
-    if (getNodeState(id) === 'stop') {
-      const resumed = await setNodeInstanceState(id, 'idle', graphId)
-      nodeStates.value = { ...nodeStates.value, [id]: resumed.state }
-    }
-
-    if (typeId === 'basic_trigger_node') {
-      if (text) {
-        const node = nodes.value.find((n) => n.id === id)
-        if (node) node.last_message = text
-        await setNodeFields(id, { OutputText: text })
-      }
-      await triggerNode(id)
-      return
-    }
-
     if (!text && typeof message === 'string') return
     lastError.value = null
     try {
@@ -1289,7 +1293,7 @@ export function useAgentBoard(): AgentBoardContext {
     })
     node.ui.width = normalized.width
     node.ui.height = normalized.height
-    updateCanvasSize()
+    updateCanvasSize({ preserveCurrentExtent: true })
     syncGraphSnapshot()
     if (!options?.persist) {
       activeDragItemIds.add(id)
@@ -1921,6 +1925,7 @@ export function useAgentBoard(): AgentBoardContext {
     cancelBoardViewportScroll,
     openNodeSettings,
     openNodeFolder,
+    openWorkFolder,
     openGraphPanel,
     triggerNode,
     startClockNode,

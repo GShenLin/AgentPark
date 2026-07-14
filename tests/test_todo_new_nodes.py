@@ -10,7 +10,7 @@ def _read_runtime_state(config_path):
     return _read_json_dict(str(config_path))
 
 
-def test_basic_trigger_node_outputs_config_text():
+def test_basic_trigger_node_forwards_input_and_uses_config_for_empty_trigger():
     from nodes.basic_trigger_node import Node
 
     node = Node()
@@ -29,11 +29,29 @@ def test_basic_trigger_node_outputs_config_text():
     assert any(isinstance(item, dict) and item.get("value") for item in skill_options)
     assert list(schema.keys())[-3:] == ["plugins", "skills", "working_path"]
 
-    out = node.on_input("ignored", {"OutputText": "hello-trigger"})
+    out = node.on_input("incoming", {"OutputText": "hello-trigger"})
     routes = out.get("routes")
     assert isinstance(routes, list) and routes
     assert routes[0].get("output_index") == 0
+    assert envelope_text(routes[0].get("payload")) == "incoming"
+
+    out = node.on_input("", {"OutputText": "hello-trigger"})
+    routes = out.get("routes")
+    assert isinstance(routes, list) and routes
     assert envelope_text(routes[0].get("payload")) == "hello-trigger"
+
+    image_input = {
+        "role": "user",
+        "parts": [
+            {
+                "type": "resource",
+                "resource": {"uri": "C:/tmp/input.png", "kind": "image"},
+            }
+        ],
+    }
+    out = node.on_input(image_input, {"OutputText": "hello-trigger"})
+    routes = out.get("routes")
+    assert routes[0]["payload"]["parts"][0]["resource"]["uri"] == "C:/tmp/input.png"
 
 
 def test_clock_node_outputs_config_text_and_defaults():

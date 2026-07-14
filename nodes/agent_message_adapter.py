@@ -126,21 +126,51 @@ def build_agent_output_message(response: object) -> dict:
     return build_text_envelope(text, role="assistant")
 
 
-def build_response_metadata_message(response: object, *, assistant_message_id: object) -> dict | None:
+def build_response_metadata_message(
+    response: object,
+    *,
+    scope: str,
+    target_message_id: object = "",
+    target_tool_call_ids: object = None,
+    fields: tuple[str, ...] = ("server_tool_calls", "citations", "response_metadata", "provider_requests"),
+) -> dict | None:
     if not isinstance(response, dict):
         return None
+    resolved_scope = str(scope or "").strip().lower()
+    if resolved_scope not in {"provider_turn", "final_assistant", "agent_run"}:
+        raise ValueError(f"unsupported response metadata scope: {scope}")
     structured_result = {
         key: response.get(key)
-        for key in ("server_tool_calls", "citations", "response_metadata", "provider_requests")
+        for key in fields
         if (isinstance(response.get(key), list) or isinstance(response.get(key), dict)) and response.get(key)
     }
     if not structured_result:
         return None
+    message_id = str(target_message_id or "").strip()
+    call_ids = [
+        str(item or "").strip()
+        for item in (target_tool_call_ids if isinstance(target_tool_call_ids, list) else [])
+        if str(item or "").strip()
+    ]
+    if message_id and call_ids:
+        raise ValueError("response metadata target must be either a message or tool calls")
+    if message_id:
+        target = {"type": "message", "message_id": message_id}
+    elif call_ids:
+        target = {"type": "tool_calls", "call_ids": list(dict.fromkeys(call_ids))}
+    else:
+        raise ValueError("response metadata requires an explicit target")
     data = {
         "kind": "response_metadata",
-        "assistant_message_id": str(assistant_message_id or "").strip(),
+        "scope": resolved_scope,
+        "target": target,
         **structured_result,
     }
+    response_metadata = structured_result.get("response_metadata")
+    provider_response = response_metadata.get("response") if isinstance(response_metadata, dict) else None
+    provider_turn_id = str(provider_response.get("id") or "").strip() if isinstance(provider_response, dict) else ""
+    if provider_turn_id:
+        data["provider_turn_id"] = provider_turn_id
     return normalize_envelope(
         {"role": "metadata", "parts": [{"type": "structured", "data": data}]},
         default_role="metadata",

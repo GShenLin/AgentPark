@@ -71,6 +71,8 @@ def test_tool_stats_store_groups_counts_by_provider_id(monkeypatch, tmp_path):
     recent = tool_stats_store.load_recent_tool_call_stats(limit=1)
     assert len(recent) == 1
     assert recent[0]["call_id"] == "call-fail"
+    analysis_records = tool_stats_store.load_tool_call_stats(limit=2)
+    assert [item["call_id"] for item in analysis_records] == ["call-fail", "call-ok"]
 
 
 def test_clear_tool_stats_removes_summary_and_recent_calls(monkeypatch, tmp_path):
@@ -145,3 +147,65 @@ def test_recorder_does_not_propagate_stats_storage_failure(monkeypatch, tmp_path
     ]
     assert errors[0]["stage"] == "recorder_handle"
     assert errors[0]["error"] == "stats backend is down"
+
+
+def test_failure_analysis_finds_cross_tool_patterns():
+    from src.tool.tool_failure_analysis import build_tool_failure_analysis
+
+    analysis = build_tool_failure_analysis(
+        [
+            {
+                "tool_name": "read_file",
+                "success": False,
+                "status": "failed",
+                "error": "file not found",
+                "tool_call_arguments": {"file_path": "missing.txt"},
+            },
+            {
+                "tool_name": "execute_console_command",
+                "success": False,
+                "status": "failed",
+                "error": "command not found",
+                "tool_call_arguments": {"command": "missing-command"},
+            },
+            {
+                "tool_name": "execute_console_command",
+                "success": False,
+                "status": "timeout",
+                "error": "command timed out",
+                "tool_call_arguments": {"command": "slow-command"},
+            },
+        ]
+    )
+
+    assert analysis["total_failures"] == 3
+    assert analysis["affected_tool_count"] == 2
+    assert {item["category"]: item["count"] for item in analysis["categories"]} == {
+        "read_failed": 1,
+        "command_failed": 1,
+        "timeout": 1,
+    }
+    assert analysis["shared_patterns"][0]["category"] == "status:failed"
+    assert analysis["shared_patterns"][0]["tools"] == ["execute_console_command", "read_file"]
+    assert analysis["tools"]["execute_console_command"]["categories"] == {
+        "command_failed": 1,
+        "timeout": 1,
+    }
+
+
+def test_failure_history_returns_every_failure_for_selected_tool():
+    from src.tool.tool_failure_analysis import build_tool_failure_history
+
+    records = [
+        {"tool_name": "read_file", "success": False, "call_id": "read-2"},
+        {"tool_name": "execute_console_command", "success": False, "call_id": "exec-1"},
+        {"tool_name": "read_file", "success": True, "call_id": "read-ok"},
+        {"tool_name": "read_file", "success": False, "call_id": "read-1"},
+    ]
+
+    history = build_tool_failure_history(records, "read_file")
+
+    assert history["tool_name"] == "read_file"
+    assert history["analyzed_call_count"] == 4
+    assert history["failure_count"] == 2
+    assert [call["call_id"] for call in history["calls"]] == ["read-2", "read-1"]

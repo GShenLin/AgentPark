@@ -132,6 +132,38 @@ def test_assistant_progress_does_not_persist_blank_content():
         assert calls == []
 
 
+def test_assistant_progress_does_not_persist_metadata_without_visible_text():
+    with tempfile.TemporaryDirectory() as d:
+        agent = DummyAgent("dummy", memory_file_path=str(Path(d) / "dummy.md"), internal_memory_enabled=False)
+        calls = []
+        agent._agentpark_persist_assistant_progress = lambda message: calls.append(dict(message))
+
+        agent.AssistantProgress(
+            "",
+            response_metadata={"protocol": "responses", "response": {"id": "resp-tool"}},
+        )
+
+        assert calls == []
+
+
+def test_provider_turn_metadata_uses_dedicated_callback():
+    with tempfile.TemporaryDirectory() as d:
+        agent = DummyAgent("dummy", memory_file_path=str(Path(d) / "dummy.md"), internal_memory_enabled=False)
+        calls = []
+        agent._agentpark_persist_provider_turn_metadata = lambda message: calls.append(dict(message))
+
+        agent.ProviderTurnMetadata(
+            tool_calls=[{"id": "call-1", "function": {"name": "read_file"}}],
+            response_metadata={"protocol": "responses", "response": {"id": "resp-tool"}},
+        )
+
+        assert calls == [{
+            "role": "provider_turn",
+            "tool_calls": [{"id": "call-1", "function": {"name": "read_file"}}],
+            "response_metadata": {"protocol": "responses", "response": {"id": "resp-tool"}},
+        }]
+
+
 def test_messages_with_memory_excludes_progress_and_explicit_exclusions():
     with tempfile.TemporaryDirectory() as d:
         agent = DummyAgent("dummy", memory_file_path=str(Path(d) / "dummy.md"), internal_memory_enabled=False)

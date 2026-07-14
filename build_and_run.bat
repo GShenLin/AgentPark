@@ -4,6 +4,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem Switch to the script directory to ensure relative paths work
 cd /d "%~dp0"
 set "AGENTPARK_WORKSPACE_ROOT=%cd%"
+for %%I in ("%AGENTPARK_WORKSPACE_ROOT%") do set "AGENTPARK_WORKSPACE_NAME=%%~nxI"
+title AgentPark Launcher - %AGENTPARK_WORKSPACE_NAME%
 echo [INFO] Checking repository before startup...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%AGENTPARK_WORKSPACE_ROOT%\scripts\sync_before_restart.ps1" -WorkspaceRoot "%AGENTPARK_WORKSPACE_ROOT%"
 if errorlevel 1 (
@@ -17,6 +19,8 @@ set "AGENTPARK_DEPENDENCY_UPDATE_LOG=%AGENTPARK_WORKSPACE_ROOT%\.runtime\depende
 set "AGENTPARK_LAUNCH_MODE=cli_web"
 set "AGENTPARK_CLI_ARGS=chat"
 set "AGENTPARK_RESTART_EXIT_CODE=43"
+set "AGENTPARK_CLI_WINDOW_MANAGED=1"
+set "AGENTPARK_CLI_START_HIDDEN=1"
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 if /I "%~1"=="server" (
@@ -243,22 +247,14 @@ exit /b 0
 
 :handle_ask_here
 if not defined AGENTPARK_ASK_HERE_PATH (
-    echo [ERROR] Ask Here requires a folder path.
+    echo [ERROR] Ask Here requires a target path.
     exit /b 1
 )
-if not exist "%AGENTPARK_ASK_HERE_PATH%\." (
-    echo [ERROR] Ask Here folder path does not exist: "%AGENTPARK_ASK_HERE_PATH%"
+if not exist "%AGENTPARK_WORKSPACE_ROOT%\scripts\agentpark_ask_here.bat" (
+    echo [ERROR] Ask Here launcher is missing: "%AGENTPARK_WORKSPACE_ROOT%\scripts\agentpark_ask_here.bat"
     exit /b 1
 )
-"%PYTHON_EXE%" -m src.ask_here_launcher ping >nul 2>nul
-if errorlevel 1 (
-    echo [INFO] AgentPark server is not running; starting it now...
-    call :start_background_server
-    if errorlevel 1 exit /b %errorlevel%
-    "%PYTHON_EXE%" -m src.ask_here_launcher wait --timeout 35
-    if errorlevel 1 exit /b %errorlevel%
-)
-"%PYTHON_EXE%" -m src.ask_here_launcher dispatch --path "%AGENTPARK_ASK_HERE_PATH%"
+call "%AGENTPARK_WORKSPACE_ROOT%\scripts\agentpark_ask_here.bat" "%AGENTPARK_ASK_HERE_PATH%"
 exit /b %errorlevel%
 
 :register_folder_context_menu

@@ -1,4 +1,5 @@
 import json
+import os
 from types import SimpleNamespace
 
 import functions.system_tools as patch_tools
@@ -51,6 +52,17 @@ def test_apply_patch_add_update_delete_file(tmp_path):
     assert not delete_path.exists()
     changes = {item["path"]: item for item in payload["file_changes"]}
     update = changes[str(file_path)]
+    assert "hunks" not in update
+    assert update["additions"] == 1
+    assert update["deletions"] == 1
+    assert payload["stats"] == {"files": 3, "additions": 2, "deletions": 2}
+    assert payload["diff"]["omitted_from_model"] is True
+    assert os.path.isfile(payload["diff"]["structured_diff_path"])
+    assert os.path.isfile(payload["diff"]["unified_diff_path"])
+
+    artifact = json.loads(open(payload["diff"]["structured_diff_path"], "r", encoding="utf-8").read())
+    artifact_changes = {item["path"]: item for item in artifact["file_changes"]}
+    update = artifact_changes[str(file_path)]
     changed_row = next(
         row
         for hunk in update["hunks"]
@@ -65,6 +77,31 @@ def test_apply_patch_add_update_delete_file(tmp_path):
         "after_text": "new value",
     }
     assert update["hunks"][0]["context_lines"] == 5
+    unified = open(payload["diff"]["unified_diff_path"], "r", encoding="utf-8").read()
+    assert f"--- {file_path}" in unified
+    assert f"+++ {file_path}" in unified
+    assert "-old value" in unified
+    assert "+new value" in unified
+
+
+def test_apply_patch_full_return_mode_keeps_small_diff_in_payload(tmp_path):
+    file_path = tmp_path / "demo.txt"
+    file_path.write_text("old\n", encoding="utf-8")
+
+    raw = patch_tools.apply_patch(
+        f"""*** Begin Patch
+*** Update File: {file_path}
+@@
+-old
++new
+*** End Patch""",
+        return_mode="full",
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert payload["diff"]["omitted_from_model"] is False
+    assert payload["file_changes"][0]["hunks"][0]["rows"][0]["before_text"] == "old"
 
 
 def test_apply_patch_move_file(tmp_path):

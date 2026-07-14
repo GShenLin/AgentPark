@@ -4,6 +4,7 @@ RUNTIME_STATE_FIELDS = {
     "state",
     "pending",
     "pending_count",
+    "held_outputs",
     "inflight",
     "inflight_at",
     "_stop_requested",

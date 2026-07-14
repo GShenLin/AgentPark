@@ -387,7 +387,6 @@ html.pet-transparent-root .app-shell {
   background: rgba(30, 44, 58, 0.08);
   color: #21313c;
   font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  font-size: 0.92em;
   padding: 1px 4px;
 }
 
@@ -398,7 +397,6 @@ html.pet-transparent-root .app-shell {
 
 .pet-output.markdown-body .markdown-code-block pre {
   padding: 10px 44px 10px 10px;
-  font-size: 11px;
   line-height: 1.55;
   white-space: pre;
 }

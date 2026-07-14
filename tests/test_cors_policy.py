@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from starlette.middleware.cors import CORSMiddleware
 
 from src.web_backend.facade import WebBackendFacade
+from src.web_backend.network_diagnostics import NetworkDiagnosticsMiddleware
 from src.web_backend.private_network_access import PrivateNetworkAccessMiddleware
 
 
@@ -19,6 +20,11 @@ def test_cors_policy_allows_all_origins():
         m for m in facade.app.user_middleware if m.cls is PrivateNetworkAccessMiddleware
     ]
     assert len(private_network_layers) == 1
+
+    diagnostics_layers = [
+        m for m in facade.app.user_middleware if m.cls is NetworkDiagnosticsMiddleware
+    ]
+    assert len(diagnostics_layers) == 1
 
 
 def test_private_network_access_header_allows_any_origin():

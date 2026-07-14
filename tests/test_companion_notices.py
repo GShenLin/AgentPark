@@ -243,7 +243,8 @@ def test_graph_node_persists_response_metadata_as_assistant_sidecar(monkeypatch,
                 "type": "structured",
                 "data": {
                     "kind": "response_metadata",
-                    "assistant_message_id": "assistant-1",
+                    "scope": "final_assistant",
+                    "target": {"type": "message", "message_id": "assistant-1"},
                     "response_metadata": {
                         "protocol": "responses",
                         "response": {"id": "resp-1", "status": "completed"},
@@ -277,7 +278,8 @@ def test_graph_node_persists_response_metadata_as_assistant_sidecar(monkeypatch,
     assert persisted[0][1]["id"] == "assistant-1"
     assert persisted[0][1]["parts"] == [{"type": "text", "text": "completed answer"}]
     metadata_data = persisted[1][1]["parts"][0]["data"]
-    assert metadata_data["assistant_message_id"] == "assistant-1"
+    assert metadata_data["scope"] == "final_assistant"
+    assert metadata_data["target"] == {"type": "message", "message_id": "assistant-1"}
     assert metadata_data["response_metadata"]["response"]["id"] == "resp-1"
     assert metadata_data["response_metadata"]["output_items"] == [{"type": "message", "id": "output-1"}]
 

@@ -39,12 +39,13 @@ call :log "python-selected path=%PYTHON_EXE%"
 set "AGENTPARK_ASK_HERE_PING_EXIT=%errorlevel%"
 call :log "ping-exit code=%AGENTPARK_ASK_HERE_PING_EXIT%"
 if not "%AGENTPARK_ASK_HERE_PING_EXIT%"=="0" (
-    call :log "server-not-ready starting-background-server"
-    call :start_background_server
+    call :log "server-not-ready starting-agentpark-project"
+    call :start_agentpark_project
     set "AGENTPARK_ASK_HERE_START_EXIT=%errorlevel%"
-    call :log "start-background-server-exit code=!AGENTPARK_ASK_HERE_START_EXIT!"
+    call :log "start-agentpark-project-exit code=!AGENTPARK_ASK_HERE_START_EXIT!"
     if not "!AGENTPARK_ASK_HERE_START_EXIT!"=="0" exit /b !AGENTPARK_ASK_HERE_START_EXIT!
-    "%PYTHON_EXE%" -m src.ask_here_launcher wait --timeout 35
+    set "AGENTPARK_ASK_HERE_PROJECT_STARTING=1"
+    "%PYTHON_EXE%" -m src.ask_here_launcher wait --timeout 180
     set "AGENTPARK_ASK_HERE_WAIT_EXIT=%errorlevel%"
     call :log "wait-exit code=!AGENTPARK_ASK_HERE_WAIT_EXIT!"
     if not "!AGENTPARK_ASK_HERE_WAIT_EXIT!"=="0" exit /b !AGENTPARK_ASK_HERE_WAIT_EXIT!
@@ -58,16 +59,13 @@ set "AGENTPARK_ASK_HERE_DISPATCH_EXIT=%errorlevel%"
 call :log "dispatch-exit code=%AGENTPARK_ASK_HERE_DISPATCH_EXIT%"
 exit /b %AGENTPARK_ASK_HERE_DISPATCH_EXIT%
 
-:start_background_server
-set "AGENTPARK_WEB_STDOUT=%cd%\.runtime\agentpark-server.log"
-set "AGENTPARK_WEB_STDERR=%cd%\.runtime\agentpark-server.err.log"
+:start_agentpark_project
 set "AGENTPARK_WORKSPACE_ROOT=%cd%"
-set "AGENTPARK_PYTHON_EXE=%PYTHON_EXE%"
-call :log "start-background-server stdout=%AGENTPARK_WEB_STDOUT% stderr=%AGENTPARK_WEB_STDERR%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AGENTPARK_PYTHON_EXE; $root=$env:AGENTPARK_WORKSPACE_ROOT; $stdout=$env:AGENTPARK_WEB_STDOUT; $stderr=$env:AGENTPARK_WEB_STDERR; $env:AGENTPARK_RESTORE_DESKTOP_PETS='1'; $arguments=@('-m','src.fast_api','--workspace-root',$root); Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr"
+call :log "start-agentpark-project workspace=%AGENTPARK_WORKSPACE_ROOT%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%cd%\scripts\start_agentpark_hidden.ps1" -WorkspaceRoot "%cd%" >> "%AGENTPARK_ASK_HERE_LOG%" 2>&1
 if errorlevel 1 (
-    call :log "error start-background-server-failed code=%errorlevel%"
-    echo [ERROR] Failed to start AgentPark web server in background.
+    call :log "error start-agentpark-project-failed code=%errorlevel%"
+    echo [ERROR] Failed to start AgentPark through build_and_run.bat.
     exit /b %errorlevel%
 )
 exit /b 0

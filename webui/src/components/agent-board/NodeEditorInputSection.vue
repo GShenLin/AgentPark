@@ -249,6 +249,7 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
   background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
   color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
   padding: 10px 12px;
+  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
   outline: none;
 }
 

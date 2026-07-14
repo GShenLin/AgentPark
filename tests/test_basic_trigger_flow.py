@@ -458,3 +458,110 @@ def test_stale_working_node_with_inflight_is_not_requeued_by_timeout(tmp_path):
 
     assert recovered == {"recovered": False, "reason": "", "pending_count": 0}
 
+
+def test_pause_during_work_holds_output_until_resume(monkeypatch, tmp_path):
+    import threading
+
+    import src.web_backend as backend
+    import src.web_backend.graph_node_execution as graph_node_execution
+    import src.web_backend.runtime_paths as runtime_paths_module
+    from fastapi.testclient import TestClient
+
+    runtime_root = str(tmp_path)
+    original_get_runtime_root = backend._get_runtime_root
+    original_get_resource_root = backend._get_resource_root
+    original_runtime_paths_get_runtime_root = runtime_paths_module._get_runtime_root
+    original_runtime_paths_get_resource_root = runtime_paths_module._get_resource_root
+    resource_root = original_get_runtime_root()
+    started = threading.Event()
+    release = threading.Event()
+
+    backend._get_runtime_root = lambda: runtime_root
+    backend._get_resource_root = lambda: resource_root
+    runtime_paths_module._get_runtime_root = lambda: runtime_root
+    runtime_paths_module._get_resource_root = lambda: resource_root
+
+    def delayed_run(nodes_dir, type_id, message, context):
+        if str(context.get("node_instance_id") or "") == "source":
+            started.set()
+            assert release.wait(timeout=5)
+        return original_run(nodes_dir, type_id, message, context)
+
+    original_run = graph_node_execution._run_node_logic_with_routes
+    monkeypatch.setattr(graph_node_execution, "_run_node_logic_with_routes", delayed_run)
+
+    try:
+        app = backend.create_app()
+        client = TestClient(app)
+        graph = {
+            "id": "default",
+            "name": "default",
+            "nodes": [],
+            "output_routes": {
+                "source": [
+                    {
+                        "output_index": 0,
+                        "targets": [{"node_id": "target", "input_index": 0}],
+                    }
+                ]
+            },
+        }
+        assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
+        for node_id in ("source", "target"):
+            assert client.post(
+                "/api/nodes/instances",
+                json={"node_id": node_id, "type_id": "echo_node", "graph_id": "default"},
+            ).status_code == 200
+
+        assert client.post("/api/graphs/default/runner/start").status_code == 200
+        assert client.post(
+            "/api/graphs/default/emit",
+            json={"from_id": "source", "payload": "hold-me", "trace_id": "pause-trace"},
+        ).status_code == 200
+        assert started.wait(timeout=5)
+        paused = client.post(
+            "/api/nodes/instances/source/state?graph_id=default",
+            json={"state": "stop"},
+        )
+        assert paused.status_code == 200
+        release.set()
+
+        held = None
+        for _ in range(50):
+            cfgs = client.get("/api/nodes/instances/configs?graph_id=default").json().get("nodes") or []
+            source_cfg = next((item for item in cfgs if item.get("node_id") == "source"), {})
+            target_cfg = next((item for item in cfgs if item.get("node_id") == "target"), {})
+            if source_cfg.get("held_outputs"):
+                held = (source_cfg, target_cfg)
+                break
+            time.sleep(0.1)
+
+        assert held is not None
+        source_cfg, target_cfg = held
+        assert source_cfg.get("state") == "stop"
+        assert target_cfg.get("last_message") != "hold-me"
+
+        resumed = client.post(
+            "/api/nodes/instances/source/state?graph_id=default",
+            json={"state": "idle"},
+        )
+        assert resumed.status_code == 200
+        assert resumed.json()["released_output_count"] == 1
+        assert resumed.json()["released_task_count"] == 1
+
+        delivered = False
+        for _ in range(50):
+            cfgs = client.get("/api/nodes/instances/configs?graph_id=default").json().get("nodes") or []
+            target_cfg = next((item for item in cfgs if item.get("node_id") == "target"), {})
+            if target_cfg.get("last_message") == "hold-me":
+                delivered = True
+                break
+            time.sleep(0.1)
+        assert delivered
+    finally:
+        release.set()
+        backend._get_runtime_root = original_get_runtime_root
+        backend._get_resource_root = original_get_resource_root
+        runtime_paths_module._get_runtime_root = original_runtime_paths_get_runtime_root
+        runtime_paths_module._get_resource_root = original_runtime_paths_get_resource_root
+

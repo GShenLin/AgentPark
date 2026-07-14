@@ -132,6 +132,7 @@ class RuntimeStateMemoryStore:
         }
         self._normalize_state(normalized)
         self._normalize_pending(normalized)
+        self._validate_optional_list(normalized, "held_outputs")
         self._validate_optional_dict(normalized, "inflight")
         self._validate_optional_dict(normalized, "last_runtime_event")
         self._validate_optional_list(normalized, "runtime_events")

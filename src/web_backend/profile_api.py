@@ -7,7 +7,7 @@ import shutil
 from typing import Any
 
 from . import runtime_paths
-from .graph_api_storage import _write_graph_config
+from .graph_config_file import write_graph_config
 from .graph_runtime_registry import GraphConfigReadError
 from .node_config_errors import NodeConfigReadError, NodeConfigWriteError
 from .node_config_service import RESERVED_NODE_CONFIG_FIELDS, RUNTIME_STATE_FIELDS, node_config_service
@@ -292,7 +292,7 @@ class ProfileApi(HostBoundService):
             graph_config.pop("nodes", None)
             graph_config["id"] = target_graph_id
             graph_config["name"] = target_graph_id
-            _write_graph_config(os.path.join(graph_dir, "config.json"), graph_config)
+            write_graph_config(os.path.join(graph_dir, "config.json"), graph_config)
 
             for item in raw_node_configs:
                 node_cfg = _node_config_from_profile(item, target_graph_id=target_graph_id)

@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { MessageEnvelope } from '../api'
+import MemoryMetadataDisclosure from './MemoryMetadataDisclosure.vue'
 import MemoryMessageActions from './MemoryMessageActions.vue'
 import MemoryResourcePart from './MemoryResourcePart.vue'
 import MemoryResponseMetadataPart from './MemoryResponseMetadataPart.vue'
@@ -7,20 +9,27 @@ import MemoryToolCallPart from './MemoryToolCallPart.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownText } from './memoryMarkdown'
 import { extractMemoryMessageText } from './memoryMessageText'
-import { messageParts, normalizeMemoryRole } from './memoryFeedTools'
+import {
+  isResponseMetadataPart,
+  memoryMessageDisplayParts,
+  normalizeMemoryRole,
+  responseMetadataPartData,
+} from './memoryFeedTools'
 
 const props = withDefaults(defineProps<{
   message: MessageEnvelope
   markdownPreview: boolean
   showActions?: boolean
+  metadataDisclosure?: boolean
 }>(), {
   showActions: true,
+  metadataDisclosure: true,
 })
 
 const emit = defineEmits<{
   (event: 'save', text: string): void
   (event: 'copy', text: string): void
-  (event: 'delete', message: MessageEnvelope): void
+  (event: 'delete', message: MessageEnvelope | MessageEnvelope[]): void
 }>()
 
 function escapeHtml(value: string) {
@@ -49,12 +58,6 @@ function renderFeedMarkdown(text: string) {
   }
 }
 
-function isResponseMetadataPart(part: unknown) {
-  if (!part || typeof part !== 'object' || String((part as any).type || '') !== 'structured') return false
-  const data = (part as any).data
-  return !!(data && typeof data === 'object' && (data.response_metadata || Array.isArray(data.server_tool_calls) || Array.isArray(data.citations)))
-}
-
 function isAssistantProgressMeta(part: unknown) {
   return !!(part && typeof part === 'object' && String((part as any).type || '') === 'meta' && String((part as any)?.meta?.kind || '') === 'assistant_progress')
 }
@@ -66,23 +69,46 @@ function messageText() {
 function canDelete() {
   return !!String((props.message as any)?.id || '').trim()
 }
+
+function deletableMessages() {
+  const associated = (props.message as any)?.__associatedMetadataMessages
+  return Array.isArray(associated) && associated.length > 0 ? [props.message, ...associated] : props.message
+}
+
+const displayParts = computed(() => memoryMessageDisplayParts(props.message, props.metadataDisclosure))
 </script>
 
 <template>
   <div class="feed-parts">
-    <template v-for="(part, idx) in messageParts(message)" :key="idx">
-      <div
-        v-if="String((part as any)?.type || '') === 'text' && markdownPreview && shouldRenderMarkdown()"
-        class="feed-text markdown-part"
-        v-html="renderFeedMarkdown(String((part as any)?.text || ''))"
-        @click="handleMarkdownCodeCopyClick"
-      ></div>
-      <div v-else-if="String((part as any)?.type || '') === 'text'" class="feed-text">{{ String((part as any)?.text || '') }}</div>
-      <MemoryResourcePart v-else-if="String((part as any)?.type || '') === 'resource'" :part="part as Record<string, unknown>" />
-      <MemoryToolCallPart v-else-if="String((part as any)?.type || '') === 'tool_call'" :part="part as Record<string, unknown>" />
-      <MemoryResponseMetadataPart v-else-if="isResponseMetadataPart(part)" :data="(part as any).data" />
-      <div v-else-if="isAssistantProgressMeta(part)" class="progress-context-note">Excluded from model context</div>
-      <pre v-else class="feed-structured">{{ JSON.stringify(part, null, 2) }}</pre>
+    <template v-for="entry in displayParts" :key="entry.key">
+      <MemoryMetadataDisclosure
+        v-if="entry.kind === 'associated_metadata'"
+        :created-at="entry.createdAt"
+        default-expanded
+      >
+        <MemoryResponseMetadataPart
+          v-for="(part, index) in entry.parts"
+          :key="index"
+          :data="responseMetadataPartData(part)"
+        />
+      </MemoryMetadataDisclosure>
+      <template v-else>
+        <div
+          v-if="String((entry.part as any)?.type || '') === 'text' && markdownPreview && shouldRenderMarkdown()"
+          class="feed-text markdown-part"
+          v-html="renderFeedMarkdown(String((entry.part as any)?.text || ''))"
+          @click="handleMarkdownCodeCopyClick"
+        ></div>
+        <div v-else-if="String((entry.part as any)?.type || '') === 'text'" class="feed-text">{{ String((entry.part as any)?.text || '') }}</div>
+        <MemoryResourcePart v-else-if="String((entry.part as any)?.type || '') === 'resource'" :part="entry.part as Record<string, unknown>" />
+        <MemoryToolCallPart v-else-if="String((entry.part as any)?.type || '') === 'tool_call'" :part="entry.part as Record<string, unknown>" />
+        <MemoryResponseMetadataPart
+          v-else-if="isResponseMetadataPart(entry.part)"
+          :data="responseMetadataPartData(entry.part)"
+        />
+        <div v-else-if="isAssistantProgressMeta(entry.part)" class="progress-context-note">Excluded from model context</div>
+        <pre v-else class="feed-structured">{{ JSON.stringify(entry.part, null, 2) }}</pre>
+      </template>
     </template>
     <MemoryMessageActions
       v-if="showActions && (messageText() || canDelete())"
@@ -92,7 +118,7 @@ function canDelete() {
       :show-delete="canDelete()"
       @save="emit('save', messageText())"
       @copy="emit('copy', messageText())"
-      @delete="emit('delete', message)"
+      @delete="emit('delete', deletableMessages())"
     />
   </div>
 </template>
@@ -102,8 +128,8 @@ function canDelete() {
 .feed-actions { align-self: flex-end; margin-top: 2px; }
 .feed-text { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
 .feed-text.markdown-part { white-space: normal; }
-.progress-context-note { align-self: flex-start; padding: 2px 7px; border-radius: 999px; color: rgba(125, 211, 252, 0.9); background: rgba(14, 116, 144, 0.16); font-size: 11px; }
-.feed-structured { margin: 0; padding: 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.24); overflow: auto; font-size: 12px; }
+.progress-context-note { align-self: flex-start; padding: 2px 7px; border-radius: 999px; color: rgba(125, 211, 252, 0.9); background: rgba(14, 116, 144, 0.16); font-size: var(--theme-panel-memory-panel-font-small, 11px); }
+.feed-structured { margin: 0; padding: 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.24); overflow: auto; font-size: var(--theme-panel-memory-panel-font-ui, 12px); }
 :deep(.feed-text.markdown-part p) { margin: 0 0 8px 0; }
 :deep(.feed-text.markdown-part p:last-child) { margin-bottom: 0; }
 :deep(.feed-text.markdown-part pre) { margin: 8px 0; padding: 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.28); overflow: auto; }

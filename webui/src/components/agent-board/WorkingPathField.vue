@@ -50,16 +50,17 @@ async function chooseWorkingPath() {
 
 .field-input {
   width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #f8fafc;
+  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
+  color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
   padding: 10px 12px;
+  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
   outline: none;
 }
 
 .field-input:focus {
-  border-color: rgba(56, 189, 248, 0.7);
+  border-color: var(--theme-panel-node-side-editor-input-focus-border, rgba(56, 189, 248, 0.7));
 }
 
 .path-picker-btn {

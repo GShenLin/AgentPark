@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import type { MessageEnvelope } from '../api'
+import type { LatestTurnProgressSummary, MessageEnvelope } from '../api'
+import MemoryMetadataMessage from './MemoryMetadataMessage.vue'
 import MemoryMessageActions from './MemoryMessageActions.vue'
 import MemoryMessageParts from './MemoryMessageParts.vue'
 import {
@@ -17,10 +18,12 @@ const props = withDefaults(defineProps<{
   compact?: boolean
   lazyLoad?: boolean
   loading?: boolean
+  summary?: LatestTurnProgressSummary | null
 }>(), {
   compact: false,
   lazyLoad: false,
   loading: false,
+  summary: null,
 })
 
 const emit = defineEmits<{
@@ -58,10 +61,11 @@ function deletableMessages() {
 }
 
 function groupLabel() {
-  const messageCount = props.entry.messages.length
-  const toolCount = toolGroupParts(props.entry).length
+  const deferredSummary = props.lazyLoad ? props.summary : null
+  const messageCount = deferredSummary?.item_count ?? props.entry.messages.length
+  const toolCount = deferredSummary?.tool_count ?? toolGroupParts(props.entry).length
   const pieces = [`${messageCount} ${messageCount === 1 ? 'item' : 'items'}`]
-  if (toolCount > 0) pieces.push(`${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`)
+  if (toolCount > 0 || deferredSummary) pieces.push(`${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`)
   return pieces.join(' · ')
 }
 </script>
@@ -88,24 +92,33 @@ function groupLabel() {
     </div>
 
     <div v-if="expanded" class="progress-group-list">
-      <div
-        v-for="(message, index) in entry.messages"
-        :key="String((message as any)?.id || index)"
-        class="progress-message"
-        :class="`role-${feedRoleClass(String((message as any)?.role || ''))}`"
-      >
-        <div class="progress-message-head">
-          <span>{{ memoryRoleLabel(feedRoleClass(String((message as any)?.role || '')), String((message as any)?.role || '')) }}</span>
-          <span>{{ String((message as any)?.created_at || '') }}</span>
-        </div>
-        <MemoryMessageParts
+      <template v-for="(message, index) in entry.messages" :key="String((message as any)?.id || index)">
+        <MemoryMetadataMessage
+          v-if="feedRoleClass(String((message as any)?.role || '')) === 'metadata'"
           :message="message"
           :markdown-preview="markdownPreview"
           @save="emit('save', $event)"
           @copy="emit('copy', $event)"
           @delete="emit('delete', $event)"
         />
-      </div>
+        <div
+          v-else
+          class="progress-message"
+          :class="`role-${feedRoleClass(String((message as any)?.role || ''))}`"
+        >
+          <div class="progress-message-head">
+            <span>{{ memoryRoleLabel(feedRoleClass(String((message as any)?.role || '')), String((message as any)?.role || '')) }}</span>
+            <span>{{ String((message as any)?.created_at || '') }}</span>
+          </div>
+          <MemoryMessageParts
+            :message="message"
+            :markdown-preview="markdownPreview"
+            @save="emit('save', $event)"
+            @copy="emit('copy', $event)"
+            @delete="emit('delete', $event)"
+          />
+        </div>
+      </template>
     </div>
   </div>
 </template>

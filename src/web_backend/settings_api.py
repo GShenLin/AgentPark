@@ -24,8 +24,10 @@ from src.web_backend.theme_settings import (
     theme_image_response,
     validate_theme_config,
 )
+from src.tool.tool_failure_analysis import build_tool_failure_analysis, build_tool_failure_history
 from src.tool.tool_stats_store import (
     clear_tool_stats as clear_tool_stats_store,
+    load_tool_call_stats,
     load_recent_tool_call_stats,
     load_tool_stats_summary,
 )
@@ -333,20 +335,33 @@ class SettingsApiDomain(DomainBase):
 
     def get_tool_stats(self):
         try:
+            recent_calls = load_recent_tool_call_stats()
+            analysis_calls = load_tool_call_stats()
             return {
                 "summary": load_tool_stats_summary(),
-                "recent_calls": load_recent_tool_call_stats(),
+                "recent_calls": recent_calls,
+                "failure_analysis": build_tool_failure_analysis(analysis_calls),
             }
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to read tool stats: {exc}") from exc
 
+    def get_tool_failure_history(self, tool_name: str):
+        try:
+            return build_tool_failure_history(load_tool_call_stats(), tool_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to read tool failure history: {exc}") from exc
+
     def clear_tool_stats(self):
         try:
             clear_tool_stats_store()
+            recent_calls = load_recent_tool_call_stats()
             return {
                 "ok": True,
                 "summary": load_tool_stats_summary(),
-                "recent_calls": load_recent_tool_call_stats(),
+                "recent_calls": recent_calls,
+                "failure_analysis": build_tool_failure_analysis(recent_calls),
             }
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to clear tool stats: {exc}") from exc

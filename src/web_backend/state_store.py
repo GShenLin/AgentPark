@@ -1,6 +1,7 @@
 import json
 import os
 from .node_config_store import NodeConfigStore, NodeDeletingError
+from .node_output_hold_store import node_output_hold_store
 
 
 def _preview_text(value: object, limit: int = 260) -> str:
@@ -41,6 +42,14 @@ def _update_node_config_state(config_path: str, state: str) -> None:
 
 def _transition_node_config_to_idle(config_path: str) -> None:
     _NODE_CONFIG_STORE.transition_to_idle(config_path)
+
+
+def _complete_node_config_work_with_held_output(config_path: str, item: dict) -> tuple[str, int]:
+    return node_output_hold_store.complete_work(config_path, item)
+
+
+def _resume_node_config_with_held_outputs(config_path: str) -> list[dict]:
+    return node_output_hold_store.resume(config_path)
 
 
 def _append_node_pending(config_path: str, item: dict) -> None:

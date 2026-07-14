@@ -8,10 +8,17 @@ from typing import Any, Callable
 
 from src.companion_inbox import drain_companion_notices
 from src.companion_inbox import format_companion_notice
+from src.companion_cli_window import hide_companion_cli_window
 from src.cli_commands.companion_debug import build_terminal_debug_text
+from src.cli_commands.companion_choice_menu import run_choice_menu
+from src.cli_commands.companion_config_menus import select_provider, select_reasoning, toggle_capability
 from src.cli_commands.companion_inbox_watcher import CompanionInboxWatcher
+from src.cli_commands.companion_prompt_input import CompanionPromptInputBridge
+from src.cli_commands.companion_prompt_live import PromptLiveTranscript
+from src.cli_commands.companion_prompt_turns import PromptTurnCoordinator
 from src.cli_commands.companion_restart import launch_restart_bat
 from src.cli_commands.companion_style import accent, error, field_line, muted, role_label
+from src.web_backend.node_config_service import node_config_service
 
 
 EXIT_COMMANDS = {"/exit", "/quit", "exit", "quit"}
@@ -19,6 +26,12 @@ COMMANDS = [
     ("/help", "Show available companion commands"),
     ("/status", "Show provider, config, memory, and runtime paths"),
     ("/restart", "Run the platform restart script and exit this CLI session"),
+    ("/provider", "Select the Companion provider"),
+    ("/resoning", "Select the reasoning effort"),
+    ("/tool", "Enable or remove a Companion tool"),
+    ("/mcp", "Enable or remove a Companion MCP server"),
+    ("/skill", "Enable or remove a Companion skill"),
+    ("/hidden", "Hide this CLI window"),
     ("/clear", "Clear the terminal transcript"),
     ("/exit", "Quit the companion CLI"),
 ]
@@ -26,6 +39,12 @@ HELP_TEXT = """Commands:
   /help    Show this help
   /status  Show companion runtime paths and provider config
   /restart Run the platform restart script and exit this CLI session
+  /provider Select the Companion provider with Up/Down and Enter
+  /resoning Select reasoning effort with Up/Down and Enter
+  /tool    Enable or remove one tool with Up/Down and Enter
+  /mcp     Enable or remove one MCP server with Up/Down and Enter
+  /skill   Enable or remove one skill with Up/Down and Enter
+  /hidden  Hide this CLI window; use ToggleConsole.bat or folder right-click to show it
   /clear   Clear the terminal
   /exit    Quit
 
@@ -98,8 +117,22 @@ class PromptCompanionTerminal:
         self.target = target
         self.debug_terminal = debug_terminal
         self.run_turn = run_turn
-        self.turn_count = 0
         self.turn_lock = threading.Lock()
+        self.config_signature = self._target_config_signature()
+        self.live_transcript: PromptLiveTranscript | None = None
+        input_bridge = CompanionPromptInputBridge(target)
+        self.turns = PromptTurnCoordinator(
+            target,
+            run_turn=run_turn,
+            turn_lock=self.turn_lock,
+            print_user=self._print_user_message,
+            print_status=self._print_muted,
+            print_error=self._print_error,
+            after_turn=self._after_turn,
+            begin_turn=input_bridge.begin_turn,
+            submit_mid_turn=input_bridge.submit_mid_turn,
+            finish_turn=input_bridge.finish_turn,
+        )
 
     @classmethod
     def is_available(cls) -> bool:
@@ -133,10 +166,12 @@ class PromptCompanionTerminal:
             completer=SlashCommandCompleter(COMMANDS),
             complete_while_typing=True,
             bottom_toolbar=self._toolbar,
+            erase_when_done=True,
             reserve_space_for_menu=8,
             style=Style.from_dict(
                 {
                     "bottom-toolbar": "reverse",
+                    "live": "#d1d5db",
                     "prompt": "ansicyan bold",
                     "bottom-toolbar.text": "bg:#111827 #d1d5db",
                     "completion-menu.completion": "bg:#1f2937 #d1d5db",
@@ -146,6 +181,8 @@ class PromptCompanionTerminal:
                 }
             ),
         )
+        self.live_transcript = PromptLiveTranscript(session.app.invalidate)
+        self.turns.set_stream_handler(self.live_transcript.handle)
         self._print_banner()
         if self.debug_terminal:
             self._print_block("terminal", self._terminal_debug_text())
@@ -154,51 +191,84 @@ class PromptCompanionTerminal:
         watcher = CompanionInboxWatcher(self._drain_inbox)
         watcher.start()
         try:
-            while True:
-                try:
-                    line = session.prompt([("class:prompt", "> ")])
-                except EOFError:
-                    self._print_muted("exit")
-                    break
-                except KeyboardInterrupt:
-                    self._print_muted("cancelled")
-                    continue
-
-                text = line.strip()
-                if not text:
-                    continue
-                command = text.lower()
-                if command in EXIT_COMMANDS:
-                    break
-                if command == "/help":
-                    self._print_block("help", HELP_TEXT)
-                    continue
-                if command == "/status":
-                    self._print_block("status", self._status_text())
-                    continue
-                if command == "/restart":
-                    if self._restart():
-                        return "restart"
-                    continue
-                if command == "/clear":
-                    self._clear()
-                    self._print_banner()
-                    continue
-
-                self._print_user_message(line)
-                self._print_muted("working")
-                try:
-                    with self.turn_lock:
-                        self.run_turn(self.target, line, print_stream=True)
-                    self.turn_count += 1
-                    self._drain_inbox()
-                except KeyboardInterrupt:
-                    self._print_error("interrupted")
-                except Exception as exc:
-                    self._print_error(f"{type(exc).__name__}: {exc}")
+            with _patch_prompt_stdout():
+                result = self._run_prompt_loop(session)
+                if result == "restart":
+                    return result
             return ""
         finally:
             watcher.stop()
+
+    def _run_prompt_loop(self, session) -> str:
+        while True:
+            try:
+                message = (
+                    self.live_transcript.prompt_message
+                    if self.live_transcript is not None
+                    else [("class:prompt", "> ")]
+                )
+                line = session.prompt(message)
+            except EOFError:
+                if self.turns.running:
+                    self._print_muted("waiting for current turn before exit")
+                    self.turns.wait_until_idle()
+                self._print_muted("exit")
+                return ""
+            except KeyboardInterrupt:
+                self._print_muted("cancelled")
+                continue
+
+            text = line.strip()
+            if not text:
+                continue
+            command = text.lower()
+            if command in EXIT_COMMANDS:
+                if self.turns.running:
+                    self._print_muted("current turn is still working")
+                    continue
+                return ""
+            if command == "/help":
+                self._print_block("help", HELP_TEXT)
+                continue
+            if command == "/status":
+                self._print_block("status", self._status_text())
+                continue
+            if command == "/restart":
+                if self.turns.running:
+                    self._print_muted("current turn is still working")
+                    continue
+                if self._restart():
+                    return "restart"
+                continue
+            if command == "/hidden":
+                self._hide_window()
+                continue
+            if command in {"/provider", "/resoning", "/reasoning", "/tool", "/mcp", "/skill"}:
+                if self.turns.running:
+                    self._print_muted("configuration can be changed after the current turn")
+                    continue
+                self._run_config_command(command)
+                continue
+            if command == "/clear":
+                self._clear()
+                self._print_banner()
+                continue
+            self.turns.submit(line)
+
+    def _run_config_command(self, command: str) -> None:
+        if command == "/provider":
+            self._select_provider()
+        elif command in {"/resoning", "/reasoning"}:
+            self._select_reasoning()
+        else:
+            self._toggle_capability(command[1:])
+
+    def _after_turn(self) -> None:
+        if self.live_transcript is not None:
+            transcript = self.live_transcript.commit()
+            if transcript:
+                print(transcript, flush=True)
+        self._drain_inbox()
 
     def _load_prompt_toolkit(self):
         try:
@@ -208,11 +278,54 @@ class PromptCompanionTerminal:
             raise RuntimeError(f"prompt backend is unavailable: {type(exc).__name__}: {exc}") from exc
         return PromptSession, Style
 
+    def _select_provider(self) -> None:
+        if select_provider(self.target, self._run_choice_menu, self._print_error):
+            self.config_signature = self._target_config_signature()
+
+    def _select_reasoning(self) -> None:
+        if select_reasoning(self.target, self._run_choice_menu, self._print_error):
+            self.config_signature = self._target_config_signature()
+
+    def _toggle_capability(self, kind: str) -> None:
+        if toggle_capability(self.target, kind, self._run_choice_menu, self._print_error):
+            self.config_signature = self._target_config_signature()
+
+    def _run_choice_menu(
+        self,
+        *,
+        title: str,
+        text: str,
+        choices: list[tuple[str, str]],
+        default: str,
+        checked: set[str] | None = None,
+    ) -> str | None:
+        return run_choice_menu(
+            title=title,
+            text=text,
+            choices=choices,
+            default=default,
+            checked=checked,
+        )
+
     def _toolbar(self) -> str:
+        self._refresh_target_config()
         provider = str(self.target.config.get("provider_id") or "provider-unset")
-        mode = str(self.target.config.get("mode") or "chat")
-        reasoning = str(self.target.config.get("reasoning_effort") or "")
-        return f" AgentPark Companion | provider {provider} | mode {mode} | reasoning {reasoning} | turns {self.turn_count} "
+        reasoning = str(self.target.config.get("reasoning_effort") or "").strip() or "-"
+        working_path = str(self.target.config.get("working_path") or "").strip() or "-"
+        return f" provider: {provider} | reasoning: {reasoning} | WorkingPath: {working_path} "
+
+    def _refresh_target_config(self) -> None:
+        signature = self._target_config_signature()
+        if signature == self.config_signature:
+            return
+        latest_config = node_config_service.read_strict(self.target.config_path)
+        self.target.config.clear()
+        self.target.config.update(latest_config)
+        self.config_signature = signature
+
+    def _target_config_signature(self) -> tuple[int, int, int]:
+        stat = os.stat(self.target.config_path)
+        return stat.st_mtime_ns, stat.st_size, stat.st_ino
 
     def _print_banner(self) -> None:
         provider = str(self.target.config.get("provider_id") or "provider-unset")
@@ -277,7 +390,6 @@ class PromptCompanionTerminal:
             try:
                 with self.turn_lock:
                     self.run_turn(self.target, text, print_stream=True)
-                self.turn_count += 1
             except KeyboardInterrupt:
                 self._print_error("interrupted")
             except Exception as exc:
@@ -293,5 +405,17 @@ class PromptCompanionTerminal:
         self._print_block("status", f"Started {label}\nscript: {launched.script_path}\npid: {launched.pid}")
         return True
 
+    def _hide_window(self) -> None:
+        try:
+            hide_companion_cli_window()
+        except Exception as exc:
+            self._print_error(f"hide failed: {type(exc).__name__}: {exc}")
+
     def _clear(self) -> None:
         os.system("cls" if os.name == "nt" else "clear")
+
+
+def _patch_prompt_stdout():
+    from prompt_toolkit.patch_stdout import patch_stdout
+
+    return patch_stdout(raw=True)

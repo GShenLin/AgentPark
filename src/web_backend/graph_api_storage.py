@@ -7,13 +7,16 @@ import threading
 import time
 from datetime import datetime
 
-from src.file_transaction import atomic_write_text
+from fastapi import Request
+
 from ..workspace_settings import read_startup_graph_settings, save_startup_graph_settings
 
+from .graph_config_file import graph_config_version, read_graph_config, write_graph_config
 from .graph_runtime_registry import GraphConfigReadError
 from .graph_output_routes import normalize_output_routes
 from . import runtime_paths
 from .node_deletion import NodeDeletionBlocked, delete_node_directory
+from .request_access import is_local_request
 from .service_host import HostBoundService
 from .shared import HTTPException
 
@@ -24,7 +27,14 @@ def _is_protected_graph_id(graph_id: object) -> bool:
     return str(graph_id or "").strip().lower() in PROTECTED_GRAPH_IDS
 
 
-def _graph_list_item(graph_id: str, name: str, updated_at: str | None) -> dict:
+def _graph_list_item(
+    graph_id: str,
+    name: str,
+    updated_at: str | None,
+    *,
+    private: bool,
+    visibility_editable: bool,
+) -> dict:
     protected = _is_protected_graph_id(graph_id)
     return {
         "id": graph_id,
@@ -33,37 +43,9 @@ def _graph_list_item(graph_id: str, name: str, updated_at: str | None) -> dict:
         "readonly": protected,
         "deletable": not protected,
         "editable": True,
+        "private": private,
+        "visibility_editable": visibility_editable,
     }
-
-
-def _graph_config_version(config_path: str) -> int:
-    try:
-        return int(os.stat(config_path).st_mtime_ns)
-    except OSError:
-        return 0
-
-
-def _write_graph_config(config_path: str, payload: dict) -> None:
-    if not isinstance(payload, dict):
-        raise ValueError("graph config payload must be an object")
-    atomic_write_text(config_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
-
-
-def _read_graph_config_file(config_path: str) -> dict:
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-    except json.JSONDecodeError as exc:
-        raise GraphConfigReadError(
-            f"graph config contains invalid JSON: {config_path}: line {exc.lineno} column {exc.colno}: {exc.msg}"
-        ) from exc
-    except OSError as exc:
-        raise GraphConfigReadError(
-            f"failed to read graph config {config_path}: {type(exc).__name__}: {exc}"
-        ) from exc
-    if not isinstance(payload, dict):
-        raise GraphConfigReadError(f"graph config must be a JSON object: {config_path}")
-    return payload
 
 
 class GraphApiStorage(HostBoundService):
@@ -77,6 +59,8 @@ class GraphApiStorage(HostBoundService):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         graph["working_path"] = str(graph.get("working_path") or "").strip()
+        if "private" in graph and not isinstance(graph.get("private"), bool):
+            raise HTTPException(status_code=400, detail="graph private must be a boolean")
         graph.pop("nodes", None)
         graph.pop("links", None)
         return graph
@@ -101,28 +85,44 @@ class GraphApiStorage(HostBoundService):
                     node_ids.add(entry)
         return node_ids or None
 
-    def list_graphs(self):
+    def list_graphs(self, request: Request = None):
         graphs_dir = runtime_paths._get_graphs_dir()
         graphs = []
+        local_request = is_local_request(request)
         if not os.path.isdir(graphs_dir):
-            graphs.append(_graph_list_item("default", "default", None))
+            graphs.append(
+                _graph_list_item(
+                    "default", "default", None, private=False, visibility_editable=local_request
+                )
+            )
             return {"graphs": graphs}
 
         default_config = os.path.join(graphs_dir, "default", "config.json")
         default_updated = None
         default_name = "default"
+        default_private = False
         if os.path.exists(default_config):
             try:
                 default_updated = datetime.fromtimestamp(os.path.getmtime(default_config)).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
                 default_updated = None
             try:
-                payload = _read_graph_config_file(default_config)
+                payload = read_graph_config(default_config)
             except GraphConfigReadError as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
             if payload.get("name"):
                 default_name = str(payload.get("name"))
-        graphs.append(_graph_list_item("default", default_name, default_updated))
+            default_private = payload.get("private") is True
+        if local_request or not default_private:
+            graphs.append(
+                _graph_list_item(
+                    "default",
+                    default_name,
+                    default_updated,
+                    private=default_private,
+                    visibility_editable=local_request,
+                )
+            )
 
         for entry in os.listdir(graphs_dir):
             if entry in {"agents", "default"}:
@@ -135,24 +135,36 @@ class GraphApiStorage(HostBoundService):
                 continue
             name = entry
             try:
-                payload = _read_graph_config_file(config_path)
+                payload = read_graph_config(config_path)
             except GraphConfigReadError as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
             if payload.get("name"):
                 name = str(payload.get("name"))
+            private = payload.get("private") is True
+            if private and not local_request:
+                continue
             updated_at = None
             try:
                 updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
             except Exception:
                 updated_at = None
-            graphs.append(_graph_list_item(entry, name, updated_at))
+            graphs.append(
+                _graph_list_item(
+                    entry,
+                    name,
+                    updated_at,
+                    private=private,
+                    visibility_editable=local_request,
+                )
+            )
         graphs.sort(key=lambda item: item["name"].lower())
         return {"graphs": graphs}
 
-    def get_graph(self, graph_id: str, if_version: int = 0):
+    def get_graph(self, graph_id: str, if_version: int = 0, request: Request = None):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
+        self.require_graph_visible(safe_id, request)
         self.graph_runtime._log_graph_event(safe_id, "graph_load_api")
         graphs_dir = runtime_paths._get_graphs_dir()
         config_path = os.path.join(graphs_dir, safe_id, "config.json")
@@ -161,30 +173,31 @@ class GraphApiStorage(HostBoundService):
                 return {"graph": {"id": "default", "name": "default", "output_routes": {}, "version": 0}}
             raise HTTPException(status_code=404, detail="graph not found")
         try:
-            version = _graph_config_version(config_path)
+            version = graph_config_version(config_path)
             try:
                 requested_version = int(if_version or 0)
             except Exception:
                 requested_version = 0
             if requested_version > 0 and version <= requested_version:
                 return {"graph": {"id": safe_id, "version": version, "unchanged": True}}
-            payload = _read_graph_config_file(config_path)
+            payload = read_graph_config(config_path)
             cleaned = self._sanitize_graph_payload_for_storage(payload)
             if cleaned != payload:
-                _write_graph_config(config_path, cleaned)
-                version = _graph_config_version(config_path)
+                write_graph_config(config_path, cleaned)
+                version = graph_config_version(config_path)
             cleaned["version"] = version
             return {"graph": cleaned}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 
-    def save_graph(self, graph_id: str, payload: dict):
+    def save_graph(self, graph_id: str, payload: dict, request: Request = None):
         graph = (payload or {}).get("graph")
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
         if not isinstance(graph, dict):
             raise HTTPException(status_code=400, detail="graph is required")
+        self.require_graph_visible(safe_id, request)
 
         save_reason = str((payload or {}).get("save_reason") or "").strip()
         raw_source_graph_id = graph.get("source_graph_id")
@@ -207,16 +220,20 @@ class GraphApiStorage(HostBoundService):
         graph_dir = os.path.join(graphs_dir, safe_id)
         os.makedirs(graph_dir, exist_ok=True)
         config_path = os.path.join(graph_dir, "config.json")
+        existing_private = self._graph_is_private(safe_id)
         graph = dict(graph)
         graph.pop("source_graph_id", None)
+        graph.pop("private", None)
         graph = self._sanitize_graph_payload_for_storage(graph)
         graph["id"] = safe_id
+        if existing_private:
+            graph["private"] = True
         if not graph.get("name"):
             graph["name"] = safe_id
         if source_graph_id and source_graph_id != safe_id:
             self._copy_graph_artifacts(source_graph_id, graph_dir, safe_id)
         try:
-            _write_graph_config(config_path, graph)
+            write_graph_config(config_path, graph)
             if source_graph_id and source_graph_id != safe_id:
                 self.graph_runtime._register_all_scheduled_nodes(force_rebuild=True)
             updated_at = datetime.fromtimestamp(os.path.getmtime(config_path)).strftime("%Y-%m-%d %H:%M:%S")
@@ -255,14 +272,20 @@ class GraphApiStorage(HostBoundService):
                 return
             payload["node_id"] = str(node_id)
             payload["graph_id"] = str(target_graph_id)
-            _write_graph_config(config_path, payload)
+            write_graph_config(config_path, payload)
         except Exception:
             pass
 
-    def delete_graph(self, graph_id: str, wait_timeout_seconds: float = 10.0):
+    def delete_graph(
+        self,
+        graph_id: str,
+        wait_timeout_seconds: float = 10.0,
+        request: Request = None,
+    ):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
+        self.require_graph_visible(safe_id, request)
         if _is_protected_graph_id(safe_id):
             raise HTTPException(status_code=403, detail=f"protected graph cannot be deleted: {safe_id}")
         self.graph_runtime._unregister_scheduled_graph(safe_id)

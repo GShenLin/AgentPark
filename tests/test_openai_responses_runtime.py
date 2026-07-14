@@ -88,6 +88,44 @@ def test_responses_web_search_requests_structured_sources():
     assert payload["include"] == ["reasoning.encrypted_content", "web_search_call.action.sources"]
 
 
+def test_codex_oauth_responses_payload_disables_server_storage():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "model": "gpt-test",
+        "authMode": "codex",
+    }
+
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[],
+        use_stream=True,
+        provider_options={"reasoning_effort": ""},
+    )
+
+    assert payload["store"] is False
+
+
+def test_api_key_responses_payload_preserves_default_storage_contract():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "model": "gpt-test",
+        "authMode": "api_key",
+    }
+
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[],
+        use_stream=True,
+        provider_options={"reasoning_effort": ""},
+    )
+
+    assert "store" not in payload
+
+
 def test_responses_input_uses_output_text_for_assistant_history():
     from src.providers.openai_agent import OpenAIAgent
 
@@ -2297,8 +2335,10 @@ def test_explicit_context_continuation_excludes_assistant_progress_text():
     agent.Message = BaseAgent.Message.__get__(agent, OpenAIAgent)
     payloads = []
     order = []
-    agent._agentpark_persist_assistant_progress = lambda message: order.append(
-        ("persist", message.get("content"))
+    progress_messages = []
+    agent._agentpark_persist_assistant_progress = lambda message: (
+        progress_messages.append(dict(message)),
+        order.append(("persist", message.get("content"))),
     )
 
     def echo_tool(message=None):
@@ -2358,6 +2398,8 @@ def test_explicit_context_continuation_excludes_assistant_progress_text():
         ("persist", "I will inspect the first result."),
         ("tool", "hello"),
     ]
+    assert progress_messages[0]["response_metadata"]["response"]["id"] == "resp-1"
+    assert progress_messages[0]["response_metadata"]["output_items"][1]["call_id"] == "call-1"
     continuation_text = json.dumps(payloads[1]["input"], ensure_ascii=False)
     assert continuation_text.count("I will inspect the first result.") == 0
     preserved = [

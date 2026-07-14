@@ -12,7 +12,7 @@ from src.web_backend.node_memory_store import ensure_node_memory_files
 from src.web_backend.node_memory_store import load_recent_node_memory_records
 from src.web_backend.node_memory_store import load_latest_node_memory_turn
 from src.web_backend.node_memory_store import read_node_memory_text
-from src.web_backend.node_instance_runtime import _select_latest_turn_records
+from src.web_backend.node_instance_runtime import _latest_turn_progress_summary, _select_latest_turn_records
 
 
 def test_append_node_memory_entry_writes_markdown_and_jsonl(tmp_path):
@@ -166,6 +166,39 @@ def test_latest_turn_lazy_modes_split_summary_progress_and_metadata():
     ]
 
 
+def test_latest_turn_progress_summary_counts_hidden_items_and_tool_parts():
+    records = [
+        {"id": "old-u", "role": "user"},
+        {"id": "old-p", "role": "assistant_progress"},
+        {"id": "old-a", "role": "assistant"},
+        {"id": "u1", "role": "user"},
+        {"id": "p1", "role": "assistant_progress", "parts": [{"type": "text", "text": "thinking"}]},
+        {"id": "a-mid", "role": "assistant", "parts": [{"type": "text", "text": "I will inspect"}]},
+        {
+            "id": "t1",
+            "role": "tool",
+            "parts": [
+                {"type": "tool_call", "name": "read_file"},
+                {"type": "tool_call", "name": "search"},
+            ],
+        },
+        {"id": "a1", "role": "assistant"},
+        {"id": "m1", "role": "metadata"},
+    ]
+
+    assert _latest_turn_progress_summary(records) == {"item_count": 3, "tool_count": 2}
+
+
+def test_latest_turn_progress_summary_counts_inflight_progress_without_final_response():
+    records = [
+        {"id": "u1", "role": "user"},
+        {"id": "p1", "role": "assistant_progress"},
+        {"id": "t1", "role": "tool", "parts": [{"type": "tool_call", "name": "read_file"}]},
+    ]
+
+    assert _latest_turn_progress_summary(records) == {"item_count": 2, "tool_count": 1}
+
+
 def test_latest_turn_progress_mode_keeps_inflight_progress_without_final_assistant():
     records = [
         {"id": "u1", "role": "user"},
@@ -178,6 +211,23 @@ def test_latest_turn_progress_mode_keeps_inflight_progress_without_final_assista
         "u1",
         "p1",
         "t1",
+    ]
+
+
+def test_latest_turn_uses_system_message_as_terminal_response():
+    records = [
+        {"id": "u1", "role": "user"},
+        {"id": "p1", "role": "assistant_progress"},
+        {"id": "t1", "role": "tool"},
+        {"id": "e1", "role": "system"},
+    ]
+
+    assert [item["id"] for item in _select_latest_turn_records(records, "latest_turn")] == ["u1", "e1"]
+    assert [item["id"] for item in _select_latest_turn_records(records, "latest_turn_progress")] == [
+        "u1",
+        "p1",
+        "t1",
+        "e1",
     ]
 
 

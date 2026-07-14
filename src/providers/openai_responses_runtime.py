@@ -11,17 +11,19 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
         return self._send_responses_gate(declaration, reasoning_effort="")
 
     def _responses_payload_extra(self, **provider_options):
+        payload = {}
+        if str(self.config.get("authMode") or "api_key").strip().lower() == "codex":
+            payload["store"] = False
+
         reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
         if reasoning_effort:
             reasoning = {"effort": reasoning_effort}
             reasoning_summary = self._resolve_reasoning_summary(provider_options.get("reasoning_summary"))
             if reasoning_summary != "disabled":
                 reasoning["summary"] = reasoning_summary
-            return {
-                "reasoning": reasoning,
-                "include": ["reasoning.encrypted_content"],
-            }
-        return {}
+            payload["reasoning"] = reasoning
+            payload["include"] = ["reasoning.encrypted_content"]
+        return payload
 
     def _responses_required_includes(self, tools_payload) -> list[str]:
         tool_types = {

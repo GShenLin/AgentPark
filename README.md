@@ -363,6 +363,8 @@ memories/Companion/Companion/messages.jsonl
 
 After the normal build/install flow, `build_and_run.bat` on Windows or `build_and_run.sh` on Linux starts the WebUI server in the background and then starts the interactive companion CLI in the current terminal. The `cli` and `chat` modes use the combined Web + CLI startup. Use `server` or `web` for WebUI only, and `cli-only` for CLI without WebUI.
 
+On Windows, the Companion CLI started by `build_and_run.bat` is hidden by default. Double-click `ToggleConsole.bat` in the workspace root to show or hide that same window, or run `/hidden` inside the CLI to hide it, without restarting the session. When no Pet is running, the AgentPark folder context-menu action updates the Companion working path and shows or starts the CLI; when a Pet exists, the existing Pet dispatch flow remains unchanged. Window control is intended for a standalone Windows console; when launched inside a shared Windows Terminal window, hiding may affect the entire Terminal window.
+
 The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/Companion/Companion/`. If the terminal does not accept input, run the platform build-and-run script with `cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
 
 Inside the companion CLI, `/restart` launches `Restart.bat` on Windows or `Restart.sh` on Linux and exits the current CLI session so restart behavior stays on the canonical startup path.

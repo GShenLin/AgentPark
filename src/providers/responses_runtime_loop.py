@@ -206,7 +206,8 @@ def send_via_responses(
 
         self._emit_provider_request_completed(last_request_summary, result)
         content, function_calls, response_id = self._parse_responses_output_envelopes(result)
-        structured_result = _accumulate_structured_result(self._parse_responses_structured_result(result))
+        turn_structured_result = self._parse_responses_structured_result(result)
+        structured_result = _accumulate_structured_result(turn_structured_result)
         self._last_responses_structured_result = dict(structured_result)
         save_agent_turn_context_reference(self, context_item)
         save_agent_context_history(self, context_history_items_to_save)
@@ -271,7 +272,10 @@ def send_via_responses(
         if function_calls:
             empty_message_feedback.reset()
             display_tool_calls = [to_openai_tool_call(call) for call in function_calls]
-            self.AssistantProgress(content, tool_calls=display_tool_calls, **structured_result)
+            if self._has_visible_text(content):
+                self.AssistantProgress(content, tool_calls=display_tool_calls, **turn_structured_result)
+            else:
+                self.ProviderTurnMetadata(tool_calls=display_tool_calls, **turn_structured_result)
             self.Message("assistant", None, persist=False, tool_calls=display_tool_calls)
             if not run_tools:
                 _emit_turn_debug(

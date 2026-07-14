@@ -24,7 +24,7 @@ export type FeedTurnEntry = {
   key: string
   userMessage: MessageEnvelope
   progressMessages: MessageEnvelope[]
-  finalAssistant: MessageEnvelope | null
+  finalResponse: MessageEnvelope | null
   finalMessages: MessageEnvelope[]
   startIndex: number
 }
@@ -33,6 +33,10 @@ export type TurnLazySection = 'progress' | 'metadata'
 
 export type FeedEntry = FeedMessageEntry | FeedToolGroupEntry
 export type MemoryTurnFeedEntry = FeedMessageEntry | FeedTurnEntry
+
+export type MemoryMessageDisplayPart =
+  | { kind: 'part'; key: string; part: unknown }
+  | { kind: 'associated_metadata'; key: string; parts: unknown[]; createdAt: string }
 
 export function normalizeMemoryRole(role: string) {
   const value = String(role || '').trim().toLowerCase()
@@ -80,6 +84,59 @@ export function isToolMessage(message: MessageEnvelope) {
 
 export function messageParts(message: MessageEnvelope) {
   return Array.isArray((message as any)?.parts) ? ((message as any).parts as unknown[]) : []
+}
+
+export function responseMetadataPartData(part: unknown) {
+  return (part as any)?.data as Record<string, unknown> | undefined
+}
+
+export function isResponseMetadataPart(part: unknown) {
+  if (!part || typeof part !== 'object' || String((part as any).type || '') !== 'structured') return false
+  const data = responseMetadataPartData(part)
+  return !!(data && typeof data === 'object' && (
+    data.response_metadata
+    || data.provider_requests
+    || Array.isArray(data.server_tool_calls)
+    || Array.isArray(data.citations)
+  ))
+}
+
+export function isAssociatedMetadataPart(part: unknown) {
+  return isResponseMetadataPart(part)
+    && String(responseMetadataPartData(part)?.display_placement || '') === 'associated'
+}
+
+export function memoryMessageDisplayParts(message: MessageEnvelope, groupAssociatedMetadata = true): MemoryMessageDisplayPart[] {
+  const parts = messageParts(message)
+  if (!groupAssociatedMetadata) {
+    return parts.map((part, index) => ({ kind: 'part', key: `part-${index}`, part }))
+  }
+
+  const associatedParts = parts.filter(isAssociatedMetadataPart)
+  if (associatedParts.length === 0) {
+    return parts.map((part, index) => ({ kind: 'part', key: `part-${index}`, part }))
+  }
+
+  const createdTimes = associatedParts
+    .map((part) => String(responseMetadataPartData(part)?.display_created_at || '').trim())
+    .filter((value, index, values) => !!value && values.indexOf(value) === index)
+  const createdAt = createdTimes.length > 1
+    ? `${createdTimes[0]} - ${createdTimes[createdTimes.length - 1]}`
+    : (createdTimes[0] || '')
+  const firstAssociatedIndex = parts.findIndex(isAssociatedMetadataPart)
+
+  return parts.flatMap((part, index): MemoryMessageDisplayPart[] => {
+    if (!isAssociatedMetadataPart(part)) {
+      return [{ kind: 'part', key: `part-${index}`, part }]
+    }
+    if (index !== firstAssociatedIndex) return []
+    return [{
+      kind: 'associated_metadata',
+      key: `associated-metadata-${index}`,
+      parts: associatedParts,
+      createdAt,
+    }]
+  })
 }
 
 export function toolParts(message: MessageEnvelope) {
@@ -135,6 +192,87 @@ export function toolGroupTime(entry: FeedToolGroupEntry | FeedProgressGroupEntry
   return `${first} - ${last}`
 }
 
+function messageResponseMetadataData(message: MessageEnvelope) {
+  for (const part of messageParts(message)) {
+    if (String((part as any)?.type || '') !== 'structured') continue
+    const data = (part as any)?.data
+    if (data && typeof data === 'object' && String(data.kind || '') === 'response_metadata') return data as Record<string, any>
+  }
+  return null
+}
+
+function messageToolCallIds(message: MessageEnvelope) {
+  return toolParts(message)
+    .map((part) => String((part as any)?.call_id || '').trim())
+    .filter(Boolean)
+}
+
+function associateMetadataSidecars(messages: MessageEnvelope[]) {
+  const output = messages.map((message) => ({
+    ...(message as any),
+    parts: [...messageParts(message)],
+  })) as MessageEnvelope[]
+  const messageTargets = new Map<string, number>()
+  const toolTargets = new Map<string, number[]>()
+
+  output.forEach((message, index) => {
+    const messageId = String((message as any)?.id || '').trim()
+    if (messageId) messageTargets.set(messageId, index)
+    for (const callId of messageToolCallIds(message)) {
+      toolTargets.set(callId, [...(toolTargets.get(callId) || []), index])
+    }
+  })
+
+  const hidden = new Set<number>()
+  output.forEach((message, sidecarIndex) => {
+    if (normalizeMemoryRole(String((message as any)?.role || '')) !== 'metadata') return
+    const data = messageResponseMetadataData(message)
+    const target = data?.target
+    if (!target || typeof target !== 'object') return
+
+    let targetIndex: number | undefined
+    if (String(target.type || '') === 'message') {
+      targetIndex = messageTargets.get(String(target.message_id || '').trim())
+    } else if (String(target.type || '') === 'tool_calls' && Array.isArray(target.call_ids)) {
+      for (const callId of target.call_ids) {
+        const candidates = toolTargets.get(String(callId || '').trim()) || []
+        targetIndex = candidates.find((candidate) => candidate > sidecarIndex) ?? candidates[0]
+        if (targetIndex !== undefined) break
+      }
+    }
+    if (targetIndex === undefined || targetIndex === sidecarIndex) return
+
+    const targetMessage = output[targetIndex] as any
+    const sidecarParts = messageParts(message).map((part) => ({
+      ...(part as any),
+      data: (part as any)?.data && typeof (part as any).data === 'object'
+        ? {
+            ...(part as any).data,
+            display_placement: 'associated',
+            display_created_at: String((message as any)?.created_at || ''),
+          }
+        : (part as any)?.data,
+    }))
+    targetMessage.parts = [...messageParts(targetMessage), ...sidecarParts]
+    targetMessage.__associatedMetadataMessages = [
+      ...(Array.isArray(targetMessage.__associatedMetadataMessages) ? targetMessage.__associatedMetadataMessages : []),
+      message,
+    ]
+    hidden.add(sidecarIndex)
+  })
+
+  return output.filter((_message, index) => !hidden.has(index))
+}
+
+export function associatedMessages(message: MessageEnvelope) {
+  const values = (message as any)?.__associatedMetadataMessages
+  return Array.isArray(values) ? values as MessageEnvelope[] : []
+}
+
+export function prepareMemoryMessages(messages: MessageEnvelope[]) {
+  return associateMetadataSidecars(messages)
+}
+
 export function useMemoryFeedEntries(messages: Ref<MessageEnvelope[]>) {
   return computed<FeedEntry[]>(() => {
     const entries: FeedEntry[] = []
@@ -161,7 +299,7 @@ export function useMemoryFeedEntries(messages: Ref<MessageEnvelope[]>) {
       toolRun = null
     }
 
-    messages.value.forEach((message, index) => {
+    prepareMemoryMessages(messages.value).forEach((message, index) => {
       if (isToolMessage(message)) {
         if (!toolRun) toolRun = { messages: [], startIndex: index }
         toolRun.messages.push(message)
@@ -188,7 +326,7 @@ export function useMemoryTurnEntries(messages: Ref<MessageEnvelope[]>) {
       })
     }
 
-    const source = messages.value
+    const source = associateMetadataSidecars(messages.value)
     let index = 0
 
     // Records written before the first user message are not part of a user turn.
@@ -208,10 +346,11 @@ export function useMemoryTurnEntries(messages: Ref<MessageEnvelope[]>) {
         bodyEnd += 1
       }
 
-      let finalAssistantIndex = -1
+      let finalResponseIndex = -1
       for (let candidate = bodyEnd - 1; candidate >= bodyStart; candidate -= 1) {
-        if (normalizeMemoryRole(String((source[candidate] as any)?.role || '')) === 'assistant') {
-          finalAssistantIndex = candidate
+        const role = normalizeMemoryRole(String((source[candidate] as any)?.role || ''))
+        if (role === 'assistant' || role === 'system') {
+          finalResponseIndex = candidate
           break
         }
       }
@@ -219,10 +358,10 @@ export function useMemoryTurnEntries(messages: Ref<MessageEnvelope[]>) {
       const progressMessages: MessageEnvelope[] = []
       const finalMessages: MessageEnvelope[] = []
       for (let bodyIndex = bodyStart; bodyIndex < bodyEnd; bodyIndex += 1) {
-        if (bodyIndex === finalAssistantIndex) continue
+        if (bodyIndex === finalResponseIndex) continue
         const message = source[bodyIndex]
         if (!message) continue
-        if (finalAssistantIndex >= 0 && bodyIndex > finalAssistantIndex) {
+        if (finalResponseIndex >= 0 && bodyIndex > finalResponseIndex) {
           finalMessages.push(message)
         } else {
           progressMessages.push(message)
@@ -233,7 +372,7 @@ export function useMemoryTurnEntries(messages: Ref<MessageEnvelope[]>) {
         key: `turn-${stableMessageKey(userMessage, index)}`,
         userMessage,
         progressMessages,
-        finalAssistant: finalAssistantIndex >= 0 ? (source[finalAssistantIndex] || null) : null,
+        finalResponse: finalResponseIndex >= 0 ? (source[finalResponseIndex] || null) : null,
         finalMessages,
         startIndex: index,
       })

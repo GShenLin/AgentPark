@@ -363,6 +363,8 @@ memories/Companion/Companion/messages.jsonl
 
 正常构建/安装流程完成后，Windows 使用 `build_and_run.bat`，Linux 使用 `build_and_run.sh`；脚本会在后台启动 WebUI 服务，然后在当前终端启动交互式 companion CLI。`cli` 和 `chat` 使用 Web + CLI 组合模式；`server` 或 `web` 只运行 WebUI；`cli-only` 只运行 CLI。
 
+Windows 下通过 `build_and_run.bat` 启动的 Companion CLI 默认隐藏。双击项目根目录的 `ToggleConsole.bat` 可随时显示或再次隐藏同一个控制台窗口，CLI 中也可以执行 `/hidden` 隐藏窗口，操作都不会重启 CLI 会话。文件夹右键菜单的 AgentPark 入口在没有运行中的 Pet 时，会把 Companion 的工作路径切换到目标文件夹，并按需显示或启动 CLI；存在 Pet 时仍沿用 Pet 分发流程。该窗口控制功能适用于独立的 Windows 控制台；若在 Windows Terminal 的共享窗口中启动，隐藏操作可能影响整个 Terminal 窗口。
+
 companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/Companion/Companion/`。如果终端不接受输入，使用对应平台的构建启动脚本运行 `cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
 
 在 companion CLI 中，`/restart` 会在 Windows 启动 `Restart.bat`，在 Linux 启动 `Restart.sh`，然后退出当前 CLI 会话，确保重启行为仍走标准启动路径。

@@ -28,7 +28,7 @@ export function extractRuntimeToolInsights(runtimeCalls: DataRecord[]): {
 }
 
 function runtimeFileChanges(call: DataRecord, result: DataRecord): DataRecord[] {
-  return records(result.file_changes).map((change) => {
+  return records(result.file_changes).filter((change) => records(change.hunks).length > 0).map((change) => {
     const operation = text(change.operation)
     const path = text(change.path)
     const parsedOperation = operation === 'add' ? 'create_file' : operation === 'delete' ? 'delete_file' : 'update_file'

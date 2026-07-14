@@ -65,9 +65,9 @@ const progressLine = computed(() => {
   return null
 })
 
-function unsupportedRows(unsupported: ProviderLimitChannelEntry['unsupported'] | undefined) {
+function resultRows(values: ProviderLimitChannelEntry['unsupported'] | ProviderLimitChannelEntry['inconclusive'] | undefined) {
   const rows: Array<{ key: string; value: string }> = []
-  for (const [key, value] of Object.entries(unsupported || {})) {
+  for (const [key, value] of Object.entries(values || {})) {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       for (const [childKey, childValue] of Object.entries(value as Record<string, string>)) {
         rows.push({ key: `${key}.${childKey}`, value: String(childValue || 'not supported') })
@@ -198,11 +198,6 @@ function providerState(provider: ProviderLimitEntry | undefined) {
   return provider?.accessible ? 'ok' : 'bad'
 }
 
-function providerSubtitle(provider: ProviderLimitEntry | undefined) {
-  if (!provider) return ''
-  return [provider.type, provider.model].filter(Boolean).join(' / ')
-}
-
 function testChannelLabel(channel: string | undefined) {
   if (channel === 'responses') return 'Responses API'
   if (channel === 'chat_completions') return 'Chat Completions'
@@ -221,27 +216,57 @@ onUnmounted(clearPoll)
     <aside class="provider-list">
       <div class="test-actions">
         <button type="button" class="start-btn" :disabled="jobRunning || loading" @click="startTesting">
-          {{ testing ? 'Testing...' : 'StartTesting' }}
+          {{ testing ? 'Testing...' : 'Test all' }}
         </button>
         <button type="button" class="model-btn" :disabled="jobRunning || loading" @click="startModelDiscovery">
-          {{ modelRefreshing ? 'Getting...' : 'GetModul' }}
+          {{ modelRefreshing ? 'Getting...' : 'Models' }}
         </button>
         <button type="button" :disabled="loading" @click="loadLimits">Reload</button>
       </div>
 
-      <button
-        v-for="providerId in providerIds"
-        :key="providerId"
-        type="button"
-        class="provider-item"
-        :class="[providerState(limits?.providers?.[providerId]), { active: selectedProviderId === providerId }]"
-        @click="selectedProviderId = providerId"
-      >
-        <span>{{ providerId }}</span>
-        <small>{{ providerSubtitle(limits?.providers?.[providerId]) }}</small>
-      </button>
+      <div class="provider-items">
+        <button
+          v-for="providerId in providerIds"
+          :key="providerId"
+          type="button"
+          class="provider-item"
+          :class="[providerState(limits?.providers?.[providerId]), { active: selectedProviderId === providerId }]"
+          :aria-pressed="selectedProviderId === providerId"
+          @click="selectedProviderId = providerId"
+        >
+          <span class="provider-item-head">
+            <span class="provider-name" :title="providerId">{{ providerId }}</span>
+            <span class="provider-health">
+              <span class="provider-health-dot" aria-hidden="true"></span>
+              {{ limits?.providers?.[providerId]?.accessible ? 'Ready' : 'Unavailable' }}
+            </span>
+          </span>
+          <span class="provider-meta">
+            <span
+              v-if="limits?.providers?.[providerId]?.type"
+              class="provider-type"
+              :title="limits?.providers?.[providerId]?.type"
+            >
+              {{ limits?.providers?.[providerId]?.type }}
+            </span>
+            <span
+              v-if="limits?.providers?.[providerId]?.model"
+              class="provider-model"
+              :title="limits?.providers?.[providerId]?.model"
+            >
+              {{ limits?.providers?.[providerId]?.model }}
+            </span>
+            <span
+              v-if="!limits?.providers?.[providerId]?.type && !limits?.providers?.[providerId]?.model"
+              class="provider-model"
+            >
+              No type or model information
+            </span>
+          </span>
+        </button>
 
-      <div v-if="!providerIds.length && !loading" class="empty-list">No test results</div>
+        <div v-if="!providerIds.length && !loading" class="empty-list">No test results</div>
+      </div>
     </aside>
 
     <section class="provider-detail">
@@ -286,9 +311,10 @@ onUnmounted(clearPoll)
                 <code>{{ channelResult.result.access_error }}</code>
               </div>
             </div>
-            <div v-if="unsupportedRows(channelResult.result.unsupported).length" class="channel-unsupported">
+            <div v-if="resultRows(channelResult.result.unsupported).length" class="channel-unsupported">
+              <strong>Unsupported</strong>
               <div
-                v-for="row in unsupportedRows(channelResult.result.unsupported)"
+                v-for="row in resultRows(channelResult.result.unsupported)"
                 :key="row.key"
                 class="unsupported-row"
               >
@@ -296,7 +322,23 @@ onUnmounted(clearPoll)
                 <div class="limit-value">{{ row.value }}</div>
               </div>
             </div>
-            <div v-else class="all-supported">No unsupported tested attributes</div>
+            <div v-if="resultRows(channelResult.result.inconclusive).length" class="channel-unsupported">
+              <strong>Inconclusive / not tested</strong>
+              <div
+                v-for="row in resultRows(channelResult.result.inconclusive)"
+                :key="row.key"
+                class="unsupported-row"
+              >
+                <div class="limit-key">{{ row.key }}</div>
+                <div class="limit-value">{{ row.value }}</div>
+              </div>
+            </div>
+            <div
+              v-if="!resultRows(channelResult.result.unsupported).length && !resultRows(channelResult.result.inconclusive).length"
+              class="all-supported"
+            >
+              No unsupported or inconclusive tested attributes
+            </div>
           </article>
         </div>
 

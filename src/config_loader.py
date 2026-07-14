@@ -220,8 +220,6 @@ class ConfigLoader:
 
         provider.pop("apiKeyEnv", None)
         if auth_mode == "codex":
-            if provider.get("responsesApi") is not True:
-                raise ValueError(f"Provider '{provider_name}' with authMode 'codex' requires responsesApi=true.")
             if str(provider.get("apiKey") or "").strip():
                 raise ValueError(f"Provider '{provider_name}' with authMode 'codex' must not contain apiKey.")
             provider["authMode"] = "codex"

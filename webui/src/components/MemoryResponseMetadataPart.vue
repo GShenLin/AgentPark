@@ -34,6 +34,15 @@ const providerTotals = computed<Record<string, any>>(() => (
     : {}
 ))
 
+const scope = computed(() => String(payload.value.scope || '').trim())
+
+const heading = computed(() => {
+  if (scope.value === 'provider_turn') return 'Provider turn details'
+  if (scope.value === 'final_assistant') return 'Final response details'
+  if (scope.value === 'agent_run') return 'Agent run details'
+  return 'Response details'
+})
+
 const sources = computed<Source[]>(() => {
   const values: unknown[] = []
   if (Array.isArray(payload.value.citations)) values.push(...payload.value.citations)
@@ -106,7 +115,7 @@ const totalUsage = computed(() => {
 <template>
   <section class="response-metadata">
     <div class="response-metadata-head">
-      <strong>Response details</strong>
+      <strong>{{ heading }}</strong>
       <span v-if="summary">{{ summary }}</span>
     </div>
     <div v-if="totalUsage" class="response-usage">Full-turn usage: {{ totalUsage }}</div>
@@ -129,7 +138,7 @@ const totalUsage = computed(() => {
     </details>
     <ResponseToolInsights :metadata="metadata" />
     <details v-if="Object.keys(metadata).length" class="response-raw">
-      <summary>Complete provider response</summary>
+      <summary>{{ scope === 'provider_turn' ? 'Provider response for this turn' : 'Provider response payload' }}</summary>
       <pre>{{ JSON.stringify(metadata, null, 2) }}</pre>
     </details>
   </section>

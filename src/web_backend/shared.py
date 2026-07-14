@@ -50,6 +50,7 @@ from .runtime_paths import (
 )
 from .state_store import (
     _cancel_node_work,
+    _complete_node_config_work_with_held_output,
     _dequeue_node_pending_to_working,
     _finish_node_stop_requested,
     _is_node_stop_requested,
@@ -64,6 +65,7 @@ from .state_store import (
     _append_jsonl_line,
     _append_node_pending,
     _pop_node_pending,
+    _resume_node_config_with_held_outputs,
     _preview_text,
     _read_json_dict,
     _transition_node_config_to_idle,
@@ -114,6 +116,7 @@ __all__ = [
     "_get_runtime_root",
     "_append_jsonl_line",
     "_cancel_node_work",
+    "_complete_node_config_work_with_held_output",
     "_dequeue_node_pending_to_working",
     "_finish_node_stop_requested",
     "_is_node_stop_requested",
@@ -127,6 +130,7 @@ __all__ = [
     "_recover_node_config_stale_working",
     "_append_node_pending",
     "_pop_node_pending",
+    "_resume_node_config_with_held_outputs",
     "_preview_text",
     "_read_json_dict",
     "_transition_node_config_to_idle",

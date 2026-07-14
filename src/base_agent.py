@@ -136,6 +136,12 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
         if callable(callback):
             callback(progress)
 
+    def ProviderTurnMetadata(self, **kwargs):
+        event = {"role": "provider_turn", **kwargs}
+        callback = getattr(self, "_agentpark_persist_provider_turn_metadata", None)
+        if callable(callback):
+            callback(event)
+
     @staticmethod
     def _has_visible_text(content):
         if isinstance(content, str):

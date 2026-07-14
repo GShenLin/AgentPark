@@ -22,6 +22,7 @@ def test_agent_runtime_context_bind_and_read(tmp_path):
             responses_instruction="Use the Responses instructions field.",
             skill_resource_roots={"demo": str(tmp_path / "skill")},
             persist_assistant_progress=lambda message: calls.append(message),
+            persist_provider_turn_metadata=lambda message: calls.append(message),
         ),
     )
 
@@ -34,8 +35,11 @@ def test_agent_runtime_context_bind_and_read(tmp_path):
     assert resolved.responses_instruction == "Use the Responses instructions field."
     assert resolved.skill_resource_roots == {"demo": str(tmp_path / "skill")}
     assert resolved.persist_assistant_progress is not None
+    assert resolved.persist_provider_turn_metadata is not None
     resolved.persist_assistant_progress({"role": "assistant_progress"})
     assert calls == [{"role": "assistant_progress"}]
+    resolved.persist_provider_turn_metadata({"role": "provider_turn"})
+    assert calls[-1] == {"role": "provider_turn"}
 
 
 def test_agent_runtime_context_reads_bound_attributes(tmp_path):
