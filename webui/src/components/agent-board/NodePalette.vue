@@ -4,6 +4,7 @@ import { getNodeTemplate } from '../../api'
 import { AgentBoardKey, type AgentBoardContext } from './context'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { useAgentNodeCreateSchema } from '../../composables/useAgentNodeCreateSchema'
+import { useProviderDrivenTemplateSchema } from '../../composables/useProviderDrivenTemplateSchema'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
 import NodeConfigFields from './NodeConfigFields.vue'
 
@@ -23,7 +24,6 @@ const selectedNodeName = ref('')
 const selectedNodeSchema = ref<Record<string, any>>({})
 const selectedNodeFields = ref<Record<string, any>>({})
 const {
-  modeOptions,
   toolOptions,
   createProviderOptions,
   ensureCreateAgentSelections,
@@ -32,6 +32,12 @@ const {
   selectedNodeFields,
   providers,
   availableTools,
+})
+const { loading: providerSchemaLoading } = useProviderDrivenTemplateSchema({
+  typeId: selectedTypeId,
+  fields: selectedNodeFields,
+  schema: selectedNodeSchema,
+  onError: (error) => { lastError.value = String((error as { message?: unknown })?.message || error || '') },
 })
 
 function capabilityList(values: unknown): string[] {
@@ -84,7 +90,7 @@ async function confirmCreateNode() {
   lastError.value = null
   try {
     const fields: Record<string, unknown> = {}
-    for (const key of Object.keys(selectedNodeFields.value || {})) {
+    for (const key of Object.keys(selectedNodeSchema.value || {})) {
       const raw = selectedNodeFields.value[key]
       fields[key] = normalizeSchemaFieldValue(selectedNodeSchema.value, key, raw)
     }
@@ -100,10 +106,8 @@ async function confirmCreateNode() {
 watch(
   () => [
     selectedTypeId.value,
-    modeOptions.value.join('|'),
     createProviderOptions.value.join('|'),
     toolOptions.value.join('|'),
-    String(selectedNodeFields.value.mode ?? ''),
   ],
   () => {
     ensureCreateAgentSelections()
@@ -172,7 +176,7 @@ watch(
 
           <div class="modal-actions">
             <button @click="showNodeDialog = false">鍙栨秷</button>
-            <button class="primary" :disabled="creatingNode" @click="confirmCreateNode">纭鍒涘缓</button>
+            <button class="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">纭鍒涘缓</button>
           </div>
         </div>
       </div>

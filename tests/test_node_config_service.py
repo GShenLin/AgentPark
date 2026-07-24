@@ -230,3 +230,41 @@ def test_config_runtime_fields_are_split_on_write(tmp_path):
     for key in ("state", "pending", "last_message", "goal_state"):
         assert key not in saved_config
     assert not config_path.with_name("runtime_state.json").exists()
+
+
+def test_patch_persistent_fields_preserves_concurrent_runtime_state(tmp_path):
+    config_path = tmp_path / "node" / "config.json"
+    pending_item = {"payload": {"role": "user", "parts": [{"type": "text", "text": "B"}]}}
+    node_config_service.write(
+        str(config_path),
+        {
+            "node_id": "multi",
+            "type_id": "multi_input_node",
+            "state": "working",
+            "pending": [pending_item],
+            "inflight": {"payload": {"role": "user", "parts": [{"type": "text", "text": "A"}]}},
+        },
+    )
+
+    saved = node_config_service.patch_persistent_fields(
+        str(config_path),
+        {"_multi_input_buffer": [{"role": "user", "parts": [{"type": "text", "text": "A"}]}, None]},
+    )
+
+    assert saved["_multi_input_buffer"][0]["parts"][0]["text"] == "A"
+    merged = node_config_service.read_strict(str(config_path))
+    assert merged["pending"] == [pending_item]
+    assert merged["inflight"]["payload"]["parts"][0]["text"] == "A"
+    assert merged["state"] == "working"
+    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    assert raw["_multi_input_buffer"] == saved["_multi_input_buffer"]
+    for field in ("pending", "inflight", "state"):
+        assert field not in raw
+
+
+def test_patch_persistent_fields_rejects_runtime_fields(tmp_path):
+    config_path = tmp_path / "node" / "config.json"
+    node_config_service.write(str(config_path), {"node_id": "n1", "type_id": "append_node"})
+
+    with pytest.raises(NodeConfigWriteError, match="cannot contain runtime fields: pending"):
+        node_config_service.patch_persistent_fields(str(config_path), {"pending": []})

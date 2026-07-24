@@ -56,15 +56,13 @@ All nodes inherit these common configuration fields:
 
 | Node      | `type_id`        | Features                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent     | `agent_node`     | General-purpose LLM Agent node. Accepts text, images, videos, audio, documents, files, URLs, structured data, and meta input. Outputs text, generated image/video resources, structured data, tool calls, and meta. Supports `provider_id`, `mode`, `system_prompt`, local `tools`, `mcp_servers`, `skills`, and `plugins`. Provider capabilities can enable `web_search`, `thinking`, and `reasoning_effort`. Runtime behavior includes persistent node memory, streaming messages, tool-call history, and stop control. |
+| Agent     | `agent_node`     | General-purpose LLM Agent node. Accepts text, images, videos, audio, documents, files, URLs, structured data, and meta input. Provider SupportModes include chat, image generation, video generation, audio generation, and image chat; generated media is returned as resources. Supports `provider_id`, `system_prompt`, local `tools`, `mcp_servers`, `skills`, and `plugins`. Provider capabilities can enable `web_search`, `thinking`, and `reasoning_effort`. Runtime behavior includes persistent node memory, streaming messages, tool-call history, and stop control. |
 | GUI Agent | `gui_agent_node` | Single-node GUI automation loop. Captures screenshots, asks a visual/multimodal provider to plan actions, executes mouse/keyboard/scroll operations, and can verify completion. Supports `instruction`, planner/verify prompts, screenshot regions, dry run, mock actions, planner timeout, and verify timeout. Useful for local desktop or remote GUI operations.                                                                                                                                                        |
 
 ### Generation Nodes
 
 | Node                        | `type_id`                       | Features                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Image Generation            | `image_generation_node`         | Generates images from a prompt and optional reference images. Supports `aspect_ratio`, `image_size`, `response_format`, `watermark`, and `filename_prefix`. Outputs image resources and structured generation metadata. The selected provider must declare `image_generation` support in `supportmode`.                                                                                                                  |
-| Video Generation            | `video_generation_node`         | Generates video from text, first/last frame images, reference images, reference video, and reference audio. Supports resolution, aspect ratio, duration, seed, generated audio, watermark, returning the last frame, callbacks, task expiration, safety identifier, web search, public base URL, and output filename prefix. Outputs video resources, optional last-frame image resources, and structured task metadata. |
 | Video Change Person         | `video_change_person_node`      | Uses Wan Animate Mix-style providers to replace the subject in a reference video with a portrait image. Requires one portrait image and one reference video. Supports `wan-std`/`wan-pro`, watermark, image checking, public base URL, and output filename prefix. Outputs the replaced-person video resource and task metadata.                                                                                         |
 | 3D Model Generation         | `model_generation_node`         | Uses Hyper3D/Rodin-style providers for text-to-3D or image-to-3D generation. Supports multiple reference images, Gen-2/Regular tier, alpha handling, seed, export format, material type, quality, face-count override, T/A pose, bounding-box dimensions, Raw/Quad mesh, HighPack, preview rendering, and high-definition textures. Outputs downloaded model file resources and task metadata.                           |
 | 3D Model Texture Generation | `model_texture_generation_node` | Generates or repaints textures for an existing 3D model. Accepts a model file or URL, reference images, and optional prompt. Supports seed, reference scale, export format, material, and resolution. Outputs a retextured model file resource and task metadata.                                                                                                                                                        |
@@ -103,6 +101,7 @@ All nodes inherit these common configuration fields:
 - Desktop mode is used on wider screens and includes the full visual graph editor, topbar, remote switcher, file/memory panes, node controls, and direct `Settings` access in the top-right area.
 - Mobile mode is automatically selected when the viewport is 760px wide or smaller. It provides a phone-friendly flow for selecting a PC, selecting a graph, listing nodes, chatting with a node, uploading attachments, viewing live streaming output, saving/copying/deleting messages, clearing memory, opening node configuration, creating/deleting nodes, saving/deleting graphs, restarting the workspace, and opening Settings from the header.
 - Remote endpoints can be added from the desktop topbar and are stored in `config/remote.json`; mobile APIs use these endpoints to browse PCs, graphs, nodes, conversations, and messages.
+- For node-level remote tools, run `AgentParkRemote.exe` on the browser PC, open the AgentPark WebUI by its server IP, select a node, and enable `Remote` beside `WorkingPath`. Browser-local discovery pairs the silent worker through the same Remote Workspace v1 protocol used by the Unreal plugin. Use the folder button to choose a path on that PC. Only one standalone worker or Unreal worker should be running on the browser PC while pairing.
 
 ## Project Layout
 
@@ -115,6 +114,7 @@ AgentPark/
   scripts/             # Helper scripts
   skills/              # Agent skill documents
   src/                 # FastAPI backend, providers, protocols, runtime
+    remote_worker/     # Standalone AgentParkRemote worker
   tests/               # pytest tests
   webui/               # Vue 3 + Vite frontend
 ```
@@ -122,6 +122,7 @@ AgentPark/
 ## Requirements
 
 - Windows is the primary target environment. Some features depend on `.bat`, PowerShell, desktop automation, or PyInstaller packaging paths.
+- `package.bat` builds both `dist/AgentPark.exe` and the windowless `dist/AgentParkRemote.exe`.
 - Linux is supported for the WebUI, CLI, provider runtime, and restart flow. Windows-only desktop and packaging features remain Windows-only.
 - Python 3.11+. Windows scripts prefer local Python 3.14/3.12/3.11; Linux scripts prefer `AgentPark_Linux_env`, `.venv`, `python3`, then `python`.
 - Node.js + npm for installing and building `webui`.
@@ -154,7 +155,7 @@ Main service configuration lives in `config/config.json`:
   },
   "agentNode": {
     "minSendDelayMs": 200,
-    "historyMessageLimit": 40
+    "historyMessageLimit": 6
   },
   "nodeMemory": {
     "maxEntries": 20
@@ -164,9 +165,10 @@ Main service configuration lives in `config/config.json`:
 
 - `server.host` and `server.port` control the FastAPI listen address. If the port is occupied, the startup path searches for the next available port.
 - `nodeMemory.maxEntries` controls how many entries each node keeps in the current `memory.md` / `messages.jsonl`. Older entries are archived under `archive/YYYY-MM-DD/`.
+- The local memories directory is configured in Settings and stored as `memoriesPath` in `.cache/memoryLocalConfig.json`. It is intentionally kept out of the shared `config/config.json`.
 - The startup graph is stored in `.cache/startup_graph.json`; this directory is not committed to Git.
 
-Provider configuration lives in `config/moduleProvider.json`. A typical provider entry looks like this:
+Provider configuration lives in `config/modelProvider.json`. A typical provider entry looks like this:
 
 ```json
 {
@@ -184,6 +186,8 @@ Provider configuration lives in `config/moduleProvider.json`. A typical provider
 ```
 
 Common `type` values include `doubao`, `gemini`, `openai`, `zhipu`, and `hyper3d`. Do not commit real API keys to a public repository.
+
+Provider-scoped audio speaker indexes live in `config/audio_speaker.json`. Running the Doubao `ListSpeakers` management operation replaces the selected provider's index; speaker lists are not embedded in `modelProvider.json`.
 
 ## Startup
 

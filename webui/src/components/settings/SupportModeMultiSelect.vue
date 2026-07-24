@@ -9,6 +9,19 @@ const emit = defineEmits<{
   'update:selectedValues': [value: string[]]
 }>()
 
+const modeLabels: Record<string, string> = {
+  chat: 'chat',
+  imagechat: 'imagechat',
+  image_generation: 'image_generation',
+  vision_understand: 'vision_understand',
+  GUIAgent: 'GUIAgent',
+  video_generation: 'video_generation',
+  video_change_person: 'video_change_person',
+  model_generation: 'model_generation',
+  model_texture_generation: 'model_texture_generation',
+  audio_generation: 'AudioGenerate',
+}
+
 const options = computed(() => {
   const defaults = [
     'chat',
@@ -20,11 +33,17 @@ const options = computed(() => {
     'video_change_person',
     'model_generation',
     'model_texture_generation',
+    'audio_generation',
   ]
   return Array.from(new Set([...defaults, ...props.selectedValues])).filter(Boolean)
 })
 
-const summary = computed(() => props.selectedValues.join(', ') || 'Select support modes')
+function labelForMode(mode: string) {
+  const value = String(mode || '').trim()
+  return modeLabels[value] || value
+}
+
+const summary = computed(() => props.selectedValues.map(labelForMode).join(', ') || 'Select support modes')
 
 function toggle(value: string) {
   const item = String(value || '').trim()
@@ -46,7 +65,7 @@ function toggle(value: string) {
           :checked="selectedValues.includes(mode)"
           @change="toggle(mode)"
         />
-        <span>{{ mode }}</span>
+        <span>{{ labelForMode(mode) }}</span>
       </label>
     </div>
   </details>

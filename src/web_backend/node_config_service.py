@@ -5,6 +5,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
+from copy import deepcopy
 from typing import Any, Callable
 
 from src.file_transaction import KeyedTransactionQueue, atomic_write_text
@@ -33,6 +34,7 @@ RESERVED_NODE_CONFIG_FIELDS = {
     "type_id",
     "name",
     "graph_id",
+    "private",
     "state",
     "ui",
     "pending",
@@ -87,6 +89,10 @@ class NodeConfigService:
 
     def read_strict(self, config_path: str) -> dict[str, Any]:
         path = self._normalize_config_path(config_path)
+        return self.with_runtime_state(path, self.read_persistent_strict(path))
+
+    def read_persistent_strict(self, config_path: str) -> dict[str, Any]:
+        path = self._normalize_config_path(config_path)
         if not os.path.isfile(path):
             raise NodeConfigNotFoundError(f"node config does not exist: {path}")
         try:
@@ -99,8 +105,30 @@ class NodeConfigService:
             raise NodeConfigReadError(f"failed to read node config {path}: {type(exc).__name__}: {exc}") from exc
         if not isinstance(payload, dict):
             raise NodeConfigFormatError(f"node config must be a JSON object: {path}")
-        config_payload = self._migrate_config(payload, path)
+        return self._migrate_config(payload, path)
+
+    def with_runtime_state(self, config_path: str, config_payload: dict[str, Any]) -> dict[str, Any]:
+        path = self._normalize_config_path(config_path)
+        if not isinstance(config_payload, dict):
+            raise NodeConfigFormatError(f"node config must be a JSON object: {path}")
         return runtime_state_memory_store.merge(path, config_payload)
+
+    def with_runtime_fields(
+        self,
+        config_path: str,
+        config_payload: dict[str, Any],
+        runtime_fields: set[str],
+    ) -> dict[str, Any]:
+        path = self._normalize_config_path(config_path)
+        if not isinstance(config_payload, dict):
+            raise NodeConfigFormatError(f"node config must be a JSON object: {path}")
+        merged = {
+            key: deepcopy(value)
+            for key, value in config_payload.items()
+            if key not in RUNTIME_STATE_FIELDS
+        }
+        merged.update(runtime_state_memory_store.snapshot_fields(path, runtime_fields))
+        return merged
 
     def read_optional_object(self, config_path: str) -> dict[str, Any]:
         path = str(config_path or "").strip()
@@ -129,6 +157,29 @@ class NodeConfigService:
                 ) from exc
 
         self._queue.run(path, do_write)
+
+    def patch_persistent_fields(self, config_path: str, fields: dict[str, Any]) -> dict[str, Any]:
+        path = self._normalize_config_path(config_path)
+        if not isinstance(fields, dict) or not fields:
+            raise NodeConfigWriteError("persistent field patch must be a non-empty object")
+        runtime_fields = sorted(set(fields) & RUNTIME_STATE_FIELDS)
+        if runtime_fields:
+            raise NodeConfigWriteError(
+                "persistent field patch cannot contain runtime fields: " + ", ".join(runtime_fields)
+            )
+
+        def do_patch() -> dict[str, Any]:
+            current = self._read_config_payload_optional(path)
+            if current is None:
+                raise NodeConfigNotFoundError(f"node config does not exist: {path}")
+            next_config = dict(current)
+            next_config.update(deepcopy(fields))
+            self._validate_capability_fields(next_config, path)
+            if next_config != current:
+                atomic_write_text(path, json.dumps(next_config, ensure_ascii=False, indent=2) + "\n")
+            return deepcopy(next_config)
+
+        return self._queue.run(path, do_patch)
 
     def update(self, config_path: str, mutate: Mutation, *, effective: str = "next_agent_run") -> NodeConfigChangeResult:
         path = self._normalize_config_path(config_path)
@@ -337,6 +388,10 @@ def read_node_config_optional(config_path: str) -> dict[str, Any]:
 
 def write_node_config(config_path: str, payload: dict[str, Any]) -> None:
     node_config_service.write(config_path, payload)
+
+
+def patch_node_config_persistent_fields(config_path: str, fields: dict[str, Any]) -> dict[str, Any]:
+    return node_config_service.patch_persistent_fields(config_path, fields)
 
 
 def node_runtime_state_path(config_path: str) -> str:

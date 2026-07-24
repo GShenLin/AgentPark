@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.grok_reasoning_effort import grok_reasoning_effort_values
+from src.kimi_model_contract import kimi_model_family
 
 
 PROVIDER_FEATURE_SCHEMA_VERSION = 1
@@ -81,6 +82,37 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "values": ["high", "max"],
                 "transport": "chat_completions",
             },
+            reasoning_summary={"supported": False, "values": []},
+        )
+    if provider_type == "kimi":
+        family = kimi_model_family(config.get("model"))
+        web_search_supported = family in {"k3", "k2.6", "k2.5"}
+        if family == "k3":
+            thinking = {"supported": False, "values": []}
+            reasoning_effort = {"supported": True, "values": ["max"], "transport": "chat_completions"}
+        elif family == "k2.7-code":
+            thinking = {"supported": True, "values": ["enabled"], "transport": "chat_completions"}
+            reasoning_effort = {"supported": False, "values": []}
+        elif family in {"k2.6", "k2.5"}:
+            thinking = {
+                "supported": True,
+                "values": ["enabled", "disabled"],
+                "transport": "chat_completions",
+            }
+            reasoning_effort = {"supported": False, "values": []}
+        else:
+            thinking = {"supported": False, "values": []}
+            reasoning_effort = {"supported": False, "values": []}
+        return _payload(
+            responses_api={"supported": False, "values": []},
+            web_search={
+                "supported": web_search_supported,
+                "values": ["enabled", "disabled"] if web_search_supported else [],
+                "transport": "chat_completions" if web_search_supported else "",
+            },
+            tools={"supported": True, "values": ["enabled", "disabled"]},
+            thinking=thinking,
+            reasoning_effort=reasoning_effort,
             reasoning_summary={"supported": False, "values": []},
         )
     if provider_type == "doubao":
@@ -171,4 +203,3 @@ def _feature(value: dict[str, Any]) -> dict[str, Any]:
     if transport:
         out["transport"] = transport
     return out
-

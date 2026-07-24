@@ -5,10 +5,12 @@ import urllib.error
 import urllib.request
 
 from src.base_agent import BaseAgent
-from src.providers.provider_errors import ProviderImageAttachmentError
 from src.providers.gemini_function_runtime import GeminiFunctionRuntime
 from src.providers.gemini_image_generation import GeminiImageGeneration
+from src.providers.gemini_message_mapping import attach_gemini_call_ids
+from src.providers.gemini_message_mapping import map_messages_to_gemini
 from src.providers.gemini_stream_runtime import GeminiStreamRuntime
+from src.providers.image_generation_input import latest_image_generation_input
 from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.providers.provider_pressure import acquire_provider_pressure
 from src.service_host import ServiceHost
@@ -53,21 +55,6 @@ class GeminiAgent(ServiceHost, BaseAgent):
                 return str(content.get("text") or "")
         return ""
 
-    @staticmethod
-    def _build_function_response_content(content):
-        if not isinstance(content, str):
-            return {"result": content}
-        text = content.strip()
-        if not text or not text.startswith("{"):
-            return {"result": content}
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            return {"result": content}
-        if isinstance(parsed, dict):
-            return parsed
-        return {"result": content}
-
     def Send(
         self,
         tools=None,
@@ -77,126 +64,50 @@ class GeminiAgent(ServiceHost, BaseAgent):
         thinking=None,
         stream=False,
         stream_handler=None,
+        mode_options=None,
     ):
         self.config = self._read_provider_config_from_file()
         _ = web_search
         _ = thinking
         if mode == "image_generation":
-            prompt = self._extract_latest_user_prompt(self.messages)
+            options = dict(mode_options or {}) if isinstance(mode_options, dict) else {}
+            prompt, references = latest_image_generation_input(self.messages, options.get("image_references"))
             if not prompt:
                 return "Error: No prompt found for image generation."
 
             try:
-                result = self.generate_image(prompt)
-                if isinstance(result, dict) and result.get("image_path"):
-                    return f"Image generated successfully: {result['image_path']}"
-                return str(result)
+                result = self.generate_image(
+                    prompt,
+                    filename_prefix=options.get("image_filename_prefix") or "generated_image",
+                    image=references or None,
+                    aspect_ratio=options.get("image_aspect_ratio"),
+                    image_size=options.get("image_size"),
+                    response_format=options.get("image_response_format"),
+                    watermark=options.get("image_watermark"),
+                )
+                image_value = result.get("image_path") if isinstance(result, dict) else result
+                paths = image_value if isinstance(image_value, list) else [image_value]
+                normalized = [str(path).strip() for path in paths if str(path or "").strip()]
+                return {
+                    "response": f"Image generated successfully: {', '.join(normalized)}",
+                    "image_path": normalized[0] if len(normalized) == 1 else normalized,
+                }
             except Exception as e:
                 return f"Image generation failed: {str(e)}"
 
         messages = self._get_messages_with_memory()
-        gemini_contents = []
-        system_instruction = None
-
-        for msg in messages:
-            role = msg["role"]
-            content = msg.get("content")
-
-            if role == "system":
-                if system_instruction is None:
-                    system_instruction = {"parts": [{"text": content}]}
-                elif isinstance(content, dict) and content.get("type") == "image_data":
-                    text = content.get("text", "")
-                    base64_data = content.get("data")
-                    mime_type = content.get("mime_type", "image/png")
-                    parts = []
-                    if text:
-                        parts.append({"text": text})
-                    parts.append(
-                        {
-                            "inline_data": {
-                                "mime_type": mime_type,
-                                "data": base64_data,
-                            }
-                        }
-                    )
-                    system_instruction.setdefault("parts", []).extend(parts)
-                else:
-                    system_instruction["parts"][0]["text"] += "\n" + str(content)
-            elif role == "user":
-                parts = []
-                if isinstance(content, dict) and content.get("type") == "image":
-                    image_path = content.get("path")
-                    text = content.get("text", "")
-                    if text:
-                        parts.append({"text": text})
-                    try:
-                        with open(image_path, "rb") as img_file:
-                            import base64
-
-                            b64_data = base64.b64encode(img_file.read()).decode("utf-8")
-                        parts.append(
-                            {
-                                "inline_data": {
-                                    "mime_type": "image/png",
-                                    "data": b64_data,
-                                }
-                            }
-                        )
-                    except Exception as exc:
-                        raise ProviderImageAttachmentError(
-                            f"failed to read image file {image_path}: {type(exc).__name__}: {exc}"
-                        ) from exc
-                elif isinstance(content, dict) and content.get("type") == "image_data":
-                    text = content.get("text", "")
-                    base64_data = content.get("data")
-                    mime_type = content.get("mime_type", "image/png")
-                    if text:
-                        parts.append({"text": text})
-                    parts.append(
-                        {
-                            "inline_data": {
-                                "mime_type": mime_type,
-                                "data": base64_data,
-                            }
-                        }
-                    )
-                else:
-                    parts.append({"text": str(content)})
-
-                gemini_contents.append(
-                    {
-                        "role": "user",
-                        "parts": parts,
-                    }
-                )
-            elif role == "assistant":
-                if "parts" in msg:
-                    gemini_contents.append({"role": "model", "parts": msg["parts"]})
-                else:
-                    gemini_contents.append({"role": "model", "parts": [{"text": content}]})
-            elif role == "function":
-                response_content = self._build_function_response_content(content)
-
-                gemini_contents.append(
-                    {
-                        "role": "function",
-                        "parts": [
-                            {
-                                "functionResponse": {
-                                    "name": msg.get("name"),
-                                    "response": response_content,
-                                }
-                            }
-                        ],
-                    }
-                )
+        system_instruction, gemini_contents = map_messages_to_gemini(messages)
 
         payload = {"contents": gemini_contents}
         if system_instruction:
             payload["system_instruction"] = system_instruction
+        if str(mode or "chat").strip().lower() == "imagechat":
+            payload["generationConfig"] = {"responseModalities": ["TEXT", "IMAGE"]}
 
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
+        compaction_tool_filter = getattr(self, "_tool_context_compaction_active_tools", None)
+        if callable(compaction_tool_filter):
+            active_tools = compaction_tool_filter(active_tools)
         if active_tools:
             gemini_tools = []
             if isinstance(active_tools, list):
@@ -256,24 +167,19 @@ class GeminiAgent(ServiceHost, BaseAgent):
 
                         if has_function_call:
                             self.AssistantProgress(text_content if has_text else None)
-                            protocol_parts = [
-                                part
-                                for part in parts
-                                if isinstance(part, dict) and part.get("functionCall")
-                            ]
+                            envelopes = self._normalize_gemini_function_calls(function_calls)
+                            protocol_parts = attach_gemini_call_ids(
+                                parts,
+                                [envelope.call_id for envelope in envelopes],
+                            )
                             self.Message("assistant", None, persist=False, parts=protocol_parts)
                             if run_tools:
-                                executions = self._execute_function_calls_parallel(function_calls)
-                                for execution in executions:
-                                    self.Message("function", execution.cleaned_result, name=execution.func_name)
-                                    non_retry_warn = self._build_non_retryable_tool_warning(
-                                        execution.func_name,
-                                        execution.cleaned_result,
-                                    )
-                                    if non_retry_warn:
-                                        self.Message("system", non_retry_warn)
-
-                                    image_data = execution.image_data
+                                executions = self._execute_tool_call_envelopes_parallel(envelopes)
+                                image_messages = self._append_tool_execution_messages_then_warnings(
+                                    executions,
+                                    message_role="function",
+                                )
+                                for image_data in image_messages:
                                     if image_data:
                                         if image_data.get("base64"):
                                             self.Message(
@@ -295,8 +201,7 @@ class GeminiAgent(ServiceHost, BaseAgent):
                                                 },
                                             )
 
-                                if self._tool_context_compaction_gate_completed(executions):
-                                    return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
+                                self._tool_context_compaction_gate_completed(executions)
                                 self._notify_companion_about_failed_tool_executions(executions)
                                 self._run_tool_context_compaction_gate_if_needed(executions)
                                 append_mid_turn_user_messages(self)
@@ -311,10 +216,36 @@ class GeminiAgent(ServiceHost, BaseAgent):
                                 )
                             return {"type": "function_call", "function": function_calls[0]}
 
+                        image_paths = self.save_inline_images(parts, filename_prefix="generated_image")
+                        compaction_gate_active = getattr(self, "_tool_context_compaction_gate_active_now", None)
+                        if callable(compaction_gate_active) and compaction_gate_active():
+                            final_response = text_content if has_text else image_paths
+                            finish_gate = getattr(self, "_finish_tool_context_compaction_gate_with_response", None)
+                            if not callable(finish_gate) or not finish_gate(final_response):
+                                self._retry_tool_context_compaction_gate(
+                                    "the model returned an empty response instead of calling compact_tool_context"
+                                )
+                                return self.Send(
+                                    tools=tools,
+                                    run_tools=run_tools,
+                                    mode=mode,
+                                    web_search=web_search,
+                                    thinking=thinking,
+                                    stream=stream,
+                                    stream_handler=stream_handler,
+                                )
+
                         if has_text:
                             self.Message("assistant", text_content)
                             if stream:
                                 self._emit_stream_text(stream_handler, "", text_content)
+                        if image_paths:
+                            response_text = text_content if has_text else f"Image generated successfully: {', '.join(image_paths)}"
+                            return {
+                                "response": response_text,
+                                "image_path": image_paths[0] if len(image_paths) == 1 else image_paths,
+                            }
+                        if has_text:
                             return text_content
                     else:
                         return f"Error: No content in candidate. Finish reason: {candidate.get('finishReason')}"
@@ -327,7 +258,7 @@ class GeminiAgent(ServiceHost, BaseAgent):
                     time.sleep(retry_delay + random.uniform(0, 0.5))
                     retry_delay *= 2
                     continue
-                self.Message("system", f"Gemini API Error: {error_msg}")
+                self.RuntimeInstruction(f"Gemini API Error: {error_msg}")
                 return error_msg
             except Exception as e:
                 error_str = str(e)
@@ -335,5 +266,5 @@ class GeminiAgent(ServiceHost, BaseAgent):
                     time.sleep(retry_delay + random.uniform(0, 0.5))
                     retry_delay *= 2
                     continue
-                self.Message("system", f"Gemini Internal Error: {error_str}")
+                self.RuntimeInstruction(f"Gemini Internal Error: {error_str}")
                 return f"Error: {error_str}"

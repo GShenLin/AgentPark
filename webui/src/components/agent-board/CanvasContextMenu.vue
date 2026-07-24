@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { deleteAgentProfile, getNodeTemplate, listAgentProfiles, type AgentProfile, type NodeInfo } from '../../api'
 import { useAgentNodeCreateSchema } from '../../composables/useAgentNodeCreateSchema'
+import { useProviderDrivenTemplateSchema } from '../../composables/useProviderDrivenTemplateSchema'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
 import { AgentBoardKey } from './context'
@@ -35,7 +36,6 @@ const agentProfiles = ref<AgentProfile[]>([])
 const profileLoading = ref(false)
 const deletingProfileId = ref('')
 const {
-  modeOptions,
   toolOptions,
   createProviderOptions,
   ensureCreateAgentSelections,
@@ -44,6 +44,12 @@ const {
   selectedNodeFields,
   providers,
   availableTools,
+})
+const { loading: providerSchemaLoading } = useProviderDrivenTemplateSchema({
+  typeId: selectedTypeId,
+  fields: selectedNodeFields,
+  schema: selectedNodeSchema,
+  onError: (error) => { ctx.lastError.value = String((error as { message?: unknown })?.message || error || '') },
 })
 
 const sortedNodes = computed(() => {
@@ -234,10 +240,8 @@ onBeforeUnmount(() => {
 watch(
   () => [
     selectedTypeId.value,
-    modeOptions.value.join('|'),
     createProviderOptions.value.join('|'),
     toolOptions.value.join('|'),
-    String(selectedNodeFields.value.mode ?? ''),
   ],
   () => {
     ensureCreateAgentSelections()
@@ -322,7 +326,7 @@ defineExpose({
 
         <div class="modal-actions">
           <button @click="closeDialog">Cancel</button>
-          <button class="primary" :disabled="creatingNode" @click="confirmCreateNode">
+          <button class="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">
             {{ creatingNode ? 'Creating...' : 'Create Node' }}
           </button>
         </div>

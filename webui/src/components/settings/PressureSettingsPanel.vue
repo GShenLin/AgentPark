@@ -29,6 +29,11 @@ function secondsText(value: number | null | undefined) {
   return `${value.toFixed(1)}s`
 }
 
+function tokenText(value: number | null | undefined) {
+  if (value == null) return '∞'
+  return Math.max(0, value).toLocaleString()
+}
+
 function pressureClass(provider: ProviderPressureEntry) {
   if (provider.queued > 0) return 'queued'
   if (provider.in_flight > 0) return 'active'
@@ -82,6 +87,10 @@ onUnmounted(() => {
             <th>RPM Limit</th>
             <th>Interval</th>
             <th>Next</th>
+            <th>Total TPM</th>
+            <th>Input TPM</th>
+            <th>Output TPM</th>
+            <th>TPM Next</th>
             <th>Peak</th>
           </tr>
         </thead>
@@ -95,14 +104,24 @@ onUnmounted(() => {
             <td>{{ limitText(provider.rpm_limit) }}</td>
             <td>{{ secondsText(provider.rpm_interval_sec) }}</td>
             <td>{{ secondsText(provider.rpm_next_available_in_sec) }}</td>
+            <td>
+              {{ tokenText(provider.tpm_used) }} / {{ tokenText(provider.tpm_limit) }}
+              <small>left {{ tokenText(provider.tpm_remaining) }}</small>
+            </td>
+            <td>{{ tokenText(provider.input_tpm_used) }}</td>
+            <td>{{ tokenText(provider.output_tpm_used) }}</td>
+            <td>{{ secondsText(provider.tpm_next_available_in_sec) }}</td>
             <td class="peak-cell">
               <span>C {{ provider.peak_in_flight }}</span>
               <span>Q {{ provider.peak_queued }}</span>
               <span>R {{ provider.peak_rpm_used }}</span>
+              <span>T {{ tokenText(provider.peak_tpm_used) }}</span>
+              <span>TI {{ tokenText(provider.peak_input_tpm_used) }}</span>
+              <span>TO {{ tokenText(provider.peak_output_tpm_used) }}</span>
             </td>
           </tr>
           <tr v-if="!providers.length && !loading">
-            <td colspan="9" class="empty-cell">No providers</td>
+            <td colspan="13" class="empty-cell">No providers</td>
           </tr>
         </tbody>
       </table>
@@ -167,7 +186,7 @@ onUnmounted(() => {
 .pressure-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 940px;
+  min-width: 1380px;
   font-size: 13px;
 }
 
@@ -215,6 +234,13 @@ onUnmounted(() => {
 
 .peak-cell span {
   color: var(--text-muted, #6b7280);
+}
+
+.pressure-table td small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted, #6b7280);
+  font-size: 11px;
 }
 
 .empty-cell {

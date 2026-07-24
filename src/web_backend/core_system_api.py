@@ -10,6 +10,7 @@ from src.cli_commands.companion_restart import resolve_restart_script
 from src.cli_commands.companion_restart import restart_script_label
 
 from .domain_base import DomainBase
+from .request_access import is_local_request
 from .runtime_paths import _get_runtime_root
 from .system_file_api import FileSystemApiMixin
 
@@ -47,8 +48,12 @@ class SystemApiDomain(FileSystemApiMixin, DomainBase):
         timer.start()
         return {"ok": True}
 
-    def list_providers(self):
-        return {"providers": build_provider_support_list()}
+    def list_providers(self, request: Request = None):
+        return {
+            "providers": build_provider_support_list(
+                include_private=is_local_request(request),
+            )
+        }
 
 
 __all__ = ["SystemApiDomain"]

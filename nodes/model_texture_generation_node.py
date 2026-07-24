@@ -5,7 +5,10 @@ from src.generation_output import ResourceOutputField, StructuredOutputSpec, bui
 from src.message_protocol import envelope_text
 from src.model_texture_content import resolve_model_texture_inputs
 from src.node_config_overlay import merge_node_config_overlay
-from src.provider_options import build_provider_options_for_support_modes
+from src.provider_options import (
+    build_provider_options_for_support_modes,
+    provider_options_include_private,
+)
 from src.providers import create_agent
 
 
@@ -94,7 +97,10 @@ class Node(BaseNode):
 
     def get_config_schema(self, context: dict | None = None) -> dict:
         schema = super().get_config_schema(context)
-        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
+        options = build_provider_options_for_support_modes(
+            _SUPPORTED_PROVIDER_MODES,
+            include_private=provider_options_include_private(context),
+        )
         if options:
             provider_schema = dict(schema.get("provider_id") or {})
             provider_schema["type"] = "select"
@@ -106,7 +112,10 @@ class Node(BaseNode):
         super().on_create(config, context)
         if not isinstance(config, dict) or str(config.get("provider_id") or "").strip():
             return
-        options = build_provider_options_for_support_modes(_SUPPORTED_PROVIDER_MODES)
+        options = build_provider_options_for_support_modes(
+            _SUPPORTED_PROVIDER_MODES,
+            include_private=provider_options_include_private(context),
+        )
         if options:
             config["provider_id"] = options[0]["value"]
 

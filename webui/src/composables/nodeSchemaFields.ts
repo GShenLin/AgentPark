@@ -150,8 +150,10 @@ function getSchemaValueType(schema: NodeSchema | null | undefined, key: string):
 
 export function normalizeSchemaFieldValue(schema: NodeSchema | null | undefined, key: string, value: unknown): any {
   const type = getSchemaFieldType(schema, key)
-  if (type === 'multiselect') {
-    const values = Array.isArray(value) ? value : String(value ?? '').split(',')
+  if (type === 'multiselect' || type === 'file_list') {
+    const values = Array.isArray(value)
+      ? value
+      : String(value ?? '').split(type === 'file_list' ? /\r?\n/ : ',')
     const out: string[] = []
     const seen = new Set<string>()
     for (const item of values) {
@@ -187,7 +189,7 @@ export function normalizeSchemaFieldValue(schema: NodeSchema | null | undefined,
   if (valueType === 'boolean') {
     if (typeof value === 'boolean') return value
     if (typeof value === 'string' && value.trim() === '') return ''
-    return String(value).toLowerCase() === 'true'
+    return isSchemaBooleanValue(value)
   }
 
   return value

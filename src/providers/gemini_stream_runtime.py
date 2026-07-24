@@ -19,6 +19,8 @@ class GeminiStreamRuntime(ProviderStreamEmitMixin, ProviderRuntimeEventMixin, Ho
 
         full_text = ""
         latest_function_calls: list[dict] = []
+        inline_image_parts: list[dict] = []
+        seen_inline_images: set[tuple[str, str]] = set()
 
         with acquire_provider_pressure(self):
             with urllib.request.urlopen(req, timeout=max(1, float(timeout_sec or 60))) as response:
@@ -48,6 +50,21 @@ class GeminiStreamRuntime(ProviderStreamEmitMixin, ProviderRuntimeEventMixin, Ho
                     function_calls, text_content, has_text = self._extract_candidate_calls_and_text(parts)
                     if function_calls:
                         latest_function_calls = function_calls
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        inline = part.get("inlineData") or part.get("inline_data")
+                        if not isinstance(inline, dict):
+                            continue
+                        mime_type = str(inline.get("mimeType") or inline.get("mime_type") or "").strip()
+                        data = str(inline.get("data") or "").strip()
+                        if not mime_type.lower().startswith("image/") or not data:
+                            continue
+                        key = (mime_type.lower(), data)
+                        if key in seen_inline_images:
+                            continue
+                        seen_inline_images.add(key)
+                        inline_image_parts.append(part)
                     if has_text:
                         if text_content.startswith(full_text):
                             delta_text = text_content[len(full_text) :]
@@ -64,5 +81,6 @@ class GeminiStreamRuntime(ProviderStreamEmitMixin, ProviderRuntimeEventMixin, Ho
         for call in latest_function_calls:
             if isinstance(call, dict):
                 parts_out.append({"functionCall": call})
+        parts_out.extend(inline_image_parts)
 
         return {"candidates": [{"content": {"parts": parts_out}}]}

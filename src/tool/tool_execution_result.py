@@ -10,8 +10,10 @@ TERMINAL_ERROR_STATUSES = {
     "exception",
     "failed",
     "failure",
+    "invalid_arguments",
     "timeout",
     "stopped",
+    "cancellation_failed",
     "blocked",
     "locked",
     "locked_or_readonly",
@@ -20,6 +22,7 @@ TERMINAL_ERROR_STATUSES = {
 
 
 SUCCESS_STATUSES = {"", "ok", "done", "success", "completed"}
+USER_STOPPED_TOOL_CALL_RESULT = "UserStoppedThisCall"
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,8 @@ class ToolExecutionResult:
         return self.status not in TERMINAL_ERROR_STATUSES
 
     def model_output(self) -> Any:
+        if self.status == "stopped" and self.result == USER_STOPPED_TOOL_CALL_RESULT:
+            return USER_STOPPED_TOOL_CALL_RESULT
         if self.ok:
             return self.result
         payload = _payload_from_result(self.result)
@@ -65,6 +70,23 @@ def build_error_result(
         result=result,
         error=str(error or "").strip() or _first_error_text(result),
         tool_name=tool_name,
+    )
+
+
+def build_user_stopped_result(*, tool_name: str | None = None) -> ToolExecutionResult:
+    return ToolExecutionResult(
+        status="stopped",
+        result=USER_STOPPED_TOOL_CALL_RESULT,
+        error=None,
+        tool_name=tool_name,
+    )
+
+
+def build_cancellation_failed_result(*, tool_name: str | None = None) -> ToolExecutionResult:
+    return build_error_result(
+        "cancellation_failed",
+        tool_name=tool_name,
+        error="Tool did not stop after cancellation was requested.",
     )
 
 

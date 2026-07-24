@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 
 from fastapi import File, Form, HTTPException, UploadFile
 
@@ -24,22 +23,25 @@ from src.web_backend.theme_settings import (
     theme_image_response,
     validate_theme_config,
 )
-from src.tool.tool_failure_analysis import build_tool_failure_analysis, build_tool_failure_history
 from src.tool.tool_stats_store import (
     clear_tool_stats as clear_tool_stats_store,
-    load_tool_call_stats,
-    load_recent_tool_call_stats,
-    load_tool_stats_summary,
 )
 
 from .domain_base import DomainBase
 from . import runtime_paths
+from .default_settings_storage import (
+    defaults_with_memory_local_config,
+    defaults_without_memory_local_config,
+    memory_local_config_from_defaults,
+)
+from .settings_maintenance import MemoryMaintenanceError, run_memory_maintenance
+from .tool_stats_document import build_scoped_tool_failure_history, build_scoped_tool_stats_document
 
 
 SETTINGS_SECTIONS = {
-    "module-provider": {
-        "label": "moduleProvider",
-        "filename": "moduleProvider.json",
+    "model-provider": {
+        "label": "modelProvider",
+        "filename": "modelProvider.json",
     },
     "defaults": {
         "label": "Default settings",
@@ -61,8 +63,19 @@ SETTINGS_SECTIONS = {
 
 
 class SettingsApiDomain(DomainBase):
-    def _delete_operational_memory_script_path(self) -> str:
-        return os.path.join(workspace_settings.get_workspace_root(), "delete_operational_memory.bat")
+    def _run_memory_maintenance(self, script_filename: str) -> dict:
+        workspace_root = workspace_settings.get_workspace_root()
+        script_path = os.path.join(workspace_root, script_filename)
+        try:
+            return run_memory_maintenance(
+                script_path=script_path,
+                workspace_root=workspace_root,
+                memories_root=runtime_paths._get_graphs_dir(),
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"maintenance script not found: {exc}") from exc
+        except MemoryMaintenanceError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     def _section_meta(self, section: str) -> dict:
         safe_section = str(section or "").strip()
@@ -72,11 +85,11 @@ class SettingsApiDomain(DomainBase):
         return {"id": safe_section, **meta}
 
     def _settings_path(self, section: str) -> str:
-        if section == "module-provider":
+        if section == "model-provider":
             explicit_path = str(os.environ.get(ConfigLoader.CONFIG_PATH_ENV) or "").strip()
             if explicit_path:
                 return os.path.abspath(explicit_path)
-            return os.path.join(workspace_settings.get_workspace_root(), "config", "moduleProvider.json")
+            return os.path.join(workspace_settings.get_workspace_root(), "config", "modelProvider.json")
         if section == "defaults":
             explicit_path = str(os.environ.get(ConfigLoader.CONFIG_PATH_ENV) or "").strip()
             if explicit_path:
@@ -89,6 +102,23 @@ class SettingsApiDomain(DomainBase):
         if section == "theme":
             return theme_config_path()
         raise HTTPException(status_code=404, detail=f"unknown settings section: {section}")
+
+    def _settings_runtime_metadata(self, section: str, payload: dict) -> dict:
+        if section != "defaults":
+            return {}
+        try:
+            local_config = memory_local_config_from_defaults(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        configured_root = workspace_settings.resolve_memories_root(local_config)
+        active_root = os.path.abspath(runtime_paths._get_graphs_dir())
+        return {
+            "restart_required": os.path.normcase(configured_root) != os.path.normcase(active_root),
+            "runtime": {
+                "active_memories_root": active_root,
+                "configured_memories_root": configured_root,
+            },
+        }
 
     def _read_payload(self, path: str, section: str) -> tuple[str, dict, list[str]]:
         if not os.path.isfile(path):
@@ -111,20 +141,20 @@ class SettingsApiDomain(DomainBase):
         if section == "events":
             if not isinstance(payload, dict):
                 raise HTTPException(status_code=400, detail="events settings must be a top-level object")
-        elif section == "module-provider":
-            self._validate_module_provider_structure(payload)
-            warnings = self._module_provider_validation_warnings(payload)
+        elif section == "model-provider":
+            self._validate_model_provider_structure(payload)
+            warnings = self._model_provider_validation_warnings(payload)
         else:
             self._validate_payload(section, payload)
         return content, payload, warnings
 
-    def _validate_module_provider_structure(self, payload: object) -> None:
+    def _validate_model_provider_structure(self, payload: object) -> None:
         if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="module-provider settings must be a top-level object")
+            raise HTTPException(status_code=400, detail="model-provider settings must be a top-level object")
         if not isinstance(payload.get("providers"), dict):
-            raise HTTPException(status_code=400, detail="moduleProvider.json field 'providers' must be an object")
+            raise HTTPException(status_code=400, detail="modelProvider.json field 'providers' must be an object")
 
-    def _module_provider_validation_warnings(self, payload: dict) -> list[str]:
+    def _model_provider_validation_warnings(self, payload: dict) -> list[str]:
         warnings: list[str] = []
         config_loader = ConfigLoader()
         for provider_id, provider in payload["providers"].items():
@@ -153,8 +183,8 @@ class SettingsApiDomain(DomainBase):
     def _validate_payload(self, section: str, payload: object) -> None:
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail=f"{section} settings must be a top-level object")
-        if section == "module-provider":
-            self._validate_module_provider_structure(payload)
+        if section == "model-provider":
+            self._validate_model_provider_structure(payload)
             providers = payload["providers"]
             config_loader = ConfigLoader()
             for provider_id, provider in providers.items():
@@ -170,10 +200,31 @@ class SettingsApiDomain(DomainBase):
                 except ValueError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from exc
         elif section == "defaults":
-            for key in ("server", "agentNode", "graphRunner", "consoleCommand", "nodeMemory", "mcpServers"):
+            for key in (
+                "server",
+                "storage",
+                "agentNode",
+                "graphRunner",
+                "consoleCommand",
+                "nodeMemory",
+                "mcpServers",
+                "undo",
+            ):
                 value = payload.get(key)
                 if value is not None and not isinstance(value, dict):
                     raise HTTPException(status_code=400, detail=f"config.json field '{key}' must be an object")
+            try:
+                memory_local_config_from_defaults(payload)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            undo = payload.get("undo")
+            if isinstance(undo, dict) and "maxSteps" in undo:
+                max_steps = undo.get("maxSteps")
+                if isinstance(max_steps, bool) or not isinstance(max_steps, int) or not 0 <= max_steps <= 100:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="config.json field 'undo.maxSteps' must be an integer between 0 and 100",
+                    )
             agent_node = payload.get("agentNode")
             if isinstance(agent_node, dict):
                 for bool_key in ("reviewNodeRunsWithCompanion", "reviseToolFailureMemoryWithCompanion"):
@@ -234,6 +285,16 @@ class SettingsApiDomain(DomainBase):
         meta = self._section_meta(section)
         path = self._settings_path(meta["id"])
         content, payload, warnings = self._read_payload(path, meta["id"])
+        if meta["id"] == "defaults":
+            try:
+                local_config = workspace_settings.load_memory_local_config()
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"memory local settings JSON is invalid: {exc}",
+                ) from exc
+            payload = defaults_with_memory_local_config(payload, local_config)
+            content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         return {
             "section": meta["id"],
             "label": meta["label"],
@@ -241,6 +302,7 @@ class SettingsApiDomain(DomainBase):
             "content": content,
             "data": payload,
             "warnings": warnings,
+            **self._settings_runtime_metadata(meta["id"], payload),
             **({"active_preset_id": active_theme_preset_id(), **list_theme_presets()} if meta["id"] == "theme" else {}),
         }
 
@@ -248,9 +310,18 @@ class SettingsApiDomain(DomainBase):
         meta = self._section_meta(section)
         path = self._settings_path(meta["id"])
         parsed = self._parse_content(meta["id"], (payload or {}).get("content"))
-        content = json.dumps(parsed, ensure_ascii=False, indent=2) + "\n"
+        response_content = json.dumps(parsed, ensure_ascii=False, indent=2) + "\n"
+        persisted = parsed
+        if meta["id"] == "defaults":
+            local_config = memory_local_config_from_defaults(parsed)
+            persisted = defaults_without_memory_local_config(parsed)
+            try:
+                workspace_settings.save_memory_local_config(local_config)
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"failed to write memory local settings: {exc}") from exc
+        persisted_content = json.dumps(persisted, ensure_ascii=False, indent=2) + "\n"
         try:
-            atomic_write_text(path, content, encoding="utf-8")
+            atomic_write_text(path, persisted_content, encoding="utf-8")
         except OSError as exc:
             raise HTTPException(status_code=500, detail=f"failed to write {meta['id']} settings: {exc}") from exc
         return {
@@ -258,9 +329,10 @@ class SettingsApiDomain(DomainBase):
             "section": meta["id"],
             "label": meta["label"],
             "path": path,
-            "content": content,
+            "content": response_content,
             "data": parsed,
             "warnings": [],
+            **self._settings_runtime_metadata(meta["id"], parsed),
             **({"active_preset_id": active_theme_preset_id(), **list_theme_presets()} if meta["id"] == "theme" else {}),
         }
 
@@ -333,73 +405,36 @@ class SettingsApiDomain(DomainBase):
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to read provider pressure: {exc}") from exc
 
-    def get_tool_stats(self):
+    def get_tool_stats(self, graph_id: str = "", scope_hours: int = 0):
         try:
-            recent_calls = load_recent_tool_call_stats()
-            analysis_calls = load_tool_call_stats()
-            return {
-                "summary": load_tool_stats_summary(),
-                "recent_calls": recent_calls,
-                "failure_analysis": build_tool_failure_analysis(analysis_calls),
-            }
+            return build_scoped_tool_stats_document(graph_id=graph_id, scope_hours=scope_hours)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to read tool stats: {exc}") from exc
 
-    def get_tool_failure_history(self, tool_name: str):
+    def get_tool_failure_history(self, tool_name: str, graph_id: str = "", scope_hours: int = 0):
         try:
-            return build_tool_failure_history(load_tool_call_stats(), tool_name)
+            return build_scoped_tool_failure_history(
+                tool_name,
+                graph_id=graph_id,
+                scope_hours=scope_hours,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to read tool failure history: {exc}") from exc
 
-    def clear_tool_stats(self):
+    def clear_tool_stats(self, graph_id: str = "", scope_hours: int = 0):
         try:
             clear_tool_stats_store()
-            recent_calls = load_recent_tool_call_stats()
-            return {
-                "ok": True,
-                "summary": load_tool_stats_summary(),
-                "recent_calls": recent_calls,
-                "failure_analysis": build_tool_failure_analysis(recent_calls),
-            }
+            return {"ok": True, **build_scoped_tool_stats_document(graph_id=graph_id, scope_hours=scope_hours)}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to clear tool stats: {exc}") from exc
 
     def delete_optional_memory(self):
-        script_path = self._delete_operational_memory_script_path()
-        if not os.path.isfile(script_path):
-            raise HTTPException(status_code=404, detail=f"delete_operational_memory.bat not found: {script_path}")
+        return self._run_memory_maintenance("delete_operational_memory.bat")
 
-        workspace_root = workspace_settings.get_workspace_root()
-        command = ["cmd.exe", "/c", script_path] if os.name == "nt" else [script_path]
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=workspace_root,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=120,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise HTTPException(status_code=500, detail="delete_operational_memory.bat timed out") from exc
-        except OSError as exc:
-            raise HTTPException(status_code=500, detail=f"failed to run delete_operational_memory.bat: {exc}") from exc
-
-        stdout = str(completed.stdout or "").strip()
-        stderr = str(completed.stderr or "").strip()
-        if completed.returncode != 0:
-            detail = stderr or stdout or f"exit code {completed.returncode}"
-            raise HTTPException(status_code=500, detail=f"delete_operational_memory.bat failed: {detail}")
-
-        return {
-            "ok": True,
-            "returncode": completed.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-        }
+    def clear_logs(self):
+        return self._run_memory_maintenance("ClearLog.bat")
 
     def start_provider_limit_tests(self, payload: dict | None = None):
         running = self.core.provider_limit_jobs.latest_running()

@@ -22,23 +22,42 @@ CAPABILITY_REGISTRY_SCHEMA_VERSION = 1
 
 
 class CapabilityRegistry:
-    def discover(self, config: dict[str, Any] | None = None) -> dict[str, list[CapabilityDescriptor]]:
+    def discover(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        kinds: Iterable[str] | None = None,
+    ) -> dict[str, list[CapabilityDescriptor]]:
         node_config = config if isinstance(config, dict) else {}
+        requested = set(kinds) if kinds is not None else set(FIELD_BY_KIND.keys())
         selected = {
             kind: set(_validate_selected(node_config.get(field), field))
             for kind, field in FIELD_BY_KIND.items()
         }
-        grouped: dict[str, list[CapabilityDescriptor]] = {
-            "tool": self._options("tool", list_available_tool_options(), selected["tool"], source="workspace"),
-            "mcp": self._mcp_descriptors(selected["mcp"]),
-            "skill": self._skill_descriptors(selected["skill"]),
-            "plugin": self._plugin_descriptors(selected["plugin"]),
-        }
-        self._mark_missing_selected(grouped, selected)
+        grouped: dict[str, list[CapabilityDescriptor]] = {}
+        if "tool" in requested:
+            grouped["tool"] = self._options(
+                "tool",
+                list_available_tool_options(),
+                selected["tool"],
+                source="workspace",
+            )
+        if "mcp" in requested:
+            grouped["mcp"] = self._mcp_descriptors(selected["mcp"])
+        if "skill" in requested:
+            grouped["skill"] = self._skill_descriptors(selected["skill"])
+        if "plugin" in requested:
+            grouped["plugin"] = self._plugin_descriptors(selected["plugin"])
+        self._mark_missing_selected(grouped, {k: v for k, v in selected.items() if k in requested})
         return grouped
 
-    def discover_payload(self, config: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
-        grouped = self.discover(config)
+    def discover_payload(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        kinds: Iterable[str] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        grouped = self.discover(config, kinds=kinds)
         payload: dict[str, dict[str, Any]] = {}
         for kind, descriptors in grouped.items():
             field = FIELD_BY_KIND[kind]

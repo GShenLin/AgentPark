@@ -3,10 +3,8 @@ import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import {
   applyRuntimeEventConfig,
   getNodeTemplate,
-  listAgentProfiles,
   listProviders,
   listTools,
-  type AgentProfile,
   type ProviderInfo,
 } from '../api'
 import { getSchemaFieldOptions } from '../composables/nodeSchemaFields'
@@ -25,7 +23,7 @@ import {
 import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
 import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySelect.vue'
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
-import ModuleProviderSettingsForm from './settings/ModuleProviderSettingsForm.vue'
+import ModelProviderSettingsForm from './settings/ModelProviderSettingsForm.vue'
 import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
 import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
@@ -35,12 +33,13 @@ import ToolStatsSettingsPanel from './settings/ToolStatsSettingsPanel.vue'
 import { applyWorkspaceTheme } from '../theme'
 
 const AnimEditor = defineAsyncComponent(() => import('./settings/AnimEditor.vue'))
+const NodeProfilerEditor = defineAsyncComponent(() => import('./settings/NodeProfilerEditor.vue'))
 const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
   {
-    id: 'module-provider',
-    label: 'moduleProvider',
-    path: 'config/moduleProvider.json',
-    filename: 'moduleProvider.json',
+    id: 'model-provider',
+    label: 'modelProvider',
+    path: 'config/modelProvider.json',
+    filename: 'modelProvider.json',
   },
   {
     id: 'defaults',
@@ -74,7 +73,7 @@ const emit = defineEmits<{
 }>()
 
 const sections = ref<SettingsSectionInfo[]>(DEFAULT_SETTINGS_SECTIONS.slice())
-const activeSection = ref('module-provider')
+const activeSection = ref('model-provider')
 const loadedDocument = ref<SettingsDocument | null>(null)
 const editorContent = ref('')
 const advancedMode = ref(false)
@@ -83,11 +82,11 @@ const saving = ref(false)
 const error = ref('')
 const status = ref('')
 const providers = ref<ProviderInfo[]>([])
-const agentProfiles = ref<AgentProfile[]>([])
 const availableTools = ref<string[]>([])
 const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[]>>({})
 const themePresets = ref<ThemePresetInfo[]>([])
 const activeThemePresetId = ref('default')
+const nodeProfilerDirty = ref(false)
 
 const displaySections = computed<SettingsSectionInfo[]>(() => {
   const base = sections.value.slice()
@@ -103,7 +102,7 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
     base.push({
       id: 'pressure',
       label: 'Pressure',
-      path: 'config/moduleProvider.json',
+      path: 'config/modelProvider.json',
       filename: '',
     })
   }
@@ -123,6 +122,14 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
       filename: 'frame.json',
     })
   }
+  if (!base.some((item) => item.id === 'node-profiler-editor')) {
+    base.push({
+      id: 'node-profiler-editor',
+      label: 'NodeProfilerEditor',
+      path: 'agent/*.json',
+      filename: '*.json',
+    })
+  }
   if (!base.some((item) => item.id === 'exit')) {
     base.push({
       id: 'exit',
@@ -139,7 +146,7 @@ const currentSection = computed(() => {
 })
 
 const activeLabel = computed(() => {
-  if (activeSection.value === 'module-provider') return 'moduleProvider'
+  if (activeSection.value === 'model-provider') return 'modelProvider'
   if (activeSection.value === 'defaults') return 'Default settings'
   if (activeSection.value === 'companion') return 'Companion'
   if (activeSection.value === 'events') return 'Runtime Events'
@@ -147,6 +154,7 @@ const activeLabel = computed(() => {
   if (activeSection.value === 'pressure') return 'Pressure'
   if (activeSection.value === 'tool-stats') return 'Static'
   if (activeSection.value === 'anim-editor') return 'AnimEditor'
+  if (activeSection.value === 'node-profiler-editor') return 'NodeProfilerEditor'
   if (activeSection.value === 'exit') return 'Exit'
   return currentSection.value?.label || activeSection.value
 })
@@ -155,8 +163,9 @@ const isProviderTest = computed(() => activeSection.value === 'provider-test')
 const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
 const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
+const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profiler-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
-const isVirtualSection = computed(() => isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isExitSection.value)
+const isVirtualSection = computed(() => isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isExitSection.value)
 const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 const validationWarnings = computed(() => Array.isArray(loadedDocument.value?.warnings)
   ? loadedDocument.value.warnings.map((item) => String(item || '').trim()).filter(Boolean)
@@ -172,7 +181,7 @@ const formData = computed<Record<string, unknown> | null>(() => {
 })
 
 function labelFor(section: SettingsSectionInfo) {
-  if (section.id === 'module-provider') return 'moduleProvider'
+  if (section.id === 'model-provider') return 'modelProvider'
   if (section.id === 'defaults') return 'Default settings'
   if (section.id === 'companion') return 'Companion'
   if (section.id === 'events') return 'Runtime Events'
@@ -180,6 +189,7 @@ function labelFor(section: SettingsSectionInfo) {
   if (section.id === 'pressure') return 'Pressure'
   if (section.id === 'tool-stats') return 'Static'
   if (section.id === 'anim-editor') return 'AnimEditor'
+  if (section.id === 'node-profiler-editor') return 'NodeProfilerEditor'
   if (section.id === 'exit') return 'Exit'
   return section.label
 }
@@ -191,14 +201,12 @@ function replaceData(data: Record<string, unknown>) {
 }
 
 async function loadCatalog() {
-  const [nextProviders, nextTools, nextAgentProfiles] = await Promise.all([
+  const [nextProviders, nextTools] = await Promise.all([
     listProviders(),
     listTools(),
-    listAgentProfiles(),
   ])
   providers.value = nextProviders
   availableTools.value = nextTools
-  agentProfiles.value = nextAgentProfiles
 }
 
 function syncThemePresetState(document: SettingsDocument | null) {
@@ -231,12 +239,12 @@ async function loadSections() {
   const nextSections = await listSettingsSections()
   sections.value = nextSections.length ? nextSections : DEFAULT_SETTINGS_SECTIONS.slice()
   if (!displaySections.value.some((item) => item.id === activeSection.value)) {
-    activeSection.value = sections.value[0]?.id || 'module-provider'
+    activeSection.value = sections.value[0]?.id || 'model-provider'
   }
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'exit') {
+  if (sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -264,7 +272,18 @@ async function loadSection(sectionId = activeSection.value) {
 
 async function selectSection(sectionId: string) {
   if (sectionId === activeSection.value) return
+  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm('Discard unsaved NodeProfiler changes?')) {
+    return
+  }
+  nodeProfilerDirty.value = false
   await loadSection(sectionId)
+}
+
+function handleBack() {
+  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm('Discard unsaved NodeProfiler changes?')) {
+    return
+  }
+  emit('back')
 }
 
 function formatJson() {
@@ -305,8 +324,8 @@ async function saveSection() {
     loadedDocument.value = document
     editorContent.value = document.content
     syncThemePresetState(document)
-    status.value = 'Saved'
-    if (activeSection.value === 'module-provider') {
+    status.value = document.restart_required ? 'Saved · Restart required' : 'Saved'
+    if (activeSection.value === 'model-provider') {
       emit('providersUpdated')
       await loadCatalogForForms()
     } else if (activeSection.value === 'defaults') {
@@ -386,10 +405,10 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>Settings</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? '.cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? '.cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
-        <button type="button" class="settings-btn" @click="emit('back')">{{ props.backLabel }}</button>
+        <button type="button" class="settings-btn" @click="handleBack">{{ props.backLabel }}</button>
       </div>
     </header>
 
@@ -435,6 +454,14 @@ onMounted(async () => {
         <PressureSettingsPanel v-else-if="isPressure" />
         <ToolStatsSettingsPanel v-else-if="isToolStats" />
         <AnimEditor v-else-if="isAnimEditor" @error="error = $event" @status="status = $event" />
+        <NodeProfilerEditor
+          v-else-if="isNodeProfilerEditor"
+          :providers="providers"
+          :available-tools="availableTools"
+          @error="error = $event"
+          @status="status = $event"
+          @dirty="nodeProfilerDirty = $event"
+        />
         <SystemExitPanel v-else-if="isExitSection" />
 
         <textarea
@@ -447,14 +474,15 @@ onMounted(async () => {
         ></textarea>
 
         <template v-else>
-          <ModuleProviderSettingsForm
-            v-if="activeSection === 'module-provider' && formData"
+          <ModelProviderSettingsForm
+            v-if="activeSection === 'model-provider' && formData"
             :data="formData"
             @update:data="replaceData"
           />
           <DefaultSettingsForm
             v-else-if="activeSection === 'defaults' && formData"
             :data="formData"
+            :runtime="loadedDocument?.runtime"
             @update:data="replaceData"
           />
           <CompanionSettingsForm
@@ -468,7 +496,6 @@ onMounted(async () => {
           <RuntimeEventsSettingsForm
             v-else-if="activeSection === 'events' && formData"
             :data="formData"
-            :agent-profiles="agentProfiles"
             @update:data="replaceData"
           />
           <ThemeSettingsForm

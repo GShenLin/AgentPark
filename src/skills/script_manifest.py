@@ -90,7 +90,12 @@ def load_skill_script_manifest(skill_dir: str, *, skill_name: str) -> tuple[Skil
     return tuple(result)
 
 
-def run_skill_script(definition: SkillScriptDefinition, arguments: dict[str, Any]) -> str:
+def run_skill_script(
+    definition: SkillScriptDefinition,
+    arguments: dict[str, Any],
+    *,
+    runtime_env: dict[str, str] | None = None,
+) -> str:
     try:
         normalized_args = validate_script_arguments(definition.args_schema, arguments)
     except SkillScriptArgumentError as exc:
@@ -109,6 +114,9 @@ def run_skill_script(definition: SkillScriptDefinition, arguments: dict[str, Any
     env["AGENTPARK_SKILL_SCRIPT_ID"] = definition.id
     env["AGENTPARK_SKILL_SCRIPT_ARGS"] = args_payload
     env["AGENTPARK_SKILL_SCRIPT_ALLOW_WRITE"] = "1" if definition.allow_write else "0"
+    for name, value in (runtime_env or {}).items():
+        if name.startswith("AGENTPARK_") and str(value or "").strip():
+            env[name] = str(value)
     try:
         completed = subprocess.run(
             command,

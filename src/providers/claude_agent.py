@@ -56,13 +56,11 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             effort_source = self.config.get("reasoningEffort", "")
 
         messages = self._restore_recent_tool_results(self._get_messages_with_memory())
-        if isinstance(self.system_prompt, str) and self.system_prompt.strip():
-            has_system = any((msg or {}).get("role") == "system" for msg in messages)
-            if not has_system:
-                messages = [{"role": "system", "content": self.system_prompt.strip()}] + messages
+        messages = self._ensure_runtime_instruction(messages, self.system_prompt)
         messages = self._compact_tool_result_messages_for_submission(messages)
 
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
+        active_tools = self._tool_context_compaction_active_tools(active_tools)
         if active_tools:
             active_tools = self.to_claude_tool_declarations(active_tools)
         payload = self.build_claude_messages_payload(
@@ -131,24 +129,18 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             extra = {"tool_calls": tool_calls}
             if isinstance(native_blocks, list):
                 extra["_claude_content_blocks"] = [
-                    block
+                    dict(block)
                     for block in native_blocks
-                    if isinstance(block, dict) and str(block.get("type") or "").strip().lower() == "tool_use"
+                    if isinstance(block, dict) and str(block.get("type") or "").strip()
                 ]
             self.AssistantProgress(message.get("content"), tool_calls=tool_calls)
             self.Message("assistant", None, persist=False, **extra)
             if run_tools:
                 executions = self.execute_tool_calls_parallel(tool_calls)
-                for execution in executions:
-                    self.Message(
-                        "tool",
-                        execution.cleaned_result,
-                        tool_call_id=execution.call_id,
-                        name=execution.func_name,
-                    )
-                    warning = self._build_non_retryable_tool_warning(execution.func_name, execution.cleaned_result)
-                    if warning:
-                        self.Message("system", warning)
+                self._append_tool_execution_messages_then_warnings(executions)
+                self._tool_context_compaction_gate_completed(executions)
+                self._notify_companion_about_failed_tool_executions(executions)
+                self._run_tool_context_compaction_gate_if_needed(executions)
                 return self.Send(
                     tools=tools,
                     run_tools=run_tools,
@@ -164,6 +156,21 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
 
         content = message.get("content")
         text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+        if self._tool_context_compaction_gate_active_now() and not self._finish_tool_context_compaction_gate_with_response(
+            content
+        ):
+            self._retry_tool_context_compaction_gate("the model returned an empty response")
+            return self.Send(
+                tools=tools,
+                run_tools=run_tools,
+                mode=mode,
+                web_search=web_search_mode,
+                thinking=thinking_mode,
+                reasoning_effort=reasoning_effort,
+                stream=stream,
+                stream_handler=stream_handler,
+                thinking_stream_handler=thinking_stream_handler,
+            )
         native_blocks = message.get("_claude_content_blocks")
         if isinstance(native_blocks, list):
             self.Message("assistant", text, _claude_content_blocks=native_blocks)

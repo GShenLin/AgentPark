@@ -2,9 +2,12 @@ import json
 import os
 from types import SimpleNamespace
 
-import functions.system_tools as patch_tools
+import pytest
+
+import functions.apply_patch_tool as patch_tools
 import functions.system_tools as system_tools
 from src.tool.base_tool import BaseTool
+from src.workspace_patch_requirements import WorkspacePatchRequirementError
 
 
 class _DummyAgent:
@@ -191,3 +194,52 @@ def test_system_tools_registers_apply_patch():
         item.get("function", {}).get("name") == "apply_patch"
         for item in tool.tool_declarations
     )
+    declaration = next(
+        item["function"]
+        for item in tool.tool_declarations
+        if item.get("function", {}).get("name") == "apply_patch"
+    )
+    assert declaration["parameters"]["required"] == ["patch", "required_changes"]
+
+
+def test_agent_apply_patch_enforces_requirements_for_direct_mutation(tmp_path):
+    target = tmp_path / "value.txt"
+    target.write_text("before\n", encoding="utf-8")
+    patch = (
+        "*** Begin Patch\n"
+        f"*** Update File: {target}\n"
+        "@@\n"
+        "-before\n"
+        "+after\n"
+        "*** End Patch\n"
+    )
+
+    with pytest.raises(WorkspacePatchRequirementError, match="old_text removal"):
+        system_tools.apply_patch(
+            patch=patch,
+            required_changes=[
+                {
+                    "id": "wrong",
+                    "kind": "replacement",
+                    "old_text": "missing",
+                    "new_text": "after",
+                }
+            ],
+        )
+
+    assert target.read_text(encoding="utf-8") == "before\n"
+    result = json.loads(
+        system_tools.apply_patch(
+            patch=patch,
+            required_changes=[
+                {
+                    "id": "value",
+                    "kind": "replacement",
+                    "old_text": "before",
+                    "new_text": "after",
+                }
+            ],
+        )
+    )
+    assert result["status"] == "success"
+    assert target.read_text(encoding="utf-8") == "after\n"

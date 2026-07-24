@@ -2,6 +2,8 @@ import os
 import socket
 import uuid
 
+from fastapi import Request
+
 from .domain_base import DomainBase
 from .shared import (
     HTTPException,
@@ -38,9 +40,9 @@ class MobileApiDomain(DomainBase):
         if str(pc_id or "").strip() != LOCAL_PC_ID:
             raise HTTPException(status_code=404, detail="PC target not found")
 
-    def _list_graph_summaries(self) -> list[dict]:
+    def _list_graph_summaries(self, request: Request = None) -> list[dict]:
         instance = self._runtime_instance()
-        payload = self.core.graph_api.list_graphs()
+        payload = self.core.graph_api.list_graphs(request)
         graphs = payload.get("graphs") if isinstance(payload, dict) else None
         if not isinstance(graphs, list):
             raise HTTPException(status_code=500, detail="invalid graph list response")
@@ -93,8 +95,8 @@ class MobileApiDomain(DomainBase):
             "output_num": item.get("output_num"),
         }
 
-    def _list_mobile_nodes_for_graph(self, graph_id: str) -> list[dict]:
-        payload = self.core.node_ops.list_node_instance_configs(graph_id)
+    def _list_mobile_nodes_for_graph(self, graph_id: str, request: Request = None) -> list[dict]:
+        payload = self.core.node_ops.list_node_instance_configs(graph_id, request=request)
         nodes = payload.get("nodes") if isinstance(payload, dict) else None
         if not isinstance(nodes, list):
             raise HTTPException(status_code=500, detail="invalid node list response")
@@ -106,8 +108,8 @@ class MobileApiDomain(DomainBase):
             result.append(self._mobile_node_from_config(item, graph_id))
         return result
 
-    def _mobile_node_snapshot(self, graph_id: str, node_id: str) -> dict:
-        for item in self._list_mobile_nodes_for_graph(graph_id):
+    def _mobile_node_snapshot(self, graph_id: str, node_id: str, request: Request = None) -> dict:
+        for item in self._list_mobile_nodes_for_graph(graph_id, request):
             item_id = str(item.get("id") or "").strip()
             if item_id == node_id:
                 return item
@@ -122,11 +124,11 @@ class MobileApiDomain(DomainBase):
             history_mode=history_mode,
         )
 
-    def _require_graph(self, graph_id: str) -> str:
+    def _require_graph(self, graph_id: str, request: Request = None) -> str:
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_graph_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
-        if not any(item["id"] == safe_graph_id for item in self._list_graph_summaries()):
+        if not any(item["id"] == safe_graph_id for item in self._list_graph_summaries(request)):
             raise HTTPException(status_code=404, detail="graph not found")
         return safe_graph_id
 
@@ -143,7 +145,7 @@ class MobileApiDomain(DomainBase):
             ]
         }
 
-    def list_mobile_graphs(self, pc_id: str):
+    def list_mobile_graphs(self, pc_id: str, request: Request = None):
         self._require_local_pc(pc_id)
         instance = self._runtime_instance()
         return {
@@ -151,35 +153,97 @@ class MobileApiDomain(DomainBase):
             "instances": [
                 {
                     **instance,
-                    "graphs": self._list_graph_summaries(),
+                    "graphs": self._list_graph_summaries(request),
                 }
             ],
         }
 
-    def list_mobile_nodes(self, pc_id: str, graph_id: str):
+    def list_mobile_nodes(self, pc_id: str, graph_id: str, request: Request = None):
         self._require_local_pc(pc_id)
-        safe_graph_id = self._require_graph(graph_id)
-        return {"pc_id": LOCAL_PC_ID, "graph_id": safe_graph_id, "nodes": self._list_mobile_nodes_for_graph(safe_graph_id)}
+        safe_graph_id = self._require_graph(graph_id, request)
+        return {
+            "pc_id": LOCAL_PC_ID,
+            "graph_id": safe_graph_id,
+            "nodes": self._list_mobile_nodes_for_graph(safe_graph_id, request),
+        }
 
-    def get_mobile_node_conversation(self, pc_id: str, graph_id: str, node_id: str, history_mode: str = "latest_turn"):
+    def get_mobile_node_conversation(
+        self,
+        pc_id: str,
+        graph_id: str,
+        node_id: str,
+        request: Request = None,
+        history_mode: str = "latest_turn",
+    ):
         self._require_local_pc(pc_id)
-        safe_graph_id = self._require_graph(graph_id)
+        safe_graph_id = self._require_graph(graph_id, request)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         if not safe_node_id:
             raise HTTPException(status_code=400, detail="invalid node id")
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
+        self.core.node_ops.require_node_visible(safe_node_id, safe_graph_id, request)
         return self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id, history_mode=history_mode)
 
-    def delete_mobile_node_message(self, pc_id: str, graph_id: str, node_id: str, message_id: str):
+    def delete_mobile_node_message(
+        self,
+        pc_id: str,
+        graph_id: str,
+        node_id: str,
+        message_id: str,
+        request: Request = None,
+    ):
         self._require_local_pc(pc_id)
-        safe_graph_id = self._require_graph(graph_id)
+        safe_graph_id = self._require_graph(graph_id, request)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         if not safe_node_id:
             raise HTTPException(status_code=400, detail="invalid node id")
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
+        self.core.node_ops.require_node_visible(safe_node_id, safe_graph_id, request)
         return self.core.node_ops.delete_node_instance_memory_message(
             safe_node_id,
             message_id,
+            graph_id=safe_graph_id,
+        )
+
+    def delete_mobile_node_messages(
+        self,
+        pc_id: str,
+        graph_id: str,
+        node_id: str,
+        payload: dict,
+        request: Request = None,
+    ):
+        self._require_local_pc(pc_id)
+        safe_graph_id = self._require_graph(graph_id, request)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        if not safe_node_id:
+            raise HTTPException(status_code=400, detail="invalid node id")
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
+        self.core.node_ops.require_node_visible(safe_node_id, safe_graph_id, request)
+        return self.core.node_ops.delete_node_instance_memory_messages(
+            safe_node_id,
+            payload,
+            graph_id=safe_graph_id,
+        )
+
+    def delete_mobile_node_turn(
+        self,
+        pc_id: str,
+        graph_id: str,
+        node_id: str,
+        payload: dict,
+        request: Request = None,
+    ):
+        self._require_local_pc(pc_id)
+        safe_graph_id = self._require_graph(graph_id, request)
+        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
+        if not safe_node_id:
+            raise HTTPException(status_code=400, detail="invalid node id")
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
+        self.core.node_ops.require_node_visible(safe_node_id, safe_graph_id, request)
+        return self.core.node_ops.delete_node_instance_memory_turn(
+            safe_node_id,
+            payload,
             graph_id=safe_graph_id,
         )
 
@@ -189,10 +253,11 @@ class MobileApiDomain(DomainBase):
         graph_id: str,
         node_id: str,
         payload: dict,
+        request: Request = None,
         history_mode: str = "latest_turn",
     ):
         self._require_local_pc(pc_id)
-        safe_graph_id = self._require_graph(graph_id)
+        safe_graph_id = self._require_graph(graph_id, request)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         if not safe_node_id:
             raise HTTPException(status_code=400, detail="invalid node id")
@@ -206,6 +271,7 @@ class MobileApiDomain(DomainBase):
         text_full = envelope_text(message).strip()
         text_preview = envelope_preview(message)
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
+        self.core.node_ops.require_node_visible(safe_node_id, safe_graph_id, request)
         result = self.core.node_ops.enqueue_node_instance_pending(
             safe_node_id,
             {
@@ -242,7 +308,7 @@ class MobileApiDomain(DomainBase):
             "queued": True,
             "trace_id": trace_id,
             "pending_count": result.get("pending_count"),
-            "node": self._mobile_node_snapshot(safe_graph_id, safe_node_id),
+            "node": self._mobile_node_snapshot(safe_graph_id, safe_node_id, request),
             "conversation": self._mobile_node_conversation_snapshot(
                 safe_graph_id,
                 safe_node_id,

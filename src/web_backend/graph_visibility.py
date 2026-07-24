@@ -27,7 +27,9 @@ class GraphVisibilityService(HostBoundService):
 
     def require_graph_visible(self, graph_id: str, request: Request | None = None) -> None:
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        if self._graph_is_private(safe_id) and not is_local_request(request):
+        if is_local_request(request):
+            return
+        if self._graph_is_private(safe_id):
             raise HTTPException(status_code=404, detail="graph not found")
 
     def set_graph_visibility(self, graph_id: str, payload: dict, request: Request = None):

@@ -1,16 +1,19 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 
 from .channel_api import channel_http_endpoint
 
 
 class ApiRouteRegistry:
     ROUTES = [
+        ("get", "/api/workspace/bootstrap", lambda core: core.workspace_bootstrap.get_workspace_bootstrap),
         ("get", "/api/runs/{task_id}/subagents/{name}/memory", lambda core: core.agent_domain.get_subagent_memory),
         ("get", "/api/mobile/pcs", lambda core: core.mobile_api.list_mobile_pcs),
         ("get", "/api/mobile/pcs/{pc_id}/graphs", lambda core: core.mobile_api.list_mobile_graphs),
         ("get", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes", lambda core: core.mobile_api.list_mobile_nodes),
         ("get", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/conversation", lambda core: core.mobile_api.get_mobile_node_conversation),
         ("delete", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/messages/{message_id}", lambda core: core.mobile_api.delete_mobile_node_message),
+        ("post", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/messages/delete", lambda core: core.mobile_api.delete_mobile_node_messages),
+        ("post", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/turns/delete", lambda core: core.mobile_api.delete_mobile_node_turn),
         ("post", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/messages", lambda core: core.mobile_api.send_mobile_node_message),
         ("get", "/api/node-desktop-views", lambda core: core.node_desktop_views.list_node_desktop_views),
         ("post", "/api/node-desktop-views", lambda core: core.node_desktop_views.upsert_node_desktop_view),
@@ -32,6 +35,9 @@ class ApiRouteRegistry:
         ("get", "/api/config/prompts", lambda core: core.agent_domain.list_prompts),
         ("get", "/api/config/prompts/{filename}", lambda core: core.agent_domain.get_prompt),
         ("post", "/api/config/prompts", lambda core: core.agent_domain.save_prompt),
+        ("get", "/api/config/input-bundles", lambda core: core.agent_domain.list_input_bundles),
+        ("get", "/api/config/input-bundles/{name}", lambda core: core.agent_domain.get_input_bundle),
+        ("post", "/api/config/input-bundles", lambda core: core.agent_domain.save_input_bundle),
         ("get", "/api/tools", lambda core: core.node_ops.list_tools),
         ("get", "/api/user-interactions", lambda core: core.user_interaction_api.list_user_interactions),
         ("post", "/api/user-interactions/{request_id}/submit", lambda core: core.user_interaction_api.submit_user_interaction),
@@ -43,13 +49,19 @@ class ApiRouteRegistry:
         ("post", "/api/nodes/instances/{node_id}/rename", lambda core: core.node_ops.rename_node_instance),
         ("post", "/api/nodes/instances/{node_id}/clear-memory", lambda core: core.node_ops.clear_node_instance_memory),
         ("delete", "/api/nodes/instances/{node_id}/memory/messages/{message_id}", lambda core: core.node_ops.delete_node_instance_memory_message),
+        ("post", "/api/nodes/instances/{node_id}/memory/messages/delete", lambda core: core.node_ops.delete_node_instance_memory_messages),
+        ("post", "/api/nodes/instances/{node_id}/memory/turns/delete", lambda core: core.node_ops.delete_node_instance_memory_turn),
         ("post", "/api/nodes/instances/{node_id}/open-node-folder", lambda core: core.node_ops.open_node_instance_node_folder),
         ("post", "/api/nodes/instances/{node_id}/open-work-folder", lambda core: core.node_ops.open_node_instance_work_folder),
         ("delete", "/api/nodes/instances/{node_id}", lambda core: core.node_ops.delete_node_instance),
         ("get", "/api/nodes/instances/configs", lambda core: core.node_ops.list_node_instance_configs),
+        ("get", "/api/nodes/instances/{node_id}/files", lambda core: core.node_ops.list_node_instance_files),
+        ("get", "/api/nodes/instances/{node_id}/config", lambda core: core.node_ops.get_node_instance_config),
+        ("patch", "/api/nodes/instances/{node_id}/visibility", lambda core: core.node_ops.set_node_visibility),
         ("get", "/api/nodes/instances/{node_id}/memory", lambda core: core.node_ops.get_node_instance_memory),
+        ("get", "/api/nodes/instances/{node_id}/codex-sessions", lambda core: core.node_ops.list_codex_sessions),
+        ("post", "/api/nodes/instances/{node_id}/codex-sessions/select", lambda core: core.node_ops.select_codex_session),
         ("get", "/api/nodes/instances/{node_id}/live", lambda core: core.node_ops.get_node_instance_live),
-        ("get", "/api/nodes/instances/{node_id}/live/stream", lambda core: core.node_ops.stream_node_instance_live),
         ("post", "/api/nodes/instances/{node_id}/config", lambda core: core.node_ops.update_node_instance_config),
         ("post", "/api/nodes/instances/{node_id}/state", lambda core: core.node_ops.set_node_instance_state),
         ("post", "/api/nodes/instances/{node_id}/control", lambda core: core.node_ops.control_node_instance),
@@ -58,14 +70,20 @@ class ApiRouteRegistry:
         ("post", "/api/nodes/run_async", lambda core: core.node_ops.run_node_async),
         ("get", "/api/nodes/run/{run_id}", lambda core: core.node_ops.get_node_run),
         ("post", "/api/nodes/run/{run_id}/stop", lambda core: core.graph_api.stop_node_run),
+        ("post", "/api/undo/{token}", lambda core: core.undo_api.restore_deletion),
         ("post", "/api/graphs/{graph_id}/runner/start", lambda core: core.graph_api.start_graph_runner),
         ("get", "/api/graphs/{graph_id}/runner/status", lambda core: core.graph_api.get_graph_runner_status),
-        ("get", "/api/graphs/{graph_id}/events/stream", lambda core: core.graph_api.stream_graph_events),
+        ("get", "/api/app/events/stream", lambda core: core.graph_api.stream_app_events),
+        ("get", "/api/graphs/{graph_id}/events/stream", lambda core: core.graph_api.retire_legacy_event_stream),
+        ("get", "/api/nodes/instances/{node_id}/live/stream", lambda core: core.graph_api.retire_legacy_event_stream),
         ("post", "/api/graphs/{graph_id}/emit", lambda core: core.graph_api.emit_graph),
         ("get", "/api/graphs/startup/config", lambda core: core.graph_api.get_startup_graph_config),
         ("post", "/api/graphs/startup/config", lambda core: core.graph_api.set_startup_graph_config),
         ("get", "/api/profiles/agents", lambda core: core.profile_api.list_agent_profiles),
+        ("put", "/api/profiles/agents/{profile_id}", lambda core: core.profile_api.update_agent_profile),
         ("post", "/api/profiles/agents/from-node", lambda core: core.profile_api.save_agent_profile_from_node),
+        ("post", "/api/profiles/agents/{profile_id}/load", lambda core: core.profile_api.load_agent_profile_into_node),
+        ("post", "/api/profiles/agents/{profile_id}/create", lambda core: core.profile_api.create_agent_node_from_profile),
         ("delete", "/api/profiles/agents/{profile_id}", lambda core: core.profile_api.delete_agent_profile),
         ("get", "/api/profiles/graphs", lambda core: core.profile_api.list_graph_profiles),
         ("post", "/api/profiles/graphs/from-graph", lambda core: core.profile_api.save_graph_profile_from_graph),
@@ -85,8 +103,10 @@ class ApiRouteRegistry:
         ("get", "/api/files", lambda core: core.system_api.list_files),
         ("get", "/api/files/read", lambda core: core.system_api.read_file),
         ("get", "/api/files/raw", lambda core: core.system_api.raw_file),
+        ("post", "/api/files/open", lambda core: core.system_api.open_file),
         ("post", "/api/files/upload", lambda core: core.system_api.upload_files),
         ("post", "/api/files/select-folder", lambda core: core.system_api.select_folder),
+        ("post", "/api/files/select-file", lambda core: core.system_api.select_file),
         ("post", "/api/files/write", lambda core: core.system_api.write_file),
         ("post", "/api/files/rename", lambda core: core.system_api.rename_file),
         ("post", "/api/files/delete", lambda core: core.system_api.delete_file),
@@ -98,10 +118,12 @@ class ApiRouteRegistry:
         ("post", "/api/providers/limits/test", lambda core: core.settings_api.start_provider_limit_tests),
         ("post", "/api/providers/limits/models", lambda core: core.settings_api.start_provider_model_discovery),
         ("get", "/api/providers/limits/test/{job_id}", lambda core: core.settings_api.get_provider_limit_test_job),
+        ("post", "/api/providers/{provider_id}/doubao-speech", lambda core: core.doubao_speech_management.execute),
         ("get", "/api/tool-stats", lambda core: core.settings_api.get_tool_stats),
         ("get", "/api/tool-stats/failures/{tool_name}", lambda core: core.settings_api.get_tool_failure_history),
         ("delete", "/api/tool-stats", lambda core: core.settings_api.clear_tool_stats),
         ("post", "/api/operational-memory/delete-optional", lambda core: core.settings_api.delete_optional_memory),
+        ("post", "/api/logs/clear", lambda core: core.settings_api.clear_logs),
         ("get", "/api/settings", lambda core: core.settings_api.list_settings_sections),
         ("get", "/api/settings/{section}", lambda core: core.settings_api.get_settings_section),
         ("post", "/api/settings/{section}", lambda core: core.settings_api.update_settings_section),
@@ -112,6 +134,15 @@ class ApiRouteRegistry:
         ("get", "/api/theme/img/{asset_path:path}", lambda core: core.settings_api.get_theme_image),
         ("post", "/api/system/restart", lambda core: core.system_api.restart_server),
         ("post", "/api/system/exit", lambda core: core.system_api.exit_server),
+        ("get", "/api/remote-workers", lambda core: core.remote_workspace_api.list_workers),
+        ("post", "/api/remote-workers/pair", lambda core: core.remote_workspace_api.pair_worker),
+        ("post", "/api/remote-workers/select-folder", lambda core: core.remote_workspace_api.select_worker_folder),
+        ("post", "/api/remote-workers/register", lambda core: core.remote_workspace_api.register_worker),
+        ("post", "/api/remote-workers/{worker_id}/wait-online", lambda core: core.remote_workspace_api.wait_worker_online),
+        ("post", "/api/remote-workers/{worker_id}/poll", lambda core: core.remote_workspace_api.poll_worker),
+        ("post", "/api/remote-workers/{worker_id}/heartbeat", lambda core: core.remote_workspace_api.heartbeat_worker),
+        ("post", "/api/remote-workers/{worker_id}/tasks/{task_id}/result", lambda core: core.remote_workspace_api.submit_worker_result),
+        ("post", "/api/remote-workers/internal/execute", lambda core: core.remote_workspace_api.execute_internal),
         ("get", "/api/remotes/status", lambda core: core.remote_api.get_remote_status),
         ("get", "/api/remotes", lambda core: core.remote_api.list_remotes),
         ("post", "/api/remotes", lambda core: core.remote_api.add_remote),
@@ -125,6 +156,12 @@ class ApiRouteRegistry:
 
     @classmethod
     def register(cls, app: FastAPI, core: object) -> None:
+        def require_node_visible(request: Request, node_id: str, graph_id: str = "") -> None:
+            core.node_ops.require_node_visible(node_id, graph_id, request)
+
         for method_name, path, resolver in cls.ROUTES:
             handler = resolver(core)
-            getattr(app, method_name)(path)(handler)
+            dependencies = []
+            if path.startswith("/api/nodes/instances/{node_id}") and not path.endswith("/visibility"):
+                dependencies.append(Depends(require_node_visible))
+            getattr(app, method_name)(path, dependencies=dependencies)(handler)

@@ -48,11 +48,13 @@ def build_and_emit_responses_request_payload(
         parallel_tool_calls=payload.get("parallel_tool_calls"),
         include=payload.get("include"),
     )
+    payload_json = json.dumps(payload, ensure_ascii=False)
     payload_log = write_responses_payload_log(
         runtime,
         request_index=request_index,
         payload=payload,
         request_summary=request_summary,
+        payload_json=payload_json,
     )
     if payload_log:
         if payload_log.get("path"):
@@ -69,7 +71,7 @@ def build_and_emit_responses_request_payload(
         requested_responses_mode=mode_decision.requested_mode,
     )
     return ResponsesRequestPayload(
-        payload_json=json.dumps(payload, ensure_ascii=False),
+        payload_json=payload_json,
         request_summary=request_summary,
         input_item_count=len(request_input) if isinstance(request_input, list) else 0,
     )

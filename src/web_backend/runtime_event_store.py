@@ -287,18 +287,24 @@ def append_provider_request_completion(payload: dict[str, Any], event: dict[str,
         return
     request_index = _normalize_non_negative_int(completion.get("request_index"))
     usage = sanitize_provider_usage(completion.get("usage"))
-    if request_index is None or not usage:
+    if request_index is None:
         return
     summaries = payload.get("provider_request_summaries")
     if isinstance(summaries, list):
         for summary in reversed(summaries):
             if isinstance(summary, dict) and _normalize_non_negative_int(summary.get("request_index")) == request_index:
-                summary["usage"] = dict(usage)
+                summary["completed"] = True
+                if usage:
+                    summary["usage"] = dict(usage)
                 break
     totals = payload.get("provider_request_totals")
     if not isinstance(totals, dict):
         totals = {}
-    add_provider_usage_totals(totals, usage)
+    totals["completed_request_count"] = (
+        _normalize_non_negative_int(totals.get("completed_request_count")) or 0
+    ) + 1
+    if usage:
+        add_provider_usage_totals(totals, usage)
     totals["last_completed_request_index"] = request_index
     payload["provider_request_totals"] = totals
 

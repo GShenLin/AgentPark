@@ -21,7 +21,6 @@ class AgentNodeRunRequest:
     provider_id: str
     instruction: object
     system_prompt: object
-    mode: str
     collaboration_mode: str
     web_search: object
     thinking: object
@@ -29,6 +28,8 @@ class AgentNodeRunRequest:
     reasoning_summary: object
     public_base_url: object
     working_path: str
+    remote_enabled: bool
+    remote_worker_id: str
 
     def setting(self, name: str, default: object = None) -> object:
         if self.config_data is not None and name in self.config_data:
@@ -64,7 +65,6 @@ def load_agent_node_run_request(
         provider_id=provider_id,
         instruction=setting("instruction"),
         system_prompt=setting("system_prompt"),
-        mode=str(setting("mode", "chat") or "chat").strip() or "chat",
         collaboration_mode=str(setting("collaboration_mode", "default") or "default").strip() or "default",
         web_search=setting("web_search"),
         thinking=setting("thinking"),
@@ -72,7 +72,15 @@ def load_agent_node_run_request(
         reasoning_summary=setting("reasoning_summary"),
         public_base_url=setting("public_base_url"),
         working_path=str(setting("working_path", "") or "").strip(),
+        remote_enabled=_bool_setting(setting("remote_enabled", False)),
+        remote_worker_id=str(setting("remote_worker_id", "") or "").strip(),
     )
+
+
+def _bool_setting(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
 def _read_config_data(config_path: str) -> dict[str, Any] | None:

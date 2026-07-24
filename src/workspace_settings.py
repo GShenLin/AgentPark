@@ -7,7 +7,9 @@ import sys
 DEFAULT_SERVER_HOST = "0.0.0.0"
 DEFAULT_SERVER_PORT = 8766
 DEFAULT_STARTUP_GRAPH_ID = "default"
+DEFAULT_MAX_UNDO_STEPS = 5
 STARTUP_GRAPH_CACHE_FILENAME = "startup_graph.json"
+MEMORY_LOCAL_CONFIG_FILENAME = "memoryLocalConfig.json"
 
 
 def get_workspace_root() -> str:
@@ -28,6 +30,10 @@ def get_startup_graph_cache_path() -> str:
     return os.path.join(get_workspace_cache_dir(), STARTUP_GRAPH_CACHE_FILENAME)
 
 
+def get_memory_local_config_path() -> str:
+    return os.path.join(get_workspace_cache_dir(), MEMORY_LOCAL_CONFIG_FILENAME)
+
+
 def load_workspace_settings() -> dict:
     path = get_workspace_config_path()
     if not os.path.isfile(path):
@@ -46,6 +52,35 @@ def save_workspace_settings(payload: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def validate_memory_local_config(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError(".cache/memoryLocalConfig.json must contain a top-level object.")
+    memories_path = payload.get("memoriesPath")
+    if memories_path is not None and not isinstance(memories_path, str):
+        raise ValueError(".cache/memoryLocalConfig.json field 'memoriesPath' must be a string.")
+    return payload
+
+
+def load_memory_local_config() -> dict:
+    path = get_memory_local_config_path()
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    return validate_memory_local_config(payload)
+
+
+def save_memory_local_config(payload: dict) -> None:
+    validated = validate_memory_local_config(payload)
+    path = get_memory_local_config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(validated, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(tmp_path, path)
 
 
 def load_startup_graph_cache() -> dict:
@@ -95,6 +130,55 @@ def read_server_settings() -> dict:
         raise ValueError("config/config.json field 'server.port' must be between 1 and 65535.")
 
     return {"host": host, "port": port}
+
+
+def read_undo_settings() -> dict:
+    payload = load_workspace_settings()
+    undo = payload.get("undo")
+    if undo is None:
+        undo = {}
+    if not isinstance(undo, dict):
+        raise ValueError("config/config.json field 'undo' must be an object.")
+    value = undo.get("maxSteps", DEFAULT_MAX_UNDO_STEPS)
+    if isinstance(value, bool):
+        raise ValueError("config/config.json field 'undo.maxSteps' must be an integer.")
+    try:
+        max_steps = int(value)
+    except Exception as exc:
+        raise ValueError("config/config.json field 'undo.maxSteps' must be an integer.") from exc
+    if max_steps < 0 or max_steps > 100:
+        raise ValueError("config/config.json field 'undo.maxSteps' must be between 0 and 100.")
+    return {"max_steps": max_steps}
+
+
+def resolve_memories_root(payload: dict | None = None) -> str:
+    local_config = load_memory_local_config() if payload is None else validate_memory_local_config(payload)
+    workspace_root = os.path.abspath(get_workspace_root())
+    fallback_root = os.path.join(workspace_root, "memories")
+    configured_path = local_config.get("memoriesPath")
+    if configured_path is None:
+        return fallback_root
+    path_text = configured_path.strip()
+    if not path_text:
+        return fallback_root
+    expanded_path = os.path.expanduser(os.path.expandvars(path_text))
+    if not os.path.isabs(expanded_path):
+        return fallback_root
+    resolved_path = os.path.abspath(expanded_path)
+    if (
+        os.path.normcase(resolved_path) == os.path.normcase(workspace_root)
+        or os.path.dirname(resolved_path) == resolved_path
+    ):
+        return fallback_root
+    return resolved_path
+
+
+def read_storage_settings() -> dict:
+    resolved_root = resolve_memories_root()
+    return {
+        "memories_path": resolved_root,
+        "memories_root": resolved_root,
+    }
 
 
 def resolve_local_client_host(bind_host: str) -> str:

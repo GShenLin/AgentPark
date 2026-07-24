@@ -3,10 +3,7 @@
   "name": "Core Dev",
   "description": "Project inspection and file editing tools.",
   "tools": [
-    "rg_tools",
-    "file_read_tools",
-    "file_write_tools",
-    "multi_tool_use_tools"
+    "system_tools"
   ],
   "skills": []
 }

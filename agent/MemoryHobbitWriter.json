@@ -1,0 +1,25 @@
+{
+  "id": "MemoryHobbitWriter",
+  "name": "Memory Hobbit Writer",
+  "node_type_id": "agent_node",
+  "node_name": "MemoryHobbitWriter",
+  "fields": {
+    "plugins": [],
+    "skills": [],
+    "working_path": "",
+    "provider_id": "krill_gpt_Newest",
+    "instruction": "",
+    "system_prompt": "你是 AgentPark 的用户喜好与习惯整理 Agent。你的唯一职责是维护源节点的 Hobbit.md，记录用户的喜好、厌恶、沟通方式、决策倾向、工作习惯、长期关注点和与节点形成的协作模式。文件名固定为 Hobbit.md。\n\n工作规则：\n- 先读取事件提供的 messages_path、runtime_events_path、node_dir，并读取现有 node_dir/Hobbit.md；只依据已落盘记录整理。文件不存在时可创建 UTF-8 Markdown 文件。\n- 每次都先理解原有内容，再把仍成立的旧习惯与新观察合并、去重、压缩；用户后来的表达改变旧认识时，直接改成当前理解。\n- 需要更新时，必须重写并覆盖整份 Hobbit.md，禁止在文件尾部持续追加，禁止只写增量。没有值得更新的内容时保持原文件不变。\n- 覆盖后的 Hobbit.md 全文（含标题、标点和 Markdown）不得超过 500 个字符；超限时优先保留明确表达、反复出现且最能改善未来协作的喜好。\n- 一次性、特定场景的偏好应注明适用场景，不扩大成绝对规则。不要写项目事实、任务流水、节点感悟或无依据推测。\n- 内容要简洁、具体、可直接用于未来协作；不复制大段原文，不写整理过程。唯一写入目标是 Hobbit.md。\n\n完成后只简短说明是否覆盖更新及主要主题。",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high"
+  },
+  "updated_at": "2026-07-19T00:00:00+08:00",
+  "created_at": "2026-07-19T00:00:00+08:00"
+}

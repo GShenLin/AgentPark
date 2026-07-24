@@ -73,6 +73,31 @@ def test_tool_stats_store_groups_counts_by_provider_id(monkeypatch, tmp_path):
     assert recent[0]["call_id"] == "call-fail"
     analysis_records = tool_stats_store.load_tool_call_stats(limit=2)
     assert [item["call_id"] for item in analysis_records] == ["call-fail", "call-ok"]
+    assert [item["call_id"] for item in tool_stats_store.load_all_tool_call_stats()] == ["call-fail", "call-ok"]
+    rebuilt = tool_stats_store.build_tool_stats_summary(tool_stats_store.load_all_tool_call_stats())
+    assert rebuilt["providers"]["openai"]["total"] == 2
+
+
+def test_tool_stats_scope_filters_graph_and_time(monkeypatch):
+    from datetime import datetime
+
+    from src.web_backend import tool_stats_scope
+
+    monkeypatch.setattr(
+        tool_stats_scope,
+        "scope_cutoff",
+        lambda _hours: datetime.fromisoformat("2026-07-21T12:00:00"),
+    )
+    records = [
+        {"graph_id": "test", "recorded_at": "2026-07-21T13:00:00+08:00", "call_id": "matching"},
+        {"graph_id": "test", "recorded_at": "2026-07-21T11:00:00+08:00", "call_id": "old"},
+        {"graph_id": "default", "recorded_at": "2026-07-21T13:00:00+08:00", "call_id": "other"},
+    ]
+
+    scoped = tool_stats_scope.filter_tool_call_records(records, graph_id="test", scope_hours=24)
+
+    assert [record["call_id"] for record in scoped] == ["matching"]
+    assert tool_stats_scope.available_tool_graph_ids(records) == ["default", "test"]
 
 
 def test_clear_tool_stats_removes_summary_and_recent_calls(monkeypatch, tmp_path):
@@ -87,12 +112,14 @@ def test_clear_tool_stats_removes_summary_and_recent_calls(monkeypatch, tmp_path
     assert Path(tool_stats_store.get_tool_calls_log_path()).is_file()
     assert Path(tool_stats_store.get_tool_stats_summary_path()).is_file()
 
-    tool_stats_store.clear_tool_stats()
+    reset_at = tool_stats_store.clear_tool_stats()
 
     assert not Path(tool_stats_store.get_tool_calls_log_path()).exists()
     assert not Path(tool_stats_store.get_tool_stats_summary_path()).exists()
     assert tool_stats_store.load_tool_stats_summary() == {"providers": {}}
     assert tool_stats_store.load_recent_tool_call_stats() == []
+    assert tool_stats_store.load_tool_stats_reset_at() == reset_at
+    assert Path(tool_stats_store.get_tool_stats_reset_path()).is_file()
 
 
 def test_corrupt_summary_is_archived_without_breaking_tool_stats(monkeypatch, tmp_path):

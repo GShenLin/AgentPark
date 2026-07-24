@@ -5,6 +5,7 @@ import threading
 import traceback
 from datetime import datetime
 
+from src.memory_root import get_memories_root
 from src.providers import create_agent
 
 
@@ -67,7 +68,7 @@ class BasePlaner:
         return s
 
     def _build_leader_memory_file_path(self, user_task):
-        agents_root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "memories", "agents")
+        agents_root = os.path.join(get_memories_root(), "agents")
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
         task_part = self._sanitize_for_dirname(user_task)

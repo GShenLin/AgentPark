@@ -2,18 +2,29 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { deleteFilePath, listFiles, renameFilePath, saveFile, type FileItem } from '../api'
 import FileNode from './FileNode.vue'
+import type { FileTreeItem } from './fileTree'
 
 const props = withDefaults(defineProps<{
   rootPath?: string
+  items?: FileTreeItem[]
+  showHeader?: boolean
+  selectable?: boolean
+  selectedPaths?: string[]
+  contextMenuEnabled?: boolean
 }>(), {
   rootPath: '',
+  showHeader: true,
+  selectable: false,
+  selectedPaths: () => [],
+  contextMenuEnabled: true,
 })
 
 const emit = defineEmits<{
   (e: 'file-selected', file: FileItem): void
+  (e: 'update:selectedPaths', paths: string[]): void
 }>()
 
-const files = ref<FileItem[]>([])
+const files = ref<FileTreeItem[]>(Array.isArray(props.items) ? props.items : [])
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 const rootPath = ref(String(props.rootPath || '').trim())
@@ -24,6 +35,7 @@ const menuX = ref(0)
 const menuY = ref(0)
 const menuTarget = ref<FileItem | null>(null)
 const isMenuTargetDir = computed(() => menuTarget.value?.type === 'dir')
+const usesProvidedItems = computed(() => Array.isArray(props.items))
 
 const sortedFiles = computed(() => {
   return [...files.value].sort((a, b) => {
@@ -89,6 +101,11 @@ function onGlobalKeyDown(event: KeyboardEvent) {
 }
 
 async function refresh() {
+  if (usesProvidedItems.value) {
+    files.value = props.items || []
+    error.value = null
+    return
+  }
   isLoading.value = true
   error.value = null
   try {
@@ -137,13 +154,25 @@ function onFolderDblClick(path: string) {
 }
 
 function onBlankContextMenu(event: MouseEvent) {
+  if (!props.contextMenuEnabled) return
   const target = event.target as HTMLElement | null
   if (target?.closest('.file-row')) return
   openMenu(event.clientX, event.clientY, null)
 }
 
 function onItemContextMenu(payload: { item: FileItem; x: number; y: number }) {
+  if (!props.contextMenuEnabled) return
   openMenu(payload.x, payload.y, payload.item)
+}
+
+function onFileSelected(file: FileItem) {
+  if (props.selectable && file.type === 'file') {
+    const selected = props.selectedPaths.includes(file.path)
+      ? props.selectedPaths.filter((path) => path !== file.path)
+      : [...props.selectedPaths, file.path]
+    emit('update:selectedPaths', selected)
+  }
+  emit('file-selected', file)
 }
 
 async function createFileAtFolder(folderPath: string) {
@@ -213,7 +242,7 @@ async function deleteTarget() {
 }
 
 onMounted(() => {
-  void refresh()
+  if (!usesProvidedItems.value) void refresh()
   window.addEventListener('pointerdown', onGlobalPointerDown)
   window.addEventListener('keydown', onGlobalKeyDown)
 })
@@ -233,11 +262,18 @@ watch(
     void refresh()
   },
 )
+
+watch(
+  () => props.items,
+  (items) => {
+    if (Array.isArray(items)) files.value = items
+  },
+)
 </script>
 
 <template>
   <div class="file-explorer">
-    <div class="header-group">
+    <div v-if="showHeader" class="header-group">
       <div class="toolbar">
         <button class="tool-btn" type="button" @click="goUp">Up</button>
         <button class="tool-btn" type="button" @click="refresh">Refresh</button>
@@ -276,7 +312,10 @@ watch(
           :key="file.path"
           v-bind="file"
           :level="0"
-          @file-selected="(f) => emit('file-selected', f)"
+          :selectable="selectable"
+          :selected-paths="selectedPaths"
+          :context-menu-enabled="contextMenuEnabled"
+          @file-selected="onFileSelected"
           @folder-dblclick="onFolderDblClick"
           @item-contextmenu="onItemContextMenu"
         />
@@ -284,7 +323,7 @@ watch(
       </template>
 
       <div
-        v-if="menuOpen"
+        v-if="contextMenuEnabled && menuOpen"
         class="context-menu"
         :style="{ left: `${menuX}px`, top: `${menuY}px` }"
         @pointerdown.stop

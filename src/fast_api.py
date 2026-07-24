@@ -10,11 +10,12 @@ from uvicorn.config import LOGGING_CONFIG
 
 from src.server_pid_file import get_server_pid_file_path, install_server_pid_file, remove_server_pid_file
 from src.web_backend import create_app
+from src.web_backend import runtime_paths
 from src.web_backend.node_desktop_pet_launcher import terminate_registered_desktop_pet_processes
 from src.workspace_session_shutdown import start_workspace_session_shutdown
 from src.windows_parent_monitor import start_env_parent_exit_monitor
 from src.windows_parent_monitor import start_frozen_parent_exit_monitor
-from src.workspace_settings import find_available_server_port, get_workspace_root, read_server_settings
+from src.workspace_settings import find_available_server_port, get_workspace_root, read_server_settings, read_storage_settings
 
 
 class Ignore200OKFilter(logging.Filter):
@@ -144,6 +145,7 @@ def main(argv=None):
     os.environ["AGENTPARK_SERVER_PORT"] = str(actual_port)
     if "AGENTPARK_RESTORE_DESKTOP_PETS" not in os.environ:
         os.environ["AGENTPARK_RESTORE_DESKTOP_PETS"] = "1"
+    runtime_paths.configure_graphs_dir(read_storage_settings()["memories_root"])
     pid_path = install_server_pid_file(args.host, actual_port)
     print(f"[server] pid file: {pid_path}")
     _run_server(

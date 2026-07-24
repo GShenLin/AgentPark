@@ -15,13 +15,275 @@ def _responses_contract(**overrides):
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
         "toolContextCompactionEveryToolCalls": 1,
+        "toolContextCompactionInputTokens": 0,
+        "toolContextCompactionCurrentInputTokens": 0,
+        "toolContextCompactionOutputTokens": 0,
     }
     payload.update(overrides)
     return payload
 
 
+def _write_openai_responses_provider(tmp_path, **contract_overrides):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "openai",
+                        "apiKey": "test-key",
+                        "model": "gpt-test",
+                        **_responses_contract(**contract_overrides),
+                        "responsesReplayReasoningItems": False,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("", ""),
+        ("speech-key", "speech-key"),
+    ],
+)
+def test_provider_x_api_key_accepts_key_name_references(monkeypatch, tmp_path, configured, expected):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "demo": {
+                    "type": "doubao",
+                    "apiKey": "general-key",
+                    "xApiKey": configured,
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    providers = ConfigLoader().get_all_providers()
+
+    assert providers["demo"]["xApiKey"] == expected
+
+
+def test_provider_x_api_key_rejects_key_name_with_surrounding_whitespace(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "demo": {
+                    "type": "doubao",
+                    "apiKey": "general-key",
+                    "xApiKey": "  speech-key  ",
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="surrounding whitespace"):
+        ConfigLoader().get_all_providers()
+
+
+def test_provider_x_api_key_rejects_non_string(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "demo": {
+                    "type": "doubao",
+                    "apiKey": "general-key",
+                    "xApiKey": 123,
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="xApiKey"):
+        ConfigLoader().get_all_providers()
+
+
+@pytest.mark.parametrize("key", ["speechAccessKeyId", "speechSecretAccessKey"])
+def test_provider_speech_access_key_fields_accept_key_name_references(monkeypatch, tmp_path, key):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "demo": {
+                    "type": "doubao",
+                    "apiKey": "general-key",
+                    key: "speech-credential",
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    assert ConfigLoader().get_all_providers()["demo"][key] == "speech-credential"
+
+
+@pytest.mark.parametrize("key", ["speechAccessKeyId", "speechSecretAccessKey"])
+def test_provider_speech_access_key_fields_reject_non_string(monkeypatch, tmp_path, key):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "demo": {
+                    "type": "doubao",
+                    "apiKey": "general-key",
+                    key: 123,
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match=key):
+        ConfigLoader().get_all_providers()
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "toolContextCompactionInputTokens",
+        "toolContextCompactionCurrentInputTokens",
+        "toolContextCompactionOutputTokens",
+    ],
+)
+def test_responses_provider_requires_token_compaction_limits(monkeypatch, tmp_path, missing_key):
+    contract = _responses_contract()
+    contract.pop(missing_key)
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "openai",
+                        "apiKey": "test-key",
+                        "model": "gpt-test",
+                        **contract,
+                        "responsesReplayReasoningItems": False,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match=missing_key):
+        ConfigLoader().get_config()
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("toolContextCompactionEveryToolCalls", -1),
+        ("toolContextCompactionInputTokens", -1),
+        ("toolContextCompactionCurrentInputTokens", -1),
+        ("toolContextCompactionOutputTokens", True),
+    ],
+)
+def test_responses_provider_rejects_invalid_compaction_limits(
+    monkeypatch,
+    tmp_path,
+    field_name,
+    value,
+):
+    config_path = _write_openai_responses_provider(tmp_path, **{field_name: value})
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match=field_name):
+        ConfigLoader().get_config()
+
+
+def test_responses_provider_rejects_enabled_compaction_with_all_limits_zero(monkeypatch, tmp_path):
+    config_path = _write_openai_responses_provider(
+        tmp_path,
+        toolContextCompactionEnabled=True,
+        toolContextCompactionEveryToolCalls=0,
+        toolContextCompactionInputTokens=0,
+        toolContextCompactionCurrentInputTokens=0,
+        toolContextCompactionOutputTokens=0,
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="all compaction limits are zero"):
+        ConfigLoader().get_config()
+
+
+def test_responses_provider_accepts_context_window_compaction_policy(monkeypatch, tmp_path):
+    config_path = _write_openai_responses_provider(
+        tmp_path,
+        toolContextCompactionEnabled=True,
+        toolContextCompactionEveryToolCalls=0,
+        toolContextCompactionCurrentInputTokens=0,
+        modelContextWindowTokens=272_000,
+        toolContextCompactionContextPercent=90,
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    provider = ConfigLoader().get_config()["providers"]["demo"]
+
+    assert provider["modelContextWindowTokens"] == 272_000
+    assert provider["toolContextCompactionContextPercent"] == 90
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"toolContextCompactionContextPercent": 90},
+        {
+            "modelContextWindowTokens": 272_000,
+            "toolContextCompactionContextPercent": 0,
+        },
+        {
+            "modelContextWindowTokens": 272_000,
+            "toolContextCompactionContextPercent": 101,
+        },
+        {
+            "modelContextWindowTokens": 272_000,
+            "toolContextCompactionContextPercent": 90,
+            "toolContextCompactionCurrentInputTokens": 50_000,
+        },
+    ],
+)
+def test_responses_provider_rejects_invalid_context_window_compaction_policy(
+    monkeypatch,
+    tmp_path,
+    overrides,
+):
+    config_path = _write_openai_responses_provider(tmp_path, **overrides)
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError):
+        ConfigLoader().get_config()
+
+
 def test_get_config_returns_validated_payload_and_supports_explicit_config_path(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -62,12 +324,62 @@ def test_get_config_returns_validated_payload_and_supports_explicit_config_path(
     assert payload["providers"]["demo"]["supportmode"] == ["chat", "imagechat"]
     assert payload["providers"]["demo"]["timeoutMs"] == 1500
     assert payload["providers"]["demo"]["apiKey"] == "inline-secret"
+    assert payload["providers"]["demo"]["private"] is False
     assert payload["providers"]["demo"]["features"]["web_search"]["supported"] is False
     assert payload["providers"]["demo"]["features"]["thinking"]["supported"] is False
 
 
+def test_get_config_preserves_private_provider_option(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "gemini",
+                        "apiKey": "inline-secret",
+                        "private": True,
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    assert ConfigLoader().get_config()["providers"]["demo"]["private"] is True
+
+
+def test_get_config_rejects_non_boolean_private_provider_option(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "gemini",
+                        "apiKey": "inline-secret",
+                        "private": "true",
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="invalid private"):
+        ConfigLoader().get_config()
+
+
 def test_get_config_rejects_provider_type_case_normalization(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -91,7 +403,7 @@ def test_get_config_rejects_provider_type_case_normalization(monkeypatch, tmp_pa
 
 
 def test_get_config_rejects_numeric_string_timeout(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -116,7 +428,7 @@ def test_get_config_rejects_numeric_string_timeout(monkeypatch, tmp_path):
 
 
 def test_get_config_rejects_duplicate_support_modes(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -141,7 +453,7 @@ def test_get_config_rejects_duplicate_support_modes(monkeypatch, tmp_path):
 
 
 def test_get_provider_config_requires_non_empty_api_key(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -169,8 +481,8 @@ def test_get_provider_config_requires_non_empty_api_key(monkeypatch, tmp_path):
         loader.get_provider_config("demo")
 
 
-def test_get_provider_config_still_accepts_direct_api_key(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+def test_get_provider_config_resolves_api_key_name(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -197,7 +509,7 @@ def test_get_provider_config_still_accepts_direct_api_key(monkeypatch, tmp_path)
 
 
 def test_openai_codex_auth_does_not_require_api_key(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps({
             "providers": {
@@ -223,8 +535,80 @@ def test_openai_codex_auth_does_not_require_api_key(monkeypatch, tmp_path):
     assert "apiKey" not in provider
 
 
+def test_openai_api_key_responses_provider_accepts_fast_mode(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "compatible": {
+                    "type": "openai",
+                    "apiKey": "test-key",
+                    "model": "gpt-test",
+                    "fastMode": True,
+                    **_responses_contract(),
+                    "responsesReplayReasoningItems": False,
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    provider = ConfigLoader().get_provider_config("compatible")
+
+    assert provider["authMode"] == "api_key"
+    assert provider["fastMode"] is True
+
+
+@pytest.mark.parametrize("value", ["true", 1, None])
+def test_provider_rejects_non_boolean_fast_mode(monkeypatch, tmp_path, value):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "bad": {
+                    "type": "openai",
+                    "apiKey": "test-key",
+                    "fastMode": value,
+                    **_responses_contract(),
+                    "responsesReplayReasoningItems": False,
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="invalid fastMode"):
+        ConfigLoader().get_provider_config("bad")
+
+
+def test_provider_rejects_fast_mode_for_chat_completions(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({
+            "providers": {
+                "bad": {
+                    "type": "openai",
+                    "apiKey": "test-key",
+                    "responsesApi": False,
+                    "fastMode": True,
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="only with type 'openai' and responsesApi=true"):
+        ConfigLoader().get_provider_config("bad")
+
+
 def test_openai_codex_auth_allows_chat_completions_configuration(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps({
             "providers": {
@@ -250,7 +634,7 @@ def test_openai_codex_auth_allows_chat_completions_configuration(monkeypatch, tm
 
 
 def test_codex_auth_rejects_non_openai_provider(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps({"providers": {"bad": {"type": "gemini", "authMode": "codex", "responsesApi": True}}}),
         encoding="utf-8",
@@ -263,7 +647,7 @@ def test_codex_auth_rejects_non_openai_provider(monkeypatch, tmp_path):
 
 
 def test_get_provider_config_is_not_blocked_by_another_invalid_provider(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -285,7 +669,7 @@ def test_get_provider_config_is_not_blocked_by_another_invalid_provider(monkeypa
 
 
 def test_doubao_provider_rejects_unsupported_reasoning_effort(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -310,7 +694,7 @@ def test_doubao_provider_rejects_unsupported_reasoning_effort(monkeypatch, tmp_p
 
 
 def test_doubao_provider_rejects_reasoning_effort_snake_case(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -335,7 +719,7 @@ def test_doubao_provider_rejects_reasoning_effort_snake_case(monkeypatch, tmp_pa
 
 
 def test_get_config_rejects_invalid_provider_timeout(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -360,7 +744,7 @@ def test_get_config_rejects_invalid_provider_timeout(monkeypatch, tmp_path):
 
 
 def test_get_config_accepts_provider_pressure_limits(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -370,6 +754,7 @@ def test_get_config_accepts_provider_pressure_limits(monkeypatch, tmp_path):
                         "apiKey": "inline-secret",
                         "concurrencyLimit": 2,
                         "rpmLimit": 30,
+                        "tpmLimit": 1000000,
                     }
                 }
             },
@@ -385,10 +770,11 @@ def test_get_config_accepts_provider_pressure_limits(monkeypatch, tmp_path):
 
     assert provider["concurrencyLimit"] == 2
     assert provider["rpmLimit"] == 30
+    assert provider["tpmLimit"] == 1000000
 
 
 def test_get_config_rejects_invalid_provider_pressure_limits(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -413,7 +799,7 @@ def test_get_config_rejects_invalid_provider_pressure_limits(monkeypatch, tmp_pa
 
 
 def test_get_config_reloads_from_disk_when_file_changes(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -458,7 +844,7 @@ def test_get_config_reloads_from_disk_when_file_changes(monkeypatch, tmp_path):
 
 
 def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -524,7 +910,7 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
 
 
 def test_responses_api_config_requires_boolean(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -554,7 +940,7 @@ def test_responses_api_config_requires_boolean(monkeypatch, tmp_path):
 
 
 def test_stream_enabled_defaults_to_true_when_absent(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -579,7 +965,7 @@ def test_stream_enabled_defaults_to_true_when_absent(monkeypatch, tmp_path):
 
 
 def test_stream_enabled_preserves_explicit_false(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -605,7 +991,7 @@ def test_stream_enabled_preserves_explicit_false(monkeypatch, tmp_path):
 
 
 def test_stream_enabled_rejects_non_boolean(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -630,7 +1016,7 @@ def test_stream_enabled_rejects_non_boolean(monkeypatch, tmp_path):
 
 
 def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -657,7 +1043,7 @@ def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, 
 
 
 def test_openai_responses_api_provider_requires_reasoning_replay_contract(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -682,7 +1068,7 @@ def test_openai_responses_api_provider_requires_reasoning_replay_contract(monkey
 
 
 def test_openai_responses_api_provider_validates_reasoning_summary(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -708,7 +1094,7 @@ def test_openai_responses_api_provider_validates_reasoning_summary(monkeypatch, 
 
 
 def test_grok_45_provider_validates_reasoning_effort(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -735,7 +1121,7 @@ def test_grok_45_provider_validates_reasoning_effort(monkeypatch, tmp_path):
 
 
 def test_grok_provider_rejects_reasoning_summary(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -763,7 +1149,7 @@ def test_grok_provider_rejects_reasoning_summary(monkeypatch, tmp_path):
 
 
 def test_responses_api_provider_validates_field_types(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -791,7 +1177,7 @@ def test_responses_api_provider_validates_field_types(monkeypatch, tmp_path):
 
 
 def test_deepseek_provider_rejects_responses_api(monkeypatch, tmp_path):
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
@@ -814,6 +1200,33 @@ def test_deepseek_provider_rejects_responses_api(monkeypatch, tmp_path):
     _reset_loader_singleton()
 
     with pytest.raises(ValueError, match="DeepSeek uses chat completions"):
+        ConfigLoader().get_all_providers()
+
+
+def test_kimi_provider_rejects_responses_api(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "kimi": {
+                        "type": "kimi",
+                        "apiKey": "kimi-key",
+                        "baseUrl": "https://api.moonshot.cn/v1",
+                        "model": "kimi-k3",
+                        "responsesApi": True,
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="Kimi uses chat completions"):
         ConfigLoader().get_all_providers()
 
 

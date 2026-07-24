@@ -92,8 +92,6 @@ def _failure_category(record: dict[str, Any]) -> str:
     tool_name = _tool_name(record)
     if tool_name in {"execute_console_command", "execute_consoleCommand"}:
         return "process_exit" if _has_nonzero_returncode(payload) else "command_failed"
-    if tool_name == "multi_tool_use_parallel":
-        return "parallel_request_rejected"
     if tool_name == "apply_patch":
         return "patch_rejected"
     if tool_name == "read_file":

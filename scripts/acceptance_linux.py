@@ -25,7 +25,7 @@ def _check_json_files(root: Path) -> list[str]:
     errors: list[str] = []
     for relative in (
         "config/config.json",
-        "config/moduleProvider.json",
+        "config/modelProvider.json",
         "config/ProviderLimit.json",
     ):
         path = root / relative
@@ -40,7 +40,7 @@ def _check_json_files(root: Path) -> list[str]:
 
 
 def _providers_from_config(root: Path) -> dict[str, dict[str, Any]]:
-    payload = _load_json(root / "config/moduleProvider.json")
+    payload = _load_json(root / "config/modelProvider.json")
     providers = payload.get("providers") if isinstance(payload, dict) else None
     return providers if isinstance(providers, dict) else {}
 
@@ -59,7 +59,7 @@ def _check_provider_types(providers: dict[str, dict[str, Any]]) -> list[str]:
 
 def _check_loader_contract(root: Path) -> list[str]:
     errors: list[str] = []
-    os.environ["AGENTPARK_CONFIG_PATH"] = str(root / "config/moduleProvider.json")
+    os.environ["AGENTPARK_CONFIG_PATH"] = str(root / "config/modelProvider.json")
     try:
         from src.config_loader import ConfigLoader
 
@@ -73,7 +73,7 @@ def _check_loader_contract(root: Path) -> list[str]:
 
 def _check_provider_factory(root: Path, providers: dict[str, dict[str, Any]]) -> list[str]:
     errors: list[str] = []
-    os.environ["AGENTPARK_CONFIG_PATH"] = str(root / "config/moduleProvider.json")
+    os.environ["AGENTPARK_CONFIG_PATH"] = str(root / "config/modelProvider.json")
     try:
         from src.providers import create_agent
     except Exception as exc:

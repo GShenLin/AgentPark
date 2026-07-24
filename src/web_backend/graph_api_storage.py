@@ -15,7 +15,9 @@ from .graph_config_file import graph_config_version, read_graph_config, write_gr
 from .graph_runtime_registry import GraphConfigReadError
 from .graph_output_routes import normalize_output_routes
 from . import runtime_paths
+from .deletion_undo_store import deletion_undo_store
 from .node_deletion import NodeDeletionBlocked, delete_node_directory
+from .runtime_state_memory_store import runtime_state_memory_store
 from .request_access import is_local_request
 from .service_host import HostBoundService
 from .shared import HTTPException
@@ -185,6 +187,11 @@ class GraphApiStorage(HostBoundService):
             if cleaned != payload:
                 write_graph_config(config_path, cleaned)
                 version = graph_config_version(config_path)
+            cleaned["output_routes"] = self.filter_output_routes_for_request(
+                safe_id,
+                cleaned.get("output_routes"),
+                request,
+            )
             cleaned["version"] = version
             return {"graph": cleaned}
         except Exception as exc:
@@ -221,9 +228,21 @@ class GraphApiStorage(HostBoundService):
         os.makedirs(graph_dir, exist_ok=True)
         config_path = os.path.join(graph_dir, "config.json")
         existing_private = self._graph_is_private(safe_id)
+        existing_graph: dict = {}
+        if os.path.isfile(config_path):
+            try:
+                existing_graph = read_graph_config(config_path)
+            except GraphConfigReadError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
         graph = dict(graph)
         graph.pop("source_graph_id", None)
         graph.pop("private", None)
+        graph["output_routes"] = self.merge_remote_output_routes(
+            safe_id,
+            graph.get("output_routes"),
+            existing_graph.get("output_routes"),
+            request,
+        )
         graph = self._sanitize_graph_payload_for_storage(graph)
         graph["id"] = safe_id
         if existing_private:
@@ -288,6 +307,25 @@ class GraphApiStorage(HostBoundService):
         self.require_graph_visible(safe_id, request)
         if _is_protected_graph_id(safe_id):
             raise HTTPException(status_code=403, detail=f"protected graph cannot be deleted: {safe_id}")
+        startup = read_startup_graph_settings()
+        startup_was_selected = self.graph_runtime._sanitize_graph_id(startup.get("graph_id")) == safe_id
+        undo_entry = deletion_undo_store.begin(
+            "delete_graph",
+            {
+                "graph_id": safe_id,
+                "startup_was_selected": startup_was_selected,
+                "startup_graph_name": str(startup.get("graph_name") or safe_id),
+            },
+        )
+        removed_event_rules: dict = {}
+        try:
+            event_cleanup = self.core.runtime_events.remove_source_rules(safe_id)
+            removed_event_rules = dict(event_cleanup.get("removed_rules") or {})
+            if undo_entry is not None and removed_event_rules:
+                deletion_undo_store.write_json(undo_entry, "runtime-event-rules.json", removed_event_rules)
+        except Exception as exc:
+            deletion_undo_store.discard(undo_entry)
+            raise HTTPException(status_code=500, detail=f"failed to remove graph event config: {str(exc)}") from exc
         self.graph_runtime._unregister_scheduled_graph(safe_id)
 
         graphs_dir = os.path.abspath(runtime_paths._get_graphs_dir())
@@ -306,16 +344,56 @@ class GraphApiStorage(HostBoundService):
             if not os.path.isdir(graph_dir):
                 raise HTTPException(status_code=400, detail="graph path is not a directory")
             try:
-                self._delete_graph_node_directories(safe_id, graph_dir, wait_timeout_seconds)
-                shutil.rmtree(graph_dir)
+                self._delete_graph_node_directories(
+                    safe_id,
+                    graph_dir,
+                    wait_timeout_seconds,
+                    preserve_directories=undo_entry is not None,
+                )
+                if undo_entry is not None:
+                    deletion_undo_store.archive_directory(undo_entry, graph_dir, "graph")
+                else:
+                    shutil.rmtree(graph_dir)
                 deleted = True
             except NodeDeletionBlocked as exc:
+                if removed_event_rules:
+                    self.core.runtime_events.restore_source_rules(removed_event_rules)
+                deletion_undo_store.discard(undo_entry)
+                self.graph_runtime._register_all_scheduled_nodes(force_rebuild=True)
                 raise HTTPException(status_code=409, detail=f"graph deletion is blocked: {str(exc)}")
             except Exception as exc:
+                if undo_entry is not None:
+                    archived_graph = os.path.join(str(undo_entry["temp_dir"]), "graph")
+                    if os.path.exists(archived_graph) and not os.path.exists(graph_dir):
+                        os.makedirs(os.path.dirname(graph_dir), exist_ok=True)
+                        os.replace(archived_graph, graph_dir)
+                deletion_undo_store.discard(undo_entry)
+                self.graph_runtime._register_all_scheduled_nodes(force_rebuild=True)
+                if removed_event_rules:
+                    self.core.runtime_events.restore_source_rules(removed_event_rules)
                 raise HTTPException(status_code=500, detail=str(exc))
 
-        self._reset_startup_graph_after_delete(safe_id)
-        return {"ok": True, "graph_id": safe_id, "deleted": deleted}
+        try:
+            self._reset_startup_graph_after_delete(safe_id)
+            undo_token = deletion_undo_store.commit(undo_entry) if undo_entry is not None and deleted else ""
+        except Exception:
+            if undo_entry is not None:
+                archived_graph = os.path.join(str(undo_entry["temp_dir"]), "graph")
+                if os.path.exists(archived_graph) and not os.path.exists(graph_dir):
+                    os.makedirs(os.path.dirname(graph_dir), exist_ok=True)
+                    os.replace(archived_graph, graph_dir)
+                deletion_undo_store.discard(undo_entry)
+            self.graph_runtime._register_all_scheduled_nodes(force_rebuild=True)
+            if removed_event_rules:
+                self.core.runtime_events.restore_source_rules(removed_event_rules)
+            raise
+        return {
+            "ok": True,
+            "graph_id": safe_id,
+            "deleted": deleted,
+            "undo_token": undo_token or None,
+            "removed_event_handlers": int(event_cleanup.get("removed_handlers") or 0),
+        }
 
     def _reset_startup_graph_after_delete(self, deleted_graph_id: str) -> None:
         try:
@@ -357,8 +435,15 @@ class GraphApiStorage(HostBoundService):
             if self.graph_runners.get(safe_id) is existing:
                 self.graph_runners.pop(safe_id, None)
 
-    def _delete_graph_node_directories(self, graph_id: str, graph_dir: str, wait_timeout_seconds: float) -> None:
-        memory_root = os.path.join(runtime_paths._get_runtime_root(), "memories")
+    def _delete_graph_node_directories(
+        self,
+        graph_id: str,
+        graph_dir: str,
+        wait_timeout_seconds: float,
+        *,
+        preserve_directories: bool = False,
+    ) -> None:
+        memory_root = runtime_paths._get_graphs_dir()
         for entry in sorted(os.listdir(graph_dir)):
             node_dir = os.path.join(graph_dir, entry)
             if not os.path.isdir(node_dir):
@@ -374,7 +459,9 @@ class GraphApiStorage(HostBoundService):
                 node_dir=node_dir,
                 memory_root=memory_root,
                 wait_timeout_seconds=wait_timeout_seconds,
+                archive_directory=(lambda _source: None) if preserve_directories else None,
             )
+            runtime_state_memory_store.clear(config_path)
 
 
 __all__ = ["GraphApiStorage"]

@@ -1,7 +1,6 @@
-from datetime import datetime
 import json
-import os
-import uuid
+
+from src.tool_result_artifact_store import store_tool_result_artifact
 
 
 class ToolFeedbackMixin:
@@ -277,32 +276,14 @@ class ToolFeedbackMixin:
         )
 
     def _store_tool_result_artifact_if_possible(self, *, tool_name, call_id, content, reason="") -> str:
-        memory_path = str(getattr(self, "current_memory_path", "") or "").strip()
-        if not memory_path:
-            memory = getattr(self, "memory", None)
-            memory_path = str(getattr(memory, "current_memory_path", "") or "").strip()
-        if not memory_path:
-            return ""
         try:
-            base_dir = os.path.dirname(os.path.abspath(memory_path))
-            artifact_dir = os.path.join(base_dir, "tool_artifacts")
-            os.makedirs(artifact_dir, exist_ok=True)
-            safe_tool = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(tool_name or "tool"))
-            safe_call = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(call_id or "call"))
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{stamp}_{safe_tool}_{safe_call}_{uuid.uuid4().hex[:8]}.json"
-            path = os.path.join(artifact_dir, filename)
-            payload = {
-                "tool": str(tool_name or "").strip() or "tool",
-                "call_id": str(call_id or "").strip(),
-                "reason": str(reason or "").strip(),
-                "content_chars": len(str(content or "")),
-                "content": str(content or ""),
-            }
-            with open(path, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False)
-                handle.write("\n")
-            return path
+            return store_tool_result_artifact(
+                self,
+                tool_name=tool_name,
+                call_id=call_id,
+                content=content,
+                reason=reason,
+            )
         except Exception as exc:
             emitter = getattr(self, "_emit_provider_runtime_notice", None)
             if callable(emitter):

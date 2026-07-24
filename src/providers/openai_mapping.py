@@ -143,10 +143,17 @@ class OpenAIResponsesMapping(ResponsesMapping):
             if not isinstance(content, list):
                 continue
             for part in content:
-                if isinstance(part, dict) and str(part.get("type") or "").strip().lower() in {"output_text", "text"}:
+                if not isinstance(part, dict):
+                    continue
+                part_type = str(part.get("type") or "").strip().lower()
+                if part_type in {"output_text", "text"}:
                     text = str(part.get("text") or "")
-                    if text:
-                        text_parts.append(text)
+                elif part_type == "refusal":
+                    text = str(part.get("refusal") or part.get("text") or "")
+                else:
+                    continue
+                if text:
+                    text_parts.append(text)
         return "\n".join(text_parts).strip(), function_calls, str(result.get("id") or "").strip() if isinstance(result, dict) else ""
 
     def _parse_responses_structured_result(self, result):

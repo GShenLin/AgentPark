@@ -14,19 +14,21 @@ def truncate_text(value: object, limit: int) -> str:
     return text
 
 
-def context_fragment(content: str, *, ttl: str, priority: str) -> dict[str, Any]:
+def context_fragment(content: str, *, ttl: str, priority: str, role: str = "developer") -> dict[str, Any]:
     return {
         "type": "context_fragment",
         "priority": priority,
         "ttl": ttl,
+        "role": role,
         "audience": "model",
         "content": content,
     }
 
 
-def notice(message: str, *, level: str = "info") -> dict[str, Any]:
+def notice(message: str, *, level: str = "info", title: str = "事件通知") -> dict[str, Any]:
     return {
         "type": "notice",
         "level": level,
+        "title": title,
         "message": message,
     }

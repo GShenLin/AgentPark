@@ -1,0 +1,60 @@
+{
+  "id": "ProjectManager",
+  "name": "ProjectManager",
+  "node_type_id": "agent_node",
+  "source_graph_id": "default",
+  "source_node_id": "ProjectManager121",
+  "node_name": "ProjectManager121",
+  "fields": {
+    "plugins": [],
+    "skills": [],
+    "working_path": "C:\\Project\\AgentPark",
+    "provider_id": "krill_gpt_Newest",
+    "system_prompt": "",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools",
+      "user_interaction_tools"
+    ],
+    "mcp_servers": [],
+    "web_search": "enabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "instruction": "",
+    "reasoning_summary": ""
+  },
+  "event_rules": {
+    "WorkPersisted": [
+      {
+        "enabled": true,
+        "action": "node.dispatch",
+        "target": "companion",
+        "params": {
+          "profile_ids": [
+            "MemorySoulWriter",
+            "MemoryNoteWriter",
+            "MemoryHobbitWriter"
+          ]
+        }
+      }
+    ],
+    "OnInput": [
+      {
+        "enabled": true,
+        "action": "context.append_file",
+        "target": "",
+        "params": {
+          "paths": [
+            "Hobbit.md",
+            "Soul.md",
+            "Note.md"
+          ],
+          "role": "developer"
+        }
+      }
+    ]
+  },
+  "updated_at": "2026-07-19T19:19:24+08:00",
+  "created_at": "2026-07-19T19:19:24+08:00"
+}

@@ -5,11 +5,11 @@ import subprocess
 import time
 from datetime import datetime
 from functools import lru_cache
+from importlib import import_module
 from typing import Any
 
 from src.providers.agent_runtime_context import get_agent_runtime_context
 from src.workspace_settings import get_workspace_root
-from src.web_backend import runtime_paths
 
 
 ENVIRONMENT_CONTEXT_TEXT_PREFIX = "<environment_context>"
@@ -52,18 +52,23 @@ def build_agent_environment_context(agent: object, *, current_input: object | No
 
 def resolve_agent_configured_working_path(agent: object) -> str:
     """Return the effective node/graph configured working path, or empty when unset."""
-    return _normalized_path(_first_non_empty(*resolve_agent_working_path_settings(agent)))
+    configured = _first_non_empty(*resolve_agent_working_path_settings(agent))
+    if configured and get_agent_runtime_context(agent).remote_enabled:
+        return configured
+    return _normalized_path(configured)
 
 
 def resolve_agent_model_workspace_path(agent: object) -> str:
     """Return the model-visible workspace path, aligned with tool relative-path resolution."""
     root = resolve_agent_configured_working_path(agent)
     if root:
+        if get_agent_runtime_context(agent).remote_enabled:
+            return root
         if not os.path.isdir(root):
             raise ValueError(f"WorkingPath directory does not exist: {root}")
         return root
     runtime_context = get_agent_runtime_context(agent)
-    return _normalized_path(_first_non_empty(runtime_context.workspace_root, get_workspace_root()))
+    return _resolve_local_default_directory(runtime_context)
 
 
 def resolve_agent_working_path_settings(agent: object) -> tuple[str, str]:
@@ -92,9 +97,28 @@ def resolve_agent_relative_path(path: object, agent: object = None) -> str:
 
 def resolve_agent_working_directory(agent: object = None) -> str:
     root = resolve_agent_configured_working_path(agent)
+    if root and get_agent_runtime_context(agent).remote_enabled:
+        return root
     if root and not os.path.isdir(root):
         raise ValueError(f"WorkingPath directory does not exist: {root}")
-    return root or os.getcwd()
+    if root:
+        return root
+    return _resolve_local_default_directory(get_agent_runtime_context(agent))
+
+
+def _resolve_local_default_directory(runtime_context: object) -> str:
+    """Resolve the local fallback after node and graph WorkingPath settings are absent."""
+    root = _normalized_path(
+        _first_non_empty(
+            getattr(runtime_context, "node_directory", ""),
+            getattr(runtime_context, "workspace_root", ""),
+            get_workspace_root(),
+            os.getcwd(),
+        )
+    )
+    if not os.path.isdir(root):
+        raise ValueError(f"Agent default working directory does not exist: {root}")
+    return root
 
 
 def format_agent_environment_context(context: dict[str, Any]) -> str:
@@ -154,6 +178,7 @@ def _read_graph_working_path(graph_id: object) -> str:
     graph_text = str(graph_id or "").strip()
     if not graph_text:
         return ""
+    runtime_paths = import_module("src.web_backend.runtime_paths")
     config_path = os.path.join(runtime_paths._get_graphs_dir(), graph_text, "config.json")
     try:
         import json

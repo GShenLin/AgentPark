@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { LatestTurnProgressSummary, MessageEnvelope } from '../api'
 import MemoryMetadataMessage from './MemoryMetadataMessage.vue'
 import MemoryMessageActions from './MemoryMessageActions.vue'
@@ -35,6 +35,7 @@ const emit = defineEmits<{
 
 const expanded = ref(false)
 const openAfterLoad = ref(false)
+const reversedMessages = computed(() => [...props.entry.messages].reverse())
 
 watch(
   () => props.lazyLoad,
@@ -92,7 +93,7 @@ function groupLabel() {
     </div>
 
     <div v-if="expanded" class="progress-group-list">
-      <template v-for="(message, index) in entry.messages" :key="String((message as any)?.id || index)">
+      <template v-for="(message, index) in reversedMessages" :key="String((message as any)?.id || index)">
         <MemoryMetadataMessage
           v-if="feedRoleClass(String((message as any)?.role || '')) === 'metadata'"
           :message="message"

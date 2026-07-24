@@ -79,7 +79,7 @@ def _claude_messages_url(config: dict[str, Any]) -> str:
 
 def _claude_web_search_tool(config: dict[str, Any]) -> dict[str, Any]:
     tool: dict[str, Any] = {
-        "type": str(config.get("webSearchToolType") or "web_search_20260318"),
+        "type": str(config.get("webSearchToolType") or "web_search_20250305"),
         "name": "web_search",
     }
     limit = config.get("webSearchLimit")

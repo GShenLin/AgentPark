@@ -18,10 +18,8 @@ export function extractRuntimeToolInsights(runtimeCalls: DataRecord[]): {
     } else if (name === 'execute_console_command') {
       const command = runtimeCommandActivity(call, args, result)
       if (command) commands.push(command)
-    } else if (name === 'multi_tool_use_parallel') {
-      const nested = runtimeParallelActivities(call, args, result)
-      fileChanges.push(...nested.fileChanges)
-      commands.push(...nested.commands)
+    } else if (name === 'workspace_exec') {
+      commands.push(...runtimeWorkspaceCommands(call, args, result))
     }
   }
   return { fileChanges, commands }
@@ -96,34 +94,37 @@ function runtimeCommandActivity(call: DataRecord, args: DataRecord, result: Data
   }
 }
 
-function runtimeParallelActivities(
+function runtimeWorkspaceCommands(
   call: DataRecord,
   args: DataRecord,
   result: DataRecord,
-): { fileChanges: DataRecord[]; commands: DataRecord[] } {
-  const uses = records(args.tool_uses)
-  const fileChanges: DataRecord[] = []
-  const commands: DataRecord[] = []
-  for (const nestedResult of records(result.results)) {
-    const index = Number(nestedResult.index)
-    const use = Number.isInteger(index) ? record(uses[index]) : {}
-    const parameters = record(use.parameters)
-    const toolName = text(nestedResult.tool_name || use.recipient_name).replace(/^functions\./, '').toLowerCase()
-    const parsedResult = jsonRecord(nestedResult.result)
-    const nestedCall: DataRecord = {
-      call_id: `${callId(call)}:${Number.isInteger(index) ? index : toolName}`,
-      name: toolName,
-      status: text(nestedResult.status) || text(call.status),
+): DataRecord[] {
+  const declaredOperations = new Map<string, DataRecord>()
+  for (const stage of records(args.stages)) {
+    for (const operation of records(stage.operations)) {
+      declaredOperations.set(text(operation.id), operation)
     }
-    if (toolName === 'apply_patch') {
-      const changes = runtimeFileChanges(nestedCall, parsedResult)
-      fileChanges.push(...(changes.length ? changes : patchArgumentChanges(nestedCall, parameters)))
-    } else if (toolName === 'execute_console_command') {
-      const command = runtimeCommandActivity(nestedCall, parameters, parsedResult)
+  }
+  const commands: DataRecord[] = []
+  for (const stageResult of records(result.stages)) {
+    for (const operationResult of records(stageResult.operations)) {
+      if (text(operationResult.kind) !== 'run_command') continue
+      const operationId = text(operationResult.id)
+      const declaration = declaredOperations.get(operationId) ?? {}
+      const nestedCall: DataRecord = {
+        call_id: `${callId(call)}:${operationId}`,
+        name: 'execute_console_command',
+        status: text(operationResult.status) || text(call.status),
+      }
+      const command = runtimeCommandActivity(
+        nestedCall,
+        record(declaration.arguments),
+        record(operationResult.result),
+      )
       if (command) commands.push(command)
     }
   }
-  return { fileChanges, commands }
+  return commands
 }
 
 function record(value: unknown): DataRecord {

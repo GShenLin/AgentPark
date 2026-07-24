@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+import StorageSettingsGroup from './StorageSettingsGroup.vue'
+
 const props = defineProps<{
   data: Record<string, unknown>
+  runtime?: {
+    active_memories_root?: string
+    configured_memories_root?: string
+  }
 }>()
 
 const emit = defineEmits<{
@@ -124,6 +130,12 @@ function deleteMcpServer() {
 
 <template>
   <div class="defaults-form">
+    <StorageSettingsGroup
+      :memories-path="fieldText('storage', 'memoriesPath')"
+      :runtime="props.runtime"
+      @update:memories-path="setNestedField('storage', 'memoriesPath', $event)"
+    />
+
     <section class="settings-group">
       <h2>Server</h2>
       <div class="form-grid">
@@ -162,6 +174,16 @@ function deleteMcpServer() {
         <label>
           <span>Node Memory Max Entries</span>
           <input :value="fieldText('nodeMemory', 'maxEntries')" type="number" min="1" @input="setNestedNumber('nodeMemory', 'maxEntries', ($event.target as HTMLInputElement).value)" />
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-group">
+      <h2>Undo</h2>
+      <div class="form-grid">
+        <label>
+          <span>Max Undo Steps</span>
+          <input :value="fieldText('undo', 'maxSteps') || '5'" type="number" min="0" max="100" @input="setNestedNumber('undo', 'maxSteps', ($event.target as HTMLInputElement).value)" />
         </label>
       </div>
     </section>
@@ -267,6 +289,15 @@ label {
   gap: 5px;
   color: rgba(226, 232, 240, 0.94);
   font-size: 12px;
+}
+
+label small {
+  color: rgba(148, 163, 184, 0.9);
+  line-height: 1.45;
+}
+
+label small.pending-path {
+  color: rgba(250, 204, 21, 0.92);
 }
 
 input,

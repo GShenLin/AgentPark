@@ -24,6 +24,7 @@ class AgentStreamRuntime:
         self.tool_event_callback = tool_event_callback if callable(tool_event_callback) else None
         self.streamed_text = ""
         self.thinking_text = ""
+        self.refusal_text = ""
         self.server_tool_calls: dict[str, dict] = {}
         self.runtime_tool_calls: dict[str, dict] = {}
 
@@ -52,6 +53,8 @@ class AgentStreamRuntime:
                     self.server_tool_calls[call_id] = {
                         key: value for key, value in event.items() if key not in {"type", "provider"}
                     }
+            elif event_type == "response_refusal":
+                self.refusal_text = str(event.get("text") or "")
             elif event_type in {"tool_call_start", "tool_call_end"}:
                 call_id = str(event.get("call_id") or "").strip()
                 if call_id:
@@ -82,6 +85,8 @@ class AgentStreamRuntime:
 
     def emit_done(self, final_text: object, *, structured_result: object = None) -> None:
         text = str(final_text or "")
+        if not text and self.refusal_text:
+            text = self.refusal_text
         if text and text != self.streamed_text:
             delta_text = text[len(self.streamed_text) :] if text.startswith(self.streamed_text) else text
             self._emit(build_node_message_delta(delta_text, text, force=True))

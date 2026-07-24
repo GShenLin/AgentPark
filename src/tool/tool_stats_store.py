@@ -18,6 +18,7 @@ TOOL_STATS_DIRNAME = "tool_stats"
 TOOL_CALLS_LOG_FILENAME = "tool_calls.jsonl"
 TOOL_STATS_SUMMARY_FILENAME = "summary.json"
 TOOL_STATS_ERRORS_FILENAME = "errors.jsonl"
+TOOL_STATS_RESET_FILENAME = "reset.json"
 DEFAULT_RECENT_TOOL_CALL_LIMIT = 50
 DEFAULT_FAILURE_ANALYSIS_LIMIT = 2000
 
@@ -38,6 +39,10 @@ def get_tool_stats_summary_path() -> str:
 
 def get_tool_stats_error_log_path() -> str:
     return os.path.join(get_tool_stats_dir(), TOOL_STATS_ERRORS_FILENAME)
+
+
+def get_tool_stats_reset_path() -> str:
+    return os.path.join(get_tool_stats_dir(), TOOL_STATS_RESET_FILENAME)
 
 
 class ToolCallStatsRecorder:
@@ -148,17 +153,36 @@ def load_tool_stats_summary() -> dict[str, Any]:
         return _load_summary_unlocked()
 
 
-def clear_tool_stats() -> None:
+def clear_tool_stats() -> str:
     with _LOCK:
         for path in (get_tool_calls_log_path(), get_tool_stats_summary_path(), get_tool_stats_error_log_path()):
             try:
                 os.remove(path)
             except FileNotFoundError:
                 continue
+        reset_at = datetime.now().astimezone().isoformat(timespec="microseconds")
+        _write_json_file_unlocked(get_tool_stats_reset_path(), {"reset_at": reset_at})
+        return reset_at
+
+
+def load_tool_stats_reset_at() -> str:
+    with _LOCK:
+        path = get_tool_stats_reset_path()
+        if not os.path.isfile(path):
+            return ""
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if not isinstance(payload, dict):
+            raise ValueError("tool stats reset file must contain an object")
+        return str(payload.get("reset_at") or "").strip()
 
 
 def load_recent_tool_call_stats(limit: int = DEFAULT_RECENT_TOOL_CALL_LIMIT) -> list[dict[str, Any]]:
     return load_tool_call_stats(limit=limit)
+
+
+def load_all_tool_call_stats() -> list[dict[str, Any]]:
+    return _load_tool_call_records(limit=None)
 
 
 def load_tool_call_stats(limit: int = DEFAULT_FAILURE_ANALYSIS_LIMIT) -> list[dict[str, Any]]:
@@ -169,6 +193,19 @@ def load_tool_call_stats(limit: int = DEFAULT_FAILURE_ANALYSIS_LIMIT) -> list[di
     if safe_limit <= 0:
         return []
 
+    return _load_tool_call_records(limit=safe_limit)
+
+
+def build_tool_stats_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {"providers": {}}
+    for record in reversed(records):
+        if not isinstance(record, dict):
+            raise ValueError("tool call stat record must be an object")
+        _apply_record_to_summary(summary, record)
+    return summary
+
+
+def _load_tool_call_records(*, limit: int | None) -> list[dict[str, Any]]:
     path = get_tool_calls_log_path()
     if not os.path.isfile(path):
         return []
@@ -178,7 +215,8 @@ def load_tool_call_stats(limit: int = DEFAULT_FAILURE_ANALYSIS_LIMIT) -> list[di
             lines = handle.readlines()
 
     records: list[dict[str, Any]] = []
-    for line in lines[-safe_limit:]:
+    selected_lines = lines if limit is None else lines[-limit:]
+    for line in selected_lines:
         text = line.strip()
         if not text:
             continue
@@ -215,11 +253,15 @@ def _load_summary_unlocked() -> dict[str, Any]:
 
 def _write_summary_unlocked(summary: dict[str, Any]) -> None:
     path = get_tool_stats_summary_path()
+    _write_json_file_unlocked(path, summary)
+
+
+def _write_json_file_unlocked(path: str, payload: dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(prefix="summary.", suffix=".tmp", dir=os.path.dirname(path), text=True)
+    fd, tmp_path = tempfile.mkstemp(prefix=f"{os.path.basename(path)}.", suffix=".tmp", dir=os.path.dirname(path), text=True)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(summary, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
             handle.write("\n")
         os.replace(tmp_path, path)
     finally:
@@ -291,7 +333,7 @@ def _apply_record_to_summary(summary: dict[str, Any], record: dict[str, Any]) ->
     tool_name = str(record.get("tool_name") or "tool").strip() or "tool"
     status = str(record.get("status") or "completed").strip().lower() or "completed"
     success = bool(record.get("success"))
-    now = _now_iso()
+    recorded_at = str(record.get("recorded_at") or "").strip() or _now_iso()
 
     providers = summary.setdefault("providers", {})
     if not isinstance(providers, dict):
@@ -309,7 +351,7 @@ def _apply_record_to_summary(summary: dict[str, Any], record: dict[str, Any]) ->
         },
     )
     _increment_counter(provider, success=success, status=status)
-    provider["last_call_at"] = now
+    provider["last_call_at"] = recorded_at
 
     tools = provider.setdefault("tools", {})
     if not isinstance(tools, dict):
@@ -329,11 +371,11 @@ def _apply_record_to_summary(summary: dict[str, Any], record: dict[str, Any]) ->
         },
     )
     _increment_counter(tool, success=success, status=status)
-    tool["last_call_at"] = now
+    tool["last_call_at"] = recorded_at
     tool["last_status"] = status
     tool["last_error"] = str(record.get("error") or "").strip()
     tool["last_result_preview"] = str(record.get("result_preview") or "").strip()
-    summary["updated_at"] = now
+    summary["updated_at"] = recorded_at
 
 
 def _increment_counter(target: dict[str, Any], *, success: bool, status: str) -> None:

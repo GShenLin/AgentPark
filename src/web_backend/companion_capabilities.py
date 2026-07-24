@@ -25,7 +25,7 @@ def infer_node_can(payload: dict[str, Any]) -> dict[str, bool]:
         "web_fetch": bool(has_curl),
         "web_search": bool("web_search" in exact_names),
         "control_agentpark": bool("agentpark-companion" in mcp_servers),
-        "spawn_sub_agents": bool("multi_tool_use_tools" in tools),
+        "spawn_sub_agents": False,
     }
 
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { MessageEnvelope, MobileGraph, MobileNode, ResourceKind } from '../api'
-import { restartServer } from '../api'
+import { getRemoteStatus, restartServer } from '../api'
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
 import { useMemoryTurnEntries } from '../components/memoryFeedTools'
+import CodexSessionPicker from '../components/CodexSessionPicker.vue'
 import MobileLiveMessage from './MobileLiveMessage.vue'
 import MobileMemoryMessageCard from './MobileMemoryMessageCard.vue'
 import MobileNodeCreateDialog from './MobileNodeCreateDialog.vue'
@@ -13,10 +14,14 @@ import MobileNodeConfigDialog from './MobileNodeConfigDialog.vue'
 import MobileNodeListItem from './MobileNodeListItem.vue'
 import SettingsPage from '../components/SettingsPage.vue'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
+import { recordDeletionUndo } from '../composables/useDeletionUndo'
+import { useAudioRecorder } from '../composables/useAudioRecorder'
+import { useWorkAlerts } from '../composables/useWorkAlerts'
 import { useMobileWorkspace } from './useMobileWorkspace'
 import { buildMessageSignature } from './mobileMessageRender'
 
 const workspace = useMobileWorkspace()
+const { navigationRequest, completeWorkAlertNavigation } = useWorkAlerts()
 const {
   saveDialogOpen,
   saveDialogFilename,
@@ -33,10 +38,12 @@ const feedRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<UploadedFileItem[]>([])
 const uploadingFiles = ref(false)
+const audioRecorder = useAudioRecorder()
 const submittingDraft = ref(false)
 const configOpen = ref(false)
 const createNodeOpen = ref(false)
 const settingsOpen = ref(false)
+const isLocalClient = ref(false)
 const isRestarting = ref(false)
 const graphNameInput = ref('')
 const selectedGraphProfileId = ref('')
@@ -44,6 +51,7 @@ const graphStatus = ref('')
 const graphSaving = ref(false)
 const graphProfileCreating = ref(false)
 const goalArmedByNode = ref<Record<string, boolean>>({})
+const workspaceMounted = ref(false)
 const SCROLL_STICK_THRESHOLD = 48
 
 const headerTitle = computed(() => {
@@ -58,6 +66,7 @@ const messages = computed(() => workspace.conversation.value?.messages || [])
 const feedEntries = useMemoryTurnEntries(messages)
 const historyComplete = computed(() => workspace.conversation.value?.history_complete !== false)
 const mobileSectionLoading = ref<'progress' | 'metadata' | null>(null)
+let activeMobileSectionRequest: { section: 'progress' | 'metadata'; promise: Promise<void> } | null = null
 
 function isLatestTurn(index: number) {
   for (let candidate = feedEntries.value.length - 1; candidate >= 0; candidate -= 1) {
@@ -72,19 +81,44 @@ async function onMobileTurnToggle(index: number, expanded: boolean) {
 }
 
 async function loadMobileTurnSection(section: 'progress' | 'metadata') {
-  if (mobileSectionLoading.value) return
-  mobileSectionLoading.value = section
-  try {
-    await workspace.loadConversationSection(section)
-  } catch {
-    // The workspace exposes the request error; keep the collapsed section available for retry.
-  } finally {
-    mobileSectionLoading.value = null
+  const conversation = workspace.conversation.value
+  if (section === 'progress' && conversation?.latest_turn_progress_loaded === true) return
+  if (section === 'metadata' && conversation?.latest_turn_metadata_loaded === true) return
+
+  if (activeMobileSectionRequest) {
+    const activeSection = activeMobileSectionRequest.section
+    await activeMobileSectionRequest.promise
+    const refreshed = workspace.conversation.value
+    if (section === 'progress' && refreshed?.latest_turn_progress_loaded === true) return
+    if (section === 'metadata' && refreshed?.latest_turn_metadata_loaded === true) return
+    if (activeSection === section) return
   }
+
+  const promise = (async () => {
+    mobileSectionLoading.value = section
+    try {
+      await workspace.loadConversationSection(section)
+    } catch {
+      // The workspace exposes the request error; keep the collapsed section available for retry.
+    } finally {
+      mobileSectionLoading.value = null
+    }
+  })()
+  activeMobileSectionRequest = { section, promise }
+  try {
+    await promise
+  } finally {
+    if (activeMobileSectionRequest?.promise === promise) activeMobileSectionRequest = null
+  }
+}
+
+async function ensureMobileTurnMetadata() {
+  await loadMobileTurnSection('metadata')
 }
 const liveMessage = computed(() => String(workspace.conversation.value?.live_message || ''))
 const thinkingMessage = computed(() => String(workspace.conversation.value?.thinking_message || ''))
 const activityMessage = computed(() => String(workspace.conversation.value?.activity_message || ''))
+const activityBlocks = computed(() => workspace.conversation.value?.activity_blocks || [])
 const messageSignature = computed(() => buildMessageSignature(messages.value))
 const selectedGoalState = computed(() => {
   const state = workspace.selectedNode.value?.goal_state
@@ -93,6 +127,7 @@ const selectedGoalState = computed(() => {
 const selectedGoalText = computed(() => String(workspace.selectedNode.value?.goal || '').trim())
 const hasPersistedGoal = computed(() => !!(selectedGoalText.value || selectedGoalState.value))
 const isAgentNode = computed(() => workspace.selectedNode.value?.type_id === 'agent_node')
+const audioInputEnabled = computed(() => isAgentNode.value)
 const goalEnabled = computed(() => isAgentNode.value || hasPersistedGoal.value)
 const goalActive = computed(() => {
   const id = String(workspace.selectedNode.value?.id || '').trim()
@@ -191,6 +226,26 @@ async function onFileSelected(event: Event) {
       if (!attachments.value.some((existing) => existing.path === item.path)) {
         attachments.value.push(item)
       }
+    }
+  } catch (e: any) {
+    workspace.error.value = String(e?.message || e)
+  } finally {
+    uploadingFiles.value = false
+  }
+}
+
+async function toggleAudioRecording() {
+  workspace.error.value = ''
+  try {
+    if (!audioRecorder.recording.value) {
+      await audioRecorder.start()
+      return
+    }
+    const file = await audioRecorder.stop()
+    uploadingFiles.value = true
+    const uploaded = await uploadFiles([file], 'mobile-audio-recording')
+    for (const item of uploaded.files || []) {
+      if (!attachments.value.some((existing) => existing.path === item.path)) attachments.value.push(item)
     }
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
@@ -311,13 +366,16 @@ async function stopSelectedNode() {
 async function openConfig() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   configOpen.value = true
-  await workspace.refreshSelectedNodeConfig().catch((e: any) => {
+  await Promise.all([
+    workspace.refreshSelectedNodeConfig(),
+    workspace.refreshAgentProfiles(),
+  ]).catch((e: any) => {
     workspace.error.value = String(e?.message || e)
   })
 }
 
 function openSettings() {
-  if (workspace.view.value !== 'graphs') return
+  if (!isLocalClient.value || workspace.view.value !== 'graphs') return
   settingsOpen.value = true
 }
 
@@ -440,17 +498,42 @@ async function duplicateMobileNode(node: MobileNode) {
   }
 }
 
+async function onChooseCodexSession(sessionId: string) {
+  await workspace.chooseCodexSession(sessionId)
+  await nextTick()
+  scrollFeedToBottom()
+}
+
 async function clearMemory() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   const nodeId = String(workspace.selectedNode.value.id || '').trim()
-  const ok = window.confirm(`Clear all memory for node "${nodeId}"?`)
+  const targetLabel = workspace.codexMemoryClearTargetLabel(nodeId)
+  const ok = window.confirm(`Clear ${targetLabel}?`)
   if (!ok) return
   await workspace.clearSelectedNodeMemory()
   await nextTick()
   scrollFeedToBottom()
 }
 
-async function deleteMobileMessages(target: MessageEnvelope | MessageEnvelope[]) {
+async function deleteMobileMessages(target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }) {
+  if (!Array.isArray(target) && (target as any)?.kind === 'turn') {
+    const userMessage = (target as { kind: 'turn'; userMessage: MessageEnvelope }).userMessage
+    const userMessageId = String((userMessage as any)?.id || '').trim()
+    if (!userMessageId) return
+    const ok = window.confirm('Delete this entire turn?')
+    if (!ok) return
+    try {
+      const result = await workspace.deleteSelectedNodeTurn(userMessageId)
+      recordDeletionUndo(result.undo_token ? {
+        token: result.undo_token,
+        kind: 'delete_dialogue',
+        label: 'conversation turn',
+      } : null)
+    } catch (e: any) {
+      workspace.error.value = String(e?.message || e)
+    }
+    return
+  }
   const messagesToDelete = Array.isArray(target) ? target : [target]
   const messageIds = Array.from(new Set(
     messagesToDelete.map((message) => String((message as any)?.id || '').trim()).filter(Boolean),
@@ -460,7 +543,12 @@ async function deleteMobileMessages(target: MessageEnvelope | MessageEnvelope[])
   const ok = window.confirm(`Delete ${label}?`)
   if (!ok) return
   try {
-    await workspace.deleteSelectedNodeMessages(messageIds)
+    const result = await workspace.deleteSelectedNodeMessages(messageIds)
+    recordDeletionUndo(result.undo_token ? {
+      token: result.undo_token,
+      kind: 'delete_dialogue',
+      label: messageIds.length === 1 ? 'conversation entry' : `${messageIds.length} conversation entries`,
+    } : null)
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
   }
@@ -496,32 +584,58 @@ function isFeedNearBottom() {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_STICK_THRESHOLD
 }
 
-watch(messageSignature, (_next, previous) => {
-  const shouldStick = previous == null || isFeedNearBottom()
-  if (!shouldStick) return
-  void nextTick(scrollFeedToBottom)
+let feedScrollFrame = 0
+
+function scheduleFeedScroll() {
+  if (!isFeedNearBottom() || feedScrollFrame) return
+  feedScrollFrame = window.requestAnimationFrame(() => {
+    feedScrollFrame = 0
+    void nextTick(() => {
+      if (isFeedNearBottom()) scrollFeedToBottom()
+    })
+  })
+}
+
+watch(
+  [messageSignature, liveMessage, thinkingMessage, activityMessage, activityBlocks],
+  scheduleFeedScroll,
+  { deep: true },
+)
+
+function consumeWorkAlertNavigation(request: { graphId: string; nodeId: string; nonce: number }) {
+  settingsOpen.value = false
+  void workspace.openGraphNode(request.graphId, request.nodeId)
+    .catch((error: unknown) => {
+      workspace.error.value = String((error as { message?: unknown })?.message || error)
+    })
+    .finally(() => completeWorkAlertNavigation(request.nonce))
+}
+
+watch(
+  navigationRequest,
+  (request) => {
+    if (!request || !workspaceMounted.value) return
+    consumeWorkAlertNavigation(request)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  workspaceMounted.value = false
+  if (feedScrollFrame) window.cancelAnimationFrame(feedScrollFrame)
 })
 
-watch(liveMessage, (_next, previous) => {
-  const shouldStick = previous == null || isFeedNearBottom()
-  if (!shouldStick) return
-  void nextTick(scrollFeedToBottom)
-})
-
-watch(thinkingMessage, (_next, previous) => {
-  const shouldStick = previous == null || isFeedNearBottom()
-  if (!shouldStick) return
-  void nextTick(scrollFeedToBottom)
-})
-
-watch(activityMessage, (_next, previous) => {
-  const shouldStick = previous == null || isFeedNearBottom()
-  if (!shouldStick) return
-  void nextTick(scrollFeedToBottom)
-})
-
-onMounted(() => {
-  void workspace.loadPcs()
+onMounted(async () => {
+  await workspace.loadPcs()
+  workspaceMounted.value = true
+  if (navigationRequest.value) consumeWorkAlertNavigation(navigationRequest.value)
+  void getRemoteStatus()
+    .then((status) => {
+      isLocalClient.value = status.is_local_client === true
+    })
+    .catch((error: any) => {
+      workspace.error.value = String(error?.message || error)
+    })
 })
 </script>
 
@@ -535,7 +649,7 @@ onMounted(() => {
       <div v-else class="header-spacer"></div>
       <div class="header-title">{{ headerTitle }}</div>
       <div class="header-actions">
-        <button v-if="!settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" aria-label="Open settings" @click="openSettings">Settings</button>
+        <button v-if="isLocalClient && !settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" aria-label="Open settings" @click="openSettings">Settings</button>
         <button v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn danger" type="button" aria-label="Clear memory" @click="clearMemory">ClearMemory</button>
         <button v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" aria-label="打开节点配置" @click="openConfig">配置</button>
         <button v-if="!settingsOpen" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" aria-label="Restart" @click="restartWorkspace">
@@ -553,7 +667,7 @@ onMounted(() => {
       />
       <template v-else>
         <div v-if="workspace.error.value" class="mobile-error">{{ workspace.error.value }}</div>
-        <div v-if="workspace.loading.value" class="loading-line">Loading...</div>
+        <div v-if="workspace.loading.value" class="loading-line" role="status" aria-live="polite">Loading...</div>
 
         <section v-if="workspace.view.value === 'pcs'" class="mobile-list">
         <button v-for="pc in workspace.pcs.value" :key="pc.id" class="list-row pc-row" type="button" @click="workspace.selectPc(pc)">
@@ -625,8 +739,17 @@ onMounted(() => {
       </section>
 
       <section v-else class="chat-view">
+        <CodexSessionPicker
+          v-if="workspace.codexSessionState.value?.supported"
+          :sessions="workspace.codexSessionState.value.sessions"
+          :active-session-id="workspace.codexSessionState.value.active_session_id"
+          :is-new-session="workspace.codexSessionState.value.is_new_session"
+          :loading="workspace.codexSessionLoading.value"
+          @select="onChooseCodexSession"
+          @refresh="workspace.refreshCodexSessions"
+        />
         <div ref="feedRef" class="chat-feed">
-          <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage" class="empty-chat">暂无消息</div>
+          <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage && activityBlocks.length === 0" class="empty-chat">暂无消息</div>
           <template v-for="(entry, index) in feedEntries" :key="entry.key">
             <MobileMemoryMessageCard
               v-if="entry.type === 'message'"
@@ -645,6 +768,7 @@ onMounted(() => {
               :metadata-deferred="isLatestTurn(index) && workspace.conversation.value?.latest_turn_metadata_loaded !== true"
               :loading-section="isLatestTurn(index) ? mobileSectionLoading : null"
               :progress-summary="isLatestTurn(index) ? workspace.conversation.value?.latest_turn_progress_summary : null"
+              :ensure-metadata="isLatestTurn(index) ? ensureMobileTurnMetadata : undefined"
               @save="openSaveMessageDialog"
               @copy="copyMessageText"
               @delete="deleteMobileMessages"
@@ -652,7 +776,15 @@ onMounted(() => {
               @request-section="loadMobileTurnSection"
             />
           </template>
-          <MobileLiveMessage v-if="liveMessage || thinkingMessage || activityMessage" :text="liveMessage" :thinking-text="thinkingMessage" :activity-text="activityMessage" />
+          <MobileLiveMessage
+            v-if="liveMessage || thinkingMessage || activityMessage || activityBlocks.length"
+            :text="liveMessage"
+            :thinking-text="thinkingMessage"
+            :activity-text="activityMessage"
+            :activity-blocks="activityBlocks"
+            :node-id="workspace.selectedNode.value?.id"
+            :graph-id="workspace.selectedGraph.value?.id || 'default'"
+          />
         </div>
 
         <form class="composer" @submit.prevent="sendDraft">
@@ -661,6 +793,16 @@ onMounted(() => {
               {{ uploadingFiles ? '上传中...' : '添加图片或附件' }}
             </button>
             <button v-if="attachments.length > 0" class="clear-attachments-btn" type="button" :disabled="composerLocked" @click="clearAttachments">清空</button>
+            <button
+              v-if="audioInputEnabled"
+              class="audio-record-btn"
+              :class="{ active: audioRecorder.recording.value }"
+              type="button"
+              :disabled="!audioRecorder.supported.value || uploadingFiles || composerLocked"
+              @click="toggleAudioRecording"
+            >
+              {{ audioRecorder.recording.value ? '停止录音' : '录音' }}
+            </button>
             <button
               v-if="!workspace.selectedNode.value?.readonly"
               class="goal-toggle-btn"
@@ -705,10 +847,14 @@ onMounted(() => {
       :config="workspace.selectedConfig.value"
       :providers="workspace.providers.value"
       :available-tools="workspace.availableTools.value"
+      :agent-profiles="workspace.agentProfiles.value"
+      :graph-id="workspace.selectedGraph.value?.id || ''"
       :nodes="workspace.nodes.value"
       :output-routes="workspace.selectedNodeOutputRoutes.value"
       :save-fields="workspace.setSelectedNodeFields"
       :rename-node="workspace.renameSelectedNode"
+      :save-profile="workspace.saveSelectedNodeProfile"
+      :load-profile="workspace.loadSelectedNodeProfile"
       :add-output-route="workspace.addSelectedNodeOutputRoute"
       :update-output-route="workspace.updateSelectedNodeOutputRoute"
       :remove-output-route="workspace.removeSelectedNodeOutputRoute"
@@ -813,6 +959,7 @@ onMounted(() => {
 }
 
 .mobile-main {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -996,6 +1143,20 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.chat-view :deep(.codex-session-picker) {
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: rgba(8, 15, 29, 0.72);
+  overflow: visible;
+}
+
+.chat-view :deep(.codex-session-menu) {
+  left: 0;
+  right: 0;
+  z-index: 20;
 }
 
 .chat-feed {
@@ -1371,5 +1532,16 @@ onMounted(() => {
 .loading-line,
 .empty-chat {
   color: rgba(148, 163, 184, 0.95);
+}
+
+.loading-line {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+  pointer-events: none;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.28);
 }
 </style>

@@ -1,7 +1,65 @@
-import { Marked, Renderer, marked, type Tokens } from 'marked'
+import katex from 'katex'
+import { Marked, Renderer, marked, type MarkedExtension, type Tokens } from 'marked'
 import markedKatex from 'marked-katex-extension'
 
+const displayLatexRule = /^\\\[\s*([\s\S]*?)\s*\\\](?:\n|$)/
+const inlineLatexRule = /^\\\((.+?)\\\)/
+
+const standardLatexDelimiters: MarkedExtension = {
+  extensions: [
+    {
+      name: 'displayLatex',
+      level: 'block',
+      start(src) {
+        const index = src.indexOf('\\[')
+        return index >= 0 ? index : undefined
+      },
+      tokenizer(src) {
+        const match = src.match(displayLatexRule)
+        if (!match) return undefined
+        return {
+          type: 'displayLatex',
+          raw: match[0],
+          text: String(match[1] || '').trim(),
+          displayMode: true,
+        }
+      },
+      renderer(token) {
+        return `${katex.renderToString(String(token.text || ''), {
+          displayMode: true,
+          throwOnError: false,
+        })}\n`
+      },
+    },
+    {
+      name: 'inlineLatex',
+      level: 'inline',
+      start(src) {
+        const index = src.indexOf('\\(')
+        return index >= 0 ? index : undefined
+      },
+      tokenizer(src) {
+        const match = src.match(inlineLatexRule)
+        if (!match) return undefined
+        return {
+          type: 'inlineLatex',
+          raw: match[0],
+          text: String(match[1] || '').trim(),
+          displayMode: false,
+        }
+      },
+      renderer(token) {
+        return katex.renderToString(String(token.text || ''), {
+          displayMode: false,
+          throwOnError: false,
+        })
+      },
+    },
+  ],
+}
+
 marked.use(markedKatex({ throwOnError: false }))
+marked.use(standardLatexDelimiters)
 const liveMarked = new Marked()
 
 function escapeHtml(value: string) {
@@ -25,9 +83,26 @@ function renderCodeBlock({ text, lang, escaped }: Tokens.Code) {
   return `<div class="markdown-code-block"><pre><code${className}>${code}</code></pre><button type="button" class="markdown-code-copy" aria-label="Copy code" title="Copy code">Copy</button></div>`
 }
 
+function isWindowsAbsolutePath(value: string) {
+  return /^[a-zA-Z]:[\\/]/.test(value) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(value)
+}
+
+export function resolveMarkdownImageHref(value: string) {
+  const href = String(value || '').trim()
+  if (!isWindowsAbsolutePath(href)) return href
+  return `/api/files/raw?path=${encodeURIComponent(href)}`
+}
+
+function renderImage({ href, title, text }: Tokens.Image) {
+  const resolvedHref = resolveMarkdownImageHref(href)
+  const titleAttribute = title ? ` title="${escapeHtml(title)}"` : ''
+  return `<img src="${escapeHtml(resolvedHref)}" alt="${escapeHtml(text)}"${titleAttribute}>`
+}
+
 function createMarkdownRenderer() {
   const renderer = new Renderer()
   renderer.code = renderCodeBlock
+  renderer.image = renderImage
   return renderer
 }
 

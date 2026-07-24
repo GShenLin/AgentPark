@@ -98,7 +98,7 @@ def test_model_texture_generation_node_schema_filters_texture_providers(monkeypa
     from src.config_loader import ConfigLoader
     import nodes.model_texture_generation_node as node_module
 
-    config_path = tmp_path / "moduleProvider.json"
+    config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {

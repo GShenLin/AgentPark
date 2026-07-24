@@ -89,6 +89,8 @@ function copyNodeForClipboard(node: NodeCard): NodeCard {
     tools: Array.isArray(node.tools) ? node.tools.map(String).filter(Boolean) : [],
     mcpServers: Array.isArray(node.mcpServers) ? node.mcpServers.map(String).filter(Boolean) : [],
     workingPath: node.workingPath,
+    remoteEnabled: node.remoteEnabled,
+    remoteWorkerId: node.remoteWorkerId,
   }
 }
 
@@ -118,5 +120,7 @@ function createPastedNodeCard(node: NodeCard, nodeId: string, offset: number): N
     tools: Array.isArray(node.tools) ? node.tools.map(String).filter(Boolean) : [],
     mcpServers: Array.isArray(node.mcpServers) ? node.mcpServers.map(String).filter(Boolean) : [],
     workingPath: node.workingPath,
+    remoteEnabled: node.remoteEnabled,
+    remoteWorkerId: node.remoteWorkerId,
   }
 }

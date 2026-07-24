@@ -5,9 +5,6 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from src.web_backend.node_config_service import node_config_service
-from src.web_backend.node_memory_store import ensure_node_memory_files
-from src.web_backend.node_state_machine import parse_node_state
 from src.web_backend.profile_storage import AGENT_PROFILE_DIR, get_profile, profile_category_dir
 from src.web_backend.shared import _append_node_pending, build_text_envelope, envelope_preview
 
@@ -19,31 +16,25 @@ class RuntimeEventNodeDispatch:
         self.core = core
         self.metrics = metrics
         self.diagnostics = diagnostics
-        self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="runtime-event-dispatch")
+        self._executor = ThreadPoolExecutor(thread_name_prefix="runtime-event-dispatch")
 
-    def enqueue(self, *, group: CompiledReceiverGroup, envelope: RuntimeEventEnvelope) -> None:
+    def enqueue(self, *, group: CompiledReceiverGroup, envelope: RuntimeEventEnvelope, profile_id: str) -> None:
         if self.metrics is not None and hasattr(self.metrics, "inc"):
             self.metrics.inc("dispatch_queued", group=group.group_id, event=envelope.event)
-        self._executor.submit(self._dispatch, group, envelope)
+        self._executor.submit(self._dispatch, group, envelope, str(profile_id).strip())
 
-    def _dispatch(self, group: CompiledReceiverGroup, envelope: RuntimeEventEnvelope) -> None:
+    def _dispatch(self, group: CompiledReceiverGroup, envelope: RuntimeEventEnvelope, profile_id: str) -> None:
         try:
-            receiver = self._first_idle_receiver(group.receivers)
-            temporary = False
-            profile_id = ""
-            if receiver is None:
-                profile_id = group.event_profiles.get(envelope.event, "")
-                if not profile_id:
-                    raise ValueError(f"receiver group {group.group_id} has no profile for event {envelope.event}")
-                receiver = self._create_temporary_receiver(group, envelope, profile_id)
-                temporary = True
-            self._enqueue_receiver(receiver, group, envelope, profile_id=profile_id, temporary=temporary)
+            if not profile_id:
+                raise ValueError("node.dispatch handler requires an agent profile")
+            receiver = self._create_temporary_receiver(group, envelope, profile_id)
+            self._enqueue_receiver(receiver, group, envelope, profile_id=profile_id, temporary=True)
             if self.metrics is not None and hasattr(self.metrics, "inc"):
                 self.metrics.inc(
                     "dispatch_enqueued",
                     group=group.group_id,
                     event=envelope.event,
-                    temporary=temporary,
+                    temporary=True,
                 )
         except Exception as exc:
             if self.metrics is not None and hasattr(self.metrics, "inc"):
@@ -71,16 +62,6 @@ class RuntimeEventNodeDispatch:
                 error=f"{type(exc).__name__}: {exc}",
             )
 
-    def _first_idle_receiver(self, receivers: tuple[CompiledReceiver, ...]) -> CompiledReceiver | None:
-        for receiver in receivers:
-            config_path = self.core.graph_runtime._node_config_path(receiver.node_id, receiver.graph_id)
-            if not config_path or not os.path.exists(config_path):
-                continue
-            cfg = node_config_service.read_optional_object(config_path)
-            if parse_node_state(cfg.get("state")) == "idle":
-                return receiver
-        return None
-
     def _create_temporary_receiver(
         self,
         group: CompiledReceiverGroup,
@@ -92,21 +73,13 @@ class RuntimeEventNodeDispatch:
             raise FileNotFoundError(f"agent profile not found: {profile_id}")
         base_node_id = str(profile.get("node_name") or profile.get("id") or profile_id).strip() or profile_id
         node_id = self._unique_node_id(group.graph_id, f"{base_node_id}_{envelope.event}_{envelope.event_id[-8:]}")
-        node_dir = self.core.graph_runtime._node_dir(group.graph_id, node_id)
-        os.makedirs(node_dir, exist_ok=False)
-        ensure_node_memory_files(
-            self.core.graph_runtime._node_memory_path(node_id, group.graph_id),
-            self.core.graph_runtime._node_messages_path(node_id, group.graph_id),
-        )
-        fields = profile.get("fields") if isinstance(profile.get("fields"), dict) else {}
-        config: dict[str, Any] = dict(fields)
-        config.update(
-            {
-                "node_id": node_id,
-                "graph_id": group.graph_id,
-                "type_id": str(profile.get("node_type_id") or "agent_node").strip() or "agent_node",
-                "name": str(profile.get("name") or node_id).strip() or node_id,
-                "state": "idle",
+        self.core.profile_api._create_agent_node_from_profile(
+            profile_id,
+            profile,
+            graph_id=group.graph_id,
+            node_id=node_id,
+            name=str(profile.get("name") or node_id).strip() or node_id,
+            extra_config={
                 "runtime_event_receiver": {
                     "temporary": True,
                     "receiver_group": group.group_id,
@@ -119,10 +92,9 @@ class RuntimeEventNodeDispatch:
                         "node_id": group.merge_target.node_id,
                     },
                     "cleanup_status": "pending",
-                },
-            }
+                }
+            },
         )
-        node_config_service.create_or_replace(self.core.graph_runtime._node_config_path(node_id, group.graph_id), config)
         self.core.graph_runtime._log_graph_event(
             group.graph_id,
             "runtime_event_receiver_created",
@@ -205,7 +177,20 @@ def _dispatch_message(
         lines.append(f"Profile: {profile_id}")
     if temporary:
         lines.append("This is a temporary receiver. Produce the correction or analysis needed; backend cleanup will merge and delete this node.")
-    summary_keys = ("message", "error", "status", "tool_name", "provider", "runtime_events_path", "final_message_preview")
+    summary_keys = (
+        "message",
+        "error",
+        "status",
+        "tool_name",
+        "provider",
+        "node_dir",
+        "messages_path",
+        "runtime_events_path",
+        "user_context_path",
+        "soul_context_path",
+        "long_term_memory_path",
+        "final_message_preview",
+    )
     for key in summary_keys:
         value = payload.get(key)
         if value:

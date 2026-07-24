@@ -88,6 +88,29 @@ def test_declared_readonly_skill_script_registers_and_executes(tmp_path):
     assert [item["function"]["name"] for item in agent.tools.tool_declarations] == ["skill__demo__echo"]
     assert result["status"] == "success"
     assert json.loads(result["stdout"]) == {"echo": "hello"}
+    registered_callable = agent.tools.function_map["skill__demo__echo"]
+    assert registered_callable.tool_timeout_seconds == 5
+
+
+def test_skill_script_receives_node_directory(tmp_path):
+    _write_skill(
+        tmp_path,
+        manifest={"scripts": [_script_manifest("where", "scripts/where.py")]},
+        scripts={
+            "where.py": """
+                import os
+                print(os.environ.get("AGENTPARK_NODE_DIRECTORY", ""))
+            """
+        },
+    )
+    skills = load_node_skills(["demo"], node_id="node-a", skill_root=str(tmp_path))
+    agent = _Agent()
+    agent._agentpark_node_directory = str(tmp_path)
+    register_skill_script_tools(agent, skills)
+
+    result = json.loads(agent.tools.function_map["skill__demo__where"]())
+
+    assert result["stdout"].strip() == str(tmp_path)
 
 
 def test_undeclared_script_resource_is_not_registered(tmp_path):

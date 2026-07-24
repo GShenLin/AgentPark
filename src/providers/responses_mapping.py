@@ -5,6 +5,7 @@ from typing import Any
 from src.providers.responses_input_items import build_responses_function_call_input_item
 from src.providers.responses_input_items import build_responses_function_call_output_item
 from src.providers.responses_input_items import build_responses_message_input_item
+from src.providers.provider_message_policy import ProviderMessagePolicy
 from src.service_host import HostBoundService
 from src.tool.tool_call_protocol import ToolCallEnvelope
 from src.tool.tool_call_protocol import ToolCallParseFailure
@@ -112,7 +113,8 @@ class ResponsesMapping(HostBoundService):
 
     def _build_responses_input(self, messages):
         items = []
-        for message in messages if isinstance(messages, list) else []:
+        normalized_messages = ProviderMessagePolicy.from_config(self.config).normalize_messages(messages)
+        for message in normalized_messages:
             item = self._message_to_responses_input_item(message)
             if isinstance(item, list):
                 items.extend(item)

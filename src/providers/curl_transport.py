@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from contextlib import contextmanager
 from urllib.parse import urlparse
 from typing import Iterable
@@ -18,6 +18,7 @@ from src.runtime_cancellation import CancellationRequested, raise_if_cancel_requ
 class CurlResponse:
     body: str
     status_code: int
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 class CurlTransportError(ProviderTransportError):
@@ -26,6 +27,39 @@ class CurlTransportError(ProviderTransportError):
 
 class CurlHttpTransport:
     _WINDOWS_PROXY_CACHE: str | None = None
+    _GENERIC_HTTP_MARKER = "__AGENTPARK_HTTP_CODE__:"
+
+    def post_json_response(
+        self,
+        *,
+        url: str,
+        headers: dict,
+        payload_json: str,
+        timeout_sec: float,
+    ) -> CurlResponse:
+        return self._curl_post_once_raw(
+            url=url,
+            headers=headers,
+            payload_json=payload_json,
+            timeout_sec=timeout_sec,
+            marker=self._GENERIC_HTTP_MARKER,
+        )
+
+    def stream_sse_data(
+        self,
+        *,
+        url: str,
+        headers: dict,
+        payload_json: str,
+        timeout_sec: float,
+    ) -> Iterable[CurlResponse | str]:
+        return self._curl_post_sse_raw_lines(
+            url=url,
+            headers=headers,
+            payload_json=payload_json,
+            timeout_sec=timeout_sec,
+            marker=self._GENERIC_HTTP_MARKER,
+        )
 
     @staticmethod
     def _curl_executable() -> str:
@@ -203,10 +237,14 @@ class CurlHttpTransport:
         timeout_val = int(max(1, float(timeout_sec or 60)))
         connect_timeout = max(1, min(15, timeout_val))
         payload_path = ""
+        header_path = ""
+        response_headers: dict[str, str] = {}
         try:
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json", delete=False) as temp_file:
                 temp_file.write(payload_json)
                 payload_path = temp_file.name
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".headers", delete=False) as header_file:
+                header_path = header_file.name
 
             cmd = self._build_curl_post_command(
                 url=url,
@@ -217,6 +255,7 @@ class CurlHttpTransport:
                 marker=marker,
                 no_buffer=no_buffer,
             )
+            cmd.extend(["--dump-header", header_path])
             with self._provider_pressure_slot():
                 proc = subprocess.run(
                     cmd,
@@ -226,12 +265,14 @@ class CurlHttpTransport:
                     errors="replace",
                     timeout=timeout_val + 10,
                 )
+            response_headers = self._read_response_headers(header_path)
         except subprocess.TimeoutExpired as exc:
             raise CurlTransportError(f"curl timeout: {exc}") from exc
         except Exception as exc:
             raise CurlTransportError(str(exc)) from exc
         finally:
             self._remove_temp_payload(payload_path)
+            self._remove_temp_payload(header_path)
 
         stdout = proc.stdout or ""
         stderr = (proc.stderr or "").strip()
@@ -246,7 +287,7 @@ class CurlHttpTransport:
         if proc.returncode != 0:
             detail = stderr or body[-400:]
             raise CurlTransportError(detail or f"curl exit code: {proc.returncode}")
-        return CurlResponse(body=body, status_code=status_code)
+        return CurlResponse(body=body, status_code=status_code, headers=response_headers)
 
     def _curl_post_sse_raw_lines(
         self,
@@ -256,6 +297,7 @@ class CurlHttpTransport:
         payload_json: str,
         timeout_sec: float,
         marker: str,
+        yield_all_lines: bool = False,
     ) -> Iterable[CurlResponse | str]:
         timeout_val = int(max(1, float(timeout_sec or 60)))
         connect_timeout = max(1, min(15, timeout_val))
@@ -320,6 +362,8 @@ class CurlHttpTransport:
                     response_lines.append(line)
                     if line.startswith("data:"):
                         yield line[5:].strip()
+                    elif yield_all_lines and line.strip():
+                        yield line.strip()
 
                 try:
                     return_code = proc.wait(timeout=5)
@@ -365,6 +409,29 @@ class CurlHttpTransport:
             os.remove(payload_path)
         except Exception:
             pass
+
+    @staticmethod
+    def _read_response_headers(header_path: str) -> dict[str, str]:
+        if not header_path or not os.path.isfile(header_path):
+            return {}
+        try:
+            with open(header_path, "r", encoding="iso-8859-1") as handle:
+                text = handle.read()
+        except OSError:
+            return {}
+        blocks = [block for block in text.replace("\r\n", "\n").split("\n\n") if block.strip()]
+        for block in reversed(blocks):
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            if not lines or not lines[0].upper().startswith("HTTP/"):
+                continue
+            headers: dict[str, str] = {}
+            for line in lines[1:]:
+                if ":" not in line:
+                    continue
+                key, value = line.split(":", 1)
+                headers[key.strip().lower()] = value.strip()
+            return headers
+        return {}
 
     @classmethod
     def _build_curl_post_command(cls, *, url, headers, payload_path, timeout_val, connect_timeout, marker, no_buffer):

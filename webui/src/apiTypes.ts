@@ -11,6 +11,29 @@ export type RemoteStatus = {
   is_local_client: boolean
 }
 
+export type WorkspaceBootstrap = {
+  startup_graph: GraphConfig
+  remote_status: RemoteStatus
+  remotes: RemoteEndpoint[]
+  providers: ProviderInfo[]
+  nodes: NodeInfo[]
+  tools: string[]
+  graphs: GraphInfo[]
+  graph_profiles: GraphProfile[]
+  theme: { data: Record<string, unknown>; active_preset_id: string }
+  mobile_pcs: MobilePc[]
+  user_interactions: UserInteractionRequest[]
+}
+
+export type RemoteWorker = {
+  worker_id: string
+  display_name: string
+  host_kind: string
+  workspace_path: string
+  capabilities: string[]
+  online: boolean
+}
+
 export type RunInfo = {
   task_id: number
   pid: number | null
@@ -51,8 +74,13 @@ export type NodeTemplate = {
   output_num?: number
   accepts?: string[]
   produces?: string[]
+  support_modes?: string[]
   schema?: Record<string, any>
   fields?: Record<string, any>
+}
+
+export type NodeTemplateContext = {
+  providerId?: string
 }
 
 export type PasteAgentConfig = {
@@ -111,6 +139,8 @@ export type GraphNode = {
   tools?: string[]
   mcpServers?: string[]
   workingPath?: string
+  remoteEnabled?: boolean
+  remoteWorkerId?: string
 }
 
 export type GraphConfig = {
@@ -144,6 +174,7 @@ export type AgentProfile = {
   source_node_id?: string
   node_name?: string
   fields: Record<string, unknown>
+  event_rules?: Record<string, Array<Record<string, unknown>>>
   created_at?: string
   updated_at?: string
 }
@@ -153,12 +184,40 @@ export type AgentProfileListResponse = {
   profiles: AgentProfile[]
 }
 
+export type AgentProfileLoadResponse = {
+  ok: boolean
+  profile_id: string
+  graph_id: string
+  node_id: string
+  config: NodeConfigChangeResponse
+  event_rules: {
+    events: number
+    handlers: number
+    warnings?: string[]
+  }
+}
+
+export type AgentProfileEditorPayload = {
+  node_profiler: {
+    name: string
+    node_type_id: string
+    source_graph_id?: string
+    source_node_id?: string
+    node_name?: string
+    fields: Record<string, unknown>
+    event_rules: Record<string, Array<Record<string, unknown>>>
+  }
+  instruction: string
+  system_prompt: string
+}
+
 export type GraphProfileNodeConfig = {
   node_id: string
   graph_id: string
   type_id: string
   name?: string
   fields: Record<string, unknown>
+  event_rules?: Record<string, Array<Record<string, unknown>>>
   ui?: {
     x?: number
     y?: number
@@ -340,6 +399,7 @@ export type NodeInstanceConfig = {
   type_id: string
   name?: string
   graph_id?: string
+  private?: boolean
   last_message?: string
   last_runtime_event?: RuntimeEvent | null
   runtime_events?: RuntimeEvent[]
@@ -363,6 +423,7 @@ export type NodeInstanceConfigListResponse = {
   node_ids?: string[]
   version?: number
   partial?: boolean
+  view?: 'full' | 'board'
 }
 
 export type NodeConfigChangeResponse = {
@@ -448,6 +509,18 @@ export type FileItem = {
 export type FileListResponse = {
   files: FileItem[]
   current_path: string
+}
+
+export type NodeInstanceFile = {
+  name: string
+  path: string
+  size: number
+}
+
+export type NodeInstanceFileListResponse = {
+  graph_id: string
+  node_id: string
+  files: NodeInstanceFile[]
 }
 
 export type MobilePcInstance = {
@@ -623,5 +696,21 @@ export type MobileNodeConversation = {
   last_message?: string
   live_message?: string
   thinking_message?: string
+  live_version?: number
   activity_message?: string
+  activity_blocks?: LiveActivityBlock[]
+}
+
+export type LiveActivityBlock = {
+  id: string
+  type: string
+  label: string
+  status: string
+  text?: string
+  provider?: string
+  call_id?: string
+  arguments?: Record<string, unknown>
+  sources?: Array<{ url?: string; title?: string }>
+  action?: Record<string, unknown>
+  details?: Record<string, unknown>
 }

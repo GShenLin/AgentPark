@@ -1,8 +1,11 @@
 import os
 import threading
+from copy import deepcopy
 from datetime import datetime
 
-from .node_config_service import read_node_config_optional, write_node_config
+from .node_config_service import patch_node_config_persistent_fields, read_node_config_optional, write_node_config
+from .node_diagnostics_projection import node_diagnostics_projection_store
+from .node_run_terminal import NODE_RUN_SUMMARY_STAGE
 from .runtime_state_memory_store import runtime_state_memory_store
 from .node_event_sequence import bump_node_event_seq
 from .node_state_machine import (
@@ -15,6 +18,16 @@ from .runtime_event_store import append_runtime_event, clear_runtime_event
 
 class NodeDeletingError(RuntimeError):
     pass
+
+
+RUNTIME_EVENT_STATE_FIELDS = {
+    "last_runtime_event",
+    "runtime_events",
+    "runtime_tool_calls",
+    "provider_request_summaries",
+    "provider_request_totals",
+    "node_event_seq",
+}
 
 
 class NodeConfigStore:
@@ -59,6 +72,9 @@ class NodeConfigStore:
         lock = self._get_lock(file_path)
         with lock:
             return self._write_unlocked(file_path, data)
+
+    def patch_persistent_fields(self, config_path: str, fields: dict) -> dict:
+        return patch_node_config_persistent_fields(config_path, fields)
 
     def update_state(self, config_path: str, state: str) -> None:
         def mutate(payload: dict) -> None:
@@ -172,7 +188,13 @@ class NodeConfigStore:
     def is_stop_requested(self, config_path: str) -> bool:
         if not config_path:
             return False
-        return bool(runtime_state_memory_store.snapshot(config_path).get("_stop_requested"))
+        return bool(
+            runtime_state_memory_store.snapshot_fields(
+                config_path,
+                {"_stop_requested"},
+                include_defaults=False,
+            ).get("_stop_requested")
+        )
 
     def finish_stop_requested(self, config_path: str, message: str = "Stopped.") -> bool:
         if not config_path:
@@ -345,16 +367,45 @@ class NodeConfigStore:
     def set_runtime_event(self, config_path: str, event: dict | None, *, reset_history: bool = False) -> None:
         if not config_path:
             return
-        def mutate(payload: dict) -> None:
-            if isinstance(event, dict) and event:
-                if reset_history:
-                    clear_runtime_event(payload, reset_history=True)
-                append_runtime_event(payload, event)
-            else:
-                clear_runtime_event(payload, reset_history=reset_history)
-            bump_node_event_seq(payload)
+        lock = self._get_lock(config_path)
+        with lock:
+            def mutate(payload: dict) -> None:
+                if not reset_history:
+                    missing_fields = RUNTIME_EVENT_STATE_FIELDS - payload.keys()
+                    if missing_fields:
+                        durable_diagnostics = node_diagnostics_projection_store.read(
+                            config_path,
+                            fields=set(missing_fields),
+                        )
+                        for field, value in durable_diagnostics.items():
+                            payload[field] = deepcopy(value)
+                if isinstance(event, dict) and event:
+                    if reset_history:
+                        clear_runtime_event(payload, reset_history=True)
+                    append_runtime_event(payload, event)
+                else:
+                    clear_runtime_event(payload, reset_history=reset_history)
+                bump_node_event_seq(payload)
 
-        runtime_state_memory_store.update(config_path, mutate)
+            runtime_state_memory_store.update_fields(
+                config_path,
+                RUNTIME_EVENT_STATE_FIELDS,
+                mutate,
+            )
+            if reset_history or self._is_terminal_runtime_event(event):
+                node_diagnostics_projection_store.write(
+                    config_path,
+                    runtime_state_memory_store.snapshot(config_path, include_defaults=False),
+                )
+
+    @staticmethod
+    def _is_terminal_runtime_event(event: object) -> bool:
+        if not isinstance(event, dict):
+            return False
+        return (
+            str(event.get("type") or "").strip().lower() == "runtime_notice"
+            and str(event.get("stage") or "").strip() == NODE_RUN_SUMMARY_STAGE
+        )
 
     def touch_last_run_at(self, config_path: str, run_at: str | None = None) -> None:
         if not config_path:

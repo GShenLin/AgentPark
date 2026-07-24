@@ -17,6 +17,8 @@ class ResponsesItemLevelToolRunner:
     def __init__(self, runtime: Any, *, run_tools: bool) -> None:
         self._runtime = runtime
         self._run_tools = bool(run_tools)
+        gate_active = getattr(runtime, "_tool_context_compaction_gate_active_now", None)
+        self._defer_tool_execution = bool(callable(gate_active) and gate_active())
         self._executor: ThreadPoolExecutor | None = None
         self._items_by_call_id: dict[str, ToolCallItem] = {}
         self._futures_by_call_id: dict[str, Future[ToolCallExecution]] = {}
@@ -34,12 +36,17 @@ class ResponsesItemLevelToolRunner:
             if not call_id:
                 raise RuntimeError("item-level Responses stream produced a function_call without call_id")
             self._items_by_call_id[call_id] = item
-            if self._run_tools:
+            if self._run_tools and not self._defer_tool_execution:
                 self._start_tool_item(item)
 
     def wait_for_executions(self, function_calls: list[ToolCallItem]) -> list[ToolCallExecution]:
         if self._aborted:
             raise RuntimeError("item-level Responses tool runner was aborted before tool results were collected")
+        if self._defer_tool_execution:
+            return execute_tool_call_items_parallel(
+                tool_call_items=function_calls,
+                execute_tool_call_envelopes=self._runtime._execute_tool_call_envelopes_parallel,
+            )
         executions: list[ToolCallExecution] = []
         for call in function_calls if isinstance(function_calls, list) else []:
             call_id = str(getattr(call, "call_id", "") or "").strip()

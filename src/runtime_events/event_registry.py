@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import os
 import threading
+from copy import deepcopy
 from typing import Any
 
 from src.web_backend.profile_storage import AGENT_PROFILE_DIR, get_profile, profile_category_dir, validate_profile_id
 
 from .event_config_store import load_or_create_event_config, write_event_config
 from .event_models import CompiledReceiver, CompiledReceiverGroup, CompiledRule, EMPTY_REGISTRY, RuntimeEventRegistry
-from .event_rule_config import compile_rules_payload, iter_rules
-from .event_schema import ACTIONS, EVENTS, PRIORITIES, TTLS
+from .event_rule_config import canonicalize_rules_payload, compile_rules_payload, iter_rules
+from .event_schema import ACTIONS, CONTEXT_ROLES, EVENTS, PRIORITIES, TTLS
+from .file_context import validate_context_file_path
+from .source_rule_transfer import (
+    count_source_event_handlers,
+    export_source_event_rules,
+    replace_source_event_rules,
+)
 
 
 class EventConfigError(ValueError):
@@ -22,14 +29,16 @@ class RuntimeEventRegistryManager:
     def __init__(self, core: object) -> None:
         self.core = core
         self._active = EMPTY_REGISTRY
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def active(self) -> RuntimeEventRegistry:
         return self._active
 
     def load_startup(self) -> dict[str, Any]:
         config = load_or_create_event_config()
-        registry = self.compile(config, strict_sources=False)
+        registry = self.compile(config, strict_sources=False, prune_missing_sources=True)
+        if registry.config != config:
+            write_event_config(registry.config)
         with self._lock:
             self._active = registry
         return {"ok": True, "compiled": self._compiled_counts(registry), "warnings": list(registry.warnings)}
@@ -47,9 +56,116 @@ class RuntimeEventRegistryManager:
             "warnings": list(registry.warnings),
         }
 
-    def compile(self, config: dict[str, Any], *, strict_sources: bool) -> RuntimeEventRegistry:
+    def remove_source_rules(self, graph_id: str, node_id: str | None = None) -> dict[str, Any]:
+        safe_graph_id = _text(graph_id)
+        safe_node_id = _text(node_id)
+        if not safe_graph_id:
+            raise ValueError("graph_id is required")
+        with self._lock:
+            config = load_or_create_event_config()
+            errors: list[dict[str, Any]] = []
+            rules = compile_rules_payload(config.get("rules", {}), errors)
+            if errors:
+                raise EventConfigError(errors)
+            remaining_rules, removed_rules, removed_handlers = _remove_source_rules(
+                rules,
+                safe_graph_id,
+                safe_node_id or None,
+            )
+            updated_config = dict(config)
+            updated_config["rules"] = remaining_rules
+            registry = self.compile(updated_config, strict_sources=False)
+            write_event_config(registry.config)
+            self._active = registry
+        return {
+            "removed_handlers": removed_handlers,
+            "removed_rules": removed_rules,
+            "warnings": list(registry.warnings),
+        }
+
+    def restore_source_rules(self, removed_rules: object) -> dict[str, Any]:
+        if not isinstance(removed_rules, dict) or not removed_rules:
+            return {"restored_handlers": 0}
+        with self._lock:
+            config = load_or_create_event_config()
+            errors: list[dict[str, Any]] = []
+            current_rules = compile_rules_payload(config.get("rules", {}), errors)
+            snapshot_rules = compile_rules_payload(removed_rules, errors)
+            if errors:
+                raise EventConfigError(errors)
+            merged_rules, restored_handlers = _merge_source_rules(current_rules, snapshot_rules)
+            updated_config = dict(config)
+            updated_config["rules"] = merged_rules
+            registry = self.compile(updated_config, strict_sources=False)
+            write_event_config(registry.config)
+            self._active = registry
+        return {"restored_handlers": restored_handlers}
+
+    def export_source_event_rules(self, graph_id: str, node_id: str) -> dict[str, list[dict[str, Any]]]:
+        safe_graph_id = _text(graph_id)
+        safe_node_id = _text(node_id)
+        if not safe_graph_id or not safe_node_id:
+            raise ValueError("graph_id and node_id are required")
+        with self._lock:
+            config = load_or_create_event_config()
+            errors: list[dict[str, Any]] = []
+            rules = compile_rules_payload(config.get("rules", {}), errors)
+            if errors:
+                raise EventConfigError(errors)
+            return export_source_event_rules(rules, safe_graph_id, safe_node_id)
+
+    def replace_source_event_rules(
+        self,
+        graph_id: str,
+        node_id: str,
+        source_event_rules: object,
+    ) -> dict[str, Any]:
+        safe_graph_id = _text(graph_id)
+        safe_node_id = _text(node_id)
+        if not safe_graph_id or not safe_node_id:
+            raise ValueError("graph_id and node_id are required")
+        with self._lock:
+            config = load_or_create_event_config()
+            errors: list[dict[str, Any]] = []
+            rules = compile_rules_payload(config.get("rules", {}), errors)
+            if errors:
+                raise EventConfigError(errors)
+            try:
+                next_rules = replace_source_event_rules(rules, safe_graph_id, safe_node_id, source_event_rules)
+            except ValueError as exc:
+                raise EventConfigError([_error("profile", "event_rules", str(exc))]) from exc
+            updated_config = dict(config)
+            updated_config["rules"] = next_rules
+            registry = self.compile(updated_config, strict_sources=True)
+            write_event_config(registry.config)
+            self._active = registry
+        exported = export_source_event_rules(next_rules, safe_graph_id, safe_node_id)
+        return {
+            "events": len(exported),
+            "handlers": count_source_event_handlers(exported),
+            "warnings": list(registry.warnings),
+        }
+
+    def copy_source_event_rules(
+        self,
+        source_graph_id: str,
+        source_node_id: str,
+        target_graph_id: str,
+        target_node_id: str,
+    ) -> dict[str, Any]:
+        source_rules = self.export_source_event_rules(source_graph_id, source_node_id)
+        return self.replace_source_event_rules(target_graph_id, target_node_id, source_rules)
+
+    def compile(
+        self,
+        config: dict[str, Any],
+        *,
+        strict_sources: bool,
+        prune_missing_sources: bool = False,
+    ) -> RuntimeEventRegistry:
         errors: list[dict[str, Any]] = []
         warnings: list[str] = []
+        missing_sources: set[tuple[str, str, str]] = set()
         if not isinstance(config, dict):
             raise EventConfigError([_error("", "config", "config must be an object")])
         schema_version = _int_value(config.get("schema_version"), 1)
@@ -58,74 +174,156 @@ class RuntimeEventRegistryManager:
         enabled = bool(config.get("enabled", True))
         rules = compile_rules_payload(config.get("rules", {}), errors)
 
+        if strict_sources or prune_missing_sources:
+            for event, event_rules in rules.items():
+                for source_graph, graph_rules in event_rules.items():
+                    for source_node in graph_rules:
+                        if self._node_exists(source_graph, source_node):
+                            continue
+                        missing_sources.add((event, source_graph, source_node))
+                        warnings.append(
+                            f"rules.{event}.{source_graph}.{source_node}: source node not found; orphaned handlers were removed"
+                        )
+            if missing_sources:
+                rules = _without_missing_sources(rules, missing_sources)
+
         producer_index = _compile_builtin_map(config.get("context_producers"), "context_producers", errors)
         notice_index = _compile_builtin_map(config.get("notice_writers"), "notice_writers", errors)
         receiver_group_index = self._compile_receiver_groups(config.get("receiver_groups"), errors, strict_sources)
 
         rule_index: dict[tuple[str, str, str], list[CompiledRule]] = {}
         enabled_count_by_source: dict[tuple[str, str], int] = {}
-        for index, compiled_raw_rule in enumerate(iter_rules(rules)):
-            raw_rule = compiled_raw_rule["rule"]
-            path = str(compiled_raw_rule["path"])
+        for compiled_handler in iter_rules(rules):
+            raw_rule = compiled_handler["handler"]
+            path = str(compiled_handler["path"])
+            handler_index = int(compiled_handler["handler_index"])
             error_count_before_rule = len(errors)
             if not isinstance(raw_rule, dict):
-                errors.append(_error(path, "", "rule must be an object", index))
+                errors.append(_error(path, "", "handler must be an object", handler_index))
                 continue
             if raw_rule.get("enabled", True) is False:
                 continue
-            source_graph = str(compiled_raw_rule["graph_id"])
-            source_node = str(compiled_raw_rule["node_id"])
+            source_graph = str(compiled_handler["graph_id"])
+            source_node = str(compiled_handler["node_id"])
             if not source_graph:
-                errors.append(_error(path, "graph_id", "source graph_id is required", index))
+                errors.append(_error(path, "graph_id", "source graph_id is required", handler_index))
             if not source_node:
-                errors.append(_error(path, "node_id", "source node_id is required", index))
-            event = str(compiled_raw_rule["event"])
+                errors.append(_error(path, "node_id", "source node_id is required", handler_index))
+            event = str(compiled_handler["event"])
             action = _text(raw_rule.get("action"))
             target = _text(raw_rule.get("target"))
             if event not in EVENTS:
-                errors.append(_error(path, "event", f"unsupported event: {event}", index))
+                errors.append(_error(path, "event", f"unsupported event: {event}", handler_index))
             if action not in ACTIONS:
-                errors.append(_error(path, "action", f"unsupported action: {action}", index))
-            if not target:
-                errors.append(_error(path, "target", "target is required", index))
-            if strict_sources and source_graph and source_node and not self._node_exists(source_graph, source_node):
-                errors.append(_error(path, "node_id", "source node not found", index))
+                errors.append(_error(path, "action", f"unsupported action: {action}", handler_index))
+            if action != "context.append_file" and not target:
+                errors.append(_error(path, "target", "target is required", handler_index))
+            if action == "context.append_file" and target:
+                errors.append(_error(path, "target", "target must be empty for context.append_file", handler_index))
             if action == "context.produce" and target and target not in producer_index:
-                errors.append(_error(path, "target", f"unknown context producer: {target}", index))
+                errors.append(_error(path, "target", f"unknown context producer: {target}", handler_index))
             if action == "notice.write" and target and target not in notice_index:
-                errors.append(_error(path, "target", f"unknown notice writer: {target}", index))
+                errors.append(_error(path, "target", f"unknown notice writer: {target}", handler_index))
             if action == "node.dispatch" and target and target not in receiver_group_index:
-                errors.append(_error(path, "target", f"unknown receiver group: {target}", index))
-            if action == "node.dispatch" and target in receiver_group_index and event in EVENTS:
-                group = receiver_group_index[target]
-                if event not in group.event_profiles:
-                    errors.append(
-                        _error(
-                            path,
-                            "event",
-                            f"receiver group {target} has no profile for event {event}",
-                            index,
-                        )
-                    )
+                errors.append(_error(path, "target", f"unknown receiver group: {target}", handler_index))
             params = raw_rule.get("params")
             if params is None:
                 params = {}
             if not isinstance(params, dict):
-                errors.append(_error(path, "params", "params must be an object", index))
+                errors.append(_error(path, "params", "params must be an object", handler_index))
                 params = {}
-            compiled_params = _compile_params(params, errors, path, index)
+            compiled_params = _compile_params(params, errors, path, handler_index)
+            if action == "context.append_file":
+                paths_raw = params.get("paths")
+                if not isinstance(paths_raw, list) or not paths_raw:
+                    errors.append(
+                        _error(
+                            path,
+                            "paths",
+                            "params.paths must be a non-empty list for context.append_file",
+                            handler_index,
+                        )
+                    )
+                else:
+                    safe_paths: list[str] = []
+                    for configured_path in paths_raw:
+                        try:
+                            safe_path = validate_context_file_path(configured_path)
+                        except ValueError as exc:
+                            errors.append(_error(path, "paths", str(exc), handler_index))
+                            continue
+                        if safe_path in safe_paths:
+                            errors.append(
+                                _error(
+                                    path,
+                                    "paths",
+                                    f"duplicate context file path: {safe_path}",
+                                    handler_index,
+                                )
+                            )
+                            continue
+                        safe_paths.append(safe_path)
+                    if safe_paths:
+                        compiled_params["paths"] = safe_paths
+                role = _text(params.get("role")) or "developer"
+                if role not in CONTEXT_ROLES:
+                    errors.append(
+                        _error(
+                            path,
+                            "role",
+                            "params.role must be developer, system, user, or assistant for context.append_file",
+                            handler_index,
+                        )
+                    )
+                else:
+                    compiled_params["role"] = role
+            else:
+                if "paths" in params:
+                    errors.append(_error(path, "paths", "params.paths is only valid for context.append_file", handler_index))
+                if "role" in params:
+                    errors.append(_error(path, "role", "params.role is only valid for context.append_file", handler_index))
+            if "path" in params:
+                errors.append(_error(path, "path", "legacy params.path is not supported; use params.paths", handler_index))
+            if action == "node.dispatch" and target in receiver_group_index and event in EVENTS:
+                profile_ids_raw = params.get("profile_ids")
+                if not isinstance(profile_ids_raw, list) or not profile_ids_raw:
+                    errors.append(_error(path, "profile_ids", "params.profile_ids must be a non-empty list for node.dispatch", handler_index))
+                else:
+                    safe_profile_ids: list[str] = []
+                    for profile_id_raw in profile_ids_raw:
+                        profile_id = _text(profile_id_raw)
+                        if not profile_id:
+                            errors.append(_error(path, "profile_ids", "params.profile_ids cannot contain empty values", handler_index))
+                            continue
+                        try:
+                            safe_profile_id = validate_profile_id(profile_id)
+                        except Exception as exc:
+                            errors.append(_error(path, "profile_ids", str(exc), handler_index))
+                            continue
+                        if safe_profile_id in safe_profile_ids:
+                            errors.append(_error(path, "profile_ids", f"duplicate agent profile: {safe_profile_id}", handler_index))
+                            continue
+                        safe_profile_ids.append(safe_profile_id)
+                        if strict_sources and get_profile(profile_category_dir(AGENT_PROFILE_DIR), safe_profile_id) is None:
+                            errors.append(_error(path, "profile_ids", f"agent profile not found: {safe_profile_id}", handler_index))
+                    if safe_profile_ids:
+                        compiled_params["profile_ids"] = safe_profile_ids
+            elif "profile_ids" in params:
+                errors.append(_error(path, "profile_ids", "profile_ids is only valid for node.dispatch", handler_index))
+            if "profile_id" in params:
+                errors.append(_error(path, "profile_id", "legacy params.profile_id is not supported; use params.profile_ids", handler_index))
             if len(errors) > error_count_before_rule:
                 continue
             key = (source_graph, source_node, event)
             enabled_count_by_source[(source_graph, source_node)] = enabled_count_by_source.get((source_graph, source_node), 0) + 1
             if enabled_count_by_source[(source_graph, source_node)] > 50:
-                errors.append(_error(path, "source", "source node has more than 50 enabled rules", index))
+                errors.append(_error(path, "source", "source node has more than 50 enabled handlers", handler_index))
                 continue
             rule_index.setdefault(key, []).append(
                 CompiledRule(
                     graph_id=source_graph,
                     node_id=source_node,
-                    rule_index=index,
+                    handler_index=handler_index,
                     event=event,
                     action=action,
                     target=target,
@@ -137,7 +335,7 @@ class RuntimeEventRegistryManager:
             raise EventConfigError(errors)
         frozen_rules = {key: tuple(value) for key, value in rule_index.items()}
         canonical_config = dict(config)
-        canonical_config["rules"] = rules
+        canonical_config["rules"] = canonicalize_rules_payload(rules)
         return RuntimeEventRegistry(
             enabled=enabled,
             schema_version=schema_version,
@@ -185,31 +383,19 @@ class RuntimeEventRegistryManager:
             elif strict_sources and not self._node_exists(merge_target.graph_id, merge_target.node_id):
                 errors.append(_error(f"receiver_groups.{group_id}.merge_target", "node_id", "merge target not found"))
 
-            profiles_raw = group_raw.get("event_profiles")
-            event_profiles: dict[str, str] = {}
-            if not isinstance(profiles_raw, dict):
-                errors.append(_error(f"receiver_groups.{group_id}", "event_profiles", "event_profiles is required"))
-            else:
-                for event_raw, profile_raw in profiles_raw.items():
-                    event = _text(event_raw)
-                    profile_id = _text(profile_raw)
-                    if event not in EVENTS:
-                        errors.append(_error(f"receiver_groups.{group_id}.event_profiles", event, f"unsupported event: {event}"))
-                        continue
-                    try:
-                        safe_profile_id = validate_profile_id(profile_id)
-                    except Exception as exc:
-                        errors.append(_error(f"receiver_groups.{group_id}.event_profiles", event, str(exc)))
-                        continue
-                    if strict_sources and get_profile(profile_category_dir(AGENT_PROFILE_DIR), safe_profile_id) is None:
-                        errors.append(_error(f"receiver_groups.{group_id}.event_profiles", event, f"agent profile not found: {safe_profile_id}"))
-                    event_profiles[event] = safe_profile_id
-
             receivers: list[CompiledReceiver] = []
             raw_receivers = group_raw.get("receivers", [])
             if not isinstance(raw_receivers, list):
                 errors.append(_error(f"receiver_groups.{group_id}", "receivers", "receivers must be a list"))
                 raw_receivers = []
+            if raw_receivers:
+                errors.append(
+                    _error(
+                        f"receiver_groups.{group_id}",
+                        "receivers",
+                        "explicit receivers are not supported; node.dispatch creates one temporary Agent per selected profile",
+                    )
+                )
             for index, receiver_raw in enumerate(raw_receivers):
                 if not isinstance(receiver_raw, dict):
                     errors.append(_error(f"receiver_groups.{group_id}.receivers[{index}]", "", "receiver must be an object"))
@@ -227,7 +413,6 @@ class RuntimeEventRegistryManager:
                     group_id=group_id,
                     graph_id=graph_id,
                     merge_target=merge_target,
-                    event_profiles=event_profiles,
                     receivers=tuple(receivers),
                 )
         return output
@@ -252,6 +437,71 @@ class RuntimeEventRegistryManager:
             "notice_writers": len(registry.notice_index),
             "receiver_groups": len(registry.receiver_group_index),
         }
+
+
+def _without_missing_sources(
+    rules: dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
+    missing_sources: set[tuple[str, str, str]],
+) -> dict[str, dict[str, dict[str, list[dict[str, Any]]]]]:
+    output = canonicalize_rules_payload(rules)
+    for event, graph_id, node_id in missing_sources:
+        event_rules = output.get(event)
+        graph_rules = event_rules.get(graph_id) if event_rules else None
+        if not graph_rules:
+            continue
+        graph_rules.pop(node_id, None)
+        if not graph_rules:
+            event_rules.pop(graph_id, None)
+        if not event_rules:
+            output.pop(event, None)
+    return output
+
+
+def _remove_source_rules(
+    rules: dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
+    graph_id: str,
+    node_id: str | None,
+) -> tuple[
+    dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
+    dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
+    int,
+]:
+    remaining = canonicalize_rules_payload(rules)
+    removed: dict[str, dict[str, dict[str, list[dict[str, Any]]]]] = {}
+    removed_handlers = 0
+    for event in list(remaining):
+        event_rules = remaining[event]
+        graph_rules = event_rules.get(graph_id)
+        if not graph_rules:
+            continue
+        selected_node_ids = [node_id] if node_id is not None else list(graph_rules)
+        for selected_node_id in selected_node_ids:
+            handlers = graph_rules.pop(selected_node_id, None)
+            if handlers is None:
+                continue
+            copied_handlers = deepcopy(handlers)
+            removed.setdefault(event, {}).setdefault(graph_id, {})[selected_node_id] = copied_handlers
+            removed_handlers += len(copied_handlers)
+        if not graph_rules:
+            event_rules.pop(graph_id, None)
+        if not event_rules:
+            remaining.pop(event, None)
+    return remaining, removed, removed_handlers
+
+
+def _merge_source_rules(
+    current: dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
+    restored: dict[str, dict[str, dict[str, list[dict[str, Any]]]]],
+) -> tuple[dict[str, dict[str, dict[str, list[dict[str, Any]]]]], int]:
+    output = canonicalize_rules_payload(current)
+    restored_handlers = 0
+    for event, event_rules in restored.items():
+        for graph_id, graph_rules in event_rules.items():
+            for node_id, handlers in graph_rules.items():
+                copied_handlers = deepcopy(handlers)
+                output.setdefault(event, {}).setdefault(graph_id, {})[node_id] = copied_handlers
+                restored_handlers += len(copied_handlers)
+    return output, restored_handlers
 
 
 def _compile_builtin_map(raw: object, field: str, errors: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

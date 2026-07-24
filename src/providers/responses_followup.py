@@ -13,7 +13,7 @@ def build_responses_followup_items(runtime: Any, executions) -> list[dict[str, A
         runtime.Message("tool", model_output, tool_call_id=execution.call_id, name=execution.func_name)
         non_retry_warn = runtime._build_non_retryable_tool_warning(execution.func_name, model_output)
         if non_retry_warn:
-            runtime.Message("system", non_retry_warn)
+            runtime.RuntimeInstruction(non_retry_warn)
         call_id = str(execution.call_id or "").strip()
         if call_id:
             runtime._validate_responses_followup_call_id(call_id)

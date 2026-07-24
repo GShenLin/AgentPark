@@ -27,7 +27,13 @@ def test_basic_trigger_node_forwards_input_and_uses_config_for_empty_trigger():
     skill_options = schema["skills"]["options"]
     assert isinstance(skill_options, list)
     assert any(isinstance(item, dict) and item.get("value") for item in skill_options)
-    assert list(schema.keys())[-3:] == ["plugins", "skills", "working_path"]
+    assert list(schema.keys())[-5:] == [
+        "plugins",
+        "skills",
+        "working_path",
+        "remote_enabled",
+        "remote_worker_id",
+    ]
 
     out = node.on_input("incoming", {"OutputText": "hello-trigger"})
     routes = out.get("routes")
@@ -239,6 +245,44 @@ def test_clock_control_start_sets_working_state(monkeypatch, tmp_path):
     assert runtime_updated.get("state") == "working"
     assert updated.get("_clock_trigger_count") == 0
     assert str(runtime_updated.get("last_message") or "").startswith("Working")
+
+
+def test_agent_control_stops_only_requested_tool_call(monkeypatch, tmp_path):
+    from src.web_backend.core import BackendCore
+    import src.web_backend.runtime_paths as runtime_paths
+
+    core = BackendCore()
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+
+    graph_id = "tool_stop_graph"
+    node_id = "agent1"
+    node_dir = tmp_path / "memories" / graph_id / node_id
+    node_dir.mkdir(parents=True, exist_ok=True)
+    config_path = node_dir / "config.json"
+    _write_json_dict(
+        str(config_path),
+        {
+            "node_id": node_id,
+            "type_id": "agent_node",
+            "state": "working",
+        },
+    )
+    first = core.tool_call_cancellations.begin(str(config_path), "call-1")
+    second = core.tool_call_cancellations.begin(str(config_path), "call-2")
+    try:
+        result = core.node_ops.control_node_instance(
+            node_id,
+            {"action": "stop_tool_call", "call_id": "call-1"},
+            graph_id,
+        )
+
+        assert result["ok"] is True
+        assert result["call_id"] == "call-1"
+        assert first.is_set()
+        assert not second.is_set()
+    finally:
+        core.tool_call_cancellations.end(str(config_path), "call-1", first)
+        core.tool_call_cancellations.end(str(config_path), "call-2", second)
 
 
 def test_clock_trigger_scan_requires_start_and_enqueues_after_interval(monkeypatch, tmp_path):

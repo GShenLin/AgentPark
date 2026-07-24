@@ -1,0 +1,15 @@
+{
+  "id": "unreal-engine",
+  "name": "Unreal Engine",
+  "description": "Remote Unreal Engine control tools and crash-report integration.",
+  "version": "1.0.0",
+  "tools": [],
+  "publicTools": [
+    "./tools/cancer_control.py",
+    "./tools/ue_remote_control.py"
+  ],
+  "serverApi": [
+    "./server_api.py"
+  ],
+  "skills": []
+}

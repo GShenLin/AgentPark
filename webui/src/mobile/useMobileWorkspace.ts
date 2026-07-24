@@ -1,16 +1,18 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { consumeAudioStreamEvents } from '../composables/streamingAudioPlayback'
 import {
   createGraphFromProfile,
   clearNodeInstanceMemory,
   cloneNodeInstance,
   controlNodeInstance,
+  createNodeFromAgentProfile,
   createNodeInstance,
   deleteGraph,
-  deleteMobileNodeMessage,
+  deleteMobileNodeMessages,
+  deleteMobileNodeTurn,
   deleteNodeInstance,
   getMobileNodeConversation,
   emitGraph,
-  graphEventsStreamUrl,
   listAgentProfiles,
   listGraphProfiles,
   listNodes,
@@ -20,9 +22,10 @@ import {
   listMobilePcs,
   listProviders,
   listTools,
+  loadAgentProfileIntoNode,
   loadGraph,
-  nodeInstanceLiveStreamUrl,
   renameNodeInstance,
+  saveAgentProfileFromNode,
   saveGraph,
   sendMobileNodeMessage,
   setStartupGraphConfig,
@@ -43,9 +46,17 @@ import {
   type NodeInstanceConfig,
   type ProviderInfo,
 } from '../api'
+import { subscribeAppEvents } from '../composables/useAppEventStream'
 import { useGlobalState } from '../composables/useGlobalState'
+import { resolveMobileGraphTarget } from './mobileGraphTarget'
+import { useCodexSessions } from '../composables/useCodexSessions'
 import { formatLiveActivity } from '../liveActivity'
-import { messageText } from './mobileMessageRender'
+import {
+  isLiveCompletionEvent,
+  LIVE_OUTPUT_COMMITTED_EVENT,
+  LIVE_STREAM_FINISHED_EVENT,
+  resolveLiveCompletionHandoff,
+} from '../liveCompletionHandoff'
 
 export type MobileView = 'pcs' | 'graphs' | 'nodes' | 'chat'
 
@@ -71,14 +82,7 @@ type MobileChatSelection = MobileGraphSelection & {
   nodeId: string
 }
 
-const chatConversationRefreshEvents = new Set([
-  'server_tool_activity',
-  'tool_call_start',
-  'tool_call_end',
-  'node_message_done',
-  'node_output',
-  'node_input',
-])
+const chatConversationRefreshEvents = new Set([LIVE_STREAM_FINISHED_EVENT, LIVE_OUTPUT_COMMITTED_EVENT])
 
 const chatNodeRefreshGraphEvents = new Set([
   'emit_enqueued',
@@ -145,17 +149,6 @@ const chatLightweightGraphEvents = new Set([
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
-function messagesContainCommittedLive(messages: MessageEnvelope[], text: string, traceId: string): boolean {
-  const safeTraceId = String(traceId || '').trim()
-  if (safeTraceId && messages.some((message) => String(message?.trace_id || '').trim() === safeTraceId)) return true
-  const safeText = String(text || '').trim()
-  if (!safeText) return false
-  return messages.some((message) => {
-    const role = String(message?.role || '').trim().toLowerCase()
-    return role !== 'user' && messageText(message) === safeText
-  })
 }
 
 function portIndex(value: unknown, fallback: number) {
@@ -317,16 +310,39 @@ export function useMobileWorkspace() {
   const loading = ref(false)
   const sending = ref(false)
   const error = ref('')
-  let chatLiveEventSource: EventSource | null = null
+
+  const {
+    codexSessionState,
+    codexSessionLoading,
+    refreshCodexSessions,
+    chooseCodexSession,
+    resetCodexSessions,
+    codexMemoryClearTargetLabel,
+  } = useCodexSessions({
+    getNodeId: () => String(selectedNode.value?.id || ''),
+    getGraphId: () => String(selectedGraph.value?.id || 'default'),
+    isEnabled: () => view.value === 'chat' && !!String(selectedNode.value?.id || '').trim(),
+    onAfterSelect: async () => {
+      clearConversationCommit()
+      conversation.value = null
+      await refreshConversationForSelection(requireChatSelection(), 'latest_turn')
+    },
+    onError: (value) => {
+      setError(value)
+    },
+  })
+
   let chatLiveStreamKey = ''
-  let graphEventSource: EventSource | null = null
   let graphEventStreamKey = ''
+  let chatLiveVersion = 0
+  let stopWorkspaceEvents: (() => void) | null = null
   let graphRefreshTimer: number | null = null
   let graphRefreshInFlight = false
   let graphRefreshNeedsConversation = false
   let graphRefreshNeedsGraphConfig = false
   let pendingConversationLiveText = ''
   let pendingConversationLiveTraceId = ''
+  let graphNodeNavigationVersion = 0
 
   const flatGraphs = computed(() => graphInstances.value.flatMap((item) => item.graphs))
   const selectedConfig = computed(() => {
@@ -395,12 +411,35 @@ export function useMobileWorkspace() {
     return isCurrentGraphSelection(selection) && String(selectedNode.value?.id || '').trim() === selection.nodeId
   }
 
+  function isNodeWorking(node: MobileNode) {
+    return (
+      String(node.state || 'idle') === 'working' ||
+      Number(node.pending_count ?? 0) > 0 ||
+      !!node.has_inflight ||
+      !!node.stop_requested
+    )
+  }
+
+  function orderNodesForSelectionView(nextNodes: MobileNode[]) {
+    return nextNodes
+      .map((node, index) => ({ node, index }))
+      .sort((left, right) => {
+        const workingOrder = Number(isNodeWorking(right.node)) - Number(isNodeWorking(left.node))
+        return workingOrder || left.index - right.index
+      })
+      .map(({ node }) => node)
+  }
+
   function applyNodes(nextNodes: MobileNode[]) {
-    nodes.value = nextNodes
+    nodes.value = view.value === 'nodes' ? orderNodesForSelectionView(nextNodes) : nextNodes
     if (selectedNode.value) {
       const current = nodes.value.find((item) => item.id === selectedNode.value?.id)
       if (current) selectedNode.value = current
     }
+  }
+
+  function sortNodesForSelectionView() {
+    nodes.value = orderNodesForSelectionView(nodes.value)
   }
 
   function mergeMobileNodeSummary(nodeId: string, patch: Partial<MobileNode>) {
@@ -467,7 +506,12 @@ export function useMobileWorkspace() {
 
   function normalizeConversationAfterRefresh(nextConversation: MobileNodeConversation) {
     const messages = Array.isArray(nextConversation.messages) ? nextConversation.messages : []
-    if (messagesContainCommittedLive(messages, pendingConversationLiveText, pendingConversationLiveTraceId)) {
+    const committedLive = resolveLiveCompletionHandoff(
+      messages,
+      pendingConversationLiveText,
+      pendingConversationLiveTraceId,
+    )
+    if (committedLive.status === 'committed') {
       clearConversationCommit()
       return { ...nextConversation, live_message: '', thinking_message: '', activity_message: '' }
     }
@@ -553,6 +597,55 @@ export function useMobileWorkspace() {
     agentProfiles.value = await listAgentProfiles()
   }
 
+  async function saveSelectedNodeProfile(profileId: string, profileName: string) {
+    const { graphId, nodeId } = requireChatSelection()
+    const safeProfileId = String(profileId || '').trim()
+    if (!safeProfileId) throw new Error('Profile ID is required')
+    const safeProfileName = String(profileName || '').trim() || safeProfileId
+    error.value = ''
+    try {
+      const result = await saveAgentProfileFromNode({
+        graph_id: graphId,
+        node_id: nodeId,
+        profile_id: safeProfileId,
+        profile_name: safeProfileName,
+      })
+      await refreshAgentProfiles()
+      window.dispatchEvent(new CustomEvent('agent-profiles-changed'))
+      return result
+    } catch (e) {
+      setError(e)
+      throw e
+    }
+  }
+
+  async function loadSelectedNodeProfile(profileId: string) {
+    const { graphId, nodeId } = requireChatSelection()
+    const safeProfileId = String(profileId || '').trim()
+    if (!safeProfileId) throw new Error('Profile ID is required')
+    error.value = ''
+    try {
+      const result = await loadAgentProfileIntoNode(safeProfileId, {
+        graph_id: graphId,
+        node_id: nodeId,
+      })
+      if (result.config?.after && typeof result.config.after === 'object') {
+        mergeNodeConfig(nodeId, result.config.after)
+      }
+      logMobileGraphEvent('node_config_updated', {
+        node_id: nodeId,
+        node_instance_id: nodeId,
+        profile_id: safeProfileId,
+        changed_fields: result.config?.changed_fields || [],
+        event_handlers: result.event_rules?.handlers || 0,
+      })
+      return result
+    } catch (e) {
+      setError(e)
+      throw e
+    }
+  }
+
   async function refreshGraphProfiles() {
     graphProfiles.value = await listGraphProfiles()
   }
@@ -597,7 +690,7 @@ export function useMobileWorkspace() {
     const nodeId = String(selectedNode.value?.id || '').trim()
     if (!graphId) throw new Error('Graph selection is required')
     if (!nodeId) throw new Error('Node selection is required')
-    const response = await listNodeInstanceConfigs(graphId)
+    const response = await listNodeInstanceConfigs(graphId, 0, 'board')
     const configs = response.nodes || []
     const selected = configs.find((item) => String(item.node_id || '').trim() === nodeId)
     if (!selected) return
@@ -730,6 +823,8 @@ export function useMobileWorkspace() {
       tools: Array.isArray(graphNode?.tools) ? graphNode.tools.map(String).filter(Boolean) : [],
       mcpServers: Array.isArray(graphNode?.mcpServers) ? graphNode.mcpServers.map(String).filter(Boolean) : [],
       workingPath: String(graphNode?.workingPath ?? '').trim(),
+      remoteEnabled: Boolean(graphNode?.remoteEnabled),
+      remoteWorkerId: String(graphNode?.remoteWorkerId ?? '').trim(),
     }
   }
 
@@ -752,7 +847,7 @@ export function useMobileWorkspace() {
     graphConfig.value = normalizeGraphConfig(next)
   }
 
-  async function createNode(typeId: string, nodeName: string, fields: Record<string, unknown>) {
+  async function createNode(typeId: string, nodeName: string, fields: Record<string, unknown>, profileId = '') {
     const graphId = String(selectedGraph.value?.id || '').trim()
     const safeTypeId = String(typeId || '').trim()
     if (!graphId || !safeTypeId) throw new Error('Graph and node type are required')
@@ -762,9 +857,11 @@ export function useMobileWorkspace() {
     error.value = ''
     loading.value = true
     try {
-      const created = await createNodeInstance(nodeId, safeTypeId, nodeId, graphId, ui)
+      const created = profileId
+        ? await createNodeFromAgentProfile(profileId, { graph_id: graphId, node_id: nodeId, name: nodeId, ui })
+        : await createNodeInstance(nodeId, safeTypeId, nodeId, graphId, ui)
       const createdNodeId = String(created?.node_id || nodeId).trim() || nodeId
-      if (fields && Object.keys(fields).length) {
+      if (!profileId && fields && Object.keys(fields).length) {
         await updateNodeInstanceConfig(createdNodeId, { fields }, graphId)
       }
       const typeInfo = availableNodeTypes.value.find((item) => item.id === safeTypeId)
@@ -790,6 +887,8 @@ export function useMobileWorkspace() {
             tools: Array.isArray((fields as any)?.tools) ? (fields as any).tools.map(String).filter(Boolean) : [],
             mcpServers: Array.isArray((fields as any)?.mcp_servers) ? (fields as any).mcp_servers.map(String).filter(Boolean) : [],
             workingPath: String((fields as any)?.working_path ?? '').trim(),
+            remoteEnabled: Boolean((fields as any)?.remote_enabled),
+            remoteWorkerId: String((fields as any)?.remote_worker_id ?? '').trim(),
           },
         ],
       }))
@@ -816,7 +915,7 @@ export function useMobileWorkspace() {
     const nodeTypeId = String(profile.node_type_id || '').trim()
     if (!nodeTypeId) throw new Error(`Node preset "${safeProfileId}" is missing node_type_id`)
     const nodeName = String(profile.node_name || profile.name || profile.id || nodeTypeId).trim() || nodeTypeId
-    return createNode(nodeTypeId, nodeName, { ...(profile.fields || {}) })
+    return createNode(nodeTypeId, nodeName, { ...(profile.fields || {}) }, safeProfileId)
   }
 
   async function deleteNode(node: MobileNode) {
@@ -978,6 +1077,7 @@ export function useMobileWorkspace() {
     if (!graphId) throw new Error('Graph id is required')
     selectedGraph.value = graph
     selectedNode.value = null
+    nodes.value = []
     nodeConfigs.value = {}
     conversation.value = null
     view.value = 'nodes'
@@ -985,6 +1085,7 @@ export function useMobileWorkspace() {
     loading.value = true
     try {
       await Promise.all([loadEditorCatalog(), refreshNodes(), refreshGraphConfig()])
+      sortNodesForSelectionView()
       startGraphEventStream()
     } catch (e) {
       setError(e)
@@ -1057,10 +1158,17 @@ export function useMobileWorkspace() {
     }
   }
 
+  function setConversationActivityBlocks(blocks: MobileNodeConversation['activity_blocks']) {
+    if (!conversation.value) return
+    conversation.value = {
+      ...conversation.value,
+      activity_blocks: Array.isArray(blocks) ? blocks : [],
+    }
+  }
+
   async function selectNode(node: MobileNode) {
     const nodeId = String(node.id || '').trim()
     if (!nodeId) throw new Error('Node id is required')
-    stopGraphEventStream()
     selectedNode.value = node
     view.value = 'chat'
     error.value = ''
@@ -1068,12 +1176,44 @@ export function useMobileWorkspace() {
     loading.value = true
     try {
       await refreshConversationForSelection(requireChatSelection(), 'latest_turn')
+      void refreshCodexSessions()
       startChatStreams()
     } catch (e) {
       setError(e)
     } finally {
       loading.value = false
     }
+  }
+
+  async function openGraphNode(graphId: string, nodeId: string) {
+    const targetNodeId = String(nodeId || '').trim()
+    if (!targetNodeId) throw new Error('Node id is required')
+    const navigationVersion = ++graphNodeNavigationVersion
+    error.value = ''
+
+    const target = await resolveMobileGraphTarget(graphId, {
+      knownPcs: pcs.value,
+      selectedPcId: selectedPc.value?.id,
+      selectedGraphInstances: graphInstances.value,
+    })
+    if (navigationVersion !== graphNodeNavigationVersion) return
+    pcs.value = target.pcs
+
+    if (selectedPc.value?.id !== target.pc.id) {
+      await selectPc(target.pc)
+    } else {
+      graphInstances.value = target.graphInstances
+    }
+    if (navigationVersion !== graphNodeNavigationVersion) return
+
+    const graph = flatGraphs.value.find((item) => item.id === target.graph.id) || target.graph
+    await selectGraph(graph)
+    if (navigationVersion !== graphNodeNavigationVersion) return
+    if (error.value) throw new Error(error.value)
+    const node = nodes.value.find((item) => item.id === targetNodeId)
+      || nodes.value.find((item) => item.id.toLowerCase() === targetNodeId.toLowerCase())
+    if (!node) throw new Error(`Node not found in graph "${graph.id}": ${targetNodeId}`)
+    await selectNode(node)
   }
 
   async function sendMessage(message: string | MessageEnvelope) {
@@ -1148,6 +1288,7 @@ export function useMobileWorkspace() {
         node_instance_id: nodeId,
       })
       await Promise.all([refreshNodes(), refreshConversation()])
+      void refreshCodexSessions()
     } catch (e) {
       setError(e)
     } finally {
@@ -1163,9 +1304,7 @@ export function useMobileWorkspace() {
     if (!pcId || !graphId || !nodeId || safeMessageIds.length === 0) throw new Error('PC, Graph, Node, and Message selection are required')
     error.value = ''
     try {
-      for (const messageId of safeMessageIds) {
-        await deleteMobileNodeMessage(pcId, graphId, nodeId, messageId)
-      }
+      const result = await deleteMobileNodeMessages(pcId, graphId, nodeId, safeMessageIds)
       if (conversation.value?.messages) {
         const deletedIds = new Set(safeMessageIds)
         conversation.value = {
@@ -1174,6 +1313,31 @@ export function useMobileWorkspace() {
         }
       }
       await refreshConversation()
+      return result
+    } catch (e) {
+      setError(e)
+      throw e
+    }
+  }
+
+  async function deleteSelectedNodeTurn(userMessageId: string) {
+    const pcId = String(selectedPc.value?.id || '').trim()
+    const graphId = String(selectedGraph.value?.id || '').trim()
+    const nodeId = String(selectedNode.value?.id || '').trim()
+    const safeUserMessageId = String(userMessageId || '').trim()
+    if (!pcId || !graphId || !nodeId || !safeUserMessageId) throw new Error('PC, Graph, Node, and Turn selection are required')
+    error.value = ''
+    try {
+      const result = await deleteMobileNodeTurn(pcId, graphId, nodeId, safeUserMessageId)
+      if (conversation.value?.messages) {
+        const deletedIds = new Set(result.message_ids)
+        conversation.value = {
+          ...conversation.value,
+          messages: conversation.value.messages.filter((item) => !deletedIds.has(String((item as any)?.id || ''))),
+        }
+      }
+      await refreshConversation()
+      return result
     } catch (e) {
       setError(e)
       throw e
@@ -1298,6 +1462,7 @@ export function useMobileWorkspace() {
     graphConfig.value = null
     nodeConfigs.value = {}
     conversation.value = null
+    resetCodexSessions()
     view.value = 'graphs'
   }
 
@@ -1305,6 +1470,8 @@ export function useMobileWorkspace() {
     stopChatStreams()
     selectedNode.value = null
     conversation.value = null
+    resetCodexSessions()
+    sortNodesForSelectionView()
     view.value = 'nodes'
     startGraphEventStream()
   }
@@ -1378,12 +1545,62 @@ export function useMobileWorkspace() {
         if (shouldRefreshGraphConfig) tasks.push(refreshGraphConfig())
         if (shouldRefreshConversation) tasks.push(refreshConversation())
         await Promise.all(tasks)
+        if (shouldRefreshConversation) void refreshCodexSessions()
       } catch (e) {
         setError(e)
       } finally {
         graphRefreshInFlight = false
       }
     }, 75)
+  }
+
+  function consumeChatLivePayload(payload: Record<string, any>) {
+    const version = Number(payload.version || 0)
+    const streamType = String(payload.stream_type || 'snapshot').trim().toLowerCase()
+    if (version <= chatLiveVersion) return
+    if (streamType === 'delta' && version !== chatLiveVersion + 1) {
+      void refreshConversation()
+      return
+    }
+    chatLiveVersion = version
+    consumeAudioStreamEvents(payload.media_chunks)
+    const eventType = String(payload.event_type || payload.event?.type || '').trim()
+    const eventData = payload.event && typeof payload.event === 'object'
+      ? (payload.event as Record<string, unknown>)
+      : null
+    const nextLiveMessage = streamType === 'delta'
+      ? String(conversation.value?.live_message || '') + String(payload.live_delta || '')
+      : String(payload.live_message || '')
+    const nextThinkingMessage = streamType === 'delta'
+      ? String(conversation.value?.thinking_message || '') + String(payload.thinking_delta || '')
+      : String(payload.thinking_message || '')
+    const nextActivityMessage = formatLiveActivity(eventType, eventData)
+    if (Array.isArray(payload.activity_blocks)) setConversationActivityBlocks(payload.activity_blocks)
+    setConversationThinkingMessage(nextThinkingMessage)
+    if (isLiveCompletionEvent(eventType)) {
+      const handoff = resolveLiveCompletionHandoff(
+        Array.isArray(conversation.value?.messages) ? conversation.value.messages : [],
+        String(eventData?.text || nextLiveMessage || conversation.value?.live_message || ''),
+        String(payload.trace_id || eventData?.trace_id || ''),
+      )
+      if (handoff.status === 'committed') {
+        clearConversationCommit()
+        setConversationLiveMessage('')
+      } else if (handoff.status === 'pending') {
+        rememberConversationCommit(handoff.text, handoff.traceId)
+        setConversationLiveMessage(handoff.text)
+      }
+      setConversationThinkingMessage('')
+      setConversationActivityMessage('')
+      setConversationActivityBlocks([])
+    } else if (nextLiveMessage || !pendingConversationLiveText) {
+      setConversationLiveMessage(nextLiveMessage)
+    }
+    if (nextActivityMessage) setConversationActivityMessage(nextActivityMessage)
+    else if (eventType === 'server_tool_activity') setConversationActivityMessage('')
+    if (chatConversationRefreshEvents.has(eventType)) {
+      scheduleGraphRefresh({ includeConversation: true, includeGraphConfig: false })
+    }
   }
 
   function startChatLiveStream() {
@@ -1395,69 +1612,15 @@ export function useMobileWorkspace() {
       return
     }
     const streamKey = `${pcId}:${graphId}:${nodeId}`
-    if (chatLiveEventSource && chatLiveStreamKey === streamKey) return
+    if (chatLiveStreamKey === streamKey) return
     stopChatLiveStream()
-
-    const source = new EventSource(nodeInstanceLiveStreamUrl(nodeId, graphId))
-    chatLiveEventSource = source
     chatLiveStreamKey = streamKey
-    source.onmessage = (event) => {
-      if (chatLiveEventSource !== source) return
-      if (view.value !== 'chat') return
-      if (String(selectedPc.value?.id || '').trim() !== pcId) return
-      if (String(selectedGraph.value?.id || '').trim() !== graphId) return
-      if (String(selectedNode.value?.id || '').trim() !== nodeId) return
-      try {
-        const payload = JSON.parse(String(event.data || '{}'))
-        const eventType = String(payload?.event_type || payload?.event?.type || '').trim()
-        const eventData = payload?.event && typeof payload.event === 'object'
-          ? (payload.event as Record<string, unknown>)
-          : null
-        const nextLiveMessage = String(payload?.live_message || '')
-        const nextThinkingMessage = String(payload?.thinking_message || '')
-        const nextActivityMessage = formatLiveActivity(eventType, eventData)
-        setConversationThinkingMessage(nextThinkingMessage)
-        if (eventType === 'node_message_done' || eventType === 'node_output') {
-          rememberConversationCommit(
-            String(eventData?.text || nextLiveMessage || conversation.value?.live_message || ''),
-            String(payload?.trace_id || eventData?.trace_id || ''),
-          )
-          if (pendingConversationLiveText) setConversationLiveMessage(pendingConversationLiveText)
-          setConversationThinkingMessage('')
-          setConversationActivityMessage('')
-        } else if (nextLiveMessage || !pendingConversationLiveText) {
-          setConversationLiveMessage(nextLiveMessage)
-        }
-        if (nextActivityMessage) setConversationActivityMessage(nextActivityMessage)
-        else if (eventType === 'server_tool_activity') setConversationActivityMessage('')
-        if (chatConversationRefreshEvents.has(eventType)) {
-          scheduleGraphRefresh({ includeConversation: true, includeGraphConfig: false })
-        }
-      } catch {
-        // Ignore malformed stream payloads; the next valid event will correct the chat view.
-      }
-    }
-    source.onerror = () => {
-      if (chatLiveEventSource !== source) return
-      if (
-        view.value !== 'chat' ||
-        String(selectedPc.value?.id || '').trim() !== pcId ||
-        String(selectedGraph.value?.id || '').trim() !== graphId ||
-        String(selectedNode.value?.id || '').trim() !== nodeId
-      ) {
-        source.close()
-        chatLiveEventSource = null
-        chatLiveStreamKey = ''
-      }
-    }
+    chatLiveVersion = Number(conversation.value?.live_version || 0)
   }
 
   function stopChatLiveStream() {
-    if (chatLiveEventSource) {
-      chatLiveEventSource.close()
-      chatLiveEventSource = null
-    }
     chatLiveStreamKey = ''
+    chatLiveVersion = 0
   }
 
   function startGraphEventStream() {
@@ -1468,36 +1631,28 @@ export function useMobileWorkspace() {
       return
     }
     const streamKey = `${pcId}:${graphId}`
-    if (graphEventSource && graphEventStreamKey === streamKey) return
+    if (stopWorkspaceEvents && graphEventStreamKey === streamKey) return
     stopGraphEventStream()
-
-    const source = new EventSource(graphEventsStreamUrl(graphId))
-    graphEventSource = source
     graphEventStreamKey = streamKey
-    source.onmessage = (event) => {
-      if (graphEventSource !== source) return
+    stopWorkspaceEvents = subscribeAppEvents((payload) => {
       if (view.value !== 'nodes' && view.value !== 'chat') return
       if (String(selectedPc.value?.id || '').trim() !== pcId) return
       if (String(selectedGraph.value?.id || '').trim() !== graphId) return
-      try {
-        const payload = JSON.parse(String(event.data || '{}')) as Record<string, unknown>
-        handleGraphEventPayload(payload)
-      } catch {
-        // Ignore malformed graph events; EventSource will keep delivering later updates.
+      if (String(payload.event || '').trim() === 'stream_gap') {
+        scheduleGraphRefresh({ includeConversation: view.value === 'chat', includeGraphConfig: true })
+        return
       }
-    }
-    source.onerror = () => {
-      if (graphEventSource !== source) return
-      if (
-        (view.value !== 'nodes' && view.value !== 'chat') ||
-        String(selectedPc.value?.id || '').trim() !== pcId ||
-        String(selectedGraph.value?.id || '').trim() !== graphId
-      ) {
-        source.close()
-        graphEventSource = null
-        graphEventStreamKey = ''
+      if (String(payload.graph_id || '').trim() !== graphId) return
+      if (String(payload.event || '').trim() === 'node_live') {
+        const nodeId = String(selectedNode.value?.id || '').trim()
+        if (view.value !== 'chat' || String(payload.node_id || '').trim() !== nodeId) return
+        if (payload.live && typeof payload.live === 'object') {
+          consumeChatLivePayload(payload.live as Record<string, any>)
+        }
+        return
       }
-    }
+      handleGraphEventPayload(payload)
+    })
   }
 
   function startChatStreams() {
@@ -1510,10 +1665,8 @@ export function useMobileWorkspace() {
   }
 
   function stopGraphEventStream() {
-    if (graphEventSource) {
-      graphEventSource.close()
-      graphEventSource = null
-    }
+    stopWorkspaceEvents?.()
+    stopWorkspaceEvents = null
     graphEventStreamKey = ''
     if (graphRefreshTimer != null) {
       window.clearTimeout(graphRefreshTimer)
@@ -1549,6 +1702,11 @@ export function useMobileWorkspace() {
     selectedNode,
     selectedConfig,
     selectedNodeOutputRoutes,
+    codexSessionState,
+    codexSessionLoading,
+    refreshCodexSessions,
+    chooseCodexSession,
+    codexMemoryClearTargetLabel,
     loading,
     sending,
     error,
@@ -1556,6 +1714,7 @@ export function useMobileWorkspace() {
     selectPc,
     selectGraph,
     selectNode,
+    openGraphNode,
     sendMessage,
     stopSelectedNodeWork,
     setSelectedNodeFields,
@@ -1564,6 +1723,7 @@ export function useMobileWorkspace() {
     clearSelectedNodeMemory,
     deleteSelectedNodeMessage,
     deleteSelectedNodeMessages,
+    deleteSelectedNodeTurn,
     refreshGraphConfig,
     addSelectedNodeOutputRoute,
     updateSelectedNodeOutputRoute,
@@ -1582,6 +1742,8 @@ export function useMobileWorkspace() {
     refreshSelectedNodeConfig,
     refreshEditorCatalog,
     refreshAgentProfiles,
+    saveSelectedNodeProfile,
+    loadSelectedNodeProfile,
     refreshGraphProfiles,
     backToPcs,
     backToGraphs,

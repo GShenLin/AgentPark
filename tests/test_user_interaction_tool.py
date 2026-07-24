@@ -7,10 +7,11 @@ from src.user_interaction_store import (
     submit_interaction_response,
     wait_for_interaction_response,
 )
+from src.web_backend.core import BackendCore
 
 
 def test_interaction_store_submits_response(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.user_interaction_store.get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
 
     schema = normalize_interaction_schema(
         title="需要确认",
@@ -38,7 +39,7 @@ def test_interaction_store_submits_response(tmp_path, monkeypatch):
 
 
 def test_interaction_schema_rejects_invalid_select_options(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.user_interaction_store.get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
 
     try:
         normalize_interaction_schema(
@@ -52,7 +53,7 @@ def test_interaction_schema_rejects_invalid_select_options(tmp_path, monkeypatch
 
 
 def test_interaction_schema_accepts_custom_html(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.user_interaction_store.get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
 
     schema = normalize_interaction_schema(
         title="custom",
@@ -77,7 +78,7 @@ def test_interaction_schema_accepts_custom_html(tmp_path, monkeypatch):
 
 
 def test_interaction_schema_rejects_custom_html_without_html(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.user_interaction_store.get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
 
     try:
         normalize_interaction_schema(
@@ -88,3 +89,67 @@ def test_interaction_schema_rejects_custom_html_without_html(tmp_path, monkeypat
         assert "html is required" in str(exc)
     else:
         raise AssertionError("expected invalid custom_html schema to raise")
+
+
+def test_ask_user_emits_created_and_submitted_runtime_notices(tmp_path, monkeypatch):
+    import json
+
+    from functions.user_interaction_tools import ask_user
+
+    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
+    monkeypatch.setattr(
+        "functions.user_interaction_tools.wait_for_interaction_response",
+        lambda request_id, **_kwargs: {
+            "id": request_id,
+            "status": "submitted",
+            "response": {"values": {"confirmed": True}},
+        },
+    )
+    events = []
+
+    class FakeAgent:
+        config = {"graph_id": "graph-a", "node_instance_id": "node-a", "name": "Node A"}
+        tool_event_callback = staticmethod(events.append)
+
+    ask_user("确认", agent=FakeAgent())
+
+    assert [event["stage"] for event in events] == [
+        "user_interaction_created",
+        "user_interaction_submitted",
+    ]
+    assert all(event["source"] == "user_interaction" for event in events)
+    created_payload = json.loads(events[0]["message"])
+    assert created_payload == {
+        "description": "",
+        "graph_id": "graph-a",
+        "node_id": "node-a",
+        "node_name": "Node A",
+        "request_id": created_payload["request_id"],
+        "status": "pending",
+        "title": "确认",
+    }
+
+
+def test_submit_interaction_publishes_graph_event(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
+    request = create_interaction_request(
+        schema=normalize_interaction_schema(title="确认"),
+        timeout_sec=30,
+        agent=type(
+            "FakeAgent",
+            (),
+            {"config": {"graph_id": "graph-a", "node_instance_id": "node-a", "name": "Node A"}},
+        )(),
+    )
+    core = BackendCore()
+
+    result = core.user_interaction_api.submit_user_interaction(
+        request["id"],
+        {"status": "submitted", "response": {"values": {"confirmed": True}}},
+    )
+
+    assert result["request"]["status"] == "submitted"
+    event = core.graph_events.get("graph-a")
+    assert event["event"] == "user_interaction_submitted"
+    assert event["request_id"] == request["id"]
+    assert event["node_instance_id"] == "node-a"

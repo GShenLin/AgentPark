@@ -1,0 +1,5 @@
+远程打包机IP地址：192.168.34.24
+支持 SSH 连接
+打包脚本位于远端的"C:\Project\Gameuser_Integrative\XYJ\Scripts\PackageUE.bat"
+编译并提交的脚本位于远端的
+"C:\Project\Gameuser_Integrative\XYJ\Scripts\BuildUEAndCommitToP4.bat"

@@ -2,6 +2,8 @@ import os
 from datetime import datetime
 import json
 
+from src.memory_root import get_memories_root
+
 
 class BaseMemory:
     def __init__(self, provider_name, memory_file_path=None):
@@ -54,7 +56,7 @@ class BaseMemory:
             role = role_or_message
             message = {"role": role_or_message, "content": content}
 
-        if role not in ["user", "assistant", "tool", "function", "system"]:
+        if role not in ["user", "assistant", "tool", "function", "system", "developer"]:
             return ""
 
         content_to_write = self._format_memory_entry(message)
@@ -141,8 +143,7 @@ class BaseMemory:
         return ""
 
     def _get_default_memory_dir(self):
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(base_dir, "memories")
+        return get_memories_root()
 
     def _resolve_memory_path(self, memory_name_or_path):
         if memory_name_or_path is None:

@@ -423,7 +423,14 @@ def terminate_process(proc):
             pass
 
 
-def run_rg_stream_lines(cmd, on_line, timeout_sec, cancel_source=None):
+def run_rg_stream_lines(
+    cmd,
+    on_line,
+    timeout_sec,
+    cancel_source=None,
+    *,
+    cwd=None,
+):
     proc = None
     timed_out = False
     stopped_early = False
@@ -439,6 +446,7 @@ def run_rg_stream_lines(cmd, on_line, timeout_sec, cancel_source=None):
             text=True,
             encoding="utf-8",
             errors="replace",
+            cwd=cwd,
         )
         deadline = time.monotonic() + float(timeout_sec or 0)
         line_queue: queue.Queue[str | None] = queue.Queue()
@@ -545,7 +553,7 @@ def _search_with_rg(
     if not case_sensitive:
         cmd.append("-i")
     append_rg_globs(cmd, include_globs, exclude_globs)
-    cmd.extend([query, root])
+    cmd.extend([query, "."])
 
     def _on_line(raw_line):
         nonlocal stopped_by_char_limit
@@ -568,7 +576,13 @@ def _search_with_rg(
         matches.append(match)
         return len(matches) >= limit
 
-    meta = run_rg_stream_lines(cmd, _on_line, timeout_sec=RG_TIMEOUT_SEC, cancel_source=cancel_source)
+    meta = run_rg_stream_lines(
+        cmd,
+        _on_line,
+        timeout_sec=RG_TIMEOUT_SEC,
+        cancel_source=cancel_source,
+        cwd=root,
+    )
     if not meta.get("ok"):
         return json.dumps(
             {
@@ -753,7 +767,7 @@ def _list_files_with_rg(*, rg_path, root, include_globs, exclude_globs, limit, c
     stopped_by_char_limit = False
     cmd = [rg_path, "--files", "--no-messages"]
     append_rg_globs(cmd, include_globs, exclude_globs)
-    cmd.append(root)
+    cmd.append(".")
 
     def _on_line(raw_line):
         nonlocal scanned_files, stopped_by_char_limit
@@ -773,7 +787,13 @@ def _list_files_with_rg(*, rg_path, root, include_globs, exclude_globs, limit, c
         matches.append(match)
         return len(matches) >= limit
 
-    meta = run_rg_stream_lines(cmd, _on_line, timeout_sec=RG_TIMEOUT_SEC, cancel_source=cancel_source)
+    meta = run_rg_stream_lines(
+        cmd,
+        _on_line,
+        timeout_sec=RG_TIMEOUT_SEC,
+        cancel_source=cancel_source,
+        cwd=root,
+    )
     if not meta.get("ok"):
         return json.dumps(
             {

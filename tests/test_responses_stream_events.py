@@ -1,9 +1,15 @@
 import json
 
+import pytest
+
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
 from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta
 from src.providers.responses_stream_events import ResponsesOutputItemDone
 from src.providers.responses_stream_events import ResponsesReasoningDelta
+from src.providers.responses_stream_events import ResponsesRefusalDelta
+from src.providers.responses_stream_events import ResponsesResponseIncomplete
+from src.providers.responses_stream_events import ResponsesResponseInProgress
+from src.providers.responses_stream_events import ResponsesResponseQueued
 from src.providers.responses_stream_events import ResponsesServerToolActivity
 from src.providers.responses_stream_events import ResponsesStreamFailure
 
@@ -108,6 +114,66 @@ def test_openai_responses_server_tool_status_event_normalizes():
     assert event.item["action"] == {"type": "search", "query": "AgentPark"}
 
 
+@pytest.mark.parametrize(
+    ("raw_type", "item_type", "status"),
+    [
+        ("response.web_search_call.searching", "web_search_call", "in_progress"),
+        ("response.file_search_call.completed", "file_search_call", "completed"),
+        ("response.image_generation_call.generating", "image_generation_call", "in_progress"),
+        ("response.image_generation_call.partial_image", "image_generation_call", "in_progress"),
+    ],
+)
+def test_openai_responses_live_server_tool_families_normalize(raw_type, item_type, status):
+    events = _ingest_events(
+        [
+            {
+                "type": raw_type,
+                "item_id": "call_1",
+                "output_index": 0,
+                "partial_image_index": 2,
+                "action": {"query": "AgentPark", "prompt": "A park of agents"},
+            }
+        ]
+    )
+
+    assert len(events) == 1
+    event = events[0]
+    assert isinstance(event, ResponsesServerToolActivity)
+    assert event.item_type == item_type
+    assert event.status == status
+    if raw_type.endswith("partial_image"):
+        assert event.item["partial_image_index"] == 2
+
+
+def test_openai_responses_refusal_stream_normalizes_delta_and_done():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.refusal.delta",
+                "item_id": "msg_1",
+                "output_index": 0,
+                "content_index": 0,
+                "delta": "I cannot",
+            },
+            {
+                "type": "response.refusal.done",
+                "item_id": "msg_1",
+                "output_index": 0,
+                "content_index": 0,
+                "refusal": "I cannot help with that.",
+            },
+        ]
+    )
+
+    assert len(events) == 2
+    assert all(isinstance(event, ResponsesRefusalDelta) for event in events)
+    assert events[0].text == "I cannot"
+    assert events[0].status == "in_progress"
+    assert events[1].delta == " help with that."
+    assert events[1].text == "I cannot help with that."
+    assert events[1].status == "completed"
+
+
 def test_openai_responses_sse_malformed_json_surfaces_typed_failure():
     normalizer = OpenAIResponsesStreamEventNormalizer()
 
@@ -118,6 +184,64 @@ def test_openai_responses_sse_malformed_json_surfaces_typed_failure():
     assert events[0].event == "response_failed"
     assert events[0].code == "invalid_sse_json"
     assert "Malformed Responses SSE event JSON" in events[0].message
+
+
+def test_openai_responses_lifecycle_events_normalize_explicitly():
+    events = _ingest_events(
+        [
+            {"type": "response.queued", "response": {"id": "resp-1", "status": "queued"}},
+            {"type": "response.in_progress", "response": {"id": "resp-1", "status": "in_progress"}},
+        ]
+    )
+
+    assert isinstance(events[0], ResponsesResponseQueued)
+    assert isinstance(events[1], ResponsesResponseInProgress)
+    assert [event.event for event in events] == ["response_queued", "response_in_progress"]
+    assert [event.response_id for event in events] == ["resp-1", "resp-1"]
+
+
+def test_openai_responses_incomplete_is_typed_terminal_event():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.incomplete",
+                "response": {
+                    "id": "resp-1",
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "max_output_tokens"},
+                    "output": [],
+                },
+            }
+        ]
+    )
+
+    assert len(events) == 1
+    assert isinstance(events[0], ResponsesResponseIncomplete)
+    assert events[0].response_id == "resp-1"
+    assert events[0].reason == "max_output_tokens"
+
+
+def test_openai_responses_official_error_event_uses_top_level_fields():
+    events = _ingest_events(
+        [
+            {
+                "type": "error",
+                "code": "server_error",
+                "message": "Temporary provider failure",
+                "param": "input",
+                "sequence_number": 12,
+                "status_code": 503,
+            }
+        ]
+    )
+
+    assert len(events) == 1
+    assert isinstance(events[0], ResponsesStreamFailure)
+    assert events[0].code == "server_error"
+    assert events[0].message == "server_error: Temporary provider failure"
+    assert events[0].status_code == 503
+    assert events[0].event_type == "error"
+    assert events[0].details == {"param": "input", "sequence_number": 12}
 
 
 def test_openai_responses_sse_reasoning_summary_delta_normalizes():
@@ -218,6 +342,75 @@ def test_openai_responses_sse_reasoning_done_snapshot_emits_only_missing_suffix(
     ]
 
 
+def test_openai_responses_sse_reasoning_part_added_starts_new_segment_occurrence():
+    events = _ingest_events(
+        [
+            {
+                "type": "response.reasoning_summary_part.added",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": ""},
+            },
+            {
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "summary_index": 0,
+                "delta": "First reasoning segment.",
+            },
+            {
+                "type": "response.reasoning_summary_text.done",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "summary_index": 0,
+                "text": "First reasoning segment.",
+            },
+            {
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "rs_1",
+                "output_index": 0,
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": "First reasoning segment."},
+            },
+            {
+                "type": "response.reasoning_summary_part.added",
+                "item_id": "rs_1",
+                "output_index": 8,
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": ""},
+            },
+            {
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_1",
+                "output_index": 8,
+                "summary_index": 0,
+                "delta": "Second reasoning segment.",
+            },
+            {
+                "type": "response.reasoning_summary_text.done",
+                "item_id": "rs_1",
+                "output_index": 8,
+                "summary_index": 0,
+                "text": "Second reasoning segment.",
+            },
+            {
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "rs_1",
+                "output_index": 8,
+                "summary_index": 0,
+                "part": {"type": "summary_text", "text": "Second reasoning segment."},
+            },
+        ]
+    )
+
+    assert not [event for event in events if isinstance(event, ResponsesStreamFailure)]
+    assert [event.delta for event in events if isinstance(event, ResponsesReasoningDelta)] == [
+        "First reasoning segment.",
+        "Second reasoning segment.",
+    ]
+
+
 def test_openai_responses_sse_rejects_inconsistent_reasoning_done_snapshot():
     events = _ingest_events(
         [
@@ -238,6 +431,114 @@ def test_openai_responses_sse_rejects_inconsistent_reasoning_done_snapshot():
 
     assert isinstance(events[-1], ResponsesStreamFailure)
     assert events[-1].code == "inconsistent_reasoning_snapshot"
+    assert events[-1].details == {
+        "item_id": "rs_1",
+        "output_index": None,
+        "segment_index": 0,
+        "sequence_number": None,
+        "streamed_length": 12,
+        "snapshot_length": 21,
+        "common_prefix_length": 0,
+        "first_difference_index": 0,
+        "snapshot_is_prefix_of_streamed": False,
+        "streamed_is_prefix_of_snapshot": False,
+        "streamed_context_start": 0,
+        "streamed_context": "Need a plan.",
+        "snapshot_context_start": 0,
+        "snapshot_context": "Use a different plan.",
+    }
+
+
+def test_openai_transport_forces_failure_sse_debug_before_raising(monkeypatch):
+    from src.providers.openai_agent import OpenAIAgent
+    from src.providers.openai_transport_errors import OpenAITransportError
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    raw_events = [
+        {
+            "type": "response.reasoning_summary_text.delta",
+            "item_id": "rs_1",
+            "summary_index": 0,
+            "sequence_number": 10,
+            "delta": "Need a plan.",
+        },
+        {
+            "type": "response.reasoning_summary_part.done",
+            "item_id": "rs_1",
+            "summary_index": 0,
+            "sequence_number": 11,
+            "part": {"type": "summary_text", "text": "Use a different plan."},
+        },
+    ]
+    monkeypatch.setattr(
+        agent,
+        "_curl_post_sse_data_lines",
+        lambda **_kwargs: (json.dumps(event) for event in raw_events),
+    )
+    debug_records = []
+    agent._write_sse_debug_if_needed = lambda **kwargs: debug_records.append(kwargs) or "failure-debug.json"
+    notices = []
+    agent.tool_event_callback = notices.append
+
+    with pytest.raises(OpenAITransportError, match="does not extend the streamed text"):
+        agent._stream_responses_once(
+            url="https://api.openai.test/v1/responses",
+            headers={},
+            payload_json="{}",
+            timeout_sec=1,
+            stream_handler=None,
+        )
+
+    assert len(debug_records) == 1
+    debug_record = debug_records[0]
+    assert debug_record["force"] is True
+    assert debug_record["filename_prefix"] == "openai_sse_responses_failure"
+    assert len(debug_record["events"]) == 2
+    failed_event = debug_record["events"][-1]
+    assert failed_event["raw_truncated"] is False
+    assert failed_event["sequence_number"] == 11
+    assert failed_event["normalized_failure"]["code"] == "inconsistent_reasoning_snapshot"
+    assert failed_event["normalized_failure"]["details"]["first_difference_index"] == 0
+    assert debug_record["final_payload"]["failure"] == failed_event["normalized_failure"]
+    assert any(event.get("stage") == "openai_responses_sse_failure_debug" for event in notices)
+
+
+def test_openai_transport_writes_partial_sse_when_stream_iterator_raises(monkeypatch):
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+
+    def failing_stream(**_kwargs):
+        yield json.dumps({"type": "response.output_text.delta", "delta": "partial"})
+        raise ValueError("stream parser failed")
+
+    monkeypatch.setattr(agent, "_curl_post_sse_data_lines", failing_stream)
+    debug_records = []
+    agent._write_sse_debug_if_needed = lambda **kwargs: debug_records.append(kwargs) or "failure-debug.json"
+
+    with pytest.raises(ValueError, match="stream parser failed"):
+        agent._stream_responses_once(
+            url="https://api.openai.test/v1/responses",
+            headers={},
+            payload_json="{}",
+            timeout_sec=1,
+            stream_handler=None,
+        )
+
+    assert len(debug_records) == 1
+    debug_record = debug_records[0]
+    assert debug_record["force"] is True
+    assert debug_record["filename_prefix"] == "openai_sse_responses_failure"
+    assert debug_record["events"][0]["event_type"] == "response.output_text.delta"
+    assert debug_record["final_payload"]["failure"] == {
+        "message": "stream parser failed",
+        "code": "unexpected_responses_stream_exception",
+        "exception_type": "ValueError",
+    }
 
 
 def test_function_call_arguments_delta_requires_item_or_call_identity():
@@ -396,6 +697,85 @@ def test_openai_transport_text_streaming_stays_delta_then_full(monkeypatch):
         "response_completed",
     ]
     assert result["output"][0]["content"][0]["text"] == "hello"
+
+
+def test_openai_transport_rejects_incomplete_response_instead_of_synthetic_success(monkeypatch):
+    from src.providers.openai_agent import OpenAIAgent
+    from src.providers.openai_transport_errors import OpenAIResponseIncompleteError
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    raw_events = [
+        {"type": "response.output_text.delta", "delta": "partial"},
+        {
+            "type": "response.incomplete",
+            "response": {
+                "id": "resp-1",
+                "status": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "output": [],
+            },
+        },
+    ]
+    monkeypatch.setattr(
+        agent,
+        "_curl_post_sse_data_lines",
+        lambda **_kwargs: (json.dumps(event) for event in raw_events),
+    )
+    debug_records = []
+    agent._write_sse_debug_if_needed = lambda **kwargs: debug_records.append(kwargs) or "incomplete-debug.json"
+
+    with pytest.raises(OpenAIResponseIncompleteError, match="max_output_tokens") as exc_info:
+        agent._stream_responses_once(
+            url="https://api.openai.test/v1/responses",
+            headers={},
+            payload_json="{}",
+            timeout_sec=1,
+            stream_handler=None,
+        )
+
+    assert exc_info.value.response_id == "resp-1"
+    assert exc_info.value.response["output"] == []
+    assert len(debug_records) == 1
+    assert debug_records[0]["force"] is True
+    assert "incomplete_response" in debug_records[0]["final_payload"]
+
+
+def test_openai_transport_rejects_official_error_event(monkeypatch):
+    from src.providers.openai_agent import OpenAIAgent
+    from src.providers.openai_transport_errors import OpenAIHttpError
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"timeoutMs": 1000}
+    agent.provider_name = "openai"
+    monkeypatch.setattr(
+        agent,
+        "_curl_post_sse_data_lines",
+        lambda **_kwargs: iter(
+            [
+                json.dumps(
+                    {
+                        "type": "error",
+                        "code": "server_error",
+                        "message": "Temporary provider failure",
+                        "status_code": 503,
+                    }
+                )
+            ]
+        ),
+    )
+
+    with pytest.raises(OpenAIHttpError, match="server_error: Temporary provider failure") as exc_info:
+        agent._stream_responses_once(
+            url="https://api.openai.test/v1/responses",
+            headers={},
+            payload_json="{}",
+            timeout_sec=1,
+            stream_handler=None,
+        )
+
+    assert exc_info.value.status_code == 503
 
 
 def test_openai_transport_forwards_reasoning_delta_to_thinking_stream(monkeypatch):

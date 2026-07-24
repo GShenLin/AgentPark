@@ -1,5 +1,6 @@
 import json
 import os
+from src.file_transaction import append_text, run_with_interprocess_lock
 from .node_config_store import NodeConfigStore, NodeDeletingError
 from .node_output_hold_store import node_output_hold_store
 
@@ -15,14 +16,11 @@ def _preview_text(value: object, limit: int = 260) -> str:
 def _append_jsonl_line(file_path: str, payload: dict) -> None:
     if not file_path:
         return
-    try:
-        parent = os.path.dirname(file_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        with open(file_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except OSError:
-        return
+    line = json.dumps(payload, ensure_ascii=False) + "\n"
+    run_with_interprocess_lock(
+        file_path + ".lock",
+        lambda: append_text(file_path, line, encoding="utf-8"),
+    )
 
 
 _NODE_CONFIG_STORE = NodeConfigStore()
@@ -34,6 +32,10 @@ def _read_json_dict(file_path: str) -> dict:
 
 def _write_json_dict(file_path: str, data: dict) -> bool:
     return _NODE_CONFIG_STORE.write(file_path, data)
+
+
+def _patch_node_config_persistent_fields(config_path: str, fields: dict) -> dict:
+    return _NODE_CONFIG_STORE.patch_persistent_fields(config_path, fields)
 
 
 def _update_node_config_state(config_path: str, state: str) -> None:

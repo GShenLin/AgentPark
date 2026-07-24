@@ -46,6 +46,25 @@ def test_agent_environment_context_handles_missing_optional_runtime_fields(monke
     assert context["shell"]
 
 
+def test_agent_environment_context_uses_node_directory_before_project_fallback(tmp_path):
+    import src.providers.agent_environment_context as module
+
+    node_directory = tmp_path / "memories" / "g1" / "n1"
+    project = tmp_path / "project"
+    node_directory.mkdir(parents=True)
+    project.mkdir()
+    agent = SimpleNamespace(
+        _agentpark_node_directory=str(node_directory),
+        _agentpark_workspace_root=str(project),
+        config={},
+    )
+
+    context = module.build_agent_environment_context(agent)
+
+    assert context["workspace_path"] == str(node_directory)
+    assert module.resolve_agent_working_directory(agent) == str(node_directory)
+
+
 def test_format_agent_environment_context_filters_runtime_only_fields(tmp_path):
     import src.providers.agent_environment_context as module
 
@@ -153,14 +172,14 @@ def test_resolve_agent_relative_path_uses_graph_working_path_when_node_unset(mon
 
     graph_work = tmp_path / "graph-work"
     graph_work.mkdir()
-    runtime_root = tmp_path / "runtime"
-    graph_dir = runtime_root / "memories" / "g1"
+    graphs_dir = tmp_path / "memories"
+    graph_dir = graphs_dir / "g1"
     graph_dir.mkdir(parents=True)
     (graph_dir / "config.json").write_text(
         json.dumps({"id": "g1", "name": "g1", "working_path": str(graph_work), "output_routes": {}}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(runtime_root))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
 
     agent = SimpleNamespace(_agentpark_graph_id="g1", config={})
 
@@ -177,15 +196,33 @@ def test_resolve_agent_relative_path_prefers_node_working_path_over_graph(monkey
     graph_work = tmp_path / "graph-work"
     node_work.mkdir()
     graph_work.mkdir()
-    runtime_root = tmp_path / "runtime"
-    graph_dir = runtime_root / "memories" / "g1"
+    graphs_dir = tmp_path / "memories"
+    graph_dir = graphs_dir / "g1"
     graph_dir.mkdir(parents=True)
     (graph_dir / "config.json").write_text(
         json.dumps({"id": "g1", "name": "g1", "working_path": str(graph_work), "output_routes": {}}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(runtime_root))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
 
     agent = SimpleNamespace(_agentpark_graph_id="g1", config={"working_path": str(node_work)})
 
     assert module.resolve_agent_relative_path("src/app.py", agent=agent) == str(node_work / "src" / "app.py")
+
+
+def test_resolve_agent_relative_path_uses_node_directory_when_settings_unset(tmp_path):
+    import src.providers.agent_environment_context as module
+
+    node_directory = tmp_path / "memories" / "g1" / "n1"
+    project = tmp_path / "project"
+    node_directory.mkdir(parents=True)
+    project.mkdir()
+    agent = SimpleNamespace(
+        _agentpark_node_directory=str(node_directory),
+        _agentpark_workspace_root=str(project),
+        config={},
+    )
+
+    assert module.resolve_agent_relative_path("test_output.txt", agent=agent) == str(
+        node_directory / "test_output.txt"
+    )

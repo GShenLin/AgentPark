@@ -88,6 +88,30 @@
   font-size: 18px;
 }
 
+.tool-stats-scope-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-stats-scope-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tool-stats-scope-controls select {
+  min-width: 130px;
+  min-height: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0 9px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+}
+
 .call-review-head h3 {
   margin-top: 5px;
   font-size: 17px;

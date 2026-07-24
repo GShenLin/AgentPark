@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, onBeforeUnmount, ref } from 'vue'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { AgentBoardKey } from './context'
 import NodeConfigSection from './NodeConfigSection.vue'
@@ -10,7 +10,72 @@ if (!injected) {
 }
 const ctx = injected
 
-const { lastError, providers, availableTools } = useGlobalState()
+const { lastError, providers, availableTools, nodeConfigDockWidth: configDockWidth } = useGlobalState()
+
+const CONFIG_DOCK_WIDTH_KEY = 'agentpark.nodeConfigDockWidth'
+const CONFIG_DOCK_DEFAULT_WIDTH = 360
+const CONFIG_DOCK_MIN_WIDTH = 320
+const resizeStart = ref<{ clientX: number; width: number } | null>(null)
+
+function maxDockWidth() {
+  return Math.max(CONFIG_DOCK_MIN_WIDTH, Math.floor(window.innerWidth * 0.75))
+}
+
+function clampDockWidth(width: number) {
+  return Math.max(CONFIG_DOCK_MIN_WIDTH, Math.min(maxDockWidth(), Math.round(width)))
+}
+
+function readStoredDockWidth() {
+  try {
+    const stored = Number(window.localStorage.getItem(CONFIG_DOCK_WIDTH_KEY))
+    if (Number.isFinite(stored) && stored > 0) return clampDockWidth(stored)
+  } catch {
+    // Local storage is optional; the default width remains usable without it.
+  }
+  return CONFIG_DOCK_DEFAULT_WIDTH
+}
+
+configDockWidth.value = readStoredDockWidth()
+
+function persistDockWidth() {
+  try {
+    window.localStorage.setItem(CONFIG_DOCK_WIDTH_KEY, String(configDockWidth.value))
+  } catch {
+    // Ignore browser storage restrictions.
+  }
+}
+
+function onResizeMove(event: PointerEvent) {
+  const session = resizeStart.value
+  if (!session) return
+  configDockWidth.value = clampDockWidth(session.width + event.clientX - session.clientX)
+  event.preventDefault()
+}
+
+function stopResize() {
+  if (!resizeStart.value) return
+  resizeStart.value = null
+  persistDockWidth()
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', stopResize)
+  window.removeEventListener('blur', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
+function startResize(event: PointerEvent) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  resizeStart.value = { clientX: event.clientX, width: configDockWidth.value }
+  document.body.style.cursor = 'ew-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onResizeMove)
+  window.addEventListener('pointerup', stopResize)
+  window.addEventListener('blur', stopResize)
+}
+
+onBeforeUnmount(stopResize)
 
 const selectedNode = computed(() => {
   const id = String(ctx.selectedNodeId.value || '').trim()
@@ -30,7 +95,12 @@ function showEditorError(message: string) {
 </script>
 
 <template>
-  <aside v-if="selectedNode" class="node-config-dock" data-board-occlusion="left">
+  <aside
+    v-if="selectedNode"
+    class="node-config-dock"
+    data-board-occlusion="left"
+    :style="{ width: `${configDockWidth}px` }"
+  >
     <div class="config-dock-head">
       <div class="config-title-wrap">
         <div class="config-title">{{ selectedNode.name }}</div>
@@ -46,6 +116,7 @@ function showEditorError(message: string) {
       :available-tools="availableTools"
       @error="showEditorError"
     />
+    <div class="config-dock-resize-handle" title="拖动调整 Config 面板宽度" @pointerdown="startResize"></div>
   </aside>
 </template>
 
@@ -54,9 +125,7 @@ function showEditorError(message: string) {
   position: absolute;
   inset: 0 auto 0 0;
   z-index: 80;
-  width: 360px;
   min-width: 320px;
-  max-width: 420px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -70,6 +139,32 @@ function showEditorError(message: string) {
   background-position: var(--theme-panel-node-side-editor-background-position, center);
   background-repeat: var(--theme-panel-node-side-editor-background-repeat, no-repeat);
   background-blend-mode: var(--theme-panel-node-side-editor-background-blend-mode, normal);
+}
+
+.config-dock-resize-handle {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  right: -6px;
+  bottom: 0;
+  width: 12px;
+  cursor: ew-resize;
+}
+
+.config-dock-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 5px;
+  bottom: 10px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.config-dock-resize-handle:hover::before,
+.config-dock-resize-handle:active::before {
+  background: var(--accent-blue, #38bdf8);
 }
 
 .config-dock-head {

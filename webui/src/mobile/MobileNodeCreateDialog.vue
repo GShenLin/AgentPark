@@ -4,6 +4,7 @@ import { getNodeTemplate, type AgentProfile, type NodeInfo, type ProviderInfo } 
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
 import { useAgentNodeCreateSchema } from '../composables/useAgentNodeCreateSchema'
+import { useProviderDrivenTemplateSchema } from '../composables/useProviderDrivenTemplateSchema'
 
 const props = defineProps<{
   open: boolean
@@ -35,7 +36,6 @@ const toolsRef = computed(() => props.availableTools)
 const fieldKeys = computed(() => Object.keys(selectedNodeSchema.value || {}))
 
 const {
-  modeOptions,
   toolOptions,
   createProviderOptions,
   ensureCreateAgentSelections,
@@ -44,6 +44,12 @@ const {
   selectedNodeFields,
   providers: providersRef,
   availableTools: toolsRef,
+})
+const { loading: providerSchemaLoading } = useProviderDrivenTemplateSchema({
+  typeId: selectedTypeId,
+  fields: selectedNodeFields,
+  schema: selectedNodeSchema,
+  onError: showError,
 })
 
 function showError(value: unknown) {
@@ -98,7 +104,7 @@ async function createNode() {
   const typeId = String(selectedTypeId.value || '').trim()
   if (!typeId) return
   const fields: Record<string, unknown> = {}
-  for (const key of Object.keys(selectedNodeFields.value || {})) {
+  for (const key of Object.keys(selectedNodeSchema.value || {})) {
     fields[key] = normalizeSchemaFieldValue(selectedNodeSchema.value, key, selectedNodeFields.value[key])
   }
   creating.value = true
@@ -123,10 +129,8 @@ watch(
 watch(
   () => [
     selectedTypeId.value,
-    modeOptions.value.join('|'),
     createProviderOptions.value.join('|'),
     toolOptions.value.join('|'),
-    String(selectedNodeFields.value.mode ?? ''),
   ],
   () => {
     ensureCreateAgentSelections()
@@ -198,7 +202,7 @@ watch(
 
       <footer class="create-actions">
         <button class="secondary-btn" type="button" @click="emit('close')">Cancel</button>
-        <button class="primary-btn" type="button" :disabled="!selectedTypeId || creating" @click="createNode">
+        <button class="primary-btn" type="button" :disabled="!selectedTypeId || creating || providerSchemaLoading" @click="createNode">
           {{ creating ? 'Creating...' : 'Create' }}
         </button>
       </footer>

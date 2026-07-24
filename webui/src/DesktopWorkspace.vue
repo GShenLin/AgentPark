@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import {
-  getStartupGraphConfig,
-  getRemoteStatus,
   listProviders,
-  listTools,
   loadGraph,
+  setStartupGraphConfig,
+  type WorkspaceBootstrap,
 } from './api'
 import { useGlobalState } from './composables/useGlobalState'
 import { useMemory } from './composables/useMemory'
+import { useDeletionUndo } from './composables/useDeletionUndo'
+import { useWorkAlerts } from './composables/useWorkAlerts'
 import FileExplorer from './components/FileExplorer.vue'
 import AgentBoard from './components/AgentBoard.vue'
 import MemoryPanel from './components/MemoryPanel.vue'
@@ -18,9 +19,12 @@ import { AgentBoardKey } from './components/agent-board/context'
 import NodeConfigDock from './components/agent-board/NodeConfigDock.vue'
 import { useAgentBoard } from './components/agent-board/useAgentBoard'
 
+const props = defineProps<{ bootstrap: WorkspaceBootstrap }>()
+
 const {
   lastError,
   graphLoadRequest,
+  graphNodeFocusRequest,
   currentGraphId,
   currentGraphName,
   currentGraphWorkingPath,
@@ -30,9 +34,13 @@ const {
   availableTools,
 } = useGlobalState()
 const { onFileSelected } = useMemory()
+const { navigationRequest, completeWorkAlertNavigation } = useWorkAlerts()
 
-const agentBoard = useAgentBoard()
+const workspaceMounted = ref(false)
+const workspaceReady = ref(false)
+const agentBoard = useAgentBoard({ ready: workspaceReady, initialNodes: props.bootstrap.nodes })
 provide(AgentBoardKey, agentBoard)
+const { undoLastDeletion } = useDeletionUndo()
 
 const LEFT_WIDTH_KEY = 'agentpark.leftSidebarWidth'
 const RIGHT_MEMORY_WIDTH_KEY = 'agentpark.rightPanelWidth.memory'
@@ -70,9 +78,11 @@ const leftSidebarWidth = ref(280)
 const isResizingLeft = ref(false)
 const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
-const canAccessLocalFiles = ref(true)
+const isLocalClient = ref(false)
+const canAccessLocalFiles = computed(() => isLocalClient.value)
 const fileExplorerRootPath = ref('')
 const activeView = ref<'board' | 'settings'>('board')
+let graphNavigationVersion = 0
 
 const leftWidth = computed(() => (leftCollapsed.value ? 44 : leftSidebarWidth.value))
 const activeRightPanelWidth = computed({
@@ -98,6 +108,36 @@ function startMemoryResize(event: MouseEvent) {
 
 function stopMemoryResize() {
   isResizingMemory.value = false
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && !!target.closest('input, textarea, [contenteditable="true"], select')
+}
+
+function onUndoKeyDown(event: KeyboardEvent) {
+  if (isEditableTarget(event.target)) return
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+  if (event.key.toLowerCase() !== 'z') return
+  event.preventDefault()
+  lastError.value = null
+  void undoLastDeletion()
+    .then(async (restored) => {
+      if (!restored) return
+      const graphId = String(restored.result.graph_id || '').trim()
+      if (restored.result.kind === 'delete_graph') {
+        currentGraphId.value = graphId || currentGraphId.value
+        currentGraphName.value = graphId || currentGraphName.value
+        graphLoadRequest.value = await loadGraph(graphId)
+      } else if (graphId === (currentGraphId.value || 'default')) {
+        await agentBoard.refreshNodeConfigsAndMemory()
+        if (restored.result.kind === 'delete_node' && restored.result.node_id) {
+          await agentBoard.selectAndFocusNode(restored.result.node_id).catch(() => false)
+        }
+      }
+    })
+    .catch((error: any) => {
+      lastError.value = `Undo failed: ${String(error?.message || error)}`
+    })
 }
 
 function handleMemoryResize(event: MouseEvent) {
@@ -141,7 +181,36 @@ async function refreshProviders() {
   providers.value = await listProviders()
 }
 
+async function openWorkAlertTarget(request: { graphId: string; nodeId: string; nonce: number }) {
+  const graphId = String(request.graphId || '').trim()
+  const nodeId = String(request.nodeId || '').trim()
+  if (!graphId || !nodeId) return
+  const navigationVersion = ++graphNavigationVersion
+  activeView.value = 'board'
+  lastError.value = null
+  const targetGraph = await loadGraph(graphId)
+  if (navigationVersion !== graphNavigationVersion) return
+
+  const resolvedId = String(targetGraph.id || graphId).trim() || graphId
+  currentGraphId.value = resolvedId
+  currentGraphName.value = String(targetGraph.name || resolvedId)
+  currentGraphWorkingPath.value = String((targetGraph as { working_path?: unknown }).working_path || '').trim()
+  graphLoadRequest.value = targetGraph
+  graphNodeFocusRequest.value = { graphId: resolvedId, nodeId, nonce: request.nonce }
+  workspaceReady.value = true
+  await setStartupGraphConfig(resolvedId, currentGraphName.value || resolvedId).catch(() => null)
+}
+
+function consumeWorkAlertNavigation(request: { graphId: string; nodeId: string; nonce: number }) {
+  void openWorkAlertTarget(request)
+    .catch((error: unknown) => {
+      lastError.value = String((error as { message?: unknown })?.message || error)
+    })
+    .finally(() => completeWorkAlertNavigation(request.nonce))
+}
+
 onMounted(async () => {
+  workspaceMounted.value = true
   selectedNodeId.value = null
   memoryMode.value = 'graph'
 
@@ -160,35 +229,46 @@ onMounted(async () => {
   window.addEventListener('mousemove', handleLeftResize)
   window.addEventListener('mouseup', stopMemoryResize)
   window.addEventListener('mouseup', stopLeftResize)
+  window.addEventListener('keydown', onUndoKeyDown)
 
+  if (navigationRequest.value) consumeWorkAlertNavigation(navigationRequest.value)
+
+  isLocalClient.value = props.bootstrap.remote_status.is_local_client === true
+  providers.value = props.bootstrap.providers
+  availableTools.value = props.bootstrap.tools
+  if (graphNavigationVersion !== 0) return
+  const startupNavigationVersion = graphNavigationVersion
   try {
-    const remoteStatus = await getRemoteStatus()
-    canAccessLocalFiles.value = remoteStatus.is_local_client === true
-    await refreshProviders()
-    availableTools.value = await listTools()
-  } catch (e: any) {
-    lastError.value = String(e?.message || e)
-  }
-  try {
-    const startup = await getStartupGraphConfig().catch(() => ({ graph_id: 'default', graph_name: 'default' }))
-    const targetId = String(startup?.graph_id || 'default').trim() || 'default'
-    const targetGraph = await loadGraph(targetId)
+    const targetGraph = props.bootstrap.startup_graph
+    if (startupNavigationVersion !== graphNavigationVersion) return
 
     const resolvedId = String(targetGraph?.id || 'default')
     currentGraphId.value = resolvedId
     currentGraphName.value = String(targetGraph?.name || resolvedId)
     currentGraphWorkingPath.value = String((targetGraph as any)?.working_path || '').trim()
     graphLoadRequest.value = targetGraph
+    workspaceReady.value = true
   } catch (e: any) {
     lastError.value = String(e?.message || e)
   }
 })
 
+watch(
+  navigationRequest,
+  (request) => {
+    if (!request || !workspaceMounted.value) return
+    consumeWorkAlertNavigation(request)
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(() => {
+  workspaceMounted.value = false
   window.removeEventListener('mousemove', handleMemoryResize)
   window.removeEventListener('mousemove', handleLeftResize)
   window.removeEventListener('mouseup', stopMemoryResize)
   window.removeEventListener('mouseup', stopLeftResize)
+  window.removeEventListener('keydown', onUndoKeyDown)
 })
 
 watch(leftSidebarWidth, (value) => {
@@ -246,6 +326,8 @@ watch(
       :left-collapsed="leftCollapsed"
       :right-collapsed="rightCollapsed"
       :can-access-local-files="canAccessLocalFiles"
+      :can-open-settings="isLocalClient"
+      :initial-remotes="props.bootstrap.remotes"
       @toggle-left="toggleLeftSidebar"
       @toggle-right="toggleRightPanel"
       @error="lastError = $event || null"
@@ -263,14 +345,18 @@ watch(
       <div class="center">
         <main class="agent-stage">
           <NodeConfigDock />
-          <AgentBoard />
+          <AgentBoard v-if="workspaceReady" />
           <div v-if="lastError" class="error">{{ lastError }}</div>
         </main>
       </div>
 
       <div class="memory-resizer" data-board-occlusion="right" @mousedown="startMemoryResize"></div>
       <aside class="right" data-board-occlusion="right" :class="{ collapsed: rightCollapsed }" :style="{ width: `${rightWidth}px` }">
-        <MemoryPanel v-if="!rightCollapsed" />
+        <MemoryPanel
+          v-if="!rightCollapsed"
+          :initial-graphs="props.bootstrap.graphs"
+          :initial-graph-profiles="props.bootstrap.graph_profiles"
+        />
         <div v-else class="collapsed-mark">Memory</div>
       </aside>
     </div>

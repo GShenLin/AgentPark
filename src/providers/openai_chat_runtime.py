@@ -10,6 +10,7 @@ from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.providers.tool_call_execution import parse_openai_tool_call_items
+from src.providers.tool_turn_protocol import prepare_chat_completions_messages
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import sleep_with_cancel
 from src.service_host import HostBoundService
@@ -44,7 +45,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.config["model"],
-            "messages": messages,
+            "messages": prepare_chat_completions_messages(messages),
         }
         if active_tools:
             payload["tools"] = active_tools
@@ -59,6 +60,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 payload["reasoning_effort"] = effort
         if stream:
             payload["stream"] = True
+            payload["stream_options"] = {"include_usage": True}
         return payload
 
     def _send_chat_completions(
@@ -69,6 +71,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         run_tools,
         reasoning_effort,
         thinking_mode,
+        web_search_mode,
         stream,
         stream_handler,
         thinking_stream_handler=None,
@@ -109,6 +112,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             run_tools=run_tools,
             reasoning_effort=reasoning_effort,
             thinking_mode=thinking_mode,
+            web_search_mode=web_search_mode,
             stream=stream,
             stream_handler=stream_handler,
             thinking_stream_handler=thinking_stream_handler,
@@ -121,6 +125,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         run_tools,
         reasoning_effort,
         thinking_mode,
+        web_search_mode,
         stream,
         stream_handler,
         thinking_stream_handler=None,
@@ -144,15 +149,14 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 execute_tool_call_envelopes=self._execute_tool_call_envelopes_parallel,
             )
             self._append_tool_execution_messages_then_warnings(executions)
-            if self._tool_context_compaction_gate_completed(executions):
-                return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
+            self._tool_context_compaction_gate_completed(executions)
             self._notify_companion_about_failed_tool_executions(executions)
             self._run_tool_context_compaction_gate_if_needed(executions)
             append_mid_turn_user_messages(self)
             return self.Send(
                 run_tools=run_tools,
                 mode="chat",
-                web_search="disabled",
+                web_search=web_search_mode,
                 thinking=thinking_mode,
                 reasoning_effort=reasoning_effort,
                 stream=stream,
@@ -162,7 +166,21 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
 
         content = message.get("content")
         text = "" if content is None else str(content)
-        self.Message("assistant", text)
+        if self._tool_context_compaction_gate_active_now() and not self._finish_tool_context_compaction_gate_with_response(
+            content
+        ):
+            self._retry_tool_context_compaction_gate("the model returned an empty response")
+            return self.Send(
+                run_tools=run_tools,
+                mode="chat",
+                web_search=web_search_mode,
+                thinking=thinking_mode,
+                reasoning_effort=reasoning_effort,
+                stream=stream,
+                stream_handler=stream_handler,
+                thinking_stream_handler=thinking_stream_handler,
+            )
+        self.Message("assistant", text, **self._assistant_final_message_fields(message))
         return text
 
     def _post_json_with_retry(self, *, endpoint, url, headers, payload_json):
@@ -286,6 +304,10 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
     def _assistant_tool_call_message_fields(self, message: dict[str, Any], tool_calls: list[dict]) -> dict[str, Any]:
         _ = message
         return {"tool_calls": tool_calls}
+
+    def _assistant_final_message_fields(self, message: dict[str, Any]) -> dict[str, Any]:
+        _ = message
+        return {}
 
     def _attach_stream_thinking_to_message(self, message: dict[str, Any], thinking_text: str) -> None:
         _ = message, thinking_text

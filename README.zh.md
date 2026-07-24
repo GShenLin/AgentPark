@@ -51,15 +51,13 @@ AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 
 | 节点        | `type_id`        | 功能                                                                                                                                                                                                                                                                 |
 | --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Agent     | `agent_node`     | 通用 LLM Agent 节点。接收文本、图片、视频、音频、文档、文件、URL、结构化数据和 meta 输入。输出文本、生成的图片/视频资源、结构化数据、工具调用和 meta。支持 `provider_id`、`mode`、`system_prompt`、本地 `tools`、`mcp_servers`、`skills` 和 `plugins`。服务商能力可启用 `web_search`、`thinking` 和 `reasoning_effort`。运行时支持持久化节点记忆、流式消息、工具调用历史和停止控制。 |
+| Agent     | `agent_node`     | 通用 LLM Agent 节点。接收文本、图片、视频、音频、文档、文件、URL、结构化数据和 meta 输入。Provider SupportMode 覆盖聊天、图片生成、视频生成、音频生成和图片聊天，生成的媒体统一作为资源输出。支持 `provider_id`、`system_prompt`、本地 `tools`、`mcp_servers`、`skills` 和 `plugins`。服务商能力可启用 `web_search`、`thinking` 和 `reasoning_effort`。运行时支持持久化节点记忆、流式消息、工具调用历史和停止控制。 |
 | GUI Agent | `gui_agent_node` | 单节点 GUI 自动化循环。捕获屏幕截图，调用视觉/多模态服务商规划操作，执行鼠标、键盘、滚动动作，并可验证任务是否完成。支持 `instruction`、planner/verify prompt、截图区域、dry run、mock actions、planner timeout 和 verify timeout。适合本地桌面或远程 GUI 操作。                                                                                   |
 
 ### 生成类节点
 
 | 节点                          | `type_id`                       | 功能                                                                                                                                                                     |
 | --------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Image Generation            | `image_generation_node`         | 根据 prompt 和可选参考图生成图片。支持 `aspect_ratio`、`image_size`、`response_format`、`watermark` 和 `filename_prefix`。输出图片资源和结构化生成元数据。所选服务商必须在 `supportmode` 中声明支持 `image_generation`。 |
-| Video Generation            | `video_generation_node`         | 根据文本、首帧/尾帧图片、参考图、参考视频和参考音频生成视频。支持分辨率、宽高比、时长、seed、生成音频、水印、返回尾帧、回调、任务过期、安全标识、web search、public base URL 和输出文件名前缀。输出视频资源、可选尾帧图片资源和结构化任务元数据。                               |
 | Video Change Person         | `video_change_person_node`      | 使用 Wan Animate Mix 风格服务商，把参考视频中的主体替换为肖像图片。需要一张肖像图片和一个参考视频。支持 `wan-std`/`wan-pro`、水印、图片检查、public base URL 和输出文件名前缀。输出换人后的视频资源和任务元数据。                                    |
 | 3D Model Generation         | `model_generation_node`         | 使用 Hyper3D/Rodin 风格服务商进行文生 3D 或图生 3D。支持多张参考图、Gen-2/Regular 档位、alpha 处理、seed、导出格式、材质类型、质量、面数覆盖、T/A pose、包围盒尺寸、Raw/Quad mesh、HighPack、预览渲染和高清纹理。输出下载后的模型文件资源和任务元数据。      |
 | 3D Model Texture Generation | `model_texture_generation_node` | 为已有 3D 模型生成或重绘贴图。接收模型文件或 URL、参考图和可选 prompt。支持 seed、reference scale、导出格式、材质和分辨率。输出重绘贴图后的模型文件资源和任务元数据。                                                                   |
@@ -98,6 +96,7 @@ AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 - 桌面端用于较宽屏幕，包含完整可视化图编辑器、顶部栏、远程切换器、文件/记忆面板、节点控制，以及右上角直接进入 `Settings` 的入口。
 - 手机端在视口宽度不超过 760px 时自动启用。它提供适合手机的流程：选择 PC、选择图、列出节点、与节点聊天、上传附件、查看实时流式输出、保存/复制/删除消息、清空 memory、打开节点配置、创建/删除节点、保存/删除图、重启工作区，以及从 header 打开 Settings。
 - 远程端点可从桌面端顶部栏添加，并存储在 `config/remote.json`；移动端 API 使用这些端点浏览 PC、图、节点、会话和消息。
+- 节点级远程工具的使用方式：在浏览器所在的 Windows 电脑运行 `AgentParkRemote.exe`，通过服务端 IP 打开 AgentPark 网页，选中节点并勾选 `WorkingPath` 旁的 `Remote`。网页会通过浏览器本机发现端点配对静默 worker；该 worker 与虚幻插件复用同一套 Remote Workspace v1 协议。可点击文件夹按钮选择该电脑上的工作目录。配对时同一台浏览器电脑只能运行一个独立 worker 或虚幻 worker。
 
 ## 项目结构
 
@@ -110,6 +109,7 @@ AgentPark/
   scripts/             # 辅助脚本
   skills/              # Agent skill 文档
   src/                 # FastAPI 后端、服务商、协议、运行时
+    remote_worker/     # 独立 AgentParkRemote worker
   tests/               # pytest 测试
   webui/               # Vue 3 + Vite 前端
 ```
@@ -117,6 +117,7 @@ AgentPark/
 ## 环境要求
 
 - Windows 是主要目标环境。部分功能依赖 `.bat`、PowerShell、桌面自动化或 PyInstaller 打包路径。
+- `package.bat` 会同时构建 `dist/AgentPark.exe` 与无窗口运行的 `dist/AgentParkRemote.exe`。
 - Linux 支持 WebUI、CLI、provider runtime 和重启流程；Windows 桌面与打包功能仍仅支持 Windows。
 - Python 3.11+。Windows 脚本优先使用本地 Python 3.14/3.12/3.11；Linux 脚本依次尝试 `AgentPark_Linux_env`、`.venv`、`python3` 和 `python`。
 - Node.js + npm，用于安装和构建 `webui`。
@@ -149,7 +150,7 @@ npm install
   },
   "agentNode": {
     "minSendDelayMs": 200,
-    "historyMessageLimit": 40
+    "historyMessageLimit": 6
   },
   "nodeMemory": {
     "maxEntries": 20
@@ -159,9 +160,10 @@ npm install
 
 - `server.host` 和 `server.port` 控制 FastAPI 监听地址。如果端口被占用，启动流程会寻找下一个可用端口。
 - `nodeMemory.maxEntries` 控制每个节点在当前 `memory.md` / `messages.jsonl` 中保留多少条记录。更早的记录会归档到 `archive/YYYY-MM-DD/`。
+- 本地 memories 目录在 Settings 中配置，并以 `memoriesPath` 字段存储到 `.cache/memoryLocalConfig.json`，不再写入共享的 `config/config.json`。
 - 启动图存储在 `.cache/startup_graph.json`；该目录不会提交到 Git。
 
-服务商配置位于 `config/moduleProvider.json`。典型配置如下：
+服务商配置位于 `config/modelProvider.json`。典型配置如下：
 
 ```json
 {
@@ -179,6 +181,8 @@ npm install
 ```
 
 常见 `type` 包括 `doubao`、`gemini`、`openai`、`zhipu` 和 `hyper3d`。不要把真实 API key 提交到公开仓库。
+
+按 Provider 划分的音色索引位于 `config/audio_speaker.json`。执行豆包语音管理中的 `ListSpeakers` 后，会替换所选 Provider 的索引；音色列表不再写入 `modelProvider.json`。
 
 ## 启动
 

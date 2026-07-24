@@ -10,9 +10,6 @@ class DoubaoResponsesRuntime(ResponsesRuntime):
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.config['apiKey']}"}
         return url, headers
 
-    def _send_tool_context_compaction_gate(self, declaration):
-        return self._send_responses_gate(declaration, thinking_mode="disabled")
-
     def _responses_payload_extra(self, **provider_options):
         thinking_mode = provider_options.get("thinking_mode")
         payload = {}

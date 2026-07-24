@@ -1,5 +1,6 @@
 from src.providers.provider_request_usage import ProviderRequestTracker
 from src.providers.provider_request_usage import extract_provider_usage
+from src.providers.provider_request_usage import provider_usage_tpm_tokens
 
 
 def test_extract_provider_usage_normalizes_openai_details():
@@ -70,3 +71,28 @@ def test_provider_request_tracker_accumulates_full_turn_actual_usage():
     assert snapshot["totals"]["actual_output_tokens"] == 50
     assert snapshot["totals"]["actual_total_tokens"] == 300
     assert snapshot["totals"]["actual_cached_input_tokens"] == 70
+    assert snapshot["totals"]["last_actual_input_tokens"] == 150
+
+
+def test_provider_request_tracker_records_completed_model_turn_without_usage():
+    tracker = ProviderRequestTracker()
+    tracker.record_summary({"request_index": 1, "approx_input_tokens": 90})
+
+    completion = tracker.record_completion(1, {})
+    snapshot = tracker.snapshot()
+
+    assert completion == {"request_index": 1}
+    assert snapshot["summaries"][0]["completed"] is True
+    assert "usage" not in snapshot["summaries"][0]
+    assert snapshot["totals"]["completed_request_count"] == 1
+    assert "usage_request_count" not in snapshot["totals"]
+    assert "last_actual_input_tokens" not in snapshot["totals"]
+
+
+def test_provider_usage_tpm_tokens_keeps_input_and_output_separate():
+    assert provider_usage_tpm_tokens(
+        {"input_tokens": 100, "output_tokens": 20, "total_tokens": 125}
+    ) == (100, 20)
+    assert provider_usage_tpm_tokens({"input_tokens": 100}) == (100, 0)
+    assert provider_usage_tpm_tokens({"output_tokens": 20}) == (0, 20)
+    assert provider_usage_tpm_tokens({}) is None

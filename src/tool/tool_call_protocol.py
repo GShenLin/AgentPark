@@ -81,10 +81,7 @@ def build_tool_call_parse_error_execution(failure: ToolCallParseFailure) -> Tool
         "tool": tool_name,
         "call_id": failure.call_id,
         "error": error_text,
-        "instruction": (
-            "The tool call was not executed because its arguments were not valid JSON. "
-            "Resend the tool call with arguments encoded as a JSON object string; escape newlines as \\n."
-        ),
+        "instruction": "Invalid Json Object Param.",
     }
     return ToolCallExecution(
         func_name=tool_name,

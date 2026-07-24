@@ -287,6 +287,7 @@ def _tester_for_type(provider_type: str):
     return {
         "openai": _test_openai_compatible,
         "deepseek": _test_openai_compatible,
+        "kimi": _test_openai_compatible,
         "claude": _test_claude,
         "doubao": _test_doubao,
         "grok": _test_grok,

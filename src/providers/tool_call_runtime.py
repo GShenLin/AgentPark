@@ -2,6 +2,7 @@ from src.providers.tool_call_execution import execute_tool_call_envelopes_parall
 from src.providers.tool_loop_guard import ToolLoopGuard
 from src.providers.tool_loop_guard import build_tool_loop_blocked_execution
 from src.service_host import HostBoundService
+from src.tool.tool_call_protocol import build_tool_call_error_execution
 
 
 class ToolCallExecutionMixin:
@@ -18,10 +19,26 @@ class ToolCallExecutionMixin:
                 execute_tasks_parallel_ordered=self._execute_tasks_parallel_ordered,
             )
         results = [None] * len(tool_calls) if isinstance(tool_calls, list) else []
+        admission = self._admit_tool_context_compaction_turn(tool_calls)
+        admitted_calls = list(admission.admitted_calls)
+        positions_by_identity = {id(call): index for index, call in enumerate(tool_calls)}
+        for rejected in admission.rejected_calls:
+            position = positions_by_identity.get(id(rejected.call))
+            if position is None:
+                continue
+            results[position] = build_tool_call_error_execution(
+                rejected.call,
+                status="rejected",
+                error=(
+                    "Tool call was not offered during the active context-compaction checkpoint. "
+                    "Complete compaction before requesting another function tool."
+                ),
+            )
         executable_calls = []
         executable_positions = []
         guard = self._tool_loop_guard_instance()
-        for index, call in enumerate(tool_calls if isinstance(tool_calls, list) else []):
+        for call in admitted_calls:
+            index = positions_by_identity[id(call)]
             decision = guard.inspect_and_record(call)
             if decision.blocked:
                 results[index] = build_tool_loop_blocked_execution(call, decision)

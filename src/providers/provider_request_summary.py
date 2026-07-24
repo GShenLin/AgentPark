@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
+import math
 from typing import Any
 
 from src.providers.agent_environment_context import is_agent_environment_context_text
@@ -51,6 +51,7 @@ def build_provider_request_summary(
     tool_results = [item for item in item_summaries if _is_tool_result_summary(item)]
     largest_tool_result = max(tool_results, key=lambda item: int(item.get("chars") or 0), default=None)
     tools_included = _tools_included(tools_payload)
+    approx_input_chars = sum(int(item.get("chars") or 0) for item in item_summaries)
     environment_context_chars = sum(_context_text_chars(raw, is_agent_environment_context_text) for raw in items)
     turn_context_chars = sum(_context_text_chars(raw, is_agent_turn_context_text) for raw in items)
     collaboration_context_chars = sum(_context_text_chars(raw, is_collaboration_mode_text) for raw in items)
@@ -75,8 +76,8 @@ def build_provider_request_summary(
         "parallel_tool_calls": parallel_tool_calls if isinstance(parallel_tool_calls, bool) else None,
         "include": [str(item) for item in include] if isinstance(include, list) else [],
         "input_item_count": len(items),
-        "approx_input_chars": sum(int(item.get("chars") or 0) for item in item_summaries),
-        "approx_input_tokens": _approx_input_tokens(current_input),
+        "approx_input_chars": approx_input_chars,
+        "approx_input_tokens": _approx_input_tokens(current_input, serialized_chars=approx_input_chars),
         "environment_context_chars": environment_context_chars,
         "turn_context_chars": turn_context_chars,
         "permissions_context_chars": permissions_context_chars,
@@ -496,72 +497,48 @@ def _json_chars(value: Any) -> int:
         return len(str(value or ""))
 
 
-@lru_cache(maxsize=8)
-def _tiktoken_encoding(model: str = ""):
-    """Return a tiktoken encoding, or None if unavailable.
+def _approx_input_tokens(current_input: Any, *, serialized_chars: int) -> int:
+    """Estimate diagnostic token volume without tokenizing the full request.
 
-    Special tokens like ``<|endoftext|>`` appear naturally in tool results, logs,
-    or user text and must be encoded as ordinary text to avoid raising
-    ``ValueError: Encountered text corresponding to disallowed special token``.
-    Callers must pass ``disallowed_special=()`` when encoding.
+    This value is intentionally approximate and is not used for billing or
+    context admission. Actual provider usage remains authoritative. Counting
+    text classes avoids allocating a second request-sized string and prevents
+    CPU-bound tokenizer work from blocking the web server during concurrent
+    agent turns.
     """
-    try:
-        import tiktoken  # type: ignore
-    except Exception:
-        return None
-    try:
-        if model:
-            return tiktoken.encoding_for_model(model)
-    except Exception:
-        pass
-    try:
-        return tiktoken.get_encoding("cl100k_base")
-    except Exception:
-        return None
+    ascii_chars, non_ascii_chars = _text_character_profile(current_input)
+    structural_chars = max(0, int(serialized_chars or 0) - ascii_chars - non_ascii_chars)
+    estimate = (
+        math.ceil(ascii_chars / 4)
+        + non_ascii_chars
+        + math.ceil(structural_chars / 4)
+    )
+    return max(1, estimate) if serialized_chars > 0 else 0
 
 
-def _flatten_input_text(value: Any) -> str:
-    """Flatten Responses-style input items into a single text string for token estimation."""
-    if value is None:
-        return ""
+def _text_character_profile(value: Any) -> tuple[int, int]:
     if isinstance(value, str):
-        return value
-    if isinstance(value, (int, float, bool)):
-        return str(value)
+        if value.isascii():
+            return (len(value), 0)
+        ascii_chars = len(value.encode("ascii", errors="ignore"))
+        return (ascii_chars, len(value) - ascii_chars)
     if isinstance(value, dict):
-        parts: list[str] = []
-        for key in ("text", "content", "output", "name", "arguments", "input"):
-            if key in value:
-                parts.append(_flatten_input_text(value.get(key)))
-        for key, sub in value.items():
-            if key in {"type", "role", "call_id", "status", "id", "content_type"}:
-                parts.append(str(sub or ""))
-                continue
-            if key in {"text", "content", "output", "name", "arguments", "input"}:
-                continue
-            parts.append(_flatten_input_text(sub))
-        return "\n".join(p for p in parts if p)
+        ascii_total = 0
+        non_ascii_total = 0
+        for key, child in value.items():
+            key_ascii, key_non_ascii = _text_character_profile(str(key))
+            child_ascii, child_non_ascii = _text_character_profile(child)
+            ascii_total += key_ascii + child_ascii
+            non_ascii_total += key_non_ascii + child_non_ascii
+        return (ascii_total, non_ascii_total)
     if isinstance(value, (list, tuple, set)):
-        return "\n".join(_flatten_input_text(item) for item in value)
-    return str(value)
-
-
-def _approx_input_tokens(current_input: Any, model: str = "") -> int:
-    """Return an approximate token count for request input.
-
-    Tiktoken raises on disallowed special tokens (e.g. ``<|endoftext|>``) when
-    user or tool output contains them literally. We pass ``disallowed_special=()``
-    to treat all such tokens as normal text, and fall back to a rough character
-    heuristic if tiktoken is unavailable or fails.
-    """
-    text = _flatten_input_text(current_input)
-    if not text:
-        return 0
-    encoding = _tiktoken_encoding(model)
-    if encoding is not None:
-        try:
-            return len(encoding.encode(text, disallowed_special=()))
-        except Exception:
-            pass
-    # Fallback heuristic: ~4 chars per token for mixed text.
-    return max(1, len(text) // 4)
+        ascii_total = 0
+        non_ascii_total = 0
+        for child in value:
+            child_ascii, child_non_ascii = _text_character_profile(child)
+            ascii_total += child_ascii
+            non_ascii_total += child_non_ascii
+        return (ascii_total, non_ascii_total)
+    if value is None:
+        return (0, 0)
+    return _text_character_profile(str(value))

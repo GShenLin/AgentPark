@@ -141,7 +141,7 @@ def test_invalid_openai_tool_arguments_can_be_returned_as_tool_error():
     payload = json.loads(execution.cleaned_result)
     assert payload["status"] == "invalid_arguments"
     assert payload["tool"] == "apply_patch"
-    assert "valid JSON" in payload["instruction"]
+    assert payload["instruction"] == "Invalid Json Object Param."
 
 
 def test_invalid_responses_tool_arguments_can_be_returned_as_tool_error():

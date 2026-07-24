@@ -17,10 +17,6 @@ export type BoardNodePlacement =
       ui: { x: number; y: number; width?: number; height?: number }
     }
 
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 export function clampX(value: number) {
   return Math.max(0, value)
 }
@@ -168,6 +164,8 @@ export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: numbe
     tools: normalizeConfigList((cfg as any)?.tools),
     mcpServers: normalizeConfigList((cfg as any)?.mcp_servers),
     workingPath: String((cfg as any)?.working_path ?? '').trim(),
+    remoteEnabled: Boolean((cfg as any)?.remote_enabled),
+    remoteWorkerId: String((cfg as any)?.remote_worker_id ?? '').trim(),
   }
 }
 
@@ -196,6 +194,8 @@ export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, u
   node.tools = Array.isArray((cfg as any)?.tools) ? normalizeConfigList((cfg as any).tools) : node.tools || []
   node.mcpServers = Array.isArray((cfg as any)?.mcp_servers) ? normalizeConfigList((cfg as any).mcp_servers) : node.mcpServers || []
   node.workingPath = String((cfg as any)?.working_path ?? node.workingPath ?? '').trim()
+  node.remoteEnabled = Boolean((cfg as any)?.remote_enabled ?? node.remoteEnabled)
+  node.remoteWorkerId = String((cfg as any)?.remote_worker_id ?? node.remoteWorkerId ?? '').trim()
   node.lastRuntimeEvent = normalizeRuntimeEvent((cfg as any)?.last_runtime_event)
   node.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
   node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
@@ -270,6 +270,12 @@ export function applyNodeFieldPatchToCard(
   }
   if (hasOwn(fields, 'working_path')) {
     node.workingPath = String((merged as any)?.working_path ?? '').trim()
+  }
+  if (hasOwn(fields, 'remote_enabled')) {
+    node.remoteEnabled = Boolean((merged as any)?.remote_enabled)
+  }
+  if (hasOwn(fields, 'remote_worker_id')) {
+    node.remoteWorkerId = String((merged as any)?.remote_worker_id ?? '').trim()
   }
 }
 
@@ -368,6 +374,8 @@ export function buildBoardGraphConfig(options: {
       tools: node.tools,
       mcpServers: node.mcpServers,
       workingPath: node.workingPath,
+      remoteEnabled: node.remoteEnabled,
+      remoteWorkerId: node.remoteWorkerId,
     })),
     output_routes: buildOutputRoutesFromLinks(options.links),
   }

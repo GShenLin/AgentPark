@@ -8,9 +8,12 @@ def test_file_upload_endpoint_persists_files_and_returns_resource_metadata(tmp_p
     original_get_runtime_root = backend._get_runtime_root
     original_get_resource_root = backend._get_resource_root
     resource_root = original_get_runtime_root()
+    import src.web_backend.system_file_api as system_file_api
+    original_get_graphs_dir = system_file_api._get_graphs_dir
 
     backend._get_runtime_root = lambda: runtime_root
     backend._get_resource_root = lambda: resource_root
+    system_file_api._get_graphs_dir = lambda: str(tmp_path / "memories")
 
     try:
         app = backend.create_app()
@@ -48,3 +51,4 @@ def test_file_upload_endpoint_persists_files_and_returns_resource_metadata(tmp_p
     finally:
         backend._get_runtime_root = original_get_runtime_root
         backend._get_resource_root = original_get_resource_root
+        system_file_api._get_graphs_dir = original_get_graphs_dir

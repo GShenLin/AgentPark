@@ -1,10 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { MessageEnvelope, MessagePart } from '../api'
+import { computed, ref } from 'vue'
+import { openLocalFile, type MessageEnvelope, type MessagePart } from '../api'
+import type { ParsedFilePatch } from '../utils/responseMetadataDiff'
+import MemoryFileDiffDialog from '../components/MemoryFileDiffDialog.vue'
+import ImageLightbox from '../components/ImageLightbox.vue'
 import MemoryMetadataDisclosure from '../components/MemoryMetadataDisclosure.vue'
 import MemoryResourcePart from '../components/MemoryResourcePart.vue'
 import MemoryResponseMetadataPart from '../components/MemoryResponseMetadataPart.vue'
 import MemoryToolCallPart from '../components/MemoryToolCallPart.vue'
+import { handleMarkdownCodeCopyClick } from '../components/markdownCodeCopy'
+import {
+  collectMessageFilePatches,
+  localFileLinkFromAnchor,
+  matchingFilePatches,
+} from '../components/memoryFileLinks'
 import {
   isResponseMetadataPart,
   memoryMessageDisplayParts,
@@ -33,6 +42,42 @@ function partText(part: MessagePart) {
 }
 
 const displayParts = computed(() => memoryMessageDisplayParts(props.message))
+const filePatches = computed(() => collectMessageFilePatches(props.message))
+const selectedDiffPath = ref('')
+const selectedDiffPatches = ref<ParsedFilePatch[]>([])
+const previewImage = ref({ src: '', alt: '' })
+
+async function handleMarkdownClick(event: MouseEvent) {
+  await handleMarkdownCodeCopyClick(event)
+  if (event.defaultPrevented) return
+  const image = (event.target as HTMLElement | null)?.closest('img') as HTMLImageElement | null
+  if (image) {
+    previewImage.value = { src: image.currentSrc || image.src, alt: image.alt }
+    return
+  }
+  const anchor = (event.target as HTMLElement | null)?.closest('a') as HTMLAnchorElement | null
+  if (!anchor) return
+  const file = localFileLinkFromAnchor(anchor)
+  if (!file) return
+
+  event.preventDefault()
+  const patches = matchingFilePatches(file.path, filePatches.value)
+  if (patches.length) {
+    selectedDiffPath.value = file.path
+    selectedDiffPatches.value = patches
+    return
+  }
+  try {
+    await openLocalFile(file.path)
+  } catch (error) {
+    window.alert(`Failed to open local file:\n${String((error as Error)?.message || error)}`)
+  }
+}
+
+function closeFileDiff() {
+  selectedDiffPath.value = ''
+  selectedDiffPatches.value = []
+}
 </script>
 
 <template>
@@ -54,6 +99,7 @@ const displayParts = computed(() => memoryMessageDisplayParts(props.message))
           v-if="isTextPart(entry.part as MessagePart) && partText(entry.part as MessagePart).trim().length > 0 && shouldRenderMarkdown(message)"
           class="bubble-text bubble-markdown"
           v-html="renderMessageMarkdown({ ...message, parts: [entry.part as MessagePart] })"
+          @click="handleMarkdownClick"
         ></div>
         <div v-else-if="isTextPart(entry.part as MessagePart) && partText(entry.part as MessagePart).trim().length > 0" class="bubble-text">{{ partText(entry.part as MessagePart) }}</div>
         <div v-else-if="isTextPart(entry.part as MessagePart)" class="bubble-empty">[empty message]</div>
@@ -69,6 +115,18 @@ const displayParts = computed(() => memoryMessageDisplayParts(props.message))
     <div v-if="displayParts.length === 0" class="bubble-empty">
       [empty message]
     </div>
+    <MemoryFileDiffDialog
+      :open="selectedDiffPatches.length > 0"
+      :path="selectedDiffPath"
+      :patches="selectedDiffPatches"
+      @close="closeFileDiff"
+    />
+    <ImageLightbox
+      :open="!!previewImage.src"
+      :src="previewImage.src"
+      :alt="previewImage.alt"
+      @close="previewImage = { src: '', alt: '' }"
+    />
   </div>
 </template>
 
@@ -120,6 +178,23 @@ const displayParts = computed(() => memoryMessageDisplayParts(props.message))
 
 :deep(.bubble-markdown li) {
   margin: 2px 0;
+}
+
+:deep(.bubble-markdown a) {
+  color: rgba(125, 211, 252, 0.96);
+  cursor: pointer;
+}
+
+:deep(.bubble-markdown img) {
+  display: block;
+  width: auto;
+  max-width: min(240px, 100%);
+  max-height: 180px;
+  height: auto;
+  margin: 8px 0;
+  border-radius: 8px;
+  object-fit: contain;
+  cursor: zoom-in;
 }
 
 :deep(.bubble-markdown .katex-display) {

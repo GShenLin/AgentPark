@@ -14,6 +14,15 @@ class _CurlTransportError(ProviderTransportError):
     pass
 
 
+class _ResponsesIncompleteError(ProviderTransportError):
+    def __init__(self, *, response: dict, reason: str = ""):
+        self.response = dict(response)
+        self.response_id = str(self.response.get("id") or "").strip()
+        self.reason = str(reason or "").strip() or "unspecified"
+        identity = f" {self.response_id}" if self.response_id else ""
+        super().__init__(f"Responses response{identity} ended incomplete: {self.reason}")
+
+
 def _parse_doubao_error_payload(response_body):
     text = str(response_body or "").strip()
     if not text:

@@ -215,6 +215,37 @@ def test_openai_chat_stream_writes_sse_debug_when_enabled():
     assert debug_records[0]["final_payload"]["assembled_message"]["content"] == "Hello"
 
 
+def test_openai_chat_stream_requests_and_persists_server_usage():
+    agent = _build_openai_chat_agent()
+    requests = []
+    runtime_events = []
+    raw_events = [
+        '{"choices":[{"delta":{"content":"ok"}}]}',
+        '{"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":8,"total_tokens":128}}',
+        "[DONE]",
+    ]
+    agent.tool_event_callback = lambda event: runtime_events.append(event)
+
+    def fake_stream(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return iter(raw_events)
+
+    agent._curl_post_sse_data_lines = fake_stream
+
+    assert agent.Send(stream=True, thinking="disabled") == "ok"
+    assert requests[0]["stream_options"] == {"include_usage": True}
+    completions = [
+        json.loads(event["message"])
+        for event in runtime_events
+        if event.get("stage") == "provider_request_completed"
+    ]
+    assert completions[0]["usage"] == {
+        "input_tokens": 120,
+        "output_tokens": 8,
+        "total_tokens": 128,
+    }
+
+
 def test_openai_chat_stream_forwards_compatible_thinking_fields():
     agent = _build_openai_chat_agent()
     emitted = []
@@ -274,8 +305,21 @@ def test_openai_chat_compaction_gate_uses_chat_completions_when_responses_api_fa
     from src.tool.tool_call_protocol import ToolCallExecution
 
     agent = _build_openai_chat_agent()
+    agent.tool_declarations = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
     agent.config["toolContextCompactionEnabled"] = True
     agent.config["toolContextCompactionEveryToolCalls"] = 1
+    agent.config["toolContextCompactionInputTokens"] = 0
+    agent.config["toolContextCompactionCurrentInputTokens"] = 0
+    agent.config["toolContextCompactionOutputTokens"] = 0
     agent.messages = [
         {"role": "user", "content": "inspect files"},
         {
@@ -298,6 +342,8 @@ def test_openai_chat_compaction_gate_uses_chat_completions_when_responses_api_fa
         payload = json.loads(kwargs["payload_json"])
         assert kwargs["url"] == "https://chat.example/v1/chat/completions"
         assert "input" not in payload
+        if len(requests) == 2:
+            return {"choices": [{"message": {"role": "assistant", "content": "done"}}]}
         return {
             "choices": [
                 {
@@ -314,7 +360,20 @@ def test_openai_chat_compaction_gate_uses_chat_completions_when_responses_api_fa
                                         {
                                             "action": "replace",
                                             "reason": "The tool output was summarized.",
-                                            "summary": "Read the requested file and kept the useful finding.",
+                                            "summary": {
+                                                "task_anchor": "Inspect the requested file.",
+                                                "completed_facts": [
+                                                    "Read the requested file and kept the useful finding."
+                                                ],
+                                                "changed_state": [],
+                                                "verification": [],
+                                                "failed_attempts": [],
+                                                "remaining_steps": ["Continue the original task."],
+                                                "immediate_next_step": "Continue the original task.",
+                                                "avoid_repeating": [
+                                                    "Do not re-read the requested file."
+                                                ],
+                                            },
                                         }
                                     ),
                                 },
@@ -332,8 +391,203 @@ def test_openai_chat_compaction_gate_uses_chat_completions_when_responses_api_fa
     )
 
     assert ran is True
-    payload = json.loads(requests[0]["payload_json"])
-    assert payload["tools"][0]["function"]["name"] == "compact_tool_context"
+    assert requests == []
+    result = agent.Send(run_tools=True, mode="chat", stream=False)
+    assert result == "done"
+    assert len(requests) == 2
+    compact_payload = json.loads(requests[0]["payload_json"])
+    assert [tool["function"]["name"] for tool in compact_payload["tools"]] == ["compact_tool_context"]
+    normal_payload = json.loads(requests[1]["payload_json"])
+    assert [tool["function"]["name"] for tool in normal_payload["tools"]] == ["read_file"]
+    assert agent._tool_context_compaction_gate_active is False
+
+
+def test_openai_chat_compaction_checkpoint_accepts_final_text():
+    from src.tool.tool_call_protocol import ToolCallExecution
+
+    agent = _build_openai_chat_agent()
+    agent.tool_declarations = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    agent.config.update(
+        {
+            "toolContextCompactionEnabled": True,
+            "toolContextCompactionEveryToolCalls": 1,
+            "toolContextCompactionInputTokens": 0,
+            "toolContextCompactionCurrentInputTokens": 0,
+            "toolContextCompactionOutputTokens": 0,
+        }
+    )
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_read",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "content": "raw file content", "tool_call_id": "call_read", "name": "read_file"},
+    ]
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return {"choices": [{"message": {"role": "assistant", "content": "The task is complete."}}]}
+
+    agent._curl_post_json_once = lambda **kwargs: fake_post(**kwargs)
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call_read", "raw file content")]
+    )
+
+    assert agent.Send(run_tools=True, mode="chat", stream=False) == "The task is complete."
+    assert len(requests) == 1
+    assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["compact_tool_context"]
+    assert agent._tool_context_compaction_gate_active is False
+    assert agent.messages[-1]["content"] == "The task is complete."
+
+
+def test_openai_chat_compaction_checkpoint_canonicalizes_mixed_tool_batch_before_side_effects():
+    from src.tool.tool_call_protocol import ToolCallExecution
+
+    agent = _build_openai_chat_agent()
+    agent.config.update(
+        {
+            "toolContextCompactionEnabled": True,
+            "toolContextCompactionEveryToolCalls": 1,
+            "toolContextCompactionInputTokens": 0,
+            "toolContextCompactionCurrentInputTokens": 0,
+            "toolContextCompactionOutputTokens": 0,
+        }
+    )
+    agent.tool_declarations = [
+        {
+            "type": "function",
+            "function": {
+                "name": "execute_console_command",
+                "description": "Execute a command.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    executed_commands = []
+    agent.tools.function_map["execute_console_command"] = lambda **kwargs: executed_commands.append(kwargs)
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_read",
+                    "type": "function",
+                    "function": {"name": "execute_console_command", "arguments": "{}"},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "content": "raw command output",
+            "tool_call_id": "call_read",
+            "name": "execute_console_command",
+        },
+    ]
+    requests = []
+    events = []
+    agent.tool_event_callback = lambda event: events.append(event)
+
+    def fake_post(**kwargs):
+        payload = json.loads(kwargs["payload_json"])
+        requests.append(payload)
+        if len(requests) == 2:
+            return {"choices": [{"message": {"role": "assistant", "content": "done"}}]}
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_compact",
+                                "type": "function",
+                                "function": {
+                                    "name": "compact_tool_context",
+                                    "arguments": json.dumps(
+                                        {
+                                            "action": "replace",
+                                            "reason": "The command output was summarized.",
+                                            "summary": {
+                                                "task_anchor": "Inspect the command output.",
+                                                "completed_facts": [
+                                                    "The command output was inspected."
+                                                ],
+                                                "changed_state": [],
+                                                "verification": [],
+                                                "failed_attempts": [],
+                                                "remaining_steps": ["Continue the original task."],
+                                                "immediate_next_step": "Continue the original task.",
+                                                "avoid_repeating": [
+                                                    "Do not rerun the inspected command."
+                                                ],
+                                            },
+                                        }
+                                    ),
+                                },
+                            },
+                            {
+                                "id": "call_unoffered_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "execute_console_command",
+                                    "arguments": '{"command":"Get-ChildItem"}',
+                                },
+                            },
+                            {
+                                "id": "call_unoffered_2",
+                                "type": "function",
+                                "function": {
+                                    "name": "execute_console_command",
+                                    "arguments": '{"command":"git status"}',
+                                },
+                            },
+                        ],
+                    }
+                }
+            ]
+        }
+
+    agent._curl_post_json_once = fake_post
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("execute_console_command", "call_read", "raw command output")]
+    )
+
+    assert agent.Send(run_tools=True, mode="chat", stream=False) == "done"
+    assert executed_commands == []
+    assert len(requests) == 2
+    assert all(message.get("role") != "tool" for message in requests[1]["messages"])
+    assert "call_unoffered" not in json.dumps(requests[1]["messages"], ensure_ascii=False)
+    admission_events = [
+        json.loads(event["message"])
+        for event in events
+        if event.get("stage") == "tool_context_compaction_turn_admission"
+    ]
+    assert admission_events[0]["admitted_call_ids"] == ["call_compact"]
+    assert [item["call_id"] for item in admission_events[0]["rejected_calls"]] == [
+        "call_unoffered_1",
+        "call_unoffered_2",
+    ]
 
 
 def test_openai_chat_tool_warnings_do_not_split_parallel_tool_results():

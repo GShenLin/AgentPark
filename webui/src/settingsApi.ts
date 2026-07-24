@@ -14,6 +14,11 @@ export type SettingsDocument = {
   content: string
   data: Record<string, unknown>
   warnings?: string[]
+  restart_required?: boolean
+  runtime?: {
+    active_memories_root?: string
+    configured_memories_root?: string
+  }
   active_preset_id?: string
   presets?: ThemePresetInfo[]
 }
@@ -91,14 +96,23 @@ export type ProviderPressureEntry = {
   model: string
   concurrency_limit: number | null
   rpm_limit: number | null
+  tpm_limit: number | null
   in_flight: number
   queued: number
   rpm_used: number
   rpm_interval_sec: number | null
   rpm_next_available_in_sec: number
+  tpm_used: number
+  tpm_remaining: number | null
+  input_tpm_used: number
+  output_tpm_used: number
+  tpm_next_available_in_sec: number
   peak_in_flight: number
   peak_queued: number
   peak_rpm_used: number
+  peak_tpm_used: number
+  peak_input_tpm_used: number
+  peak_output_tpm_used: number
   rpm_remaining: number | null
 }
 
@@ -225,10 +239,100 @@ export type ToolFailureHistory = {
   calls: ToolCallStatRecord[]
 }
 
+export type TurnTokenUsage = {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  cached_input_tokens?: number
+  cache_write_input_tokens?: number
+  reasoning_output_tokens?: number
+}
+
+export type TurnTokenRequest = {
+  request_index: number
+  sent_at: string
+  received_at: string
+  usage: TurnTokenUsage
+  cumulative_input_tokens: number
+  cumulative_output_tokens: number
+  cumulative_total_tokens: number
+}
+
+export type TurnTokenChartPoint = {
+  kind: 'sent' | 'response' | 'terminal'
+  label: string
+  request_index: number | null
+  at: string
+  cumulative_input_tokens: number
+  cumulative_output_tokens: number
+  cumulative_total_tokens: number
+  request_input_tokens: number | null
+  request_output_tokens: number | null
+}
+
+export type TurnTokenStat = {
+  trace_id: string
+  graph_id: string
+  node_id: string
+  provider_id: string
+  started_at: string
+  completed_at: string
+  persisted_at: string
+  status: 'completed' | 'failed' | 'cancelled'
+  error: string
+  request_count: number
+  model_turn_count: number
+  incomplete_request_count: number
+  usage_request_count: number
+  missing_usage_request_count: number
+  usage_status: 'available' | 'partial' | 'missing' | 'not_requested'
+  first_response: TurnTokenRequest | null
+  accumulated_usage: {
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+  }
+  persisted_totals: {
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+  }
+  requests: TurnTokenRequest[]
+  chart_points: TurnTokenChartPoint[]
+}
+
+export type TurnTokenProviderStats = {
+  provider_id: string
+  turn_count: number
+  usage_turn_count: number
+  missing_usage_turn_count: number
+  model_turn_count: number
+  usage_model_turn_count: number
+  latest_turn: TurnTokenStat | null
+  recent_turns: TurnTokenStat[]
+}
+
+export type TurnTokenStatsDocument = {
+  providers: Record<string, TurnTokenProviderStats>
+  available_graph_ids: string[]
+  scope: { graph_id: string; hours: number; reset_at: string }
+}
+
+export type ToolStatsScope = {
+  graph_id: string
+  hours: number
+  reset_at: string
+  available_graph_ids: string[]
+}
+
 export type ToolStatsDocument = {
   summary: ToolStatsSummary
   recent_calls: ToolCallStatRecord[]
+  recent_calls_by_provider: Record<string, ToolCallStatRecord[]>
   failure_analysis: ToolFailureAnalysis
+  failure_analysis_by_provider: Record<string, ToolFailureAnalysis>
+  turn_stats: TurnTokenStatsDocument
+  scope: ToolStatsScope
 }
 
 export type DeleteOptionalMemoryResponse = {
@@ -254,6 +358,8 @@ export type CodexLoginStart = {
   authUrl: string
   port: number
 }
+
+export type ClearLogsResponse = DeleteOptionalMemoryResponse
 
 async function requestJson(path: string, init?: RequestInit) {
   return requestApiJson(getActiveApiBase(), path, init)
@@ -347,20 +453,36 @@ export async function getProviderPressure(): Promise<ProviderPressureDocument> {
   return requestJson('/api/providers/pressure') as Promise<ProviderPressureDocument>
 }
 
-export async function getToolStats(): Promise<ToolStatsDocument> {
-  return requestJson('/api/tool-stats') as Promise<ToolStatsDocument>
+export async function getToolStats(graphId = '', scopeHours = 0): Promise<ToolStatsDocument> {
+  const query = new URLSearchParams()
+  if (graphId) query.set('graph_id', graphId)
+  if (scopeHours > 0) query.set('scope_hours', String(scopeHours))
+  const suffix = query.size ? `?${query.toString()}` : ''
+  return requestJson(`/api/tool-stats${suffix}`) as Promise<ToolStatsDocument>
 }
 
-export async function getToolFailureHistory(toolName: string): Promise<ToolFailureHistory> {
-  return requestJson(`/api/tool-stats/failures/${encodeURIComponent(toolName)}`) as Promise<ToolFailureHistory>
+export async function getToolFailureHistory(toolName: string, graphId = '', scopeHours = 0): Promise<ToolFailureHistory> {
+  const query = new URLSearchParams()
+  if (graphId) query.set('graph_id', graphId)
+  if (scopeHours > 0) query.set('scope_hours', String(scopeHours))
+  const suffix = query.size ? `?${query.toString()}` : ''
+  return requestJson(`/api/tool-stats/failures/${encodeURIComponent(toolName)}${suffix}`) as Promise<ToolFailureHistory>
 }
 
-export async function clearToolStats(): Promise<ToolStatsDocument> {
-  return requestJson('/api/tool-stats', { method: 'DELETE' }) as Promise<ToolStatsDocument>
+export async function clearToolStats(graphId = '', scopeHours = 0): Promise<ToolStatsDocument> {
+  const query = new URLSearchParams()
+  if (graphId) query.set('graph_id', graphId)
+  if (scopeHours > 0) query.set('scope_hours', String(scopeHours))
+  const suffix = query.size ? `?${query.toString()}` : ''
+  return requestJson(`/api/tool-stats${suffix}`, { method: 'DELETE' }) as Promise<ToolStatsDocument>
 }
 
 export async function deleteOptionalMemory(): Promise<DeleteOptionalMemoryResponse> {
   return requestJson('/api/operational-memory/delete-optional', { method: 'POST' }) as Promise<DeleteOptionalMemoryResponse>
+}
+
+export async function clearLogs(): Promise<ClearLogsResponse> {
+  return requestJson('/api/logs/clear', { method: 'POST' }) as Promise<ClearLogsResponse>
 }
 
 export async function startProviderLimitTests(

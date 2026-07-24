@@ -1,3 +1,65 @@
+def test_agent_video_generation_schema_excludes_provider_owned_and_advanced_task_fields(monkeypatch):
+    from nodes.agent_generation_schema import GENERATION_CONFIG_DEFAULTS
+    from nodes.agent_node_contract import AGENT_CONFIG_SCHEMA
+    from nodes.agent_node_modes import VIDEO_FIELDS
+    from nodes.agent_node_schema import build_agent_config_schema
+
+    removed_fields = {
+        "video_model",
+        "video_callback_url",
+        "video_service_tier",
+        "video_execution_expires_after",
+        "video_safety_identifier",
+    }
+    monkeypatch.setattr(
+        "nodes.agent_node_schema.ConfigLoader.get_all_providers",
+        lambda _self: {
+            "doubao-video": {
+                "type": "doubao",
+                "model": "doubao-seedance-2-0-260128",
+                "supportmode": ["video_generation"],
+            }
+        },
+    )
+
+    schema = build_agent_config_schema(AGENT_CONFIG_SCHEMA, {"provider_id": "doubao-video"})
+
+    assert removed_fields.isdisjoint(GENERATION_CONFIG_DEFAULTS)
+    assert removed_fields.isdisjoint(AGENT_CONFIG_SCHEMA)
+    assert removed_fields.isdisjoint(VIDEO_FIELDS)
+    assert removed_fields.isdisjoint(schema)
+
+
+def test_doubao_agent_does_not_forward_removed_video_node_options():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    class Fake:
+        messages = [{"role": "user", "content": [{"type": "text", "text": "make a video"}]}]
+
+        def _read_provider_config_from_file(self):
+            return {"model": "provider-video-model"}
+
+        def _extract_latest_user_video_content(self, messages):
+            return messages[-1]["content"]
+
+        def generate_video(self, content, **kwargs):
+            self.generated = {"content": content, **kwargs}
+            return "output.mp4"
+
+    fake = Fake()
+    removed_fields = {
+        "video_model": "node-model-override",
+        "video_callback_url": "https://callback.example.com/video",
+        "video_service_tier": "default",
+        "video_execution_expires_after": 7200,
+        "video_safety_identifier": "user-hash",
+    }
+
+    DouBaoAgent.Send(fake, mode="video_generation", mode_options=removed_fields)
+
+    assert set(removed_fields).isdisjoint(fake.generated)
+
+
 def test_agent_node_builds_doubao_video_generation_content():
     from nodes.agent_message_adapter import build_agent_user_content
 

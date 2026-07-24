@@ -212,6 +212,7 @@ def _node_worker(
     node_config_path: str | None = None,
 ) -> None:
     worker_context = dict(context) if isinstance(context, dict) else None
+    runtime_event_sink: NodeRuntimeEventSink | None = None
     if isinstance(node_config_path, str) and node_config_path and isinstance(worker_context, dict):
         graph_id = str(worker_context.get("graph_id") or "default").strip() or "default"
         node_instance_id = str(worker_context.get("node_instance_id") or node_id).strip() or node_id
@@ -244,6 +245,8 @@ def _node_worker(
     except Exception as e:
         result_queue.put({"status": "error", "error": str(e)})
     finally:
+        if runtime_event_sink is not None:
+            runtime_event_sink.close()
         if isinstance(node_config_path, str) and node_config_path:
             _transition_node_config_to_idle(node_config_path)
 

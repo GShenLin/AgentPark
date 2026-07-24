@@ -1,6 +1,7 @@
 import os
 import sys
 
+from ..memory_root import configure_memories_root, get_memories_root
 from ..workspace_settings import get_workspace_root
 
 
@@ -43,5 +44,8 @@ def _get_nodes_dir() -> str:
 
 
 def _get_graphs_dir() -> str:
-    runtime_root = _get_runtime_root()
-    return os.path.join(runtime_root, "memories")
+    return get_memories_root()
+
+
+def configure_graphs_dir(path: str) -> str:
+    return configure_memories_root(path)

@@ -41,6 +41,7 @@ def delete_node_directory(
     node_dir: str,
     memory_root: str,
     wait_timeout_seconds: float,
+    archive_directory=None,
 ) -> NodeDeletionResult:
     if not node_dir:
         raise FileNotFoundError("node instance not found")
@@ -64,7 +65,10 @@ def delete_node_directory(
         raise NodeDeletionBlocked(f"node still has {active_count} active task(s)")
 
     wait_for_node_memory_idle(memory_path, messages_path)
-    _remove_tree_with_retry(dir_real)
+    if archive_directory is None:
+        _remove_tree_with_retry(dir_real)
+    else:
+        archive_directory(dir_real)
 
     return NodeDeletionResult(
         removed_dir=True,

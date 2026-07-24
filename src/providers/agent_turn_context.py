@@ -194,6 +194,7 @@ def _provider_context(agent: object, config: dict[str, Any]) -> dict[str, Any]:
         "type",
         "model",
         "responsesApi",
+        "fastMode",
         "reasoningEffort",
         "responsesReplayReasoningItems",
     )

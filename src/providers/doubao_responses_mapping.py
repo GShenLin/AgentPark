@@ -126,6 +126,10 @@ class DoubaoResponsesMapping(ResponsesMapping):
                     text = str(part.get("text") or "")
                     if text:
                         text_parts.append(text)
+                elif part_type == "refusal":
+                    refusal = str(part.get("refusal") or part.get("text") or "")
+                    if refusal:
+                        text_parts.append(refusal)
 
         text = "\n".join([part for part in text_parts if part]).strip()
         response_id = str(result.get("id") or "").strip() if isinstance(result, dict) else ""

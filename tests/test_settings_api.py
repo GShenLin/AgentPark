@@ -7,12 +7,12 @@ from fastapi import HTTPException
 from src.web_backend.settings_api import SettingsApiDomain
 
 
-def test_settings_api_reads_and_writes_module_provider(monkeypatch, tmp_path):
+def test_settings_api_reads_and_writes_model_provider(monkeypatch, tmp_path):
     from src import workspace_settings
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    provider_path = config_dir / "moduleProvider.json"
+    provider_path = config_dir / "modelProvider.json"
     provider_path.write_text(
         json.dumps(
             {
@@ -32,12 +32,12 @@ def test_settings_api_reads_and_writes_module_provider(monkeypatch, tmp_path):
 
     domain = SettingsApiDomain(SimpleNamespace())
 
-    loaded = domain.get_settings_section("module-provider")
+    loaded = domain.get_settings_section("model-provider")
     assert loaded["path"] == str(provider_path)
     assert loaded["data"]["providers"]["demo"]["type"] == "openai"
 
     result = domain.update_settings_section(
-        "module-provider",
+        "model-provider",
         {
             "content": json.dumps(
                 {
@@ -58,7 +58,7 @@ def test_settings_api_reads_and_writes_module_provider(monkeypatch, tmp_path):
     assert saved["providers"]["demo"]["type"] == "gemini"
 
 
-def test_settings_api_rejects_module_provider_without_providers(monkeypatch, tmp_path):
+def test_settings_api_rejects_model_provider_without_providers(monkeypatch, tmp_path):
     from src import workspace_settings
 
     monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
@@ -67,7 +67,7 @@ def test_settings_api_rejects_module_provider_without_providers(monkeypatch, tmp
     domain = SettingsApiDomain(SimpleNamespace())
 
     with pytest.raises(HTTPException) as exc:
-        domain.update_settings_section("module-provider", {"content": "{}"})
+        domain.update_settings_section("model-provider", {"content": "{}"})
 
     assert exc.value.status_code == 400
     assert "providers" in str(exc.value.detail)
@@ -83,7 +83,7 @@ def test_settings_api_rejects_invalid_responses_provider_contract(monkeypatch, t
 
     with pytest.raises(HTTPException) as exc:
         domain.update_settings_section(
-            "module-provider",
+            "model-provider",
             {
                 "content": json.dumps(
                     {
@@ -110,7 +110,7 @@ def test_settings_api_reads_invalid_provider_contract_with_warning(monkeypatch, 
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    provider_path = config_dir / "moduleProvider.json"
+    provider_path = config_dir / "modelProvider.json"
     provider_path.write_text(
         json.dumps(
             {
@@ -124,7 +124,7 @@ def test_settings_api_reads_invalid_provider_contract_with_warning(monkeypatch, 
     monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
-    loaded = SettingsApiDomain(SimpleNamespace()).get_settings_section("module-provider")
+    loaded = SettingsApiDomain(SimpleNamespace()).get_settings_section("model-provider")
 
     assert loaded["data"]["providers"]["bad"]["type"] == "grok"
     assert loaded["warnings"] == [
@@ -144,6 +144,100 @@ def test_settings_api_rejects_invalid_defaults_section(monkeypatch, tmp_path):
 
     assert exc.value.status_code == 400
     assert "server" in str(exc.value.detail)
+
+
+def test_settings_api_marks_changed_memories_path_as_restart_required(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.web_backend import runtime_paths
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text("{}", encoding="utf-8")
+    active_root = tmp_path / "memories"
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(active_root))
+    domain = SettingsApiDomain(SimpleNamespace())
+    configured_root = tmp_path / "data" / "memories"
+
+    result = domain.update_settings_section(
+        "defaults",
+        {"content": json.dumps({"storage": {"memoriesPath": str(configured_root)}})},
+    )
+
+    assert result["restart_required"] is True
+    assert result["runtime"] == {
+        "active_memories_root": str(active_root),
+        "configured_memories_root": str(configured_root),
+    }
+    assert json.loads((tmp_path / ".cache" / "memoryLocalConfig.json").read_text(encoding="utf-8")) == {
+        "memoriesPath": str(configured_root),
+    }
+    assert "storage" not in json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
+
+
+def test_settings_api_merges_memory_local_config_into_defaults(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.web_backend import runtime_paths
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "server": {"port": 9001},
+                "storage": {"memoriesPath": str(tmp_path / "legacy-memories")},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cache_dir = tmp_path / ".cache"
+    cache_dir.mkdir()
+    configured_root = tmp_path / "external-memories"
+    (cache_dir / "memoryLocalConfig.json").write_text(
+        json.dumps({"memoriesPath": str(configured_root)}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
+
+    result = SettingsApiDomain(SimpleNamespace()).get_settings_section("defaults")
+
+    assert result["data"]["server"] == {"port": 9001}
+    assert result["data"]["storage"] == {"memoriesPath": str(configured_root)}
+    assert json.loads(result["content"])["storage"] == {"memoriesPath": str(configured_root)}
+
+
+def test_settings_api_falls_back_for_relative_memories_path(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.web_backend import runtime_paths
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
+    domain = SettingsApiDomain(SimpleNamespace())
+
+    result = domain.update_settings_section(
+        "defaults",
+        {"content": json.dumps({"storage": {"memoriesPath": "data/memories"}})},
+    )
+
+    assert result["restart_required"] is False
+    assert result["runtime"]["configured_memories_root"] == str(tmp_path / "memories")
+
+
+def test_settings_api_rejects_invalid_undo_max_steps(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    domain = SettingsApiDomain(SimpleNamespace())
+
+    with pytest.raises(HTTPException) as exc:
+        domain.update_settings_section(
+            "defaults",
+            {"content": json.dumps({"undo": {"maxSteps": 101}})},
+        )
+
+    assert exc.value.status_code == 400
+    assert "undo.maxSteps" in str(exc.value.detail)
 
 
 def test_settings_api_rejects_non_boolean_companion_node_review_switch(monkeypatch, tmp_path):
@@ -362,12 +456,13 @@ def test_settings_api_clears_tool_stats(monkeypatch, tmp_path):
 
 
 def test_settings_api_delete_optional_memory_runs_bat(monkeypatch, tmp_path):
-    import src.web_backend.settings_api as settings_api
     from src import workspace_settings
+    from src.web_backend import runtime_paths, settings_maintenance
 
     script_path = tmp_path / "delete_operational_memory.bat"
     script_path.write_text("@echo off\necho Deleted 2 files. Failed 0 files. Matched 2 files.\n", encoding="utf-8")
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
     calls = []
 
     def fake_run(command, **kwargs):
@@ -378,7 +473,7 @@ def test_settings_api_delete_optional_memory_runs_bat(monkeypatch, tmp_path):
             stderr="",
         )
 
-    monkeypatch.setattr(settings_api.subprocess, "run", fake_run)
+    monkeypatch.setattr(settings_maintenance.subprocess, "run", fake_run)
 
     domain = SettingsApiDomain(SimpleNamespace())
     result = domain.delete_optional_memory()
@@ -388,6 +483,36 @@ def test_settings_api_delete_optional_memory_runs_bat(monkeypatch, tmp_path):
     assert calls
     assert calls[0][1]["cwd"] == str(tmp_path)
     assert str(script_path) in calls[0][0]
+    assert str(tmp_path / "memories") in calls[0][0]
+
+
+def test_settings_api_clear_logs_runs_clear_log_bat(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.web_backend import runtime_paths, settings_maintenance
+
+    script_path = tmp_path / "ClearLog.bat"
+    script_path.write_text("@echo off\necho Cleared 4 log files. Failed 0 files. Matched 4 files.\n", encoding="utf-8")
+    memories_root = tmp_path / "external-memories"
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(memories_root))
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(
+            returncode=0,
+            stdout="Cleared 4 log files. Failed 0 files. Matched 4 files.\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(settings_maintenance.subprocess, "run", fake_run)
+
+    result = SettingsApiDomain(SimpleNamespace()).clear_logs()
+
+    assert result["ok"] is True
+    assert result["stdout"].startswith("Cleared 4 log files")
+    assert str(script_path) in calls[0][0]
+    assert str(memories_root) in calls[0][0]
 
 
 def test_settings_api_starts_automatic_provider_channel_tests():

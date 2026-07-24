@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { launchNodeDesktopPet, saveAgentProfileFromNode } from '../../api'
 import { AgentBoardKey } from './context'
 
@@ -16,6 +16,13 @@ const menuTop = ref(0)
 const targetNodeId = ref('')
 const launchingPet = ref(false)
 const openingFolder = ref<'node' | 'work' | null>(null)
+const changingPrivacy = ref(false)
+const targetIsPrivate = computed(() => {
+  const nodeId = String(targetNodeId.value || '').trim()
+  return nodeId ? ctx.nodeConfigs.value[nodeId]?.private === true : false
+})
+
+const actionBusy = computed(() => launchingPet.value || openingFolder.value !== null || changingPrivacy.value)
 
 function closeMenu() {
   showMenu.value = false
@@ -103,6 +110,18 @@ async function saveToProfile() {
   }
 }
 
+async function togglePrivacy() {
+  const nodeId = String(targetNodeId.value || '').trim()
+  if (!nodeId || changingPrivacy.value) return
+  changingPrivacy.value = true
+  try {
+    await ctx.setNodePrivacy(nodeId, !targetIsPrivate.value)
+    closeMenu()
+  } finally {
+    changingPrivacy.value = false
+  }
+}
+
 function onWindowKeyDown(event: KeyboardEvent) {
   if (event.key === 'Escape') closeMenu()
 }
@@ -133,16 +152,19 @@ defineExpose({
         @pointerdown.stop
         @contextmenu.prevent
       >
-        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="showPet">
+        <button class="node-menu-item" :disabled="actionBusy" @click="showPet">
           {{ launchingPet ? 'ShowingPet...' : 'ShowPet' }}
         </button>
-        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="openFolder('node')">
+        <button class="node-menu-item" :disabled="actionBusy" @click="openFolder('node')">
           {{ openingFolder === 'node' ? 'OpeningNodeFolder...' : 'OpenNodeFolder' }}
         </button>
-        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="openFolder('work')">
+        <button class="node-menu-item" :disabled="actionBusy" @click="openFolder('work')">
           {{ openingFolder === 'work' ? 'OpeningWorkFolder...' : 'OpenWorkFolder' }}
         </button>
-        <button class="node-menu-item" :disabled="launchingPet || openingFolder !== null" @click="saveToProfile">SaveToProfile</button>
+        <button class="node-menu-item" :disabled="actionBusy" @click="saveToProfile">SaveToProfile</button>
+        <button class="node-menu-item" :disabled="actionBusy" @click="togglePrivacy">
+          {{ changingPrivacy ? 'ChangingVisibility...' : (targetIsPrivate ? 'SetPublic' : 'SetPrivate') }}
+        </button>
       </section>
     </div>
   </Teleport>

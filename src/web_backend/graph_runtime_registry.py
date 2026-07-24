@@ -6,6 +6,8 @@ from datetime import datetime
 from json import JSONDecodeError
 
 from . import runtime_paths, state_store
+from .node_runtime_fields import NODE_EVENT_RUNTIME_FIELDS
+from .runtime_state_memory_store import runtime_state_memory_store
 from .service_host import HostBoundService
 from .shared import envelope_preview
 
@@ -38,6 +40,14 @@ class GraphRuntimeRegistry(HostBoundService):
             if not isinstance(k, str) or not k.strip():
                 continue
             payload[k] = v
+        node_id = str(payload.get("node_instance_id") or payload.get("node_id") or "").strip()
+        if node_id:
+            config_path = self._node_config_path(node_id, safe_id)
+            if config_path:
+                payload["node_runtime"] = {
+                    "node_id": node_id,
+                    **runtime_state_memory_store.snapshot_fields(config_path, NODE_EVENT_RUNTIME_FIELDS),
+                }
         state_store._append_jsonl_line(self._graph_event_log_path(safe_id), payload)
         self.core.graph_events.publish(safe_id, payload)
 
@@ -64,7 +74,7 @@ class GraphRuntimeRegistry(HostBoundService):
         return safe or self.default_graph_id
 
     def _graph_dir(self, graph_id: str) -> str:
-        return os.path.join(runtime_paths._get_runtime_root(), "memories", graph_id)
+        return os.path.join(runtime_paths._get_graphs_dir(), graph_id)
 
     def _read_graph_config(self, graph_id: str) -> dict:
         safe_id = self._sanitize_graph_id(graph_id)

@@ -1,5 +1,7 @@
 ﻿import json
 
+import pytest
+
 from src.tool.base_tool import BaseTool
 from src.tool.tool_call_protocol import ToolCallExecution
 
@@ -105,6 +107,72 @@ def test_codex_oauth_responses_payload_disables_server_storage():
     )
 
     assert payload["store"] is False
+
+
+def test_openai_responses_fast_mode_requests_priority_service_tier():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "model": "gpt-test",
+        "authMode": "api_key",
+        "fastMode": True,
+    }
+
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[],
+        use_stream=True,
+        provider_options={"reasoning_effort": ""},
+    )
+
+    assert payload["service_tier"] == "priority"
+
+
+def test_openai_responses_without_fast_mode_omits_service_tier():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "model": "gpt-test",
+        "authMode": "api_key",
+        "fastMode": False,
+    }
+
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[],
+        use_stream=True,
+        provider_options={"reasoning_effort": ""},
+    )
+
+    assert "service_tier" not in payload
+
+
+@pytest.mark.parametrize(
+    ("actual_service_tier", "expected_outcome"),
+    [("priority", "confirmed"), ("default", "fallback"), (None, "unreported")],
+)
+def test_openai_responses_fast_mode_reports_actual_service_tier(actual_service_tier, expected_outcome):
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"fastMode": True}
+    agent.provider_name = "compatible"
+    events = []
+    agent.tool_event_callback = events.append
+    result = {"service_tier": actual_service_tier} if actual_service_tier is not None else {}
+
+    agent._emit_responses_service_tier_result(result)
+
+    notices = _runtime_notice_payloads(events, "openai_responses_service_tier")
+    assert notices == [
+        {
+            "requested_service_tier": "priority",
+            "actual_service_tier": actual_service_tier or "",
+            "outcome": expected_outcome,
+        }
+    ]
 
 
 def test_api_key_responses_payload_preserves_default_storage_contract():
@@ -1972,6 +2040,7 @@ def test_responses_writes_sanitized_request_payload_log(tmp_path):
         "toolResultSubmissionMaxChars": 50000,
         "toolContextCompactionEnabled": False,
         "toolContextCompactionEveryToolCalls": 1,
+        "responsesPayloadLogFull": True,
     }
     agent.provider_name = "openai"
     agent.messages = []
@@ -2009,7 +2078,7 @@ def test_responses_writes_sanitized_request_payload_log(tmp_path):
     assert payload_log_events[0]["path"] == str(payload_log)
 
 
-def test_responses_sends_instruction_parameter_and_preserves_system_prompt(tmp_path):
+def test_responses_sends_instruction_parameter_and_maps_system_prompt_to_developer(tmp_path):
     from types import SimpleNamespace
 
     from src.providers.openai_agent import OpenAIAgent
@@ -2055,8 +2124,12 @@ def test_responses_sends_instruction_parameter_and_preserves_system_prompt(tmp_p
     ) == "ok"
 
     assert payloads[0]["instructions"] == "Use the Responses instructions parameter."
-    system_item = next(item for item in payloads[0]["input"] if item.get("role") == "system")
-    assert system_item["content"][0]["text"] == "You are the node system prompt."
+    instruction_item = next(item for item in payloads[0]["input"] if item.get("role") == "developer")
+    assert any(
+        part.get("text") == "You are the node system prompt."
+        for part in instruction_item["content"]
+    )
+    assert not any(item.get("role") == "system" for item in payloads[0]["input"])
     assert payloads[0]["input"][-1]["role"] == "user"
     assert payloads[0]["input"][-1]["content"][0]["text"] == "hello"
     summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
@@ -2064,7 +2137,7 @@ def test_responses_sends_instruction_parameter_and_preserves_system_prompt(tmp_p
     assert summaries[0]["instructions_chars"] == len("Use the Responses instructions parameter.")
 
 
-def test_responses_stream_sends_instruction_parameter_and_system_input(tmp_path):
+def test_responses_stream_sends_instruction_parameter_and_developer_input(tmp_path):
     from types import SimpleNamespace
 
     from src.providers.openai_agent import OpenAIAgent
@@ -2118,8 +2191,9 @@ def test_responses_stream_sends_instruction_parameter_and_system_input(tmp_path)
     assert stream_events == [("O", "O"), ("K", "OK")]
     assert payloads[0]["stream"] is True
     assert payloads[0]["instructions"] == "Stream through payload.instructions."
-    system_item = next(item for item in payloads[0]["input"] if item.get("role") == "system")
-    assert system_item["content"][0]["text"] == "System stream prompt."
+    instruction_item = next(item for item in payloads[0]["input"] if item.get("role") == "developer")
+    assert any(part.get("text") == "System stream prompt." for part in instruction_item["content"])
+    assert not any(item.get("role") == "system" for item in payloads[0]["input"])
 
 
 def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_path):
@@ -2196,7 +2270,8 @@ def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_p
     assert len(payloads) == 2
     assert payloads[0]["instructions"] == "Use the Responses instructions parameter."
     assert payloads[1]["instructions"] == "Use the Responses instructions parameter."
-    assert any(item.get("role") == "system" for payload in payloads for item in payload["input"])
+    assert any(item.get("role") == "developer" for payload in payloads for item in payload["input"])
+    assert not any(item.get("role") == "system" for payload in payloads for item in payload["input"])
     summaries = _runtime_notice_payloads(agent.events, "provider_request_summary")
     assert [summary["instructions_present"] for summary in summaries] == [True, True]
 
@@ -2251,10 +2326,9 @@ def test_responses_merges_initial_developer_context_before_user_context(tmp_path
     first = payloads[0]["input"][0]
     assert first["role"] == "developer"
     assert first["content"][0]["text"].startswith("<permissions instructions>")
-    assert first["content"][1]["text"].startswith("Operational memory for this node:")
-    assert any(item.get("role") == "system" for item in payloads[0]["input"])
-    system_item = next(item for item in payloads[0]["input"] if item.get("role") == "system")
-    assert system_item["content"][0]["text"] == "System prompt."
+    assert first["content"][1]["text"] == "System prompt."
+    assert first["content"][2]["text"].startswith("Operational memory for this node:")
+    assert not any(item.get("role") == "system" for item in payloads[0]["input"])
     assert any(item.get("role") == "user" and item["content"][0]["text"].startswith("<environment_context>") for item in payloads[0]["input"])
     assert all(item.get("role") != "developer" for item in payloads[0]["input"][1:])
 

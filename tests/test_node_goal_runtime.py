@@ -7,7 +7,6 @@ from src.message_protocol import build_text_envelope
 from src.web_backend.node_goal_runtime import GoalEvaluationError
 from src.web_backend.node_goal_runtime import NodeGoalRuntime
 from src.web_backend.node_goal_runtime import has_structured_completion_audit
-from src.web_backend.node_goal_runtime import is_internal_control_output
 from src.web_backend.node_goal_runtime import node_goal_context
 from src.web_backend.node_goal_runtime import parse_goal_evaluation
 from src.web_backend.state_store import _read_json_dict, _write_json_dict
@@ -240,39 +239,3 @@ def test_node_goal_runtime_persists_complete_state_without_continuation(tmp_path
     assert saved["goal_state"]["reason"] == "all requested work is done"
     assert saved["pending"] == []
     assert not wake_event.is_set()
-
-
-def test_node_goal_runtime_skips_internal_control_output(tmp_path):
-    config_path = _write_goal_config(tmp_path)
-    host = _FakeHost()
-    runtime = _FailingGoalRuntime(host)
-    wake_event = threading.Event()
-    output_message = build_text_envelope('{"status":"tool_context_compaction_completed"}', role="assistant")
-
-    assert is_internal_control_output(output_message) is True
-
-    result = runtime._evaluate_node_goal_after_persist(
-        graph_id="g1",
-        node_id="n1",
-        node_type_id="agent_node",
-        config_path=str(config_path),
-        config={},
-        input_message=build_text_envelope("start", role="user"),
-        output_message=output_message,
-        trace_id="trace-1",
-        depth=0,
-        wake_event=wake_event,
-    )
-
-    saved = _read_json_dict(str(config_path))
-    assert result == {
-        "active": True,
-        "should_continue": False,
-        "skipped": True,
-        "reason": "internal_control_output",
-    }
-    assert saved["goal_state"]["status"] == "active"
-    assert saved["goal_state"]["turn_count"] == 1
-    assert saved["pending"] == []
-    assert not wake_event.is_set()
-    assert any(event == "node_goal_evaluation_skipped" for _graph_id, event, _payload in host.events)

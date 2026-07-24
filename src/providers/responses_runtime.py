@@ -34,6 +34,7 @@ class ResponsesRuntime(ResponsesRuntimeMethods, ToolFeedbackMixin, HostBoundServ
         messages,
         active_tools,
         run_tools,
+        regular_active_tools=None,
         web_search_mode="disabled",
         stream_handler=None,
         thinking_stream_handler=None,
@@ -43,20 +44,10 @@ class ResponsesRuntime(ResponsesRuntimeMethods, ToolFeedbackMixin, HostBoundServ
             self,
             messages=messages,
             active_tools=active_tools,
+            regular_active_tools=regular_active_tools,
             run_tools=run_tools,
             web_search_mode=web_search_mode,
             stream_handler=stream_handler,
             thinking_stream_handler=thinking_stream_handler,
             **provider_options,
         )
-
-    def _send_responses_gate(self, declaration, **provider_options):
-        if self._supports_responses_api():
-            return self._send_via_responses(
-                messages=self._get_messages_with_memory(),
-                active_tools=[declaration],
-                run_tools=True,
-                web_search_mode="disabled",
-                **provider_options,
-            )
-        return self.Send(tools=[declaration], run_tools=True, mode="chat", stream=False)

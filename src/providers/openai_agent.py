@@ -24,6 +24,13 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
     def _create_chat_runtime(self):
         return OpenAIChatRuntime(self)
 
+    def _create_tool_call_runtime(self):
+        return ToolCallExecutionRuntime(self)
+
+    def _build_chat_active_tools(self, active_tools, *, web_search_mode: str):
+        _ = web_search_mode
+        return active_tools
+
     def _iter_service_targets(self) -> tuple[object, ...]:
         try:
             cached = object.__getattribute__(self, "_service_targets_cache")
@@ -34,7 +41,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 OpenAITransport(self),
                 self._create_chat_runtime(),
                 OpenAIResponsesMapping(self),
-                ToolCallExecutionRuntime(self),
+                self._create_tool_call_runtime(),
                 OpenAIResponsesRuntime(self),
             )
             object.__setattr__(self, "_service_targets_cache", cached)
@@ -58,10 +65,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             raise ValueError("OpenAI agent currently supports chat and imagechat modes.")
 
         messages = self._get_messages_with_memory()
-        if isinstance(self.system_prompt, str) and self.system_prompt.strip():
-            has_system = any((msg or {}).get("role") == "system" for msg in messages)
-            if not has_system:
-                messages = [{"role": "system", "content": self.system_prompt.strip()}] + messages
+        messages = self._ensure_runtime_instruction(messages, self.system_prompt)
 
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
@@ -69,7 +73,8 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         summary_source = reasoning_summary
         if summary_source is None or summary_source == "":
             summary_source = self.config.get("reasoningSummary", "")
-        active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
+        regular_active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
+        active_tools = self._tool_context_compaction_active_tools(regular_active_tools)
         web_search_mode = self._effective_feature_switch(
             "web_search",
             parse_switch_mode(web_search, default="disabled"),
@@ -81,12 +86,17 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             supported_default=not self._supports_responses_api(),
         )
         if not self._supports_responses_api():
+            chat_active_tools = self._build_chat_active_tools(
+                active_tools,
+                web_search_mode=web_search_mode,
+            )
             return self._send_chat_completions(
                 messages=messages,
-                active_tools=active_tools,
+                active_tools=chat_active_tools,
                 run_tools=run_tools,
                 reasoning_effort=effort_source,
                 thinking_mode=thinking_mode,
+                web_search_mode=web_search_mode,
                 stream=stream,
                 stream_handler=stream_handler,
                 thinking_stream_handler=thinking_stream_handler if stream and callable(thinking_stream_handler) else None,
@@ -94,6 +104,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         return self._send_via_responses(
             messages=messages,
             active_tools=active_tools,
+            regular_active_tools=regular_active_tools,
             run_tools=run_tools,
             reasoning_effort=effort_source,
             reasoning_summary=summary_source,

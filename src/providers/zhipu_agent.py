@@ -47,10 +47,7 @@ class ZhipuAgent(ServiceHost, BaseAgent):
             raise ValueError("Zhipu agent currently supports chat and imagechat modes.")
 
         messages = self._get_messages_with_memory()
-        if isinstance(self.system_prompt, str) and self.system_prompt.strip():
-            has_system = any((msg or {}).get("role") == "system" for msg in messages)
-            if not has_system:
-                messages = [{"role": "system", "content": self.system_prompt.strip()}] + messages
+        messages = self._ensure_runtime_instruction(messages, self.system_prompt)
 
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
@@ -60,6 +57,7 @@ class ZhipuAgent(ServiceHost, BaseAgent):
         if thinking_source not in {None, ""} and thinking_mode not in {"enabled", "disabled"}:
             raise ValueError("Zhipu thinking must be enabled or disabled.")
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
+        active_tools = self._tool_context_compaction_active_tools(active_tools)
         return self._send_chat_completions(
             messages=messages,
             active_tools=active_tools,

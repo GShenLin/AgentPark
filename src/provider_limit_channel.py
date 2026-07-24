@@ -5,8 +5,9 @@ from typing import Any
 
 OPENAI_TEST_CHANNELS = ("chat_completions", "responses")
 PROVIDER_TEST_CHANNELS = ("configured", *OPENAI_TEST_CHANNELS)
-OPENAI_COMPATIBLE_PROVIDER_TYPES = frozenset({"openai", "doubao", "deepseek", "grok"})
+OPENAI_COMPATIBLE_PROVIDER_TYPES = frozenset({"openai", "doubao", "deepseek", "grok", "kimi"})
 OPENAI_DUAL_CHANNEL_PROVIDER_TYPES = frozenset({"openai", "doubao", "grok"})
+OPENAI_CHAT_ONLY_PROVIDER_TYPES = frozenset({"deepseek", "kimi"})
 
 
 def is_codex_auth_provider(config: dict[str, Any]) -> bool:
@@ -24,9 +25,9 @@ def normalize_provider_test_channel(value: object) -> str:
 def resolve_provider_test_channel(provider_type: str, config: dict[str, Any], requested_channel: str) -> str:
     normalized_type = str(provider_type or "").strip().lower()
     channel = normalize_provider_test_channel(requested_channel)
-    if normalized_type == "deepseek":
+    if normalized_type in OPENAI_CHAT_ONLY_PROVIDER_TYPES:
         if channel == "responses":
-            raise ValueError("DeepSeek providers support only the chat_completions test channel")
+            raise ValueError(f"{normalized_type} providers support only the chat_completions test channel")
         return "chat_completions"
     if normalized_type in OPENAI_DUAL_CHANNEL_PROVIDER_TYPES:
         if normalized_type == "openai" and is_codex_auth_provider(config):
@@ -46,7 +47,7 @@ def resolve_provider_test_channel(provider_type: str, config: dict[str, Any], re
 
 def provider_test_channels(provider_type: str, config: dict[str, Any]) -> tuple[str, ...]:
     normalized_type = str(provider_type or "").strip().lower()
-    if normalized_type == "deepseek":
+    if normalized_type in OPENAI_CHAT_ONLY_PROVIDER_TYPES:
         return ("chat_completions",)
     if normalized_type in OPENAI_DUAL_CHANNEL_PROVIDER_TYPES:
         if normalized_type == "openai" and is_codex_auth_provider(config):

@@ -51,6 +51,10 @@ function lineNumber(value: number | undefined): string {
   min-width: 0;
 }
 
+.file-diffs {
+  font-size: var(--theme-panel-memory-panel-font-diff, 14px);
+}
+
 .file-diffs,
 .file-diff {
   gap: 8px;
@@ -66,14 +70,14 @@ function lineNumber(value: number | undefined): string {
 
 .diff-header {
   color: rgba(226, 232, 240, 0.94);
-  font-size: 11px;
+  font-size: inherit;
 }
 
 .diff-header span,
 .hunk-title,
 .diff-empty {
   color: rgba(148, 163, 184, 0.9);
-  font-size: 10px;
+  font-size: inherit;
 }
 
 .diff-hunk {
@@ -97,10 +101,10 @@ function lineNumber(value: number | undefined): string {
 }
 
 .column-label {
-  padding: 5px 8px;
+  padding: 7px 8px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   color: rgba(186, 230, 253, 0.84);
-  font-size: 10px;
+  font-size: inherit;
   font-weight: 700;
 }
 
@@ -112,10 +116,10 @@ function lineNumber(value: number | undefined): string {
 .diff-cell {
   display: grid;
   grid-template-columns: 42px 18px minmax(0, 1fr);
-  min-height: 20px;
+  min-height: 24px;
   color: rgba(203, 213, 225, 0.9);
-  font-size: 10px;
-  line-height: 20px;
+  font-size: inherit;
+  line-height: 24px;
 }
 
 .diff-cell.removed {

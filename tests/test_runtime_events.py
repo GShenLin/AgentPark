@@ -5,6 +5,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
+import pytest
+
 from src.web_backend.core import BackendCore
 from src.web_backend.graph_node_execution import GraphNodeExecution
 from src.web_backend.node_config_service import node_config_service
@@ -18,7 +20,26 @@ def _patch_workspace(monkeypatch, tmp_path):
     from src.web_backend import profile_storage
 
     monkeypatch.setattr(runtime_paths, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
     monkeypatch.setattr(profile_storage, "get_workspace_root", lambda: str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _drain_context_audit_executors(monkeypatch):
+    from src.runtime_events import context_store
+
+    executors = []
+    executor_type = context_store.ThreadPoolExecutor
+
+    def create_executor(*args, **kwargs):
+        executor = executor_type(*args, **kwargs)
+        executors.append(executor)
+        return executor
+
+    monkeypatch.setattr(context_store, "ThreadPoolExecutor", create_executor)
+    yield
+    for executor in executors:
+        executor.shutdown(wait=True)
 
 
 def _write_graph_node(tmp_path, graph_id, node_id, *, state="idle", type_id="agent_node", extra=None):
@@ -37,19 +58,19 @@ def _write_graph_node(tmp_path, graph_id, node_id, *, state="idle", type_id="age
     return node_dir
 
 
-def _write_agent_profile(tmp_path, profile_id="companion_tool_failure"):
+def _write_agent_profile(tmp_path, profile_id="companion_tool_failure", *, event_rules=None):
     profile_dir = tmp_path / "agent"
     profile_dir.mkdir(parents=True, exist_ok=True)
+    profile = {
+        "id": profile_id,
+        "name": "Companion Tool Failure",
+        "node_type_id": "agent_node",
+        "fields": {"provider_id": "unit", "instruction": "review runtime event"},
+    }
+    if event_rules is not None:
+        profile["event_rules"] = event_rules
     (profile_dir / f"{profile_id}.json").write_text(
-        json.dumps(
-            {
-                "id": profile_id,
-                "name": "Companion Tool Failure",
-                "node_type_id": "agent_node",
-                "fields": {"provider_id": "unit", "instruction": "review runtime event"},
-            },
-            ensure_ascii=False,
-        ),
+        json.dumps(profile, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -62,11 +83,11 @@ def _event_config(source_graph="Test", source_node="Agent", *, action="context.p
         "rules": {
             event: {
                 source_graph: {
-                    source_node: {
+                    source_node: [{
                         "enabled": True,
                         "action": action,
                         "target": target,
-                    }
+                    }]
                 }
             }
         },
@@ -87,22 +108,7 @@ def _event_config(source_graph="Test", source_node="Agent", *, action="context.p
 
 
 def _set_rule_params(config, event, graph_id, node_id, params):
-    config["rules"][event][graph_id][node_id]["params"] = params
-
-
-def _legacy_event_config(source_graph="Test", source_node="Agent", *, action="context.produce", target="builtin.environment_context"):
-    event = "OnInput" if action != "node.dispatch" else "ToolFailure"
-    config = _event_config(source_graph, source_node, action=action, target=target)
-    config["rules"] = [
-        {
-            "source": {"graph_id": source_graph, "node_id": source_node},
-            "event": event,
-            "enabled": True,
-            "action": action,
-            "target": target,
-        }
-    ]
-    return config
+    config["rules"][event][graph_id][node_id][0]["params"] = params
 
 
 class _RuntimeEventCapture:
@@ -146,6 +152,7 @@ class _GraphExecutionHost:
     def __init__(self, tmp_path):
         self.tmp_path = tmp_path
         self.runtime_events = _RuntimeEventCapture()
+        self.graph_events = []
         self.core = SimpleNamespace(
             runtime_events=self.runtime_events,
             node_live_outputs=_NoopLiveOutputs(),
@@ -158,8 +165,8 @@ class _GraphExecutionHost:
     def _inject_node_config_into_context(self, _context, _cfg):
         return None
 
-    def _log_graph_event(self, *_args, **_kwargs):
-        return None
+    def _log_graph_event(self, graph_id, event, **payload):
+        self.graph_events.append({"graph_id": graph_id, "event": event, **payload})
 
     def _append_runtime_log(self, *_args, **_kwargs):
         return None
@@ -207,17 +214,113 @@ def test_runtime_event_no_match_is_fast_in_memory_return(tmp_path, monkeypatch):
     assert result["executed"] == 0
 
 
-def test_legacy_list_rules_are_saved_as_event_keyed_rules(tmp_path, monkeypatch):
+def test_node_dispatch_rule_can_select_agent_profile_per_node(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    _write_graph_node(tmp_path, "Companion", "Companion")
+    _write_agent_profile(tmp_path, "companion_tool_failure")
+    core = BackendCore()
+    config = _event_config(action="node.dispatch", target="companion")
+    config["receiver_groups"] = {
+        "companion": {
+            "enabled": True,
+            "graph_id": "Companion",
+            "merge_target": {"graph_id": "Companion", "node_id": "Companion"},
+            "receivers": [],
+        }
+    }
+    _set_rule_params(config, "ToolFailure", "Test", "Agent", {"profile_ids": ["companion_tool_failure"]})
+
+    registry = core.runtime_events.registry.compile(config, strict_sources=True)
+    rule = registry.rule_index[("Test", "Agent", "ToolFailure")][0]
+
+    assert rule.params["profile_ids"] == ["companion_tool_failure"]
+
+
+def test_node_dispatch_uses_rule_profile_override(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    _write_graph_node(tmp_path, "Companion", "Companion")
+    _write_agent_profile(tmp_path, "companion_tool_failure")
+    core = BackendCore()
+    config = _event_config(action="node.dispatch", target="companion")
+    config["receiver_groups"] = {
+        "companion": {
+            "enabled": True,
+            "graph_id": "Companion",
+            "merge_target": {"graph_id": "Companion", "node_id": "Companion"},
+            "receivers": [],
+        }
+    }
+    _set_rule_params(config, "ToolFailure", "Test", "Agent", {"profile_ids": ["companion_tool_failure"]})
+    core.runtime_events.registry.apply(config)
+    calls = []
+    core.runtime_events.dispatch.enqueue = lambda **kwargs: calls.append(kwargs)
+
+    result = core.runtime_events.emit(
+        event="ToolFailure",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-profile",
+        payload={"error": "boom"},
+    )
+
+    assert result["executed"] == 1
+    assert calls[0]["profile_id"] == "companion_tool_failure"
+
+
+def test_node_dispatch_enqueues_each_selected_profile(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    _write_graph_node(tmp_path, "Companion", "Companion")
+    _write_agent_profile(tmp_path, "profile_one")
+    _write_agent_profile(tmp_path, "profile_two")
+    core = BackendCore()
+    config = _event_config(action="node.dispatch", target="companion")
+    config["receiver_groups"] = {
+        "companion": {
+            "enabled": True,
+            "graph_id": "Companion",
+            "merge_target": {"graph_id": "Companion", "node_id": "Companion"},
+            "receivers": [],
+        }
+    }
+    _set_rule_params(config, "ToolFailure", "Test", "Agent", {"profile_ids": ["profile_one", "profile_two"]})
+    core.runtime_events.registry.apply(config)
+    calls = []
+    core.runtime_events.dispatch.enqueue = lambda **kwargs: calls.append(kwargs)
+
+    result = core.runtime_events.emit(
+        event="ToolFailure",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-profiles",
+        payload={"error": "boom"},
+    )
+
+    assert result["executed"] == 1
+    assert [item["profile_id"] for item in calls] == ["profile_one", "profile_two"]
+    assert result["artifacts"] == 2
+
+
+def test_legacy_list_rules_are_rejected(tmp_path, monkeypatch):
     _patch_workspace(monkeypatch, tmp_path)
     _write_graph_node(tmp_path, "Test", "Agent")
     core = BackendCore()
 
-    result = core.runtime_events.registry.apply(_legacy_event_config())
-    saved = json.loads((tmp_path / "config" / "events.json").read_text(encoding="utf-8"))
+    config = _event_config()
+    config["rules"] = [{"event": "OnInput", "source": {"graph_id": "Test", "node_id": "Agent"}}]
 
-    assert result["compiled"]["enabled_rules"] == 1
-    assert isinstance(saved["rules"], dict)
-    assert saved["rules"]["OnInput"]["Test"]["Agent"]["target"] == "builtin.environment_context"
+    try:
+        core.runtime_events.registry.apply(config)
+    except Exception as exc:
+        errors = getattr(exc, "errors", [])
+    else:
+        errors = []
+
+    assert any("rules must be an object keyed by event" in item["message"] for item in errors)
 
 
 def test_runtime_event_context_produce_injects_from_memory_store(tmp_path, monkeypatch):
@@ -238,8 +341,222 @@ def test_runtime_event_context_produce_injects_from_memory_store(tmp_path, monke
 
     assert result["matched"] == 1
     assert result["artifacts"] == 1
-    assert any("Runtime environment context" in item for item in fragments)
+    assert any("Runtime environment context" in item["content"] for item in fragments)
+    assert {item["role"] for item in fragments} == {"developer"}
     assert core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent") == []
+
+
+def test_notice_write_publishes_cross_platform_popup_event(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    core = BackendCore()
+    core.runtime_events.registry.apply(
+        _event_config(action="notice.write", target="builtin.runtime_event_notice")
+    )
+
+    result = core.runtime_events.emit(
+        event="OnInput",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-popup",
+        payload={"node_name": "测试节点"},
+    )
+    graph_event = core.graph_events.get("Test")
+
+    assert result["matched"] == 1
+    assert result["artifacts"] == 1
+    assert graph_event["event"] == "runtime_event_notice"
+    assert graph_event["alert_id"].startswith("runtime-event:evt_")
+    assert graph_event["trace_id"] == "trace-popup"
+    assert graph_event["node_instance_id"] == "Agent"
+    assert graph_event["node_name"] == "测试节点"
+    assert graph_event["runtime_event"] == "OnInput"
+    assert graph_event["title"] == "事件已触发"
+    assert "Test/Agent" in graph_event["message"]
+    assert graph_event["level"] == "info"
+
+
+def test_runtime_notice_context_is_aggregated_per_trace_while_audit_events_remain_distinct(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    core = BackendCore()
+    config = _event_config(target="builtin.runtime_notice_context")
+    config["rules"]["RuntimeNotice"] = config["rules"].pop("OnInput")
+    config["context_producers"]["builtin.runtime_notice_context"] = {
+        "kind": "builtin",
+        "enabled": True,
+        "priority": "normal",
+    }
+    core.runtime_events.registry.apply(config)
+
+    first = core.runtime_events.emit(
+        event="RuntimeNotice",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-notices",
+        payload={
+            "source": "provider_runtime",
+            "stage": "request",
+            "provider": "unit",
+            "message": "request started",
+        },
+    )
+    second = core.runtime_events.emit(
+        event="RuntimeNotice",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-notices",
+        payload={
+            "source": "provider_runtime",
+            "stage": "request",
+            "provider": "unit",
+            "message": "request completed",
+        },
+    )
+    fragments = core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent")
+
+    assert first["artifacts"] == 1
+    assert second["artifacts"] == 1
+    assert len(fragments) == 1
+    summary = fragments[0]["content"]
+    assert '"total_notice_count":2' in summary
+    assert '"state_change_count":2' in summary
+    assert "request completed" in summary
+    assert core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent") == []
+
+
+def test_on_input_append_file_injects_node_instruction_file(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    node_dir = _write_graph_node(tmp_path, "Test", "Agent")
+    (node_dir / "Soul.md").write_text("I value careful architecture.", encoding="utf-8")
+    core = BackendCore()
+    config = _event_config(action="context.append_file", target="")
+    _set_rule_params(config, "OnInput", "Test", "Agent", {"paths": ["Soul.md"], "role": "system"})
+    core.runtime_events.registry.apply(config)
+
+    result = core.runtime_events.emit(
+        event="OnInput",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-soul",
+        payload={},
+    )
+    fragments = core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent")
+
+    assert result["artifacts"] == 1
+    assert fragments == [{"role": "system", "content": "Context file: Soul.md\n\nI value careful architecture."}]
+
+
+def test_on_input_append_file_injects_multiple_files_from_one_handler(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    node_dir = _write_graph_node(tmp_path, "Test", "Agent")
+    (node_dir / "Soul.md").write_text("I value careful architecture.", encoding="utf-8")
+    (node_dir / "Note.md").write_text("Keep answers concise.", encoding="utf-8")
+    core = BackendCore()
+    config = _event_config(action="context.append_file", target="")
+    _set_rule_params(
+        config,
+        "OnInput",
+        "Test",
+        "Agent",
+        {"paths": ["Soul.md", "missing.md", "Note.md"], "role": "developer"},
+    )
+    core.runtime_events.registry.apply(config)
+
+    result = core.runtime_events.emit(
+        event="OnInput",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-multiple-context-files",
+        payload={},
+    )
+    fragments = core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent")
+
+    assert result["matched"] == 1
+    assert result["executed"] == 1
+    assert result["artifacts"] == 2
+    assert result["errors"] == []
+    assert fragments == [
+        {"role": "developer", "content": "Context file: Soul.md\n\nI value careful architecture."},
+        {"role": "developer", "content": "Context file: Note.md\n\nKeep answers concise."},
+    ]
+
+
+def test_append_file_is_available_for_non_input_events(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    node_dir = _write_graph_node(tmp_path, "Test", "Agent")
+    (node_dir / "User.md").write_text("The user prefers concise answers.", encoding="utf-8")
+    core = BackendCore()
+    config = _event_config(action="context.append_file", target="")
+    config["rules"]["WorkPersisted"] = config["rules"].pop("OnInput")
+    _set_rule_params(config, "WorkPersisted", "Test", "Agent", {"paths": ["User.md"]})
+    core.runtime_events.registry.apply(config)
+
+    result = core.runtime_events.emit(
+        event="WorkPersisted",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-user-context",
+        payload={},
+    )
+    fragments = core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent")
+
+    assert result["artifacts"] == 1
+    assert fragments == [{"role": "developer", "content": "Context file: User.md\n\nThe user prefers concise answers."}]
+
+
+def test_append_file_skips_missing_node_relative_file(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    core = BackendCore()
+    config = _event_config(action="context.append_file", target="")
+    _set_rule_params(config, "OnInput", "Test", "Agent", {"paths": ["not-created-yet.md"]})
+    core.runtime_events.registry.apply(config)
+
+    result = core.runtime_events.emit(
+        event="OnInput",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-missing-context",
+        payload={},
+    )
+
+    assert result["executed"] == 1
+    assert result["artifacts"] == 0
+    assert result["errors"] == []
+    assert core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent") == []
+
+
+def test_append_file_reads_absolute_path_outside_node(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    external_file = tmp_path / "shared" / "User.md"
+    external_file.parent.mkdir()
+    external_file.write_text("Shared user context.", encoding="utf-8")
+    core = BackendCore()
+    config = _event_config(action="context.append_file", target="")
+    _set_rule_params(config, "OnInput", "Test", "Agent", {"paths": [str(external_file)], "role": "user"})
+    core.runtime_events.registry.apply(config)
+
+    result = core.runtime_events.emit(
+        event="OnInput",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-external-context",
+        payload={},
+    )
+    fragments = core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent")
+
+    assert result["artifacts"] == 1
+    assert fragments == [{"role": "user", "content": f"Context file: {os.path.normpath(str(external_file))}\n\nShared user context."}]
 
 
 def test_graph_execution_emits_work_persisted_after_success(tmp_path, monkeypatch):
@@ -267,6 +584,15 @@ def test_graph_execution_emits_work_persisted_after_success(tmp_path, monkeypatc
 
     assert [item["event"] for item in host.runtime_events.events][-1] == "WorkPersisted"
     assert host.runtime_events.events[-1]["payload"]["final_message_preview"] == "done"
+    assert host.runtime_events.events[-1]["payload"]["messages_path"].endswith("messages.jsonl")
+    assert host.runtime_events.events[-1]["payload"]["user_context_path"].endswith("User.md")
+    assert host.runtime_events.events[-1]["payload"]["soul_context_path"].endswith("Soul.md")
+    assert host.runtime_events.events[-1]["payload"]["long_term_memory_path"].endswith("long_term_memory.sqlite3")
+    alert = next(item for item in host.graph_events if item["event"] == "work_persisted_alert")
+    assert alert["graph_id"] == "Test"
+    assert alert["node_instance_id"] == "Agent"
+    assert alert["node_name"] == "Agent"
+    assert alert["message"] == "done"
 
 
 def test_graph_execution_emits_work_failed_after_error_persistence(tmp_path, monkeypatch):
@@ -320,7 +646,7 @@ def test_persistent_context_result_uses_operational_memory_patch(tmp_path, monke
     assert core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent") == []
 
 
-def test_node_dispatch_uses_idle_explicit_receiver_without_creating_temp_node(tmp_path, monkeypatch):
+def test_node_dispatch_rejects_explicit_receivers(tmp_path, monkeypatch):
     _patch_workspace(monkeypatch, tmp_path)
     _write_graph_node(tmp_path, "Test", "Agent")
     _write_graph_node(tmp_path, "Companion", "Companion", state="idle")
@@ -334,38 +660,18 @@ def test_node_dispatch_uses_idle_explicit_receiver_without_creating_temp_node(tm
             "enabled": True,
             "graph_id": "Companion",
             "merge_target": {"graph_id": "Companion", "node_id": "Companion"},
-            "event_profiles": {"ToolFailure": "companion_tool_failure"},
             "receivers": [{"graph_id": "Companion", "node_id": "Companion"}],
         }
     }
-    core.runtime_events.registry.apply(group_config)
+    _set_rule_params(group_config, "ToolFailure", "Test", "Agent", {"profile_ids": ["companion_tool_failure"]})
+    try:
+        core.runtime_events.registry.apply(group_config)
+    except Exception as exc:
+        errors = getattr(exc, "errors", [])
+    else:
+        errors = []
 
-    core.runtime_events.emit(
-        event="ToolFailure",
-        graph_id="Test",
-        node_id="Agent",
-        node_type_id="agent_node",
-        trace_id="trace-dispatch",
-        payload={"tool_name": "read_file", "status": "error", "error": "failed"},
-    )
-    companion_config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
-    deadline = time.time() + 2
-    pending = []
-    while time.time() < deadline:
-        cfg = node_config_service.read_optional_object(str(companion_config_path))
-        pending = cfg.get("pending") if isinstance(cfg.get("pending"), list) else []
-        if pending:
-            break
-        time.sleep(0.02)
-
-    assert pending
-    assert pending[0]["source"] == "runtime_event_dispatch"
-    temp_nodes = [
-        item.name
-        for item in (tmp_path / "memories" / "Companion").iterdir()
-        if item.is_dir() and item.name != "Companion"
-    ]
-    assert temp_nodes == []
+    assert any("explicit receivers are not supported" in item["message"] for item in errors)
 
 
 def test_node_dispatch_fallback_creates_temporary_profile_receiver(tmp_path, monkeypatch):
@@ -382,10 +688,10 @@ def test_node_dispatch_fallback_creates_temporary_profile_receiver(tmp_path, mon
             "enabled": True,
             "graph_id": "Companion",
             "merge_target": {"graph_id": "Companion", "node_id": "Companion"},
-            "event_profiles": {"ToolFailure": "companion_tool_failure"},
-            "receivers": [{"graph_id": "Companion", "node_id": "Companion"}],
+            "receivers": [],
         }
     }
+    _set_rule_params(group_config, "ToolFailure", "Test", "Agent", {"profile_ids": ["companion_tool_failure"]})
     core.runtime_events.registry.apply(group_config)
 
     core.runtime_events.emit(
@@ -421,7 +727,71 @@ def test_node_dispatch_fallback_creates_temporary_profile_receiver(tmp_path, mon
     assert temp_config["pending"][0]["source"] == "runtime_event_dispatch"
 
 
-def test_receiver_group_requires_profile_for_dispatched_event(tmp_path, monkeypatch):
+def test_node_dispatch_profile_receiver_restores_and_triggers_profile_event_rules(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(tmp_path, "Test", "Agent")
+    _write_graph_node(tmp_path, "Companion", "Companion", state="working")
+    _write_agent_profile(
+        tmp_path,
+        event_rules={
+            "OnInput": [
+                {"action": "context.produce", "target": "builtin.environment_context"},
+            ]
+        },
+    )
+    core = BackendCore()
+    monkeypatch.setattr(core.graph_runtime, "_ensure_graph_runner", lambda graph_id: None)
+    monkeypatch.setattr(core.graph_runtime, "_wake_graph_runner", lambda graph_id: None)
+    group_config = _event_config(action="node.dispatch", target="companion_review")
+    group_config["receiver_groups"] = {
+        "companion_review": {
+            "enabled": True,
+            "graph_id": "Companion",
+            "merge_target": {"graph_id": "Companion", "node_id": "Companion"},
+            "receivers": [],
+        }
+    }
+    _set_rule_params(group_config, "ToolFailure", "Test", "Agent", {"profile_ids": ["companion_tool_failure"]})
+    core.runtime_events.registry.apply(group_config)
+
+    core.runtime_events.emit(
+        event="ToolFailure",
+        graph_id="Test",
+        node_id="Agent",
+        node_type_id="agent_node",
+        trace_id="trace-profile-events",
+        payload={"error": "failed"},
+    )
+
+    companion_dir = tmp_path / "memories" / "Companion"
+    deadline = time.time() + 2
+    receiver_node_id = ""
+    while time.time() < deadline and not receiver_node_id:
+        for item in companion_dir.iterdir():
+            if item.is_dir() and item.name != "Companion" and (item / "config.json").exists():
+                receiver_node_id = item.name
+                break
+        time.sleep(0.02)
+
+    assert receiver_node_id
+    persisted = json.loads((tmp_path / "config" / "events.json").read_text(encoding="utf-8"))
+    assert persisted["rules"]["OnInput"]["Companion"][receiver_node_id][0]["action"] == "context.produce"
+    assert ("Companion", receiver_node_id, "OnInput") in core.runtime_events.registry.active().rule_index
+
+    emitted = core.runtime_events.emit(
+        event="OnInput",
+        graph_id="Companion",
+        node_id=receiver_node_id,
+        node_type_id="agent_node",
+        trace_id="trace-profile-events-on-input",
+        payload={"input": "verify temporary receiver profile event"},
+    )
+    assert emitted["matched"] == 1
+    assert emitted["executed"] == 1
+    assert emitted["errors"] == []
+
+
+def test_node_dispatch_handler_requires_profile(tmp_path, monkeypatch):
     _patch_workspace(monkeypatch, tmp_path)
     _write_graph_node(tmp_path, "Test", "Agent")
     _write_graph_node(tmp_path, "Companion", "Companion")
@@ -433,8 +803,7 @@ def test_receiver_group_requires_profile_for_dispatched_event(tmp_path, monkeypa
             "enabled": True,
             "graph_id": "Companion",
             "merge_target": {"graph_id": "Companion", "node_id": "Companion"},
-            "event_profiles": {"RuntimeNotice": "companion_tool_failure"},
-            "receivers": [{"graph_id": "Companion", "node_id": "Companion"}],
+            "receivers": [],
         }
     }
 
@@ -445,7 +814,7 @@ def test_receiver_group_requires_profile_for_dispatched_event(tmp_path, monkeypa
     else:
         errors = []
 
-    assert any("has no profile for event ToolFailure" in item["message"] for item in errors)
+    assert any("params.profile_ids must be a non-empty list for node.dispatch" in item["message"] for item in errors)
 
 
 def test_temporary_receiver_cleanup_merges_once_and_deletes_node(tmp_path, monkeypatch):
@@ -770,11 +1139,11 @@ def test_events_apply_api_validates_writes_and_keeps_diagnostics(tmp_path, monke
                 "rules": {
                     "OnInput": {
                         "Test": {
-                            "Agent": {
+                            "Agent": [{
                                 "enabled": True,
                                 "action": "context.produce",
                                 "target": "builtin.missing",
-                            }
+                            }]
                         }
                     }
                 },
@@ -790,7 +1159,7 @@ def test_events_apply_api_validates_writes_and_keeps_diagnostics(tmp_path, monke
     assert invalid.json()["ok"] is False
     assert diagnostics.status_code == 200
     assert diagnostics.json()["compiled"]["enabled_rules"] == 1
-    assert saved["rules"]["OnInput"]["Test"]["Agent"]["target"] == "builtin.environment_context"
+    assert saved["rules"]["OnInput"]["Test"]["Agent"][0]["target"] == "builtin.environment_context"
 
 
 def test_events_apply_without_config_reloads_existing_file(tmp_path, monkeypatch):

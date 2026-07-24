@@ -80,7 +80,7 @@ def test_claude_agent_emits_provider_request_summary_for_messages_api():
     assert summary["environment_context_chars"] > 0
     assert summary["tools_included"] == ["web_search"]
     assert summary["stream"] is False
-    assert captured["payload"]["tools"] == [{"type": "web_search_20260318", "name": "web_search"}]
+    assert captured["payload"]["tools"] == [{"type": "web_search_20250305", "name": "web_search"}]
 
 
 def test_claude_agent_maps_reasoning_effort_to_output_config():
@@ -154,7 +154,7 @@ def test_claude_agent_supports_native_web_search_and_thinking():
 
     assert agent.Send(web_search="enabled", thinking="enabled", reasoning_effort="") == "ok"
 
-    assert captured["tools"] == [{"type": "web_search_20260318", "name": "web_search"}]
+    assert captured["tools"] == [{"type": "web_search_20250305", "name": "web_search"}]
     assert captured["thinking"] == {"type": "enabled", "budget_tokens": 1024}
 
 
@@ -215,8 +215,46 @@ def test_claude_agent_preserves_native_content_blocks_for_tool_followup():
     assert captured["messages"][0] == {"role": "assistant", "content": native_blocks}
     assert captured["messages"][1] == {
         "role": "user",
-        "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}],
+        "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"},
+            {"type": "text", "text": "continue"},
+        ],
     }
+
+
+def test_claude_agent_groups_parallel_tool_results_in_tool_use_order():
+    agent = _build_agent()
+    native_blocks = [
+        {"type": "thinking", "thinking": "Need both.", "signature": "sig"},
+        {"type": "tool_use", "id": "toolu_1", "name": "first", "input": {}},
+        {"type": "tool_use", "id": "toolu_2", "name": "second", "input": {}},
+    ]
+    agent.messages = [
+        {"role": "assistant", "content": None, "_claude_content_blocks": native_blocks},
+        {"role": "tool", "tool_call_id": "toolu_2", "name": "second", "content": "two"},
+        {"role": "system", "content": "A runtime warning."},
+        {"role": "tool", "tool_call_id": "toolu_1", "name": "first", "content": "one"},
+    ]
+    captured = {}
+
+    def fake_send(payload, **_kwargs):
+        captured.update(payload)
+        return {"choices": [{"message": {"role": "assistant", "content": "done"}}]}
+
+    agent.send_messages = fake_send
+
+    assert agent.Send() == "done"
+    assert captured["system"] == "A runtime warning."
+    assert captured["messages"] == [
+        {"role": "assistant", "content": native_blocks},
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": "one"},
+                {"type": "tool_result", "tool_use_id": "toolu_2", "content": "two"},
+            ],
+        },
+    ]
 
 
 def test_claude_agent_converts_openai_tools_to_claude_tool_declarations():

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { MobileNode } from '../api'
 
 defineProps<{
@@ -11,6 +12,8 @@ const emit = defineEmits<{
   (event: 'trigger', node: MobileNode): void
   (event: 'duplicate', node: MobileNode): void
 }>()
+
+const outputExpanded = ref(false)
 
 function nodeStateLabel(node: MobileNode) {
   const state = String(node.state || 'idle')
@@ -41,6 +44,10 @@ function triggerNode(node: MobileNode) {
 function duplicateNode(node: MobileNode) {
   emit('duplicate', node)
 }
+
+function toggleOutput() {
+  outputExpanded.value = !outputExpanded.value
+}
 </script>
 
 <template>
@@ -54,11 +61,25 @@ function duplicateNode(node: MobileNode) {
       <div class="row-body">
         <div class="row-main">{{ node.name || node.id }}</div>
         <div class="row-sub">{{ node.type_id }} · {{ nodeStateLabel(node) }}</div>
-        <div v-if="node.last_message" class="row-last">{{ node.last_message }}</div>
       </div>
       <span v-if="node.pending_count" class="pending-pill">{{ node.pending_count }}</span>
       <span class="row-arrow">›</span>
     </button>
+    <div v-if="node.last_message" class="node-output">
+      <button
+        class="output-toggle"
+        type="button"
+        :aria-expanded="outputExpanded"
+        @click="toggleOutput"
+      >
+        <span>输出</span>
+        <span class="output-toggle-state">
+          {{ outputExpanded ? '收起' : '展开' }}
+          <span class="output-chevron" :class="{ expanded: outputExpanded }">⌄</span>
+        </span>
+      </button>
+      <div v-if="outputExpanded" class="row-last">{{ node.last_message }}</div>
+    </div>
     <div v-if="!node.readonly" class="node-actions">
       <button class="node-action" type="button" @click="triggerNode(node)">Trigger</button>
       <button class="node-action" type="button" @click="duplicateNode(node)">Duplicate</button>
@@ -106,6 +127,7 @@ function duplicateNode(node: MobileNode) {
 }
 
 .node-select:focus-visible,
+.output-toggle:focus-visible,
 .node-action:focus-visible {
   outline: 2px solid rgba(56, 189, 248, 0.8);
   outline-offset: 1px;
@@ -123,8 +145,7 @@ function duplicateNode(node: MobileNode) {
 }
 
 .row-main,
-.row-sub,
-.row-last {
+.row-sub {
   min-width: 0;
   max-width: 100%;
   display: block;
@@ -144,12 +165,55 @@ function duplicateNode(node: MobileNode) {
 }
 
 .row-last {
-  margin-top: 4px;
+  padding: 10px 12px 12px;
   color: rgba(203, 213, 225, 0.9);
   font-size: 12px;
   line-height: 1.38;
-  overflow: visible;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.node-output {
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.output-toggle {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(203, 213, 225, 0.94);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.output-toggle-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(125, 211, 252, 0.9);
+  font-weight: 600;
+}
+
+.output-chevron {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.16s ease;
+}
+
+.output-chevron.expanded {
+  transform: rotate(180deg);
 }
 
 .row-arrow {

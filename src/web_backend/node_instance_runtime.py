@@ -3,7 +3,7 @@ import math
 import os
 import time
 
-from fastapi.responses import StreamingResponse
+from fastapi import Request
 
 from src.clock_config import build_clock_interval_fields, parse_clock_interval_seconds
 from src.console_interactive_sessions import send_console_interactive_input
@@ -27,10 +27,28 @@ from .shared import (
 )
 from .node_memory_store import current_node_memory_paths
 from .node_memory_store import delete_node_memory_record
+from .node_memory_store import delete_node_memory_turn
 from .node_memory_store import load_latest_node_memory_turn
 from .node_memory_store import load_recent_node_memory_records
 from .node_memory_markdown import render_memory_markdown
 from .node_memory_store import read_node_memory_text
+from .node_memory_store import restore_node_memory_records
+from .node_live_output import build_live_output_payload
+from .node_execution_context import bind_node_storage_context
+
+
+def _copy_live_activity_blocks(item: object) -> list[dict]:
+    if not isinstance(item, dict):
+        return []
+    blocks = item.get("activity_blocks")
+    return [dict(block) for block in blocks if isinstance(block, dict)] if isinstance(blocks, list) else []
+
+
+def _copy_live_media_chunks(item: object) -> list[dict]:
+    if not isinstance(item, dict):
+        return []
+    chunks = item.get("media_chunks")
+    return [dict(chunk) for chunk in chunks if isinstance(chunk, dict)] if isinstance(chunks, list) else []
 
 
 def _memory_role(record: dict) -> str:
@@ -46,6 +64,8 @@ def _select_latest_turn_records(records: list[dict], history_mode: str) -> list[
 
     visible: list[dict] = []
     for index, record in enumerate(records):
+        if bool(record.get("_deferred")):
+            continue
         role = _memory_role(record)
         if role in {"user", "human"} or index == final_response_index:
             visible.append(record)
@@ -131,7 +151,7 @@ class NodeInstanceRuntime(HostBoundService):
             raise HTTPException(status_code=500, detail="failed to write node config")
         return {"ok": True, "state": parse_node_state(next_cfg.get("state")), "config": next_cfg}
 
-    def run_node(self, payload: dict):
+    def run_node(self, payload: dict, request: Request = None):
         node_id = (payload or {}).get("node_id")
         message = (payload or {}).get("input")
         context = (payload or {}).get("context")
@@ -153,6 +173,7 @@ class NodeInstanceRuntime(HostBoundService):
                 if isinstance(graph_id, str) and graph_id.strip() and isinstance(node_instance_id, str) and node_instance_id.strip():
                     safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
                     safe_node_instance_id = self.graph_runtime._sanitize_node_id(node_instance_id)
+                    self.core.node_ops.require_node_visible(safe_node_instance_id, safe_graph_id, request)
                     node_config_path = self.graph_runtime._node_config_path(safe_node_instance_id, safe_graph_id)
                     if node_config_path and os.path.exists(node_config_path):
                         current = _read_json_dict(node_config_path)
@@ -160,6 +181,7 @@ class NodeInstanceRuntime(HostBoundService):
                             raise HTTPException(status_code=409, detail="node is being deleted")
                         if isinstance(current, dict):
                             self.graph_runtime._inject_node_config_into_context(context, current)
+                        bind_node_storage_context(context, node_config_path)
                         _set_node_config_last_message(node_config_path, message_full or message_preview)
             routed = node_runtime._run_node_logic_with_routes(runtime_paths._get_nodes_dir(), node_id, message, context)
             output = str((routed or {}).get("text") or "")
@@ -226,7 +248,17 @@ class NodeInstanceRuntime(HostBoundService):
                 ),
             )
         if safe_history_mode in lazy_turn_modes:
-            latest_turn_records, history_complete = load_latest_node_memory_turn(memory_path, messages_path)
+            common_roles = {"user", "human", "assistant", "agent", "system", "tool"}
+            materialize_roles = set(common_roles)
+            if safe_history_mode == "latest_turn_progress":
+                materialize_roles.add("assistant_progress")
+            elif safe_history_mode == "latest_turn_metadata":
+                materialize_roles.add("metadata")
+            latest_turn_records, history_complete = load_latest_node_memory_turn(
+                memory_path,
+                messages_path,
+                materialize_roles=materialize_roles,
+            )
             records = _select_latest_turn_records(latest_turn_records, safe_history_mode)
             text = render_memory_markdown(records)
             if max_chars is not None:
@@ -255,6 +287,9 @@ class NodeInstanceRuntime(HostBoundService):
             "last_message": str(cfg.get("last_message") or "") if isinstance(cfg, dict) else "",
             "live_message": str(live.get("text") or ""),
             "thinking_message": str(live.get("thinking_text") or ""),
+            "live_version": int(live.get("version") or 0),
+            "activity_blocks": _copy_live_activity_blocks(live),
+            "media_chunks": _copy_live_media_chunks(live),
         }
 
     def delete_node_instance_memory_message(self, node_id: str, message_id: str, graph_id: str = ""):
@@ -268,6 +303,135 @@ class NodeInstanceRuntime(HostBoundService):
             safe_node_id,
             message_id,
         )
+
+    def delete_node_instance_memory_messages(self, node_id: str, payload: dict, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
+        raw_ids = (payload or {}).get("message_ids") if isinstance(payload, dict) else None
+        if not isinstance(raw_ids, list):
+            raise HTTPException(status_code=400, detail="message_ids must be a list")
+        message_ids = list(dict.fromkeys(str(item or "").strip() for item in raw_ids if str(item or "").strip()))
+        if not message_ids:
+            raise HTTPException(status_code=400, detail="message_ids is required")
+
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        memory_path = self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id)
+        messages_path = self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id)
+        cfg = _read_json_dict(config_path) if os.path.exists(config_path) else {}
+        if not isinstance(cfg, dict) or not cfg:
+            raise HTTPException(status_code=404, detail="node instance not found")
+        if bool(cfg.get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
+
+        deleted = 0
+        deleted_records = []
+        try:
+            for message_id in message_ids:
+                result = delete_node_memory_record(memory_path, messages_path, message_id, capture_deleted=True)
+                deleted += int((result or {}).get("deleted") or 0)
+                deleted_records.extend(list((result or {}).get("records") or []))
+        except Exception:
+            if deleted_records:
+                restore_node_memory_records(memory_path, messages_path, deleted_records)
+            raise
+
+        undo_token = ""
+        if deleted_records:
+            from .deletion_undo_store import deletion_undo_store
+
+            undo_entry = deletion_undo_store.begin(
+                "delete_dialogue",
+                {"graph_id": safe_graph_id, "node_id": safe_node_id, "message_ids": message_ids},
+            )
+            if undo_entry is not None:
+                node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
+                portable_records = []
+                for snapshot in deleted_records:
+                    messages_file = str(snapshot.get("messages_path") or "")
+                    memory_file = str(snapshot.get("memory_path") or "")
+                    if not self.graph_runtime._is_safe_subdir(node_dir, messages_file):
+                        continue
+                    portable_records.append(
+                        {
+                            "messages_path": os.path.relpath(messages_file, node_dir),
+                            "memory_path": os.path.relpath(memory_file, node_dir) if memory_file else "",
+                            "records": list(snapshot.get("records") or []),
+                        }
+                    )
+                deletion_undo_store.write_json(undo_entry, "records.json", portable_records)
+                undo_token = deletion_undo_store.commit(undo_entry)
+        return {
+            "ok": True,
+            "deleted": deleted,
+            "message_ids": message_ids,
+            "undo_token": undo_token or None,
+        }
+
+    def delete_node_instance_memory_turn(self, node_id: str, payload: dict, graph_id: str = ""):
+        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
+        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
+        user_message_id = str((payload or {}).get("user_message_id") or "").strip() if isinstance(payload, dict) else ""
+        if not user_message_id:
+            raise HTTPException(status_code=400, detail="user_message_id is required")
+
+        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+        memory_path = self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id)
+        messages_path = self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id)
+        cfg = _read_json_dict(config_path) if os.path.exists(config_path) else {}
+        if not isinstance(cfg, dict) or not cfg:
+            raise HTTPException(status_code=404, detail="node instance not found")
+        if bool(cfg.get("_delete_requested")):
+            raise HTTPException(status_code=409, detail="node is being deleted")
+
+        result = delete_node_memory_turn(
+            memory_path,
+            messages_path,
+            user_message_id,
+            capture_deleted=True,
+        )
+        deleted_records = list((result or {}).get("records") or [])
+        if not deleted_records:
+            raise HTTPException(status_code=404, detail="user turn not found")
+
+        undo_token = ""
+        from .deletion_undo_store import deletion_undo_store
+
+        undo_entry = deletion_undo_store.begin(
+            "delete_dialogue",
+            {
+                "graph_id": safe_graph_id,
+                "node_id": safe_node_id,
+                "message_ids": list((result or {}).get("message_ids") or []),
+                "user_message_id": user_message_id,
+                "scope": "turn",
+            },
+        )
+        if undo_entry is not None:
+            node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
+            portable_records = []
+            for snapshot in deleted_records:
+                messages_file = str(snapshot.get("messages_path") or "")
+                memory_file = str(snapshot.get("memory_path") or "")
+                if not self.graph_runtime._is_safe_subdir(node_dir, messages_file):
+                    continue
+                if memory_file and not self.graph_runtime._is_safe_subdir(node_dir, memory_file):
+                    continue
+                portable_records.append(
+                    {
+                        "messages_path": os.path.relpath(messages_file, node_dir),
+                        "memory_path": os.path.relpath(memory_file, node_dir) if memory_file else "",
+                        "records": list(snapshot.get("records") or []),
+                    }
+                )
+            deletion_undo_store.write_json(undo_entry, "records.json", portable_records)
+            undo_token = deletion_undo_store.commit(undo_entry)
+        return {
+            "ok": True,
+            "deleted": int((result or {}).get("deleted") or 0),
+            "message_ids": list((result or {}).get("message_ids") or []),
+            "user_message_id": user_message_id,
+            "undo_token": undo_token or None,
+        }
 
     def delete_node_instance_memory_message_from_paths(
         self,
@@ -288,8 +452,45 @@ class NodeInstanceRuntime(HostBoundService):
             raise HTTPException(status_code=404, detail="node instance not found")
         if bool(cfg.get("_delete_requested")):
             raise HTTPException(status_code=409, detail="node is being deleted")
-        result = delete_node_memory_record(memory_path, messages_path, safe_message_id)
-        return {"ok": True, "deleted": int((result or {}).get("deleted") or 0), "message_id": safe_message_id}
+        from .deletion_undo_store import deletion_undo_store
+
+        result = delete_node_memory_record(memory_path, messages_path, safe_message_id, capture_deleted=True)
+        deleted_records = list((result or {}).get("records") or [])
+        undo_token = ""
+        if deleted_records:
+            undo_entry = deletion_undo_store.begin(
+                "delete_dialogue",
+                {
+                    "graph_id": safe_graph_id,
+                    "node_id": safe_node_id,
+                    "message_ids": [safe_message_id],
+                },
+            )
+            if undo_entry is not None:
+                node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
+                portable_records = []
+                for snapshot in deleted_records:
+                    messages_file = str(snapshot.get("messages_path") or "")
+                    memory_file = str(snapshot.get("memory_path") or "")
+                    if not self.graph_runtime._is_safe_subdir(node_dir, messages_file):
+                        continue
+                    if memory_file and not self.graph_runtime._is_safe_subdir(node_dir, memory_file):
+                        continue
+                    portable_records.append(
+                        {
+                            "messages_path": os.path.relpath(messages_file, node_dir),
+                            "memory_path": os.path.relpath(memory_file, node_dir) if memory_file else "",
+                            "records": list(snapshot.get("records") or []),
+                        }
+                    )
+                deletion_undo_store.write_json(undo_entry, "records.json", portable_records)
+                undo_token = deletion_undo_store.commit(undo_entry)
+        return {
+            "ok": True,
+            "deleted": int((result or {}).get("deleted") or 0),
+            "message_id": safe_message_id,
+            "undo_token": undo_token or None,
+        }
 
     def get_node_instance_live(self, node_id: str, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -301,57 +502,7 @@ class NodeInstanceRuntime(HostBoundService):
         if bool(cfg.get("_delete_requested")):
             raise HTTPException(status_code=409, detail="node is being deleted")
         live = self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}
-        return {
-            "node_id": safe_node_id,
-            "graph_id": safe_graph_id,
-            "live_message": str(live.get("text") or ""),
-            "thinking_message": str(live.get("thinking_text") or ""),
-        }
-
-    def stream_node_instance_live(self, node_id: str, graph_id: str = ""):
-        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
-        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
-        cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
-        if not isinstance(cfg, dict) or not cfg:
-            raise HTTPException(status_code=404, detail="node instance not found")
-        if bool(cfg.get("_delete_requested")):
-            raise HTTPException(status_code=409, detail="node is being deleted")
-
-        def encode_event(item: dict) -> str:
-            payload = {
-                "node_id": safe_node_id,
-                "graph_id": safe_graph_id,
-                "live_message": str((item or {}).get("text") or ""),
-                "thinking_message": str((item or {}).get("thinking_text") or ""),
-                "version": int((item or {}).get("version") or 0),
-                "trace_id": str((item or {}).get("trace_id") or ""),
-                "updated_at": float((item or {}).get("updated_at") or 0),
-                "is_streaming": bool((item or {}).get("is_streaming")),
-                "event_type": str((item or {}).get("event_type") or ""),
-                "event": (item or {}).get("event") if isinstance((item or {}).get("event"), dict) else None,
-                "interactive_session_id": str((item or {}).get("interactive_session_id") or ""),
-            }
-            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-        def events():
-            item = self.core.node_live_outputs.get(safe_graph_id, safe_node_id)
-            last_version = int((item or {}).get("version") or 0)
-            yield encode_event(item or {"version": last_version, "text": "", "is_streaming": False})
-            while True:
-                item = self.core.node_live_outputs.wait_for_change(safe_graph_id, safe_node_id, last_version, timeout=15.0)
-                version = int((item or {}).get("version") or 0)
-                if version <= last_version:
-                    yield ": keep-alive\n\n"
-                    continue
-                last_version = version
-                yield encode_event(item)
-
-        return StreamingResponse(
-            events(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+        return build_live_output_payload(safe_graph_id, safe_node_id, live, snapshot=True)
 
     def set_node_instance_state(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -438,6 +589,21 @@ class NodeInstanceRuntime(HostBoundService):
             if not ok:
                 raise HTTPException(status_code=404, detail="interactive session not found or process exited")
             return {"ok": True}
+        if type_id == "agent_node" and action == "stop_tool_call":
+            call_id = str((payload or {}).get("call_id") or "").strip()
+            if not call_id:
+                raise HTTPException(status_code=400, detail="call_id is required")
+            stopped = self.core.tool_call_cancellations.request(config_path, call_id)
+            if not stopped:
+                raise HTTPException(status_code=409, detail="tool call is not active")
+            self.graph_runtime._log_graph_event(
+                safe_graph_id,
+                "tool_call_stop_requested",
+                node_id=safe_node_id,
+                node_type_id=type_id,
+                call_id=call_id,
+            )
+            return {"ok": True, "state": parse_node_state(cfg.get("state")), "call_id": call_id}
         if type_id != "clock_node" and action == "stop":
             result = _cancel_node_work(config_path)
             active_cancelled = self.core.node_cancellations.request(config_path)

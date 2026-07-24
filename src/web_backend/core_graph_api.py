@@ -2,9 +2,10 @@ from .domain_base import DomainBase
 from .shared import *
 from .graph_api_storage import GraphApiStorage
 from .graph_visibility import GraphVisibilityService
+from .node_visibility import NodeVisibilityService
 from .graph_runtime_registry import GraphConfigReadError
 from .node_state_machine import parse_node_state
-from fastapi import Request
+from fastapi import Request, Response
 from fastapi.responses import StreamingResponse
 from ..workspace_settings import (
     read_startup_graph_settings,
@@ -35,7 +36,7 @@ class GraphApiDomain(DomainBase):
         except AttributeError:
             cached = None
         if cached is None:
-            cached = (GraphVisibilityService(self), GraphApiStorage(self))
+            cached = (GraphVisibilityService(self), NodeVisibilityService(self), GraphApiStorage(self))
             object.__setattr__(self, "_service_targets_cache", cached)
         return cached
 
@@ -184,10 +185,14 @@ class GraphApiDomain(DomainBase):
         }
         return self.emit_event_by_key(forwarded_payload)
 
-    def stop_node_run(self, run_id: str):
+    def stop_node_run(self, run_id: str, request: Request = None):
         run = self.node_runs.get(run_id)
         if not run:
             raise HTTPException(status_code=404, detail="run not found")
+        graph_id = str(run.get("graph_id") or "").strip()
+        node_instance_id = str(run.get("node_instance_id") or "").strip()
+        if graph_id and node_instance_id:
+            self.core.node_ops.require_node_visible(node_instance_id, graph_id, request)
         if run["status"] == "running":
             try:
                 run["process"].terminate()
@@ -212,34 +217,46 @@ class GraphApiDomain(DomainBase):
         self.require_graph_visible(safe_id, request)
         return self.graph_runtime._runner_status(safe_id)
 
-    def stream_graph_events(self, graph_id: str, request: Request = None):
-        safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        self.require_graph_visible(safe_id, request)
-
+    def stream_app_events(self, request: Request = None):
         def encode_event(item: dict) -> str:
-            payload = dict(item or {})
-            payload["graph_id"] = safe_id
-            payload["version"] = int(payload.get("version") or 0)
-            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            return f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
 
         def events():
-            item = self.core.graph_events.get(safe_id)
-            last_version = int((item or {}).get("version") or 0)
-            yield encode_event(item or {"graph_id": safe_id, "version": last_version})
+            last_version = self.core.graph_events.get_global_version()
+            yield encode_event({"event": "stream_snapshot", "stream_snapshot": True, "global_version": last_version})
             while True:
-                item = self.core.graph_events.wait_for_change(safe_id, last_version, timeout=15.0)
-                version = int((item or {}).get("version") or 0)
-                if version <= last_version:
+                item = self.core.graph_events.wait_for_global_change(last_version, timeout=15.0)
+                if not isinstance(item, dict):
                     yield ": keep-alive\n\n"
                     continue
-                last_version = version
-                yield encode_event(item)
+                last_version = int(item.get("global_version") or last_version)
+                if str(item.get("event") or "").strip() == "stream_gap":
+                    yield encode_event(item)
+                    continue
+                graph_id = self.graph_runtime._sanitize_graph_id(item.get("graph_id") or self.default_graph_id)
+                try:
+                    self.require_graph_visible(graph_id, request)
+                    if str(item.get("event") or "").strip() == "node_live":
+                        node_id = str(item.get("node_instance_id") or item.get("node_id") or "").strip()
+                        self.core.node_ops.require_node_visible(node_id, graph_id, request)
+                except HTTPException as exc:
+                    if exc.status_code == 404:
+                        continue
+                    raise
+                payload = self.sanitize_graph_event_for_request(graph_id, item, request)
+                payload["graph_id"] = graph_id
+                payload["global_version"] = last_version
+                yield encode_event(payload)
 
         return StreamingResponse(
             events(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @staticmethod
+    def retire_legacy_event_stream():
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
     def emit_graph(self, graph_id: str, payload: dict, request: Request = None):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -264,6 +281,7 @@ class GraphApiDomain(DomainBase):
         text_preview = envelope_preview(message)
 
         safe_from_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, from_id)
+        self.core.node_ops.require_node_visible(safe_from_id, safe_graph_id, request)
         config_path = self.graph_runtime._node_config_path(safe_from_id, safe_graph_id)
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")

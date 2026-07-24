@@ -4,6 +4,7 @@ import random
 import time
 from datetime import datetime
 
+from src.memory_root import get_memories_root
 from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
 from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportError, format_doubao_http_error
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
@@ -21,19 +22,21 @@ class DoubaoHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRu
         for key, value in headers.items():
             k = str(key)
             v = str(value)
-            if k.lower() == "authorization":
+            lowered = k.lower()
+            if lowered == "authorization":
                 if " " in v:
                     scheme = v.split(" ", 1)[0]
                     masked[k] = f"{scheme} ***"
                 else:
                     masked[k] = "***"
+            elif any(token in lowered for token in ("api-key", "access-key", "access-token")):
+                masked[k] = "***"
             else:
                 masked[k] = v
         return masked
 
     def _http_debug_dump_path(self, prefix):
-        runtime_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        debug_dir = os.path.join(runtime_root, "memories", "_http_debug")
+        debug_dir = os.path.join(get_memories_root(), "_http_debug")
         os.makedirs(debug_dir, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         return os.path.join(debug_dir, f"{prefix}_{ts}_{os.getpid()}.json")
@@ -125,8 +128,21 @@ class DoubaoHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRu
             preview = response.body[:500]
             raise RuntimeError(f"Invalid JSON response: {e}; body={preview}") from e
 
-    def _post_json_with_retry(self, *, endpoint, url, headers, payload_json, max_retries, retry_delay):
-        timeout = self.config.get("timeoutMs", 60000) / 1000
+    def _post_json_with_retry(
+        self,
+        *,
+        endpoint,
+        url,
+        headers,
+        payload_json,
+        max_retries,
+        retry_delay,
+        timeout_ms=None,
+    ):
+        configured_timeout_ms = self.config.get("timeoutMs", 60000) if timeout_ms is None else timeout_ms
+        timeout = float(configured_timeout_ms) / 1000
+        if timeout <= 0:
+            raise ValueError("Doubao HTTP timeout_ms must be greater than zero.")
         current_delay = float(retry_delay)
         for attempt in range(max_retries + 1):
             try:

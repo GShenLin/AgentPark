@@ -22,7 +22,13 @@ class BaseNode:
     description = ""
     input_capabilities = ["text"]
     output_capabilities = ["text"]
-    common_config_defaults: dict[str, Any] = {"plugins": [], "skills": [], "working_path": ""}
+    common_config_defaults: dict[str, Any] = {
+        "plugins": [],
+        "skills": [],
+        "remote_enabled": False,
+        "remote_worker_id": "",
+        "working_path": "",
+    }
     common_config_schema: dict[str, dict[str, Any]] = {
         "plugins": {
             "type": "multiselect",
@@ -41,7 +47,18 @@ class BaseNode:
             "label": "Working Path",
             "placeholder": "Select or enter the node working directory",
             "description": "The file explorer opens this directory when the node is selected. Agent nodes receive it as working-directory context.",
-        }
+        },
+        "remote_enabled": {
+            "type": "boolean",
+            "value_type": "boolean",
+            "hidden": True,
+            "description": "Internal companion state for the Working Path Remote control.",
+        },
+        "remote_worker_id": {
+            "type": "text",
+            "hidden": True,
+            "description": "Internal identifier of the remote worker paired through the Working Path Remote control.",
+        },
     }
     config_defaults: dict[str, Any] = {}
     config_schema: dict[str, dict[str, Any]] = {}

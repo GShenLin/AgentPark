@@ -100,9 +100,11 @@ class ZhipuHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRun
         if response.status_code < 200 or response.status_code >= 300:
             raise ZhipuHttpError(response.status_code, response.body)
         try:
-            return json.loads(response.body)
+            payload = json.loads(response.body)
         except Exception as exc:
             raise ProviderProtocolError(f"Invalid JSON response: {exc}; body={response.body[:500]}") from exc
+        self._raise_for_provider_error_event(payload, stage="zhipu_chat_completions")
+        return payload
 
     def _post_json_with_retry(self, *, endpoint: str, url: str, headers: dict, payload_json: str) -> dict:
         max_retries, retry_delay = self._resolve_retry_policy()
@@ -218,6 +220,7 @@ class ZhipuHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRun
         content_chunks: list[str] = []
         tool_calls_by_index: dict[int, dict] = {}
         finish_reason = ""
+        usage: dict[str, Any] = {}
         for data_text in self._curl_post_sse_data_lines(
             url=url,
             headers=headers,
@@ -229,6 +232,9 @@ class ZhipuHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRun
             event = self._parse_sse_json_event(data_text, stage="zhipu_chat_completions_stream_parse")
             if not isinstance(event, dict):
                 continue
+            self._raise_for_provider_error_event(event, stage="zhipu_chat_completions_stream")
+            if isinstance(event.get("usage"), dict):
+                usage = dict(event["usage"])
             for choice in event.get("choices") if isinstance(event.get("choices"), list) else []:
                 if not isinstance(choice, dict):
                     continue
@@ -245,7 +251,30 @@ class ZhipuHttpTransport(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRun
         tool_calls = self._assembled_tool_calls(tool_calls_by_index)
         if tool_calls:
             message["tool_calls"] = tool_calls
-        return {"choices": [{"message": message, "finish_reason": finish_reason}]}
+        result: dict[str, Any] = {"choices": [{"message": message, "finish_reason": finish_reason}]}
+        if usage:
+            result["usage"] = usage
+        return result
+
+    @staticmethod
+    def _raise_for_provider_error_event(payload: object, *, stage: str) -> None:
+        if not isinstance(payload, dict):
+            return
+        error = payload.get("error")
+        if not isinstance(error, dict):
+            return
+        code = str(error.get("code") or "").strip()
+        error_type = str(error.get("type") or "").strip()
+        message = str(error.get("message") or "").strip()
+        param = str(error.get("param") or "").strip()
+        details = [
+            f"code={code or '<missing>'}",
+            f"type={error_type or '<missing>'}",
+            f"message={message or '<missing>'}",
+        ]
+        if param:
+            details.append(f"param={param}")
+        raise ProviderProtocolError(f"{stage} provider error: " + "; ".join(details))
 
     @staticmethod
     def _merge_tool_call_deltas(tool_calls_by_index: dict[int, dict], tool_calls_delta: Any) -> None:

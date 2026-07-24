@@ -22,6 +22,12 @@ if exist "dist\AgentPark.exe" del /f /q "dist\AgentPark.exe" >nul 2>nul
 if errorlevel 1 goto :fail
 if not exist "dist\AgentPark.exe" goto :fail
 
+echo [INFO] Packaging silent remote worker executable...
+if exist "dist\AgentParkRemote.exe" del /f /q "dist\AgentParkRemote.exe" >nul 2>nul
+"%PYTHON_EXE%" -m PyInstaller --noconfirm --clean AgentParkRemote.spec
+if errorlevel 1 goto :fail
+if not exist "dist\AgentParkRemote.exe" goto :fail
+
 call :mirror_dir "config" "dist\config"
 if errorlevel 1 goto :fail
 call :mirror_dir "functions" "dist\functions"
@@ -36,6 +42,7 @@ call :mirror_dir "docs" "dist\docs"
 if errorlevel 1 goto :fail
 
 echo [INFO] Package complete: dist\AgentPark.exe
+echo [INFO] Remote worker: dist\AgentParkRemote.exe
 echo [INFO] Offline doctor: dist\AgentPark.exe doctor --json
 endlocal
 exit /b 0

@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta, ResponsesFunctionCallStreamItem, ResponsesOutputItemAdded, ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesResponseCompleted, ResponsesResponseCreated, ResponsesServerToolActivity, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.responses_stream_events import ResponsesFunctionCallArgumentsDelta, ResponsesFunctionCallStreamItem, ResponsesOutputItemAdded, ResponsesOutputItemDone, ResponsesOutputTextDelta, ResponsesReasoningDelta, ResponsesRefusalDelta, ResponsesResponseCompleted, ResponsesResponseCreated, ResponsesResponseIncomplete, ResponsesResponseInProgress, ResponsesResponseQueued, ResponsesServerToolActivity, ResponsesStreamEvent, ResponsesStreamFailure
+from src.providers.openai_retry_policy import is_server_overloaded_code
+from src.providers.responses_stream_diagnostics import build_reasoning_snapshot_diagnostics
 from src.providers.server_tool_protocol import is_server_tool_item_type
 
 
@@ -13,6 +15,7 @@ class OpenAIResponsesStreamEventNormalizer:
         self._function_call_buckets: dict[str, dict[str, Any]] = {}
         self._function_call_keys_by_id: dict[str, str] = {}
         self._reasoning_text_by_segment: dict[tuple[str, int], str] = {}
+        self._refusal_text_by_segment: dict[tuple[str, int], str] = {}
 
     def ingest_sse_data(self, data_text: Any) -> list[ResponsesStreamEvent]:
         text = str(data_text or "")
@@ -41,6 +44,8 @@ class OpenAIResponsesStreamEventNormalizer:
             ]
         raw_type = str(raw_event.get("type") or "").strip()
         event_type = raw_type.lower()
+        if event_type == "response.queued":
+            return self._response_lifecycle_event(raw_event, raw_type, status="queued")
         if event_type == "response.created":
             response = raw_event.get("response")
             if not isinstance(response, dict):
@@ -51,10 +56,14 @@ class OpenAIResponsesStreamEventNormalizer:
                     response=dict(response),
                 )
             ]
+        if event_type == "response.in_progress":
+            return self._response_lifecycle_event(raw_event, raw_type, status="in_progress")
         if event_type in {"response.output_item.added", "output_item.added"}:
             return self._output_item_added(raw_event, raw_type)
         if event_type in {"response.output_text.delta", "output_text.delta"}:
             return self._output_text_delta(raw_event, raw_type)
+        if event_type in {"response.refusal.delta", "refusal.delta", "response.refusal.done", "refusal.done"}:
+            return self._refusal_event(raw_event, raw_type, event_type)
         if "reasoning" in event_type or "thinking" in event_type:
             return self._reasoning_events(raw_event, raw_type, event_type)
         if event_type in {"response.function_call_arguments.delta", "function_call_arguments.delta"}:
@@ -76,15 +85,73 @@ class OpenAIResponsesStreamEventNormalizer:
                         event_type=raw_type,
                     )
                 ]
+            status = str(response.get("status") or "").strip().lower()
+            if status and status != "completed":
+                return [
+                    self._failure(
+                        message=f"Responses completed event carries incompatible response status: {status}",
+                        code="invalid_completed_response_status",
+                        event_type=raw_type,
+                    )
+                ]
             return [
                 ResponsesResponseCompleted(
                     response_id=str(response.get("id") or raw_event.get("response_id") or "").strip(),
                     response=dict(response),
                 )
             ]
-        if event_type in {"response.failed", "response.error"}:
+        if event_type == "response.incomplete":
+            response = raw_event.get("response")
+            if not isinstance(response, dict):
+                return [
+                    self._failure(
+                        message="Responses incomplete event is missing response object",
+                        code="missing_incomplete_response",
+                        event_type=raw_type,
+                    )
+                ]
+            status = str(response.get("status") or "").strip().lower()
+            if status and status != "incomplete":
+                return [
+                    self._failure(
+                        message=f"Responses incomplete event carries incompatible response status: {status}",
+                        code="invalid_incomplete_response_status",
+                        event_type=raw_type,
+                    )
+                ]
+            incomplete_details = response.get("incomplete_details")
+            details = incomplete_details if isinstance(incomplete_details, dict) else {}
+            return [
+                ResponsesResponseIncomplete(
+                    response_id=str(response.get("id") or raw_event.get("response_id") or "").strip(),
+                    reason=str(details.get("reason") or "").strip(),
+                    response=dict(response),
+                )
+            ]
+        if event_type in {"response.failed", "response.error", "error"}:
             return [self._provider_failure(raw_event, raw_type)]
         return []
+
+    def _response_lifecycle_event(
+        self,
+        event: dict[str, Any],
+        raw_type: str,
+        *,
+        status: str,
+    ) -> list[ResponsesStreamEvent]:
+        response = event.get("response")
+        if not isinstance(response, dict):
+            return [
+                self._failure(
+                    message=f"Responses {status} event is missing response object",
+                    code=f"missing_{status}_response",
+                    event_type=raw_type,
+                )
+            ]
+        response_id = str(response.get("id") or event.get("response_id") or "").strip()
+        if status == "queued":
+            return [ResponsesResponseQueued(response_id=response_id, response=dict(response))]
+        return [ResponsesResponseInProgress(response_id=response_id, response=dict(response))]
 
     def _server_tool_activity(
         self,
@@ -102,6 +169,8 @@ class OpenAIResponsesStreamEventNormalizer:
             "queued": "queued",
             "in_progress": "in_progress",
             "searching": "in_progress",
+            "generating": "in_progress",
+            "partial_image": "in_progress",
             "completed": "completed",
             "failed": "failed",
         }
@@ -114,9 +183,16 @@ class OpenAIResponsesStreamEventNormalizer:
             "id": item_id,
             "status": status,
         }
+        for key in ("query", "prompt", "result", "revised_prompt"):
+            value = event.get(key)
+            if value is not None:
+                item[key] = value
         action = event.get("action")
         if isinstance(action, dict):
             item["action"] = dict(action)
+        partial_image_index = self._int_or_none(event.get("partial_image_index"))
+        if partial_image_index is not None:
+            item["partial_image_index"] = partial_image_index
         return ResponsesServerToolActivity(
             item_id=item_id,
             output_index=self._int_or_none(event.get("output_index")),
@@ -181,19 +257,95 @@ class OpenAIResponsesStreamEventNormalizer:
             )
         ]
 
+    def _refusal_event(
+        self,
+        event: dict[str, Any],
+        raw_type: str,
+        event_type: str,
+    ) -> list[ResponsesStreamEvent]:
+        item_id = str(event.get("item_id") or "").strip()
+        output_index = self._int_or_none(event.get("output_index"))
+        content_index = self._int_or_none(event.get("content_index"))
+        segment_key = (item_id or f"output:{output_index}", content_index if content_index is not None else 0)
+        previous = self._refusal_text_by_segment.get(segment_key, "")
+
+        if event_type.endswith(".delta"):
+            delta = event.get("delta")
+            if not isinstance(delta, str):
+                return [
+                    self._failure(
+                        message="Responses refusal.delta event requires string delta",
+                        code="invalid_refusal_delta",
+                        event_type=raw_type,
+                    )
+                ]
+            text = previous + delta
+            status = "in_progress"
+        else:
+            snapshot = event.get("refusal")
+            if not isinstance(snapshot, str):
+                return [
+                    self._failure(
+                        message="Responses refusal.done event requires string refusal",
+                        code="invalid_refusal_snapshot",
+                        event_type=raw_type,
+                    )
+                ]
+            if not snapshot.startswith(previous):
+                return [
+                    self._failure(
+                        message=(
+                            "Responses refusal completion snapshot does not extend the streamed text "
+                            f"for item {item_id or '<unknown>'}, content {content_index if content_index is not None else 0}"
+                        ),
+                        code="inconsistent_refusal_snapshot",
+                        event_type=raw_type,
+                        details={
+                            "item_id": item_id,
+                            "output_index": output_index,
+                            "content_index": content_index,
+                            "streamed_length": len(previous),
+                            "snapshot_length": len(snapshot),
+                        },
+                    )
+                ]
+            delta = snapshot[len(previous) :]
+            text = snapshot
+            status = "completed"
+
+        self._refusal_text_by_segment[segment_key] = text
+        if not delta and status != "completed":
+            return []
+        return [
+            ResponsesRefusalDelta(
+                delta=delta,
+                text=text,
+                item_id=item_id,
+                output_index=output_index,
+                content_index=content_index,
+                provider=self.provider,
+                status=status,
+            )
+        ]
+
     def _reasoning_events(
         self,
         event: dict[str, Any],
         raw_type: str,
         event_type: str,
     ) -> list[ResponsesStreamEvent]:
-        text = self._extract_reasoning_text(event)
-        if not text:
-            return []
         item_id = str(event.get("item_id") or "").strip()
         output_index = self._int_or_none(event.get("output_index"))
         segment_index = self._reasoning_segment_index(event)
         segment_key = (item_id or f"output:{output_index}", segment_index)
+
+        if event_type.endswith("reasoning_summary_part.added"):
+            self._reasoning_text_by_segment[segment_key] = ""
+            return []
+
+        text = self._extract_reasoning_text(event)
+        if not text:
+            return []
         previous = self._reasoning_text_by_segment.get(segment_key, "")
 
         if event_type.endswith(".delta"):
@@ -211,6 +363,14 @@ class OpenAIResponsesStreamEventNormalizer:
                         ),
                         code="inconsistent_reasoning_snapshot",
                         event_type=raw_type,
+                        details=build_reasoning_snapshot_diagnostics(
+                            event=event,
+                            item_id=item_id,
+                            output_index=output_index,
+                            segment_index=segment_index,
+                            streamed_text=previous,
+                            snapshot_text=text,
+                        ),
                     )
                 ]
             delta = text[len(previous) :]
@@ -439,17 +599,30 @@ class OpenAIResponsesStreamEventNormalizer:
     def _provider_failure(self, event: dict[str, Any], raw_type: str) -> ResponsesStreamFailure:
         response = event.get("response") if isinstance(event.get("response"), dict) else {}
         error = response.get("error") if isinstance(response.get("error"), dict) else event.get("error")
-        error_obj = error if isinstance(error, dict) else {}
+        error_obj = dict(error) if isinstance(error, dict) else {}
+        for key in ("code", "message", "param", "status_code", "status", "http_status", "http_status_code"):
+            if key not in error_obj and event.get(key) is not None:
+                error_obj[key] = event.get(key)
         code = str(error_obj.get("code") or error_obj.get("type") or "provider_response_failed").strip()
         error_message = str(error_obj.get("message") or "").strip()
         message = f"{code}: {error_message}" if code and error_message else error_message
         if not message:
             message = json.dumps(error_obj or event, ensure_ascii=False)
+        details = {
+            key: value
+            for key, value in {
+                "param": error_obj.get("param", event.get("param")),
+                "sequence_number": event.get("sequence_number"),
+                "response_id": response.get("id"),
+            }.items()
+            if value is not None and value != ""
+        }
         return self._failure(
             message=message,
             code=code,
             event_type=raw_type,
             status_code=self._status_code_from_error(error_obj),
+            details=details,
         )
 
     def _failure(
@@ -459,6 +632,7 @@ class OpenAIResponsesStreamEventNormalizer:
         code: str,
         event_type: str,
         status_code: int = 0,
+        details: dict[str, Any] | None = None,
     ) -> ResponsesStreamFailure:
         return ResponsesStreamFailure(
             message=str(message or "").strip(),
@@ -466,6 +640,7 @@ class OpenAIResponsesStreamEventNormalizer:
             provider=self.provider,
             event_type=str(event_type or "").strip(),
             status_code=int(status_code or 0),
+            details=dict(details) if isinstance(details, dict) else {},
         )
 
     @staticmethod
@@ -546,6 +721,6 @@ class OpenAIResponsesStreamEventNormalizer:
         code = str(error.get("code") or error.get("type") or "").strip().lower()
         if code in {"rate_limit_exceeded", "rate_limit_error"}:
             return 429
-        if code in {"server_error", "service_unavailable", "temporarily_unavailable"}:
+        if code in {"server_error", "service_unavailable", "temporarily_unavailable"} or is_server_overloaded_code(code):
             return 503
         return 0

@@ -56,6 +56,8 @@ export type NodeCard = {
   tools?: string[]
   mcpServers?: string[]
   workingPath?: string
+  remoteEnabled?: boolean
+  remoteWorkerId?: string
 }
 
 export type DragSession =
@@ -130,6 +132,7 @@ export type AgentBoardContext = {
   openNodeSettings: (id: string) => void
   openNodeFolder: (id: string) => Promise<void>
   openWorkFolder: (id: string) => Promise<void>
+  setNodePrivacy: (id: string, privateNode: boolean) => Promise<void>
   openGraphPanel: () => void
   triggerNode: (nodeId: string) => Promise<void>
   startClockNode: (nodeId: string) => Promise<void>
@@ -145,8 +148,9 @@ export type AgentBoardContext = {
   sendNodeMessage: (nodeId: string, message: string | MessageEnvelope) => Promise<void>
   renameNodeCard: (nodeId: string, nextName: string) => Promise<void>
   deleteNodeCard: (nodeId: string) => Promise<void>
+  refreshNodeConfigsAndMemory: () => Promise<void>
   ensureNodeConfig: (nodeId: string) => Promise<void>
-  refreshNodeConfig: (nodeId: string) => Promise<void>
+  refreshNodeConfig: (nodeId: string, options?: { signal?: AbortSignal }) => Promise<void>
   setNodeFields: (nodeId: string, fields: Record<string, unknown>) => Promise<NodeConfigChangeResponse | void>
   clearNodeFields: (nodeId: string, fields: string[]) => Promise<NodeConfigChangeResponse | void>
 

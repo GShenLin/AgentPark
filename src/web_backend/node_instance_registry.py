@@ -4,40 +4,31 @@ import shutil
 import subprocess
 from types import SimpleNamespace
 
+from fastapi import Request
+
+from src.provider_options import PROVIDER_VISIBILITY_CONTEXT_KEY
 from src.providers.agent_environment_context import resolve_agent_model_workspace_path
 
 from . import runtime_paths
 from .node_config_errors import NodeConfigWriteError
 from .node_config_errors import NodeConfigReadError
-from .node_config_service import RUNTIME_STATE_FIELDS, node_config_service, node_runtime_state_version
+from .node_config_service import RUNTIME_STATE_FIELDS, node_config_service
 from .node_instance_artifacts import rename_node_artifacts
 from .node_instance_artifacts import rename_node_references_in_graph
 from .node_metadata_reader import NodeMetadataError
-from .node_memory_store import NodeMemoryPersistenceError, clear_node_memory
-from .node_runtime_projection import load_node_runtime_projection
+from .node_memory_store import NodeMemoryPersistenceError
+from .node_memory_reset import NodeMemoryResetBlocked, NodeMemoryResetError, reset_node_memory
 from .node_event_sequence import bump_node_event_seq
-from .node_state_machine import parse_node_state
 from .runtime_state_memory_store import runtime_state_memory_store
+from .request_access import is_local_request
 from .service_host import HostBoundService
 from .shared import (
     HTTPException,
     _read_json_dict,
     _write_json_dict,
 )
-
-
-def _config_file_version(config_path: str) -> int:
-    version = 0
-    try:
-        version = max(version, int(os.stat(config_path).st_mtime_ns))
-    except OSError:
-        pass
-    version = max(version, node_runtime_state_version(config_path))
-    return version
-
-
 class NodeInstanceRegistry(HostBoundService):
-    def create_node_instance(self, payload: dict):
+    def create_node_instance(self, payload: dict, request: Request = None):
         node_id = (payload or {}).get("node_id")
         type_id = (payload or {}).get("type_id")
         name = (payload or {}).get("name")
@@ -78,7 +69,15 @@ class NodeInstanceRegistry(HostBoundService):
         if isinstance(cfg, dict) and cfg:
             before = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
             try:
-                self.graph_runtime._try_init_node_config(type_id, cfg, graph_id, safe_id)
+                self.graph_runtime._try_init_node_config(
+                    type_id,
+                    cfg,
+                    graph_id,
+                    safe_id,
+                    {
+                        PROVIDER_VISIBILITY_CONTEXT_KEY: is_local_request(request),
+                    },
+                )
             except NodeMetadataError as exc:
                 raise HTTPException(status_code=500, detail=str(exc))
             after = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
@@ -201,7 +200,7 @@ class NodeInstanceRegistry(HostBoundService):
         if os.path.exists(new_dir):
             raise HTTPException(status_code=409, detail="target node id already exists")
 
-        memory_root = os.path.join(runtime_paths._get_runtime_root(), "memories")
+        memory_root = runtime_paths._get_graphs_dir()
         if not self.graph_runtime._is_safe_subdir(memory_root, old_dir) or not self.graph_runtime._is_safe_subdir(memory_root, new_dir):
             raise HTTPException(status_code=400, detail="invalid node path")
 
@@ -232,10 +231,24 @@ class NodeInstanceRegistry(HostBoundService):
             next_cfg["state"] = "idle"
             if not _write_json_dict(config_path, next_cfg):
                 raise HTTPException(status_code=500, detail="failed to update cloned node config")
+            event_copy = self.core.runtime_events.copy_source_event_rules(
+                safe_source_graph_id,
+                safe_node_id,
+                safe_target_graph_id,
+                safe_new_node_id,
+            )
         except HTTPException:
+            try:
+                self.core.runtime_events.remove_source_rules(safe_target_graph_id, safe_new_node_id)
+            except Exception:
+                pass
             shutil.rmtree(new_dir, ignore_errors=True)
             raise
         except Exception as e:
+            try:
+                self.core.runtime_events.remove_source_rules(safe_target_graph_id, safe_new_node_id)
+            except Exception:
+                pass
             shutil.rmtree(new_dir, ignore_errors=True)
             raise HTTPException(status_code=500, detail=f"failed to clone node instance: {str(e)}")
 
@@ -256,6 +269,7 @@ class NodeInstanceRegistry(HostBoundService):
             "graph_id": safe_target_graph_id,
             "type_id": type_id,
             "config_path": config_path,
+            "event_rules": event_copy,
         }
 
     def clear_node_instance_memory(self, node_id: str, graph_id: str = ""):
@@ -265,11 +279,18 @@ class NodeInstanceRegistry(HostBoundService):
         if not config_path or not os.path.exists(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
         try:
-            cleared_files = clear_node_memory(
-                self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id),
-                self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id),
+            reset = reset_node_memory(
+                core=self.core,
+                config_path=config_path,
+                memory_path=self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id),
+                messages_path=self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id),
+                node_directory=self.graph_runtime._node_dir(safe_graph_id, safe_node_id),
             )
         except NodeMemoryPersistenceError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        except NodeMemoryResetBlocked as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except NodeMemoryResetError as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         summary = self._clear_node_runtime_summary(config_path)
         self.core.node_live_outputs.clear(safe_graph_id, safe_node_id)
@@ -277,7 +298,11 @@ class NodeInstanceRegistry(HostBoundService):
             "ok": True,
             "node_id": safe_node_id,
             "graph_id": safe_graph_id,
-            "cleared_files": cleared_files,
+            "cleared_files": reset.cleared_file_count,
+            "cleared_task_direction_files": list(reset.cleared_task_direction_files),
+            "active_runs_cancelled": reset.active_runs_cancelled,
+            "async_runs_stopped": reset.async_runs_stopped,
+            "pending_items_cleared": reset.pending_items_cleared,
             "cleared_summary_fields": summary.changed_fields,
         }
 
@@ -357,77 +382,6 @@ class NodeInstanceRegistry(HostBoundService):
             "path": working_path,
             "source": "work_folder",
         }
-
-    def list_node_instance_configs(self, graph_id: str = "", since_version: int = 0):
-        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        base_dir = self.graph_runtime._graph_dir(safe_graph_id)
-        if not base_dir or not os.path.isdir(base_dir):
-            return {"nodes": [], "node_ids": [], "version": 0, "partial": bool(since_version)}
-        items = []
-        node_ids = []
-        max_version = 0
-        try:
-            min_version = int(since_version or 0)
-        except Exception:
-            min_version = 0
-        for entry in os.listdir(base_dir):
-            if entry == "agents":
-                continue
-            config_path = os.path.join(base_dir, entry, "config.json")
-            if not os.path.exists(config_path):
-                continue
-            node_ids.append(entry)
-            config_version = _config_file_version(config_path)
-            max_version = max(max_version, config_version)
-            if min_version > 0 and config_version <= min_version:
-                continue
-            try:
-                cfg = node_config_service.read_strict(config_path)
-            except NodeConfigReadError as exc:
-                raise HTTPException(status_code=500, detail=str(exc))
-            self._apply_runtime_projection_if_needed(cfg, os.path.join(base_dir, entry))
-            type_id = str(cfg.get("type_id") or "").strip()
-            if type_id == "clock_node" or (type_id and "working_path" not in cfg):
-                before = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
-                try:
-                    self.graph_runtime._try_init_node_config(type_id, cfg, safe_graph_id, entry)
-                except NodeMetadataError as exc:
-                    raise HTTPException(status_code=500, detail=str(exc))
-                after = json.dumps(cfg, ensure_ascii=False, sort_keys=True)
-                if after != before:
-                    _write_json_dict(config_path, cfg)
-                    config_version = _config_file_version(config_path)
-                    max_version = max(max_version, config_version)
-            cfg.pop("schema", None)
-            cfg["node_id"] = entry
-            cfg["graph_id"] = safe_graph_id
-            cfg["state"] = parse_node_state(cfg.get("state"))
-            pending = cfg.get("pending")
-            cfg["pending_count"] = len(pending) if isinstance(pending, list) else 0
-            cfg["_config_version"] = config_version
-            items.append(cfg)
-        return {
-            "nodes": items,
-            "node_ids": sorted(node_ids),
-            "version": max_version,
-            "partial": min_version > 0,
-        }
-
-    @staticmethod
-    def _apply_runtime_projection_if_needed(cfg: dict, node_dir: str) -> None:
-        if (
-            cfg.get("last_runtime_event")
-            and cfg.get("runtime_events")
-            and cfg.get("provider_request_summaries")
-            and cfg.get("provider_request_totals")
-        ):
-            return
-        projection = load_node_runtime_projection(node_dir)
-        if not projection:
-            return
-        for key in ("last_runtime_event", "runtime_events", "provider_request_summaries", "provider_request_totals"):
-            if not cfg.get(key) and projection.get(key):
-                cfg[key] = projection[key]
 
     def update_node_instance_config(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)

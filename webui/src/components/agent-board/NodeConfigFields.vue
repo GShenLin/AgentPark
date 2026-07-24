@@ -3,19 +3,15 @@ import { computed, ref, watch } from 'vue'
 import { getPrompt, listPrompts, savePrompt, type PromptLibraryKind, type ProviderInfo } from '../../api'
 import { ASSET_FIELD_KEYS } from '../../composables/droppedPaths'
 import {
+  agentProviderModes,
+  codexProviderModes,
   dedupeStrings,
-  GUI_AGENT_MODE,
   GUI_AGENT_NODE_TYPE,
-  IMAGE_GENERATION_MODE,
-  IMAGE_GENERATION_NODE_TYPE,
-  normalizeMode,
   normalizeSwitch,
   normalizeToolSelection,
   providerModes,
   reasoningEffortOptions,
   switchOptions,
-  VIDEO_GENERATION_MODE,
-  VIDEO_GENERATION_NODE_TYPE,
 } from '../../composables/useAgentNodeCreateSchema'
 import {
   getSchemaFieldHint,
@@ -30,11 +26,14 @@ import {
   normalizeSchemaFieldValue,
 } from '../../composables/nodeSchemaFields'
 import FieldMultiSelect from './FieldMultiSelect.vue'
+import FieldCombobox from './FieldCombobox.vue'
+import FieldFileListPicker from './FieldFileListPicker.vue'
+import FieldImageDimensions from './FieldImageDimensions.vue'
 import {
   createNodeConfigFieldSections,
-  type NodeConfigFieldGroupId,
   type NodeConfigFieldSection,
 } from './nodeConfigFieldGroups'
+import ExpandableTextarea from '../ExpandableTextarea.vue'
 import WorkingPathField from './WorkingPathField.vue'
 
 type NodeFields = Record<string, any>
@@ -66,7 +65,6 @@ const emit = defineEmits<{
   'field-error': [message: string]
 }>()
 
-const defaultModeOrder = ['chat', 'image_generation', 'video_generation', 'imagechat', 'vision_understand']
 const multiSelectSearchQueries = ref<Record<string, string>>({})
 const promptActionBusy = ref('')
 const promptActionMessage = ref('')
@@ -75,33 +73,29 @@ const promptLibraryField = ref('')
 const promptLibraryFiles = ref<string[]>([])
 const promptSaveFilename = ref('system_prompt.txt')
 const schemaKeys = computed(() => Object.keys(props.schema || {}).filter((key) => shouldShowField(key)))
-const fieldSections = computed(() => createNodeConfigFieldSections(props.typeId, schemaKeys.value))
-const fieldGroupOpen = ref<Record<NodeConfigFieldGroupId, boolean>>({
-  environment: true,
-  behavior: false,
-  ability: false,
-})
-const modeOptions = computed(() => {
-  const discovered = props.providers.flatMap((provider) => providerModes(provider))
-  const merged = dedupeStrings([...defaultModeOrder, ...discovered].map((mode) => normalizeMode(mode)))
-  return merged.length ? merged : ['chat']
-})
+const providerOptions = computed(() => dedupeStrings(
+  props.providers
+    .filter((provider) => {
+      if (props.typeId === 'agent_node') return agentProviderModes(provider).length > 0
+      if (props.typeId === 'codex_node') return codexProviderModes(provider).length > 0
+      return true
+    })
+    .map((provider) => String(provider.id || '').trim())
+    .filter(Boolean),
+).sort((left, right) => left.localeCompare(right)))
 const toolOptions = computed(() => dedupeStrings(props.availableTools).sort((a, b) => a.localeCompare(b)))
-const selectedMode = computed(() => {
-  if (props.typeId === GUI_AGENT_NODE_TYPE) return GUI_AGENT_MODE
-  if (props.typeId === IMAGE_GENERATION_NODE_TYPE) return IMAGE_GENERATION_MODE
-  if (props.typeId === VIDEO_GENERATION_NODE_TYPE) return VIDEO_GENERATION_MODE
-  return normalizeMode(props.fields.mode) || modeOptions.value[0] || 'chat'
+const activeSupportModes = computed(() => {
+  const provider = getSelectedProvider()
+  if (!provider) return []
+  return props.typeId === 'agent_node' ? agentProviderModes(provider) : providerModes(provider)
 })
-const providerOptions = computed(() => {
-  const mode = selectedMode.value
-  return dedupeStrings(
-    props.providers
-      .filter((provider) => providerModes(provider).includes(mode))
-      .map((provider) => String(provider.id || '').trim())
-      .filter(Boolean),
-    ).sort((a, b) => a.localeCompare(b))
-})
+const fieldSections = computed(() => createNodeConfigFieldSections(
+  props.typeId,
+  schemaKeys.value,
+  props.schema,
+  activeSupportModes.value,
+))
+const fieldGroupOpen = ref<Record<string, boolean>>({})
 
 function setField(key: string, value: any) {
   if (isPromptLibraryField(key)) promptActionMessage.value = ''
@@ -237,22 +231,21 @@ async function loadPromptFile(key: string, requested: string) {
   }
 }
 
-function isModeField(key: string) {
-  return props.typeId === 'agent_node' && key === 'mode'
-}
-
 function isProviderField(key: string) {
   if (key !== 'provider_id') return false
   return (
     props.typeId === 'agent_node' ||
-    props.typeId === GUI_AGENT_NODE_TYPE ||
-    props.typeId === IMAGE_GENERATION_NODE_TYPE ||
-    props.typeId === VIDEO_GENERATION_NODE_TYPE
+    props.typeId === 'codex_node' ||
+    props.typeId === GUI_AGENT_NODE_TYPE
   )
 }
 
+function setProvider(providerId: string) {
+  setField('provider_id', String(providerId || '').trim())
+}
+
 function isWebSearchField(key: string) {
-  return (props.typeId === 'agent_node' || props.typeId === VIDEO_GENERATION_NODE_TYPE) && key === 'web_search'
+  return props.typeId === 'agent_node' && key === 'web_search'
 }
 
 function isThinkingField(key: string) {
@@ -263,8 +256,25 @@ function isReasoningEffortField(key: string) {
   return props.typeId === 'agent_node' && key === 'reasoning_effort'
 }
 
-function shouldShowField(_key: string) {
+function shouldShowField(key: string) {
+  const field = props.schema?.[String(key || '').trim()]
+  if (!(field && typeof field === 'object' && !Array.isArray(field))) return true
+  if (field.hidden === true) return false
+  const operations = Array.isArray(field.operations) ? field.operations.map((item: unknown) => String(item || '').trim()) : []
+  if (operations.length > 0) {
+    return operations.includes(String(props.fields.audio_operation || 'generate').trim())
+  }
+  const visibleWhen = field.visible_when
+  if (visibleWhen && typeof visibleWhen === 'object' && !Array.isArray(visibleWhen)) {
+    const dependency = String(visibleWhen.field || '').trim()
+    if (!dependency || !Object.prototype.hasOwnProperty.call(visibleWhen, 'equals')) return false
+    return props.fields[dependency] === visibleWhen.equals
+  }
   return true
+}
+
+function isComboboxField(key: string) {
+  return String(props.schema?.[key]?.type || '').trim().toLowerCase() === 'combobox'
 }
 
 function getSelectedProvider() {
@@ -299,6 +309,10 @@ function isToolSelectionField(key: string) {
 
 function getFieldType(key: string) {
   return getSchemaFieldType(props.schema, key)
+}
+
+function getFieldContainerTag(key: string) {
+  return getFieldType(key) === 'image_dimensions' ? 'div' : 'label'
 }
 
 function getInputType(key: string) {
@@ -417,16 +431,12 @@ function getReasoningEffortValue() {
 }
 
 function resetFieldGroups() {
-  fieldGroupOpen.value = {
-    environment: true,
-    behavior: false,
-    ability: false,
-  }
+  fieldGroupOpen.value = {}
 }
 
 function isFieldGroupOpen(section: NodeConfigFieldSection) {
   if (!section.collapsible) return true
-  return fieldGroupOpen.value[section.id as NodeConfigFieldGroupId]
+  return fieldGroupOpen.value[section.id] ?? section.defaultOpen
 }
 
 function onFieldGroupToggle(section: NodeConfigFieldSection, event: Event) {
@@ -440,7 +450,7 @@ function onFieldGroupToggle(section: NodeConfigFieldSection, event: Event) {
 }
 
 watch(
-  () => [props.resetKey, props.typeId],
+  () => [props.resetKey, props.typeId, activeSupportModes.value.join('|')],
   () => {
     multiSelectSearchQueries.value = {}
     resetFieldGroups()
@@ -465,7 +475,8 @@ watch(
       </summary>
 
       <div class="config-field-group-fields">
-        <label
+        <component
+          :is="getFieldContainerTag(key)"
           v-for="key in section.keys"
           :key="key"
           class="field"
@@ -507,22 +518,23 @@ watch(
             />
           </span>
 
-      <select
-        v-if="isModeField(key)"
-        class="field-input"
-        :value="selectedMode"
-        @change="setField('mode', ($event.target as HTMLSelectElement).value)"
-      >
-        <option v-for="mode in modeOptions" :key="mode" :value="mode">{{ mode }}</option>
-      </select>
+      <FieldCombobox
+        v-if="isComboboxField(key)"
+        :id="`node-config-${typeId}-${key}`"
+        :value="String(fields[key] ?? '')"
+        :options="getFieldOptions(key)"
+        :reset-key="`${resetKey}:${key}`"
+        @update-value="setField(key, $event)"
+      />
 
       <select
         v-else-if="isProviderField(key)"
         class="field-input"
         :value="String(fields.provider_id ?? '')"
         :disabled="providerOptions.length === 0"
-        @change="setField('provider_id', ($event.target as HTMLSelectElement).value)"
+        @change="setProvider(($event.target as HTMLSelectElement).value)"
       >
+        <option value="" disabled>Select provider</option>
         <option v-for="providerId in providerOptions" :key="providerId" :value="providerId">
           {{ providerId }}
         </option>
@@ -572,6 +584,16 @@ watch(
         @toggle="toggleMultiSelectOption(key, $event)"
       />
 
+      <FieldImageDimensions
+        v-else-if="getFieldType(key) === 'image_dimensions'"
+        :value="fields[key]"
+        :aspect-ratio-value="fields.image_aspect_ratio"
+        :field-schema="schema[key]"
+        :reset-key="`${resetKey}:${key}`"
+        @update-value="setField(key, $event)"
+        @update-aspect-ratio="setField('image_aspect_ratio', $event)"
+      />
+
       <select
         v-else-if="isSelectField(key)"
         class="field-input"
@@ -583,16 +605,38 @@ watch(
         </option>
       </select>
 
-      <textarea
+      <WorkingPathField
+        v-else-if="isWorkingPathField(key)"
+        :value="String(fields[key] ?? '')"
+        :input-attrs="getInputAttrs(key)"
+        :remote-enabled="isCheckedValue(fields.remote_enabled)"
+        :remote-worker-id="String(fields.remote_worker_id ?? '')"
+        @update-value="setField(key, $event)"
+        @update-remote="setField('remote_enabled', $event)"
+        @update-worker="setField('remote_worker_id', $event)"
+        @error="emit('field-error', $event)"
+      />
+
+      <FieldFileListPicker
+        v-else-if="getFieldType(key) === 'file_list'"
+        :value="fields[key]"
+        :root-path="String(fields.working_path ?? '')"
+        :label="getFieldLabel(key)"
+        :reset-key="`${resetKey}:${key}`"
+        @update-value="setField(key, $event)"
+      />
+
+      <ExpandableTextarea
         v-else-if="getFieldType(key) === 'text' || getFieldType(key) === 'json'"
-        class="field-input field-textarea"
-        rows="3"
-        :value="getFieldText(key)"
-        @input="setField(key, ($event.target as HTMLTextAreaElement).value)"
+        :model-value="getFieldText(key)"
+        :title="getFieldLabel(key)"
+        :aria-label="getFieldLabel(key)"
+        :rows="3"
+        @update:model-value="setField(key, $event)"
         @dragover="enableAssetDrop ? emit('field-dragover', key, $event) : undefined"
         @dragleave="enableAssetDrop ? emit('field-dragleave', key, $event) : undefined"
         @drop="enableAssetDrop ? emit('field-drop', key, $event) : undefined"
-      ></textarea>
+      />
 
       <input
         v-else-if="getFieldType(key) === 'boolean'"
@@ -603,7 +647,7 @@ watch(
       />
 
       <input
-        v-else-if="!isWorkingPathField(key)"
+        v-else
         class="field-input"
         :type="getInputType(key)"
         v-bind="getInputAttrs(key)"
@@ -612,14 +656,6 @@ watch(
         @dragover="enableAssetDrop ? emit('field-dragover', key, $event) : undefined"
         @dragleave="enableAssetDrop ? emit('field-dragleave', key, $event) : undefined"
         @drop="enableAssetDrop ? emit('field-drop', key, $event) : undefined"
-      />
-
-      <WorkingPathField
-        v-else
-        :value="String(fields[key] ?? '')"
-        :input-attrs="getInputAttrs(key)"
-        @update-value="setField(key, $event)"
-        @error="emit('field-error', $event)"
       />
 
       <div v-if="isPromptLibraryOpen(key)" class="field-prompt-library" @click.stop @keydown.stop>
@@ -672,7 +708,7 @@ watch(
           <span v-if="getFieldHint(key)" class="field-hint">{{ getFieldHint(key) }}</span>
           <span v-if="isPromptLibraryField(key) && promptLibraryField === key && promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
           <span v-if="enableAssetDrop && isAssetFieldKey(key)" class="field-drop-hint">Drop files here to upload and fill this asset field.</span>
-        </label>
+        </component>
       </div>
     </component>
   </div>
@@ -893,12 +929,6 @@ watch(
   border-color: var(--theme-panel-node-side-editor-input-focus-border, rgba(56, 189, 248, 0.7));
 }
 
-.field-textarea {
-  min-height: 78px;
-  resize: vertical;
-  line-height: 1.4;
-}
-
 .field-checkbox {
   width: 16px;
   height: 16px;
@@ -921,7 +951,16 @@ watch(
   box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.28);
 }
 
+.field-drop-target :deep(.expandable-textarea__input) {
+  border-color: rgba(45, 212, 191, 0.8);
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.28);
+}
+
 .field-busy .field-input {
+  opacity: 0.7;
+}
+
+.field-busy :deep(.expandable-textarea__input) {
   opacity: 0.7;
 }
 

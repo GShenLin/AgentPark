@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 
 from src.config_loader import ConfigLoader
+from src.runtime_cancellation import cancel_source_from_agent
 from src.value_parsing import parse_bool_value
 
 
@@ -153,6 +154,7 @@ def run_gui_agent_task(
     verify_on_finish=True,
     dry_run=False,
     capture_region=None,
+    agent=None,
 ):
     instruction = _safe_text(task)
     if not instruction:
@@ -199,6 +201,10 @@ def run_gui_agent_task(
         "verify_on_finish": "true" if parse_bool_value(verify_on_finish, default=True) else "false",
         "dry_run": "true" if parse_bool_value(dry_run, default=False) else "false",
     }
+    cancel_source = cancel_source_from_agent(agent)
+    if cancel_source is not None:
+        context["cancel_event"] = cancel_source
+        context["cancel_check"] = cancel_source
     prompt_text = _safe_text(system_prompt)
     if prompt_text:
         context["system_prompt"] = prompt_text

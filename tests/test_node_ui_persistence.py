@@ -7,7 +7,25 @@ import uuid
 from src.web_backend.state_store import _read_json_dict, _write_json_dict
 
 
-def test_clone_node_instance_copies_artifacts_and_resets_runtime_state():
+def _patch_runtime_root(monkeypatch, tmp_path):
+    from src.web_backend import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "get_workspace_root", lambda: str(tmp_path))
+
+
+def _patch_event_config(monkeypatch, tmp_path):
+    from src.runtime_events import event_config_store
+
+    monkeypatch.setattr(
+        event_config_store,
+        "event_config_path",
+        lambda: str(tmp_path / "config" / "events.json"),
+    )
+
+
+def test_clone_node_instance_copies_artifacts_and_resets_runtime_state(monkeypatch, tmp_path):
+    _patch_event_config(monkeypatch, tmp_path)
+
     import src.web_backend as backend
     from src.web_backend.runtime_paths import _get_graphs_dir
 
@@ -53,7 +71,7 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state():
             f"/api/nodes/instances/{node_id}/clone?graph_id={graph_id}",
             json={"new_node_id": clone_id, "new_name": "Clone 1", "ui": {"x": 44, "y": 55}},
         )
-        assert cloned.status_code == 200
+        assert cloned.status_code == 200, cloned.text
         assert cloned.json().get("source_node_id") == node_id
         assert cloned.json().get("node_id") == clone_id
 
@@ -89,7 +107,62 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state():
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
 
-def test_clone_node_instance_can_target_another_graph():
+def test_clone_node_instance_rebinds_and_activates_source_event_rules(tmp_path, monkeypatch):
+    _patch_runtime_root(monkeypatch, tmp_path)
+
+    from fastapi.testclient import TestClient
+    from src.runtime_events.event_config_store import default_event_config
+    from src.web_backend.facade import WebBackendFacade
+
+    graph_id = "clone_event_graph"
+    source_node_id = "source"
+    clone_node_id = "clone"
+    facade = WebBackendFacade()
+    client = TestClient(facade.build())
+    assert client.post(
+        "/api/nodes/instances",
+        json={"node_id": source_node_id, "type_id": "append_node", "graph_id": graph_id},
+    ).status_code == 200
+
+    config = default_event_config()
+    config["rules"] = {
+        "OnInput": {
+            graph_id: {
+                source_node_id: [
+                    {"action": "context.produce", "target": "builtin.environment_context"},
+                ]
+            }
+        }
+    }
+    assert client.post("/api/events/apply", json={"config": config}).json()["ok"] is True
+
+    cloned = client.post(
+        f"/api/nodes/instances/{source_node_id}/clone?graph_id={graph_id}",
+        json={"new_node_id": clone_node_id},
+    )
+
+    assert cloned.status_code == 200
+    persisted = json.loads((tmp_path / "config" / "events.json").read_text(encoding="utf-8"))
+    assert persisted["rules"]["OnInput"][graph_id][clone_node_id] == persisted["rules"]["OnInput"][graph_id][source_node_id]
+    runtime_events = facade.core.runtime_events
+    active_rules = runtime_events.registry.active().rule_index
+    assert (graph_id, clone_node_id, "OnInput") in active_rules
+    emitted = runtime_events.emit(
+        event="OnInput",
+        graph_id=graph_id,
+        node_id=clone_node_id,
+        node_type_id="append_node",
+        trace_id="clone-profile-event-trigger",
+        payload={"input": "verify cloned event"},
+    )
+    assert emitted["matched"] == 1
+    assert emitted["executed"] == 1
+    assert emitted["errors"] == []
+
+
+def test_clone_node_instance_can_target_another_graph(monkeypatch, tmp_path):
+    _patch_event_config(monkeypatch, tmp_path)
+
     import src.web_backend as backend
     from src.web_backend.runtime_paths import _get_graphs_dir
 
@@ -126,7 +199,7 @@ def test_clone_node_instance_can_target_another_graph():
                 "ui": {"x": 44, "y": 55},
             },
         )
-        assert cloned.status_code == 200
+        assert cloned.status_code == 200, cloned.text
         cloned_payload = cloned.json()
         assert cloned_payload.get("source_graph_id") == source_graph_id
         assert cloned_payload.get("source_node_id") == node_id
@@ -289,6 +362,105 @@ def test_list_node_instance_configs_supports_incremental_refresh():
         assert [item["node_id"] for item in changed_payload["nodes"]] == [node_id]
         assert changed_payload["nodes"][0]["custom_field"] == "changed"
         assert int(changed_payload["version"]) > version
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_incremental_config_refresh_merges_runtime_state_only_for_changed_nodes(monkeypatch):
+    import src.web_backend as backend
+    from src.web_backend.node_config_service import node_config_service
+    from src.web_backend.runtime_paths import _get_graphs_dir
+    from src.web_backend.runtime_state_memory_store import runtime_state_memory_store
+
+    graph_id = f"ut_incremental_merge_{uuid.uuid4().hex[:8]}"
+    node_ids = ["n1", "n2"]
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+
+    try:
+        client = TestClient(app)
+        for node_id in node_ids:
+            created = client.post(
+                "/api/nodes/instances",
+                json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id},
+            )
+            assert created.status_code == 200
+
+        first = client.get(f"/api/nodes/instances/configs?graph_id={graph_id}")
+        assert first.status_code == 200
+        version = int(first.json()["version"])
+
+        merged_paths: list[str] = []
+        original = node_config_service.with_runtime_state
+
+        def track_merge(config_path: str, config_payload: dict):
+            merged_paths.append(config_path)
+            return original(config_path, config_payload)
+
+        monkeypatch.setattr(node_config_service, "with_runtime_state", track_merge)
+
+        unchanged = client.get(f"/api/nodes/instances/configs?graph_id={graph_id}&since_version={version}")
+        assert unchanged.status_code == 200
+        assert unchanged.json()["nodes"] == []
+        assert merged_paths == []
+
+        changed_path = os.path.join(_get_graphs_dir(), graph_id, "n2", "config.json")
+        runtime_state_memory_store.update(changed_path, lambda payload: payload.update({"last_message": "changed"}))
+        changed = client.get(f"/api/nodes/instances/configs?graph_id={graph_id}&since_version={version}")
+        assert changed.status_code == 200
+        assert [item["node_id"] for item in changed.json()["nodes"]] == ["n2"]
+        assert changed.json()["nodes"][0]["last_message"] == "changed"
+        assert merged_paths == [changed_path]
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_get_node_instance_config_returns_only_the_requested_node():
+    import src.web_backend as backend
+    from src.web_backend.runtime_paths import _get_graphs_dir
+    from src.web_backend.runtime_state_memory_store import runtime_state_memory_store
+
+    graph_id = f"ut_single_config_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+
+    try:
+        client = TestClient(app)
+        for node_id in ("n1", "n2"):
+            created = client.post(
+                "/api/nodes/instances",
+                json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id},
+            )
+            assert created.status_code == 200
+
+        response = client.get(f"/api/nodes/instances/n2/config?graph_id={graph_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        assert int(payload["version"]) > 0
+        assert payload["node"]["node_id"] == "n2"
+        assert payload["node"]["graph_id"] == graph_id
+        assert "schema" not in payload["node"]
+
+        config_path = os.path.join(_get_graphs_dir(), graph_id, "n2", "config.json")
+        runtime_state_memory_store.update(
+            config_path,
+            lambda state: state.update(
+                {
+                    "last_message": "editor-visible",
+                    "runtime_events": [{"type": "runtime_notice", "message": "large diagnostics"}],
+                }
+            ),
+        )
+        editor_response = client.get(f"/api/nodes/instances/n2/config?graph_id={graph_id}&view=editor")
+        assert editor_response.status_code == 200
+        editor_payload = editor_response.json()
+        assert editor_payload["view"] == "editor"
+        assert editor_payload["node"]["last_message"] == "editor-visible"
+        assert "runtime_events" not in editor_payload["node"]
+
+        full_response = client.get(f"/api/nodes/instances/n2/config?graph_id={graph_id}&view=full")
+        assert full_response.status_code == 200
+        assert full_response.json()["node"]["runtime_events"][0]["message"] == "large diagnostics"
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
@@ -535,6 +707,7 @@ def test_clear_node_instance_memory_resets_visible_runtime_summary():
     from fastapi.testclient import TestClient
     from src.web_backend.node_memory_store import append_node_memory_entry
     from src.web_backend.runtime_paths import _get_graphs_dir
+    from src.task_direction_store import TaskDirectionStore, task_direction_path
 
     graph_id = f"ut_clear_memory_{uuid.uuid4().hex[:8]}"
     node_id = "clear_node"
@@ -567,6 +740,25 @@ def test_clear_node_instance_memory_resets_visible_runtime_summary():
         memory_path = facade.core.graph_runtime._node_memory_path(node_id, graph_id)
         messages_path = facade.core.graph_runtime._node_messages_path(node_id, graph_id)
         append_node_memory_entry(memory_path, messages_path, "user", "old question")
+        node_dir = facade.core.graph_runtime._node_dir(graph_id, node_id)
+        direction_path = task_direction_path(node_dir, "task-to-clear")
+        TaskDirectionStore(direction_path, task_id="task-to-clear").replace(
+            expected_revision=0,
+            state={
+                "objective": "Old task",
+                "hypotheses": [],
+                "evidence": [],
+                "unresolved_risks": [],
+                "done_criteria": [
+                    {
+                        "id": "done",
+                        "statement": "Finish old task",
+                        "status": "pending",
+                        "evidence_ids": [],
+                    }
+                ],
+            },
+        )
         facade.core.node_live_outputs.update(graph_id, node_id, "old live")
 
         response = client.post(f"/api/nodes/instances/{node_id}/clear-memory?graph_id={graph_id}")
@@ -574,6 +766,8 @@ def test_clear_node_instance_memory_resets_visible_runtime_summary():
         body = response.json()
         assert body["ok"] is True
         assert "last_message" in body["cleared_summary_fields"]
+        assert direction_path in body["cleared_task_direction_files"]
+        assert not os.path.exists(direction_path)
 
         memory = client.get(f"/api/nodes/instances/{node_id}/memory?graph_id={graph_id}&max_chars=20000").json()
         assert memory["text"] == ""
@@ -645,7 +839,7 @@ class Node:
     assert "on create boom" in response.json().get("detail", "")
 
 
-def test_delete_node_instance_reports_delete_failures(monkeypatch, tmp_path):
+def test_delete_node_instance_uses_undo_archive_instead_of_rmtree(monkeypatch, tmp_path):
     import src.web_backend as backend
     from src.web_backend import runtime_paths
 
@@ -661,20 +855,27 @@ def test_delete_node_instance_reports_delete_failures(monkeypatch, tmp_path):
     assert created.status_code == 200
 
     def fail_rmtree(_path):
-        raise OSError("delete boom")
+        raise AssertionError("undo-enabled node deletion should not call shutil.rmtree")
 
     monkeypatch.setattr(shutil, "rmtree", fail_rmtree)
     response = client.delete("/api/nodes/instances/delete_fail?graph_id=ut_delete_fail")
 
-    assert response.status_code == 500
-    assert "delete boom" in response.json().get("detail", "")
+    assert response.status_code == 200
+    assert response.json().get("undo_token")
+    assert not os.path.exists(tmp_path / "memories" / "ut_delete_fail" / "delete_fail")
 
 
-def test_delete_node_instance_retries_transient_permission_errors(monkeypatch, tmp_path):
+def test_delete_node_instance_without_undo_retries_transient_permission_errors(monkeypatch, tmp_path):
     import src.web_backend as backend
     from src.web_backend import runtime_paths
 
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    from src import workspace_settings
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text('{"undo":{"maxSteps":0}}', encoding="utf-8")
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     app = backend.create_app()
     from fastapi.testclient import TestClient
 

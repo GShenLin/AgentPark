@@ -205,7 +205,7 @@ def _models_endpoint(provider: dict[str, Any], provider_type: str) -> str:
     if _is_codex_auth_provider(provider):
         query = urlencode({"client_version": _codex_client_version(provider)})
         return f"{_base_url(provider)}/models?{query}"
-    if provider_type in {"openai", "deepseek", "claude", "doubao", "grok", "zhipu", "gemini"}:
+    if provider_type in {"openai", "deepseek", "kimi", "claude", "doubao", "grok", "zhipu", "gemini"}:
         return f"{_base_url(provider)}/models"
     return ""
 

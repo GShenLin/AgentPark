@@ -1,14 +1,29 @@
 import json
 
 from src.base_agent import BaseAgent
+from src.providers.doubao_audio_generation import DoubaoAudioGeneration
+from src.providers.doubao_audio_runtime import DoubaoAudioRuntime
+from src.providers.doubao_tts_http import DoubaoTtsHttp
+from src.providers.doubao_asr_flash import DoubaoAsrFlash
+from src.providers.doubao_asr_file import DoubaoAsrFile
+from src.providers.doubao_machine_translation import DoubaoMachineTranslation
+from src.providers.doubao_tts_async import DoubaoTtsAsync
+from src.providers.doubao_tts_websocket import DoubaoTtsWebSocket
+from src.providers.doubao_asr_websocket import DoubaoAsrWebSocket
+from src.providers.doubao_audio_minutes import DoubaoAudioMinutes
+from src.providers.doubao_podcast import DoubaoPodcast
+from src.providers.doubao_realtime_dialogue import DoubaoRealtimeDialogue
+from src.providers.doubao_simultaneous_interpretation import DoubaoSimultaneousInterpretation
 from src.providers.doubao_http_transport import DoubaoHttpTransport
 from src.providers.doubao_image_generation import DoubaoImageGeneration
 from src.providers.doubao_responses_mapping import DoubaoResponsesMapping
 from src.providers.doubao_responses_runtime import DoubaoResponsesRuntime
 from src.providers.doubao_stream_runtime import DoubaoStreamRuntime
 from src.providers.tool_feedback import ToolFeedbackMixin
+from src.providers.tool_turn_protocol import prepare_chat_completions_messages
 from src.providers.doubao_tool_runtime import DoubaoToolRuntime
 from src.providers.doubao_video_generation import DoubaoVideoGeneration
+from src.providers.image_generation_input import latest_image_generation_input
 from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.providers.wan_animate_mix_runtime import WanAnimateMixRuntime
 from src.service_host import ServiceHost
@@ -41,6 +56,19 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 DoubaoResponsesRuntime(self),
                 DoubaoImageGeneration(self),
                 DoubaoVideoGeneration(self),
+                DoubaoAudioGeneration(self),
+                DoubaoTtsHttp(self),
+                DoubaoAsrFlash(self),
+                DoubaoAsrFile(self),
+                DoubaoMachineTranslation(self),
+                DoubaoTtsAsync(self),
+                DoubaoTtsWebSocket(self),
+                DoubaoAsrWebSocket(self),
+                DoubaoAudioMinutes(self),
+                DoubaoPodcast(self),
+                DoubaoRealtimeDialogue(self),
+                DoubaoSimultaneousInterpretation(self),
+                DoubaoAudioRuntime(self),
                 WanAnimateMixRuntime(self),
             )
             object.__setattr__(self, "_service_targets_cache", cached)
@@ -92,6 +120,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         stream=False,
         stream_handler=None,
         thinking_stream_handler=None,
+        mode_options=None,
         _tool_submission_error_recovered=False,
     ):
         self.config = self._read_provider_config_from_file()
@@ -101,18 +130,49 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 return "Error: No content found for video generation."
 
             try:
+                options = dict(mode_options or {}) if isinstance(mode_options, dict) else {}
                 tools_payload = [{"type": "web_search"}] if parse_switch_mode(web_search, default="disabled") == "enabled" else None
-                return self.generate_video(content, tools=tools_payload)
+                return self.generate_video(
+                    content,
+                    filename_prefix=options.get("video_filename_prefix") or "generated_video",
+                    resolution=options.get("video_resolution"),
+                    ratio=options.get("video_ratio"),
+                    duration=options.get("video_duration"),
+                    frames=options.get("video_frames"),
+                    seed=options.get("video_seed"),
+                    camera_fixed=options.get("video_camera_fixed"),
+                    watermark=options.get("video_watermark"),
+                    generate_audio=options.get("video_generate_audio"),
+                    return_last_frame=options.get("video_return_last_frame"),
+                    tools=tools_payload,
+                )
             except Exception as e:
                 return f"Video generation failed: {str(e)}"
 
         if mode == "image_generation":
-            prompt = self._extract_latest_user_text_prompt(self.messages)
+            options = dict(mode_options or {}) if isinstance(mode_options, dict) else {}
+            prompt, references = latest_image_generation_input(self.messages, options.get("image_references"))
             if not prompt:
                 return "Error: No prompt found for image generation."
 
             try:
-                result = self.generate_image(prompt)
+                image_watermark = options.get("image_watermark")
+                if image_watermark is None:
+                    image_watermark = True
+                result = self.generate_image(
+                    prompt,
+                    filename_prefix=options.get("image_filename_prefix") or "generated_image",
+                    response_format=options.get("image_response_format") or "url",
+                    watermark=image_watermark,
+                    size=options.get("image_size"),
+                    image=references or None,
+                    optimize_prompt_mode=options.get("image_optimize_prompt_mode"),
+                    output_format=options.get("image_output_format"),
+                    sequential_image_generation=options.get("image_sequential_image_generation"),
+                    max_images=options.get("image_max_images"),
+                    stream=options.get("image_stream"),
+                    tools=options.get("image_tools"),
+                )
                 paths = []
                 if isinstance(result, str):
                     paths = [result]
@@ -122,20 +182,24 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 if paths:
                     for path in paths:
                         self._inject_image_message(path)
-                    return f"Image generated successfully: {', '.join(paths)}"
+                    return {
+                        "response": f"Image generated successfully: {', '.join(paths)}",
+                        "image_path": paths[0] if len(paths) == 1 else paths,
+                    }
 
                 return str(result)
             except Exception as e:
                 return f"Image generation failed: {str(e)}"
 
+        if mode == "audio_generation":
+            return self.run_audio_operation(self.messages, mode_options)
+
         messages = self._restore_recent_tool_results(self._get_messages_with_memory())
-        if isinstance(self.system_prompt, str) and self.system_prompt.strip():
-            has_system = any((msg or {}).get("role") == "system" for msg in messages)
-            if not has_system:
-                messages = [{"role": "system", "content": self.system_prompt.strip()}] + messages
+        messages = self._ensure_runtime_instruction(messages, self.system_prompt)
         messages = self._compact_tool_result_messages_for_submission(messages)
 
-        active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
+        regular_active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
+        active_tools = self._tool_context_compaction_active_tools(regular_active_tools)
         web_search_mode = parse_switch_mode(web_search, default="disabled")
         thinking_mode = parse_switch_mode(thinking, default=None)
         effort_source = reasoning_effort
@@ -145,6 +209,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             response_text = self._send_via_responses(
                 messages=messages,
                 active_tools=active_tools,
+                regular_active_tools=regular_active_tools,
                 run_tools=run_tools,
                 thinking_mode=thinking_mode,
                 reasoning_effort=effort_source,
@@ -158,7 +223,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
 
         payload = {
             "model": self.config["model"],
-            "messages": messages,
+            "messages": prepare_chat_completions_messages(messages),
         }
         if active_tools:
             payload["tools"] = active_tools
@@ -245,8 +310,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                             mime_type=image_data.get("mime_type", "image/png"),
                         )
 
-                    if self._tool_context_compaction_gate_completed(executions):
-                        return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
+                    self._tool_context_compaction_gate_completed(executions)
                     self._notify_companion_about_failed_tool_executions(executions)
                     self._run_tool_context_compaction_gate_if_needed(executions)
                     append_mid_turn_user_messages(self)
@@ -264,6 +328,21 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 return {"type": "function_call", "function": tool_calls[0]["function"], "tool_calls": tool_calls}
 
             content = message["content"]
+            if self._tool_context_compaction_gate_active_now() and not self._finish_tool_context_compaction_gate_with_response(
+                content
+            ):
+                self._retry_tool_context_compaction_gate("the model returned an empty response")
+                return self.Send(
+                    tools=tools,
+                    run_tools=run_tools,
+                    mode=mode,
+                    web_search=web_search_mode,
+                    thinking=thinking_mode,
+                    reasoning_effort=reasoning_effort,
+                    stream=stream,
+                    stream_handler=stream_handler,
+                    thinking_stream_handler=thinking_stream_handler,
+                )
             self.Message("assistant", content)
             return content
 

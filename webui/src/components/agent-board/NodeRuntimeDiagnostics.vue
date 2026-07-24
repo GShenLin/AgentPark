@@ -189,7 +189,8 @@ const requestRows = computed<DiagnosticRow[]>(() => {
     }
     const toolsCount = numberField(summary, 'tools_included_count')
     if (toolsCount != null) rows.push({ label: 'Tools Sent', value: String(toolsCount) })
-    const toolResultCount = Array.isArray(summary.tool_result_chars_by_call) ? summary.tool_result_chars_by_call.length : null
+    const toolResultCount = numberField(summary, 'tool_result_count')
+      ?? (Array.isArray(summary.tool_result_chars_by_call) ? summary.tool_result_chars_by_call.length : null)
     if (toolResultCount != null || runtimeToolCallCount.value != null) {
       const parts: string[] = []
       if (toolResultCount != null) parts.push(`${toolResultCount} results`)

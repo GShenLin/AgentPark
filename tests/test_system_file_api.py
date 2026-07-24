@@ -1,6 +1,9 @@
 import os
 import types
 
+import pytest
+from fastapi import HTTPException
+
 from src.web_backend import runtime_paths
 from src.web_backend.core_system_api import SystemApiDomain
 
@@ -13,6 +16,33 @@ def _system_api(monkeypatch, runtime_root):
     monkeypatch.setattr(core_system_api, "_get_runtime_root", lambda: str(runtime_root))
     monkeypatch.setattr(system_file_api, "_get_runtime_root", lambda: str(runtime_root))
     return SystemApiDomain(object())
+
+
+def test_list_providers_includes_private_only_for_local_requests(monkeypatch, tmp_path):
+    import src.web_backend.core_system_api as core_system_api
+
+    include_private_values = []
+
+    def fake_build_provider_support_list(*, include_private):
+        include_private_values.append(include_private)
+        return []
+
+    monkeypatch.setattr(
+        core_system_api,
+        "build_provider_support_list",
+        fake_build_provider_support_list,
+    )
+    api = _system_api(monkeypatch, tmp_path)
+    local_request = types.SimpleNamespace(
+        client=types.SimpleNamespace(host="127.0.0.1"),
+    )
+    remote_request = types.SimpleNamespace(
+        client=types.SimpleNamespace(host="192.0.2.10"),
+    )
+
+    assert api.list_providers(local_request) == {"providers": []}
+    assert api.list_providers(remote_request) == {"providers": []}
+    assert include_private_values == [True, False]
 
 
 def test_file_api_resolves_relative_paths_inside_runtime_root(monkeypatch, tmp_path):
@@ -70,6 +100,42 @@ def test_read_file_allows_paths_outside_runtime_root(monkeypatch, tmp_path):
     result = api.read_file(str(outside))
 
     assert result == {"content": "secret", "path": os.path.abspath(str(outside))}
+
+
+def test_open_file_launches_existing_file_for_local_request(monkeypatch, tmp_path):
+    target = tmp_path / "demo.txt"
+    target.write_text("hello", encoding="utf-8")
+    api = _system_api(monkeypatch, tmp_path)
+    launched = []
+    monkeypatch.setattr(api, "_launch_local_file", lambda path: launched.append(path))
+    request = types.SimpleNamespace(client=types.SimpleNamespace(host="127.0.0.1"))
+
+    result = api.open_file({"path": target.as_uri()}, request)
+
+    expected_path = os.path.abspath(str(target))
+    assert result == {"ok": True, "path": expected_path}
+    assert launched == [expected_path]
+
+
+def test_open_file_rejects_remote_request(monkeypatch, tmp_path):
+    target = tmp_path / "demo.txt"
+    target.write_text("hello", encoding="utf-8")
+    api = _system_api(monkeypatch, tmp_path)
+    request = types.SimpleNamespace(client=types.SimpleNamespace(host="192.0.2.10"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        api.open_file({"path": str(target)}, request)
+
+    assert exc_info.value.status_code == 403
+
+
+def test_open_file_rejects_missing_file(monkeypatch, tmp_path):
+    api = _system_api(monkeypatch, tmp_path)
+
+    with pytest.raises(HTTPException) as exc_info:
+        api.open_file({"path": "missing.txt"})
+
+    assert exc_info.value.status_code == 404
 
 
 def test_list_files_allows_directories_outside_runtime_root(monkeypatch, tmp_path):
@@ -224,4 +290,65 @@ def test_select_folder_allows_initial_path_outside_runtime_root(monkeypatch, tmp
     result = api.select_folder({"initial_path": str(outside)})
 
     assert seen["initialdir"] == os.path.abspath(str(outside))
+    assert result == {"ok": True, "path": os.path.abspath(str(outside))}
+
+
+def test_select_file_uses_node_directory_as_initial_path(monkeypatch, tmp_path):
+    node_dir = tmp_path / "memories" / "Main" / "Worker"
+    node_dir.mkdir(parents=True)
+    selected = node_dir / "Soul.md"
+    selected.write_text("soul", encoding="utf-8")
+    seen = {}
+    api = _system_api(monkeypatch, tmp_path)
+
+    class FakeTk:
+        def withdraw(self):
+            return None
+
+        def attributes(self, *args):
+            return None
+
+        def destroy(self):
+            return None
+
+    def fake_askopenfilename(**kwargs):
+        seen.update(kwargs)
+        return str(selected)
+
+    fake_filedialog = types.SimpleNamespace(askopenfilename=fake_askopenfilename)
+    fake_tk_module = types.SimpleNamespace(Tk=FakeTk, filedialog=fake_filedialog)
+    monkeypatch.setitem(__import__("sys").modules, "tkinter", fake_tk_module)
+    monkeypatch.setitem(__import__("sys").modules, "tkinter.filedialog", fake_filedialog)
+
+    result = api.select_file({"initial_path": "memories/Main/Worker"})
+
+    assert seen["initialdir"] == os.path.abspath(str(node_dir))
+    assert result == {"ok": True, "path": os.path.abspath(str(selected))}
+
+
+def test_select_file_allows_file_outside_runtime_root(monkeypatch, tmp_path):
+    runtime_root = tmp_path / "workspace"
+    runtime_root.mkdir()
+    outside = tmp_path / "outside" / "User.md"
+    outside.parent.mkdir()
+    outside.write_text("user", encoding="utf-8")
+    api = _system_api(monkeypatch, runtime_root)
+
+    class FakeTk:
+        def withdraw(self):
+            return None
+
+        def attributes(self, *args):
+            return None
+
+        def destroy(self):
+            return None
+
+    fake_filedialog = types.SimpleNamespace(askopenfilename=lambda **kwargs: str(outside))
+    fake_tk_module = types.SimpleNamespace(Tk=FakeTk, filedialog=fake_filedialog)
+    monkeypatch.setitem(__import__("sys").modules, "tkinter", fake_tk_module)
+    monkeypatch.setitem(__import__("sys").modules, "tkinter.filedialog", fake_filedialog)
+
+    result = api.select_file({})
+
     assert result == {"ok": True, "path": os.path.abspath(str(outside))}

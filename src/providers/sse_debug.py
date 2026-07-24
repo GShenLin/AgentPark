@@ -2,6 +2,8 @@ import json
 import os
 from datetime import datetime
 
+from src.memory_root import get_memories_root
+
 
 class ProviderSseDebugMixin:
     @staticmethod
@@ -44,6 +46,7 @@ class ProviderSseDebugMixin:
         record = {
             "index": index,
             "raw": raw_preview,
+            "raw_length": len(str(raw_data or "")),
             "raw_truncated": raw_truncated,
             "parsed_type": type(parsed_event).__name__ if parsed_event is not None else "none",
         }
@@ -56,6 +59,9 @@ class ProviderSseDebugMixin:
         record["object"] = str(parsed_event.get("object") or "")
         record["event_type"] = str(parsed_event.get("type") or "")
         record["keys"] = sorted(str(key) for key in parsed_event.keys())
+        for key in ("sequence_number", "item_id", "output_index", "content_index", "summary_index"):
+            if key in parsed_event:
+                record[key] = parsed_event.get(key)
         record["choice_count"] = len(choices) if isinstance(choices, list) else 0
         if isinstance(choices, list):
             record["choices"] = [self._summarize_sse_choice(choice) for choice in choices if isinstance(choice, dict)]
@@ -89,10 +95,9 @@ class ProviderSseDebugMixin:
         force=False,
     ):
         if not force and not self._provider_sse_debug_enabled():
-            return
+            return None
         try:
-            root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            debug_dir = os.path.join(root, "memories", "_http_debug")
+            debug_dir = os.path.join(get_memories_root(), "_http_debug")
             os.makedirs(debug_dir, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             path = os.path.join(debug_dir, f"{filename_prefix}_{ts}_{os.getpid()}.json")
@@ -111,8 +116,9 @@ class ProviderSseDebugMixin:
                 record["final_payload"] = final_payload
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(record, handle, ensure_ascii=False, indent=2)
+            return path
         except Exception:
-            return
+            return None
 
     def _provider_sse_debug_enabled(self) -> bool:
         config = getattr(self, "config", None)

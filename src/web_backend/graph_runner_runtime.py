@@ -14,7 +14,6 @@ from .service_host import HostBoundService
 from .shared import (
     _dequeue_node_pending_to_working,
     _recover_node_config_stale_working,
-    _write_json_dict,
 )
 
 
@@ -116,7 +115,10 @@ class GraphRunnerRuntime(HostBoundService):
             )
             cfg["input_num"] = input_num
             cfg["output_num"] = output_num
-            _write_json_dict(config_path, cfg)
+            state_store._patch_node_config_persistent_fields(
+                config_path,
+                {"input_num": input_num, "output_num": output_num},
+            )
             return cfg
         except NodeMetadataError as exc:
             self._log_graph_event(

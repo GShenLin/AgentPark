@@ -1,9 +1,11 @@
 import { ref } from 'vue'
-import type { ProviderInfo, GraphConfig, LatestTurnProgressSummary, MessageEnvelope } from '../api'
+import type { ProviderInfo, GraphConfig, LatestTurnProgressSummary, LiveActivityBlock, MessageEnvelope } from '../api'
 
 export type NodeEditorAttachment = {
   name: string
   path: string
+  kind?: string
+  mime?: string
 }
 
 const selectedNodeId = ref<string | null>(null)
@@ -20,6 +22,7 @@ const memoryLatestTurnProgressSummary = ref<LatestTurnProgressSummary | null>(nu
 const memoryLiveMessage = ref('')
 const memoryThinkingMessage = ref('')
 const memoryActivityMessage = ref('')
+const memoryActivityBlocks = ref<LiveActivityBlock[]>([])
 const memoryInteractiveSessionId = ref('')
 const memoryInteractiveSending = ref(false)
 const memoryTitle = ref('')
@@ -37,7 +40,9 @@ const currentGraphWorkingPath = ref('')
 const nodeSettingsRequest = ref<{ id: string; nonce: number } | null>(null)
 const nodeEditorInputText = ref('')
 const nodeEditorAttachments = ref<NodeEditorAttachment[]>([])
+const nodeEditorAttachmentDrafts = ref<Record<string, NodeEditorAttachment[]>>({})
 const nodeTriggerInputs = ref<Record<string, string>>({})
+const nodeConfigDockWidth = ref(360)
 
 export function useGlobalState() {
   return {
@@ -54,6 +59,7 @@ export function useGlobalState() {
     memoryLiveMessage,
     memoryThinkingMessage,
     memoryActivityMessage,
+    memoryActivityBlocks,
     memoryInteractiveSessionId,
     memoryInteractiveSending,
     memoryTitle,
@@ -71,6 +77,8 @@ export function useGlobalState() {
     nodeSettingsRequest,
     nodeEditorInputText,
     nodeEditorAttachments,
+    nodeEditorAttachmentDrafts,
     nodeTriggerInputs,
+    nodeConfigDockWidth,
   }
 }

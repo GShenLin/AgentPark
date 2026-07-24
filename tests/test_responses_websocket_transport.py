@@ -1,7 +1,46 @@
+import json
+
+import pytest
+from websockets.exceptions import ConnectionClosedError
+from websockets.frames import Close
+
+from src.providers.openai_transport_errors import OpenAITransportError
 from src.providers.responses_websocket_transport import incremental_request_input
 from src.providers.responses_websocket_transport import responses_websocket_url
+from src.providers.responses_websocket_transport import websocket_error_message
 from src.providers.responses_websocket_transport import websocket_response_create_payload
 from src.providers.responses_websocket_transport import ResponsesWebSocketTransportMixin
+
+
+class _KeepaliveTimeoutConnection:
+    def __init__(self, messages=()):
+        self.messages = list(messages)
+
+    def send(self, _message):
+        return None
+
+    def recv(self, timeout=None):
+        _ = timeout
+        if self.messages:
+            return self.messages.pop(0)
+        raise ConnectionClosedError(None, Close(1011, "keepalive ping timeout"))
+
+    def close(self):
+        return None
+
+
+class _FallbackRecordingTransport(ResponsesWebSocketTransportMixin):
+    def __init__(self, messages=()):
+        self._responses_ws_connection = _KeepaliveTimeoutConnection(messages)
+        self.notices = []
+        self.http_calls = 0
+
+    def _emit_provider_runtime_notice(self, *, message, stage):
+        self.notices.append((stage, message))
+
+    def _curl_post_sse_data_lines(self, **_kwargs):
+        self.http_calls += 1
+        yield "http-sse-event"
 
 
 def test_responses_websocket_url_converts_http_scheme_only():
@@ -17,6 +56,24 @@ def test_responses_websocket_headers_add_codex_beta_without_mutating_input():
     assert headers == {"Authorization": "Bearer test"}
     assert ws_headers["Authorization"] == "Bearer test"
     assert ws_headers["OpenAI-Beta"] == "responses_websockets=2026-02-06"
+
+
+def test_websocket_error_message_preserves_structured_provider_code():
+    error = websocket_error_message(
+        {
+            "type": "error",
+            "error": {
+                "code": "server_error",
+                "message": "temporary failure",
+            },
+        }
+    )
+
+    assert error == (
+        0,
+        "server_error",
+        "server_error: temporary failure",
+    )
 
 
 def test_websocket_payload_uses_previous_response_id_only_for_strict_extension():
@@ -311,3 +368,41 @@ def test_websocket_streamed_and_completed_output_items_are_deduplicated():
     )
 
     assert agent._responses_ws_last_response["output"] == [reasoning, function_call]
+
+
+def test_websocket_keepalive_timeout_before_first_event_falls_back_to_http_sse_once():
+    transport = _FallbackRecordingTransport()
+
+    events = list(
+        transport._responses_stream_data_lines(
+            url="https://api.example.test/v1/responses",
+            headers={"Authorization": "Bearer test"},
+            payload_json=json.dumps({"model": "gpt-test", "input": [], "stream": True}),
+            timeout_sec=60,
+        )
+    )
+
+    assert events == ["http-sse-event"]
+    assert transport.http_calls == 1
+    assert transport.notices[-1][0] == "openai_responses_websocket_fallback"
+    fallback_notice = json.loads(transport.notices[-1][1])
+    assert fallback_notice["fallback"] == "responses_http_sse"
+    assert "before first response event" in fallback_notice["reason"]
+
+
+def test_websocket_keepalive_timeout_after_first_event_does_not_fall_back_to_http_sse():
+    transport = _FallbackRecordingTransport(
+        [json.dumps({"type": "response.output_text.delta", "delta": "partial"})]
+    )
+    stream = transport._responses_stream_data_lines(
+        url="https://api.example.test/v1/responses",
+        headers={"Authorization": "Bearer test"},
+        payload_json=json.dumps({"model": "gpt-test", "input": [], "stream": True}),
+        timeout_sec=60,
+    )
+
+    assert json.loads(next(stream))["delta"] == "partial"
+    with pytest.raises(OpenAITransportError, match="websocket receive failed"):
+        next(stream)
+    assert transport.http_calls == 0
+    assert all(stage != "openai_responses_websocket_fallback" for stage, _message in transport.notices)

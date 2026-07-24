@@ -16,10 +16,12 @@ class PluginManifest:
     description: str = ""
     version: str = ""
     tools: tuple[str, ...] = ()
+    public_tools: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
     mcp_servers: tuple[str, ...] = ()
     mcp_server_configs: dict[str, dict] = field(default_factory=dict)
     config_schema: dict[str, Any] = field(default_factory=dict)
+    server_api: tuple[str, ...] = ()
     source_format: str = "agentpark"
 
 
@@ -75,6 +77,7 @@ def _validate_manifest(
     description = _optional_string(payload.get("description"), "description", path) or ""
     version = _optional_string(payload.get("version"), "version", path) or ""
     tools = _string_tuple(payload.get("tools"), "tools", path)
+    public_tools = _string_tuple(payload.get("publicTools"), "publicTools", path)
     skills = _string_tuple(payload.get("skills"), "skills", path)
     mcp_servers, mcp_server_configs = _mcp_values(payload, path)
     config_schema = payload.get("configSchema")
@@ -82,16 +85,19 @@ def _validate_manifest(
         config_schema = {}
     if not isinstance(config_schema, dict):
         raise PluginManifestError(f"plugin manifest configSchema must be an object: {path}")
+    server_api = _string_tuple(payload.get("serverApi"), "serverApi", path)
     return PluginManifest(
         id=plugin_id,
         name=name,
         description=description,
         version=version,
         tools=tools,
+        public_tools=public_tools,
         skills=skills,
         mcp_servers=mcp_servers,
         mcp_server_configs=mcp_server_configs,
         config_schema=dict(config_schema),
+        server_api=server_api,
         source_format=source_format,
     )
 

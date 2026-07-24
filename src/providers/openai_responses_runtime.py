@@ -7,13 +7,12 @@ from src.providers.responses_runtime import ResponsesRuntime
 class OpenAIResponsesRuntime(ResponsesRuntime):
     _REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "disabled"}
 
-    def _send_tool_context_compaction_gate(self, declaration):
-        return self._send_responses_gate(declaration, reasoning_effort="")
-
     def _responses_payload_extra(self, **provider_options):
         payload = {}
         if str(self.config.get("authMode") or "api_key").strip().lower() == "codex":
             payload["store"] = False
+        if self.config.get("fastMode") is True:
+            payload["service_tier"] = "priority"
 
         reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
         if reasoning_effort:
@@ -44,6 +43,25 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
         if summary not in self._REASONING_SUMMARY_VALUES:
             raise ValueError("OpenAI Responses reasoning_summary must be auto, concise, detailed, or disabled.")
         return summary
+
+    def _emit_responses_service_tier_result(self, result) -> None:
+        if self.config.get("fastMode") is not True:
+            return
+        actual = str(result.get("service_tier") or "").strip().lower() if isinstance(result, dict) else ""
+        if actual == "priority":
+            outcome = "confirmed"
+        elif actual:
+            outcome = "fallback"
+        else:
+            outcome = "unreported"
+        self._emit_responses_runtime_notice(
+            stage="openai_responses_service_tier",
+            payload={
+                "requested_service_tier": "priority",
+                "actual_service_tier": actual,
+                "outcome": outcome,
+            },
+        )
 
     def _responses_continuation_input_items(self, result, function_calls):
         return self._build_responses_continuation_input_items(result, function_calls)

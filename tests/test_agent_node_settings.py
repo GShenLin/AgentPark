@@ -4,6 +4,12 @@ from nodes.agent_node_settings import AgentNodeSettingsError
 from nodes.agent_node_settings import resolve_agent_node_settings
 
 
+def test_resolve_agent_node_settings_uses_six_message_history_by_default():
+    settings = resolve_agent_node_settings({})
+
+    assert settings.history_message_limit == 6
+
+
 def test_resolve_agent_node_settings_accepts_config_json_values():
     settings = resolve_agent_node_settings(
         {

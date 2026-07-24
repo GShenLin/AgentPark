@@ -9,10 +9,12 @@ setup(
         "uvicorn[standard]>=0.27.0",
         "python-multipart>=0.0.9",
         "pyautogui>=0.9.54",
-        "Pillow>=10.0.0",
+        "Pillow>=11.1.0",
+        "pillow-heif>=0.18.0",
         "cryptography>=42.0.0",
         "mcp>=1.28.0",
         "prompt_toolkit>=3.0.52",
         "PyYAML>=6.0",
+        "protobuf>=7.35.0",
     ],
 )

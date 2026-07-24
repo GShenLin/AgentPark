@@ -3,33 +3,23 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from src.tool_context_compaction_actions import TOOL_CONTEXT_SUMMARY_PREFIX
+from src.tool_context_compaction_actions import ToolContextCompactionActionsMixin
+from src.tool_context_compaction_admission import ToolContextCompactionAdmissionMixin
+from src.providers.provider_message_policy import ProviderMessagePolicy
 from src.value_parsing import parse_optional_int_value
+from src.tool_context_compaction_trigger import ToolContextCompactionLimits
+from src.tool_context_compaction_trigger import ToolContextCompactionWindow
 
 
-TOOL_CONTEXT_SUMMARY_PREFIX = "[Tool Context Summary]"
 INTERNAL_TOOL_NAMES = {"edit_operational_memory", "compact_tool_context"}
 DEFAULT_MAX_GATE_PROMPT_CHARS = 200000
 DEFAULT_MAX_CANDIDATE_CONTENT_CHARS = 50000
-TOOL_CONTEXT_COMPACTION_REQUIRED_ERROR = (
-    "Error: tool_context_compaction_gate requires a compact_tool_context tool call. "
-    "Use the provided compact_tool_context tool to compress tool-call context before "
-    "executing any other instruction. Do not answer normally or call any other tool."
-)
-TOOL_CONTEXT_COMPACTION_REFUSED_ERROR = (
-    "Tool context compaction gate failed: the model did not call compact_tool_context "
-    "after being explicitly required to do so."
-)
-TOOL_CONTEXT_COMPACTION_SKIPPED_MARKER = (
-    "[Tool Context Summary]\nReason: compaction_gate_refused\n"
-    "The automatic tool-context compaction gate did not receive the required "
-    "compact_tool_context call. Compaction has been skipped for this turn; "
-    "the conversation continues without context compression."
-)
+TOOL_CONTEXT_COMPACTION_RETRY_PREFIX = "[Tool Context Compaction Retry]"
 
 
-class ToolContextCompactionGateMixin:
+class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolContextCompactionAdmissionMixin):
     def _run_tool_context_compaction_gate_if_needed(self, executions: object) -> bool:
-        self._tool_context_compaction_last_changed = False
         if not self._tool_context_compaction_enabled():
             return False
         if bool(getattr(self, "_tool_context_compaction_gate_active", False)):
@@ -38,35 +28,33 @@ class ToolContextCompactionGateMixin:
         count = self._count_regular_tool_executions(executions)
         if count <= 0:
             return False
-        current_count = int(getattr(self, "_tool_context_compaction_since_last", 0) or 0) + count
-        self._tool_context_compaction_since_last = current_count
-
-        threshold = self._tool_context_compaction_threshold()
-        if threshold <= 0 or current_count < threshold:
+        window = self._tool_context_compaction_window_state()
+        window.add_tool_executions(count)
+        limits = self._tool_context_compaction_limits()
+        decision = window.evaluate(
+            limits,
+            self._tool_context_compaction_usage_totals(),
+        )
+        if not decision.reached:
             return False
 
         candidates = self._collect_tool_context_compaction_candidates()
         if not candidates:
-            self._tool_context_compaction_since_last = 0
+            self._reset_tool_context_compaction_window()
             return False
+        emitter = getattr(self, "_emit_provider_runtime_notice", None)
+        if callable(emitter):
+            emitter(
+                message=json.dumps(decision.to_payload(), ensure_ascii=False),
+                stage="tool_context_compaction_triggered",
+            )
 
         original_messages = getattr(self, "messages", [])
         if not isinstance(original_messages, list):
             return False
 
         prompt = self._build_tool_context_compaction_gate_prompt(candidates)
-        gate_messages = list(original_messages)
-        gate_messages.append({"role": "system", "content": prompt})
-
-        previous_active = bool(getattr(self, "_tool_context_compaction_gate_active", False))
-        previous_target = getattr(self, "_tool_context_compaction_target_messages", None)
-        previous_candidates = getattr(self, "_tool_context_compaction_candidate_map", None)
-        previous_applied = bool(getattr(self, "_tool_context_compaction_applied", False))
-        previous_changed = bool(getattr(self, "_tool_context_compaction_changed", False))
-        previous_messages = self.messages
-        had_compaction_tool = "compact_tool_context" in self.tools.function_map
-        previous_compaction_tool = self.tools.function_map.get("compact_tool_context")
-        declaration = self._ensure_tool_context_compaction_tool_registered()
+        prompt_message = self.RuntimeInstructionMessage(prompt)
 
         self._tool_context_compaction_gate_active = True
         self._tool_context_compaction_target_messages = original_messages
@@ -75,82 +63,113 @@ class ToolContextCompactionGateMixin:
         }
         self._tool_context_compaction_applied = False
         self._tool_context_compaction_changed = False
-        self.messages = gate_messages
-        applied = False
-        changed = False
-        try:
-            sender = getattr(self, "_send_tool_context_compaction_gate", None)
-            for attempt in range(2):
-                if callable(sender):
-                    sender(declaration)
-                else:
-                    self.Send(tools=[declaration], run_tools=True, mode="chat", stream=False)
-
-                applied = bool(getattr(self, "_tool_context_compaction_applied", False))
-                if applied:
-                    break
-                if attempt == 0:
-                    self.messages.append(
-                        {"role": "system", "content": TOOL_CONTEXT_COMPACTION_REQUIRED_ERROR}
-                    )
-        finally:
-            self.messages = previous_messages
-            if had_compaction_tool:
-                self.tools.function_map["compact_tool_context"] = previous_compaction_tool
-            else:
-                self.tools.function_map.pop("compact_tool_context", None)
-            self._tool_context_compaction_gate_active = previous_active
-            self._tool_context_compaction_target_messages = previous_target
-            self._tool_context_compaction_candidate_map = previous_candidates
-            applied = bool(getattr(self, "_tool_context_compaction_applied", False))
-            changed = bool(getattr(self, "_tool_context_compaction_changed", False))
-            self._tool_context_compaction_applied = previous_applied
-            self._tool_context_compaction_changed = previous_changed
-
-        if not applied:
-            # Graceful degradation: if the model does not call compact_tool_context
-            # after the required prompts (e.g. due to an EmptyMessage feedback
-            # loop stripping the gate instruction), skip compaction for this turn
-            # instead of crashing the agent with a hard RuntimeError.  A short
-            # system note is appended to the original messages so future turns
-            # carry a trace of the skip without discarding the conversation.
-            self._tool_context_compaction_since_last = 0
-            self._tool_context_compaction_last_changed = False
-            try:
-                emitter = getattr(self, "_emit_provider_runtime_notice", None)
-                if callable(emitter):
-                    emitter(
-                        message=json.dumps(
-                            {
-                                "reason": "model_refused_compaction",
-                                "attempts": 2,
-                                "candidate_count": len(candidates) if isinstance(candidates, list) else 0,
-                            },
-                            ensure_ascii=False,
-                        ),
-                        stage="tool_context_compaction_gate_refused",
-                    )
-            except Exception:
-                pass
-            if isinstance(original_messages, list):
-                original_messages.append(
-                    {"role": "system", "content": TOOL_CONTEXT_COMPACTION_SKIPPED_MARKER}
-                )
-            return False
-        self._tool_context_compaction_since_last = 0
-        self._tool_context_compaction_last_changed = changed
+        self._tool_context_compaction_gate_prompt = prompt_message
+        self.messages.append(self._tool_context_compaction_gate_prompt)
+        function_map = self.tools.function_map
+        self._tool_context_compaction_had_previous_function = "compact_tool_context" in function_map
+        self._tool_context_compaction_previous_function = function_map.get("compact_tool_context")
+        self._ensure_tool_context_compaction_tool_registered()
         return True
-
-    def _tool_context_compaction_changed_last_run(self) -> bool:
-        return bool(getattr(self, "_tool_context_compaction_last_changed", False))
 
     def _tool_context_compaction_gate_completed(self, executions: object) -> bool:
         if not bool(getattr(self, "_tool_context_compaction_gate_active", False)):
             return False
         for item in executions if isinstance(executions, list) else []:
-            if self._execution_tool_name(item) == "compact_tool_context":
+            if (
+                self._execution_tool_name(item) == "compact_tool_context"
+                and self._execution_completed_successfully(item)
+                and bool(getattr(self, "_tool_context_compaction_applied", False))
+                and bool(getattr(self, "_tool_context_compaction_changed", False))
+            ):
+                self._complete_tool_context_compaction_gate()
                 return True
         return False
+
+    def _tool_context_compaction_gate_active_now(self) -> bool:
+        return bool(getattr(self, "_tool_context_compaction_gate_active", False))
+
+    def _finish_tool_context_compaction_gate_with_response(self, content: object) -> bool:
+        if not self._tool_context_compaction_gate_active_now():
+            return False
+        if isinstance(content, str):
+            has_response = bool(content.strip())
+        elif isinstance(content, (dict, list, tuple, set)):
+            has_response = bool(content)
+        else:
+            has_response = content is not None
+        if not has_response:
+            return False
+        self._close_tool_context_compaction_gate()
+        return True
+
+    def _retry_tool_context_compaction_gate(self, reason: object = "") -> None:
+        if not self._tool_context_compaction_gate_active_now():
+            return
+        messages = getattr(self, "messages", None)
+        if not isinstance(messages, list):
+            raise TypeError("agent.messages must be a list for tool context compaction retry")
+        messages[:] = [
+            message
+            for message in messages
+            if not (
+                isinstance(message, dict)
+                and str(message.get("content") or "").startswith(TOOL_CONTEXT_COMPACTION_RETRY_PREFIX)
+            )
+        ]
+        detail = str(reason or "").strip()
+        suffix = f" Previous attempt: {detail}" if detail else ""
+        messages.append(
+            self.RuntimeInstructionMessage(
+                f"{TOOL_CONTEXT_COMPACTION_RETRY_PREFIX}\n"
+                "The compaction checkpoint is still active. If more function-tool work is needed, call "
+                "compact_tool_context and reduce the eligible tool context first. If the task is already complete, "
+                "return the final answer directly; a substantive response closes this checkpoint."
+                f"{suffix}"
+            )
+        )
+
+    def _tool_context_compaction_active_tools(self, active_tools: object) -> object:
+        if not bool(getattr(self, "_tool_context_compaction_gate_active", False)):
+            return active_tools
+        return [self._ensure_tool_context_compaction_tool_registered()]
+
+    def _complete_tool_context_compaction_gate(self) -> None:
+        self._close_tool_context_compaction_gate()
+
+    def _close_tool_context_compaction_gate(self) -> None:
+        prompt_message = getattr(self, "_tool_context_compaction_gate_prompt", None)
+        if isinstance(prompt_message, dict):
+            protocol_exchange_message_ids = self._tool_context_compaction_protocol_exchange_message_ids(
+                self.messages
+            )
+            self.messages[:] = [
+                message
+                for message in self.messages
+                if id(message) not in protocol_exchange_message_ids
+                and message is not prompt_message
+                and not self._is_tool_context_compaction_protocol_message(message)
+                and not (
+                    isinstance(message, dict)
+                    and str(message.get("content") or "").startswith(TOOL_CONTEXT_COMPACTION_RETRY_PREFIX)
+                )
+            ]
+        if bool(getattr(self, "_tool_context_compaction_had_previous_function", False)):
+            self.tools.function_map["compact_tool_context"] = getattr(
+                self,
+                "_tool_context_compaction_previous_function",
+                None,
+            )
+        else:
+            self.tools.function_map.pop("compact_tool_context", None)
+        self._tool_context_compaction_gate_active = False
+        self._tool_context_compaction_target_messages = None
+        self._tool_context_compaction_candidate_map = None
+        self._tool_context_compaction_gate_prompt = None
+        self._tool_context_compaction_had_previous_function = False
+        self._tool_context_compaction_previous_function = None
+        self._tool_context_compaction_applied = False
+        self._tool_context_compaction_changed = False
+        self._reset_tool_context_compaction_window()
 
     def _ensure_tool_context_compaction_tool_registered(self) -> dict[str, Any]:
         from src.tool_context_compaction_tool import compact_tool_context
@@ -158,91 +177,6 @@ class ToolContextCompactionGateMixin:
 
         self.tools.function_map["compact_tool_context"] = compact_tool_context
         return compact_tool_context_declaration
-
-    def _apply_tool_context_compaction(
-        self,
-        *,
-        action: object,
-        reason: object,
-        summary: object,
-        keep_message_ids: list,
-        delete_message_ids: list,
-        rewrites: list,
-    ) -> dict[str, Any]:
-        if not bool(getattr(self, "_tool_context_compaction_gate_active", False)):
-            raise RuntimeError("compact_tool_context can only run inside the compaction gate")
-
-        action_text = str(action or "").strip().lower()
-        if action_text not in {"replace", "patch", "skip"}:
-            raise ValueError("action must be one of replace, patch, or skip")
-        reason_text = str(reason or "").strip()
-        if not reason_text:
-            raise ValueError("reason is required")
-
-        target_messages = getattr(self, "_tool_context_compaction_target_messages", None)
-        candidate_map = getattr(self, "_tool_context_compaction_candidate_map", None)
-        if not isinstance(target_messages, list) or not isinstance(candidate_map, dict):
-            raise RuntimeError("tool context compaction target is unavailable")
-
-        eligible_ids = set(candidate_map.keys())
-        keep_ids = self._normalize_message_id_set(keep_message_ids) & eligible_ids
-        delete_ids = self._normalize_message_id_set(delete_message_ids) & eligible_ids
-        normalized_rewrites = self._normalize_tool_context_rewrites(rewrites, eligible_ids)
-        summary_text = self._normalize_tool_context_summary(summary)
-
-        if action_text == "skip":
-            self._tool_context_compaction_applied = True
-            self._tool_context_compaction_changed = False
-            return {"ok": True, "action": "skip", "reason": reason_text, "changed": False}
-
-        if action_text == "replace" and not summary_text:
-            raise ValueError("summary is required for action=replace")
-
-        removed_ids: set[str] = set()
-        rewritten_ids: set[str] = set()
-
-        if action_text == "replace":
-            keep_ids = self._expand_tool_exchange_message_ids(
-                target_messages,
-                candidate_map,
-                keep_ids | set(normalized_rewrites.keys()),
-            )
-            remove_ids = eligible_ids - keep_ids - set(normalized_rewrites.keys())
-            insert_at = self._first_candidate_index(candidate_map, remove_ids or eligible_ids)
-            rewritten_ids.update(
-                self._apply_message_rewrites(target_messages, candidate_map, normalized_rewrites)
-            )
-            self._remove_messages_by_candidate_ids(target_messages, candidate_map, remove_ids)
-            removed_ids.update(remove_ids)
-            if summary_text:
-                self._insert_tool_context_summary(target_messages, insert_at, summary_text, reason_text)
-        else:
-            delete_ids = self._expand_tool_exchange_message_ids(target_messages, candidate_map, delete_ids)
-            normalized_rewrites = {
-                message_id: content
-                for message_id, content in normalized_rewrites.items()
-                if message_id not in delete_ids
-            }
-            insert_at = self._first_candidate_index(candidate_map, delete_ids or set(normalized_rewrites.keys()))
-            rewritten_ids.update(
-                self._apply_message_rewrites(target_messages, candidate_map, normalized_rewrites)
-            )
-            self._remove_messages_by_candidate_ids(target_messages, candidate_map, delete_ids)
-            removed_ids.update(delete_ids)
-            if summary_text:
-                self._insert_tool_context_summary(target_messages, insert_at, summary_text, reason_text)
-
-        self._tool_context_compaction_applied = True
-        self._tool_context_compaction_changed = bool(removed_ids or rewritten_ids or summary_text)
-        return {
-            "ok": True,
-            "action": action_text,
-            "reason": reason_text,
-            "changed": bool(removed_ids or rewritten_ids or summary_text),
-            "removed_count": len(removed_ids),
-            "rewritten_count": len(rewritten_ids),
-            "summary_inserted": bool(summary_text),
-        }
 
     def _collect_tool_context_compaction_candidates(self) -> list[dict[str, Any]]:
         messages = getattr(self, "messages", []) or []
@@ -273,7 +207,7 @@ class ToolContextCompactionGateMixin:
             return not self._tool_calls_are_internal(message.get("tool_calls"))
         if isinstance(message.get("parts"), list) and self._parts_include_function_call(message.get("parts")):
             return True
-        if role == "system":
+        if ProviderMessagePolicy.is_instruction_message(message):
             content = str(message.get("content") or "")
             return content.startswith("Tool ") and "non-retryable result" in content
         return False
@@ -322,35 +256,31 @@ class ToolContextCompactionGateMixin:
         }
 
     def _build_tool_context_compaction_gate_prompt(self, candidates: list[dict[str, Any]]) -> str:
-        summaries = self._existing_tool_context_summaries()
-        payload = {
-            "latest_user_input": self._latest_tool_context_compaction_user_input(),
-            "existing_summaries": summaries,
-            "eligible_messages": candidates,
-        }
-        payload_text = json.dumps(payload, ensure_ascii=False)
-        max_chars = self._tool_context_compaction_max_prompt_chars()
-        if len(payload_text) > max_chars:
-            payload_text = payload_text[: max(0, max_chars - 3)].rstrip() + "..."
+        _ = candidates
         return (
-            "Tool calls have accumulated in the current task. Before using any other tools, you must call "
-            "compact_tool_context exactly once. This is a context maintenance gate.\n"
-            "Review the eligible tool-call messages below and decide what should remain in the model context. "
-            "Use latest_user_input as the primary task anchor when deciding which tool facts are still relevant. "
+            "Tool calls have accumulated in the current task. This is a context maintenance checkpoint. "
+            "If more function-tool work is needed, call compact_tool_context before using another function tool. "
+            "If the task is already complete, return the final answer directly without calling it; a substantive "
+            "response closes the checkpoint and ends the current turn.\n"
+            "Review the tool-call history already present in the conversation and decide what should remain. "
+            "Use the latest user request as the primary task anchor. "
             "Prefer action=replace when the raw tool-call window can be replaced by a concise but actionable summary. "
-            "Use action=patch when only specific messages should be deleted or rewritten. Use action=skip only when "
-            "the raw messages are still required.\n"
+            "Use action=patch when only specific messages should be deleted or rewritten. A compaction call only "
+            "completes after the eligible context is actually reduced or rewritten.\n"
             "The runtime will only modify eligible message ids. Preserve: inspected file paths, line numbers, "
             "state-changing actions, failed attempts that affect next steps, important outputs, and pending decisions. "
             "Do not preserve raw logs, duplicate search results, or large file contents after extracting the useful facts.\n"
+            "The summary is a strict checkpoint object. Distinguish confirmed facts, changed state, completed "
+            "verification, failed attempts, and ordered remaining steps. Set immediate_next_step to exactly one "
+            "remaining_steps item. Record already-sufficient reads/searches/checks in avoid_repeating, and trust "
+            "those entries after compaction unless a later state change invalidates them.\n"
             "Assistant tool-call messages and their matching tool-result messages are protocol-atomic: "
             "keep or remove the whole exchange together.\n"
             "For replace, provide summary and optional keep_message_ids for raw messages that must remain. "
             "For patch, provide delete_message_ids and/or rewrites, plus optional summary.\n"
             "The resulting summary is working memory for continuation, not a completion signal. "
             "After compaction, resume the current task using the latest user request, pending work, "
-            "and verification state. Do not send a final response solely because compaction completed.\n"
-            f"Compaction input: {payload_text}"
+            "and verification state. Do not send a final response solely because compaction completed."
         )
 
     def _latest_tool_context_compaction_user_input(self) -> dict[str, Any] | None:
@@ -384,8 +314,6 @@ class ToolContextCompactionGateMixin:
         for message in messages if isinstance(messages, list) else []:
             if not isinstance(message, dict):
                 continue
-            if str(message.get("role") or "").strip().lower() != "system":
-                continue
             content = str(message.get("content") or "")
             if content.startswith(TOOL_CONTEXT_SUMMARY_PREFIX):
                 summaries.append(content)
@@ -399,25 +327,30 @@ class ToolContextCompactionGateMixin:
                 count += 1
         return count
 
-    def _tool_context_compaction_threshold(self) -> int:
-        provider_config = self.config
-        if "toolContextCompactionEveryToolCalls" not in provider_config:
-            raise ValueError(
-                "provider.toolContextCompactionEveryToolCalls is required when "
-                "provider.toolContextCompactionEnabled is true."
-            )
-        field_name = "provider.toolContextCompactionEveryToolCalls"
-        try:
-            parsed = parse_optional_int_value(
-                field_name,
-                provider_config.get("toolContextCompactionEveryToolCalls"),
-                minimum=0,
-            )
-        except ValueError as exc:
-            raise ValueError(f"{field_name} must be an integer greater than or equal to zero.") from exc
-        if parsed is None:
-            raise ValueError(f"{field_name} must be an integer greater than or equal to zero.")
-        return parsed
+    def _tool_context_compaction_limits(self) -> ToolContextCompactionLimits:
+        return ToolContextCompactionLimits.from_provider_config(self.config)
+
+    def _tool_context_compaction_window_state(self) -> ToolContextCompactionWindow:
+        window = getattr(self, "_tool_context_compaction_window", None)
+        if not isinstance(window, ToolContextCompactionWindow):
+            window = ToolContextCompactionWindow()
+            self._tool_context_compaction_window = window
+        return window
+
+    def _tool_context_compaction_usage_totals(self) -> dict[str, Any]:
+        snapshot_getter = getattr(self, "_provider_request_snapshot", None)
+        if not callable(snapshot_getter):
+            return {}
+        snapshot = snapshot_getter()
+        if not isinstance(snapshot, dict):
+            return {}
+        totals = snapshot.get("totals")
+        return totals if isinstance(totals, dict) else {}
+
+    def _reset_tool_context_compaction_window(self) -> None:
+        self._tool_context_compaction_window_state().reset(
+            self._tool_context_compaction_usage_totals()
+        )
 
     def _tool_context_compaction_enabled(self) -> bool:
         provider_config = self.config
@@ -452,141 +385,3 @@ class ToolContextCompactionGateMixin:
         if parsed is None:
             return default
         return parsed
-
-    @staticmethod
-    def _normalize_message_id_set(values: list) -> set[str]:
-        return {str(item or "").strip() for item in values if str(item or "").strip()}
-
-    @staticmethod
-    def _normalize_tool_context_summary(summary: object) -> str:
-        if isinstance(summary, str):
-            return summary.strip()
-        if summary in {None, ""}:
-            return ""
-        return json.dumps(summary, ensure_ascii=False)
-
-    @staticmethod
-    def _normalize_tool_context_rewrites(rewrites: list, eligible_ids: set[str]) -> dict[str, str]:
-        normalized: dict[str, str] = {}
-        for item in rewrites:
-            if not isinstance(item, dict):
-                continue
-            message_id = str(item.get("message_id") or "").strip()
-            if message_id not in eligible_ids:
-                continue
-            normalized[message_id] = str(item.get("content") or "")
-        return normalized
-
-    def _expand_tool_exchange_message_ids(
-        self,
-        messages: list[dict[str, Any]],
-        candidate_map: dict[str, int],
-        message_ids: set[str],
-    ) -> set[str]:
-        expanded = set(message_ids)
-        if not expanded:
-            return expanded
-        for group in self._tool_exchange_candidate_groups(messages, candidate_map):
-            if expanded.intersection(group):
-                expanded.update(group)
-        return expanded
-
-    def _tool_exchange_candidate_groups(
-        self,
-        messages: list[dict[str, Any]],
-        candidate_map: dict[str, int],
-    ) -> list[set[str]]:
-        groups: list[set[str]] = []
-        for assistant_id, assistant_index in candidate_map.items():
-            if not isinstance(assistant_index, int) or assistant_index < 0 or assistant_index >= len(messages):
-                continue
-            assistant = messages[assistant_index]
-            if not isinstance(assistant, dict):
-                continue
-            if str(assistant.get("role") or "").strip().lower() != "assistant":
-                continue
-            call_ids = self._message_tool_call_ids(assistant)
-            if not call_ids:
-                continue
-            group = {assistant_id}
-            for candidate_id, candidate_index in candidate_map.items():
-                if candidate_id == assistant_id:
-                    continue
-                if not isinstance(candidate_index, int) or candidate_index < 0 or candidate_index >= len(messages):
-                    continue
-                message = messages[candidate_index]
-                if not isinstance(message, dict):
-                    continue
-                role = str(message.get("role") or "").strip().lower()
-                if role not in {"tool", "function"}:
-                    continue
-                tool_call_id = str(message.get("tool_call_id") or message.get("call_id") or "").strip()
-                if tool_call_id in call_ids:
-                    group.add(candidate_id)
-            groups.append(group)
-        return groups
-
-    @staticmethod
-    def _message_tool_call_ids(message: dict[str, Any]) -> set[str]:
-        ids: set[str] = set()
-        tool_calls = message.get("tool_calls")
-        if not isinstance(tool_calls, list):
-            return ids
-        for item in tool_calls:
-            if not isinstance(item, dict):
-                continue
-            call_id = str(item.get("id") or "").strip()
-            if call_id:
-                ids.add(call_id)
-        return ids
-
-    @staticmethod
-    def _first_candidate_index(candidate_map: dict[str, int], message_ids: set[str]) -> int:
-        indexes = [candidate_map[item] for item in message_ids if item in candidate_map]
-        return min(indexes) if indexes else len(candidate_map)
-
-    @staticmethod
-    def _remove_messages_by_candidate_ids(
-        messages: list[dict[str, Any]],
-        candidate_map: dict[str, int],
-        message_ids: set[str],
-    ) -> None:
-        indexes = sorted((candidate_map[item] for item in message_ids if item in candidate_map), reverse=True)
-        for index in indexes:
-            if 0 <= index < len(messages):
-                messages.pop(index)
-
-    @staticmethod
-    def _apply_message_rewrites(
-        messages: list[dict[str, Any]],
-        candidate_map: dict[str, int],
-        rewrites: dict[str, str],
-    ) -> set[str]:
-        rewritten: set[str] = set()
-        for message_id, content in rewrites.items():
-            index = candidate_map.get(message_id)
-            if not isinstance(index, int) or index < 0 or index >= len(messages):
-                continue
-            message = messages[index]
-            if not isinstance(message, dict):
-                continue
-            role = str(message.get("role") or "").strip().lower()
-            if role not in {"tool", "function", "system"}:
-                continue
-            message["content"] = content
-            rewritten.add(message_id)
-        return rewritten
-
-    @staticmethod
-    def _insert_tool_context_summary(
-        messages: list[dict[str, Any]],
-        index: int,
-        summary: str,
-        reason: str,
-    ) -> None:
-        summary_message = {
-            "role": "system",
-            "content": f"{TOOL_CONTEXT_SUMMARY_PREFIX}\nReason: {reason}\n{summary}",
-        }
-        insert_at = max(0, min(index, len(messages)))
-        messages.insert(insert_at, summary_message)

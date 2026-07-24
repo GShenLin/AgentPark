@@ -46,9 +46,8 @@ compact_tool_context_declaration = {
         "name": "compact_tool_context",
         "description": (
             "Make the required context compaction decision after many tool calls. "
-            "Use action=replace to replace the eligible tool-call window with a concise summary, "
-            "action=patch to delete or rewrite specific eligible messages, and action=skip when no "
-            "safe compaction is possible. The resulting summary is working memory for continuation, "
+            "Use action=replace to replace the eligible tool-call window with a structured checkpoint, "
+            "and action=patch to delete or rewrite specific eligible messages. The resulting summary is working memory for continuation, "
             "not a completion signal. After compaction, resume the current task using the latest "
             "user request, pending work, and verification state. Do not send a final response "
             "solely because compaction completed."
@@ -58,7 +57,7 @@ compact_tool_context_declaration = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["replace", "patch", "skip"],
+                    "enum": ["replace", "patch"],
                     "description": "Required compaction decision for the current tool-call window.",
                 },
                 "reason": {
@@ -66,10 +65,62 @@ compact_tool_context_declaration = {
                     "description": "Why this compaction decision is appropriate.",
                 },
                 "summary": {
-                    "type": "string",
+                    "type": "object",
+                    "properties": {
+                        "task_anchor": {
+                            "type": "string",
+                            "description": "The exact current user objective and non-negotiable constraints.",
+                        },
+                        "completed_facts": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Confirmed architecture facts and conclusions that should be trusted without re-reading.",
+                        },
+                        "changed_state": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files or external state changed, including the material effect of each change.",
+                        },
+                        "verification": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Checks already run with their exact outcome; do not rerun unless later changes invalidate them.",
+                        },
+                        "failed_attempts": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Failures and rejected approaches whose repetition would waste work.",
+                        },
+                        "remaining_steps": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"},
+                            "description": "Concrete unfinished steps in execution order.",
+                        },
+                        "immediate_next_step": {
+                            "type": "string",
+                            "description": "Exactly one item copied verbatim from remaining_steps.",
+                        },
+                        "avoid_repeating": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Specific reads, searches, or validations already sufficient and not to repeat.",
+                        },
+                    },
+                    "required": [
+                        "task_anchor",
+                        "completed_facts",
+                        "changed_state",
+                        "verification",
+                        "failed_attempts",
+                        "remaining_steps",
+                        "immediate_next_step",
+                        "avoid_repeating",
+                    ],
+                    "additionalProperties": False,
                     "description": (
-                        "Concise replacement summary preserving useful findings, inspected files, "
-                        "state changes, failed attempts, and remaining next steps."
+                        "Strict continuation checkpoint. Record enough evidence to resume the immediate "
+                        "next step without repeating completed repository reads or validations."
                     ),
                 },
                 "keep_message_ids": {
@@ -96,7 +147,7 @@ compact_tool_context_declaration = {
                     "description": "For action=patch, replacement content for eligible tool/system messages.",
                 },
             },
-            "required": ["action", "reason"],
+            "required": ["action", "reason", "summary"],
             "additionalProperties": False,
         },
     },

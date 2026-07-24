@@ -1,4 +1,5 @@
 import os
+import time
 
 import pytest
 
@@ -44,6 +45,47 @@ def test_load_node_instance_import_error_raises_module_error(monkeypatch, tmp_pa
 
     with pytest.raises(NodeModuleLoadError, match="broken_node"):
         load_node_instance("broken_node")
+
+
+def test_load_node_instance_reuses_class_until_source_changes(monkeypatch, tmp_path):
+    from src.web_backend import runtime_paths
+
+    nodes_dir = tmp_path / "nodes"
+    nodes_dir.mkdir()
+    node_path = nodes_dir / "cached_node.py"
+    node_path.write_text(
+        "import builtins\n"
+        "builtins._agentpark_node_load_count = getattr(builtins, '_agentpark_node_load_count', 0) + 1\n"
+        "class Node:\n"
+        "    version = 1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_nodes_dir", lambda: str(nodes_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_resource_root", lambda: str(tmp_path))
+
+    import builtins
+
+    before = int(getattr(builtins, "_agentpark_node_load_count", 0))
+    first = load_node_instance("cached_node")
+    second = load_node_instance("cached_node")
+    assert first is not second
+    assert first.__class__ is second.__class__
+    assert int(getattr(builtins, "_agentpark_node_load_count", 0)) == before + 1
+
+    time.sleep(0.002)
+    node_path.write_text(
+        "import builtins\n"
+        "builtins._agentpark_node_load_count = getattr(builtins, '_agentpark_node_load_count', 0) + 1\n"
+        "class Node:\n"
+        "    version = 22\n",
+        encoding="utf-8",
+    )
+    os.utime(node_path, None)
+    reloaded = load_node_instance("cached_node")
+    assert reloaded.version == 22
+    assert reloaded.__class__ is not first.__class__
+    assert int(getattr(builtins, "_agentpark_node_load_count", 0)) == before + 2
 
 
 def test_read_node_ports_passes_context_to_context_aware_getters():

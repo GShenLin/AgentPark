@@ -2,8 +2,11 @@ import json
 
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.providers.tool_call_execution import parse_openai_tool_call_items
+from src.providers.tool_turn_protocol import prepare_chat_completions_messages
 from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.providers.zhipu_http_transport import ZhipuHttpTransport
+from src.providers.zhipu_tool_schema_adapter import adapt_zhipu_tool_declarations
+from src.providers.zhipu_tool_schema_adapter import restore_zhipu_tool_call_arguments
 from src.switch_utils import require_bool_switch
 from src.tool.tool_call_protocol import to_openai_tool_call
 
@@ -12,12 +15,13 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
     def _build_payload(self, *, messages, active_tools, reasoning_effort, thinking_mode, stream: bool) -> dict:
         payload = {
             "model": self.config["model"],
-            "messages": messages,
+            "messages": prepare_chat_completions_messages(messages),
         }
         if active_tools:
             payload["tools"] = active_tools
         if stream:
             payload["stream"] = True
+            payload["stream_options"] = {"include_usage": True}
         if reasoning_effort:
             payload["reasoning_effort"] = str(reasoning_effort)
         if thinking_mode in {"enabled", "disabled"}:
@@ -78,9 +82,10 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config['apiKey']}",
         }
+        tool_adaptation = adapt_zhipu_tool_declarations(active_tools)
         payload = self._build_payload(
             messages=messages,
-            active_tools=active_tools,
+            active_tools=tool_adaptation.declarations,
             reasoning_effort=reasoning_effort,
             thinking_mode=thinking_mode,
             stream=bool(stream),
@@ -114,7 +119,11 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
                 return "Error: Zhipu model context window exceeded."
             return json.dumps(result, ensure_ascii=False)
 
-        tool_call_items = parse_openai_tool_call_items(message.get("tool_calls"), provider="zhipu_chat")
+        restored_tool_calls = restore_zhipu_tool_call_arguments(
+            message.get("tool_calls"),
+            aliased_tool_names=tool_adaptation.aliased_tool_names,
+        )
+        tool_call_items = parse_openai_tool_call_items(restored_tool_calls, provider="zhipu_chat")
         if tool_call_items:
             display_tool_calls = [to_openai_tool_call(item) for item in tool_call_items]
             self.AssistantProgress(message.get("content") or "", tool_calls=display_tool_calls)
@@ -130,8 +139,7 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
                 execute_tool_call_envelopes=self._execute_tool_call_envelopes_parallel,
             )
             self._append_tool_execution_messages_then_warnings(executions)
-            if self._tool_context_compaction_gate_completed(executions):
-                return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
+            self._tool_context_compaction_gate_completed(executions)
             self._notify_companion_about_failed_tool_executions(executions)
             self._run_tool_context_compaction_gate_if_needed(executions)
             append_mid_turn_user_messages(self)
@@ -147,5 +155,17 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
         content = message.get("content")
         if finish_reason == "model_context_window_exceeded" and not content:
             content = "Error: Zhipu model context window exceeded."
+        if self._tool_context_compaction_gate_active_now() and not self._finish_tool_context_compaction_gate_with_response(
+            content
+        ):
+            self._retry_tool_context_compaction_gate("the model returned an empty response")
+            return self.Send(
+                run_tools=run_tools,
+                mode="chat",
+                reasoning_effort=reasoning_effort,
+                thinking=thinking_mode,
+                stream=stream,
+                stream_handler=stream_handler,
+            )
         self.Message("assistant", "" if content is None else content)
         return "" if content is None else content

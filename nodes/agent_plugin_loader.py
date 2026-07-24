@@ -214,6 +214,14 @@ def _read_tool_refs(
                 raise PluginLoadError(str(exc)) from exc
         else:
             refs.append(text)
+    for item in manifest.public_tools:
+        text = str(item or "").strip()
+        if not text.startswith("./") and not text.startswith(".\\"):
+            raise PluginLoadError(f"plugin publicTools must use a plugin-local path: {text!r}")
+        try:
+            definitions.extend(load_plugin_tool_path(plugin_dir, text))
+        except PluginToolLoadError as exc:
+            raise PluginLoadError(str(exc)) from exc
     return TOOL_NAME_LIST.parse(refs), dedupe_plugin_tool_definitions(definitions)
 
 

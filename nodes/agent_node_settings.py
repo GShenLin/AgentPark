@@ -9,7 +9,7 @@ from src.value_parsing import parse_optional_int_value
 @dataclass(frozen=True)
 class AgentNodeSettings:
     min_send_delay_ms: int = 0
-    history_message_limit: int = 40
+    history_message_limit: int = 6
 
 
 class AgentNodeSettingsError(ValueError):
@@ -29,7 +29,7 @@ def resolve_agent_node_settings(config: dict[str, Any]) -> AgentNodeSettings:
         history_message_limit=_optional_positive_int(
             node_config,
             keys=("historyMessageLimit", "history_message_limit"),
-            default=40,
+            default=6,
             field_name="agentNode.historyMessageLimit",
             allow_zero=False,
         ),

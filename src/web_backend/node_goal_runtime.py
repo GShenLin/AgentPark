@@ -11,35 +11,20 @@ from src.providers import create_agent
 
 from .node_config_service import node_config_service
 from .node_event_sequence import bump_node_event_seq
+from .node_goal_contract import ACTIVE_GOAL_STATUS
+from .node_goal_contract import BLOCKED_GOAL_STATUS
+from .node_goal_contract import COMPLETE_GOAL_STATUS
+from .node_goal_contract import GOAL_COMPLETION_AUDIT_INSTRUCTIONS
+from .node_goal_contract import GoalEvaluationError
+from .node_goal_contract import TERMINAL_GOAL_STATUSES
+from .node_goal_contract import has_structured_completion_audit
+from .node_goal_contract import parse_goal_evaluation
 from .service_host import HostBoundService
 from .shared import _append_node_pending, _preview_text
 
 
 GOAL_FIELD = "goal"
 GOAL_STATE_FIELD = "goal_state"
-ACTIVE_GOAL_STATUS = "active"
-COMPLETE_GOAL_STATUS = "complete"
-BLOCKED_GOAL_STATUS = "blocked"
-TERMINAL_GOAL_STATUSES = {COMPLETE_GOAL_STATUS, BLOCKED_GOAL_STATUS}
-INTERNAL_CONTROL_OUTPUT_STATUSES = {
-    "tool_context_compaction_completed",
-}
-
-GOAL_COMPLETION_AUDIT_INSTRUCTIONS = (
-    "Completion contract:\n"
-    '- Keep the original goal scope intact; do not redefine success around the work already done.\n'
-    '- Treat completion as unproven until the current state proves the full goal is satisfied.\n'
-    '- If the full goal is not proven complete, keep making concrete progress and do not claim completion.\n'
-    '- Only when the full goal is proven complete, include a "Goal completion audit:" section with this exact '
-    "structured contract:\n"
-    "  Original goal: <the full original goal>\n"
-    "  Current-state evidence: <evidence from the current project/runtime state>\n"
-    "  Verification evidence: <commands, logs, files, or direct checks that prove the evidence>\n"
-    "  Known caveats: none\n"
-    "  Remaining required work: none\n"
-    "- If any caveat, timeout, failed verification, unchecked boundary, or remaining required work exists, do not "
-    "use Known caveats: none or Remaining required work: none; keep the goal active instead."
-)
 
 
 def node_goal_context(config: dict[str, Any] | None) -> str:
@@ -81,43 +66,6 @@ def normalize_goal_state(value: object) -> dict[str, Any]:
     return state
 
 
-def is_internal_control_output(message: object) -> bool:
-    text = envelope_text(message).strip()
-    if not text:
-        return False
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return False
-    if set(parsed) != {"status"}:
-        return False
-    status = str(parsed.get("status") or "").strip().lower()
-    return status in INTERNAL_CONTROL_OUTPUT_STATUSES
-
-
-def has_structured_completion_audit(message: object) -> bool:
-    text = envelope_text(message)
-    marker = "Goal completion audit:"
-    marker_index = text.find(marker)
-    if marker_index < 0:
-        return False
-    audit = text[marker_index + len(marker) :]
-    required_labels = (
-        "Original goal:",
-        "Current-state evidence:",
-        "Verification evidence:",
-        "Known caveats:",
-        "Remaining required work:",
-    )
-    if any(label not in audit for label in required_labels):
-        return False
-    return "Known caveats: none" in audit and "Remaining required work: none" in audit
-
-
-class GoalEvaluationError(RuntimeError):
-    pass
-
-
 class NodeGoalRuntime(HostBoundService):
     def _evaluate_node_goal_after_persist(
         self,
@@ -143,17 +91,6 @@ class NodeGoalRuntime(HostBoundService):
         state = normalize_goal_state(current_config.get(GOAL_STATE_FIELD))
         if not goal or state.get("status") != ACTIVE_GOAL_STATUS:
             return {"active": False, "should_continue": False}
-        if is_internal_control_output(output_message):
-            self._log_graph_event(
-                graph_id,
-                "node_goal_evaluation_skipped",
-                trace_id=trace_id,
-                node_id=node_id,
-                node_type_id=node_type_id,
-                depth=depth,
-                reason="internal_control_output",
-            )
-            return {"active": True, "should_continue": False, "skipped": True, "reason": "internal_control_output"}
         if not has_structured_completion_audit(output_message):
             return self._persist_active_and_continue(
                 graph_id=graph_id,
@@ -310,7 +247,7 @@ class NodeGoalRuntime(HostBoundService):
             system_prompt=None,
             internal_memory_enabled=False,
         )
-        agent.Message("system", self._goal_evaluator_system_prompt(), persist=False)
+        agent.RuntimeInstruction(self._goal_evaluator_system_prompt(), persist=False)
         agent.Message(
             "user",
             self._goal_evaluator_user_prompt(
@@ -446,27 +383,3 @@ class NodeGoalRuntime(HostBoundService):
             wake_event.set()
         else:
             self._wake_graph_runner(graph_id)
-
-def parse_goal_evaluation(response: object) -> dict[str, str]:
-    text = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False)
-    parsed = _parse_json_object(str(text or ""))
-    if set(parsed) != {"new_goal_state", "reason"}:
-        raise GoalEvaluationError('goal evaluator JSON must contain exactly "new_goal_state" and "reason"')
-    status = str(parsed.get("new_goal_state") or "").strip().lower()
-    reason = str(parsed.get("reason") or "").strip()
-    if status not in {ACTIVE_GOAL_STATUS, COMPLETE_GOAL_STATUS, BLOCKED_GOAL_STATUS}:
-        raise GoalEvaluationError(f"invalid new_goal_state: {status!r}")
-    if not reason:
-        raise GoalEvaluationError("goal evaluation reason is required")
-    return {"new_goal_state": status, "reason": reason}
-
-
-def _parse_json_object(text: str) -> dict[str, Any]:
-    stripped = str(text or "").strip()
-    try:
-        parsed = json.loads(stripped)
-    except json.JSONDecodeError:
-        raise GoalEvaluationError("goal evaluator did not return a valid JSON object")
-    if not isinstance(parsed, dict):
-        raise GoalEvaluationError("goal evaluator JSON must be an object")
-    return parsed

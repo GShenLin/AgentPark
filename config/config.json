@@ -28,12 +28,15 @@
   },
   "agentNode": {
     "minSendDelayMs": 200,
-    "historyMessageLimit": 40
+    "historyMessageLimit": 6
   },
   "consoleCommand": {
     "timeoutSec": 300
   },
   "nodeMemory": {
     "maxEntries": 20
+  },
+  "undo": {
+    "maxSteps": 5
   }
 }

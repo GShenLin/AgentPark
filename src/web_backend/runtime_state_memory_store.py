@@ -47,6 +47,27 @@ class RuntimeStateMemoryStore:
             payload = copy.deepcopy(self._items.get(key) or {})
         return self._with_defaults(payload) if include_defaults else payload
 
+    def snapshot_fields(self, config_path: str, fields: set[str], *, include_defaults: bool = True) -> dict[str, Any]:
+        requested = {str(field or "").strip() for field in fields if str(field or "").strip()}
+        unknown = requested - RUNTIME_STATE_FIELDS
+        if unknown:
+            raise RuntimeStateContractError("unknown runtime state fields: " + ", ".join(sorted(unknown)))
+        key = self._key(config_path)
+        lock = self._lock_for(key)
+        with lock:
+            source = self._items.get(key) or {}
+            payload = {
+                field: copy.deepcopy(source[field])
+                for field in requested
+                if field in source
+            }
+        if include_defaults:
+            if "state" in requested and "state" not in payload:
+                payload["state"] = "idle"
+            if "pending_count" in requested and "pending_count" not in payload:
+                payload["pending_count"] = 0
+        return payload
+
     def replace_from_payload(self, config_path: str, payload: dict[str, Any]) -> None:
         runtime_payload = {
             key: copy.deepcopy(value)
@@ -74,6 +95,43 @@ class RuntimeStateMemoryStore:
                 self._items[key] = payload
                 self._touch_version(key)
             return copy.deepcopy(self._with_defaults(payload))
+
+    def update_fields(
+        self,
+        config_path: str,
+        fields: set[str],
+        mutate: RuntimeMutation,
+    ) -> dict[str, Any]:
+        requested = {str(field or "").strip() for field in fields if str(field or "").strip()}
+        unknown = requested - RUNTIME_STATE_FIELDS
+        if unknown:
+            raise RuntimeStateContractError("unknown runtime state fields: " + ", ".join(sorted(unknown)))
+        key = self._key(config_path)
+        lock = self._lock_for(key)
+        with lock:
+            source = self._items.get(key) or {}
+            payload = {
+                field: copy.deepcopy(source[field])
+                for field in requested
+                if field in source
+            }
+            before = copy.deepcopy(payload)
+            mutate(payload)
+            normalized = self._normalize(payload)
+            unexpected = set(normalized) - requested
+            if unexpected:
+                raise RuntimeStateContractError(
+                    "field-scoped runtime mutation produced undeclared fields: "
+                    + ", ".join(sorted(unexpected))
+                )
+            if normalized != before:
+                next_state = dict(source)
+                for field in requested:
+                    next_state.pop(field, None)
+                next_state.update(normalized)
+                self._items[key] = next_state
+                self._touch_version(key)
+            return copy.deepcopy(normalized)
 
     def clear(self, config_path: str) -> None:
         key = self._key(config_path)

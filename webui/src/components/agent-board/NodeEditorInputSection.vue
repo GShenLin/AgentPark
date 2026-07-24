@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NodeEditorAttachment } from '../../composables/useGlobalState'
+import ExpandableTextarea from '../ExpandableTextarea.vue'
 
 defineProps<{
   attachments: NodeEditorAttachment[]
@@ -9,6 +10,9 @@ defineProps<{
   goalActive: boolean
   goalEnabled: boolean
   goalTitle?: string
+  audioInputEnabled: boolean
+  audioRecording: boolean
+  audioRecordingSupported: boolean
 }>()
 
 const emit = defineEmits<{
@@ -16,8 +20,8 @@ const emit = defineEmits<{
   'drop-input': [event: DragEvent]
   'paste-input': [event: ClipboardEvent]
   'remove-attachment': [index: number]
-  'clear-attachments': []
   'toggle-goal': []
+  'toggle-audio-recording': []
   send: []
 }>()
 
@@ -25,6 +29,16 @@ function onInputKeyDown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey) return
   event.preventDefault()
   emit('send')
+}
+
+function onInputDragOver(event: DragEvent) {
+  event.preventDefault()
+}
+
+function onInputDrop(event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  emit('drop-input', event)
 }
 
 function attachmentExtension(file: NodeEditorAttachment) {
@@ -78,8 +92,8 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
       <div
         v-for="(file, index) in attachments"
         :key="file.path"
-        class="attachment-chip"
-        :class="{ 'attachment-chip-image': isImageAttachment(file) }"
+        class="attachment-item"
+        :class="isImageAttachment(file) ? 'attachment-item-image' : 'attachment-item-file'"
       >
         <a
           v-if="isImageAttachment(file) && attachmentPreviewHref(file)"
@@ -92,20 +106,34 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
           <img class="attachment-thumb" :src="attachmentPreviewHref(file)" :alt="file.name" loading="lazy" />
         </a>
         <span v-if="!isImageAttachment(file)" class="attachment-name" :title="file.path">{{ file.name }}</span>
-        <button class="attachment-remove" type="button" @click="emit('remove-attachment', index)">x</button>
+        <button
+          class="attachment-remove"
+          type="button"
+          :aria-label="`Remove ${file.name}`"
+          title="Remove attachment"
+          @click="emit('remove-attachment', index)"
+        >
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+          </svg>
+        </button>
       </div>
-      <button class="attachment-clear" type="button" @click="emit('clear-attachments')">Clear</button>
     </div>
 
-    <textarea
-      class="input-box"
-      rows="2"
+    <ExpandableTextarea
+      :model-value="inputText"
+      title="Node Input"
+      aria-label="Node input"
+      :rows="2"
+      min-height="52px"
+      max-height="108px"
       placeholder="Type input for this node, or drop files here."
-      :value="inputText"
-      @input="emit('update:inputText', ($event.target as HTMLTextAreaElement).value)"
+      @update:model-value="emit('update:inputText', $event)"
       @keydown="onInputKeyDown"
       @paste="emit('paste-input', $event)"
-    ></textarea>
+      @dragover="onInputDragOver"
+      @drop="onInputDrop"
+    />
 
     <div class="input-actions">
       <div v-if="isUploadingFiles" class="section-hint">Uploading files...</div>
@@ -119,6 +147,17 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
           @click="emit('toggle-goal')"
         >
           Goal
+        </button>
+        <button
+          v-if="audioInputEnabled"
+          class="record-btn"
+          :class="{ active: audioRecording }"
+          type="button"
+          :disabled="!audioRecordingSupported || isUploadingFiles"
+          :title="audioRecording ? 'Stop recording and attach audio' : 'Start microphone recording'"
+          @click="emit('toggle-audio-recording')"
+        >
+          {{ audioRecording ? 'Stop audio' : 'Record audio' }}
         </button>
         <button class="primary-btn" :disabled="!canSend" @click="emit('send')">
           Send
@@ -161,7 +200,12 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
   gap: 8px;
 }
 
-.attachment-chip {
+.attachment-item {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.attachment-item-file {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -172,35 +216,29 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
   padding: 5px 10px;
 }
 
-.attachment-chip-image {
+.attachment-item-image {
+  width: 80px;
+  height: 80px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 14px;
-  padding: 5px 9px 5px 5px;
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 3px 12px rgba(2, 6, 23, 0.28);
 }
 
 .attachment-thumb-link {
-  display: inline-flex;
-  width: 52px;
-  height: 42px;
-  flex: 0 0 auto;
+  display: block;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid rgba(226, 232, 240, 0.34);
-  background-color: rgba(248, 250, 252, 0.12);
-  background-image:
-    linear-gradient(45deg, rgba(148, 163, 184, 0.22) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(148, 163, 184, 0.22) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.22) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.22) 75%);
-  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
-  background-size: 12px 12px;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.26);
+  border-radius: 13px;
+  background: rgba(30, 41, 59, 0.92);
 }
 
 .attachment-thumb {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  display: block;
+  object-fit: cover;
 }
 
 .attachment-name {
@@ -214,8 +252,8 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 
 
 .attachment-remove,
-.attachment-clear,
 .goal-btn,
+.record-btn,
 .primary-btn {
   border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
@@ -228,29 +266,37 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 }
 
 .attachment-remove {
+  display: grid;
+  place-items: center;
   padding: 0;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
+  background: rgba(2, 6, 23, 0.86);
+  color: rgba(248, 250, 252, 0.96);
 }
 
-.attachment-clear {
-  padding: 6px 10px;
-  font-size: 12px;
+.attachment-item-image .attachment-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  border-color: rgba(226, 232, 240, 0.28);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.42);
 }
 
-.input-box {
-  width: 100%;
-  min-height: 52px;
-  max-height: 108px;
-  resize: vertical;
-  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
-  border-radius: 10px;
-  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
-  color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
-  padding: 10px 12px;
-  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
-  outline: none;
+.attachment-remove:hover {
+  border-color: rgba(248, 250, 252, 0.56);
+  background: rgba(15, 23, 42, 0.98);
+}
+
+.attachment-remove svg {
+  display: block;
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.7;
 }
 
 .input-actions {
@@ -280,6 +326,12 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 .goal-btn:disabled {
   cursor: not-allowed;
   opacity: 0.46;
+}
+
+.record-btn.active {
+  border-color: rgba(248, 113, 113, 0.72);
+  background: rgba(153, 27, 27, 0.42);
+  color: #fee2e2;
 }
 
 .primary-btn {

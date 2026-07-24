@@ -1,15 +1,31 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem Deletes every operational_memory.json file under this repo's memories folder.
+rem Deletes every operational_memory.json file under the configured memories folder.
 cd /d "%~dp0"
 
 set "MEMORIES_ROOT=%CD%\memories"
 set "TARGET_NAME=operational_memory.json"
 set "DRY_RUN=0"
 
+:parse_args
+if "%~1"=="" goto args_parsed
+if /I "%~1"=="--root" (
+    if "%~2"=="" (
+        echo [ERROR] --root requires a directory path.
+        exit /b 2
+    )
+    set "MEMORIES_ROOT=%~2"
+    shift
+    shift
+    goto parse_args
+)
 if /I "%~1"=="--dry-run" set "DRY_RUN=1"
 if /I "%~1"=="/dry-run" set "DRY_RUN=1"
+shift
+goto parse_args
+
+:args_parsed
 
 if not exist "%MEMORIES_ROOT%\" (
     echo [ERROR] memories folder does not exist: "%MEMORIES_ROOT%"

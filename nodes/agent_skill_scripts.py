@@ -6,6 +6,7 @@ from typing import Iterable
 
 from nodes.agent_skill_loader import SkillDefinition
 from src.skills.script_manifest import SkillScriptDefinition, run_skill_script
+from src.providers.agent_runtime_context import get_agent_runtime_context
 from src.tool.tool_load_errors import ToolLoadError
 
 
@@ -29,7 +30,7 @@ def register_skill_script_tools(agent: object, skills: Iterable[SkillDefinition]
     registered: list[str] = []
     for script in definitions:
         function_name = _script_tool_name(script)
-        register(_script_tool_declaration(script, function_name), _script_callable(script))
+        register(_script_tool_declaration(script, function_name), _script_callable(agent, script))
         registered.append(function_name)
     return registered
 
@@ -51,11 +52,17 @@ def _script_tool_declaration(script: SkillScriptDefinition, function_name: str) 
     }
 
 
-def _script_callable(script: SkillScriptDefinition):
+def _script_callable(agent: object, script: SkillScriptDefinition):
     def call_skill_script(**kwargs):
-        return run_skill_script(script, kwargs)
+        context = get_agent_runtime_context(agent)
+        return run_skill_script(
+            script,
+            kwargs,
+            runtime_env={"AGENTPARK_NODE_DIRECTORY": context.node_directory},
+        )
 
     call_skill_script.__name__ = _script_tool_name(script)
+    call_skill_script.tool_timeout_seconds = script.timeout_seconds
     return call_skill_script
 
 

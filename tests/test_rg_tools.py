@@ -73,6 +73,77 @@ def test_rg_list_files_fallback_without_rg(monkeypatch, tmp_path):
     assert "dist/bundle.js" not in files
 
 
+def test_rg_list_files_runs_globs_from_explicit_project_root(monkeypatch, tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    target = src / "a.py"
+    target.write_text("print('a')\n", encoding="utf-8")
+    captured = {}
+
+    def fake_run(cmd, on_line, timeout_sec, cancel_source=None, *, cwd=None):
+        captured.update({"cmd": cmd, "cwd": cwd})
+        on_line("src/a.py")
+        return {
+            "ok": True,
+            "timed_out": False,
+            "stopped_early": False,
+            "stderr": "",
+            "return_code": 0,
+            "had_output": True,
+        }
+
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: "rg")
+    monkeypatch.setattr(rg_tools, "run_rg_stream_lines", fake_run)
+
+    payload = json.loads(
+        rg_tools.rg_list_files(
+            project_root=str(tmp_path),
+            include_globs=["src/*.py"],
+            max_results=10,
+        )
+    )
+
+    assert captured["cwd"] == str(tmp_path)
+    assert captured["cmd"][-1] == "."
+    assert payload["files"][0]["file_path"] == str(target)
+
+
+def test_rg_search_runs_globs_from_explicit_project_root(monkeypatch, tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    target = src / "a.py"
+    target.write_text("needle\n", encoding="utf-8")
+    captured = {}
+
+    def fake_run(cmd, on_line, timeout_sec, cancel_source=None, *, cwd=None):
+        captured.update({"cmd": cmd, "cwd": cwd})
+        on_line("src/a.py:1:needle")
+        return {
+            "ok": True,
+            "timed_out": False,
+            "stopped_early": False,
+            "stderr": "",
+            "return_code": 0,
+            "had_output": True,
+        }
+
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: "rg")
+    monkeypatch.setattr(rg_tools, "run_rg_stream_lines", fake_run)
+
+    payload = json.loads(
+        rg_tools.rg_search_text(
+            query="needle",
+            project_root=str(tmp_path),
+            include_globs=["src/*.py"],
+            max_results=10,
+        )
+    )
+
+    assert captured["cwd"] == str(tmp_path)
+    assert captured["cmd"][-2:] == ["needle", "."]
+    assert payload["matches"][0]["file_path"] == str(target)
+
+
 def test_rg_list_files_blocks_broad_inventory_scan(tmp_path):
     raw = rg_tools.rg_list_files(
         project_root=str(tmp_path),

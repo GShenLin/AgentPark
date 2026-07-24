@@ -1,6 +1,9 @@
 import json
 
 from src.tool.tool_execution_result import build_error_result
+from src.tool.tool_execution_result import build_cancellation_failed_result
+from src.tool.tool_execution_result import build_cancellation_failed_result
+from src.tool.tool_execution_result import build_user_stopped_result
 from src.tool.tool_execution_result import normalize_tool_execution_result
 from src.tool.tool_execution_result import status_and_error_from_payload
 
@@ -44,3 +47,30 @@ def test_explicit_error_result_builds_structured_model_output():
         "tool": "demo_tool",
         "error": "ValueError: bad",
     }
+
+
+def test_user_stopped_tool_call_returns_exact_protocol_result():
+    result = build_user_stopped_result(tool_name="demo_tool")
+
+    assert result.status == "stopped"
+    assert result.error is None
+    assert result.model_output() == "UserStoppedThisCall"
+
+
+def test_uncooperative_tool_cancellation_is_not_reported_as_user_stopped():
+    result = build_cancellation_failed_result(tool_name="demo_tool")
+
+    assert result.status == "cancellation_failed"
+    assert result.model_output() != "UserStoppedThisCall"
+    payload = json.loads(result.model_output())
+    assert payload["status"] == "cancellation_failed"
+    assert payload["tool"] == "demo_tool"
+
+
+def test_cancellation_failure_is_not_reported_as_user_stopped():
+    result = build_cancellation_failed_result(tool_name="demo_tool")
+
+    payload = json.loads(result.model_output())
+    assert payload["status"] == "cancellation_failed"
+    assert payload["tool"] == "demo_tool"
+    assert payload["error"] == "Tool did not stop after cancellation was requested."

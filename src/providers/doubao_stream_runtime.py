@@ -3,16 +3,20 @@ import random
 import time
 from typing import Callable
 
-from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportError, format_doubao_http_error
+from src.providers.doubao_agent_common import _CurlHTTPError, _CurlTransportError, _ResponsesIncompleteError, format_doubao_http_error
 from src.providers.doubao_curl_stream_transport import DoubaoCurlStreamTransport
 from src.providers.openai_responses_stream_normalizer import OpenAIResponsesStreamEventNormalizer
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.providers.responses_stream_events import ResponsesOutputItemAdded
 from src.providers.responses_stream_events import ResponsesOutputItemDone
 from src.providers.responses_stream_events import ResponsesReasoningDelta
+from src.providers.responses_stream_events import ResponsesRefusalDelta
+from src.providers.responses_stream_events import ResponsesResponseIncomplete
 from src.providers.responses_stream_events import ResponsesServerToolActivity
 from src.providers.responses_stream_events import ResponsesStreamEvent
+from src.providers.responses_stream_events import ResponsesStreamFailure
 from src.providers.server_tool_protocol import build_server_tool_activity
+from src.providers.response_refusal_protocol import build_response_refusal_event
 from src.providers.server_tool_protocol import is_server_tool_item_type
 from src.runtime_cancellation import CancellationRequested
 from src.service_host import HostBoundService
@@ -287,6 +291,15 @@ class DoubaoStreamRuntime(DoubaoCurlStreamTransport, ProviderRuntimeEventMixin, 
             for normalized_event in normalized_events:
                 if callable(item_event_handler):
                     item_event_handler(normalized_event)
+                if isinstance(normalized_event, ResponsesStreamFailure):
+                    if normalized_event.event_type in {"response.failed", "response.error", "error"} or normalized_event.status_code:
+                        raise _CurlHTTPError(normalized_event.status_code, normalized_event.message)
+                    raise _CurlTransportError(normalized_event.message)
+                if isinstance(normalized_event, ResponsesResponseIncomplete):
+                    raise _ResponsesIncompleteError(
+                        response=normalized_event.response,
+                        reason=normalized_event.reason,
+                    )
                 if isinstance(normalized_event, ResponsesReasoningDelta) and normalized_event.delta:
                     thinking_chunks.append(normalized_event.delta)
                     self._emit_stream_thinking(
@@ -295,6 +308,20 @@ class DoubaoStreamRuntime(DoubaoCurlStreamTransport, ProviderRuntimeEventMixin, 
                         "".join(thinking_chunks),
                         normalized_event.provider or "doubao_responses",
                     )
+                if isinstance(normalized_event, ResponsesRefusalDelta):
+                    callback = getattr(self, "tool_event_callback", None)
+                    if callable(callback):
+                        callback(
+                            build_response_refusal_event(
+                                delta=normalized_event.delta,
+                                text=normalized_event.text,
+                                item_id=normalized_event.item_id,
+                                output_index=normalized_event.output_index,
+                                content_index=normalized_event.content_index,
+                                provider=normalized_event.provider,
+                                status=normalized_event.status,
+                            )
+                        )
                 server_tool_item = None
                 server_tool_status = ""
                 if isinstance(normalized_event, ResponsesOutputItemAdded) and is_server_tool_item_type(normalized_event.item_type):
@@ -432,6 +459,8 @@ class DoubaoStreamRuntime(DoubaoCurlStreamTransport, ProviderRuntimeEventMixin, 
                     current_delay *= 2
                     continue
                 raise RuntimeError(f"Error after {max_retries} retries: {error_str}")
+            except _ResponsesIncompleteError as e:
+                raise RuntimeError(str(e)) from e
             except Exception as e:
                 error_str = str(e)
                 if attempt < max_retries:

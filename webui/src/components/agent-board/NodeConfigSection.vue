@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import {
   controlChannelReceiver,
   getNodeTemplate,
@@ -11,11 +11,13 @@ import {
 } from '../../api'
 import { ASSET_FIELD_KEYS, mergeDroppedPaths, resolveDroppedPaths } from '../../composables/droppedPaths'
 import { getSchemaFieldType, normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
+import { resolveAgentProviderSchemaContext } from '../../composables/useAgentNodeCreateSchema'
+import { waitForSelectionRequestWindow } from '../../selectionRequestPolicy'
 import { AgentBoardKey, type NodeCard } from './context'
 import { withPersistedCapabilityState } from './capabilitySchemaState'
 import { formatNodeConfigChangeSummary, normalizeApplyError } from './nodeApplySummary'
 import NodeConfigFields from './NodeConfigFields.vue'
-import NodeRuntimeEventsSection from './NodeRuntimeEventsSection.vue'
+import NodeRuntimeEventsFieldGroup from './NodeRuntimeEventsFieldGroup.vue'
 
 const injectedCtx = inject(AgentBoardKey, null)
 if (!injectedCtx) {
@@ -39,6 +41,7 @@ const draftFields = ref<Record<string, any>>({})
 const dirtyKeys = ref<Record<string, true>>({})
 const applying = ref(false)
 const templateSchema = ref<Record<string, any>>({})
+const fieldSchemaCache = ref<Record<string, any>>({})
 const templateFields = ref<Record<string, any>>({})
 const dropFieldKey = ref('')
 const uploadingFieldKey = ref('')
@@ -50,6 +53,9 @@ const loginSessionKey = ref('')
 const loginMessage = ref('')
 const applySummary = ref('')
 let templateRequestId = 0
+let loadedSchemaContextKey = ''
+let openRequestId = 0
+let openAbortController: AbortController | null = null
 
 const schema = computed(() => withPersistedCapabilityState(templateSchema.value, props.config))
 const fieldKeys = computed(() => Object.keys(schema.value || {}))
@@ -90,46 +96,96 @@ function resetDraftFromConfig() {
   dirtyKeys.value = {}
 }
 
-async function loadTemplate(typeId: string) {
+function schemaContextKey(fields: Record<string, any> | null | undefined) {
+  const context = resolveAgentProviderSchemaContext(props.providers, fields)
+  return context.providerId
+}
+
+async function loadTemplate(
+  typeId: string,
+  contextFields: Record<string, any> | null | undefined = null,
+  preserveDraft = false,
+  signal?: AbortSignal,
+) {
   const safeTypeId = String(typeId || '').trim()
   templateRequestId += 1
   const requestId = templateRequestId
   if (!safeTypeId) {
     templateSchema.value = {}
+    fieldSchemaCache.value = {}
     templateFields.value = {}
+    loadedSchemaContextKey = ''
     return
   }
   try {
-    const tpl = await getNodeTemplate(safeTypeId)
+    const contextKey = schemaContextKey(contextFields)
+    const tpl = await getNodeTemplate(safeTypeId, { providerId: contextKey }, { signal })
     if (requestId !== templateRequestId) return
-    templateSchema.value = (tpl.schema || {}) as Record<string, any>
+    const nextSchema = (tpl.schema || {}) as Record<string, any>
+    templateSchema.value = nextSchema
+    fieldSchemaCache.value = preserveDraft
+      ? { ...fieldSchemaCache.value, ...nextSchema }
+      : { ...nextSchema }
     templateFields.value = { ...(tpl.fields || {}) }
+    loadedSchemaContextKey = contextKey
+    if (preserveDraft) {
+      const config = props.config as Record<string, any> | null
+      const nextDraft = { ...draftFields.value }
+      for (const key of Object.keys(nextSchema)) {
+        if (nextDraft[key] !== undefined) continue
+        nextDraft[key] = config?.[key] ?? templateFields.value[key]
+      }
+      draftFields.value = nextDraft
+    }
   } catch (e: any) {
+    if (signal?.aborted) return
     if (requestId !== templateRequestId) return
     templateSchema.value = {}
+    fieldSchemaCache.value = {}
     templateFields.value = {}
+    loadedSchemaContextKey = ''
     showError(String(e?.message || e))
   }
 }
 
 async function openForNode(nodeId: string) {
   const targetId = String(nodeId || '').trim()
+  const requestId = ++openRequestId
+  openAbortController?.abort()
+  openAbortController = null
   templateRequestId += 1
   if (!targetId) {
     draftFields.value = {}
     dirtyKeys.value = {}
     templateSchema.value = {}
+    fieldSchemaCache.value = {}
     templateFields.value = {}
+    loadedSchemaContextKey = ''
     applySummary.value = ''
     loading.value = false
     channelStatus.value = null
     qrModalOpen.value = false
     return
   }
+  const controller = new AbortController()
+  openAbortController = controller
   loading.value = true
   try {
-    await ctx.refreshNodeConfig(targetId).catch(() => null)
-    await loadTemplate(String(props.node?.typeId || '').trim())
+    if (!(await waitForSelectionRequestWindow(controller.signal))) return
+    await Promise.all([
+      ctx.refreshNodeConfig(targetId, { signal: controller.signal }).catch((error) => {
+        if (controller.signal.aborted) return null
+        showError(String(error?.message || error))
+        return null
+      }),
+      loadTemplate(
+        String(props.node?.typeId || '').trim(),
+        props.config as Record<string, any> | null,
+        false,
+        controller.signal,
+      ),
+    ])
+    if (controller.signal.aborted || requestId !== openRequestId) return
     resetDraftFromConfig()
     if (String(props.node?.typeId || '').trim() === 'channel_receiver_node') {
       await refreshChannelStatus()
@@ -138,9 +194,18 @@ async function openForNode(nodeId: string) {
       qrModalOpen.value = false
     }
   } finally {
-    loading.value = false
+    if (requestId === openRequestId) {
+      loading.value = false
+      if (openAbortController === controller) openAbortController = null
+    }
   }
 }
+
+onBeforeUnmount(() => {
+  openRequestId += 1
+  openAbortController?.abort()
+  openAbortController = null
+})
 
 async function applyChanges(): Promise<boolean> {
   const nodeId = props.node?.id
@@ -150,7 +215,7 @@ async function applyChanges(): Promise<boolean> {
 
   const fields: Record<string, unknown> = {}
   for (const key of keys) {
-    fields[key] = normalizeSchemaFieldValue(schema.value, key, draftFields.value[key])
+    fields[key] = normalizeSchemaFieldValue(fieldSchemaCache.value, key, draftFields.value[key])
   }
 
   applying.value = true
@@ -311,6 +376,15 @@ watch(
     resetDraftFromConfig()
   },
 )
+
+watch(
+  () => schemaContextKey(draftFields.value),
+  (contextKey) => {
+    if (String(props.node?.typeId || '').trim() !== 'agent_node') return
+    if (loading.value || !contextKey || contextKey === loadedSchemaContextKey) return
+    void loadTemplate(String(props.node?.typeId || '').trim(), draftFields.value, true)
+  },
+)
 </script>
 
 <template>
@@ -389,7 +463,7 @@ watch(
       </div>
     </div>
 
-    <NodeRuntimeEventsSection
+    <NodeRuntimeEventsFieldGroup
       :node="node"
       :graph-id="currentGraphId()"
       @error="showError"

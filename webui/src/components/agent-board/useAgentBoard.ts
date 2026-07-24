@@ -6,17 +6,18 @@ import {
   deleteNodeInstance,
   emitGraph,
   getPasteAgentConfig,
-  listNodeInstanceConfigs,
   listNodes,
   loadGraph,
   openNodeInstanceNodeFolder,
   openNodeInstanceWorkFolder,
   renameNodeInstance,
   saveGraph,
+  setNodeInstanceVisibility,
   setNodeInstanceState,
   startGraphRunner,
   stopNodeRun,
   updateNodeInstanceConfig,
+  waitForRemoteWorker,
   type GraphConfig,
   type MessageEnvelope,
   type NodeInstanceConfig,
@@ -24,8 +25,10 @@ import {
   type NodeInfo,
   type PasteAgentConfig,
 } from '../../api'
+import type { Ref } from 'vue'
 import { resolveDroppedPaths } from '../../composables/droppedPaths'
 import { useGlobalState } from '../../composables/useGlobalState'
+import { recordDeletionUndo } from '../../composables/useDeletionUndo'
 import {
   buildBoardPastePlan,
   hasBoardClipboardSnapshot,
@@ -60,7 +63,6 @@ import {
   isBoardNodeStopped,
   isBoardNodeWorking,
   resolveBoardNodeTypeId,
-  waitForBoardNodeOutput,
 } from './boardNodeRuntime'
 import {
   computeNodeIdsInSelectionRect,
@@ -100,7 +102,7 @@ import {
   type BoardNodePlacement,
 } from './boardModel'
 
-export function useAgentBoard(): AgentBoardContext {
+export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: NodeInfo[] } = {}): AgentBoardContext {
   const {
     selectedNodeId,
     lastError,
@@ -131,7 +133,6 @@ export function useAgentBoard(): AgentBoardContext {
   let dragBatchStart: Record<string, { x: number; y: number }> | null = null
   const activeDragItemIds = new Set<string>()
   const pendingUiPositions = new Map<string, BoardPosition>()
-  let nodeConfigRefreshPromise: Promise<void> | null = null
   let pasteCount = 0
   let clipboardSnapshot: BoardClipboardSnapshot | null = null
   let pasteAgentConfigCache: PasteAgentConfig | null = null
@@ -213,7 +214,7 @@ export function useAgentBoard(): AgentBoardContext {
     if (!nodes.value.some((node) => node.id === nodeId)) return false
 
     selectNode(nodeId)
-    const shouldRefresh = options.refreshConfig !== false
+    const shouldRefresh = options.refreshConfig === true
     const shouldFocus = options.focusViewport !== false
     const refreshPromise = shouldRefresh ? refreshNodeConfig(nodeId).catch(() => null) : Promise.resolve()
     const focused = shouldFocus ? await focusNodeInViewport(nodeId) : false
@@ -476,6 +477,8 @@ export function useAgentBoard(): AgentBoardContext {
       tools: Array.isArray((fields as any)?.tools) ? (fields as any).tools.map(String).filter(Boolean) : [],
       mcpServers: Array.isArray((fields as any)?.mcp_servers) ? (fields as any).mcp_servers.map(String).filter(Boolean) : [],
       workingPath: String((fields as any)?.working_path ?? '').trim(),
+      remoteEnabled: Boolean((fields as any)?.remote_enabled),
+      remoteWorkerId: String((fields as any)?.remote_worker_id ?? '').trim(),
     })
     selectedItemIds.value = [nodeId]
     selectedNodeId.value = nodeId
@@ -484,7 +487,6 @@ export function useAgentBoard(): AgentBoardContext {
     await persistGraphConfig('create_node_from_palette')
     refreshNodeConfigsAndMemory().catch(() => null)
     ensureNodeConfig(nodeId).catch(() => null)
-    scheduleActiveNodeRefresh()
     return nodeId
   }
 
@@ -692,7 +694,12 @@ export function useAgentBoard(): AgentBoardContext {
     lastError.value = null
     const graphId = currentGraphId.value || 'default'
     try {
-      await deleteNodeInstance(nodeId, graphId)
+      const result = await deleteNodeInstance(nodeId, graphId)
+      recordDeletionUndo(result.undo_token ? {
+        token: result.undo_token,
+        kind: 'delete_node',
+        label: `node ${nodeId}`,
+      } : null)
     } catch (e: any) {
       lastError.value = String(e?.message || e)
       await refreshNodeConfigsAndMemory().catch(() => null)
@@ -820,21 +827,6 @@ export function useAgentBoard(): AgentBoardContext {
     event.preventDefault()
   }
 
-  async function waitForNodeOutput(
-    nodeId: string,
-    prevRunAt: string | null,
-    prevMessage: string | null,
-    graphId: string,
-  ): Promise<{ status: 'completed' | 'stopped' | 'deadline'; message: string }> {
-    return waitForBoardNodeOutput({
-      nodeId,
-      prevRunAt,
-      prevMessage,
-      graphId,
-      listNodeInstanceConfigs,
-    })
-  }
-
   function triggerNodeDone(nodeId: string) {
     nodeDonePulse.value = { ...nodeDonePulse.value, [nodeId]: Date.now() }
   }
@@ -948,7 +940,6 @@ export function useAgentBoard(): AgentBoardContext {
     nodeStates.value = { ...nodeStates.value, [nodeId]: res.state }
     await startGraphRunner(graphId).catch(() => null)
     await refreshNodeConfigsAndMemory().catch(() => null)
-    scheduleActiveNodeRefresh()
   }
 
   async function toggleNodeStop(nodeId: string) {
@@ -959,7 +950,6 @@ export function useAgentBoard(): AgentBoardContext {
       nodeStates.value = { ...nodeStates.value, [nodeId]: res.state }
       if (res.state === 'working') {
         await startGraphRunner(graphId).catch(() => null)
-        scheduleActiveNodeRefresh()
       }
       await refreshNodeConfigsAndMemory().catch(() => null)
       return
@@ -970,7 +960,6 @@ export function useAgentBoard(): AgentBoardContext {
     nodeStates.value = { ...nodeStates.value, [nodeId]: next }
     if (next === 'idle') {
       startGraphRunner(graphId).catch(() => null)
-      scheduleActiveNodeRefresh()
     }
   }
 
@@ -1000,7 +989,8 @@ export function useAgentBoard(): AgentBoardContext {
     requestMemoryRefresh,
   })
   const {
-    hasActiveNodeWork,
+    applyNodeRuntimeEvent,
+    refreshNodeConfig,
     refreshNodeConfigs,
     refreshNodeConfigsAndMemory,
     resetNodeConfigWatermark,
@@ -1008,15 +998,12 @@ export function useAgentBoard(): AgentBoardContext {
 
   const runtimeRefresh = createBoardRuntimeRefresh({
     currentGraphId,
+    applyNodeRuntimeEvent,
     refreshNodeConfigs,
     refreshGraphLinks,
-    hasActiveNodeWork,
-    requestMemoryRefresh,
   })
   const {
-    scheduleActiveNodeRefresh,
     startGraphEventStream,
-    stopActiveNodeRefresh,
     stopGraphEventStream,
   } = runtimeRefresh
 
@@ -1029,22 +1016,6 @@ export function useAgentBoard(): AgentBoardContext {
     await refreshNodeConfigsAndMemory().catch(() => null)
   }
 
-  async function refreshNodeConfig(nodeId: string) {
-    const id = String(nodeId || '').trim()
-    if (!id) return
-    if (!nodes.value.some((node) => node.id === id)) return
-    if (!nodeConfigs.value[id]) {
-      await ensureNodeConfig(id)
-      return
-    }
-    if (!nodeConfigRefreshPromise) {
-      nodeConfigRefreshPromise = refreshNodeConfigs().finally(() => {
-        nodeConfigRefreshPromise = null
-      })
-    }
-    await nodeConfigRefreshPromise
-  }
-
   async function triggerNode(nodeId: string) {
     const id = String(nodeId || '').trim()
     if (!id) return
@@ -1052,18 +1023,9 @@ export function useAgentBoard(): AgentBoardContext {
     if (!node) return
 
     const graphId = currentGraphId.value || 'default'
-    const cfg = (nodeConfigs.value as any)?.[id] || null
     const input = String(nodeTriggerInputs.value[id] || '')
-    const prevRunAt = String(cfg?.last_run_at ?? '')
-    const prevMessage = String(cfg?.last_message ?? '')
     await startGraphRunner(graphId).catch(() => null)
     await emitGraph(graphId, id, input).catch(() => null)
-    scheduleActiveNodeRefresh()
-    const waited = await waitForNodeOutput(id, prevRunAt || null, prevMessage || null, graphId)
-    if (waited.status === 'completed') {
-      node.last_message = waited.message
-    }
-    await refreshNodeConfigsAndMemory().catch(() => null)
   }
 
   async function sendNodeMessage(nodeId: string, message: string | MessageEnvelope) {
@@ -1082,12 +1044,18 @@ export function useAgentBoard(): AgentBoardContext {
     lastError.value = null
     try {
       const node = nodes.value.find((n) => n.id === id)
+      const config = nodeConfigs.value[id] as any
+      const remoteEnabled = Boolean(config?.remote_enabled ?? node?.remoteEnabled)
+      if (remoteEnabled) {
+        const configuredWorkerId = String(config?.remote_worker_id ?? node?.remoteWorkerId ?? '').trim()
+        if (!configuredWorkerId) throw new Error('Remote is enabled, but this node has no bound remote worker.')
+        await waitForRemoteWorker(configuredWorkerId)
+      }
       if (node) node.last_message = text
       requestSelectedNodeMemoryRefresh(id)
       await startGraphRunner(graphId).catch(() => null)
       await emitGraph(graphId, id, message)
       await refreshNodeConfigsAndMemory().catch(() => null)
-      scheduleActiveNodeRefresh()
     } catch (e: any) {
       lastError.value = String(e?.message || e)
       throw e
@@ -1124,6 +1092,27 @@ export function useAgentBoard(): AgentBoardContext {
     syncGraphSnapshot()
     await persistGraphConfig('set_node_fields')
     return result
+  }
+
+  async function setNodePrivacy(nodeId: string, privateNode: boolean) {
+    const id = String(nodeId || '').trim()
+    if (!id) return
+    const graphId = currentGraphId.value || 'default'
+    lastError.value = null
+    try {
+      const result = await setNodeInstanceVisibility(id, graphId, privateNode)
+      const existing = nodeConfigs.value[id]
+      if (existing) {
+        nodeConfigs.value = {
+          ...nodeConfigs.value,
+          [id]: { ...existing, private: result.private },
+        }
+      }
+      await refreshNodeConfigsAndMemory()
+    } catch (error: any) {
+      lastError.value = String(error?.message || error)
+      throw error
+    }
   }
 
   async function clearNodeFields(nodeId: string, fields: string[]) {
@@ -1808,25 +1797,49 @@ export function useAgentBoard(): AgentBoardContext {
     },
   )
 
-  onMounted(() => {
+  let boardMounted = false
+  let boardInitialized = false
+
+  function initializeBoard() {
+    if (!boardMounted || boardInitialized || options.ready?.value === false) return
+    boardInitialized = true
     ensurePositions()
     window.addEventListener('resize', onWindowResize)
     window.addEventListener('keydown', onWindowKeyDown)
     window.addEventListener('paste', onWindowPaste)
-    listNodes()
-      .then((items) => {
-        availableNodes.value = items
-      })
-      .catch((e: any) => {
-        lastError.value = String(e?.message || e)
-      })
+    if (options.initialNodes) {
+      availableNodes.value = options.initialNodes
+    } else {
+      listNodes()
+        .then((items) => {
+          availableNodes.value = items
+        })
+        .catch((e: any) => {
+          lastError.value = String(e?.message || e)
+        })
+    }
     syncGraphSnapshot()
-    refreshNodeConfigs().catch(() => null)
+    const loadedGraph = graphLoadRequest.value
+    if (loadedGraph) {
+      applyGraphConfig(loadedGraph)
+      graphLoadRequest.value = null
+      selectedItemIds.value = []
+      refreshNodeConfigsAndMemory().catch(() => null)
+    } else {
+      refreshNodeConfigs().catch(() => null)
+    }
     startGraphEventStream()
+  }
+
+  onMounted(() => {
+    boardMounted = true
+    initializeBoard()
   })
 
+  watch(() => options.ready?.value, initializeBoard)
+
   onBeforeUnmount(() => {
-    stopActiveNodeRefresh()
+    boardMounted = false
     stopGraphEventStream()
     activeDragItemIds.clear()
     pendingUiPositions.clear()
@@ -1846,6 +1859,7 @@ export function useAgentBoard(): AgentBoardContext {
     () => graphLoadRequest.value,
     (config) => {
       if (!config) return
+      if (!boardInitialized) return
       applyGraphConfig(config)
       graphLoadRequest.value = null
       selectedItemIds.value = []
@@ -1926,6 +1940,7 @@ export function useAgentBoard(): AgentBoardContext {
     openNodeSettings,
     openNodeFolder,
     openWorkFolder,
+    setNodePrivacy,
     openGraphPanel,
     triggerNode,
     startClockNode,
@@ -1936,6 +1951,7 @@ export function useAgentBoard(): AgentBoardContext {
     onNodePaletteDragStart,
     renameNodeCard,
     deleteNodeCard,
+    refreshNodeConfigsAndMemory,
     ensureNodeConfig,
     refreshNodeConfig,
     setNodeFields,

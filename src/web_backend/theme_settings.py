@@ -186,6 +186,7 @@ DEFAULT_THEME_CONFIG = {
                 "ui": "12px",
                 "meta": "11px",
                 "small": "11px",
+                "diff": "14px",
             },
             "border": {
                 "color": "rgba(148, 163, 184, 0.15)",

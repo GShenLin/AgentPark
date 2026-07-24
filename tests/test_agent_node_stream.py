@@ -5,6 +5,27 @@ import os
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _declare_synthetic_chat_providers(monkeypatch):
+    """Keep unit-only provider ids explicit under the Settings-owned contract."""
+    import nodes.agent_node as agent_node_module
+
+    original_get_provider_config = agent_node_module.ConfigLoader.get_provider_config
+
+    def get_provider_config(loader, provider_id):
+        if provider_id in {
+            "provider-stream",
+            "doubao-chat",
+            "doubao-2.0-pro",
+            "openai",
+            "claude",
+        }:
+            return {"supportmode": ["chat"]}
+        return original_get_provider_config(loader, provider_id)
+
+    monkeypatch.setattr(agent_node_module.ConfigLoader, "get_provider_config", get_provider_config)
+
+
 def _write_agent_node_test_skill(root, name="ue5-cpp-gameplay"):
     skill_dir = root / name
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -16,10 +37,17 @@ def _write_agent_node_test_skill(root, name="ue5-cpp-gameplay"):
     return skill_path
 
 
-def test_agent_node_tools_schema_is_multiselect_with_available_tools():
+def test_agent_node_tools_schema_is_multiselect_with_available_tools(monkeypatch):
     from nodes.agent_node import Node
+    import nodes.agent_node_schema as schema_module
 
-    schema = Node().get_config_schema(None)
+    class DummyConfigLoader:
+        def get_all_providers(self):
+            return {"test-chat": {"supportmode": ["chat"]}}
+
+    monkeypatch.setattr(schema_module, "ConfigLoader", DummyConfigLoader)
+
+    schema = Node().get_config_schema({"provider_id": "test-chat"})
 
     tools_schema = schema.get("tools")
     assert isinstance(tools_schema, dict)
@@ -39,10 +67,11 @@ def test_agent_node_tools_schema_is_multiselect_with_available_tools():
 
 def test_agent_node_capability_schema_uses_registry_descriptors(monkeypatch):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_node_schema as schema_module
 
     class DummyRegistry:
         def discover_payload(self, config):
-            assert config == {"tools": ["demo_tool"]}
+            assert config == {"provider_id": "test-chat", "tools": ["demo_tool"]}
             return {
                 "tool": {
                     "available": [
@@ -64,9 +93,16 @@ def test_agent_node_capability_schema_uses_registry_descriptors(monkeypatch):
                 "plugin": {"available": []},
             }
 
-    monkeypatch.setattr(agent_node_module, "CapabilityRegistry", lambda: DummyRegistry())
+    class DummyConfigLoader:
+        def get_all_providers(self):
+            return {"test-chat": {"supportmode": ["chat"]}}
 
-    schema = agent_node_module.Node().get_config_schema({"tools": ["demo_tool"]})
+    monkeypatch.setattr(schema_module, "CapabilityRegistry", lambda: DummyRegistry())
+    monkeypatch.setattr(schema_module, "ConfigLoader", DummyConfigLoader)
+
+    schema = agent_node_module.Node().get_config_schema(
+        {"provider_id": "test-chat", "tools": ["demo_tool"]}
+    )
 
     option = schema["tools"]["options"][0]
     assert option["value"] == "demo_tool"
@@ -79,6 +115,7 @@ def test_agent_node_capability_schema_uses_registry_descriptors(monkeypatch):
 
 def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_node_schema as schema_module
 
     class DummyRegistry:
         def discover_payload(self, _config):
@@ -93,6 +130,7 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
         def get_all_providers(self):
             return {
                 "zhipu": {
+                    "supportmode": ["chat"],
                     "features": {
                         "web_search": {"supported": False, "values": []},
                         "tools": {"supported": False, "values": []},
@@ -109,8 +147,8 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
                 }
             }
 
-    monkeypatch.setattr(agent_node_module, "CapabilityRegistry", lambda: DummyRegistry())
-    monkeypatch.setattr(agent_node_module, "ConfigLoader", lambda: DummyConfigLoader())
+    monkeypatch.setattr(schema_module, "CapabilityRegistry", lambda: DummyRegistry())
+    monkeypatch.setattr(schema_module, "ConfigLoader", lambda: DummyConfigLoader())
 
     schema = agent_node_module.Node().get_config_schema({"provider_id": "zhipu"})
 
@@ -549,6 +587,7 @@ def test_agent_node_stream_callback_and_done(monkeypatch):
 
 def test_agent_node_sse_response_mode_separates_instruction_and_system_prompt(monkeypatch):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_provider_runtime as provider_runtime
 
     created_agents = []
 
@@ -572,7 +611,7 @@ def test_agent_node_sse_response_mode_separates_instruction_and_system_prompt(mo
             return "OK"
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
-    monkeypatch.setattr(agent_node_module, "resolve_agent_default_instructions", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(provider_runtime, "resolve_agent_default_instructions", lambda *_args, **_kwargs: "")
 
     events: list[dict] = []
     result = agent_node_module.Node().on_input(
@@ -860,6 +899,63 @@ def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch
     assert memory_message["role"] == "developer"
 
 
+def test_agent_node_injects_runtime_event_context_with_selected_roles_without_mapping(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "openai", "responsesApi": False}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def _reset_provider_request_tracking(self):
+            return None
+
+        def _provider_request_snapshot(self):
+            return []
+
+        def Send(self, **_kwargs):
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_runtime_event_roles",
+            "node_instance_id": "n_runtime_event_roles",
+            "provider_id": "openai",
+            "runtime_event_context_fragments": [
+                {"role": "developer", "content": "developer scoped file"},
+                {"role": "system", "content": "system scoped file"},
+                {"role": "user", "content": "user scoped file"},
+                {"role": "assistant", "content": "assistant scoped file"},
+            ],
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    selected = {
+        item["content"]: item["role"]
+        for item in created_agents[0].messages
+        if str(item.get("content") or "").endswith("scoped file")
+    }
+    assert selected == {
+        "developer scoped file": "developer",
+        "system scoped file": "system",
+        "user scoped file": "user",
+        "assistant scoped file": "assistant",
+    }
+
+
 def test_agent_node_uses_developer_context_role_for_doubao_responses(monkeypatch):
     import nodes.agent_node as agent_node_module
 
@@ -905,6 +1001,7 @@ def test_agent_node_uses_developer_context_role_for_doubao_responses(monkeypatch
 
 def test_agent_node_injects_default_instructions_for_openai_responses(monkeypatch):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_provider_runtime as provider_runtime
 
     created_agents = []
 
@@ -925,7 +1022,7 @@ def test_agent_node_injects_default_instructions_for_openai_responses(monkeypatc
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
     monkeypatch.setattr(
-        agent_node_module,
+        provider_runtime,
         "resolve_agent_default_instructions",
         lambda *_args, **_kwargs: "Default instructions",
     )
@@ -946,6 +1043,7 @@ def test_agent_node_injects_default_instructions_for_openai_responses(monkeypatc
 
 def test_agent_node_injects_default_instructions_for_doubao_responses(monkeypatch):
     import nodes.agent_node as agent_node_module
+    import nodes.agent_provider_runtime as provider_runtime
 
     created_agents = []
 
@@ -966,7 +1064,7 @@ def test_agent_node_injects_default_instructions_for_doubao_responses(monkeypatc
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
     monkeypatch.setattr(
-        agent_node_module,
+        provider_runtime,
         "resolve_agent_default_instructions",
         lambda *_args, **_kwargs: "Default instructions",
     )
@@ -1096,6 +1194,9 @@ def test_agent_node_keeps_working_path_runtime_only(monkeypatch):
     system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
     assert not any("C:\\Project\\AgentPark\\XYJ" in str(item.get("content") or "") for item in system_messages)
     assert created_agents[0]._agentpark_working_path == r"C:\Project\AgentPark\XYJ"
+    assert created_agents[0]._agentpark_node_directory.endswith(
+        os.path.join("memories", "g_working_path_unit", "n_working_path_unit")
+    )
     sent_user = next(item for item in created_agents[0].messages if item.get("role") == "user")
     assert sent_user.get("content") == "hello"
 
@@ -1363,7 +1464,7 @@ def test_agent_node_uses_configured_history_message_limit(monkeypatch):
             return {"agentNode": {"historyMessageLimit": 1, "minSendDelayMs": 0}}
 
         def get_provider_config(self, _provider_id):
-            return {}
+            return {"supportmode": ["chat"]}
 
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
     monkeypatch.setattr(agent_node_module, "ConfigLoader", lambda: DummyLoader())
@@ -1728,6 +1829,7 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
     backend._get_resource_root = lambda: resource_root
     runtime_paths_module._get_runtime_root = lambda: runtime_root
     runtime_paths_module._get_resource_root = lambda: resource_root
+    monkeypatch.setattr(runtime_paths_module, "_get_graphs_dir", lambda: os.path.join(runtime_root, "memories"))
     node_runtime_module._get_runtime_root = lambda: runtime_root
     node_runtime_module._get_resource_root = lambda: resource_root
     monkeypatch.setattr(providers_module, "create_agent", lambda *_args, **_kwargs: SlowStreamingAgent())

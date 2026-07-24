@@ -19,7 +19,7 @@ Agent / Tool / Graph **可视化构建 + 运行 + 分享平台**,理念是 "loca
 
 ```
 AgentPark/
-├─ config/          服务/Provider/Events/PastAgent/ProviderLimit/Remote/ModuleProvider 配置(config.json 默认 port=8788)
+├─ config/          服务/Provider/Events/PastAgent/ProviderLimit/Remote/ModelProvider 配置(config.json 默认 port=8788)
 ├─ nodes/           32+ 可视化节点实现(BaseNode + Agent / GUI Agent / 图像·视频·模型生成 / trigger / loop / multi_input / channel / save_file / console_command / …)
 ├─ functions/       20+ Agent 工具模块(file / code / shell / network / memory / curl / capability_management / gui_agent / parallel / user_interaction / skill_resource / operational_memory / console / rg / multi_tool_use / …)
 ├─ src/             FastAPI 后端 + Provider + Tool + Runtime Event + CLI + Channels + MCP
@@ -146,18 +146,18 @@ AgentPark/
   - 配置:`provider_id` `instruction` `system_prompt` `mode` `collaboration_mode` `plugins` `tools` `mcp_servers` `web_search` `thinking` `reasoning_effort`
   - `get_config_schema(context)` 从 `ConfigLoader().get_all_providers()[provider_id]["features"]` 取 provider 能力,`provider_feature` 字段直接暴露给前端表单
 - GUI Agent 拆为 `gui_agent_node + actions/capture/executor/markers/observation/output/prompts/run/runtime/verifier`
-- 其他节点:trigger/basic_trigger_node/timer_trigger_node/clock_node/loop_node/event_node/multi_input_node/input_output_test/channel_receiver_node/channel_sender_node/echo_node/append_node/response_node/save_file_node/console_command_node/image_generation_node/video_generation_node/video_change_person_node/model_generation_node/model_texture_generation_node/...
+- 其他节点:trigger/basic_trigger_node/timer_trigger_node/clock_node/loop_node/event_node/multi_input_node/input_output_test/channel_receiver_node/channel_sender_node/echo_node/append_node/response_node/save_file_node/console_command_node/video_change_person_node/model_generation_node/model_texture_generation_node/...
 - 节点注册:`type_id = filename` 规则;`nodes/__init__.py` 暴露 `Node` 类列表
 
 ### 3.6 Provider 能力矩阵(`src/provider_feature_matrix.py`,114 行)
 - 中心函数 `build_provider_feature_matrix(provider_config)` → 每家 provider 返回带 `schema_version: 1` 的 features dict
 - 5 维特性:`responses_api` `web_search` `tools` `thinking` `reasoning_effort` — 每项含 `supported/values/requires/transport`
 - 表驱动(openai/doubao/zhipu/claude/gemini/其它),前端 `getNodeTemplate` / `get_provider_pressure` 走相同 shape
-- `ConfigLoader` 强制 `moduleProvider.json` 不允许的字段(48 个白名单外),`responsesApi=true` 必填 `toolResultSubmissionMaxChars` + `toolContextCompactionEnabled` + `toolContextCompactionEveryToolCalls`,openai 额外要求 `responsesReplayReasoningItems`
+- `ConfigLoader` 强制 `modelProvider.json` 不允许的字段(48 个白名单外),`responsesApi=true` 必填 `toolResultSubmissionMaxChars` + `toolContextCompactionEnabled` + `toolContextCompactionEveryToolCalls`,openai 额外要求 `responsesReplayReasoningItems`
 
 ### 3.7 数据 / 资源
-- `config/config.json`(`server.port=8788`, `agentNode.minSendDelayMs=200 / historyMessageLimit=40`, `nodeMemory.maxEntries=20`, `mcpServers` 内置 4 个: ark-docs-mcp / unreal-engine-skills / asset-to-json / agentpark-companion, `consoleCommand.timeoutSec=300`)
-- `config/moduleProvider.json`(provider 注册 `type: doubao/gemini/openai/zhipu/hyper3d/...` + `supportmode` + `timeoutMs`)
+- `config/config.json`(`server.port=8788`, `agentNode.minSendDelayMs=200 / historyMessageLimit=6`, `nodeMemory.maxEntries=20`, `mcpServers` 内置 4 个: ark-docs-mcp / unreal-engine-skills / asset-to-json / agentpark-companion, `consoleCommand.timeoutSec=300`)
+- `config/modelProvider.json`(provider 注册 `type: doubao/gemini/openai/zhipu/hyper3d/...` + `supportmode` + `timeoutMs`)
 - `config/remote.json`、`config/events.json`(`events.json.lock` 并发锁)
 - `memories/Companion/Companion/{config.json,memory.md,messages.jsonl,agent_turn_context.json,agent_context_history.json}` — Companion 默认保护图
 - `agent/*.json` 预置 Agent 配置:GPT / Doubao / Doubao_CodingPlan / XYJProgrammer / Companion
@@ -200,7 +200,7 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 
 ### 4.6 设置页
 - `SettingsPage.vue` + `settings/` 子目录 12+ 子组件:
-  Provider / Companion / Default / Pressure / ProviderTest / RuntimeEvents / ToolStats / SystemExit / AnimEditor / AnimTrackEditor / SupportModeMultiSelect / CompanionCapabilitySelect / ModuleProviderSettingsForm / CompanionSettingsForm / DefaultSettingsForm / RuntimeEventsSettingsForm
+  Provider / Companion / Default / Pressure / ProviderTest / RuntimeEvents / ToolStats / SystemExit / AnimEditor / AnimTrackEditor / SupportModeMultiSelect / CompanionCapabilitySelect / ModelProviderSettingsForm / CompanionSettingsForm / DefaultSettingsForm / RuntimeEventsSettingsForm
 
 ### 4.7 其他关键组件 / composables
 - `FileExplorer.vue` / `FileNode.vue` / `NodeInspector.vue` / `UserInteractionDialog.vue` / `UserInteractionCustomFrame.vue`

@@ -80,8 +80,9 @@ if not defined PYTHON_EXE call :select_python "%LocalAppData%\Programs\Python\Py
 if not defined PYTHON_EXE call :select_python "python"
 
 if not defined PYTHON_EXE (
-    echo [ERROR] Could not find a Python interpreter with pip available.
-    echo [ERROR] Install Python with pip, or update build_and_run.bat with the Python path for this machine.
+    echo [ERROR] Python is required to run AgentPark, but no usable Python installation was found.
+    echo [ERROR] Please install Python, then run build_and_run.bat again.
+    echo [ERROR] Download Python from: https://www.python.org/downloads/windows/
     call :maybe_pause
     exit /b 1
 )
@@ -300,7 +301,7 @@ exit /b 0
 set "CANDIDATE=%~1"
 if "%CANDIDATE%"=="" exit /b 0
 if not "%CANDIDATE%"=="python" if not exist "%CANDIDATE%" exit /b 0
-"%CANDIDATE%" -m pip --version >nul 2>nul
+"%CANDIDATE%" --version >nul 2>nul
 if errorlevel 1 exit /b 0
 set "PYTHON_EXE=%CANDIDATE%"
 exit /b 0

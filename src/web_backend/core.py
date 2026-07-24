@@ -11,14 +11,20 @@ from .graph_event_stream import GraphEventStreamStore
 from .mobile_api import MobileApiDomain
 from .node_desktop_view import NodeDesktopViewDomain
 from .node_cancellation import NodeCancellationRegistry
+from .node_live_event_publisher import NodeLiveEventPublisher
 from .node_live_output import NodeLiveOutputStore
+from .tool_call_cancellation import ToolCallCancellationRegistry
 from .node_config_service import RUNTIME_STATE_FIELDS
 from .pet_avatar import PetAvatarDomain
 from .profile_api import ProfileApi
 from .provider_auth_api import ProviderAuthApiDomain
 from .remote_api import RemoteApiDomain
+from .remote_workspace_api import RemoteWorkspaceApiDomain
 from .settings_api import SettingsApiDomain
+from .doubao_speech_management import DoubaoSpeechManagementDomain
 from .user_interaction_api import UserInteractionApiDomain
+from .undo_api import UndoApiDomain
+from .workspace_bootstrap import WorkspaceBootstrapDomain
 from src.channels.service import ChannelService
 from src.provider_limit_jobs import ProviderLimitJobStore
 from src.runtime_events import RuntimeEventDomain
@@ -38,14 +44,17 @@ class BackendCore:
         self.timer_scheduler_lock = threading.Lock()
         self.timer_trigger_last_fired: dict[str, str] = {}
         self.node_cancellations = NodeCancellationRegistry()
-        self.node_live_outputs = NodeLiveOutputStore()
+        self.tool_call_cancellations = ToolCallCancellationRegistry()
         self.graph_events = GraphEventStreamStore()
+        self.node_live_event_publisher = NodeLiveEventPublisher(self.graph_events)
+        self.node_live_outputs = NodeLiveOutputStore(on_change=self.node_live_event_publisher.publish)
         self.provider_limit_jobs = ProviderLimitJobStore()
         self.reserved_node_fields = {
             "node_id",
             "type_id",
             "name",
             "graph_id",
+            "private",
             "ui",
             "schema",
             "input_num",
@@ -64,10 +73,13 @@ class BackendCore:
         self.node_desktop_views = NodeDesktopViewDomain(self, self.graph_runtime)
         self.pet_avatars = PetAvatarDomain(self)
         self.remote_api = RemoteApiDomain(self)
+        self.remote_workspace_api = RemoteWorkspaceApiDomain()
         self.settings_api = SettingsApiDomain(self)
+        self.doubao_speech_management = DoubaoSpeechManagementDomain(self)
         self.user_interaction_api = UserInteractionApiDomain(self)
+        self.undo_api = UndoApiDomain(self, self.graph_runtime)
+        self.workspace_bootstrap = WorkspaceBootstrapDomain(self)
         self.runtime_events = RuntimeEventDomain(self)
         self.system_api = SystemApiDomain(self, self.agent_domain)
-
 
 __all__ = ["BackendCore"]

@@ -39,9 +39,22 @@ class ProviderRuntimeEventMixin(ProviderSseDebugMixin):
             stage=stage,
         )
 
-    def _emit_retry_notice(self, *, error: str, delay: float, stage: str) -> None:
+    def _emit_retry_notice(
+        self,
+        *,
+        error: str,
+        delay: float,
+        stage: str,
+        attempt: int | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        progress = (
+            f" Attempt {attempt}/{max_retries}."
+            if attempt is not None and max_retries is not None
+            else ""
+        )
         self._emit_provider_runtime_notice(
-            message=f"Request failed ({error}). Retrying in {delay}s.",
+            message=f"Request failed ({error}). Retrying in {delay:.3f}s.{progress}",
             stage=stage,
         )
 

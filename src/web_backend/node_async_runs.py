@@ -2,7 +2,10 @@ import os
 import queue
 import uuid
 
+from fastapi import Request
+
 from . import runtime_paths
+from .node_execution_context import bind_node_storage_context
 from .node_state_machine import parse_node_state
 from .service_host import HostBoundService
 from .shared import (
@@ -20,7 +23,7 @@ from .shared import (
 
 
 class NodeAsyncRuns(HostBoundService):
-    def run_node_async(self, payload: dict):
+    def run_node_async(self, payload: dict, request: Request = None):
         node_id = (payload or {}).get("node_id")
         message = (payload or {}).get("input")
         context = (payload or {}).get("context")
@@ -30,6 +33,7 @@ class NodeAsyncRuns(HostBoundService):
             raise HTTPException(status_code=400, detail="input is required")
         if context is not None and not isinstance(context, dict):
             raise HTTPException(status_code=400, detail="context must be object")
+        context = dict(context or {})
         message = normalize_envelope(message, default_role="user")
         message_full = envelope_text(message).strip()
         message_preview = envelope_preview(message)
@@ -39,12 +43,15 @@ class NodeAsyncRuns(HostBoundService):
             raise HTTPException(status_code=404, detail="nodes directory not found")
 
         node_config_path = None
-        if isinstance(context, dict):
+        safe_graph_id = ""
+        safe_node_instance_id = ""
+        if context:
             graph_id = context.get("graph_id")
             node_instance_id = context.get("node_instance_id")
             if isinstance(graph_id, str) and graph_id.strip() and isinstance(node_instance_id, str) and node_instance_id.strip():
                 safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
                 safe_node_instance_id = self.graph_runtime._sanitize_node_id(node_instance_id)
+                self.core.node_ops.require_node_visible(safe_node_instance_id, safe_graph_id, request)
                 node_config_path = self.graph_runtime._node_config_path(safe_node_instance_id, safe_graph_id)
                 if node_config_path and os.path.exists(node_config_path):
                     current = _read_json_dict(node_config_path)
@@ -56,8 +63,10 @@ class NodeAsyncRuns(HostBoundService):
                     _set_node_config_last_message(node_config_path, message_full or message_preview)
                     if isinstance(current, dict):
                         self.graph_runtime._inject_node_config_into_context(context, current)
+                    bind_node_storage_context(context, node_config_path)
 
         run_id = str(uuid.uuid4())
+        context["task_id"] = run_id
         result_queue = self.mp_ctx.Queue()
         process = self.mp_ctx.Process(
             target=_node_worker,
@@ -72,13 +81,19 @@ class NodeAsyncRuns(HostBoundService):
             "error": None,
             "input": message,
             "node_config_path": node_config_path,
+            "graph_id": safe_graph_id,
+            "node_instance_id": safe_node_instance_id,
         }
         return {"run_id": run_id}
 
-    def get_node_run(self, run_id: str):
+    def get_node_run(self, run_id: str, request: Request = None):
         run = self.node_runs.get(run_id)
         if not run:
             raise HTTPException(status_code=404, detail="run not found")
+        graph_id = str(run.get("graph_id") or "").strip()
+        node_instance_id = str(run.get("node_instance_id") or "").strip()
+        if graph_id and node_instance_id:
+            self.core.node_ops.require_node_visible(node_instance_id, graph_id, request)
 
         if run["status"] == "running":
             try:

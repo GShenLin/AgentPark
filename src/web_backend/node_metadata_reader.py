@@ -4,6 +4,7 @@ import importlib.util
 import inspect
 import os
 import sys
+import threading
 import uuid
 from copy import deepcopy
 from collections.abc import Callable
@@ -32,6 +33,52 @@ class NodeMetadataSignatureError(NodeMetadataError):
     pass
 
 
+_NODE_CLASS_CACHE: dict[str, tuple[tuple[int, int], type]] = {}
+_NODE_CLASS_CACHE_LOCK = threading.RLock()
+
+
+def _node_source_version(file_path: str) -> tuple[int, int]:
+    stat = os.stat(file_path)
+    return (int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _load_node_class(file_path: str, safe_type_id: str) -> type | None:
+    normalized_path = os.path.normcase(os.path.abspath(file_path))
+    try:
+        source_version = _node_source_version(normalized_path)
+    except OSError as exc:
+        raise NodeModuleLoadError(
+            f"Cannot inspect node module {safe_type_id!r}: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    with _NODE_CLASS_CACHE_LOCK:
+        cached = _NODE_CLASS_CACHE.get(normalized_path)
+        if cached is not None and cached[0] == source_version:
+            return cached[1]
+
+        module_name = f"nodes_init_{safe_type_id}_{uuid.uuid4().hex}"
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, normalized_path)
+            if not spec or not spec.loader:
+                raise NodeModuleLoadError(f"Cannot build import spec for node {safe_type_id!r}.")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            node_cls = getattr(module, "Node", None)
+            if node_cls is None:
+                _NODE_CLASS_CACHE.pop(normalized_path, None)
+                return None
+            if not isinstance(node_cls, type):
+                raise NodeModuleLoadError(f"Node export in {safe_type_id!r} must be a class.")
+            _NODE_CLASS_CACHE[normalized_path] = (source_version, node_cls)
+            return node_cls
+        except NodeModuleLoadError:
+            raise
+        except Exception as exc:
+            raise NodeModuleLoadError(
+                f"Error loading node module {safe_type_id!r}: {type(exc).__name__}: {exc}"
+            ) from exc
+
+
 def load_node_instance(type_id: str):
     safe_type_id = str(type_id or "").strip()
     if not safe_type_id:
@@ -50,14 +97,8 @@ def load_node_instance(type_id: str):
     if resource_root and resource_root not in sys.path:
         sys.path.insert(0, resource_root)
 
-    module_name = f"nodes_init_{safe_type_id}_{uuid.uuid4().hex}"
     try:
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        if not spec or not spec.loader:
-            raise NodeModuleLoadError(f"Cannot build import spec for node {safe_type_id!r}.")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        node_cls = getattr(module, "Node", None)
+        node_cls = _load_node_class(file_path, safe_type_id)
         if node_cls is None:
             return None
         return node_cls()

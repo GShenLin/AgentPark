@@ -3,9 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   getNodeDesktopView,
   getPetAvatar,
-  graphEventsStreamUrl,
   listPetAvatars,
-  nodeInstanceLiveStreamUrl,
   sendNodeDesktopViewMessage,
   updateNodeDesktopView,
   exitServer,
@@ -22,6 +20,7 @@ import { handleMarkdownCodeCopyClick } from './components/markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './components/memoryMarkdown'
 import { usePetAvatarWindow } from './composables/usePetAvatarWindow'
 import { normalizePetPanelSize, usePetPanelResize } from './composables/usePetPanelResize'
+import { subscribeAppEvents } from './composables/useAppEventStream'
 import { uploadFiles, type UploadedFileItem } from './uploadApi'
 import './PetDesktopView.css'
 
@@ -53,13 +52,14 @@ const notificationBubbleText = ref('')
 const notificationBubbleElement = ref<HTMLElement | null>(null)
 const notificationBubbleHeight = ref(0)
 const AVATAR_CATALOG_TTL_MS = 30_000
-let graphSource: EventSource | null = null
-let liveSource: EventSource | null = null
-let graphStreamKey = ''
-let liveStreamKey = ''
+let stopWorkspaceEvents: (() => void) | null = null
 let avatarCatalogLoadedAt = 0
 let avatarCatalogRequest: Promise<PetAvatarSummary[]> | null = null
 let stopAskHereListener: (() => void) | null = null
+let refreshViewRequest: Promise<void> | null = null
+let refreshViewDirty = false
+
+const petViewRefreshEvents = new Set(['node_message_done', 'node_error'])
 
 type AskHerePayload = {
   open_chat?: boolean
@@ -279,6 +279,24 @@ async function loadAvatarCatalog(options: { force?: boolean } = {}) {
 }
 
 async function refreshView() {
+  if (refreshViewRequest) {
+    refreshViewDirty = true
+    await refreshViewRequest
+    return
+  }
+  refreshViewRequest = runRefreshView()
+  try {
+    await refreshViewRequest
+  } finally {
+    refreshViewRequest = null
+    if (refreshViewDirty) {
+      refreshViewDirty = false
+      await refreshView()
+    }
+  }
+}
+
+async function runRefreshView() {
   if (!viewId) {
     error.value = 'view_id is required'
     return
@@ -330,20 +348,6 @@ async function syncAvatar(options: { force?: boolean } = {}) {
   loadedAvatarId.value = avatarId
 }
 
-function closeGraphStream() {
-  if (!graphSource) return
-  graphSource.close()
-  graphSource = null
-  graphStreamKey = ''
-}
-
-function closeLiveStream() {
-  if (!liveSource) return
-  liveSource.close()
-  liveSource = null
-  liveStreamKey = ''
-}
-
 function graphEventTargetsCurrentNode(payload: GraphStreamPayload) {
   const current = view.value
   if (!current) return false
@@ -359,47 +363,36 @@ function graphEventTargetsCurrentAvatar(payload: GraphStreamPayload) {
 }
 
 function syncStreams() {
-  const current = view.value
-  if (!current) return
-  const nextGraphKey = String(current.graph_id || '').trim()
-  const nextLiveKey = `${String(current.graph_id || '').trim()}\0${String(current.node_id || '').trim()}`
-
-  if (graphStreamKey !== nextGraphKey) {
-    closeGraphStream()
-    graphStreamKey = nextGraphKey
-    graphSource = new EventSource(graphEventsStreamUrl(current.graph_id))
-    graphSource.onmessage = (event) => {
+  if (!view.value || stopWorkspaceEvents) return
+  stopWorkspaceEvents = subscribeAppEvents((workspaceEvent) => {
+    const current = view.value
+    if (String(workspaceEvent.event || '').trim() === 'stream_gap') {
+      void refreshView()
+      return
+    }
+    if (!current || String(workspaceEvent.graph_id || '').trim() !== String(current.graph_id || '').trim()) return
+    const eventName = String(workspaceEvent.event || '').trim()
+    if (eventName === 'node_live') {
+      if (!graphEventTargetsCurrentNode(workspaceEvent as GraphStreamPayload)) return
+      const payload = workspaceEvent.live as Record<string, unknown> | undefined
+      if (!payload) return
       try {
-        const payload = JSON.parse(String(event.data || '{}')) as GraphStreamPayload
-        const eventName = String(payload.event || '').trim()
-        if (!eventName) return
-        if (eventName === 'pet_avatar_updated') {
-          if (graphEventTargetsCurrentAvatar(payload)) void syncAvatar({ force: true })
+        const streamType = String(payload.stream_type || 'snapshot').trim().toLowerCase()
+        const version = Number(payload.version || 0)
+        const previousVersion = Number(current.live?.version || 0)
+        if (version <= previousVersion) return
+        if (streamType === 'delta' && version !== previousVersion + 1) {
+          void refreshView()
           return
         }
-        if (!graphEventTargetsCurrentNode(payload)) return
-        void refreshView()
-      } catch (exc) {
-        error.value = exc instanceof Error ? exc.message : String(exc || 'Invalid graph event')
-      }
-    }
-    graphSource.onerror = () => {
-      error.value = 'Graph event stream disconnected'
-    }
-  }
-
-  if (liveStreamKey !== nextLiveKey) {
-    closeLiveStream()
-    liveStreamKey = nextLiveKey
-    liveSource = new EventSource(nodeInstanceLiveStreamUrl(current.node_id, current.graph_id))
-    liveSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(String(event.data || '{}')) as Record<string, unknown>
-        const nextLiveText = String(payload.live_message || '')
         const eventType = String(payload.event_type || '').trim()
         const eventData = typeof payload.event === 'object' && payload.event ? payload.event as Record<string, unknown> : undefined
         const doneText = eventType === 'node_message_done' ? String(eventData?.text || '').trim() : ''
         const activeView = view.value || current
+        const currentLiveText = String(activeView.live?.text || '')
+        const nextLiveText = streamType === 'delta'
+          ? currentLiveText + String(payload.live_delta || '')
+          : String(payload.live_message || '')
         view.value = {
           ...activeView,
           live: {
@@ -415,15 +408,19 @@ function syncStreams() {
         }
         if (nextLiveText.trim()) showNotificationBubble(nextLiveText)
         else if (doneText) showNotificationBubble(doneText)
-        if (eventType) void refreshView()
+        if (petViewRefreshEvents.has(eventType)) void refreshView()
       } catch (exc) {
         error.value = exc instanceof Error ? exc.message : String(exc || 'Invalid live event')
       }
+      return
     }
-    liveSource.onerror = () => {
-      error.value = 'Node live stream disconnected'
+    if (eventName === 'pet_avatar_updated') {
+      if (graphEventTargetsCurrentAvatar(workspaceEvent as GraphStreamPayload)) void syncAvatar({ force: true })
+      return
     }
-  }
+    if (!graphEventTargetsCurrentNode(workspaceEvent as GraphStreamPayload)) return
+    if (petViewRefreshEvents.has(eventName)) void refreshView()
+  })
 }
 
 async function sendMessage() {
@@ -792,8 +789,8 @@ onBeforeUnmount(() => {
     stopAskHereListener()
     stopAskHereListener = null
   }
-  closeGraphStream()
-  closeLiveStream()
+  stopWorkspaceEvents?.()
+  stopWorkspaceEvents = null
 })
 </script>
 

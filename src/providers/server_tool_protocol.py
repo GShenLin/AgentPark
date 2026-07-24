@@ -39,6 +39,9 @@ def normalize_server_tool_call(item: object) -> dict[str, Any] | None:
     sources = normalize_sources((action or {}).get("sources") if isinstance(action, dict) else None)
     if sources:
         payload["sources"] = sources
+    for key in ("query", "search_query", "queries", "prompt", "result", "revised_prompt", "partial_image_index"):
+        if key in item:
+            payload["details"][key] = copy.deepcopy(item.get(key))
     return payload
 
 

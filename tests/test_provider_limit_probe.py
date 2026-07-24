@@ -13,7 +13,7 @@ def test_provider_limit_probe_writes_unsupported_features(monkeypatch, tmp_path)
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -27,13 +27,16 @@ def test_provider_limit_probe_writes_unsupported_features(monkeypatch, tmp_path)
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": False,
                         "toolContextCompactionEveryToolCalls": 10,
+                        "toolContextCompactionInputTokens": 0,
+                        "toolContextCompactionCurrentInputTokens": 0,
+                        "toolContextCompactionOutputTokens": 0,
                     }
                 }
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fake_curl_post_once_raw(self, *, url, headers, payload_json, timeout_sec, marker, no_buffer=False):
@@ -71,7 +74,7 @@ def test_provider_limit_probe_automatically_tests_openai_chat_and_responses_chan
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -85,13 +88,16 @@ def test_provider_limit_probe_automatically_tests_openai_chat_and_responses_chan
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": False,
                         "toolContextCompactionEveryToolCalls": 10,
+                        "toolContextCompactionInputTokens": 0,
+                        "toolContextCompactionCurrentInputTokens": 0,
+                        "toolContextCompactionOutputTokens": 0,
                     }
                 }
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     observed = []
 
@@ -128,7 +134,7 @@ def test_provider_limit_probe_tests_deepseek_chat_completions_only(monkeypatch, 
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -144,7 +150,7 @@ def test_provider_limit_probe_tests_deepseek_chat_completions_only(monkeypatch, 
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     observed = []
 
@@ -170,7 +176,7 @@ def test_provider_limit_probe_tests_grok_chat_and_responses_contracts(monkeypatc
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -185,13 +191,16 @@ def test_provider_limit_probe_tests_grok_chat_and_responses_contracts(monkeypatc
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": False,
                         "toolContextCompactionEveryToolCalls": 10,
+                        "toolContextCompactionInputTokens": 0,
+                        "toolContextCompactionCurrentInputTokens": 0,
+                        "toolContextCompactionOutputTokens": 0,
                     }
                 }
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     observed = []
 
@@ -245,7 +254,7 @@ def test_provider_limit_probe_uses_codex_oauth_for_responses_channel(monkeypatch
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -259,13 +268,16 @@ def test_provider_limit_probe_uses_codex_oauth_for_responses_channel(monkeypatch
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": False,
                         "toolContextCompactionEveryToolCalls": 10,
+                        "toolContextCompactionInputTokens": 0,
+                        "toolContextCompactionCurrentInputTokens": 0,
+                        "toolContextCompactionOutputTokens": 0,
                     }
                 }
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     monkeypatch.setattr(
         "src.provider_limit_probe.resolve_provider_request_credentials",
@@ -307,7 +319,7 @@ def test_provider_limit_probe_keeps_network_failures_out_of_unsupported(monkeypa
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -321,13 +333,16 @@ def test_provider_limit_probe_keeps_network_failures_out_of_unsupported(monkeypa
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": False,
                         "toolContextCompactionEveryToolCalls": 10,
+                        "toolContextCompactionInputTokens": 0,
+                        "toolContextCompactionCurrentInputTokens": 0,
+                        "toolContextCompactionOutputTokens": 0,
                     }
                 }
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fail_curl(*_args, **_kwargs):
@@ -374,7 +389,7 @@ def test_provider_limit_probe_tests_claude_native_messages_features(monkeypatch,
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -389,7 +404,7 @@ def test_provider_limit_probe_tests_claude_native_messages_features(monkeypatch,
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     observed_payloads = []
 
@@ -419,7 +434,7 @@ def test_provider_limit_probe_tests_claude_native_messages_features(monkeypatch,
     assert any(payload.get("output_config") == {"effort": "high"} for _url, payload in observed_payloads)
     assert any(payload.get("output_config") == {"effort": "xhigh"} for _url, payload in observed_payloads)
     assert any(payload.get("output_config") == {"effort": "max"} for _url, payload in observed_payloads)
-    assert any(payload.get("tools") == [{"type": "web_search_20260318", "name": "web_search"}] for _url, payload in observed_payloads)
+    assert any(payload.get("tools") == [{"type": "web_search_20250305", "name": "web_search"}] for _url, payload in observed_payloads)
     assert not any("/responses" in url for url, _payload in observed_payloads)
 
 
@@ -429,7 +444,7 @@ def test_provider_limit_probe_tests_doubao_ark_responses_features(monkeypatch, t
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -442,6 +457,9 @@ def test_provider_limit_probe_tests_doubao_ark_responses_features(monkeypatch, t
                         "toolResultSubmissionMaxChars": 50000,
                         "toolContextCompactionEnabled": False,
                         "toolContextCompactionEveryToolCalls": 10,
+                        "toolContextCompactionInputTokens": 0,
+                        "toolContextCompactionCurrentInputTokens": 0,
+                        "toolContextCompactionOutputTokens": 0,
                         "webSearchMaxKeyword": 2,
                         "webSearchLimit": 3,
                         "webSearchSources": ["toutiao"],
@@ -451,7 +469,7 @@ def test_provider_limit_probe_tests_doubao_ark_responses_features(monkeypatch, t
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     observed_payloads = []
 
@@ -493,11 +511,11 @@ def test_provider_limit_probe_records_missing_required_config(monkeypatch, tmp_p
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps({"providers": {"bad": {"type": "openai", "baseUrl": "https://example.test/v1", "model": "x"}}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     result = run_provider_limit_tests(timeout_seconds=1)
@@ -514,7 +532,7 @@ def test_provider_limit_probe_updates_file_after_each_provider(monkeypatch, tmp_
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -525,7 +543,7 @@ def test_provider_limit_probe_updates_file_after_each_provider(monkeypatch, tmp_
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     observed_snapshots = []
@@ -553,7 +571,7 @@ def test_provider_model_discovery_writes_available_models(monkeypatch, tmp_path)
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -568,7 +586,7 @@ def test_provider_model_discovery_writes_available_models(monkeypatch, tmp_path)
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fake_curl_get_text_once_raw(self, *, url, headers, timeout_sec, marker):
@@ -595,7 +613,7 @@ def test_provider_model_discovery_strips_gemini_model_prefix(monkeypatch, tmp_pa
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -610,7 +628,7 @@ def test_provider_model_discovery_strips_gemini_model_prefix(monkeypatch, tmp_pa
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fake_curl_get_text_once_raw(self, *, url, headers, timeout_sec, marker):
@@ -630,7 +648,7 @@ def test_provider_model_discovery_supports_grok_models_endpoint(monkeypatch, tmp
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "moduleProvider.json").write_text(
+    (config_dir / "modelProvider.json").write_text(
         json.dumps(
             {
                 "providers": {
@@ -645,7 +663,7 @@ def test_provider_model_discovery_supports_grok_models_endpoint(monkeypatch, tmp
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "moduleProvider.json"))
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
     def fake_curl_get_text_once_raw(self, *, url, headers, timeout_sec, marker):

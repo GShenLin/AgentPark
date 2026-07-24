@@ -2,7 +2,9 @@
 import { computed, inject, ref, watch } from 'vue'
 import { type MessageEnvelope, type ResourceKind } from '../../api'
 import { resolveDroppedPaths, resolvePastedImagePaths } from '../../composables/droppedPaths'
+import { useAudioRecorder } from '../../composables/useAudioRecorder'
 import { useGlobalState } from '../../composables/useGlobalState'
+import { uploadFiles } from '../../uploadApi'
 import { AgentBoardKey } from './context'
 import NodeEditorInputSection from './NodeEditorInputSection.vue'
 
@@ -16,10 +18,13 @@ const {
   lastError,
   nodeEditorInputText,
   nodeEditorAttachments,
+  nodeEditorAttachmentDrafts,
   nodeTriggerInputs,
+  nodeConfigDockWidth,
 } = useGlobalState()
 
 const isUploadingFiles = ref(false)
+const audioRecorder = useAudioRecorder()
 const goalArmedByNode = ref<Record<string, boolean>>({})
 
 const selectedNode = computed(() => {
@@ -48,6 +53,7 @@ const selectedGoalState = computed(() => {
 const selectedGoalText = computed(() => String(selectedConfig.value?.goal || '').trim())
 const hasPersistedGoal = computed(() => !!(selectedGoalText.value || selectedGoalState.value))
 const isAgentNode = computed(() => selectedNode.value?.typeId === 'agent_node')
+const audioInputEnabled = computed(() => isAgentNode.value)
 const goalEnabled = computed(() => isAgentNode.value || hasPersistedGoal.value)
 const goalActive = computed(() => {
   const id = String(selectedNode.value?.id || '').trim()
@@ -75,28 +81,30 @@ function rememberEditorInput(nodeId: string | null | undefined) {
     ...nodeTriggerInputs.value,
     [id]: String(nodeEditorInputText.value || ''),
   }
+  nodeEditorAttachmentDrafts.value = {
+    ...nodeEditorAttachmentDrafts.value,
+    [id]: nodeEditorAttachments.value.map((attachment) => ({ ...attachment })),
+  }
 }
 
 function loadEditorInput(nodeId: string | null | undefined) {
   const id = String(nodeId || '').trim()
   nodeEditorInputText.value = id ? String(nodeTriggerInputs.value[id] || '') : ''
-  nodeEditorAttachments.value = []
+  nodeEditorAttachments.value = id
+    ? (nodeEditorAttachmentDrafts.value[id] || []).map((attachment) => ({ ...attachment }))
+    : []
 }
 
-function appendAttachment(path: string, name = '') {
+function appendAttachment(path: string, name = '', kind = '', mime = '') {
   const safePath = String(path || '').trim()
   const safeName = String(name || '').trim() || safePath
   if (!safePath) return
   if (nodeEditorAttachments.value.some((item) => item.path === safePath)) return
-  nodeEditorAttachments.value.push({ path: safePath, name: safeName })
+  nodeEditorAttachments.value.push({ path: safePath, name: safeName, kind, mime })
 }
 
 function removeAttachment(index: number) {
   nodeEditorAttachments.value.splice(index, 1)
-}
-
-function clearAttachments() {
-  nodeEditorAttachments.value = []
 }
 
 async function handleInputDrop(event: DragEvent) {
@@ -143,6 +151,33 @@ function guessResourceKind(path: string): ResourceKind | 'file' {
   return 'file'
 }
 
+function attachmentResourceKind(file: { path: string; kind?: string; mime?: string }): ResourceKind | 'file' {
+  const declared = String(file.kind || '').trim().toLowerCase()
+  if (['image', 'video', 'audio', 'doc', 'url'].includes(declared)) return declared as ResourceKind
+  if (String(file.mime || '').toLowerCase().startsWith('audio/')) return 'audio'
+  return guessResourceKind(file.path)
+}
+
+async function toggleAudioRecording() {
+  lastError.value = null
+  try {
+    if (!audioRecorder.recording.value) {
+      await audioRecorder.start()
+      return
+    }
+    const file = await audioRecorder.stop()
+    isUploadingFiles.value = true
+    const uploaded = await uploadFiles([file], 'node-input-audio-recording')
+    for (const item of uploaded.files || []) {
+      appendAttachment(item.path, item.name, 'audio', item.mime || file.type)
+    }
+  } catch (e: any) {
+    lastError.value = String(e?.message || e)
+  } finally {
+    isUploadingFiles.value = false
+  }
+}
+
 function composePayload(): string | MessageEnvelope {
   const text = nodeEditorInputText.value.trim()
   if (!nodeEditorAttachments.value.length) {
@@ -161,7 +196,8 @@ function composePayload(): string | MessageEnvelope {
       resource: {
         uri,
         name: String(file.name || ''),
-        kind: guessResourceKind(uri),
+        kind: attachmentResourceKind(file),
+        mime: String(file.mime || ''),
         source: 'node_editor',
       },
     })
@@ -235,6 +271,7 @@ async function sendMessage() {
       resetEditorInput()
     }
     nodeTriggerInputs.value = { ...nodeTriggerInputs.value, [nodeId]: '' }
+    nodeEditorAttachmentDrafts.value = { ...nodeEditorAttachmentDrafts.value, [nodeId]: [] }
   } catch (e: any) {
     lastError.value = String(e?.message || e)
   }
@@ -252,7 +289,14 @@ watch(
 </script>
 
 <template>
-  <section v-if="selectedNode" class="node-input-dock" data-board-occlusion="bottom" @pointerdown.stop @click.stop>
+  <section
+    v-if="selectedNode"
+    class="node-input-dock"
+    data-board-occlusion="bottom"
+    :style="{ left: `${nodeConfigDockWidth}px` }"
+    @pointerdown.stop
+    @click.stop
+  >
     <NodeEditorInputSection
       v-model:input-text="nodeEditorInputText"
       :attachments="nodeEditorAttachments"
@@ -261,11 +305,14 @@ watch(
       :goal-active="goalActive"
       :goal-enabled="goalEnabled"
       :goal-title="goalTitle"
+      :audio-input-enabled="audioInputEnabled"
+      :audio-recording="audioRecorder.recording.value"
+      :audio-recording-supported="audioRecorder.supported.value"
       @drop-input="handleInputDrop"
       @paste-input="handleInputPaste"
       @remove-attachment="removeAttachment"
-      @clear-attachments="clearAttachments"
       @toggle-goal="toggleGoal"
+      @toggle-audio-recording="toggleAudioRecording"
       @send="sendMessage"
     />
     <button v-if="isNodeRunning" type="button" class="stop-btn" @click="ctx.stopNodeWork(selectedNode.id).catch(() => null)">
@@ -277,7 +324,6 @@ watch(
 <style scoped>
 .node-input-dock {
   position: absolute;
-  left: 360px;
   right: var(--right-panel-width, 0px);
   bottom: 0;
   z-index: 70;

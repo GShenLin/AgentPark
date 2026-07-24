@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { MessageEnvelope } from '../api'
+import { computed, nextTick, ref } from 'vue'
+import { openLocalFile, type MessageEnvelope } from '../api'
+import type { ParsedFilePatch } from '../utils/responseMetadataDiff'
+import MemoryFileDiffDialog from './MemoryFileDiffDialog.vue'
 import MemoryMetadataDisclosure from './MemoryMetadataDisclosure.vue'
 import MemoryMessageActions from './MemoryMessageActions.vue'
+import ImageLightbox from './ImageLightbox.vue'
 import MemoryResourcePart from './MemoryResourcePart.vue'
 import MemoryResponseMetadataPart from './MemoryResponseMetadataPart.vue'
 import MemoryToolCallPart from './MemoryToolCallPart.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
+import {
+  collectMessageFilePatches,
+  localFileLinkFromAnchor,
+  matchingFilePatches,
+} from './memoryFileLinks'
 import { renderMarkdownText } from './memoryMarkdown'
 import { extractMemoryMessageText } from './memoryMessageText'
 import {
@@ -21,9 +29,12 @@ const props = withDefaults(defineProps<{
   markdownPreview: boolean
   showActions?: boolean
   metadataDisclosure?: boolean
+  metadataDeferred?: boolean
+  ensureMetadata?: () => Promise<void>
 }>(), {
   showActions: true,
   metadataDisclosure: true,
+  metadataDeferred: false,
 })
 
 const emit = defineEmits<{
@@ -76,6 +87,83 @@ function deletableMessages() {
 }
 
 const displayParts = computed(() => memoryMessageDisplayParts(props.message, props.metadataDisclosure))
+const filePatches = computed(() => collectMessageFilePatches(props.message))
+const selectedDiffPath = ref('')
+const selectedDiffPatches = ref<ParsedFilePatch[]>([])
+const previewImage = ref({ src: '', alt: '' })
+const resolvingFilePath = ref('')
+
+function showFileDiff(path: string, patches: ParsedFilePatch[]) {
+  selectedDiffPath.value = path
+  selectedDiffPatches.value = patches
+}
+
+async function openFileWithoutDiff(path: string) {
+  try {
+    await openLocalFile(path)
+  } catch (error) {
+    window.alert(`Failed to open local file:\n${String((error as Error)?.message || error)}`)
+  }
+}
+
+async function resolveFileLink(path: string) {
+  let patches = matchingFilePatches(path, filePatches.value)
+  if (patches.length) {
+    showFileDiff(path, patches)
+    return
+  }
+
+  if (props.metadataDeferred) {
+    if (!props.ensureMetadata) {
+      window.alert('File change metadata is not available yet.')
+      return
+    }
+    if (resolvingFilePath.value) return
+    resolvingFilePath.value = path
+    try {
+      await props.ensureMetadata()
+      await nextTick()
+      if (resolvingFilePath.value !== path) return
+      if (props.metadataDeferred) {
+        window.alert('Failed to load file change metadata. Please try again.')
+        return
+      }
+      patches = matchingFilePatches(path, filePatches.value)
+      if (patches.length) {
+        showFileDiff(path, patches)
+        return
+      }
+    } finally {
+      if (resolvingFilePath.value === path) resolvingFilePath.value = ''
+    }
+  }
+
+  await openFileWithoutDiff(path)
+}
+
+async function handleMarkdownClick(event: MouseEvent) {
+  await handleMarkdownCodeCopyClick(event)
+  if (event.defaultPrevented) return
+
+  const target = event.target as HTMLElement | null
+  const image = target?.closest('img') as HTMLImageElement | null
+  if (image) {
+    previewImage.value = { src: image.currentSrc || image.src, alt: image.alt }
+    return
+  }
+  const anchor = target?.closest('a') as HTMLAnchorElement | null
+  if (!anchor) return
+  const file = localFileLinkFromAnchor(anchor)
+  if (!file) return
+
+  event.preventDefault()
+  await resolveFileLink(file.path)
+}
+
+function closeFileDiff() {
+  selectedDiffPath.value = ''
+  selectedDiffPatches.value = []
+}
 </script>
 
 <template>
@@ -97,7 +185,7 @@ const displayParts = computed(() => memoryMessageDisplayParts(props.message, pro
           v-if="String((entry.part as any)?.type || '') === 'text' && markdownPreview && shouldRenderMarkdown()"
           class="feed-text markdown-part"
           v-html="renderFeedMarkdown(String((entry.part as any)?.text || ''))"
-          @click="handleMarkdownCodeCopyClick"
+          @click="handleMarkdownClick"
         ></div>
         <div v-else-if="String((entry.part as any)?.type || '') === 'text'" class="feed-text">{{ String((entry.part as any)?.text || '') }}</div>
         <MemoryResourcePart v-else-if="String((entry.part as any)?.type || '') === 'resource'" :part="entry.part as Record<string, unknown>" />
@@ -120,6 +208,18 @@ const displayParts = computed(() => memoryMessageDisplayParts(props.message, pro
       @copy="emit('copy', messageText())"
       @delete="emit('delete', deletableMessages())"
     />
+    <MemoryFileDiffDialog
+      :open="selectedDiffPatches.length > 0"
+      :path="selectedDiffPath"
+      :patches="selectedDiffPatches"
+      @close="closeFileDiff"
+    />
+    <ImageLightbox
+      :open="!!previewImage.src"
+      :src="previewImage.src"
+      :alt="previewImage.alt"
+      @close="previewImage = { src: '', alt: '' }"
+    />
   </div>
 </template>
 
@@ -137,4 +237,6 @@ const displayParts = computed(() => memoryMessageDisplayParts(props.message, pro
 :deep(.feed-text.markdown-part code) { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; }
 :deep(.feed-text.markdown-part ul), :deep(.feed-text.markdown-part ol) { margin: 6px 0 6px 18px; padding: 0; }
 :deep(.feed-text.markdown-part li) { margin: 2px 0; }
+:deep(.feed-text.markdown-part a) { color: rgba(125, 211, 252, 0.96); cursor: pointer; }
+:deep(.feed-text.markdown-part img) { display: block; width: auto; max-width: min(240px, 100%); max-height: 180px; height: auto; margin: 8px 0; border-radius: 8px; object-fit: contain; cursor: zoom-in; }
 </style>

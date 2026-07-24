@@ -7,6 +7,10 @@ defineProps<{
   authMode: string
   baseUrl: string
   apiKey: string
+  xApiKey: string
+  speechAccessKeyId: string
+  speechSecretAccessKey: string
+  showDoubaoSpeechAuth: boolean
   busy: boolean
   status: CodexAuthStatus | null
   error: string
@@ -26,6 +30,7 @@ const emit = defineEmits<{
       <option value="">Unset</option>
       <option value="openai">openai</option>
       <option value="claude">claude</option>
+      <option value="deepseek">deepseek</option>
       <option value="doubao">doubao</option>
       <option value="gemini">gemini</option>
       <option value="grok">grok</option>
@@ -38,8 +43,26 @@ const emit = defineEmits<{
     <input :value="baseUrl" @input="emit('field', 'baseUrl', ($event.target as HTMLInputElement).value)" />
   </label>
   <label v-if="authMode !== 'codex'">
-    <span>API Key</span>
-    <input :value="apiKey" type="password" autocomplete="off" @input="emit('field', 'apiKey', ($event.target as HTMLInputElement).value)" />
+    <span>API Key Name</span>
+    <input :value="apiKey" @input="emit('field', 'apiKey', ($event.target as HTMLInputElement).value)" />
+    <small>References a key name defined in .env/apiKey.json.</small>
+  </label>
+  <label v-if="authMode !== 'codex' && showDoubaoSpeechAuth">
+    <span>X-Api-Key Name</span>
+    <input :value="xApiKey" @input="emit('field', 'xApiKey', ($event.target as HTMLInputElement).value)" />
+    <small>
+      References the X-Api-Key value in .env/apiKey.json for Doubao speech APIs.
+    </small>
+  </label>
+  <label v-if="authMode !== 'codex' && showDoubaoSpeechAuth">
+    <span>Speech Access Key ID Name</span>
+    <input :value="speechAccessKeyId" @input="emit('field', 'speechAccessKeyId', ($event.target as HTMLInputElement).value)" />
+    <small>References the Access Key ID in .env/apiKey.json.</small>
+  </label>
+  <label v-if="authMode !== 'codex' && showDoubaoSpeechAuth">
+    <span>Speech Secret Access Key Name</span>
+    <input :value="speechSecretAccessKey" @input="emit('field', 'speechSecretAccessKey', ($event.target as HTMLInputElement).value)" />
+    <small>References the Secret Access Key in .env/apiKey.json.</small>
   </label>
   <ProviderOfficialAuthControl
     v-else
@@ -72,5 +95,9 @@ select {
   color: rgba(226, 232, 240, 0.96);
   background: rgba(2, 6, 23, 0.5);
   font: inherit;
+}
+
+small {
+  color: rgba(148, 163, 184, 0.92);
 }
 </style>

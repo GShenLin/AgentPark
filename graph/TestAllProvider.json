@@ -1,10 +1,10 @@
 {
   "id": "TestAllProvider",
   "name": "TestAllProvider",
-  "source_graph_id": "Test",
+  "source_graph_id": "test",
   "graph": {
-    "id": "Test",
-    "name": "Test",
+    "id": "test",
+    "name": "test",
     "working_path": "",
     "output_routes": {
       "BasicTrigger": [
@@ -51,7 +51,7 @@
         }
       ]
     },
-    "version": 1783828308118039300,
+    "version": 1784286916029571000,
     "nodes": [
       {
         "id": "BasicTrigger",
@@ -73,8 +73,8 @@
         "ui": {
           "x": 759,
           "y": 367,
-          "width": 271,
-          "height": 316
+          "width": 343,
+          "height": 323
         },
         "input_num": 1,
         "output_num": 1
@@ -84,10 +84,10 @@
         "typeId": "agent_node",
         "name": "DeepSeek",
         "ui": {
-          "x": 758,
-          "y": 716,
-          "width": 291,
-          "height": 331
+          "x": 805,
+          "y": 709,
+          "width": 383,
+          "height": 377
         },
         "input_num": 1,
         "output_num": 1
@@ -99,8 +99,8 @@
         "ui": {
           "x": 454,
           "y": 9,
-          "width": 257,
-          "height": 337
+          "width": 309,
+          "height": 343
         },
         "input_num": 1,
         "output_num": 1
@@ -110,10 +110,10 @@
         "typeId": "agent_node",
         "name": "GLM",
         "ui": {
-          "x": 444,
-          "y": 713,
-          "width": 277,
-          "height": 340
+          "x": 1512,
+          "y": 400,
+          "width": 316,
+          "height": 323
         },
         "input_num": 1,
         "output_num": 1
@@ -123,10 +123,10 @@
         "typeId": "agent_node",
         "name": "GPT",
         "ui": {
-          "x": 745,
-          "y": 10,
-          "width": 275,
-          "height": 339
+          "x": 776,
+          "y": 8,
+          "width": 348,
+          "height": 342
         },
         "input_num": 1,
         "output_num": 1
@@ -136,10 +136,10 @@
         "typeId": "agent_node",
         "name": "Grok",
         "ui": {
-          "x": 1348,
-          "y": 15,
-          "width": 275,
-          "height": 339
+          "x": 1510,
+          "y": 13,
+          "width": 382,
+          "height": 357
         },
         "input_num": 1,
         "output_num": 1
@@ -149,10 +149,10 @@
         "typeId": "agent_node",
         "name": "Kimi",
         "ui": {
-          "x": 1044,
-          "y": 21,
-          "width": 294,
-          "height": 326
+          "x": 1163,
+          "y": 25,
+          "width": 330,
+          "height": 349
         },
         "input_num": 1,
         "output_num": 1
@@ -164,8 +164,8 @@
         "ui": {
           "x": 450,
           "y": 366,
-          "width": 272,
-          "height": 328
+          "width": 294,
+          "height": 326
         },
         "input_num": 1,
         "output_num": 1
@@ -175,10 +175,10 @@
         "typeId": "agent_node",
         "name": "hy3",
         "ui": {
-          "x": 1064,
-          "y": 365,
-          "width": 286,
-          "height": 338
+          "x": 1186,
+          "y": 390,
+          "width": 285,
+          "height": 307
         },
         "input_num": 1,
         "output_num": 1
@@ -188,14 +188,14 @@
   "node_configs": [
     {
       "node_id": "BasicTrigger",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "basic_trigger_node",
       "name": "BasicTrigger",
       "fields": {
         "plugins": [],
         "skills": [],
         "working_path": "",
-        "OutputText": "浏览项目现状 查看源码梳理架构"
+        "OutputText": "浏览项目现状 详细分析源码细节 并梳理架构"
       },
       "ui": {
         "x": 178,
@@ -208,7 +208,7 @@
     },
     {
       "node_id": "Claude",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "Claude",
       "fields": {
@@ -230,15 +230,15 @@
       "ui": {
         "x": 759,
         "y": 367,
-        "width": 271,
-        "height": 316
+        "width": 343,
+        "height": 323
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "DeepSeek",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "DeepSeek",
       "fields": {
@@ -259,17 +259,17 @@
         "instruction": ""
       },
       "ui": {
-        "x": 758,
-        "y": 716,
-        "width": 291,
-        "height": 331
+        "x": 805,
+        "y": 709,
+        "width": 383,
+        "height": 377
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "Doubao",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "Doubao",
       "fields": {
@@ -290,15 +290,15 @@
       "ui": {
         "x": 454,
         "y": 9,
-        "width": 257,
-        "height": 337
+        "width": 309,
+        "height": 343
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "GLM",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "GLM",
       "fields": {
@@ -319,17 +319,17 @@
         "instruction": ""
       },
       "ui": {
-        "x": 444,
-        "y": 713,
-        "width": 277,
-        "height": 340
+        "x": 1512,
+        "y": 400,
+        "width": 316,
+        "height": 323
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "GPT",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "GPT",
       "fields": {
@@ -348,17 +348,17 @@
         "plugins": []
       },
       "ui": {
-        "x": 745,
-        "y": 10,
-        "width": 275,
-        "height": 339
+        "x": 776,
+        "y": 8,
+        "width": 348,
+        "height": 342
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "Grok",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "Grok",
       "fields": {
@@ -380,17 +380,17 @@
         "reasoning_summary": ""
       },
       "ui": {
-        "x": 1348,
-        "y": 15,
-        "width": 275,
-        "height": 339
+        "x": 1510,
+        "y": 13,
+        "width": 382,
+        "height": 357
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "Kimi",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "Kimi",
       "fields": {
@@ -403,25 +403,25 @@
           "system_tools"
         ],
         "web_search": "enabled",
-        "thinking": "enabled",
-        "reasoning_effort": "high",
+        "thinking": "disabled",
+        "reasoning_effort": "max",
         "mcp_servers": [],
         "plugins": [],
         "collaboration_mode": "default",
         "instruction": ""
       },
       "ui": {
-        "x": 1044,
-        "y": 21,
-        "width": 294,
-        "height": 326
+        "x": 1163,
+        "y": 25,
+        "width": 330,
+        "height": 349
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "MiniMax",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "MiniMax",
       "fields": {
@@ -444,15 +444,15 @@
       "ui": {
         "x": 450,
         "y": 366,
-        "width": 272,
-        "height": 328
+        "width": 294,
+        "height": 326
       },
       "input_num": 1,
       "output_num": 1
     },
     {
       "node_id": "hy3",
-      "graph_id": "Test",
+      "graph_id": "test",
       "type_id": "agent_node",
       "name": "hy3",
       "fields": {
@@ -473,15 +473,15 @@
         "instruction": ""
       },
       "ui": {
-        "x": 1064,
-        "y": 365,
-        "width": 286,
-        "height": 338
+        "x": 1186,
+        "y": 390,
+        "width": 285,
+        "height": 307
       },
       "input_num": 1,
       "output_num": 1
     }
   ],
-  "updated_at": "2026-07-12T14:30:18+08:00",
-  "created_at": "2026-07-12T14:30:18+08:00"
+  "updated_at": "2026-07-17T19:25:05+08:00",
+  "created_at": "2026-07-17T19:25:05+08:00"
 }

@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
+from src.providers.claude_message_mapping import map_messages_to_claude
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
@@ -59,7 +60,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
         thinking_mode: str | None,
         reasoning_effort: object,
     ) -> dict[str, Any]:
-        system, claude_messages = self._map_messages_to_claude(messages)
+        system, claude_messages = map_messages_to_claude(messages)
         max_tokens = self._claude_max_tokens()
         payload: dict[str, Any] = {
             "model": self.config["model"],
@@ -153,117 +154,6 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
             raise RuntimeError(error_text)
         raise RuntimeError(f"{endpoint}: max retries exceeded")
 
-    def _map_messages_to_claude(self, messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-        system_parts: list[str] = []
-        mapped: list[dict[str, Any]] = []
-        for message in messages:
-            if not isinstance(message, dict):
-                raise ValueError("Claude messages must contain only objects.")
-            role = str(message.get("role") or "").strip().lower()
-            if role in {"system", "developer"}:
-                text = self._message_content_text(message.get("content")).strip()
-                if text:
-                    system_parts.append(text)
-                continue
-            if role == "tool":
-                mapped.append({"role": "user", "content": [self._tool_result_block(message)]})
-                continue
-            if role == "assistant":
-                content = self._assistant_content_blocks(message)
-                if content:
-                    mapped.append({"role": "assistant", "content": content})
-                continue
-            if role == "user":
-                content = self._user_content_blocks(message.get("content"))
-                if content:
-                    mapped.append({"role": "user", "content": content})
-                continue
-            raise ValueError(f"Claude does not accept message role: {role or '<empty>'}")
-        return "\n\n".join(system_parts), mapped
-
-    def _assistant_content_blocks(self, message: dict[str, Any]) -> list[dict[str, Any]]:
-        native_blocks = message.get("_claude_content_blocks")
-        if isinstance(native_blocks, list):
-            blocks = [dict(block) for block in native_blocks if isinstance(block, dict) and str(block.get("type") or "").strip()]
-            if blocks:
-                return blocks
-
-        blocks: list[dict[str, Any]] = []
-        text = self._message_content_text(message.get("content")).strip()
-        if text:
-            blocks.append({"type": "text", "text": text})
-        for tool_call in message.get("tool_calls") if isinstance(message.get("tool_calls"), list) else []:
-            parsed = parse_openai_tool_call_items([tool_call], provider="claude_message_history")
-            if not parsed:
-                continue
-            item = parsed[0]
-            blocks.append(
-                {
-                    "type": "tool_use",
-                    "id": item.call_id,
-                    "name": item.name,
-                    "input": item.arguments,
-                }
-            )
-        return blocks
-
-    def _user_content_blocks(self, content: object) -> list[dict[str, Any]]:
-        if isinstance(content, list):
-            blocks: list[dict[str, Any]] = []
-            for part in content:
-                if not isinstance(part, dict):
-                    continue
-                part_type = str(part.get("type") or "").strip().lower()
-                if part_type == "text":
-                    text = str(part.get("text") or "")
-                    if text:
-                        blocks.append({"type": "text", "text": text})
-                    continue
-                if part_type in {"image_url", "input_image"}:
-                    block = self._image_part_to_claude(part)
-                    if block:
-                        blocks.append(block)
-            return blocks
-        text = self._message_content_text(content)
-        return [{"type": "text", "text": text}] if text else []
-
-    @staticmethod
-    def _message_content_text(content: object) -> str:
-        if isinstance(content, str):
-            return content
-        if content is None:
-            return ""
-        if isinstance(content, list):
-            texts = [str(item.get("text") or "") for item in content if isinstance(item, dict) and item.get("type") == "text"]
-            return "\n".join(item for item in texts if item)
-        return json.dumps(content, ensure_ascii=False)
-
-    @staticmethod
-    def _tool_result_block(message: dict[str, Any]) -> dict[str, Any]:
-        content = message.get("content")
-        text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
-        return {
-            "type": "tool_result",
-            "tool_use_id": str(message.get("tool_call_id") or ""),
-            "content": text,
-        }
-
-    @staticmethod
-    def _image_part_to_claude(part: dict[str, Any]) -> dict[str, Any] | None:
-        url = ""
-        if str(part.get("type") or "").strip().lower() == "input_image":
-            url = str(part.get("image_url") or "").strip()
-        else:
-            image_url = part.get("image_url")
-            url = str((image_url or {}).get("url") or "").strip() if isinstance(image_url, dict) else ""
-        if not url:
-            return None
-        if url.startswith("data:") and ";base64," in url:
-            header, data = url.split(";base64,", 1)
-            media_type = header.removeprefix("data:") or "image/png"
-            return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}}
-        return {"type": "image", "source": {"type": "url", "url": url}}
-
     def _claude_max_tokens(self) -> int:
         value = self.config.get("maxTokens", 4096)
         try:
@@ -302,7 +192,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
 
     def _build_claude_web_search_tool(self) -> dict[str, Any]:
         tool = {
-            "type": str(self.config.get("webSearchToolType") or "web_search_20260318"),
+            "type": str(self.config.get("webSearchToolType") or "web_search_20250305"),
             "name": "web_search",
         }
         limit = self.config.get("webSearchLimit")

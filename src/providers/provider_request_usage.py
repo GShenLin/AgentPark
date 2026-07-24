@@ -71,11 +71,22 @@ def sanitize_provider_usage(value: object) -> dict[str, int]:
     return usage
 
 
+def provider_usage_tpm_tokens(value: object) -> tuple[int, int] | None:
+    usage = sanitize_provider_usage(value)
+    if not usage:
+        return None
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    if input_tokens is None and output_tokens is None:
+        return None
+    return input_tokens or 0, output_tokens or 0
+
+
 def add_provider_usage_totals(totals: dict[str, Any], usage: object) -> None:
     normalized = sanitize_provider_usage(usage)
     if not normalized:
         return
-    totals["completed_request_count"] = (_non_negative_int(totals.get("completed_request_count")) or 0) + 1
+    totals["usage_request_count"] = (_non_negative_int(totals.get("usage_request_count")) or 0) + 1
     for key, value in normalized.items():
         total_key = f"actual_{key}"
         totals[total_key] = (_non_negative_int(totals.get(total_key)) or 0) + value
@@ -113,14 +124,26 @@ class ProviderRequestTracker:
     def record_completion(self, request_index: object, usage: object) -> dict[str, Any] | None:
         normalized_index = _non_negative_int(request_index)
         normalized_usage = sanitize_provider_usage(usage)
-        if normalized_index is None or not normalized_usage:
+        if normalized_index is None:
             return None
         for summary in reversed(self._summaries):
             if _non_negative_int(summary.get("request_index")) == normalized_index:
-                summary["usage"] = dict(normalized_usage)
+                summary["completed"] = True
+                if normalized_usage:
+                    summary["usage"] = dict(normalized_usage)
                 break
-        add_provider_usage_totals(self._totals, normalized_usage)
-        return {"request_index": normalized_index, "usage": normalized_usage}
+        self._totals["completed_request_count"] = (
+            _non_negative_int(self._totals.get("completed_request_count")) or 0
+        ) + 1
+        if normalized_usage:
+            add_provider_usage_totals(self._totals, normalized_usage)
+        self._totals.pop("last_actual_input_tokens", None)
+        if "input_tokens" in normalized_usage:
+            self._totals["last_actual_input_tokens"] = normalized_usage["input_tokens"]
+        completion: dict[str, Any] = {"request_index": normalized_index}
+        if normalized_usage:
+            completion["usage"] = normalized_usage
+        return completion
 
     def snapshot(self) -> dict[str, Any]:
         if not self._summaries:

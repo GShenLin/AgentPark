@@ -3,7 +3,7 @@ import os
 
 from . import runtime_paths, state_store
 from .service_host import HostBoundService
-from .node_config_service import read_node_config_optional, read_node_config_strict, write_node_config
+from .node_config_service import node_config_service, read_node_config_strict, write_node_config
 from .node_state_machine import parse_node_state
 from .shared import (
     _recover_node_config_startup_state,
@@ -13,6 +13,7 @@ from .shared import (
 from .route_parser import NodeRouteParser
 from .node_memory_store import append_node_memory_entry
 from .node_memory_store import append_node_tool_call_entry
+from .node_execution_context import resolve_node_storage_paths
 from .node_memory_store import ensure_node_memory_files
 from .node_config_errors import NodeConfigReadError, NodeConfigWriteError
 from .node_metadata_reader import load_node_instance
@@ -21,13 +22,21 @@ from .node_metadata_reader import run_node_on_create
 
 
 class GraphNodeStore(HostBoundService):
-    def _sync_node_config_ports(self, type_id: str, config: dict, graph_id: str, node_instance_id: str) -> None:
+    def _sync_node_config_ports(
+        self,
+        type_id: str,
+        config: dict,
+        graph_id: str,
+        node_instance_id: str,
+        *,
+        node: object | None = None,
+    ) -> None:
         if not isinstance(config, dict) or not config:
             return
         safe_type_id = str(type_id or "").strip()
         if not safe_type_id:
             return
-        node = load_node_instance(safe_type_id)
+        node = node if node is not None else load_node_instance(safe_type_id)
         if node is None:
             return
         context = self._build_node_context(safe_type_id, graph_id, node_instance_id, config)
@@ -41,6 +50,7 @@ class GraphNodeStore(HostBoundService):
         graph_id: str,
         node_instance_id: str,
         cfg: dict | None = None,
+        context_overrides: dict | None = None,
     ) -> dict:
         context = {
             "graph_id": graph_id,
@@ -49,6 +59,8 @@ class GraphNodeStore(HostBoundService):
         }
         if isinstance(cfg, dict):
             self._inject_node_config_into_context(context, cfg)
+        if isinstance(context_overrides, dict):
+            context.update(context_overrides)
         return context
 
     def _inject_node_config_into_context(self, context: dict, cfg: dict) -> None:
@@ -124,6 +136,16 @@ class GraphNodeStore(HostBoundService):
         base_dir = self._graph_dir(safe_graph_id)
         if not base_dir or not os.path.isdir(base_dir):
             return safe_node_id, safe_node_id
+
+        direct_config_path = os.path.join(base_dir, safe_node_id, "config.json")
+        if os.path.isfile(direct_config_path):
+            try:
+                config = node_config_service.read_persistent_strict(direct_config_path)
+            except NodeConfigReadError:
+                config = {}
+            canonical_id = self._sanitize_node_id((config or {}).get("node_id")) or safe_node_id
+            return safe_node_id, canonical_id
+
         try:
             entries = sorted(entry for entry in os.listdir(base_dir) if entry != "agents")
         except OSError:
@@ -135,7 +157,7 @@ class GraphNodeStore(HostBoundService):
             if not os.path.isfile(config_path):
                 continue
             try:
-                config = read_node_config_optional(config_path)
+                config = node_config_service.read_persistent_strict(config_path)
             except NodeConfigReadError:
                 config = {}
             canonical_id = self._sanitize_node_id((config or {}).get("node_id")) or entry
@@ -163,12 +185,12 @@ class GraphNodeStore(HostBoundService):
         return os.path.join(node_dir, "config.json") if node_dir else ""
 
     def _node_memory_path(self, node_id: str, graph_id: str) -> str:
-        node_dir = self._node_dir(graph_id, node_id)
-        return os.path.join(node_dir, "memory.md") if node_dir else ""
+        config_path = self._node_config_path(node_id, graph_id)
+        return resolve_node_storage_paths(config_path)["memory_path"] if config_path else ""
 
     def _node_messages_path(self, node_id: str, graph_id: str) -> str:
-        node_dir = self._node_dir(graph_id, node_id)
-        return os.path.join(node_dir, "messages.jsonl") if node_dir else ""
+        config_path = self._node_config_path(node_id, graph_id)
+        return resolve_node_storage_paths(config_path)["messages_path"] if config_path else ""
 
     def _ensure_node_memory_file(self, node_id: str, graph_id: str) -> None:
         safe_graph_id = self._sanitize_graph_id(graph_id)
@@ -260,17 +282,38 @@ class GraphNodeStore(HostBoundService):
                 f"Failed to write node config {config_path}: {type(exc).__name__}: {exc}"
             ) from exc
 
-    def _try_init_node_config(self, type_id: str, config: dict, graph_id: str, node_instance_id: str) -> None:
+    def _try_init_node_config(
+        self,
+        type_id: str,
+        config: dict,
+        graph_id: str,
+        node_instance_id: str,
+        context_overrides: dict | None = None,
+        *,
+        node: object | None = None,
+    ) -> None:
         if not isinstance(config, dict) or not config:
             return
-        context = self._build_node_context(type_id, graph_id, node_instance_id, config)
-        node = load_node_instance(type_id)
+        context = self._build_node_context(
+            type_id,
+            graph_id,
+            node_instance_id,
+            config,
+            context_overrides,
+        )
+        node = node if node is not None else load_node_instance(type_id)
         if node is None:
             return
 
         run_node_on_create(node, config, context)
         config.pop("schema", None)
-        self._sync_node_config_ports(type_id, config, graph_id, node_instance_id)
+        self._sync_node_config_ports(
+            type_id,
+            config,
+            graph_id,
+            node_instance_id,
+            node=node,
+        )
 
     def _recover_node_runtime_state_on_startup(self) -> dict:
         graphs_dir = runtime_paths._get_graphs_dir()

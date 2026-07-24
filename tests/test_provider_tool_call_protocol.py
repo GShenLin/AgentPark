@@ -6,6 +6,7 @@ import pytest
 from src.tool.base_tool import BaseTool
 from src.providers.provider_errors import ProviderImageAttachmentError
 from src.tool.tool_call_protocol import ToolCallExecution
+from src.tool_context_compaction_trigger import ToolContextCompactionWindow
 
 
 def _runtime_notice_payloads(events, stage):
@@ -1355,7 +1356,10 @@ def test_openai_stream_retries_response_failed_503(monkeypatch):
         yield json_module.dumps(event)
 
     monkeypatch.setattr(agent, "_curl_post_sse_data_lines", fake_sse_lines)
-    monkeypatch.setattr("src.providers.openai_transport.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        "src.providers.openai_retry_transport.sleep_with_cancel",
+        lambda _seconds, _cancel: None,
+    )
     result = agent._stream_responses_with_retry(
         endpoint="responses",
         url="https://api.openai.test/v1/responses",
@@ -1366,9 +1370,14 @@ def test_openai_stream_retries_response_failed_503(monkeypatch):
 
     assert calls["count"] == 2
     assert result["output"][0]["content"][0]["text"] == "ok"
-    assert agent.events[0]["type"] == "runtime_notice"
-    assert agent.events[0]["stage"] == "openai_responses_retry"
-    assert "503" in agent.events[0]["message"]
+    notices_by_stage = {
+        event.get("stage"): event
+        for event in agent.events
+        if event.get("type") == "runtime_notice"
+    }
+    assert "openai_responses_sse_failure_debug" in notices_by_stage
+    assert "openai_responses_retry" in notices_by_stage
+    assert "503" in notices_by_stage["openai_responses_retry"]["message"]
 
 
 def test_openai_stream_does_not_retry_account_quota_exceeded(monkeypatch):
@@ -1398,7 +1407,10 @@ def test_openai_stream_does_not_retry_account_quota_exceeded(monkeypatch):
         yield json_module.dumps(failed_event)
 
     monkeypatch.setattr(agent, "_curl_post_sse_data_lines", fake_sse_lines)
-    monkeypatch.setattr("src.providers.openai_transport.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        "src.providers.openai_retry_transport.sleep_with_cancel",
+        lambda _seconds, _cancel: None,
+    )
 
     with pytest.raises(RuntimeError, match="AccountQuotaExceeded"):
         agent._stream_responses_with_retry(
@@ -1410,7 +1422,7 @@ def test_openai_stream_does_not_retry_account_quota_exceeded(monkeypatch):
         )
 
     assert calls["count"] == 1
-    assert agent.events == []
+    assert [event.get("stage") for event in agent.events] == ["openai_responses_sse_failure_debug"]
 
 
 def test_openai_responses_continuation_replays_explicit_context():
@@ -1709,13 +1721,16 @@ def test_openai_responses_rebuilds_input_after_tool_context_compaction():
         "retryDelaySec": 0,
         "toolContextCompactionEnabled": True,
         "toolContextCompactionEveryToolCalls": 1,
+        "toolContextCompactionInputTokens": 0,
+        "toolContextCompactionCurrentInputTokens": 0,
+        "toolContextCompactionOutputTokens": 0,
         "responsesReplayReasoningItems": False,
         "toolResultSubmissionMaxChars": 50000,
     }
     agent.provider_name = "openai"
     agent.messages = [{"role": "user", "content": "run echo"}]
     agent.tools = BaseTool(agent)
-    agent._tool_context_compaction_since_last = 0
+    agent._tool_context_compaction_window = ToolContextCompactionWindow()
     agent.internal_memory_enabled = False
     agent.system_prompt = None
     agent._read_provider_config_from_file = lambda: dict(agent.config)
@@ -1723,7 +1738,13 @@ def test_openai_responses_rebuilds_input_after_tool_context_compaction():
     agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
         {"role": role, "content": content, **kwargs}
     )
-    agent.tools.function_map["echo_tool"] = lambda message=None: f"echo:{message}"
+    echo_calls = []
+
+    def echo_tool(message=None):
+        echo_calls.append(message)
+        return f"echo:{message}"
+
+    agent.tools.function_map["echo_tool"] = echo_tool
     requests = []
 
     responses = iter(
@@ -1746,16 +1767,34 @@ def test_openai_responses_rebuilds_input_after_tool_context_compaction():
                     {
                         "type": "function_call",
                         "id": "fc-compact",
-                        "call_id": "compact-1",
+                        "call_id": "call-compact",
                         "name": "compact_tool_context",
                         "arguments": json.dumps(
                             {
                                 "action": "replace",
-                                "reason": "The echo result was summarized.",
-                                "summary": "echo_tool returned echo:hello.",
+                                "reason": "Replace the completed echo exchange.",
+                                "summary": {
+                                    "task_anchor": "Run echo and finish the original task.",
+                                    "completed_facts": [
+                                        "The echo tool returned echo:hello."
+                                    ],
+                                    "changed_state": [],
+                                    "verification": ["The echo result was observed."],
+                                    "failed_attempts": [],
+                                    "remaining_steps": ["Continue the original task."],
+                                    "immediate_next_step": "Continue the original task.",
+                                    "avoid_repeating": ["Do not call echo_tool again."],
+                                },
                             }
                         ),
-                    }
+                    },
+                    {
+                        "type": "function_call",
+                        "id": "fc-unoffered",
+                        "call_id": "call-unoffered",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"must-not-run"}',
+                    },
                 ],
             },
             {
@@ -1786,10 +1825,98 @@ def test_openai_responses_rebuilds_input_after_tool_context_compaction():
 
     assert out == "done"
     assert len(requests) == 3
+    gate_tools = [item.get("name") for item in requests[1]["tools"] if item.get("type") == "function"]
+    assert gate_tools == ["compact_tool_context"]
+    gate_input_text = json.dumps(requests[1]["input"], ensure_ascii=False)
+    assert "echo:hello" in gate_input_text
+    assert "Compaction input:" not in gate_input_text
+    assert gate_input_text.count("echo:hello") < 4
+
     final_input_text = json.dumps(requests[2]["input"], ensure_ascii=False)
-    assert "echo_tool returned echo:hello" in final_input_text
+    assert "[Tool Context Summary]" in final_input_text
+    assert "echo:hello" in final_input_text
     assert "function_call_output" not in final_input_text
     assert "compact_tool_context" not in final_input_text
+    assert "call-unoffered" not in final_input_text
+    assert echo_calls == ["hello"]
+
+
+def test_openai_responses_accepts_final_text_at_compaction_checkpoint():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://example.com/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "toolContextCompactionEnabled": True,
+        "toolContextCompactionEveryToolCalls": 1,
+        "toolContextCompactionInputTokens": 0,
+        "toolContextCompactionCurrentInputTokens": 0,
+        "toolContextCompactionOutputTokens": 0,
+        "toolResultSubmissionMaxChars": 50000,
+    }
+    agent.provider_name = "openai"
+    agent.messages = [{"role": "user", "content": "run echo"}]
+    agent.tools = BaseTool(agent)
+    agent._tool_context_compaction_window = ToolContextCompactionWindow()
+    agent.internal_memory_enabled = False
+    agent.system_prompt = None
+    agent._read_provider_config_from_file = lambda: dict(agent.config)
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    agent.tools.function_map["echo_tool"] = lambda message=None: f"echo:{message}"
+    requests = []
+    responses = iter(
+        [
+            {
+                "id": "resp-tool",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": "call-echo",
+                        "name": "echo_tool",
+                        "arguments": '{"message":"hello"}',
+                    }
+                ],
+            },
+            {
+                "id": "resp-final",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "The task is complete."}],
+                    }
+                ],
+            },
+        ]
+    )
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    out = agent._send_via_responses(
+        messages=list(agent.messages),
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="",
+    )
+
+    assert out == "The task is complete."
+    assert len(requests) == 2
+    assert [item.get("name") for item in requests[1]["tools"] if item.get("type") == "function"] == [
+        "compact_tool_context"
+    ]
+    assert agent._tool_context_compaction_gate_active is False
+    assert "compact_tool_context" not in agent.tools.function_map
+    assert agent.messages[-1]["content"] == "The task is complete."
 
 
 def test_openai_responses_rejects_function_item_id_as_call_id():
@@ -1827,11 +1954,11 @@ def test_doubao_inject_image_message_reports_missing_image(tmp_path):
 
 
 def test_gemini_function_response_content_parses_only_json_objects():
-    from src.providers.gemini_agent import GeminiAgent
+    from src.providers.gemini_message_mapping import build_function_response_content
 
-    assert GeminiAgent._build_function_response_content('{"status":"ok"}') == {"status": "ok"}
-    assert GeminiAgent._build_function_response_content("[1, 2]") == {"result": "[1, 2]"}
-    assert GeminiAgent._build_function_response_content("plain text") == {"result": "plain text"}
+    assert build_function_response_content('{"status":"ok"}') == {"status": "ok"}
+    assert build_function_response_content("[1, 2]") == {"result": "[1, 2]"}
+    assert build_function_response_content("plain text") == {"result": "plain text"}
 
 
 def test_gemini_tool_schema_preserves_action_specific_composites():

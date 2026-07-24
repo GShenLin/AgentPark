@@ -3,7 +3,7 @@ import os
 from nodes.base_node import BaseNode
 from src.message_protocol import envelope_text, normalize_envelope
 from src.value_parsing import parse_int_value
-from src.web_backend.state_store import _read_json_dict, _write_json_dict
+from src.web_backend.state_store import _patch_node_config_persistent_fields, _read_json_dict
 
 
 class Node(BaseNode):
@@ -70,7 +70,7 @@ class Node(BaseNode):
         if not ready:
             config[self._BUFFER_KEY] = slots
             if config_path:
-                _write_json_dict(config_path, config)
+                _patch_node_config_persistent_fields(config_path, {self._BUFFER_KEY: slots})
             received = sum(1 for item in slots if isinstance(item, dict))
             return {
                 "display": f"waiting {received}/{effective_count}",
@@ -81,5 +81,5 @@ class Node(BaseNode):
         merged_text = "".join(envelope_text(item) for item in slots if isinstance(item, dict))
         config[self._BUFFER_KEY] = [None] * effective_count
         if config_path:
-            _write_json_dict(config_path, config)
+            _patch_node_config_persistent_fields(config_path, {self._BUFFER_KEY: config[self._BUFFER_KEY]})
         return self._text_output(merged_text)

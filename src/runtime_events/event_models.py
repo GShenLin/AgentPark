@@ -10,7 +10,7 @@ from .event_schema import ACTIONS, EVENTS, PRIORITIES, TTLS
 class CompiledRule:
     graph_id: str
     node_id: str
-    rule_index: int
+    handler_index: int
     event: str
     action: str
     target: str
@@ -28,7 +28,6 @@ class CompiledReceiverGroup:
     group_id: str
     graph_id: str
     merge_target: CompiledReceiver
-    event_profiles: dict[str, str]
     receivers: tuple[CompiledReceiver, ...] = ()
 
 

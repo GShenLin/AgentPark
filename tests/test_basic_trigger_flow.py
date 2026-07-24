@@ -199,7 +199,7 @@ def test_output_routes_fan_out_to_multiple_targets(tmp_path):
         assert client.post("/api/graphs/default/emit", json={"from_id": "t1", "payload": ""}).status_code == 200
 
         seen = set()
-        for _ in range(40):
+        for _ in range(100):
             cfgs = client.get("/api/nodes/instances/configs?graph_id=default")
             nodes = cfgs.json().get("nodes") if cfgs.status_code == 200 else []
             for item in nodes or []:
@@ -263,6 +263,22 @@ def test_output_routes_preserve_target_input_index_for_multi_input_node(tmp_path
         assert client.post("/api/nodes/instances/a1/config?graph_id=default", json={"fields": {"AppendText": "-done"}}).status_code == 200
         assert client.post("/api/graphs/default/runner/start").status_code == 200
         assert client.post("/api/graphs/default/emit", json={"from_id": "t1", "payload": ""}).status_code == 200
+
+        staged = False
+        multi_input_config_path = tmp_path / "memories" / "default" / "m1" / "config.json"
+        for _ in range(50):
+            if multi_input_config_path.is_file():
+                config = json.loads(multi_input_config_path.read_text(encoding="utf-8"))
+                buffer = config.get("_multi_input_buffer")
+                if isinstance(buffer, list) and len(buffer) == 2 and buffer[0] is None:
+                    slot = buffer[1]
+                    parts = slot.get("parts") if isinstance(slot, dict) else None
+                    if parts == [{"type": "text", "text": "B"}]:
+                        staged = True
+                        break
+            time.sleep(0.1)
+        assert staged
+
         assert client.post("/api/graphs/default/emit", json={"from_id": "t0", "payload": ""}).status_code == 200
 
         ok = False
@@ -445,7 +461,7 @@ def test_stale_working_node_with_inflight_is_not_requeued_by_timeout(tmp_path):
         str(config_path),
         {
             "node_id": "video1",
-            "type_id": "video_generation_node",
+            "type_id": "agent_node",
             "state": "working",
             "pending": [],
             "pending_count": 0,

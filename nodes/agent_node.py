@@ -1,20 +1,34 @@
 import os
 import time
-from typing import Callable
+import uuid
 
 from nodes.agent_assistant_memory import persist_assistant_progress
+from nodes.agent_node_contract import (
+    AGENT_CONFIG_DEFAULTS,
+    AGENT_CONFIG_SCHEMA,
+    AGENT_INPUT_CAPABILITIES,
+    AGENT_OUTPUT_CAPABILITIES,
+)
 from nodes.agent_assistant_memory import persist_provider_turn_metadata
+from nodes.agent_history import load_agent_history_messages
 from nodes.agent_message_adapter import (
     append_channel_meta,
     build_agent_output_message,
     build_response_metadata_message,
     build_agent_user_content,
     extract_channel_meta,
-    history_envelope_to_agent_message,
 )
 from nodes.agent_node_config import load_agent_node_run_request
+from nodes.agent_node_modes import capability_mode, resolve_input_support_mode, settings_for_mode
+from nodes.agent_node_schema import build_agent_config_schema
+from nodes.agent_provider_runtime import effective_instruction
+from nodes.agent_provider_runtime import merge_structured_response
+from nodes.agent_provider_runtime import resolve_instruction_role
+from nodes.agent_provider_runtime import stream_callback
+from nodes.agent_provider_runtime import stream_enabled
+from nodes.agent_provider_runtime import uses_responses_api_context
 from nodes.agent_stream_runtime import AgentStreamRuntime
-from nodes.agent_support.capability_setup import resolve_agent_capabilities
+from nodes.agent_support.capability_setup import AgentCapabilityPlan, resolve_agent_capabilities
 from nodes.agent_mcp_loader import (
     inject_mcp_server_context,
     register_mcp_server_tools,
@@ -29,20 +43,20 @@ from nodes.agent_skill_scripts import register_skill_script_tools
 from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
-from src.capabilities.registry import CapabilityRegistry
 from src.config_loader import ConfigLoader
 from src.media_resource_utils import resolve_public_base_url
 from src.message_protocol import envelope_text, normalize_envelope
 from src.operational_memory import build_operational_memory_summary
 from src.providers import create_agent
-from src.providers.instructions import resolve_agent_default_instructions
 from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
+from src.providers.provider_request_usage import ProviderRequestTracker
 from src.runtime_events.context_injection import runtime_event_context_from_context
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.switch_utils import parse_switch_mode
 from src.tool.tool_stats_store import ToolCallStatsRecorder
+from src.task_direction_context import inject_task_direction_context
+from src.task_direction_store import archive_legacy_task_artifacts
 from src.workspace_settings import get_workspace_root
-from src.web_backend.node_memory_store import load_recent_node_memory_records
 from src.web_backend.node_goal_runtime import node_goal_context
 from src.web_backend.state_store import _consume_node_mid_turn_user_inputs
 
@@ -50,201 +64,37 @@ from src.web_backend.state_store import _consume_node_mid_turn_user_inputs
 class Node(BaseNode):
     name = "Agent"
     description = "Agent 节点"
-    input_capabilities = [
-        "text",
-        "resource:image",
-        "resource:video",
-        "resource:audio",
-        "resource:doc",
-        "resource:file",
-        "resource:url",
-        "structured",
-        "meta",
-    ]
-    output_capabilities = [
-        "text",
-        "resource:image",
-        "resource:video",
-        "structured",
-        "tool_call",
-        "meta",
-    ]
-
-    config_defaults = {
-        "provider_id": "",
-        "instruction": "",
-        "system_prompt": "",
-        "mode": "chat",
-        "collaboration_mode": "default",
-        "plugins": [],
-        "tools": [],
-        "mcp_servers": [],
-        "web_search": "disabled",
-        "thinking": "disabled",
-        "reasoning_effort": "high",
-        "reasoning_summary": "",
-    }
-    config_schema = {
-        "provider_id": {"type": "text", "label": "provider_id"},
-        "instruction": {"type": "text", "label": "instruction"},
-        "system_prompt": {"type": "text", "label": "system_prompt"},
-        "mode": {"type": "text", "label": "mode"},
-        "collaboration_mode": {
-            "type": "select",
-            "label": "collaboration_mode",
-            "options": [
-                {"value": "default", "label": "default"},
-                {"value": "plan", "label": "plan"},
-            ],
-        },
-        "plugins": {
-            "type": "multiselect",
-            "label": "plugins",
-            "options": [],
-        },
-        "tools": {
-            "type": "multiselect",
-            "label": "tools",
-            "options": [],
-        },
-        "mcp_servers": {
-            "type": "multiselect",
-            "label": "mcp_servers",
-            "options": [],
-        },
-        "web_search": {"type": "text", "label": "web_search"},
-        "thinking": {"type": "text", "label": "thinking"},
-        "reasoning_effort": {
-            "type": "select",
-            "label": "reasoning_effort",
-            "options": [
-                {"value": "minimal", "label": "minimal"},
-                {"value": "low", "label": "low"},
-                {"value": "medium", "label": "medium"},
-                {"value": "high", "label": "high"},
-                {"value": "xhigh", "label": "xhigh"},
-            ],
-        },
-        "reasoning_summary": {
-            "type": "select",
-            "label": "reasoning_summary",
-            "options": [
-                {"value": "", "label": "provider default"},
-                {"value": "auto", "label": "auto"},
-                {"value": "concise", "label": "concise"},
-                {"value": "detailed", "label": "detailed"},
-                {"value": "disabled", "label": "disabled"},
-            ],
-        },
-    }
+    input_capabilities = AGENT_INPUT_CAPABILITIES
+    output_capabilities = AGENT_OUTPUT_CAPABILITIES
+    config_defaults = AGENT_CONFIG_DEFAULTS
+    config_schema = AGENT_CONFIG_SCHEMA
 
     def get_config_schema(self, context: dict | None = None) -> dict:
-        schema = super().get_config_schema(context)
-        ctx = context if isinstance(context, dict) else {}
-        provider_id = str(ctx.get("provider_id") or "").strip()
-        provider_features = {}
-        if provider_id:
-            try:
-                provider_features = dict(ConfigLoader().get_all_providers().get(provider_id, {}).get("features") or {})
-            except Exception:
-                provider_features = {}
-        capability_payload = CapabilityRegistry().discover_payload(context)
-        for kind, field in (
-            ("tool", "tools"),
-            ("mcp", "mcp_servers"),
-            ("skill", "skills"),
-            ("plugin", "plugins"),
-        ):
-            field_schema = dict(schema.get(field) or {})
-            field_schema["type"] = "multiselect"
-            field_schema["options"] = list((capability_payload.get(kind) or {}).get("available") or [])
-            schema[field] = field_schema
-        for field in ("web_search", "thinking", "reasoning_effort", "reasoning_summary", "tools"):
-            if field not in schema:
-                continue
-            field_schema = dict(schema.get(field) or {})
-            feature = provider_features.get(field) if isinstance(provider_features, dict) else None
-            if isinstance(feature, dict):
-                field_schema["provider_feature"] = dict(feature)
-                field_schema["description"] = self._provider_feature_description(field, feature)
-            schema[field] = field_schema
-        terminal_keys = ("tools", "mcp_servers", "skills", "plugins")
-        ordered_schema = {
-            key: value
-            for key, value in schema.items()
-            if key not in terminal_keys
-        }
-        for key in terminal_keys:
-            if key in schema:
-                ordered_schema[key] = schema[key]
-        schema = ordered_schema
-        return schema
-
-    @staticmethod
-    def _provider_feature_description(field: str, feature: dict) -> str:
-        supported = bool(feature.get("supported"))
-        values = feature.get("values")
-        allowed = ", ".join(str(item) for item in values if str(item or "").strip()) if isinstance(values, list) else ""
-        requires = str(feature.get("requires") or "").strip()
-        if supported:
-            suffix = f" Supported values: {allowed}." if allowed else ""
-            return f"{field} is supported by the selected provider.{suffix}"
-        if requires:
-            return f"{field} is not available for this provider until {requires}."
-        return f"{field} is not supported by the selected provider."
-
-    def _load_node_history_messages(
-        self,
-        context: dict,
-        current_message: object,
-        provider_id: str,
-        public_base_url: object = "",
-    ) -> list[dict]:
-        messages_path = self._resolve_messages_path(context)
-        memory_path = self._resolve_memory_path(context)
-        if not messages_path:
-            return []
-
-        current = normalize_envelope(current_message, default_role="user")
-        current_id = str(current.get("id") or "").strip()
-        history_message_limit = resolve_agent_node_settings(ConfigLoader().get_config()).history_message_limit
-        records = load_recent_node_memory_records(
-            memory_path,
-            messages_path,
-            limit=history_message_limit + 1,
-            roles={"user", "assistant"},
-        )
-
-        history: list[dict] = []
-        for item in records:
-            envelope = normalize_envelope(item, default_role="assistant")
-            if current_id and str(envelope.get("id") or "").strip() == current_id:
-                continue
-            message = history_envelope_to_agent_message(envelope, provider_id, public_base_url)
-            if message is not None:
-                history.append(message)
-        return history[-history_message_limit:]
-
-    @staticmethod
-    def _resolve_stream_callback(context: dict | None) -> Callable[[dict], None] | None:
-        if not isinstance(context, dict):
-            return None
-        callback = context.get("stream_callback")
-        if callable(callback):
-            return callback
-        return None
+        return build_agent_config_schema(super().get_config_schema(context), context)
 
     def on_input(self, message: object, context: dict | None = None) -> dict:
         ctx = context or {}
+        task_id = str(ctx.get("task_id") or "").strip() or f"direct-{uuid.uuid4().hex}"
         memory_path_for_config = self._resolve_memory_path(ctx)
         agent_dir = os.path.dirname(memory_path_for_config) if memory_path_for_config else ""
-        config_path = os.path.join(agent_dir, "config.json")
+        if agent_dir:
+            archive_legacy_task_artifacts(agent_dir)
+        config_path = str(ctx.get("node_config_path") or "").strip()
+        if not config_path:
+            config_path = os.path.join(agent_dir, "config.json")
         run_request = load_agent_node_run_request(ctx, config_path=config_path)
-        capability_plan = resolve_agent_capabilities(
-            run_request.setting,
-            node_id=run_request.agent_id,
-            load_skills=load_node_skills,
-            resolve_plugins=resolve_plugin_capabilities,
+        input_message = normalize_envelope(message, default_role="user")
+        provider_config = ConfigLoader().get_provider_config(run_request.provider_id)
+        run_mode = resolve_input_support_mode(provider_config.get("supportmode"), input_message)
+        capability_plan = (
+            resolve_agent_capabilities(
+                run_request.setting,
+                node_id=run_request.agent_id,
+                load_skills=load_node_skills,
+                resolve_plugins=resolve_plugin_capabilities,
+            )
+            if capability_mode(run_mode)
+            else AgentCapabilityPlan()
         )
         mcp_settings = with_mcp_caller_context(
             capability_plan.mcp_settings,
@@ -252,7 +102,6 @@ class Node(BaseNode):
             node_id=run_request.agent_id,
         )
 
-        input_message = normalize_envelope(message, default_role="user")
         channel_meta_parts = extract_channel_meta(input_message)
 
         memory_path = self._resolve_memory_path(ctx)
@@ -277,6 +126,7 @@ class Node(BaseNode):
             memory_path=memory_path,
             messages_path=self._resolve_messages_path(ctx),
         )
+        provider_request_tracker = ProviderRequestTracker()
 
         def consume_mid_turn_user_inputs() -> list[dict]:
             messages: list[dict] = []
@@ -286,7 +136,7 @@ class Node(BaseNode):
                 envelope = normalize_envelope(pending_item.get("payload"), default_role="user")
                 content = build_agent_user_content(
                     run_request.provider_id,
-                    run_request.mode,
+                    run_mode,
                     envelope,
                     resolved_public_base_url,
                 )
@@ -304,23 +154,34 @@ class Node(BaseNode):
         bind_agent_runtime_context(
             agent,
             AgentRuntimeContext(
+                task_id=task_id,
                 graph_id=run_request.graph_id,
                 node_id=run_request.agent_id,
                 node_type_id="agent_node",
+                node_directory=agent_dir,
                 workspace_root=get_workspace_root(),
                 working_path=run_request.working_path,
+                remote_enabled=run_request.remote_enabled,
+                remote_worker_id=run_request.remote_worker_id,
                 collaboration_mode=run_request.collaboration_mode,
                 shell="powershell" if os.name == "nt" else "",
-                responses_instruction=_effective_instruction(agent, run_request.instruction)
-                if _uses_responses_api_context(agent)
+                responses_instruction=effective_instruction(agent, run_request.instruction)
+                if uses_responses_api_context(agent)
                 else "",
                 skill_resource_roots=capability_plan.skill_resource_roots,
                 persist_assistant_progress=persist_progress,
                 persist_provider_turn_metadata=persist_turn_metadata,
                 consume_mid_turn_user_inputs=consume_mid_turn_user_inputs,
+                begin_tool_call_cancellation=ctx.get("begin_tool_call_cancellation")
+                if callable(ctx.get("begin_tool_call_cancellation"))
+                else None,
+                end_tool_call_cancellation=ctx.get("end_tool_call_cancellation")
+                if callable(ctx.get("end_tool_call_cancellation"))
+                else None,
+                provider_request_tracker=provider_request_tracker,
             ),
         )
-        instruction_role = _instruction_role(agent)
+        instruction_role = resolve_instruction_role(agent)
         effective_system_prompt = str(run_request.system_prompt or "").strip()
 
         load_configured_tools(agent, capability_plan.tool_names)
@@ -342,10 +203,11 @@ class Node(BaseNode):
             has_system = any((msg or {}).get("role") == "system" for msg in getattr(agent, "messages", []) or [])
             if not has_system:
                 agent.Message("system", effective_system_prompt)
-        if not _uses_responses_api_context(agent):
-            effective_instruction = _effective_instruction(agent, run_request.instruction)
-            if effective_instruction:
-                agent.Message(instruction_role, effective_instruction, persist=False)
+        if not uses_responses_api_context(agent):
+            resolved_instruction = effective_instruction(agent, run_request.instruction)
+            if resolved_instruction:
+                agent.Message(instruction_role, resolved_instruction, persist=False)
+        inject_task_direction_context(agent, role=instruction_role)
         operational_memory_summary = build_operational_memory_summary(
             os.path.join(os.path.dirname(memory_path), "operational_memory.json") if memory_path else ""
         )
@@ -370,12 +232,22 @@ class Node(BaseNode):
             agent.Message("user", goal_context, persist=False)
         runtime_event_context = runtime_event_context_from_context(ctx)
         for fragment in runtime_event_context:
-            agent.Message(instruction_role, fragment, persist=False)
+            agent.Message(fragment["role"], fragment["content"], persist=False)
 
-        for history_message in self._load_node_history_messages(ctx, input_message, run_request.provider_id, resolved_public_base_url):
+        history_message_limit = resolve_agent_node_settings(
+            ConfigLoader().get_config()
+        ).history_message_limit
+        for history_message in load_agent_history_messages(
+            memory_path=memory_path,
+            messages_path=self._resolve_messages_path(ctx),
+            current_message=input_message,
+            provider_id=run_request.provider_id,
+            public_base_url=resolved_public_base_url,
+            history_message_limit=history_message_limit,
+        ):
             agent.Message(history_message["role"], history_message["content"], persist=False)
 
-        user_content = build_agent_user_content(run_request.provider_id, run_request.mode, input_message, resolved_public_base_url)
+        user_content = build_agent_user_content(run_request.provider_id, run_mode, input_message, resolved_public_base_url)
         agent.Message("user", user_content, persist=False)
         web_search_mode = parse_switch_mode(run_request.web_search, default="disabled", allow_auto=False)
         thinking_mode = parse_switch_mode(run_request.thinking, default="disabled", allow_auto=False)
@@ -391,23 +263,28 @@ class Node(BaseNode):
             node_id=run_request.agent_id,
         )
         stream_runtime = AgentStreamRuntime(
-            self._resolve_stream_callback(ctx),
+            stream_callback(ctx),
             tool_event_callback=tool_stats_recorder.handle,
         )
 
         start_time = time.monotonic()
         raise_if_cancel_requested(cancel_source)
-        agent._reset_provider_request_tracking()
+        provider_request_tracker.reset()
         response = stream_runtime.send(
             agent,
             {
                 "run_tools": True,
-                "mode": run_request.mode,
+                "mode": run_mode,
                 "web_search": web_search_mode,
                 "thinking": thinking_mode,
                 "reasoning_effort": reasoning_effort,
                 "reasoning_summary": reasoning_summary,
-                "stream": _stream_enabled_for_agent(agent),
+                "mode_options": settings_for_mode(
+                    run_mode,
+                    run_request.config_data,
+                    run_request.context,
+                ),
+                "stream": stream_enabled(agent),
                 "stream_handler": stream_runtime.on_stream_delta,
                 "thinking_stream_handler": stream_runtime.on_thinking_delta,
             },
@@ -426,8 +303,8 @@ class Node(BaseNode):
                     time.sleep(min(0.05, remaining))
         raise_if_cancel_requested(cancel_source)
         response_structured_result = getattr(agent, "_last_responses_structured_result", None)
-        response_for_message = _response_with_structured_result(response, response_structured_result)
-        provider_requests = agent._provider_request_snapshot()
+        response_for_message = merge_structured_response(response, response_structured_result)
+        provider_requests = provider_request_tracker.snapshot()
         response_for_message = stream_runtime.attach_runtime_tool_calls(response_for_message)
         metadata_source = response_for_message
         if provider_requests:
@@ -461,42 +338,3 @@ class Node(BaseNode):
         if memory_sidecars:
             result["memory_sidecars"] = memory_sidecars
         return result
-
-
-def _response_with_structured_result(response: object, structured_result: object) -> object:
-    if not isinstance(structured_result, dict) or not structured_result:
-        return response
-    if isinstance(response, dict):
-        return {**response, **structured_result}
-    return {"response": "" if response is None else str(response), **structured_result}
-
-
-def _instruction_role(agent: object) -> str:
-    if _uses_responses_api_context(agent):
-        return "developer"
-    return "system"
-
-
-def _effective_instruction(agent: object, instruction: object) -> str:
-    explicit_instruction = str(instruction or "").strip()
-    if explicit_instruction:
-        return explicit_instruction
-    if _uses_responses_api_context(agent):
-        return resolve_agent_default_instructions(agent)
-    return ""
-
-
-def _uses_responses_api_context(agent: object) -> bool:
-    config = getattr(agent, "config", None)
-    if not isinstance(config, dict):
-        return False
-    provider_type = str(config.get("type") or "").strip()
-    return provider_type in {"openai", "grok", "doubao"} and config.get("responsesApi") is True
-
-
-def _stream_enabled_for_agent(agent: object) -> bool:
-    config = getattr(agent, "config", None)
-    if not isinstance(config, dict):
-        return True
-    value = config.get("streamEnabled", True)
-    return value if isinstance(value, bool) else True

@@ -26,3 +26,14 @@ RUNTIME_STATE_FIELDS = {
     "_clock_remaining_seconds",
     "_clock_trigger_count",
 }
+
+NODE_EVENT_RUNTIME_FIELDS = {
+    "state",
+    "pending_count",
+    "_stop_requested",
+    "node_event_seq",
+    "last_run_at",
+    "goal",
+    "goal_state",
+    "provider_request_totals",
+}

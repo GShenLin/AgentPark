@@ -324,6 +324,11 @@ textarea::placeholder {
   pointer-events: none;
 }
 
+.interaction-layer.interaction-layer-global {
+  position: fixed;
+  z-index: 4100;
+}
+
 .interaction-dialog {
   position: absolute;
   max-width: calc(100% - 40px);
@@ -379,6 +384,23 @@ textarea::placeholder {
   color: var(--text-primary);
 }
 
+.interaction-navigation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.interaction-navigation .interaction-count {
+  text-align: center;
+}
+
+.interaction-navigation button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .interaction-drag-handle {
   flex: 0 0 auto;
   cursor: grab;
@@ -398,6 +420,12 @@ textarea::placeholder {
   white-space: pre-wrap;
   font-size: 14px;
   line-height: 1.7;
+}
+
+.interaction-agent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
 }
 
 .interaction-fields {

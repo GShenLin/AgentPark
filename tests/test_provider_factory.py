@@ -3,6 +3,7 @@ import pytest
 
 def test_create_agent_uses_explicit_provider_type(monkeypatch):
     import src.providers as providers
+    from src.providers import registry
 
     class DummyGemini:
         def __init__(self, provider_id=None, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
@@ -53,6 +54,13 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
             self.system_prompt = system_prompt
             self.internal_memory_enabled = internal_memory_enabled
 
+    class DummyKimi:
+        def __init__(self, provider_id=None, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
+            self.provider_id = provider_id
+            self.memory_file_path = memory_file_path
+            self.system_prompt = system_prompt
+            self.internal_memory_enabled = internal_memory_enabled
+
     class DummyZhipu:
         def __init__(self, provider_id=None, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
             self.provider_id = provider_id
@@ -72,21 +80,40 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
                 return {"type": "deepseek"}
             if provider_name == "p-grok":
                 return {"type": "grok"}
+            if provider_name == "p-kimi":
+                return {"type": "kimi"}
             if provider_name == "p-claude":
                 return {"type": "claude"}
             if provider_name == "p-zhipu":
                 return {"type": "zhipu"}
             return {"type": "doubao"}
 
-    monkeypatch.setattr(providers, "GeminiAgent", DummyGemini)
-    monkeypatch.setattr(providers, "DouBaoAgent", DummyDoubao)
-    monkeypatch.setattr(providers, "ClaudeAgent", DummyClaude)
-    monkeypatch.setattr(providers, "Hyper3DAgent", DummyHyper3D)
-    monkeypatch.setattr(providers, "OpenAIAgent", DummyOpenAI)
-    monkeypatch.setattr(providers, "DeepSeekAgent", DummyDeepSeek)
-    monkeypatch.setattr(providers, "GrokAgent", DummyGrok)
-    monkeypatch.setattr(providers, "ZhipuAgent", DummyZhipu)
-    monkeypatch.setattr(providers, "ConfigLoader", lambda: DummyLoader())
+    provider_classes = {
+        "GeminiAgent": DummyGemini,
+        "DouBaoAgent": DummyDoubao,
+        "ClaudeAgent": DummyClaude,
+        "Hyper3DAgent": DummyHyper3D,
+        "OpenAIAgent": DummyOpenAI,
+        "DeepSeekAgent": DummyDeepSeek,
+        "GrokAgent": DummyGrok,
+        "KimiAgent": DummyKimi,
+        "ZhipuAgent": DummyZhipu,
+    }
+
+    monkeypatch.setattr(registry, "ConfigLoader", lambda: DummyLoader())
+    monkeypatch.setattr(
+        registry,
+        "import_module",
+        lambda module_name: type(
+            "ProviderModule",
+            (),
+            {
+                registration.class_name: provider_classes[registration.class_name]
+                for registration in registry.PROVIDER_REGISTRATIONS.values()
+                if registration.module == module_name
+            },
+        ),
+    )
 
     gemini_agent = providers.create_agent("p-gemini", memory_file_path="m1", system_prompt="s1")
     doubao_agent = providers.create_agent("p-doubao", memory_file_path="m2", system_prompt="s2")
@@ -95,6 +122,7 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
     openai_agent = providers.create_agent("p-openai", memory_file_path="m5", system_prompt="s5")
     deepseek_agent = providers.create_agent("p-deepseek", memory_file_path="m7", system_prompt="s7")
     grok_agent = providers.create_agent("p-grok", memory_file_path="m8", system_prompt="s8")
+    kimi_agent = providers.create_agent("p-kimi", memory_file_path="m9", system_prompt="s9")
     zhipu_agent = providers.create_agent("p-zhipu", memory_file_path="m6", system_prompt="s6")
 
     assert isinstance(gemini_agent, DummyGemini)
@@ -111,6 +139,8 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
     assert deepseek_agent.provider_id == "p-deepseek"
     assert isinstance(grok_agent, DummyGrok)
     assert grok_agent.provider_id == "p-grok"
+    assert isinstance(kimi_agent, DummyKimi)
+    assert kimi_agent.provider_id == "p-kimi"
     assert isinstance(zhipu_agent, DummyZhipu)
     assert zhipu_agent.provider_id == "p-zhipu"
 
@@ -120,12 +150,13 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
 
 def test_create_agent_rejects_unsupported_provider_type(monkeypatch):
     import src.providers as providers
+    from src.providers import registry
 
     class DummyLoader:
         def get_provider_config(self, _provider_name):
             return {"type": "unknown"}
 
-    monkeypatch.setattr(providers, "ConfigLoader", lambda: DummyLoader())
+    monkeypatch.setattr(registry, "ConfigLoader", lambda: DummyLoader())
 
     with pytest.raises(ValueError):
         providers.create_agent("p-unknown")

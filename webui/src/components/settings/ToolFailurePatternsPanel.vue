@@ -15,7 +15,11 @@ import {
   statusLabel,
 } from './toolStatsFormatting'
 
-defineProps<{ analysis: ToolFailureAnalysis }>()
+const props = defineProps<{
+  analysis: ToolFailureAnalysis
+  graphId?: string
+  scopeHours?: number
+}>()
 
 const selectedToolName = ref('')
 const history = ref<ToolFailureHistory | null>(null)
@@ -35,7 +39,7 @@ async function toggleTool(toolName: string) {
   error.value = ''
   loading.value = true
   try {
-    const next = await getToolFailureHistory(toolName)
+    const next = await getToolFailureHistory(toolName, props.graphId || '', props.scopeHours || 0)
     if (currentRequestId === requestId) history.value = next
   } catch (e: any) {
     if (currentRequestId === requestId) error.value = String(e?.message || e)

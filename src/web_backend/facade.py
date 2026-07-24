@@ -3,15 +3,18 @@ import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+from nodes.agent_plugin_api_loader import register_installed_plugin_apis
+from nodes.agent_plugin_loader import default_plugin_root
 
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
 from .network_diagnostics import NetworkDiagnosticsMiddleware
 from .node_desktop_pet_launcher import terminate_registered_desktop_pet_processes
-from .private_network_access import PrivateNetworkAccessMiddleware
-from .runtime_paths import _get_resource_root, _get_runtime_root
+from .memory_static_files import VisibilityAwareMemoriesStaticFiles
+from . import runtime_paths
+from .private_network_cors import PrivateNetworkCORSMiddleware
 from .route_registry import ApiRouteRegistry
 
 
@@ -25,18 +28,25 @@ class WebBackendFacade:
             lifespan=self._lifespan,
         )
         self.app.add_middleware(
-            CORSMiddleware,
+            PrivateNetworkCORSMiddleware,
             allow_origins=["*"],
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
+            allow_private_network=True,
         )
-        self.app.add_middleware(PrivateNetworkAccessMiddleware)
         self.app.add_middleware(NetworkDiagnosticsMiddleware)
         self._desktop_pet_restore_timer = None
 
     def register_routes(self) -> None:
         ApiRouteRegistry.register(self.app, self.core)
+        register_installed_plugin_apis(
+            self.app,
+            plugin_root=default_plugin_root(),
+            runtime_root=runtime_paths._get_runtime_root(),
+            resource_root=runtime_paths._get_resource_root(),
+            core=self.core,
+        )
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI):
@@ -138,6 +148,10 @@ class WebBackendFacade:
             self.core.channel_service.stop_all()
         except Exception:
             pass
+        try:
+            self.core.remote_workspace_api.close()
+        except Exception:
+            pass
 
     def build(self) -> FastAPI:
         self.register_routes()
@@ -145,15 +159,18 @@ class WebBackendFacade:
         self.companion_mcp_app = self.companion_mcp.streamable_http_app()
         self.app.mount("/mcp", self.companion_mcp_app, name="companion-mcp")
 
-        base_dir = _get_runtime_root()
-        memories_dir = os.path.join(base_dir, "memories")
+        memories_dir = runtime_paths._get_graphs_dir()
         os.makedirs(memories_dir, exist_ok=True)
 
-        self.app.mount("/memories", StaticFiles(directory=memories_dir), name="memories")
+        self.app.mount(
+            "/memories",
+            VisibilityAwareMemoriesStaticFiles(directory=memories_dir, core=self.core),
+            name="memories",
+        )
 
         dist_candidates = [
-            os.path.join(_get_resource_root(), "webui", "dist"),
-            os.path.join(_get_runtime_root(), "webui", "dist"),
+            os.path.join(runtime_paths._get_resource_root(), "webui", "dist"),
+            os.path.join(runtime_paths._get_runtime_root(), "webui", "dist"),
         ]
         dist_dir = next((p for p in dist_candidates if os.path.isdir(p)), "")
         if dist_dir:

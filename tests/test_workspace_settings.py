@@ -2,6 +2,8 @@ import json
 import socket
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_read_server_settings_from_workspace_config(monkeypatch, tmp_path):
     from src import workspace_settings
@@ -40,6 +42,123 @@ def test_read_server_settings_defaults_to_lan_bind_host(monkeypatch, tmp_path):
     }
 
 
+def test_read_storage_settings_accepts_absolute_memories_path(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    cache_dir = tmp_path / ".cache"
+    cache_dir.mkdir()
+    memories_root = tmp_path / "runtime-data" / "memories"
+    (cache_dir / "memoryLocalConfig.json").write_text(
+        json.dumps({"memoriesPath": str(memories_root)}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.read_storage_settings() == {
+        "memories_path": str(memories_root),
+        "memories_root": str(memories_root),
+    }
+
+
+def test_read_storage_settings_defaults_to_workspace_memories(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.read_storage_settings()["memories_root"] == str(tmp_path / "memories")
+
+
+def test_relative_memories_path_falls_back_to_workspace_memories(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.resolve_memories_root(
+        {"memoriesPath": "runtime-data/memories"}
+    ) == str(tmp_path / "memories")
+
+
+def test_workspace_root_memories_path_falls_back_to_workspace_memories(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.resolve_memories_root(
+        {"memoriesPath": str(tmp_path)}
+    ) == str(tmp_path / "memories")
+
+
+def test_filesystem_root_memories_path_falls_back_to_workspace_memories(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.resolve_memories_root(
+        {"memoriesPath": tmp_path.anchor}
+    ) == str(tmp_path / "memories")
+
+
+def test_save_memory_local_config_writes_cache_file(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    memories_root = tmp_path / "external" / "memories"
+
+    workspace_settings.save_memory_local_config({"memoriesPath": str(memories_root)})
+
+    saved = json.loads((tmp_path / ".cache" / "memoryLocalConfig.json").read_text(encoding="utf-8"))
+    assert saved == {"memoriesPath": str(memories_root)}
+
+
+def test_read_storage_settings_does_not_read_legacy_workspace_storage(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text(
+        json.dumps({"storage": {"memoriesPath": str(tmp_path / "legacy")}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.read_storage_settings()["memories_root"] == str(tmp_path / "memories")
+
+
+def test_read_storage_settings_rejects_nonstring_local_path(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    cache_dir = tmp_path / ".cache"
+    cache_dir.mkdir()
+    (cache_dir / "memoryLocalConfig.json").write_text(
+        json.dumps({"memoriesPath": 42}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    with pytest.raises(ValueError, match="memoriesPath.*string"):
+        workspace_settings.read_storage_settings()
+
+
+def test_unusable_absolute_memories_path_falls_back_at_runtime(monkeypatch, tmp_path):
+    from src import memory_root, workspace_settings
+
+    blocked_path = tmp_path / "blocked"
+    blocked_path.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(memory_root, "_active_memories_root", "")
+
+    assert memory_root.configure_memories_root(str(blocked_path)) == str(tmp_path / "memories")
+    assert (tmp_path / "memories").is_dir()
+
+
+def test_read_undo_settings_defaults_to_five(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    assert workspace_settings.read_undo_settings() == {"max_steps": 5}
+
+
 def test_resolve_local_client_host_maps_wildcard_to_loopback():
     from src import workspace_settings
 
@@ -55,6 +174,16 @@ def test_fast_api_main_uses_workspace_server_defaults(monkeypatch):
     fake_app = object()
 
     monkeypatch.setattr(fast_api, "read_server_settings", lambda: {"host": "127.0.0.1", "port": 9101})
+    monkeypatch.setattr(
+        fast_api,
+        "read_storage_settings",
+        lambda: {"memories_path": "data/memories", "memories_root": "C:/data/memories"},
+    )
+    monkeypatch.setattr(
+        fast_api.runtime_paths,
+        "configure_graphs_dir",
+        lambda path: captured.update({"memories_root": path}) or path,
+    )
     monkeypatch.setattr(fast_api, "find_available_server_port", lambda host, port: 9103)
     monkeypatch.setattr(fast_api, "install_server_pid_file", lambda host, port: captured.update({"pid_host": host, "pid_port": port}) or "pid-file")
     monkeypatch.setattr(fast_api, "create_app", lambda: fake_app)
@@ -78,6 +207,7 @@ def test_fast_api_main_uses_workspace_server_defaults(monkeypatch):
     assert captured["port"] == 9103
     assert captured["pid_host"] == "127.0.0.1"
     assert captured["pid_port"] == 9103
+    assert captured["memories_root"] == "C:/data/memories"
 
 
 def test_find_available_server_port_skips_occupied_port():

@@ -3,7 +3,7 @@ import os
 from nodes.base_node import BaseNode
 from src.message_protocol import normalize_envelope
 from src.value_parsing import parse_bool_value, parse_int_value
-from src.web_backend.state_store import _read_json_dict, _write_json_dict
+from src.web_backend.state_store import _patch_node_config_persistent_fields, _read_json_dict
 
 
 class Node(BaseNode):
@@ -69,7 +69,7 @@ class Node(BaseNode):
         if remaining <= 0:
             config[self._REMAINING_KEY] = total
             if config_path:
-                _write_json_dict(config_path, config)
+                _patch_node_config_persistent_fields(config_path, {self._REMAINING_KEY: total})
             return {
                 "display": f"loop end ({total})",
                 "routes": [{"output_index": 1, "payload": payload}],
@@ -78,7 +78,7 @@ class Node(BaseNode):
         next_remaining = remaining - 1
         config[self._REMAINING_KEY] = next_remaining
         if config_path:
-            _write_json_dict(config_path, config)
+            _patch_node_config_persistent_fields(config_path, {self._REMAINING_KEY: next_remaining})
         return {
             "display": f"loop continue ({next_remaining}/{total})",
             "routes": [{"output_index": 0, "payload": payload}],

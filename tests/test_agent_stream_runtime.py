@@ -37,6 +37,31 @@ def test_agent_stream_runtime_emits_thinking_delta_separately():
     ]
 
 
+def test_agent_stream_runtime_emits_refusal_and_uses_it_as_final_text():
+    events = []
+    runtime = AgentStreamRuntime(lambda payload: events.append(payload))
+
+    runtime.on_tool_event(
+        {
+            "type": "response_refusal",
+            "item_id": "msg_1",
+            "delta": "I cannot help.",
+            "text": "I cannot help.",
+            "status": "completed",
+        }
+    )
+    runtime.emit_done("")
+
+    assert events[0]["type"] == "response_refusal"
+    assert events[-2] == {
+        "type": "node_message_delta",
+        "delta": "I cannot help.",
+        "text": "I cannot help.",
+        "force": True,
+    }
+    assert events[-1] == {"type": "node_message_done", "text": "I cannot help."}
+
+
 def test_agent_stream_runtime_carries_server_tool_result_into_done_event():
     events = []
     runtime = AgentStreamRuntime(lambda payload: events.append(payload))

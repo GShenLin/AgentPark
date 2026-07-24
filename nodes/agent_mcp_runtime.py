@@ -12,6 +12,7 @@ import anyio
 from nodes.agent_mcp_loader import McpServerDefinition, McpServerLoadError
 from src.mcp.lifecycle import mark_mcp_failed, mark_mcp_ready, mark_mcp_starting
 from src.mcp.tool_list_cache import DEFAULT_MCP_TOOL_LIST_TTL_SECONDS, cached_mcp_tool_list
+from src.runtime_cancellation import CancellationRequested, current_tool_call_cancel_source, is_cancel_requested
 from src.tool.tool_execution_result import build_error_result, build_success_result
 from src.value_parsing import parse_optional_float_value
 
@@ -99,7 +100,47 @@ class McpServerClient:
         return cached_mcp_tool_list(key, lambda: anyio.run(self._list_tools_async), ttl_seconds=ttl)
 
     def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
-        return anyio.run(self._call_tool_async, tool_name, arguments, _call_read_timeout(self.server.config, arguments))
+        return anyio.run(
+            self._call_tool_with_cancel_async,
+            tool_name,
+            arguments,
+            _call_read_timeout(self.server.config, arguments),
+            current_tool_call_cancel_source(),
+        )
+
+    async def _call_tool_with_cancel_async(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        read_timeout_override: timedelta | None,
+        cancel_source: Any,
+    ) -> Any:
+        if cancel_source is None:
+            return await self._call_tool_async(tool_name, arguments, read_timeout_override)
+
+        result: dict[str, Any] = {}
+        cancelled = False
+
+        async with anyio.create_task_group() as task_group:
+            async def execute() -> None:
+                result["value"] = await self._call_tool_async(tool_name, arguments, read_timeout_override)
+                task_group.cancel_scope.cancel()
+
+            async def watch_cancellation() -> None:
+                nonlocal cancelled
+                while True:
+                    if is_cancel_requested(cancel_source):
+                        cancelled = True
+                        task_group.cancel_scope.cancel()
+                        return
+                    await anyio.sleep(0.05)
+
+            task_group.start_soon(execute)
+            task_group.start_soon(watch_cancellation)
+
+        if cancelled:
+            raise CancellationRequested("Operation cancelled.")
+        return result.get("value")
 
     async def _list_tools_async(self) -> list[Any]:
         async def op(session):

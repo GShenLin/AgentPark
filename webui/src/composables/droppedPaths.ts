@@ -10,9 +10,11 @@ export const ASSET_FIELD_KEYS = new Set([
   'video_path',
   'first_frame_path',
   'last_frame_path',
+  'image_references',
   'reference_images',
   'reference_videos',
   'reference_audios',
+  'audio_references',
   'images',
   'model_path',
 ])
@@ -75,20 +77,49 @@ export async function resolvePastedImagePaths(event: ClipboardEvent, traceId: st
   return uploadResultToDroppedItems(uploaded)
 }
 
-export function mergeDroppedPaths(fieldType: string, currentValue: unknown, droppedItems: DroppedPathItem[]): string {
+export function normalizePathList(value: unknown): string[] {
+  let rawValues: unknown[]
+  if (Array.isArray(value)) {
+    rawValues = value
+  } else {
+    const textValue = String(value ?? '').trim()
+    if (!textValue) return []
+    if (textValue.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(textValue)
+        rawValues = Array.isArray(parsed) ? parsed : [textValue]
+      } catch {
+        rawValues = textValue.split(/\r?\n/)
+      }
+    } else {
+      rawValues = textValue.split(/\r?\n/)
+    }
+  }
+
+  const paths: string[] = []
+  const seen = new Set<string>()
+  for (const item of rawValues) {
+    const path = String(item ?? '').trim()
+    if (!path) continue
+    const key = path.replace(/[\\/]+/g, '/').toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    paths.push(path)
+  }
+  return paths
+}
+
+export function mergeDroppedPaths(fieldType: string, currentValue: unknown, droppedItems: DroppedPathItem[]): string | string[] {
   const nextPaths = droppedItems.map((item) => item.path).filter(Boolean)
   if (!nextPaths.length) {
-    return String(currentValue ?? '')
+    return fieldType === 'file_list' ? normalizePathList(currentValue) : String(currentValue ?? '')
   }
 
   if (fieldType === 'string') {
     return nextPaths[0] || ''
   }
 
-  const existingLines = String(currentValue ?? '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
+  const existingLines = normalizePathList(currentValue)
   const seen = new Set(existingLines.map((line) => line.toLowerCase()))
   const merged = [...existingLines]
   for (const path of nextPaths) {
@@ -97,5 +128,5 @@ export function mergeDroppedPaths(fieldType: string, currentValue: unknown, drop
     seen.add(key)
     merged.push(path)
   }
-  return merged.join('\n')
+  return fieldType === 'file_list' ? merged : merged.join('\n')
 }

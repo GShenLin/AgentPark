@@ -1,11 +1,10 @@
 import json
-import queue
 import re
 import threading
 
 from .tool_module_loader import load_tool_module
-from .tool_invocation import invoke_tool_function
 from .tool_load_errors import ToolLoadError
+from .tool_function_execution import execute_local_tool_function
 
 from .tool_event_protocol import build_tool_call_end
 from .tool_event_protocol import build_tool_call_start
@@ -14,15 +13,19 @@ from .tool_event_protocol import emit_tool_event
 from .tool_event_protocol import now_monotonic
 from .tool_call_protocol import ToolCallEnvelope, ToolCallExecution
 from .tool_execution_result import build_error_result
+from .tool_execution_result import build_user_stopped_result
 from .tool_execution_result import normalize_tool_execution_result
-from .tool_execution_result import ToolExecutionResult
 from .tool_result_processing import process_tool_result
 from .tool_result_processing import process_tool_result_outcome
 from .tool_timeout_config import resolve_tool_timeout_seconds
 from .tool_timeout_config import ToolTimeoutConfigError
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import cancel_source_from_agent
+from src.runtime_cancellation import combine_cancel_sources
+from src.runtime_cancellation import is_cancel_requested
 from src.runtime_cancellation import raise_if_cancel_requested
+from src.runtime_cancellation import tool_call_cancellation_scope
+from src.remote_workspace import dispatch_remote_workspace_tool
 
 
 class BaseTool:
@@ -31,7 +34,7 @@ class BaseTool:
         "read_file",
         "rg_search_text",
         "rg_list_files",
-        "multi_tool_use_parallel",
+        "workspace_exec",
         "execute_console_command",
     }
 
@@ -134,6 +137,27 @@ class BaseTool:
 
         func = self.function_map[name]
         try:
+            remote_timeout_seconds = resolve_tool_timeout_seconds(
+                config=getattr(self.agent, "config", None),
+                name=name,
+                func=func,
+                default_timeout=0,
+            )
+            remote_handled, remote_result = dispatch_remote_workspace_tool(
+                self.agent,
+                name,
+                args,
+                timeout_seconds=remote_timeout_seconds,
+            )
+            if remote_handled:
+                return normalize_tool_execution_result(remote_result, tool_name=name)
+        except CancellationRequested as exc:
+            return build_error_result("stopped", tool_name=name, error=str(exc))
+        except ToolTimeoutConfigError as exc:
+            return build_error_result("error", tool_name=name, error=str(exc))
+        except Exception as exc:
+            return build_error_result("exception", tool_name=name, error=f"{type(exc).__name__}: {str(exc)}")
+        try:
             timeout_seconds = resolve_tool_timeout_seconds(
                 config=getattr(self.agent, "config", None),
                 name=name,
@@ -141,112 +165,72 @@ class BaseTool:
             )
         except ToolTimeoutConfigError as exc:
             return build_error_result("error", tool_name=name, error=str(exc))
-        if timeout_seconds is None:
-            try:
-                return normalize_tool_execution_result(
-                    invoke_tool_function(func, args, agent=self.agent),
-                    tool_name=name,
-                )
-            except CancellationRequested as exc:
-                return build_error_result("stopped", tool_name=name, error=str(exc))
-            except Exception as e:
-                return build_error_result("exception", tool_name=name, error=f"{type(e).__name__}: {str(e)}")
-
-        result_queue = queue.Queue(maxsize=1)
-
-        def _target():
-            try:
-                result_queue.put(
-                    (
-                        "ok",
-                        normalize_tool_execution_result(
-                            invoke_tool_function(func, args, agent=self.agent),
-                            tool_name=name,
-                        ),
-                    )
-                )
-            except CancellationRequested as e:
-                result_queue.put(
-                    (
-                        "error",
-                        build_error_result("stopped", tool_name=name, error=str(e)),
-                    )
-                )
-            except Exception as e:
-                result_queue.put(
-                    (
-                        "error",
-                        build_error_result(
-                            "exception",
-                            tool_name=name,
-                            error=f"{type(e).__name__}: {str(e)}",
-                        ),
-                    )
-                )
-
-        worker = threading.Thread(target=_target, daemon=True, name=f"tool-{name}")
-        worker.start()
-        deadline = now_monotonic() + float(timeout_seconds)
-        while worker.is_alive():
-            try:
-                raise_if_cancel_requested(cancel_source)
-            except CancellationRequested as exc:
-                return build_error_result("stopped", tool_name=name, error=str(exc))
-            remaining = deadline - now_monotonic()
-            if remaining <= 0:
-                break
-            worker.join(timeout=min(0.05, remaining))
-
-        if worker.is_alive():
-            return build_error_result(
-                "timeout",
-                tool_name=name,
-                error=f"Tool execution exceeded {timeout_seconds:.2f}s.",
-            )
-
-        if result_queue.empty():
-            return build_error_result("exception", tool_name=name, error="Tool worker returned no result.")
-
-        state, payload = result_queue.get()
-        if state == "error":
-            if isinstance(payload, ToolExecutionResult):
-                return payload
-            return build_error_result("exception", tool_name=name, error=str(payload))
-        return payload
+        return execute_local_tool_function(
+            func=func,
+            args=args,
+            agent=self.agent,
+            tool_name=name,
+            timeout_seconds=timeout_seconds,
+            cancel_source=cancel_source,
+        )
 
     def execute_tool_call(self, call):
         if not isinstance(call, ToolCallEnvelope):
             raise TypeError("execute_tool_call requires a ToolCallEnvelope")
         event_callback = self._resolve_tool_event_callback()
+        node_cancel_source = cancel_source_from_agent(self.agent)
+        call_cancel_event = self._begin_tool_call_cancellation(call.call_id)
+        combined_cancel_source = combine_cancel_sources(node_cancel_source, call_cancel_event)
         started_at = now_monotonic()
-        emit_tool_event(event_callback, build_tool_call_start(call))
-        tool_result = self.execute_tool_result(call.name, call.arguments)
-        processed = process_tool_result_outcome(tool_result.model_output())
-        cleaned_result = processed.cleaned_result
-        image_data = processed.image_data
-        status = tool_result.status
-        error = tool_result.error
-        event_feedback = emit_tool_event(
-            event_callback,
-            build_tool_call_end(
-                call,
+        try:
+            emit_tool_event(event_callback, build_tool_call_start(call))
+            with tool_call_cancellation_scope(combined_cancel_source):
+                tool_result = self.execute_tool_result(call.name, call.arguments)
+            if (
+                tool_result.status == "stopped"
+                and is_cancel_requested(call_cancel_event)
+                and not is_cancel_requested(node_cancel_source)
+            ):
+                tool_result = build_user_stopped_result(tool_name=call.name)
+            processed = process_tool_result_outcome(tool_result.model_output())
+            cleaned_result = processed.cleaned_result
+            image_data = processed.image_data
+            status = tool_result.status
+            error = tool_result.error
+            event_feedback = emit_tool_event(
+                event_callback,
+                build_tool_call_end(
+                    call,
+                    status=status,
+                    duration_ms=elapsed_ms(started_at),
+                    error=error,
+                    result=cleaned_result,
+                    diagnostics=processed.diagnostics,
+                ),
+            )
+            cleaned_result = _attach_memory_persistence_warning(cleaned_result, event_feedback)
+            return ToolCallExecution(
+                func_name=call.name,
+                call_id=call.call_id,
+                cleaned_result=cleaned_result,
+                image_data=image_data,
                 status=status,
-                duration_ms=elapsed_ms(started_at),
                 error=error,
-                result=cleaned_result,
                 diagnostics=processed.diagnostics,
-            ),
-        )
-        cleaned_result = _attach_memory_persistence_warning(cleaned_result, event_feedback)
-        return ToolCallExecution(
-            func_name=call.name,
-            call_id=call.call_id,
-            cleaned_result=cleaned_result,
-            image_data=image_data,
-            status=status,
-            error=error,
-            diagnostics=processed.diagnostics,
-        )
+            )
+        finally:
+            self._end_tool_call_cancellation(call.call_id, call_cancel_event)
+
+    def _begin_tool_call_cancellation(self, call_id):
+        callback = getattr(self.agent, "_agentpark_begin_tool_call_cancellation", None)
+        if callable(callback):
+            return callback(call_id)
+        return threading.Event()
+
+    def _end_tool_call_cancellation(self, call_id, event):
+        callback = getattr(self.agent, "_agentpark_end_tool_call_cancellation", None)
+        if callable(callback):
+            callback(call_id, event)
 
     def _resolve_tool_event_callback(self):
         callback = getattr(self.agent, "tool_event_callback", None)
@@ -307,7 +291,7 @@ class BaseTool:
             "Before you start executing the task, you must first enter an information-gathering phase.\n"
             "Requirements:\n"
             "1) Use function tools to collect key information (prefer read-only tools: read_file/rg_list_files/rg_search_text; use execute_console_command only when necessary).\n"
-            "2) Parallelize tool calls whenever possible - especially for independent file reads/searches. Use multi_tool_use_parallel to parallelize tool calls and only this.\n"
+            "2) Parallelize independent function calls directly. For multi-stage workspace investigation, use workspace_exec: stages are sequential and operations inside a stage are concurrent.\n"
             "3) After gathering, output exactly one JSON object (no code fences, no explanations) containing: facts/assumptions/open_questions/plan.\n"
             "4) Do not deliver the final result in this phase.\n\n"
             f"Task: {task}\n"

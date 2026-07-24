@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   addRemote,
   deleteRemote,
-  listRemotes,
   restartServer,
 } from '../api'
 import type { RemoteEndpoint } from '../apiTypes'
@@ -13,6 +12,8 @@ const props = defineProps<{
   leftCollapsed: boolean
   rightCollapsed: boolean
   canAccessLocalFiles: boolean
+  canOpenSettings: boolean
+  initialRemotes: RemoteEndpoint[]
 }>()
 
 const emit = defineEmits<{
@@ -22,7 +23,7 @@ const emit = defineEmits<{
   error: [message: string]
 }>()
 
-const remoteEndpoints = ref<RemoteEndpoint[]>([])
+const remoteEndpoints = ref<RemoteEndpoint[]>(props.initialRemotes)
 const selectedRemoteId = ref('default')
 const showRemoteForm = ref(false)
 const remoteFormName = ref('')
@@ -45,13 +46,6 @@ function remoteBaseUrl(remote: RemoteEndpoint) {
   return `http://${remote.host}:${remote.port}`
 }
 
-async function refreshRemotes() {
-  remoteEndpoints.value = await listRemotes()
-  if (!remoteEndpoints.value.some((remote) => remote.id === selectedRemoteId.value)) {
-    selectedRemoteId.value = remoteEndpoints.value[0]?.id || 'default'
-  }
-}
-
 function selectRemote() {
   const remote = selectedRemote.value
   if (!remote) return
@@ -62,9 +56,18 @@ function selectRemote() {
 async function submitRemote() {
   const name = remoteFormName.value.trim()
   const host = remoteFormHost.value.trim()
-  const port = remoteFormPort.value.trim()
-  if (!name || !host || !port) {
+  const portText = remoteFormPort.value.trim()
+  if (!name || !host || !portText) {
     emit('error', 'Remote name, IP/host, and port are required.')
+    return
+  }
+  if (!/^\d+$/.test(portText)) {
+    emit('error', 'Port must be an integer between 1 and 65535.')
+    return
+  }
+  const port = Number(portText)
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
+    emit('error', 'Port must be an integer between 1 and 65535.')
     return
   }
   try {
@@ -104,13 +107,6 @@ async function restartWorkspace() {
   }
 }
 
-onMounted(async () => {
-  try {
-    await refreshRemotes()
-  } catch (e: any) {
-    emit('error', String(e?.message || e))
-  }
-})
 </script>
 
 <template>
@@ -130,7 +126,16 @@ onMounted(async () => {
     <form v-if="showRemoteForm" class="remote-form" @submit.prevent="submitRemote" @click.stop>
       <input v-model="remoteFormName" class="remote-input" placeholder="Name" />
       <input v-model="remoteFormHost" class="remote-input" placeholder="IP / Host" />
-      <input v-model="remoteFormPort" class="remote-input port" placeholder="Port" />
+      <input
+        v-model="remoteFormPort"
+        class="remote-input port"
+        type="number"
+        inputmode="numeric"
+        min="1"
+        max="65535"
+        step="1"
+        placeholder="Port"
+      />
       <label class="remote-private">
         <input v-model="remoteFormPrivate" type="checkbox" />
         <span>Private</span>
@@ -148,6 +153,7 @@ onMounted(async () => {
         {{ isRestarting ? 'Restarting...' : 'Restart' }}
       </button>
       <button
+        v-if="props.canOpenSettings"
         class="topbar-btn settings"
         type="button"
         :class="{ active: props.activeView === 'settings' }"

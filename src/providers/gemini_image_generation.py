@@ -15,10 +15,40 @@ from src.service_host import HostBoundService
 
 
 class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
+    def save_inline_images(self, parts, filename_prefix="generated_image") -> list[str]:
+        save_dir = os.path.dirname(self.current_memory_path)
+        os.makedirs(save_dir, exist_ok=True)
+
+        agent_id = os.path.splitext(os.path.basename(self.current_memory_path))[0]
+        if not filename_prefix.startswith(f"{agent_id}_"):
+            filename_prefix = f"{agent_id}_{filename_prefix}"
+
+        saved_files: list[str] = []
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        for part in parts if isinstance(parts, list) else []:
+            if not isinstance(part, dict):
+                continue
+            inline = part.get("inlineData") or part.get("inline_data")
+            if not isinstance(inline, dict):
+                continue
+            mime_type = str(inline.get("mimeType") or inline.get("mime_type") or "image/png").strip()
+            if not mime_type.lower().startswith("image/"):
+                continue
+            data_b64 = inline.get("data")
+            if not data_b64:
+                continue
+
+            ext = mime_type.split("/", 1)[-1].split(";", 1)[0].strip() or "png"
+            filename = f"{filename_prefix}_{timestamp}_{len(saved_files) + 1}.{ext}"
+            file_path = os.path.join(save_dir, filename)
+            with open(file_path, "wb") as f:
+                f.write(base64.b64decode(data_b64))
+            saved_files.append(file_path)
+        return saved_files
+
     def generate_image(
         self,
         prompt,
-        model=None,
         filename_prefix="generated_image",
         image=None,
         aspect_ratio=None,
@@ -32,15 +62,8 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
             self.config = read_provider_config()
         _ = response_format
         _ = watermark
-        save_dir = os.path.dirname(self.current_memory_path)
-        os.makedirs(save_dir, exist_ok=True)
-
-        agent_id = os.path.splitext(os.path.basename(self.current_memory_path))[0]
-        if not filename_prefix.startswith(f"{agent_id}_"):
-            filename_prefix = f"{agent_id}_{filename_prefix}"
-
         base_url = self.config["baseUrl"].rstrip("/")
-        use_model = model or self.config.get("model")
+        use_model = self.config.get("model")
         if not use_model:
             raise ValueError("Gemini model is required for image generation.")
 
@@ -99,31 +122,13 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
 
                 content = candidates[0].get("content") or {}
                 parts = content.get("parts") or []
-                saved_files = []
                 text_parts = []
                 for part in parts:
                     if not isinstance(part, dict):
                         continue
                     if "text" in part and part["text"] is not None:
                         text_parts.append(str(part["text"]))
-
-                    inline = part.get("inlineData") or part.get("inline_data")
-                    if isinstance(inline, dict):
-                        mime_type = inline.get("mimeType") or inline.get("mime_type") or "image/png"
-                        data_b64 = inline.get("data")
-                        if not data_b64:
-                            continue
-
-                        ext = "png"
-                        if isinstance(mime_type, str) and "/" in mime_type:
-                            ext = mime_type.split("/")[-1].strip() or "png"
-
-                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        filename = f"{filename_prefix}_{ts}_{len(saved_files) + 1}.{ext}"
-                        file_path = os.path.join(save_dir, filename)
-                        with open(file_path, "wb") as f:
-                            f.write(base64.b64decode(data_b64))
-                        saved_files.append(file_path)
+                saved_files = self.save_inline_images(parts, filename_prefix=filename_prefix)
 
                 meta = {
                     "model": use_model,

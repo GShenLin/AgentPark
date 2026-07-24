@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   getNodeTemplate,
+  type AgentProfile,
+  type AgentProfileLoadResponse,
   type MobileNode,
   type NodeInstanceConfig,
   type ProviderInfo,
 } from '../api'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
+import { resolveAgentProviderSchemaContext } from '../composables/useAgentNodeCreateSchema'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
+import MobileNodeProfilePickerSheet from './MobileNodeProfilePickerSheet.vue'
+import NodeRuntimeEventsFieldGroup from '../components/agent-board/NodeRuntimeEventsFieldGroup.vue'
 import type { MobileOutputRouteRow } from './useMobileWorkspace'
 
 const props = defineProps<{
@@ -16,10 +21,14 @@ const props = defineProps<{
   config: NodeInstanceConfig | null
   providers: ProviderInfo[]
   availableTools: string[]
+  agentProfiles: AgentProfile[]
+  graphId: string
   nodes: MobileNode[]
   outputRoutes: MobileOutputRouteRow[]
   saveFields: (fields: Record<string, unknown>) => Promise<void>
   renameNode: (name: string) => Promise<void>
+  saveProfile: (profileId: string, profileName: string) => Promise<unknown>
+  loadProfile: (profileId: string) => Promise<AgentProfileLoadResponse>
   addOutputRoute: () => Promise<void>
   updateOutputRoute: (
     routeId: string,
@@ -36,7 +45,12 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const saving = ref(false)
+const profileSaving = ref(false)
+const profileSaved = ref(false)
+const profilePickerOpen = ref(false)
+const runtimeEventsRevision = ref(0)
 const templateSchema = ref<Record<string, any>>({})
+const fieldSchemaCache = ref<Record<string, any>>({})
 const templateFields = ref<Record<string, any>>({})
 const draftFields = ref<Record<string, any>>({})
 const dirtyKeys = ref<Record<string, true>>({})
@@ -44,6 +58,8 @@ const nodeNameDraft = ref('')
 const nodeNameTouched = ref(false)
 const routing = ref(false)
 let templateRequestId = 0
+let profileSavedTimer: number | null = null
+let loadedSchemaContextKey = ''
 
 const schema = computed(() => templateSchema.value)
 const fieldKeys = computed(() => Object.keys(schema.value || {}))
@@ -62,6 +78,11 @@ const targetNodes = computed(() => {
   return (props.nodes || []).filter((item) => String(item.id || '').trim() && item.id !== sourceNodeId)
 })
 const canAddRoute = computed(() => !!props.node && targetNodes.value.length > 0 && !routing.value)
+const availableProfiles = computed(() => {
+  return (props.agentProfiles || [])
+    .slice()
+    .sort((left, right) => String(left.name || left.id).localeCompare(String(right.name || right.id)))
+})
 
 function showError(value: unknown) {
   emit('error', String((value as { message?: unknown })?.message || value || '').trim())
@@ -126,8 +147,8 @@ function removeRoute(routeId: string) {
   void runRouteChange(() => props.removeOutputRoute(routeId))
 }
 
-function resetDraftFromConfig() {
-  const cfg = props.config as Record<string, any> | null
+function resetDraftFromConfig(config: Record<string, unknown> | null = props.config) {
+  const cfg = config as Record<string, any> | null
   const next: Record<string, any> = {}
   for (const key of fieldKeys.value) {
     next[key] = cfg?.[key] ?? templateFields.value[key]
@@ -141,27 +162,55 @@ function resetNodeNameDraft() {
   nodeNameTouched.value = false
 }
 
-async function loadTemplate() {
+function schemaContextKey(fields: Record<string, any> | null | undefined) {
+  const context = resolveAgentProviderSchemaContext(props.providers, fields)
+  return context.providerId
+}
+
+async function loadTemplate(
+  contextFields: Record<string, any> | null | undefined = props.config as Record<string, any> | null,
+  preserveDraft = false,
+) {
   const typeId = String(props.node?.type_id || '').trim()
   templateRequestId += 1
   const requestId = templateRequestId
   if (!props.open || !typeId) {
     templateSchema.value = {}
+    fieldSchemaCache.value = {}
     templateFields.value = {}
+    loadedSchemaContextKey = ''
     resetDraftFromConfig()
     return
   }
   loading.value = true
   try {
-    const template = await getNodeTemplate(typeId)
+    const contextKey = schemaContextKey(contextFields)
+    const template = await getNodeTemplate(typeId, { providerId: contextKey })
     if (requestId !== templateRequestId) return
-    templateSchema.value = (template.schema || {}) as Record<string, any>
+    const nextSchema = (template.schema || {}) as Record<string, any>
+    templateSchema.value = nextSchema
+    fieldSchemaCache.value = preserveDraft
+      ? { ...fieldSchemaCache.value, ...nextSchema }
+      : { ...nextSchema }
     templateFields.value = { ...(template.fields || {}) }
-    resetDraftFromConfig()
+    loadedSchemaContextKey = contextKey
+    if (preserveDraft) {
+      const config = props.config as Record<string, any> | null
+      const nextDraft = { ...draftFields.value }
+      for (const key of Object.keys(nextSchema)) {
+        if (nextDraft[key] !== undefined) continue
+        nextDraft[key] = config?.[key] ?? templateFields.value[key]
+      }
+      draftFields.value = nextDraft
+    } else {
+      resetDraftFromConfig()
+    }
   } catch (e) {
     if (requestId !== templateRequestId) return
     templateSchema.value = {}
+    fieldSchemaCache.value = {}
     templateFields.value = {}
+    loadedSchemaContextKey = ''
     resetDraftFromConfig()
     showError(e)
   } finally {
@@ -169,21 +218,21 @@ async function loadTemplate() {
   }
 }
 
-async function applyChanges() {
+async function persistPendingChanges(emitSaved = true) {
   const nodeId = String(props.node?.id || '').trim()
-  if (!nodeId) return
+  if (!nodeId) return false
   const keys = Object.keys(dirtyKeys.value || {})
   const shouldRename = nodeNameDirty.value
   const nextNodeName = nodeNameDraft.value.trim()
-  if (!keys.length && !shouldRename) return
+  if (!keys.length && !shouldRename) return true
   if (shouldRename && !nextNodeName) {
     showError('Node name is required')
-    return
+    return false
   }
 
   const fields: Record<string, unknown> = {}
   for (const key of keys) {
-    fields[key] = normalizeSchemaFieldValue(schema.value, key, draftFields.value[key])
+    fields[key] = normalizeSchemaFieldValue(fieldSchemaCache.value, key, draftFields.value[key])
   }
 
   saving.value = true
@@ -197,6 +246,76 @@ async function applyChanges() {
       await props.saveFields(fields)
       dirtyKeys.value = {}
     }
+    if (emitSaved) emit('saved')
+    return true
+  } catch (e) {
+    showError(e)
+    return false
+  } finally {
+    saving.value = false
+  }
+}
+
+function applyChanges() {
+  void persistPendingChanges()
+}
+
+function defaultProfileId() {
+  const normalize = (value: unknown) => String(value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalize(nodeNameDraft.value) || normalize(props.node?.id) || 'node_profile'
+}
+
+async function saveNodeProfile() {
+  if (!props.node || profileSaving.value || saving.value) return
+  const suggestedId = defaultProfileId()
+  const profileId = String(window.prompt('Profile ID (existing ID will be overwritten)', suggestedId) || '').trim()
+  if (!profileId) return
+  if (!/^[A-Za-z0-9_-]+$/.test(profileId)) {
+    showError('Profile ID may contain only letters, numbers, underscores, or hyphens')
+    return
+  }
+  const suggestedName = nodeNameDraft.value.trim() || currentNodeName.value || profileId
+  const profileName = String(window.prompt('Profile name', suggestedName) || '').trim() || profileId
+
+  profileSaving.value = true
+  profileSaved.value = false
+  try {
+    const persisted = await persistPendingChanges(false)
+    if (!persisted) return
+    await props.saveProfile(profileId, profileName)
+    emit('saved')
+    profileSaved.value = true
+    if (profileSavedTimer != null) window.clearTimeout(profileSavedTimer)
+    profileSavedTimer = window.setTimeout(() => {
+      profileSaved.value = false
+      profileSavedTimer = null
+    }, 1800)
+  } catch (e) {
+    showError(e)
+  } finally {
+    profileSaving.value = false
+  }
+}
+
+function openProfilePicker() {
+  if (!props.node || saving.value || profileSaving.value) return
+  profilePickerOpen.value = true
+}
+
+async function loadNodeProfile(profile: AgentProfile) {
+  if (dirtyCount.value > 0 && !window.confirm('加载 Profile 将替换当前尚未保存的修改，是否继续？')) {
+    return
+  }
+  saving.value = true
+  try {
+    const result = await props.loadProfile(profile.id)
+    resetDraftFromConfig(result.config.after)
+    profilePickerOpen.value = false
+    resetNodeNameDraft()
+    runtimeEventsRevision.value += 1
     emit('saved')
   } catch (e) {
     showError(e)
@@ -222,6 +341,15 @@ watch(
 )
 
 watch(
+  () => schemaContextKey(draftFields.value),
+  (contextKey) => {
+    if (String(props.node?.type_id || '').trim() !== 'agent_node') return
+    if (loading.value || !props.open || contextKey === loadedSchemaContextKey) return
+    void loadTemplate(draftFields.value, true)
+  },
+)
+
+watch(
   () => [props.open, props.node?.id, props.node?.name],
   () => {
     if (saving.value || nodeNameTouched.value) return
@@ -229,6 +357,10 @@ watch(
   },
   { immediate: true },
 )
+
+onBeforeUnmount(() => {
+  if (profileSavedTimer != null) window.clearTimeout(profileSavedTimer)
+})
 </script>
 
 <template>
@@ -236,17 +368,35 @@ watch(
     <section class="config-sheet" role="dialog" aria-modal="true" aria-label="节点配置">
       <header class="config-sheet-head">
         <div class="config-title-wrap">
-          <input
-            class="config-title-input"
-            type="text"
-            :value="nodeNameDraft"
-            aria-label="节点名称"
-            :disabled="saving"
-            @input="setNodeName(($event.target as HTMLInputElement).value)"
-          />
+          <div class="config-title-row">
+            <input
+              class="config-title-input"
+              type="text"
+              :value="nodeNameDraft"
+              aria-label="节点名称"
+              :disabled="saving || profileSaving"
+              @input="setNodeName(($event.target as HTMLInputElement).value)"
+            />
+            <button
+              class="load-profile-btn"
+              type="button"
+              :disabled="saving || profileSaving || !node"
+              @click="openProfilePicker"
+            >
+              LoadProfile
+            </button>
+            <button
+              class="save-profile-btn"
+              type="button"
+              :disabled="saving || profileSaving || !node"
+              @click="saveNodeProfile"
+            >
+              {{ profileSaving ? 'Saving...' : (profileSaved ? 'Saved' : 'SaveProfile') }}
+            </button>
+          </div>
           <div class="config-subtitle">{{ node?.type_id || '' }}</div>
         </div>
-        <button class="sheet-icon-btn" type="button" aria-label="关闭配置" @click="emit('close')">x</button>
+        <button class="sheet-icon-btn" type="button" aria-label="关闭配置" :disabled="profileSaving" @click="emit('close')">x</button>
       </header>
 
       <div class="config-body">
@@ -265,6 +415,14 @@ watch(
             @field-error="showError"
           />
         </section>
+
+        <NodeRuntimeEventsFieldGroup
+          :key="`${node?.id || ''}:${runtimeEventsRevision}`"
+          v-if="node"
+          :node="node"
+          :graph-id="graphId"
+          @error="showError"
+        />
 
         <section class="output-routes-section">
           <div class="route-head">
@@ -310,6 +468,7 @@ watch(
             </div>
           </div>
         </section>
+
       </div>
 
       <footer class="config-actions">
@@ -319,6 +478,12 @@ watch(
         </button>
       </footer>
     </section>
+    <MobileNodeProfilePickerSheet
+      :open="profilePickerOpen"
+      :profiles="availableProfiles"
+      @close="profilePickerOpen = false"
+      @select="loadNodeProfile"
+    />
   </div>
 </template>
 
@@ -357,11 +522,20 @@ watch(
 }
 
 .config-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
 .config-title-input {
-  width: min(100%, 280px);
+  flex: 1;
+  width: auto;
   min-width: 0;
   height: 34px;
   padding: 0 9px;
@@ -374,6 +548,33 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.load-profile-btn,
+.save-profile-btn {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 7px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.load-profile-btn {
+  border-color: rgba(56, 189, 248, 0.48);
+  background: rgba(14, 116, 144, 0.28);
+  color: rgba(224, 242, 254, 0.96);
+}
+
+.save-profile-btn {
+  border-color: rgba(34, 197, 94, 0.48);
+  background: rgba(22, 101, 52, 0.3);
+  color: rgba(220, 252, 231, 0.96);
+}
+
+.load-profile-btn:disabled,
+.save-profile-btn:disabled {
+  opacity: 0.58;
 }
 
 .config-title-input:focus {

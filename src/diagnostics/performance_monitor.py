@@ -10,10 +10,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.memory_root import get_memories_root
 from src.web_backend.node_config_service import node_config_service
 
 
-WATCH_DIRS = ("memories", ".runtime", ".cache")
+WORKSPACE_WATCH_DIRS = (".runtime", ".cache")
 
 
 @dataclass(frozen=True)
@@ -83,8 +84,9 @@ def read_process_sample(pid: int) -> dict[str, Any]:
 
 def snapshot_files(workspace_root: Path) -> dict[str, FileState]:
     states: dict[str, FileState] = {}
-    for dirname in WATCH_DIRS:
-        root = workspace_root / dirname
+    roots = [workspace_root / dirname for dirname in WORKSPACE_WATCH_DIRS]
+    roots.append(Path(get_memories_root()))
+    for root in roots:
         if not root.exists():
             continue
         for path in root.rglob("*"):
@@ -94,8 +96,11 @@ def snapshot_files(workspace_root: Path) -> dict[str, FileState]:
                 stat = path.stat()
             except OSError:
                 continue
-            rel = str(path.relative_to(workspace_root))
-            states[rel] = FileState(size=int(stat.st_size), mtime_ns=int(stat.st_mtime_ns))
+            try:
+                display_path = str(path.relative_to(workspace_root))
+            except ValueError:
+                display_path = str(path)
+            states[display_path] = FileState(size=int(stat.st_size), mtime_ns=int(stat.st_mtime_ns))
     return states
 
 
@@ -132,7 +137,7 @@ def changed_files(
 
 
 def read_runtime_nodes(workspace_root: Path) -> list[dict[str, Any]]:
-    memories = workspace_root / "memories"
+    memories = Path(get_memories_root())
     if not memories.is_dir():
         return []
     nodes: list[dict[str, Any]] = []
@@ -147,9 +152,13 @@ def read_runtime_nodes(workspace_root: Path) -> list[dict[str, Any]]:
             continue
         pending = payload.get("pending")
         pending_count = len(pending) if isinstance(pending, list) else int(payload.get("pending_count") or 0)
+        try:
+            display_path = str(config_path.relative_to(workspace_root))
+        except ValueError:
+            display_path = str(config_path)
         nodes.append(
             {
-                "path": str(config_path.relative_to(workspace_root)),
+                "path": display_path,
                 "graph_id": str(payload.get("graph_id") or config_path.parent.parent.name),
                 "node_id": str(payload.get("node_id") or config_path.parent.name),
                 "type_id": str(payload.get("type_id") or ""),

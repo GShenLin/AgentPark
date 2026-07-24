@@ -1,4 +1,5 @@
 import pytest
+import json
 from types import SimpleNamespace
 
 from src.providers.doubao_agent_common import _CurlTransportError
@@ -112,6 +113,30 @@ def test_doubao_post_retry_uses_runtime_notice_instead_of_stdout(monkeypatch, ca
     assert "temporary transport failure" in agent.events[0]["message"]
 
 
+def test_doubao_post_retry_accepts_operation_timeout(monkeypatch):
+    agent = _build_doubao_agent()
+    observed = {}
+
+    def fake_post_once(**kwargs):
+        observed.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(agent, "_curl_post_json_once", fake_post_once)
+
+    result = agent._post_json_with_retry(
+        endpoint="images/generations",
+        url="https://example.test/v1/images/generations",
+        headers={},
+        payload_json="{}",
+        max_retries=0,
+        retry_delay=1,
+        timeout_ms=180_000,
+    )
+
+    assert result == {"ok": True}
+    assert observed["timeout_sec"] == 180
+
+
 def test_doubao_image_generation_start_uses_runtime_notice_instead_of_stdout(tmp_path, capsys):
     agent = _build_doubao_agent()
     agent.memory = SimpleNamespace(current_memory_path=str(tmp_path / "agent.md"))
@@ -122,15 +147,29 @@ def test_doubao_image_generation_start_uses_runtime_notice_instead_of_stdout(tmp
             "model": "seedream-test",
             "maxRetries": 0,
             "retryDelaySec": 0,
+            "imageGenerationTimeoutMs": 180_000,
+            "imageGenerationMaxRetries": 0,
         }
     )
-    agent._post_json_with_retry = lambda **_kwargs: {"data": [{"b64_json": "cG5n"}]}
+    captured = {}
+
+    request = {}
+
+    def fake_post(**kwargs):
+        request.update(kwargs)
+        captured.update(json.loads(kwargs["payload_json"]))
+        return {"data": [{"b64_json": "cG5n", "output_format": "png"}]}
+
+    agent._post_json_with_retry = fake_post
     agent._read_provider_config_from_file = lambda: dict(agent.config)
     agent.Message = lambda *_args, **_kwargs: None
 
-    result = agent.generate_image("draw", response_format="b64_json")
+    result = agent.generate_image("draw", response_format="b64_json", output_format="png")
 
     assert result.endswith(".png")
+    assert captured["output_format"] == "png"
+    assert request["timeout_ms"] == 180_000
+    assert request["max_retries"] == 0
     assert capsys.readouterr().out == ""
     assert agent.events[0]["type"] == "runtime_notice"
     assert agent.events[0]["stage"] == "image_generation_start"

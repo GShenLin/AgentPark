@@ -8,6 +8,12 @@ export function applyResponsesApiDefaults(provider: Record<string, unknown>) {
   if (provider.toolContextCompactionEveryToolCalls === undefined || provider.toolContextCompactionEveryToolCalls === null || provider.toolContextCompactionEveryToolCalls === '') {
     provider.toolContextCompactionEveryToolCalls = 30
   }
+  if (provider.toolContextCompactionInputTokens === undefined || provider.toolContextCompactionInputTokens === null || provider.toolContextCompactionInputTokens === '') {
+    provider.toolContextCompactionInputTokens = 0
+  }
+  if (provider.toolContextCompactionOutputTokens === undefined || provider.toolContextCompactionOutputTokens === null || provider.toolContextCompactionOutputTokens === '') {
+    provider.toolContextCompactionOutputTokens = 0
+  }
   if (String(provider.type || '').trim().toLowerCase() === 'openai' && typeof provider.responsesReplayReasoningItems !== 'boolean') {
     provider.responsesReplayReasoningItems = false
   }

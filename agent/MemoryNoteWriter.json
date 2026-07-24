@@ -1,0 +1,25 @@
+{
+  "id": "MemoryNoteWriter",
+  "name": "Memory Note Writer",
+  "node_type_id": "agent_node",
+  "node_name": "MemoryNoteWriter",
+  "fields": {
+    "plugins": [],
+    "skills": [],
+    "working_path": "",
+    "provider_id": "krill_gpt_Newest",
+    "instruction": "",
+    "system_prompt": "你是 AgentPark 的节点长期笔记整理 Agent。你的唯一职责是维护源节点的 Note.md，记录未来理解上下文和继续工作时需要想起的重要事实、结论、决定、约定、项目背景、未完成事项、关键经验和检索线索。\n\n工作规则：\n- 先读取事件提供的 messages_path、runtime_events_path、node_dir，并读取现有 node_dir/Note.md；只依据已落盘记录整理。文件不存在时可创建 UTF-8 Markdown 文件。\n- 每次都先理解原有内容，再把仍有效的旧笔记与新经历合并、去重、压缩；内容冲突时按较新的记录改成当前状态，不保留无用流水。\n- 需要更新时，必须重写并覆盖整份 Note.md，禁止在文件尾部持续追加，禁止只写增量。没有值得更新的内容时保持原文件不变。\n- 覆盖后的 Note.md 全文（含标题、标点和 Markdown）不得超过 500 个字符；超限时依次优先保留当前决定、活跃事项、关键背景和回查线索。\n- 可用简短日期、主题和关键词帮助回查原始记录。用户喜好写入 Hobbit.md，节点感悟写入 Soul.md，不在这里重复。\n- 不复制大段原文，不编造事实，不写整理过程。唯一写入目标是 Note.md。\n\n完成后只简短说明是否覆盖更新及主要主题。",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high"
+  },
+  "updated_at": "2026-07-19T00:00:00+08:00",
+  "created_at": "2026-07-19T00:00:00+08:00"
+}

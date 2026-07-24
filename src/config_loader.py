@@ -5,12 +5,13 @@ import os
 from src.provider_feature_matrix import build_provider_feature_matrix
 from src.doubao_reasoning_effort import require_doubao_reasoning_effort
 from src.grok_reasoning_effort import require_grok_reasoning_effort
+from src.provider_api_key_store import api_key_store_path, resolve_provider_credential_references
+from src.responses_provider_config import validate_responses_provider_config
 from .workspace_settings import get_workspace_root
 
 
 class ConfigLoader:
     CONFIG_PATH_ENV = "AGENTPARK_CONFIG_PATH"
-    OPENAI_REASONING_SUMMARY_VALUES = {"auto", "concise", "detailed", "disabled"}
     PROVIDER_UNSUPPORTED_CONFIG_KEYS = {
         "anthropic_beta",
         "claudeThinkingBudgetTokens",
@@ -71,13 +72,16 @@ class ConfigLoader:
 
         runtime_root = get_workspace_root()
         candidates = [
-            os.path.join(runtime_root, "config", "moduleProvider.json"),
-            os.path.join(os.getcwd(), "config", "moduleProvider.json"),
+            os.path.join(runtime_root, "config", "modelProvider.json"),
+            os.path.join(os.getcwd(), "config", "modelProvider.json"),
         ]
         for candidate in candidates:
             if os.path.isfile(candidate):
                 return candidate
         raise FileNotFoundError(f"Config file not found. Checked: {candidates}")
+
+    def get_provider_config_path(self):
+        return self._resolve_provider_config_path()
 
     def _resolve_workspace_config_path(self, provider_config_path):
         explicit_path = str(os.environ.get(self.CONFIG_PATH_ENV) or "").strip()
@@ -186,12 +190,32 @@ class ConfigLoader:
         provider["supportmode"] = self._validate_support_modes(
             provider_name, provider.get("supportmode")
         )
+        if "private" not in provider:
+            provider["private"] = False
+        elif not isinstance(provider.get("private"), bool):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid private; expected a boolean."
+            )
 
         if "timeoutMs" in provider:
             provider["timeoutMs"] = self._validate_timeout_ms(
                 provider_name, provider.get("timeoutMs")
             )
-        for pressure_key in ("concurrencyLimit", "rpmLimit"):
+        if "xApiKey" in provider:
+            if not isinstance(provider.get("xApiKey"), str):
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid xApiKey; expected a string."
+                )
+            provider["xApiKey"] = provider["xApiKey"].strip()
+        for speech_key in ("speechAccessKeyId", "speechSecretAccessKey"):
+            if speech_key not in provider:
+                continue
+            if not isinstance(provider.get(speech_key), str):
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid {speech_key}; expected a string."
+                )
+            provider[speech_key] = provider[speech_key].strip()
+        for pressure_key in ("concurrencyLimit", "rpmLimit", "tpmLimit"):
             if pressure_key in provider:
                 pressure_value = self._validate_optional_positive_int(
                     provider_name,
@@ -206,9 +230,23 @@ class ConfigLoader:
             raise ValueError(
                 f"Provider '{provider_name}' has invalid responsesApi; expected a boolean."
             )
+        if "fastMode" in provider and not isinstance(provider.get("fastMode"), bool):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid fastMode; expected a boolean."
+            )
+        if provider.get("fastMode") is True and (
+            provider_type != "openai" or provider.get("responsesApi") is not True
+        ):
+            raise ValueError(
+                f"Provider '{provider_name}' can enable fastMode only with type 'openai' and responsesApi=true."
+            )
         if provider_type == "deepseek" and provider.get("responsesApi") is True:
             raise ValueError(
                 f"Provider '{provider_name}' has type 'deepseek' but responsesApi=true; DeepSeek uses chat completions."
+            )
+        if provider_type == "kimi" and provider.get("responsesApi") is True:
+            raise ValueError(
+                f"Provider '{provider_name}' has type 'kimi' but responsesApi=true; Kimi uses chat completions."
             )
         if "streamEnabled" not in provider:
             provider["streamEnabled"] = True
@@ -216,7 +254,7 @@ class ConfigLoader:
             raise ValueError(
                 f"Provider '{provider_name}' has invalid streamEnabled; expected a boolean."
             )
-        self._validate_responses_provider_config(provider_name, provider, provider_type)
+        validate_responses_provider_config(provider_name, provider, provider_type)
 
         provider.pop("apiKeyEnv", None)
         if auth_mode == "codex":
@@ -256,84 +294,28 @@ class ConfigLoader:
         if effort:
             provider["reasoningEffort"] = effort
 
-    def _validate_responses_provider_config(self, provider_name, provider, provider_type):
-        if provider.get("responsesApi") is not True:
-            return
-        required = (
-            "toolResultSubmissionMaxChars",
-            "toolContextCompactionEnabled",
-            "toolContextCompactionEveryToolCalls",
-        )
-        for key in required:
-            if key not in provider:
-                raise ValueError(
-                    f"Provider '{provider_name}' has responsesApi=true but missing required field {key}."
-                )
-
-        if not isinstance(provider.get("toolContextCompactionEnabled"), bool):
-            raise ValueError(
-                f"Provider '{provider_name}' has invalid toolContextCompactionEnabled; expected a boolean."
-            )
-
-        for key in ("toolResultSubmissionMaxChars", "toolContextCompactionEveryToolCalls"):
-            value = provider.get(key)
-            if not isinstance(value, int) or isinstance(value, bool):
-                raise ValueError(
-                    f"Provider '{provider_name}' has invalid {key}; expected a positive integer."
-                )
-            if value <= 0:
-                raise ValueError(
-                    f"Provider '{provider_name}' has invalid {key}; expected a positive integer."
-                )
-
-        if provider_type in {"openai", "grok"}:
-            if provider_type == "openai":
-                self._validate_openai_reasoning_summary(provider_name, provider)
-            if "responsesReplayReasoningItems" not in provider:
-                raise ValueError(
-                    f"Provider '{provider_name}' has responsesApi=true but missing required field responsesReplayReasoningItems."
-                )
-            if not isinstance(provider.get("responsesReplayReasoningItems"), bool):
-                raise ValueError(
-                    f"Provider '{provider_name}' has invalid responsesReplayReasoningItems; expected a boolean."
-                )
-
-    def _validate_openai_reasoning_summary(self, provider_name, provider):
-        if "reasoningSummary" not in provider:
-            return
-        value = provider.get("reasoningSummary")
-        if value is None or value == "":
-            provider.pop("reasoningSummary", None)
-            return
-        if not isinstance(value, str):
-            raise ValueError(
-                f"Provider '{provider_name}' has invalid reasoningSummary; expected auto, concise, detailed, or disabled."
-            )
-        summary = value.strip().lower()
-        if summary not in self.OPENAI_REASONING_SUMMARY_VALUES:
-            raise ValueError(
-                f"Provider '{provider_name}' has invalid reasoningSummary; expected auto, concise, detailed, or disabled."
-            )
-        provider["reasoningSummary"] = summary
-
     def _load_provider_document(self):
         provider_config_path = self._resolve_provider_config_path()
         with open(provider_config_path, "r", encoding="utf-8") as f:
             payload = json.load(f)
 
         if not isinstance(payload, dict):
-            raise ValueError("moduleProvider.json must contain a top-level object.")
+            raise ValueError("modelProvider.json must contain a top-level object.")
 
         providers = payload.get("providers")
         if providers is None:
             providers = {}
         if not isinstance(providers, dict):
-            raise ValueError("moduleProvider.json 'providers' must be an object.")
+            raise ValueError("modelProvider.json 'providers' must be an object.")
 
         return provider_config_path, payload, providers
 
     def _load_config(self):
         provider_config_path, _, providers = self._load_provider_document()
+        providers = resolve_provider_credential_references(
+            providers,
+            store_path=api_key_store_path(get_workspace_root()),
+        )
 
         normalized = copy.deepcopy(self._load_workspace_config(provider_config_path))
         normalized["providers"] = {
@@ -358,9 +340,14 @@ class ConfigLoader:
         if provider_id not in providers:
             raise ValueError(f"Provider '{provider_id}' not found in configuration")
 
+        resolved_providers = resolve_provider_credential_references(
+            {provider_id: providers[provider_id]},
+            store_path=api_key_store_path(get_workspace_root()),
+        )
+
         return self._validate_provider_config(
             provider_id,
-            providers[provider_id],
+            resolved_providers[provider_id],
             require_api_key=True,
         )
 

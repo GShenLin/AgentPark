@@ -183,6 +183,17 @@ def test_mobile_live_keeps_exact_config_node_id_when_config_node_id_case_differs
 
         facade.core.node_live_outputs.update("default", "Agent1", "partial stream")
         facade.core.node_live_outputs.update_thinking("default", "Agent1", "checking sources")
+        facade.core.node_live_outputs.update_activity(
+            "default",
+            "Agent1",
+            {
+                "id": "server_tool:ws_1",
+                "type": "web_search",
+                "label": "WebSearch",
+                "status": "in_progress",
+                "text": "AgentPark",
+            },
+        )
 
         nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
         assert nodes.status_code == 200
@@ -195,11 +206,13 @@ def test_mobile_live_keeps_exact_config_node_id_when_config_node_id_case_differs
         assert live.json()["node_id"] == "Agent1"
         assert live.json()["live_message"] == "partial stream"
         assert live.json()["thinking_message"] == "checking sources"
+        assert live.json()["activity_blocks"][0]["type"] == "web_search"
 
         conversation = client.get("/api/mobile/pcs/local/graphs/default/nodes/Agent1/conversation")
         assert conversation.status_code == 200
         assert conversation.json()["live_message"] == "partial stream"
         assert conversation.json()["thinking_message"] == "checking sources"
+        assert conversation.json()["activity_blocks"][0]["label"] == "WebSearch"
     finally:
         backend._get_runtime_root = original_backend_runtime_root
         backend._get_resource_root = original_backend_resource_root
@@ -263,7 +276,9 @@ def test_mobile_conversation_returns_full_node_history(monkeypatch, tmp_path):
                 build_text_envelope(f"message-{index:03d} " + ("x" * 70), role="user"),
             )
 
-        conversation = client.get("/api/mobile/pcs/local/graphs/default/nodes/agent1/conversation")
+            conversation = client.get(
+                "/api/mobile/pcs/local/graphs/default/nodes/agent1/conversation?history_mode=all"
+            )
         assert conversation.status_code == 200
         payload = conversation.json()
         assert len(payload["text"]) > 20000
@@ -289,7 +304,8 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
 
     runtime_root = str(tmp_path / "AgentPark")
     resource_root = backend._get_runtime_root()
-    companion_graph_dir = os.path.join(runtime_root, "memories", "Companion")
+    graphs_dir = str(tmp_path / "memories")
+    companion_graph_dir = os.path.join(graphs_dir, "Companion")
     companion_dir = os.path.join(companion_graph_dir, "Companion")
     os.makedirs(companion_dir, exist_ok=True)
     with open(os.path.join(companion_graph_dir, "config.json"), "w", encoding="utf-8") as f:
@@ -303,6 +319,7 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
     original_backend_resource_root = backend._get_resource_root
     original_runtime_paths_runtime_root = runtime_paths_module._get_runtime_root
     original_runtime_paths_resource_root = runtime_paths_module._get_resource_root
+    original_runtime_paths_graphs_dir = runtime_paths_module._get_graphs_dir
     original_node_runtime_runtime_root = node_runtime_module._get_runtime_root
     original_node_runtime_resource_root = node_runtime_module._get_resource_root
     original_mobile_runtime_root = mobile_api_module._get_runtime_root
@@ -311,6 +328,7 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
     backend._get_resource_root = lambda: resource_root
     runtime_paths_module._get_runtime_root = lambda: runtime_root
     runtime_paths_module._get_resource_root = lambda: resource_root
+    runtime_paths_module._get_graphs_dir = lambda: graphs_dir
     node_runtime_module._get_runtime_root = lambda: runtime_root
     node_runtime_module._get_resource_root = lambda: resource_root
     mobile_api_module._get_runtime_root = lambda: runtime_root
@@ -344,6 +362,7 @@ def test_mobile_api_exposes_companion_as_readonly_graph_node(monkeypatch, tmp_pa
         backend._get_resource_root = original_backend_resource_root
         runtime_paths_module._get_runtime_root = original_runtime_paths_runtime_root
         runtime_paths_module._get_resource_root = original_runtime_paths_resource_root
+        runtime_paths_module._get_graphs_dir = original_runtime_paths_graphs_dir
         node_runtime_module._get_runtime_root = original_node_runtime_runtime_root
         node_runtime_module._get_resource_root = original_node_runtime_resource_root
         mobile_api_module._get_runtime_root = original_mobile_runtime_root

@@ -18,7 +18,9 @@ from .diagnostics import RuntimeEventDiagnostics
 from .event_models import CompiledRule, RuntimeEventEnvelope
 from .event_registry import EventConfigError, RuntimeEventRegistryManager
 from .event_schema import runtime_event_schema
+from .file_context import read_node_context_file
 from .metrics import RuntimeEventMetrics
+from .notice_aggregation import RuntimeNoticeContextAggregator
 from .node_dispatch import RuntimeEventNodeDispatch
 from .temporary_receiver_cleanup import TemporaryReceiverCleanup
 
@@ -33,6 +35,7 @@ class RuntimeEventDomain:
         self.dispatch = RuntimeEventNodeDispatch(core, self.metrics, self.diagnostics_store)
         self.cleanup = TemporaryReceiverCleanup(core, self.metrics)
         self.startup_recovery = CompanionStartupRecovery(core, self.cleanup, self.metrics)
+        self.notice_context = RuntimeNoticeContextAggregator()
         self._dedupe: dict[str, float] = {}
         self._dedupe_lock = threading.Lock()
 
@@ -49,6 +52,32 @@ class RuntimeEventDomain:
             return self.registry.apply(config if isinstance(config, dict) else None)
         except EventConfigError as exc:
             return {"ok": False, "errors": exc.errors}
+
+    def remove_source_rules(self, graph_id: str, node_id: str | None = None) -> dict[str, Any]:
+        return self.registry.remove_source_rules(graph_id, node_id)
+
+    def restore_source_rules(self, removed_rules: object) -> dict[str, Any]:
+        return self.registry.restore_source_rules(removed_rules)
+
+    def export_source_event_rules(self, graph_id: str, node_id: str) -> dict[str, list[dict[str, Any]]]:
+        return self.registry.export_source_event_rules(graph_id, node_id)
+
+    def replace_source_event_rules(self, graph_id: str, node_id: str, source_event_rules: object) -> dict[str, Any]:
+        return self.registry.replace_source_event_rules(graph_id, node_id, source_event_rules)
+
+    def copy_source_event_rules(
+        self,
+        source_graph_id: str,
+        source_node_id: str,
+        target_graph_id: str,
+        target_node_id: str,
+    ) -> dict[str, Any]:
+        return self.registry.copy_source_event_rules(
+            source_graph_id,
+            source_node_id,
+            target_graph_id,
+            target_node_id,
+        )
 
     def diagnostics(self):
         active = self.registry.active()
@@ -68,6 +97,7 @@ class RuntimeEventDomain:
             **runtime_event_schema(),
             "targets": {
                 "context.produce": list(active.producer_index.keys()),
+                "context.append_file": [],
                 "notice.write": list(active.notice_index.keys()),
                 "node.dispatch": list(active.receiver_group_index.keys()),
             },
@@ -128,7 +158,7 @@ class RuntimeEventDomain:
                 elif isinstance(result, dict):
                     artifacts += self._apply_action_result(result, rule, envelope)
             except Exception as exc:
-                errors.append(f"rule[{rule.rule_index}] {type(exc).__name__}: {exc}")
+                errors.append(f"handler[{rule.handler_index}] {type(exc).__name__}: {exc}")
                 self.metrics.inc("action_failed", event=event_name, action=rule.action)
                 self.diagnostics_store.record(
                     kind="action_failed",
@@ -137,7 +167,7 @@ class RuntimeEventDomain:
                     details={
                         "event_id": envelope.event_id,
                         "event": event_name,
-                        "rule_index": rule.rule_index,
+                        "handler_index": rule.handler_index,
                         "action": rule.action,
                         "target": rule.target,
                         "source_graph_id": envelope.source_graph_id,
@@ -153,8 +183,9 @@ class RuntimeEventDomain:
             "errors": errors,
         }
 
-    def consume_context_fragments(self, *, graph_id: str, node_id: str) -> list[str]:
+    def consume_context_fragments(self, *, graph_id: str, node_id: str) -> list[dict[str, str]]:
         fragments = self.context_store.consume_for_node(graph_id, node_id)
+        self.notice_context.clear_node(graph_id, node_id)
         if fragments:
             self.metrics.inc("context_injected", count=len(fragments))
         return fragments
@@ -163,10 +194,13 @@ class RuntimeEventDomain:
         self.metrics.inc("rule_matched", event=envelope.event, action=rule.action)
         if rule.action == "context.produce":
             return self._produce_context(rule, envelope)
+        if rule.action == "context.append_file":
+            return self._append_file_context(rule, envelope)
         if rule.action == "notice.write":
             return notice(
-                f"Runtime event {envelope.event} matched {envelope.source_graph_id}/{envelope.source_node_id}.",
+                f"{envelope.event} 已在 {envelope.source_graph_id}/{envelope.source_node_id} 触发。",
                 level="info",
+                title="事件已触发",
             )
         if rule.action == "node.dispatch":
             group = self.registry.active().receiver_group_index.get(rule.target)
@@ -174,15 +208,46 @@ class RuntimeEventDomain:
                 raise ValueError(f"receiver group not found: {rule.target}")
             if bool(envelope.payload.get("suppress_dispatch")):
                 return None
-            self.dispatch.enqueue(group=group, envelope=envelope)
-            return {
-                "type": "dispatch_request",
-                "receiver_group": group.group_id,
-                "event": envelope.event,
-                "receiver_graph_id": group.graph_id,
-                "profile_id": group.event_profiles.get(envelope.event, ""),
-            }
+            results: list[dict[str, Any]] = []
+            for profile_id in rule.params["profile_ids"]:
+                safe_profile_id = str(profile_id).strip()
+                self.dispatch.enqueue(group=group, envelope=envelope, profile_id=safe_profile_id)
+                results.append(
+                    {
+                        "type": "dispatch_request",
+                        "receiver_group": group.group_id,
+                        "event": envelope.event,
+                        "receiver_graph_id": group.graph_id,
+                        "profile_id": safe_profile_id,
+                    }
+                )
+            return results
         return None
+
+    def _append_file_context(self, rule: CompiledRule, envelope: RuntimeEventEnvelope) -> list[dict[str, Any]] | None:
+        max_chars = int(rule.params.get("max_chars") or 16000)
+        fragments: list[dict[str, Any]] = []
+        for configured_path_value in rule.params["paths"]:
+            configured_path = str(configured_path_value)
+            content = read_node_context_file(
+                self.core,
+                envelope.source_graph_id,
+                envelope.source_node_id,
+                configured_path,
+                max_chars,
+            )
+            if not content:
+                self.metrics.inc("action_no_result", event=envelope.event, action=rule.action, target=configured_path)
+                continue
+            fragments.append(
+                context_fragment(
+                    f"Context file: {configured_path}\n\n{content}",
+                    ttl="current_run",
+                    priority=str(rule.params.get("priority") or "normal"),
+                    role=str(rule.params["role"]),
+                )
+            )
+        return fragments or None
 
     def _produce_context(self, rule: CompiledRule, envelope: RuntimeEventEnvelope) -> dict[str, Any] | None:
         policy = self.registry.active().config.get("context_policy")
@@ -196,7 +261,7 @@ class RuntimeEventDomain:
         elif rule.target == "builtin.tool_failure_context":
             content = self._tool_failure_context(envelope)
         elif rule.target == "builtin.runtime_notice_context":
-            content = self._runtime_notice_context(envelope)
+            aggregation_key, content = self.notice_context.record(envelope)
         elif rule.target == "builtin.work_persisted_context":
             content = self._work_context(envelope, failed=False)
         elif rule.target == "builtin.work_failed_context":
@@ -222,32 +287,48 @@ class RuntimeEventDomain:
                     "reason": f"runtime event {envelope.event}",
                 },
             }
-        return context_fragment(content, ttl=ttl, priority=priority)
+        result = context_fragment(content, ttl=ttl, priority=priority)
+        if rule.target == "builtin.runtime_notice_context":
+            result["aggregation_key"] = aggregation_key
+        return result
 
     def _apply_action_result(self, result: dict[str, Any] | None, rule: CompiledRule, envelope: RuntimeEventEnvelope) -> int:
         if not isinstance(result, dict):
             return 0
         result_type = str(result.get("type") or "").strip()
         if result_type == "context_fragment":
-            self.context_store.add_fragment(
-                graph_id=envelope.source_graph_id,
-                node_id=envelope.source_node_id,
-                event_id=envelope.event_id,
-                ttl=str(result.get("ttl") or "next_turn"),
-                priority=str(result.get("priority") or "normal"),
-                content=str(result.get("content") or ""),
-                audit_payload={"rule_index": rule.rule_index, "event": envelope.event, "target": rule.target},
-            )
+            fragment_args = {
+                "graph_id": envelope.source_graph_id,
+                "node_id": envelope.source_node_id,
+                "event_id": envelope.event_id,
+                "ttl": str(result.get("ttl") or "next_turn"),
+                "priority": str(result.get("priority") or "normal"),
+                "role": str(result.get("role") or "developer"),
+                "content": str(result.get("content") or ""),
+                "audit_payload": {"handler_index": rule.handler_index, "event": envelope.event, "target": rule.target},
+            }
+            aggregation_key = str(result.get("aggregation_key") or "").strip()
+            if aggregation_key:
+                self.context_store.upsert_fragment(
+                    **fragment_args,
+                    aggregation_key=aggregation_key,
+                )
+            else:
+                self.context_store.add_fragment(**fragment_args)
             self.metrics.inc("context_artifact_produced", event=envelope.event)
             return 1
         if result_type == "notice":
             self.core.graph_runtime._log_graph_event(
                 envelope.source_graph_id,
                 "runtime_event_notice",
+                alert_id=f"runtime-event:{envelope.event_id}:{rule.handler_index}",
                 trace_id=envelope.trace_id,
                 node_instance_id=envelope.source_node_id,
+                node_name=str(envelope.payload.get("node_name") or envelope.source_node_id),
                 runtime_event=envelope.event,
+                title=_preview_text(str(result.get("title") or "事件通知"), 200),
                 message=_preview_text(str(result.get("message") or ""), 1000),
+                level=str(result.get("level") or "info"),
             )
             self.metrics.inc("notice_written", event=envelope.event)
             return 1
@@ -333,22 +414,6 @@ class RuntimeEventDomain:
                 f"- Status: {status}",
                 f"- Error: {error[:2000]}",
                 "- Adjust the next action based on this concrete runtime failure.",
-            ]
-        )
-
-    @staticmethod
-    def _runtime_notice_context(envelope: RuntimeEventEnvelope) -> str:
-        payload = envelope.payload
-        message = str(payload.get("message") or "").strip()
-        if not message:
-            return ""
-        return "\n".join(
-            [
-                "Runtime notice from the previous run:",
-                f"- Source: {payload.get('source') or ''}",
-                f"- Stage: {payload.get('stage') or ''}",
-                f"- Provider: {payload.get('provider') or ''}",
-                f"- Notice: {message[:2000]}",
             ]
         )
 

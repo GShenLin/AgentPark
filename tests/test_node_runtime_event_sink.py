@@ -1,7 +1,10 @@
 import json
+import threading
+import time
 
 import pytest
 
+from src.web_backend.delayed_live_activity import DelayedLiveActivityGate
 from src.web_backend.node_memory_store import NodeMemoryPersistenceError
 from src.web_backend.node_memory_store import NodeMemoryPersistenceFailure
 from src.web_backend.node_runtime_event_sink import NodeRuntimeEventSink
@@ -116,7 +119,10 @@ def test_node_runtime_event_sink_publishes_server_tool_activity(tmp_path):
     payload = _read_config(config_path)
     assert payload["last_runtime_event"]["type"] == "server_tool_activity"
     assert published[-1]["event_type"] == "server_tool_activity"
-    assert logs[-1]["tool_name"] == "web_search"
+    assert logs[-2]["event"] == "server_tool_activity"
+    assert logs[-2]["tool_name"] == "web_search"
+    assert logs[-1]["event"] == "node_progress_updated"
+    assert logs[-1]["source_event"] == "server_tool_activity"
     assert runtime_logs[-1]["event"] == "server_tool_activity"
     assert tool_entries == [
         {
@@ -132,6 +138,150 @@ def test_node_runtime_event_sink_publishes_server_tool_activity(tmp_path):
             },
         }
     ]
+
+
+def test_node_runtime_event_sink_updates_typed_live_blocks(tmp_path):
+    live_blocks = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0)
+    sink.update_live_activity = lambda graph_id, node_id, block, **kwargs: live_blocks.append(
+        {"graph_id": graph_id, "node_id": node_id, "block": block, **kwargs}
+    )
+
+    sink.handle(
+        {
+            "type": "server_tool_activity",
+            "call_id": "ws_1",
+            "tool_type": "web_search",
+            "status": "in_progress",
+            "action": {"query": "AgentPark"},
+        }
+    )
+    sink.handle(
+        {
+            "type": "response_refusal",
+            "item_id": "msg_1",
+            "text": "I cannot help.",
+            "status": "completed",
+        }
+    )
+
+    assert live_blocks[0]["block"] == {
+        "id": "server_tool:ws_1",
+        "type": "web_search",
+        "label": "Web Searching",
+        "status": "in_progress",
+        "text": "AgentPark",
+        "provider": "",
+        "call_id": "ws_1",
+        "action": {"query": "AgentPark"},
+    }
+    assert live_blocks[1]["block"]["type"] == "refusal"
+    assert live_blocks[1]["block"]["label"] == "Refusal"
+    assert live_blocks[1]["block"]["text"] == "I cannot help."
+
+
+def test_node_runtime_event_sink_removes_web_search_live_block_at_terminal_status(tmp_path):
+    live_blocks = []
+    removed_blocks = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0)
+    sink.update_live_activity = lambda graph_id, node_id, block, **kwargs: live_blocks.append(block)
+    sink.remove_live_activity = lambda graph_id, node_id, block_id, **kwargs: removed_blocks.append(block_id)
+
+    base_event = {
+        "type": "server_tool_activity",
+        "call_id": "ws_1",
+        "tool_type": "web_search",
+        "action": {"query": "today's news"},
+    }
+    sink.handle({**base_event, "status": "in_progress"})
+    sink.handle({**base_event, "status": "completed"})
+
+    assert live_blocks[0]["label"] == "Web Searching"
+    assert live_blocks[0]["text"] == "today's news"
+    assert removed_blocks == ["server_tool:ws_1"]
+
+
+def test_node_runtime_event_sink_hides_server_tool_that_finishes_within_live_threshold(tmp_path):
+    live_blocks = []
+    removed_blocks = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0.04)
+    sink.update_live_activity = lambda graph_id, node_id, block, **kwargs: live_blocks.append(block)
+    sink.remove_live_activity = lambda graph_id, node_id, block_id, **kwargs: removed_blocks.append(block_id)
+
+    base_event = {
+        "type": "server_tool_activity",
+        "call_id": "ws-fast",
+        "tool_type": "web_search",
+        "action": {"query": "AgentPark"},
+    }
+    sink.handle({**base_event, "status": "in_progress"})
+    sink.handle({**base_event, "status": "completed"})
+    time.sleep(0.08)
+
+    assert live_blocks == []
+    assert removed_blocks == []
+
+
+def test_node_runtime_event_sink_shows_slow_server_tool_after_live_threshold(tmp_path):
+    live_blocks = []
+    removed_blocks = []
+    live_block_visible = threading.Event()
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0.02)
+
+    def record_live_block(graph_id, node_id, block, **kwargs):
+        live_blocks.append(block)
+        live_block_visible.set()
+
+    sink.update_live_activity = record_live_block
+    sink.remove_live_activity = lambda graph_id, node_id, block_id, **kwargs: removed_blocks.append(block_id)
+
+    base_event = {
+        "type": "server_tool_activity",
+        "call_id": "ws-slow",
+        "tool_type": "web_search",
+        "action": {"query": "AgentPark"},
+    }
+    sink.handle({**base_event, "status": "in_progress"})
+    assert live_block_visible.wait(timeout=0.5)
+    sink.handle({**base_event, "status": "completed"})
+
+    assert [block["call_id"] for block in live_blocks] == ["ws-slow"]
+    assert removed_blocks == ["server_tool:ws-slow"]
+
+
+@pytest.mark.parametrize(
+    ("event_fields", "expected_query"),
+    [
+        ({"details": {"query": "top-level query"}}, "top-level query"),
+        ({"action": {"search_query": "alternate query"}}, "alternate query"),
+        ({"action": {"queries": ["first query", "second query"]}}, "first query"),
+    ],
+)
+def test_node_runtime_event_sink_displays_explicit_web_search_query_fields(
+    tmp_path,
+    event_fields,
+    expected_query,
+):
+    live_blocks = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0)
+    sink.update_live_activity = lambda graph_id, node_id, block, **kwargs: live_blocks.append(block)
+
+    sink.handle(
+        {
+            "type": "server_tool_activity",
+            "call_id": "ws_1",
+            "tool_type": "web_search",
+            "status": "in_progress",
+            **event_fields,
+        }
+    )
+
+    assert live_blocks[0]["text"] == expected_query
 
 
 def test_node_runtime_event_sink_persists_server_tool_only_at_terminal_status(tmp_path):
@@ -213,6 +363,29 @@ def test_node_runtime_event_sink_persists_provider_request_summary_to_node_log(t
     assert records[-1]["provider_request_summary"]["largest_input_items"][0]["chars"] == 28784
 
 
+def test_node_runtime_event_sink_moves_oversized_fields_to_artifacts(tmp_path):
+    sink, config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    oversized_message = "x" * (40 * 1024)
+
+    sink.handle(
+        {
+            "type": "runtime_notice",
+            "message": oversized_message,
+            "source": "unit",
+            "stage": "large_diagnostic",
+        }
+    )
+
+    record = _read_node_runtime_events(config_path)[-1]
+    durable_event = record["runtime_event"]
+    artifact = durable_event["message_artifact"]
+    assert durable_event["message"].startswith("[oversized runtime event message stored in ")
+    assert artifact["type"] == "runtime_event_artifact"
+    artifact_path = config_path.parent / artifact["artifact_path"]
+    assert json.loads(artifact_path.read_text(encoding="utf-8")) == oversized_message
+    assert artifact["json_chars"] == len(json.dumps(oversized_message, ensure_ascii=False, separators=(",", ":")))
+
+
 def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
     sink, config_path, logs, tool_entries, runtime_logs = _build_sink(tmp_path)
 
@@ -248,8 +421,13 @@ def test_node_runtime_event_sink_records_tool_lifecycle_and_history(tmp_path):
     assert payload["last_runtime_event"]["type"] == "tool_call_end"
     assert payload["runtime_tool_calls"][0]["arguments"] == {"filePath": "README.md"}
     assert payload["runtime_tool_calls"][0]["status"] == "completed"
-    assert [item["event"] for item in logs[-2:]] == ["tool_call_start", "tool_call_end"]
+    assert [item["event"] for item in logs[-3:]] == [
+        "tool_call_start",
+        "tool_call_end",
+        "node_progress_updated",
+    ]
     assert logs[-1]["tool_name"] == "read_file"
+    assert logs[-1]["source_event"] == "tool_call_end"
     assert [item["event"] for item in runtime_logs] == ["tool_call_start", "tool_call_end"]
     assert runtime_logs[-1]["arguments"] == {"filePath": "README.md"}
     assert runtime_logs[-1]["result_preview"] == "ok"
@@ -300,6 +478,126 @@ def test_node_runtime_event_sink_emits_tool_failure_event(tmp_path):
     assert emitted[0]["payload"].get("tool_name") == "read_file" or emitted[0]["payload"].get("name") == "read_file"
 
 
+def test_node_runtime_event_sink_tracks_active_tool_call_as_live_activity(tmp_path):
+    live_blocks = []
+    removed_blocks = []
+    live_block_visible = threading.Event()
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0.02)
+
+    def record_live_block(graph_id, node_id, block, **fields):
+        live_blocks.append({"graph_id": graph_id, "node_id": node_id, "block": block, **fields})
+        live_block_visible.set()
+
+    sink.update_live_activity = record_live_block
+    sink.remove_live_activity = lambda graph_id, node_id, block_id, **fields: removed_blocks.append(
+        {"graph_id": graph_id, "node_id": node_id, "block_id": block_id, **fields}
+    )
+
+    sink.handle(
+        {
+            "type": "tool_call_start",
+            "name": "execute_console_command",
+            "call_id": "call-running",
+            "provider": "openai",
+            "arguments": {"command": "python -m pytest -q"},
+        }
+    )
+    assert live_block_visible.wait(timeout=0.5)
+    sink.handle(
+        {
+            "type": "tool_call_end",
+            "name": "execute_console_command",
+            "call_id": "call-running",
+            "provider": "openai",
+            "status": "stopped",
+            "result_preview": "UserStoppedThisCall",
+        }
+    )
+
+    assert live_blocks[0]["block"] == {
+        "id": "tool_call:call-running",
+        "type": "tool_call",
+        "label": "execute_console_command",
+        "status": "running",
+        "provider": "openai",
+        "call_id": "call-running",
+        "arguments": {"command": "python -m pytest -q"},
+    }
+    assert removed_blocks[0]["block_id"] == "tool_call:call-running"
+
+
+def test_node_runtime_event_sink_hides_tool_calls_that_finish_within_live_threshold(tmp_path):
+    live_blocks = []
+    removed_blocks = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0.04)
+    sink.update_live_activity = lambda graph_id, node_id, block, **fields: live_blocks.append(block)
+    sink.remove_live_activity = lambda graph_id, node_id, block_id, **fields: removed_blocks.append(block_id)
+
+    sink.handle({"type": "tool_call_start", "name": "read_file", "call_id": "call-fast"})
+    sink.handle(
+        {
+            "type": "tool_call_end",
+            "name": "read_file",
+            "call_id": "call-fast",
+            "status": "completed",
+            "duration_ms": 3,
+        }
+    )
+    time.sleep(0.08)
+
+    assert live_blocks == []
+    assert removed_blocks == []
+
+
+def test_node_runtime_event_sink_delays_concurrent_tool_calls_independently(tmp_path):
+    live_blocks = []
+    removed_blocks = []
+    slow_call_visible = threading.Event()
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0.03)
+
+    def record_live_block(graph_id, node_id, block, **fields):
+        live_blocks.append(block)
+        if block["call_id"] == "call-slow":
+            slow_call_visible.set()
+
+    sink.update_live_activity = record_live_block
+    sink.remove_live_activity = lambda graph_id, node_id, block_id, **fields: removed_blocks.append(block_id)
+
+    sink.handle({"type": "tool_call_start", "name": "read_file", "call_id": "call-fast"})
+    sink.handle({"type": "tool_call_start", "name": "execute_console_command", "call_id": "call-slow"})
+    sink.handle({"type": "tool_call_end", "name": "read_file", "call_id": "call-fast", "status": "completed"})
+
+    assert slow_call_visible.wait(timeout=0.5)
+    sink.handle(
+        {
+            "type": "tool_call_end",
+            "name": "execute_console_command",
+            "call_id": "call-slow",
+            "status": "completed",
+        }
+    )
+
+    assert [block["call_id"] for block in live_blocks] == ["call-slow"]
+    assert removed_blocks == ["tool_call:call-slow"]
+
+
+def test_node_runtime_event_sink_close_cancels_pending_tool_live_activity(tmp_path):
+    live_blocks = []
+    sink, _config_path, _logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+    sink.tool_live_activity_gate = DelayedLiveActivityGate(delay_seconds=0.04)
+    sink.update_live_activity = lambda graph_id, node_id, block, **fields: live_blocks.append(block)
+    sink.remove_live_activity = lambda graph_id, node_id, block_id, **fields: None
+
+    sink.handle({"type": "tool_call_start", "name": "read_file", "call_id": "call-pending"})
+    sink.close()
+    time.sleep(0.08)
+
+    assert live_blocks == []
+
+
 def test_node_runtime_event_sink_keeps_tool_end_nonfatal_when_history_persist_fails(tmp_path):
     config_path = tmp_path / "config.json"
     _write_json_dict(str(config_path), {"node_id": "agent1"})
@@ -346,6 +644,7 @@ def test_node_runtime_event_sink_keeps_tool_end_nonfatal_when_history_persist_fa
     failure_log = next(item for item in logs if item["event"] == "node_memory_persist_failed")
     assert failure_log["target"] == "tool_history"
     assert failure_log["failures"][0]["target"] == "messages"
+    assert not any(item["event"] == "node_progress_updated" for item in logs)
     assert any(item["event_type"] == "runtime_notice" for item in live_events)
     assert live_events[-1]["event_type"] == "tool_call_end"
     assert "NodeMemoryPersistenceError" in live_events[-1]["event"]["memory_persistence_warning"]

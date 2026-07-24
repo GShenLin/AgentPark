@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 
 def _build_agent():
     from src.tool.base_tool import BaseTool
@@ -157,6 +159,67 @@ def test_doubao_responses_uses_common_complete_response_metadata_parser():
     assert parsed["server_tool_calls"][0]["details"] == response["output"][0]
     assert parsed["response_metadata"]["response"]["usage"]["total_tokens"] == 5
     assert parsed["response_metadata"]["output_items"] == response["output"]
+
+
+def test_doubao_responses_rejects_provider_failed_event():
+    from src.providers.doubao_agent_common import _CurlHTTPError
+
+    agent = _build_agent()
+    agent._curl_post_sse_data_lines = lambda **_kwargs: iter(
+        [
+            json.dumps(
+                {
+                    "type": "response.failed",
+                    "response": {
+                        "id": "resp_1",
+                        "status": "failed",
+                        "error": {"code": "server_error", "message": "provider failed", "status_code": 503},
+                    },
+                }
+            )
+        ]
+    )
+
+    with pytest.raises(_CurlHTTPError, match="server_error: provider failed") as exc_info:
+        agent._stream_responses_once(
+            url="https://example.com/v1/responses",
+            headers={},
+            payload_json="{}",
+            timeout_sec=1,
+            stream_handler=None,
+        )
+
+    assert exc_info.value.status_code == 503
+
+
+def test_doubao_responses_rejects_incomplete_event():
+    from src.providers.doubao_agent_common import _ResponsesIncompleteError
+
+    agent = _build_agent()
+    agent._curl_post_sse_data_lines = lambda **_kwargs: iter(
+        [
+            json.dumps(
+                {
+                    "type": "response.incomplete",
+                    "response": {
+                        "id": "resp_1",
+                        "status": "incomplete",
+                        "incomplete_details": {"reason": "content_filter"},
+                        "output": [],
+                    },
+                }
+            )
+        ]
+    )
+
+    with pytest.raises(_ResponsesIncompleteError, match="content_filter"):
+        agent._stream_responses_once(
+            url="https://example.com/v1/responses",
+            headers={},
+            payload_json="{}",
+            timeout_sec=1,
+            stream_handler=None,
+        )
 
 
 def test_stream_chat_completions_forwards_reasoning_content():

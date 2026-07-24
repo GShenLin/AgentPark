@@ -33,7 +33,15 @@ class ResponsesStreamFailure:
     provider: str = ""
     event_type: str = ""
     status_code: int = 0
+    details: dict[str, Any] = field(default_factory=dict)
     event: str = field(default="response_failed", init=False)
+
+
+@dataclass(frozen=True)
+class ResponsesResponseQueued:
+    response_id: str
+    response: dict[str, Any]
+    event: str = field(default="response_queued", init=False)
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,13 @@ class ResponsesResponseCreated:
     response_id: str
     response: dict[str, Any]
     event: str = field(default="response_created", init=False)
+
+
+@dataclass(frozen=True)
+class ResponsesResponseInProgress:
+    response_id: str
+    response: dict[str, Any]
+    event: str = field(default="response_in_progress", init=False)
 
 
 @dataclass(frozen=True)
@@ -60,6 +75,18 @@ class ResponsesOutputTextDelta:
     output_index: int | None = None
     content_index: int | None = None
     event: str = field(default="output_text_delta", init=False)
+
+
+@dataclass(frozen=True)
+class ResponsesRefusalDelta:
+    delta: str
+    text: str
+    item_id: str = ""
+    output_index: int | None = None
+    content_index: int | None = None
+    provider: str = ""
+    status: str = "in_progress"
+    event: str = field(default="refusal_delta", init=False)
 
 
 @dataclass(frozen=True)
@@ -109,14 +136,26 @@ class ResponsesResponseCompleted:
     event: str = field(default="response_completed", init=False)
 
 
+@dataclass(frozen=True)
+class ResponsesResponseIncomplete:
+    response_id: str
+    reason: str
+    response: dict[str, Any]
+    event: str = field(default="response_incomplete", init=False)
+
+
 ResponsesStreamEvent = (
     ResponsesStreamFailure
+    | ResponsesResponseQueued
     | ResponsesResponseCreated
+    | ResponsesResponseInProgress
     | ResponsesOutputItemAdded
     | ResponsesOutputTextDelta
+    | ResponsesRefusalDelta
     | ResponsesReasoningDelta
     | ResponsesFunctionCallArgumentsDelta
     | ResponsesServerToolActivity
     | ResponsesOutputItemDone
     | ResponsesResponseCompleted
+    | ResponsesResponseIncomplete
 )

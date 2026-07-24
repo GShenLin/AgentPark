@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { renderMarkdownTextWithoutKatex } from '../components/memoryMarkdown'
+import LiveActivityBlocks from '../components/LiveActivityBlocks.vue'
+import type { LiveActivityBlock } from '../api'
 
 const props = defineProps<{
   text: string
   thinkingText?: string
   activityText?: string
+  activityBlocks?: LiveActivityBlock[]
+  nodeId?: string
+  graphId?: string
 }>()
 
-const renderedMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.text))
-const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.thinkingText || ''))
 const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.activityText || ''))
 </script>
 
@@ -23,13 +26,14 @@ const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(p
       <div class="mobile-live-section-label">Activity</div>
       <div class="mobile-live-body mobile-live-markdown" v-html="renderedActivityMarkdown"></div>
     </section>
+    <LiveActivityBlocks :blocks="activityBlocks || []" :node-id="nodeId" :graph-id="graphId" />
     <section v-if="thinkingText" class="mobile-live-section thinking">
       <div class="mobile-live-section-label">Thinking</div>
-      <div class="mobile-live-body mobile-live-markdown" v-html="renderedThinkingMarkdown"></div>
+      <div class="mobile-live-body mobile-live-stream-text">{{ thinkingText }}</div>
     </section>
     <section v-if="text" class="mobile-live-section">
       <div v-if="thinkingText || activityText" class="mobile-live-section-label">Answer</div>
-      <div class="mobile-live-body mobile-live-markdown" v-html="renderedMarkdown"></div>
+      <div class="mobile-live-body mobile-live-stream-text">{{ text }}</div>
     </section>
   </div>
 </template>
@@ -73,6 +77,57 @@ const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(p
 
 .mobile-live-section.activity {
   background: rgba(6, 78, 59, 0.18);
+}
+
+.mobile-live-section.activity-block {
+  background: rgba(30, 41, 59, 0.22);
+}
+
+.mobile-live-section.activity-web_search {
+  background: rgba(6, 78, 59, 0.18);
+}
+
+.mobile-live-web-searching {
+  padding: 8px 10px;
+  color: rgba(125, 211, 252, 0.92);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.mobile-live-section.activity-file_search {
+  background: rgba(49, 46, 129, 0.16);
+}
+
+.mobile-live-section.activity-image_generation {
+  background: rgba(88, 28, 135, 0.16);
+}
+
+.mobile-live-section.activity-refusal {
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.mobile-live-section-label-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mobile-live-block-status {
+  color: rgba(148, 163, 184, 0.92);
+  font-weight: 500;
+}
+
+.mobile-live-sources {
+  display: grid;
+  gap: 4px;
+  padding: 0 10px 10px;
+}
+
+.mobile-live-sources a {
+  color: rgba(125, 211, 252, 0.92);
+  overflow-wrap: anywhere;
 }
 
 .mobile-live-section-label {

@@ -17,12 +17,13 @@ const props = defineProps<{
   metadataLoaded?: boolean
   progressSummary?: LatestTurnProgressSummary | null
   loadingSection?: 'progress' | 'metadata' | null
+  ensureLatestTurnMetadata?: () => Promise<void>
 }>()
 
 const emit = defineEmits<{
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
-  (event: 'deleteMessage', messages: MessageEnvelope | MessageEnvelope[]): void
+  (event: 'deleteMessage', target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }): void
   (event: 'requestHistory'): void
   (event: 'requestSection', section: 'progress' | 'metadata'): void
 }>()
@@ -80,6 +81,7 @@ function sectionDeferred(index: number, section: 'progress' | 'metadata') {
         :metadata-deferred="sectionDeferred(index, 'metadata')"
         :loading-section="isLatestTurn(index) ? loadingSection : null"
         :progress-summary="isLatestTurn(index) ? progressSummary : null"
+        :ensure-metadata="isLatestTurn(index) ? ensureLatestTurnMetadata : undefined"
         @save="emit('saveMessage', $event)"
         @copy="emit('copyMessage', $event)"
         @delete="emit('deleteMessage', $event)"

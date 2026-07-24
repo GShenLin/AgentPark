@@ -83,7 +83,7 @@ def parse_websocket_message(message: Any) -> str:
     return str(message or "")
 
 
-def websocket_error_message(payload: dict[str, Any]) -> tuple[int, str] | None:
+def websocket_error_message(payload: dict[str, Any]) -> tuple[int, str, str] | None:
     if str(payload.get("type") or "").strip().lower() != "error":
         return None
     status = payload.get("status_code", payload.get("status", 0))
@@ -96,7 +96,7 @@ def websocket_error_message(payload: dict[str, Any]) -> tuple[int, str] | None:
     code = str(error.get("code") or error.get("type") or "").strip()
     if code and code not in message:
         message = f"{code}: {message}"
-    return status_code, message
+    return status_code, code, message
 
 
 class ResponsesWebSocketTransportMixin:
@@ -159,6 +159,7 @@ class ResponsesWebSocketTransportMixin:
         with acquire_provider_pressure(self):
             connection = self._responses_websocket_connection(url=url, headers=headers, timeout_sec=timeout_sec)
             streamed_output_items: list[dict[str, Any]] = []
+            received_response_message = False
             try:
                 connection.send(json.dumps(ws_payload, ensure_ascii=False))
             except Exception as exc:
@@ -184,9 +185,14 @@ class ResponsesWebSocketTransportMixin:
                     raise OpenAITransportError(f"websocket idle timeout after {timeout_sec}s") from exc
                 except Exception as exc:
                     self._close_responses_websocket()
+                    if not received_response_message and _is_websocket_keepalive_timeout(exc):
+                        raise ResponsesWebSocketUnavailable(
+                            f"websocket keepalive failed before first response event: {exc}"
+                        ) from exc
                     raise OpenAITransportError(f"websocket receive failed: {exc}") from exc
                 if not text:
                     continue
+                received_response_message = True
                 try:
                     parsed = json.loads(text)
                 except Exception:
@@ -194,8 +200,12 @@ class ResponsesWebSocketTransportMixin:
                 if isinstance(parsed, dict):
                     error = websocket_error_message(parsed)
                     if error is not None:
-                        status_code, message = error
-                        raise OpenAIHttpError(status_code, message)
+                        status_code, provider_code, message = error
+                        raise OpenAIHttpError(
+                            status_code,
+                            message,
+                            provider_code=provider_code,
+                        )
                     if str(parsed.get("type") or "").strip().lower() == "response.output_item.done":
                         item = parsed.get("item")
                         if isinstance(item, dict):
@@ -257,6 +267,23 @@ def _non_input_fields_match(previous: dict[str, Any], current: dict[str, Any]) -
     previous_cmp = {key: value for key, value in previous.items() if key not in {"input", "previous_response_id"}}
     current_cmp = {key: value for key, value in current.items() if key not in {"input", "previous_response_id"}}
     return previous_cmp == current_cmp
+
+
+def _is_websocket_keepalive_timeout(error: Exception) -> bool:
+    try:
+        from websockets.exceptions import ConnectionClosed
+    except ImportError:
+        return False
+    if not isinstance(error, ConnectionClosed):
+        return False
+    for close_frame in (getattr(error, "sent", None), getattr(error, "rcvd", None)):
+        if close_frame is None:
+            continue
+        if int(getattr(close_frame, "code", 0) or 0) != 1011:
+            continue
+        if str(getattr(close_frame, "reason", "") or "").strip().casefold() == "keepalive ping timeout":
+            return True
+    return False
 
 
 def _response_output_items(response: dict[str, Any]) -> list[Any]:

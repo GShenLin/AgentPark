@@ -5,13 +5,14 @@ import subprocess
 import uuid
 from urllib.parse import unquote
 
-from fastapi import File, Form, HTTPException, UploadFile
+from fastapi import File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from src.file_transaction import atomic_write_text
 from src.message_protocol import build_resource_part
 
-from .runtime_paths import _get_runtime_root
+from .request_access import is_local_request
+from .runtime_paths import _get_graphs_dir, _get_runtime_root
 
 
 class FileSystemApiMixin:
@@ -25,7 +26,7 @@ class FileSystemApiMixin:
         return safe[:64] or uuid.uuid4().hex
 
     def _upload_root_dir(self, trace_id: str) -> str:
-        path = os.path.join(_get_runtime_root(), "memories", "uploads", trace_id)
+        path = os.path.join(_get_graphs_dir(), "uploads", trace_id)
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -276,6 +277,30 @@ class FileSystemApiMixin:
             return FileResponse(resolved_path, media_type=media_type, filename=filename)
         return FileResponse(resolved_path, media_type=media_type)
 
+    def open_file(self, payload: dict | None = None, request: Request = None):
+        if not is_local_request(request):
+            raise HTTPException(status_code=403, detail="opening local files is only available from the server machine")
+
+        resolved_path = self._resolve_file_api_path((payload or {}).get("path"))
+        if not resolved_path:
+            raise HTTPException(status_code=400, detail="path is required")
+        if not os.path.exists(resolved_path):
+            raise HTTPException(status_code=404, detail="file not found")
+        if not os.path.isfile(resolved_path):
+            raise HTTPException(status_code=400, detail="path is not a file")
+
+        try:
+            self._launch_local_file(resolved_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to open local file: {str(exc)}")
+        return {"ok": True, "path": resolved_path}
+
+    @staticmethod
+    def _launch_local_file(path: str) -> None:
+        if os.name != "nt":
+            raise RuntimeError("opening local files is only supported on Windows")
+        os.startfile(os.path.normpath(path))
+
     def select_folder(self, payload: dict | None = None):
         initial_path = str((payload or {}).get("initial_path") or "").strip()
         initial_dir = self._file_api_root()
@@ -312,6 +337,52 @@ class FileSystemApiMixin:
         selected_path = self._resolve_file_api_path(selected)
         if not os.path.isdir(selected_path):
             raise HTTPException(status_code=400, detail="selected path is not a directory")
+        return {"ok": True, "path": selected_path}
+
+    def select_file(self, payload: dict | None = None):
+        initial_path = str((payload or {}).get("initial_path") or "").strip()
+        initial_dir = self._file_api_root()
+        initial_file = ""
+        if initial_path:
+            resolved_initial_path = self._resolve_file_api_path(initial_path, default_to_runtime_root=True)
+            if os.path.isdir(resolved_initial_path):
+                initial_dir = resolved_initial_path
+            elif os.path.isfile(resolved_initial_path):
+                initial_dir = os.path.dirname(resolved_initial_path)
+                initial_file = os.path.basename(resolved_initial_path)
+            else:
+                candidate_dir = os.path.dirname(resolved_initial_path)
+                if os.path.isdir(candidate_dir):
+                    initial_dir = candidate_dir
+
+        root = None
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            selected = filedialog.askopenfilename(
+                parent=root,
+                initialdir=initial_dir,
+                initialfile=initial_file,
+                title="Select context file",
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"failed to open file selector: {str(e)}")
+        finally:
+            if root is not None:
+                try:
+                    root.destroy()
+                except Exception:
+                    pass
+
+        if not selected:
+            return {"ok": True, "path": ""}
+        selected_path = self._resolve_file_api_path(selected)
+        if not os.path.isfile(selected_path):
+            raise HTTPException(status_code=400, detail="selected path is not a file")
         return {"ok": True, "path": selected_path}
 
     def write_file(self, payload: dict):

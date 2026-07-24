@@ -2,12 +2,17 @@
 import { computed, ref } from 'vue'
 import { listFiles, type FileItem } from '../api'
 import FileNode from './FileNode.vue'
+import type { FileTreeItem } from './fileTree'
 
 const props = defineProps<{
   name: string
   path: string
   type: 'dir' | 'file'
   level?: number
+  children?: FileTreeItem[]
+  selectable?: boolean
+  selectedPaths?: string[]
+  contextMenuEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,11 +27,13 @@ const isLoading = ref(false)
 const error = ref<string | null>(null)
 
 const isDir = computed(() => props.type === 'dir')
+const isSelected = computed(() => !isDir.value && Boolean(props.selectable) && (props.selectedPaths || []).includes(props.path))
 const level = computed(() => Number(props.level || 0))
 const rowPaddingLeft = computed(() => `${level.value * 14 + 8}px`)
+const visibleChildren = computed(() => props.children ?? children.value)
 
 const sortedChildren = computed(() => {
-  return [...children.value].sort((a, b) => {
+  return [...visibleChildren.value].sort((a, b) => {
     if (a.type !== b.type) {
       return a.type === 'dir' ? -1 : 1
     }
@@ -56,7 +63,7 @@ async function toggle() {
   isOpen.value = !isOpen.value
 
   if (!isOpen.value) return
-  if (children.value.length > 0) return
+  if (props.children !== undefined || children.value.length > 0) return
 
   isLoading.value = true
   error.value = null
@@ -85,6 +92,7 @@ function onDragStart(event: DragEvent) {
 }
 
 function onContextMenu(event: MouseEvent) {
+  if (props.contextMenuEnabled === false) return
   emit('item-contextmenu', {
     item: {
       name: props.name,
@@ -101,7 +109,7 @@ function onContextMenu(event: MouseEvent) {
   <div class="file-node">
     <div
       class="file-row"
-      :class="{ 'is-dir': isDir, 'is-open': isOpen }"
+      :class="{ 'is-dir': isDir, 'is-open': isOpen, 'is-selected': isSelected }"
       :style="{ paddingLeft: rowPaddingLeft }"
       :draggable="props.type === 'file'"
       @click="handleRowClick"
@@ -119,6 +127,7 @@ function onContextMenu(event: MouseEvent) {
       </button>
       <span v-else class="expander-placeholder"></span>
 
+      <span v-if="selectable && !isDir" class="selection-mark" aria-hidden="true">{{ isSelected ? '✓' : '' }}</span>
       <span class="type-tag" :class="{ dir: isDir, file: !isDir }">
         {{ isDir ? 'DIR' : 'FILE' }}
       </span>
@@ -134,6 +143,9 @@ function onContextMenu(event: MouseEvent) {
         :key="child.path"
         v-bind="child"
         :level="level + 1"
+        :selectable="selectable"
+        :selected-paths="selectedPaths"
+        :context-menu-enabled="contextMenuEnabled"
         @file-selected="(f) => emit('file-selected', f)"
         @folder-dblclick="(p) => emit('folder-dblclick', p)"
         @item-contextmenu="(payload) => emit('item-contextmenu', payload)"
@@ -165,6 +177,11 @@ function onContextMenu(event: MouseEvent) {
   background: var(--theme-panel-file-panel-item-hover-background, rgba(51, 65, 85, 0.5));
 }
 
+.file-row.is-selected {
+  background: rgba(13, 148, 136, 0.2);
+  color: #ccfbf1;
+}
+
 .expander,
 .expander-placeholder {
   width: 18px;
@@ -180,6 +197,23 @@ function onContextMenu(event: MouseEvent) {
   font-size: 11px;
   line-height: 16px;
   padding: 0;
+}
+
+.selection-mark {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 5px;
+  color: #99f6e4;
+  font-size: 12px;
+}
+
+.file-row.is-selected .selection-mark {
+  border-color: rgba(45, 212, 191, 0.65);
+  background: rgba(13, 148, 136, 0.28);
 }
 
 .type-tag {

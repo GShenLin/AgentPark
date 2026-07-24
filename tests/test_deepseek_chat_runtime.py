@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -149,3 +150,25 @@ def test_deepseek_stream_assembles_reasoning_content_for_tool_call_replay():
 
     assert agent.Send(thinking="enabled", reasoning_effort="high", stream=True) == "done"
     assert requests[1]["messages"][1]["reasoning_content"] == "Use echo."
+
+
+def test_bundled_deepseek_v4_providers_use_deepseek_runtime():
+    provider_document = json.loads(
+        (Path(__file__).parents[1] / "config" / "modelProvider.json").read_text(encoding="utf-8")
+    )
+
+    assert provider_document["providers"]["deepseek_v4_flash"]["type"] == "deepseek"
+    assert provider_document["providers"]["deepseek_v4_pro"]["type"] == "deepseek"
+
+
+def test_model_provider_settings_can_select_deepseek_type():
+    component = (
+        Path(__file__).parents[1]
+        / "webui"
+        / "src"
+        / "components"
+        / "settings"
+        / "ProviderAuthFields.vue"
+    ).read_text(encoding="utf-8")
+
+    assert '<option value="deepseek">deepseek</option>' in component

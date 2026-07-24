@@ -1,3 +1,4 @@
+from .input_bundle_library import InputBundleLibrary
 from .paste_agent_settings import PasteAgentSettings
 from .prompt_library import PromptLibrary
 from .domain_base import DomainBase
@@ -14,6 +15,7 @@ class AgentDomain(DomainBase):
             cached = (
                 PasteAgentSettings(self),
                 PromptLibrary(self),
+                InputBundleLibrary(self),
             )
             object.__setattr__(self, "_service_targets_cache", cached)
         return cached

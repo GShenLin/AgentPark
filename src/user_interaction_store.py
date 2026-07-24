@@ -7,8 +7,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from src.memory_root import get_memories_root
 from src.runtime_cancellation import cancel_source_from_agent, raise_if_cancel_requested
-from src.workspace_settings import get_workspace_root
 
 _ALLOWED_FIELD_TYPES = {"text", "textarea", "select", "multiselect", "checkbox", "file", "custom_html"}
 _TERMINAL_STATUSES = {"submitted", "cancelled", "expired"}
@@ -21,12 +21,8 @@ _MAX_CUSTOM_CSS_CHARS = 12000
 _MAX_CUSTOM_JS_CHARS = 20000
 
 
-def _runtime_root() -> str:
-    return get_workspace_root()
-
-
 def _interaction_dir() -> str:
-    path = os.path.join(_runtime_root(), "memories", "interactions")
+    path = os.path.join(get_memories_root(), "interactions")
     os.makedirs(path, exist_ok=True)
     return path
 

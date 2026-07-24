@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import ImageLightbox from './ImageLightbox.vue'
+
 defineProps<{
   part: Record<string, unknown>
 }>()
+
+const previewImage = ref({ src: '', alt: '' })
 
 type ResourcePayload = {
   uri: string
@@ -126,6 +131,7 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
       :src="resourcePreviewHref(part)"
       :alt="resourceDisplayName(part) || resourceLabel(part)"
       loading="lazy"
+      @click="previewImage = { src: resourcePreviewHref(part), alt: resourceDisplayName(part) || resourceLabel(part) }"
     />
     <video
       v-else-if="resourceCanPreviewVideo(part) && resourcePreviewHref(part)"
@@ -158,6 +164,12 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
       >Download</a>
     </div>
     <div class="feed-resource-uri">{{ resourcePayload(part).uri }}</div>
+    <ImageLightbox
+      :open="!!previewImage.src"
+      :src="previewImage.src"
+      :alt="previewImage.alt"
+      @close="previewImage = { src: '', alt: '' }"
+    />
   </div>
 </template>
 
@@ -194,13 +206,14 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
 }
 
 .feed-resource-image {
-  width: 100%;
-  max-width: 380px;
-  max-height: 280px;
+  width: auto;
+  max-width: min(240px, 100%);
+  max-height: 180px;
   object-fit: contain;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.25);
   background: rgba(0, 0, 0, 0.2);
+  cursor: zoom-in;
 }
 
 .feed-resource-video {

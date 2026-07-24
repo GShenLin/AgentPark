@@ -6,7 +6,6 @@ import CanvasContextMenu from './CanvasContextMenu.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
 import NodeOutputRoutesPanel from './NodeOutputRoutesPanel.vue'
-import UserInteractionDialog from '../UserInteractionDialog.vue'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -107,11 +106,6 @@ watchEffect(() => {
           v-for="node in nodesWithOutputRoutes"
           :key="`routes:${node.id}`"
           :node="node"
-        />
-        <UserInteractionDialog
-          :nodes="items"
-          :canvas-width="ctx.canvasWidth.value"
-          :canvas-height="ctx.canvasHeight.value"
         />
       </div>
     </div>

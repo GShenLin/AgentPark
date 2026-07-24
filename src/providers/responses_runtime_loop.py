@@ -1,4 +1,5 @@
 ﻿import json
+from functools import partial
 from typing import Any
 
 from src.providers.agent_context_history import load_agent_context_history
@@ -10,10 +11,20 @@ from src.providers.responses_runtime_context import build_responses_agent_enviro
 from src.providers.responses_runtime_context import build_responses_turn_context
 from src.providers.responses_runtime_context import runtime_context_history_items
 from src.providers.responses_empty_message import EmptyMessageFeedbackController
+from src.providers.responses_completed_tool_checkpoint import CompletedToolContextCheckpoint
+from src.providers.responses_completed_tool_checkpoint import completed_tool_checkpoint_enabled
 from src.providers.responses_item_runtime import ResponsesItemLevelToolRunner
 from src.providers.responses_runtime_request import build_and_emit_responses_request_payload
 from src.providers.responses_runtime_mode import resolve_responses_runtime_mode
 from src.providers.responses_runtime_protocol import ResponsesStreamText
+from src.providers.responses_runtime_support import ResponsesStreamCallbacks
+from src.providers.responses_runtime_support import ResponsesStructuredResultAccumulator
+from src.providers.responses_runtime_support import abort_responses_item_tool_runner
+from src.providers.responses_runtime_support import checkpoint_completed_tool_context
+from src.providers.responses_runtime_support import close_responses_item_tool_runner
+from src.providers.responses_runtime_support import consume_responses_mid_turn_input_items
+from src.providers.responses_runtime_support import emit_responses_turn_debug
+from src.providers.responses_runtime_support import finish_responses_message
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.runtime_cancellation import CancellationRequested
 from src.tool.tool_call_protocol import to_openai_tool_call
@@ -24,6 +35,7 @@ def send_via_responses(
     messages,
     active_tools,
     run_tools,
+    regular_active_tools=None,
     web_search_mode="disabled",
     stream_handler=None,
     thinking_stream_handler=None,
@@ -31,7 +43,12 @@ def send_via_responses(
 ):
     self = runtime
     url, headers = self._responses_request_target()
-    tools_payload = self._build_responses_tools(active_tools, web_search_mode)
+    if regular_active_tools is None:
+        regular_active_tools = active_tools
+    tools_payload = self._build_responses_tools(
+        active_tools,
+        web_search_mode,
+    )
     current_input = self._build_responses_input(messages)
     explicit_context_input = list(current_input)
     stream_text = ResponsesStreamText()
@@ -46,86 +63,35 @@ def send_via_responses(
     persistent_reference_context_item = load_agent_turn_context_reference(self)
     context_history_items = runtime_context_history_items(load_agent_context_history(self))
     context_history_items_to_save, sticky_request_instructions = list(context_history_items), ""
+    completed_tool_checkpoint = CompletedToolContextCheckpoint(
+        enabled=completed_tool_checkpoint_enabled(self)
+    )
     if callable(reset_loop_guard := getattr(self, "_reset_tool_call_loop_guard", None)):
         reset_loop_guard()
     last_request_summary: dict[str, Any] | None = None
-    accumulated_structured_result: dict[str, Any] = {}
+    structured_result_accumulator = ResponsesStructuredResultAccumulator()
     self._last_responses_structured_result = {}
-
-    def _accumulate_structured_result(value: object) -> dict[str, Any]:
-        if not isinstance(value, dict):
-            return dict(accumulated_structured_result)
-        for key, identity_key in (("server_tool_calls", "call_id"), ("citations", "url")):
-            incoming = value.get(key)
-            if not isinstance(incoming, list):
-                continue
-            merged = accumulated_structured_result.setdefault(key, [])
-            positions = {
-                str(item.get(identity_key) or "").strip(): index
-                for index, item in enumerate(merged)
-                if isinstance(item, dict) and str(item.get(identity_key) or "").strip()
-            }
-            for item in incoming:
-                if not isinstance(item, dict):
-                    continue
-                identity = str(item.get(identity_key) or "").strip()
-                if identity and identity in positions:
-                    merged[positions[identity]] = dict(item)
-                else:
-                    if identity:
-                        positions[identity] = len(merged)
-                    merged.append(dict(item))
-        response_metadata = value.get("response_metadata")
-        if isinstance(response_metadata, dict) and response_metadata:
-            accumulated_structured_result["response_metadata"] = dict(response_metadata)
-        return {
-            key: (list(items) if isinstance(items, list) else dict(items))
-            for key, items in accumulated_structured_result.items()
-            if items
-        }
-
-    def _consume_mid_turn_user_input_items() -> list[dict[str, Any]]:
-        messages = consume_mid_turn_user_messages(self)
-        items = self._build_responses_input(messages)
-        if items:
-            self._emit_responses_notice(
-                stage="openai_responses_mid_turn_user_input",
-                payload={
-                    "message_count": len(messages),
-                    "input_item_count": len(items),
-                },
-            )
-        return items
-
-    _on_stream = lambda delta_text, full_text: self._emit_stream_text(
-        stream_handler, delta_text, stream_text.update(delta_text, full_text)
-    )
     thinking_text = ResponsesStreamText()
-
-    def _on_thinking(delta_text, full_text, provider=""):
-        if not callable(thinking_stream_handler):
-            return
-        resolved_full = thinking_text.update(delta_text, full_text)
-        thinking_stream_handler(delta_text, resolved_full, provider)
-
-    def _emit_turn_debug(**kwargs):
-        self._emit_responses_turn_debug(
-            **kwargs,
-            responses_mode=mode_decision.mode,
-            requested_responses_mode=mode_decision.requested_mode,
-            responses_mode_fallback_reason=mode_decision.fallback_reason,
-        )
+    stream_callbacks = ResponsesStreamCallbacks(
+        runtime=self,
+        stream_handler=stream_handler,
+        thinking_stream_handler=thinking_stream_handler,
+        stream_text=stream_text,
+        thinking_text=thinking_text,
+    )
+    _emit_turn_debug = partial(emit_responses_turn_debug, self, mode_decision)
 
     while True:
+        current_input = completed_tool_checkpoint.apply(current_input)
+        explicit_context_input = completed_tool_checkpoint.apply(explicit_context_input)
         item_tool_runner = ResponsesItemLevelToolRunner(self, run_tools=run_tools) if use_item_level_mode else None
 
-        def _close_item_tool_runner() -> None:
-            if item_tool_runner is not None:
-                item_tool_runner.close()
-
-        def _abort_item_tool_runner(reason: str, error: Exception) -> None:
-            if item_tool_runner is not None:
-                item_tool_runner.abort(reason=reason, error=f"{type(error).__name__}: {error}")
+        _close_item_tool_runner = partial(
+            close_responses_item_tool_runner, item_tool_runner
+        )
+        _abort_item_tool_runner = partial(
+            abort_responses_item_tool_runner, item_tool_runner
+        )
 
         stream_text.reset()
         thinking_text.reset()
@@ -186,8 +152,8 @@ def send_via_responses(
                 url=url,
                 headers=headers,
                 payload_json=payload_json,
-                stream_handler=_on_stream if use_stream else None,
-                thinking_stream_handler=_on_thinking if use_stream else None,
+                stream_handler=stream_callbacks.on_stream if use_stream else None,
+                thinking_stream_handler=stream_callbacks.on_thinking if use_stream else None,
                 item_event_handler=item_tool_runner.handle_event if item_tool_runner is not None else None,
             )
         except CancellationRequested as exc:
@@ -205,9 +171,10 @@ def send_via_responses(
             raise
 
         self._emit_provider_request_completed(last_request_summary, result)
+        self._emit_responses_service_tier_result(result)
         content, function_calls, response_id = self._parse_responses_output_envelopes(result)
         turn_structured_result = self._parse_responses_structured_result(result)
-        structured_result = _accumulate_structured_result(turn_structured_result)
+        structured_result = structured_result_accumulator.add(turn_structured_result)
         self._last_responses_structured_result = dict(structured_result)
         save_agent_turn_context_reference(self, context_item)
         save_agent_context_history(self, context_history_items_to_save)
@@ -222,7 +189,28 @@ def send_via_responses(
             request_summary=last_request_summary,
         )
         if empty_message_action.kind != "none":
-            gate_active = bool(getattr(self, "_tool_context_compaction_gate_active", False))
+            if self._tool_context_compaction_gate_active_now():
+                self._retry_tool_context_compaction_gate(
+                    "the model returned an empty response instead of calling compact_tool_context"
+                )
+                tools_payload = self._build_responses_tools(
+                    self._tool_context_compaction_active_tools(active_tools),
+                    web_search_mode,
+                )
+                current_input = self._build_responses_input(self._get_messages_with_memory())
+                explicit_context_input = list(current_input)
+                empty_message_feedback.reset()
+                _emit_turn_debug(
+                    response_id=response_id,
+                    content="",
+                    function_call_count=0,
+                    next_continuation_mode="tool_context_compaction_empty_retry",
+                    request_input_item_count=request_input_item_count,
+                    followup_item_count=0,
+                    stream=use_stream,
+                )
+                _close_item_tool_runner()
+                continue
             if empty_message_action.kind == "error":
                 _emit_turn_debug(
                     response_id=response_id,
@@ -236,27 +224,7 @@ def send_via_responses(
                 self.Message("assistant", empty_message_action.error_text)
                 _close_item_tool_runner()
                 return empty_message_action.error_text
-            if gate_active and empty_message_action.feedback_item is not None:
-                # Inside the compaction gate the model must still be forced
-                # to call compact_tool_context.  Append the EmptyMessage
-                # feedback as an extra user item on top of the existing
-                # gate input (which still contains the mandatory gate
-                # system prompt), instead of replacing current_input with
-                # the lone feedback item (which would discard the gate
-                # instruction and guarantee a second refusal).
-                current_input = list(current_input) + [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": empty_message_action.feedback_item["content"][0]["text"],
-                            }
-                        ],
-                    }
-                ]
-            else:
-                current_input = empty_message_action.next_input
+            current_input = empty_message_action.next_input
             _emit_turn_debug(
                 response_id=response_id,
                 content=empty_message_action.feedback_item["content"][0]["text"],
@@ -311,18 +279,44 @@ def send_via_responses(
             followup_items = self._build_responses_followup_items(executions)
             _close_item_tool_runner()
 
-            if self._tool_context_compaction_gate_completed(executions):
+            checkpoint_items = checkpoint_completed_tool_context(
+                self,
+                completed_tool_checkpoint,
+                items=explicit_context_input,
+                function_calls=function_calls,
+                executions=executions,
+            )
+            if checkpoint_items is not None:
+                explicit_context_input = checkpoint_items
+                current_input = list(explicit_context_input)
+
+            compaction_changed = bool(getattr(self, "_tool_context_compaction_changed", False))
+            compaction_completed = self._tool_context_compaction_gate_completed(executions)
+            self._notify_companion_about_failed_tool_executions(executions)
+
+            if compaction_completed and compaction_changed:
+                mid_turn_user_messages = consume_mid_turn_user_messages(self)
+                for message in mid_turn_user_messages:
+                    self.Message("user", message.get("content"), persist=False)
+                current_input = self._build_responses_input(self._get_messages_with_memory())
+                explicit_context_input = list(current_input)
+                tools_payload = self._build_responses_tools(regular_active_tools, web_search_mode)
                 _emit_turn_debug(
                     response_id=response_id,
                     content=content,
                     function_call_count=len(function_calls),
-                    next_continuation_mode="tool_context_compaction_completed",
+                    next_continuation_mode="tool_context_compaction",
                     request_input_item_count=request_input_item_count,
                     followup_item_count=len(followup_items),
                     stream=use_stream,
                 )
-                return json.dumps({"status": "tool_context_compaction_completed"}, ensure_ascii=False)
-            self._notify_companion_about_failed_tool_executions(executions)
+                continue
+
+            if self._tool_context_compaction_gate_active_now() and any(
+                self._execution_tool_name(execution) == "compact_tool_context"
+                for execution in executions
+            ):
+                self._retry_tool_context_compaction_gate("the compaction tool did not produce a context change")
 
             if not followup_items or (self._responses_requires_response_id_for_tool_followup() and not response_id):
                 _emit_turn_debug(
@@ -336,22 +330,30 @@ def send_via_responses(
                 )
                 return content or "Error: invalid function call continuation in Responses API."
 
-            self._run_tool_context_compaction_gate_if_needed(executions)
-            if self._tool_context_compaction_changed_last_run():
+            gate_started = self._run_tool_context_compaction_gate_if_needed(executions)
+            if self._tool_context_compaction_gate_active_now():
+                tools_payload = self._build_responses_tools(
+                    self._tool_context_compaction_active_tools(active_tools),
+                    web_search_mode,
+                )
+            else:
+                tools_payload = self._build_responses_tools(regular_active_tools, web_search_mode)
+
+            if gate_started or self._tool_context_compaction_gate_active_now():
+                current_input = self._build_responses_input(self._get_messages_with_memory())
+                explicit_context_input = list(current_input)
                 _emit_turn_debug(
                     response_id=response_id,
                     content=content,
                     function_call_count=len(function_calls),
-                    next_continuation_mode="tool_context_compaction",
+                    next_continuation_mode="tool_context_compaction_gate",
                     request_input_item_count=request_input_item_count,
                     followup_item_count=len(followup_items),
                     stream=use_stream,
                 )
-                current_input = self._build_responses_input(self._get_messages_with_memory())
-                explicit_context_input = list(current_input)
                 continue
 
-            mid_turn_user_items = _consume_mid_turn_user_input_items()
+            mid_turn_user_items = consume_responses_mid_turn_input_items(self)
             explicit_context_input = explicit_context_input + continuation_items + followup_items + mid_turn_user_items
             current_input = list(explicit_context_input)
             _emit_turn_debug(
@@ -364,6 +366,30 @@ def send_via_responses(
                 stream=use_stream,
             )
             continue
+
+        if self._tool_context_compaction_gate_active_now():
+            final_text = content or stream_text.text
+            if not self._finish_tool_context_compaction_gate_with_response(final_text):
+                self._retry_tool_context_compaction_gate(
+                    "the model returned an empty response instead of calling compact_tool_context"
+                )
+                tools_payload = self._build_responses_tools(
+                    self._tool_context_compaction_active_tools(active_tools),
+                    web_search_mode,
+                )
+                current_input = self._build_responses_input(self._get_messages_with_memory())
+                explicit_context_input = list(current_input)
+                _emit_turn_debug(
+                    response_id=response_id,
+                    content=final_text,
+                    function_call_count=0,
+                    next_continuation_mode="tool_context_compaction_retry",
+                    request_input_item_count=request_input_item_count,
+                    followup_item_count=0,
+                    stream=use_stream,
+                )
+                _close_item_tool_runner()
+                continue
 
         next_continuation_mode = "final_message"
         if not content and use_stream and stream_text.text:
@@ -379,27 +405,13 @@ def send_via_responses(
             followup_item_count=0,
             stream=use_stream,
         )
-        if content:
+        if content or (use_stream and stream_text.text):
             empty_message_feedback.reset()
-            self.Message("assistant", content, **structured_result)
-            _close_item_tool_runner()
-            public_result = {
-                key: value
-                for key, value in structured_result.items()
-                if key in {"server_tool_calls", "citations"} and value
-            }
-            return {"response": content, **public_result} if public_result else content
-        if use_stream and stream_text.text:
-            empty_message_feedback.reset()
-            self.Message("assistant", stream_text.text, **structured_result)
-            _close_item_tool_runner()
-            public_result = {
-                key: value
-                for key, value in structured_result.items()
-                if key in {"server_tool_calls", "citations"} and value
-            }
-            return {"response": stream_text.text, **public_result} if public_result else stream_text.text
-        self.Message("assistant", content)
         _close_item_tool_runner()
-        return json.dumps(result, ensure_ascii=False)
-
+        return finish_responses_message(
+            self,
+            content=content,
+            stream_text=stream_text.text if use_stream else "",
+            structured_result=structured_result,
+            raw_result=result,
+        )

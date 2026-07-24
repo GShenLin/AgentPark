@@ -215,6 +215,9 @@ class ResponsesRuntimeMethods:
     def _responses_payload_extra(self, **_provider_options) -> dict[str, Any]:
         return {}
 
+    def _emit_responses_service_tier_result(self, _result) -> None:
+        return None
+
     def _post_responses_request(self, *, url, headers, payload_json):
         return self._post_json_with_retry(endpoint="responses", url=url, headers=headers, payload_json=payload_json)
 

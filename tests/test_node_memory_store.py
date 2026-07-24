@@ -143,6 +143,70 @@ def test_load_latest_node_memory_turn_reports_complete_single_turn(tmp_path):
     assert history_complete is True
 
 
+def test_latest_turn_reads_only_the_committed_prefix_during_next_append(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    append_node_memory_entry(
+        str(memory_path),
+        str(messages_path),
+        "user",
+        {"id": "u1", "role": "user", "parts": [{"type": "text", "text": "ready"}]},
+    )
+    append_node_memory_entry(
+        str(memory_path),
+        str(messages_path),
+        "assistant",
+        {"id": "a1", "role": "assistant", "parts": [{"type": "text", "text": "done"}]},
+    )
+
+    with messages_path.open("ab") as handle:
+        handle.write(b'{"id":"partial","role":"assistant"')
+
+    records, history_complete = load_latest_node_memory_turn(str(memory_path), str(messages_path))
+
+    assert [record["id"] for record in records] == ["u1", "a1"]
+    assert history_complete is True
+
+
+def test_load_latest_node_memory_turn_defers_unrequested_large_metadata(tmp_path):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    records = [
+        {
+            "id": "u1",
+            "role": "user",
+            "parts": [{"type": "text", "text": "question"}],
+            "created_at": "2026-07-16 10:00:00.000000",
+        },
+        {
+            "id": "a1",
+            "role": "assistant",
+            "parts": [{"type": "text", "text": "answer"}],
+            "created_at": "2026-07-16 10:00:01.000000",
+        },
+        {
+            "id": "m1",
+            "role": "metadata",
+            "parts": [{"type": "data", "data": {"payload": "x" * (512 * 1024)}}],
+            "created_at": "2026-07-16 10:00:02.000000",
+        },
+    ]
+    messages_path.write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    latest, history_complete = load_latest_node_memory_turn(
+        str(memory_path),
+        str(messages_path),
+        materialize_roles={"user", "assistant"},
+    )
+
+    assert history_complete is True
+    assert latest[-1] == {"id": "", "role": "metadata", "parts": [], "created_at": "", "_deferred": True}
+    assert [item["id"] for item in _select_latest_turn_records(latest, "latest_turn")] == ["u1", "a1"]
+
+
 def test_latest_turn_lazy_modes_split_summary_progress_and_metadata():
     records = [
         {"id": "u1", "role": "user"},
@@ -264,6 +328,51 @@ def test_records_over_limit_archive_old_entries_and_keep_recent_active(tmp_path,
     assert "<!-- message_id: msg-1 -->" in text
     assert "<!-- message_id: msg-2 -->" in text
     assert "<!-- message_id: msg-3 -->" in text
+
+
+def test_active_limit_does_not_split_or_rewrite_an_inflight_user_turn(tmp_path, monkeypatch):
+    memory_path = tmp_path / "memory.md"
+    messages_path = tmp_path / "messages.jsonl"
+    monkeypatch.setattr("src.web_backend.node_memory_store._read_max_active_memory_entries", lambda: 3)
+
+    append_node_memory_entry(
+        str(memory_path),
+        str(messages_path),
+        "user",
+        {"id": "u1", "role": "user", "parts": [{"type": "text", "text": "task"}]},
+    )
+    for index in range(5):
+        append_node_memory_entry(
+            str(memory_path),
+            str(messages_path),
+            "tool",
+            {
+                "id": f"t{index}",
+                "role": "tool",
+                "parts": [{"type": "text", "text": "x" * 1024}],
+            },
+        )
+
+    active_ids = [json.loads(line)["id"] for line in messages_path.read_text(encoding="utf-8").splitlines()]
+    assert active_ids == ["u1", "t0", "t1", "t2", "t3", "t4"]
+    assert not (tmp_path / "archive").exists()
+
+    append_node_memory_entry(
+        str(memory_path),
+        str(messages_path),
+        "user",
+        {"id": "u2", "role": "user", "parts": [{"type": "text", "text": "next"}]},
+    )
+
+    active_ids = [json.loads(line)["id"] for line in messages_path.read_text(encoding="utf-8").splitlines()]
+    assert active_ids == ["u2"]
+    archived = list((tmp_path / "archive").rglob("messages.jsonl"))
+    archived_ids = [
+        json.loads(line)["id"]
+        for path in archived
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert archived_ids == ["u1", "t0", "t1", "t2", "t3", "t4"]
 
 
 def test_read_node_memory_text_can_read_full_history(tmp_path):

@@ -9,7 +9,6 @@ import { extractMemoryMessageText } from './memoryMessageText'
 import {
   feedRoleClass,
   memoryRoleLabel,
-  associatedMessages,
   type FeedProgressGroupEntry,
   type FeedTurnEntry,
 } from './memoryFeedTools'
@@ -23,6 +22,7 @@ const props = withDefaults(defineProps<{
   metadataDeferred?: boolean
   loadingSection?: 'progress' | 'metadata' | null
   progressSummary?: LatestTurnProgressSummary | null
+  ensureMetadata?: () => Promise<void>
 }>(), {
   compact: false,
   defaultExpanded: true,
@@ -35,7 +35,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (event: 'save', text: string): void
   (event: 'copy', text: string): void
-  (event: 'delete', messages: MessageEnvelope | MessageEnvelope[]): void
+  (event: 'delete', target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }): void
   (event: 'toggle', expanded: boolean): void
   (event: 'requestSection', section: 'progress' | 'metadata'): void
 }>()
@@ -71,16 +71,6 @@ function progressEntry(): FeedProgressGroupEntry {
   }
 }
 
-function turnMessages() {
-  const messages = [
-    props.entry.userMessage,
-    ...props.entry.progressMessages,
-    ...(props.entry.finalResponse ? [props.entry.finalResponse] : []),
-    ...props.entry.finalMessages,
-  ]
-  return messages.flatMap((message) => [message, ...associatedMessages(message)])
-}
-
 function regularFinalMessages() {
   return props.entry.finalMessages.filter((message) => feedRoleClass(String((message as any)?.role || '')) !== 'metadata')
 }
@@ -114,7 +104,7 @@ function requestDeferredMetadata() {
         :show-save="false"
         :show-copy="false"
         delete-title="删除整个 Turn"
-        @delete="emit('delete', turnMessages())"
+        @delete="emit('delete', { kind: 'turn', userMessage: entry.userMessage })"
       />
     </div>
 
@@ -127,6 +117,8 @@ function requestDeferredMetadata() {
         <MemoryMessageParts
           :message="entry.userMessage"
           :markdown-preview="markdownPreview"
+          :metadata-deferred="metadataDeferred"
+          :ensure-metadata="ensureMetadata"
           @save="emit('save', $event)"
           @copy="emit('copy', $event)"
           @delete="emit('delete', $event)"
@@ -159,6 +151,8 @@ function requestDeferredMetadata() {
         <MemoryMessageParts
           :message="entry.finalResponse"
           :markdown-preview="markdownPreview"
+          :metadata-deferred="metadataDeferred"
+          :ensure-metadata="ensureMetadata"
           @save="emit('save', $event)"
           @copy="emit('copy', $event)"
           @delete="emit('delete', $event)"
@@ -180,6 +174,8 @@ function requestDeferredMetadata() {
         <MemoryMessageParts
           :message="message"
           :markdown-preview="markdownPreview"
+          :metadata-deferred="metadataDeferred"
+          :ensure-metadata="ensureMetadata"
           @save="emit('save', $event)"
           @copy="emit('copy', $event)"
           @delete="emit('delete', $event)"

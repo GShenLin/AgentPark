@@ -13,7 +13,7 @@ Doctor checks Python, Node, npm, `rg`, workspace config, provider config, MCP se
 
 Common check prefixes:
 
-- `providers`: `config/moduleProvider.json` and provider feature normalization
+- `providers`: `config/modelProvider.json` and provider feature normalization
 - `mcp_server:<name>`: MCP transport and required fields
 - `skill:<id>`: `SKILL.md`, `skill.json`, resources, and `agents/*.yaml`
 - `plugin:<id>`: `agentpark.plugin.json` or adapted plugin manifest

@@ -1,7 +1,10 @@
 from __future__ import annotations
+
+import json
 from typing import Any
 
 from src.tool.tool_json_response import tool_json_payload
+from src.tool.tool_event_protocol import RuntimeNoticeEvent
 from src.user_interaction_store import (
     create_interaction_request,
     normalize_interaction_schema,
@@ -25,7 +28,13 @@ def ask_user(
             confirm_label=confirm_label,
         )
         request = create_interaction_request(schema=schema, timeout_sec=timeout_sec, agent=agent)
+        _emit_interaction_notice(agent, request, stage="user_interaction_created")
         completed = wait_for_interaction_response(request["id"], timeout_sec=request["timeout_sec"], agent=agent)
+        _emit_interaction_notice(
+            agent,
+            completed,
+            stage=f"user_interaction_{str(completed.get('status') or 'closed').strip().lower()}",
+        )
     except Exception as exc:
         return tool_json_payload({"status": "error", "tool": "ask_user", "error": f"{type(exc).__name__}: {exc}"})
 
@@ -42,6 +51,34 @@ def ask_user(
     if status != "submitted":
         payload["error"] = str(response.get("error") or f"interaction {status or 'failed'}")
     return tool_json_payload(payload)
+
+
+def _emit_interaction_notice(agent: object | None, request: dict, *, stage: str) -> None:
+    callback = getattr(agent, "tool_event_callback", None)
+    if not callable(callback):
+        return
+    schema = request.get("schema") if isinstance(request.get("schema"), dict) else {}
+    agent_context = request.get("agent") if isinstance(request.get("agent"), dict) else {}
+    callback(
+        RuntimeNoticeEvent(
+            message=json.dumps(
+                {
+                    "request_id": str(request.get("id") or ""),
+                    "status": str(request.get("status") or ""),
+                    "title": str(schema.get("title") or ""),
+                    "description": str(schema.get("description") or ""),
+                    "graph_id": str(agent_context.get("graph_id") or ""),
+                    "node_id": str(agent_context.get("node_id") or ""),
+                    "node_name": str(agent_context.get("node_name") or ""),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            source="user_interaction",
+            stage=stage,
+            name="ask_user",
+        ).to_payload()
+    )
 
 
 ask_user.tool_timeout_seconds = 0

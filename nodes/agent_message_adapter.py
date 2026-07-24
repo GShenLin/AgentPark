@@ -39,8 +39,6 @@ def build_agent_user_content(
                 text_parts.append(json.dumps(data, ensure_ascii=False) if isinstance(data, (dict, list)) else str(data))
             continue
         if isinstance(part, MetaPart):
-            if part.meta:
-                text_parts.append(json.dumps({"meta": part.meta}, ensure_ascii=False))
             continue
         if not isinstance(part, ResourcePart):
             continue
@@ -57,6 +55,29 @@ def build_agent_user_content(
             envelope.to_dict(),
             public_base_url=public_base_url,
         )
+
+    if str(mode or "").strip().lower() == "image_generation":
+        content_parts: list[dict] = []
+        merged_text = "\n".join([item for item in text_parts if item]).strip()
+        if merged_text:
+            content_parts.append({"type": "text", "text": merged_text})
+        for resource in image_resources:
+            uri = str(resource.get("uri") or "").strip()
+            if uri:
+                content_parts.append({"type": "reference_resource", "kind": "image", "uri": uri})
+        return content_parts
+
+    if str(mode or "").strip().lower() == "audio_generation":
+        content_parts: list[dict] = []
+        merged_text = "\n".join([item for item in text_parts if item]).strip()
+        if merged_text:
+            content_parts.append({"type": "text", "text": merged_text})
+        for resource in [*image_resources, *other_resources]:
+            uri = str(resource.get("uri") or "").strip()
+            kind = str(resource.get("kind") or "").strip().lower()
+            if uri and kind in {"audio", "image"}:
+                content_parts.append({"type": "reference_resource", "kind": kind, "uri": uri})
+        return content_parts
 
     if other_resources:
         text_parts.extend(
@@ -117,6 +138,34 @@ def build_agent_output_message(response: object) -> dict:
                 uri = str(item or "").strip()
                 if uri:
                     parts.append(build_resource_part(uri=uri, kind="video", source="agent"))
+
+        audio_path = response.get("audio_path")
+        if isinstance(audio_path, str) and audio_path.strip():
+            parts.append(build_resource_part(uri=audio_path.strip(), kind="audio", source="agent"))
+        elif isinstance(audio_path, list):
+            for item in audio_path:
+                uri = str(item or "").strip()
+                if uri:
+                    parts.append(build_resource_part(uri=uri, kind="audio", source="agent"))
+
+        structured = {
+            key: value
+            for key, value in response.items()
+            if key not in {
+                "response",
+                "text",
+                "image_path",
+                "video_path",
+                "audio_path",
+                "server_tool_calls",
+                "citations",
+                "response_metadata",
+                "provider_requests",
+            }
+            and value not in (None, "")
+        }
+        if structured:
+            parts.append({"type": "structured", "data": structured})
 
         if not parts:
             parts.append({"type": "text", "text": json.dumps(response, ensure_ascii=False)})

@@ -8,6 +8,8 @@ from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_
 from src.providers.zhipu_agent import ZhipuAgent
 from src.providers.zhipu_chat_runtime import ZhipuChatRuntime
 from src.providers.zhipu_http_transport import ZhipuHttpError
+from src.tool.tool_call_protocol import ToolCallExecution
+from src.tool_context_compaction_trigger import ToolContextCompactionWindow
 
 
 def _make_zhipu_agent():
@@ -241,8 +243,11 @@ def test_zhipu_tool_context_compaction_runs_between_tool_rounds():
     agent.config.update({
         "toolContextCompactionEnabled": True,
         "toolContextCompactionEveryToolCalls": 1,
+        "toolContextCompactionInputTokens": 0,
+        "toolContextCompactionCurrentInputTokens": 0,
+        "toolContextCompactionOutputTokens": 0,
     })
-    agent._tool_context_compaction_since_last = 0
+    agent._tool_context_compaction_window = ToolContextCompactionWindow()
     agent.messages = [{"role": "user", "content": "run echo"}]
     requests = []
 
@@ -287,7 +292,26 @@ def test_zhipu_tool_context_compaction_runs_between_tool_rounds():
                                             {
                                                 "action": "replace",
                                                 "reason": "The first tool result was summarized.",
-                                                "summary": "echo_tool returned echo:hello.",
+                                                "summary": {
+                                                    "task_anchor": "Run echo and finish the task.",
+                                                    "completed_facts": [
+                                                        "echo_tool returned echo:hello."
+                                                    ],
+                                                    "changed_state": [],
+                                                    "verification": [
+                                                        "The echo result was observed."
+                                                    ],
+                                                    "failed_attempts": [],
+                                                    "remaining_steps": [
+                                                        "Return the completed result."
+                                                    ],
+                                                    "immediate_next_step": (
+                                                        "Return the completed result."
+                                                    ),
+                                                    "avoid_repeating": [
+                                                        "Do not call echo_tool again."
+                                                    ],
+                                                },
                                             }
                                         ),
                                     },
@@ -322,6 +346,55 @@ def test_zhipu_tool_context_compaction_runs_between_tool_rounds():
     assert "compact_tool_context" not in final_text
     assert "echo_tool returned echo:hello" in final_text
     assert "echo:hello" not in [item.get("content") for item in final_messages if item.get("role") == "tool"]
+
+
+def test_zhipu_compaction_checkpoint_accepts_final_text_without_retrying():
+    agent = _make_zhipu_agent()
+    agent.config.update(
+        {
+            "toolContextCompactionEnabled": True,
+            "toolContextCompactionEveryToolCalls": 1,
+            "toolContextCompactionInputTokens": 0,
+            "toolContextCompactionCurrentInputTokens": 0,
+            "toolContextCompactionOutputTokens": 0,
+        }
+    )
+    agent._tool_context_compaction_window = ToolContextCompactionWindow()
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_read",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "content": "raw file content", "tool_call_id": "call_read", "name": "read_file"},
+    ]
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return {
+            "choices": [
+                {"message": {"role": "assistant", "content": "The task is complete."}, "finish_reason": "stop"}
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call_read", "raw file content")]
+    )
+
+    assert agent.Send(run_tools=True) == "The task is complete."
+    assert len(requests) == 1
+    assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["compact_tool_context"]
+    assert agent._tool_context_compaction_gate_active is False
+    assert agent.messages[-1]["content"] == "The task is complete."
 
 
 def test_zhipu_invalid_tool_arguments_return_typed_tool_result():
@@ -400,6 +473,7 @@ def test_zhipu_stream_assembles_text_and_tool_call_deltas():
         },
         {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": '"hi"}'}}]}}]},
         {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+        {"choices": [], "usage": {"prompt_tokens": 42, "completion_tokens": 5, "total_tokens": 47}},
     ]
 
     agent._curl_post_sse_data_lines = lambda **_kwargs: (json.dumps(event) for event in events)
@@ -421,6 +495,21 @@ def test_zhipu_stream_assembles_text_and_tool_call_deltas():
             "function": {"name": "echo_tool", "arguments": '{"message":"hi"}'},
         }
     ]
+    assert result["usage"] == {"prompt_tokens": 42, "completion_tokens": 5, "total_tokens": 47}
+
+
+def test_zhipu_stream_payload_requests_usage():
+    agent = _make_zhipu_agent()
+
+    payload = agent._build_payload(
+        messages=[{"role": "user", "content": "hello"}],
+        active_tools=None,
+        reasoning_effort="high",
+        thinking_mode="enabled",
+        stream=True,
+    )
+
+    assert payload["stream_options"] == {"include_usage": True}
 
 
 def test_zhipu_rejects_unsupported_thinking_auto():

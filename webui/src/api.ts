@@ -1,6 +1,8 @@
 import type {
   FileListResponse,
   AgentProfile,
+  AgentProfileEditorPayload,
+  AgentProfileLoadResponse,
   AgentProfileListResponse,
   GraphConfig,
   GraphInfo,
@@ -9,6 +11,7 @@ import type {
   MessageEnvelope,
   MemoryHistoryMode,
   LatestTurnProgressSummary,
+  LiveActivityBlock,
   MobileGraphInstance,
   MobileNode,
   MobileNodeConversation,
@@ -20,25 +23,31 @@ import type {
   NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
+  NodeInstanceFileListResponse,
   NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
   PetAvatarFrame,
   PetAvatarSummary,
   NodeTemplate,
+  NodeTemplateContext,
   PasteAgentConfig,
   PendingNodeInput,
   ProviderInfo,
   RemoteEndpoint,
   RemoteStatus,
+  RemoteWorker,
   RunInfo,
   UserInteractionRequest,
+  WorkspaceBootstrap,
 } from './apiTypes'
 
 export type {
   FileItem,
   FileListResponse,
   AgentProfile,
+  AgentProfileEditorPayload,
+  AgentProfileLoadResponse,
   AgentProfileListResponse,
   GraphConfig,
   GraphInfo,
@@ -54,6 +63,7 @@ export type {
   MessageEnvelope,
   MemoryHistoryMode,
   LatestTurnProgressSummary,
+  LiveActivityBlock,
   MessagePart,
   MobileGraph,
   MobileGraphInstance,
@@ -69,6 +79,8 @@ export type {
   NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
+  NodeInstanceFile,
+  NodeInstanceFileListResponse,
   NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
@@ -82,6 +94,7 @@ export type {
   PetAvatarTransformKeyframe,
   PetAvatarSummary,
   NodeTemplate,
+  NodeTemplateContext,
   PasteAgentConfig,
   PendingNodeInput,
   ProviderRequestSummary,
@@ -89,6 +102,7 @@ export type {
   ProviderInfo,
   RemoteEndpoint,
   RemoteStatus,
+  RemoteWorker,
   ResourceKind,
   RuntimeEvent,
   RuntimeNoticeEvent,
@@ -98,6 +112,7 @@ export type {
   ToolRuntimeEvent,
   UserInteractionField,
   UserInteractionRequest,
+  WorkspaceBootstrap,
 } from './apiTypes'
 
 const DEFAULT_API_BASE = (import.meta as any).env?.VITE_API_BASE || ''
@@ -182,6 +197,7 @@ export async function requestApiJson(baseUrl: string, path: string, init?: Reque
       headers,
     })
   } catch (error) {
+    if (init?.signal?.aborted) throw error
     throw createApiNetworkError(baseUrl, path, init, error)
   }
   if (!res.ok) {
@@ -230,7 +246,7 @@ export async function getRemoteStatus(): Promise<RemoteStatus> {
 export async function addRemote(payload: {
   name: string
   host: string
-  port: number | string
+  port: number
   private?: boolean
 }): Promise<{ ok: boolean; remote: RemoteEndpoint; remotes: RemoteEndpoint[] }> {
   return remoteConfigFetch('/api/remotes', {
@@ -241,6 +257,67 @@ export async function addRemote(payload: {
 
 export async function deleteRemote(remoteId: string): Promise<{ ok: boolean; remotes: RemoteEndpoint[] }> {
   return remoteConfigFetch(`/api/remotes/${encodeURIComponent(remoteId)}`, { method: 'DELETE' })
+}
+
+export async function pairRemoteWorker(): Promise<{ ok: boolean; worker: RemoteWorker }> {
+  return apiFetch('/api/remote-workers/pair', { method: 'POST' })
+}
+
+export async function waitForRemoteWorker(
+  workerId: string,
+  timeoutSeconds = 5,
+): Promise<{ ok: boolean; worker: RemoteWorker }> {
+  const id = String(workerId || '').trim()
+  if (!id) throw new Error('remote worker_id is required')
+  return apiFetch(`/api/remote-workers/${encodeURIComponent(id)}/wait-online`, {
+    method: 'POST',
+    body: JSON.stringify({ timeout_seconds: timeoutSeconds }),
+  })
+}
+
+export async function discoverLocalRemoteWorker(): Promise<{ ok: boolean; server_url: string }> {
+  const configuredBase = String(readActiveApiBase() || '').trim()
+  const serverUrl = new URL(configuredBase || window.location.origin, window.location.origin).origin
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 4000)
+  try {
+    const response = await fetch('http://127.0.0.1:18766/agentpark/discover', {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ server_url: serverUrl }),
+      signal: controller.signal,
+    })
+    const text = await response.text().catch(() => '')
+    if (!response.ok) {
+      let detail = text.trim()
+      try {
+        detail = String(JSON.parse(detail)?.error || detail)
+      } catch {
+        // Keep the response body when it is not JSON.
+      }
+      throw new Error(detail || `HTTP ${response.status}`)
+    }
+    return (text ? JSON.parse(text) : { ok: true, server_url: serverUrl }) as { ok: boolean; server_url: string }
+  } catch (error: any) {
+    const detail = error?.name === 'AbortError' ? 'local discovery timed out' : String(error?.message || error)
+    throw new Error(
+      `AgentParkRemote worker was not reachable on this computer. Start AgentParkRemote.exe or open the Unreal plugin: ${detail}`,
+    )
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+export async function selectRemoteWorkerFolder(
+  workerId: string,
+  initialPath?: string,
+): Promise<{ ok: boolean; path: string }> {
+  return apiFetch('/api/remote-workers/select-folder', {
+    method: 'POST',
+    body: JSON.stringify({ worker_id: workerId, initial_path: initialPath || '' }),
+  })
 }
 
 export async function listRuns(): Promise<RunInfo[]> {
@@ -281,6 +358,10 @@ export async function listTools(): Promise<string[]> {
   return res.tools
 }
 
+export async function loadWorkspaceBootstrap(): Promise<WorkspaceBootstrap> {
+  return apiFetch('/api/workspace/bootstrap') as Promise<WorkspaceBootstrap>
+}
+
 export async function listUserInteractions(): Promise<UserInteractionRequest[]> {
   const res = await apiFetch('/api/user-interactions?status=pending')
   return (res.requests || []) as UserInteractionRequest[]
@@ -301,8 +382,19 @@ export async function listNodes(): Promise<NodeInfo[]> {
   return (res.nodes || []) as NodeInfo[]
 }
 
-export async function getNodeTemplate(typeId: string): Promise<NodeTemplate> {
-  return apiFetch(`/api/nodes/templates/${encodeURIComponent(typeId)}`) as Promise<NodeTemplate>
+export async function getNodeTemplate(
+  typeId: string,
+  context: NodeTemplateContext = {},
+  options: { signal?: AbortSignal } = {},
+): Promise<NodeTemplate> {
+  const params = new URLSearchParams()
+  const providerId = String(context.providerId || '').trim()
+  if (providerId) params.set('provider_id', providerId)
+  const query = params.toString()
+  return apiFetch(
+    `/api/nodes/templates/${encodeURIComponent(typeId)}${query ? `?${query}` : ''}`,
+    { signal: options.signal },
+  ) as Promise<NodeTemplate>
 }
 
 export async function createNodeInstance(
@@ -324,8 +416,11 @@ export async function createNodeInstance(
   })
 }
 
-export async function deleteNodeInstance(nodeId: string, graphId: string): Promise<void> {
-  await apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}?graph_id=${encodeURIComponent(graphId)}`, { method: 'DELETE' })
+export async function deleteNodeInstance(
+  nodeId: string,
+  graphId: string,
+): Promise<{ ok: boolean; node_id: string; graph_id: string; undo_token?: string | null }> {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}?graph_id=${encodeURIComponent(graphId)}`, { method: 'DELETE' })
 }
 
 export async function renameNodeInstance(
@@ -389,15 +484,36 @@ export async function clearNodeInstanceMemory(
   })
 }
 
-export async function listNodeInstanceConfigs(graphId: string, sinceVersion = 0): Promise<NodeInstanceConfigListResponse> {
+export async function listNodeInstanceConfigs(
+  graphId: string,
+  sinceVersion = 0,
+  view: 'full' | 'board' = 'full',
+): Promise<NodeInstanceConfigListResponse> {
   const query = new URLSearchParams({ graph_id: graphId })
   if (sinceVersion > 0) query.set('since_version', String(Math.floor(sinceVersion)))
+  query.set('view', view)
   const res = await apiFetch(`/api/nodes/instances/configs?${query.toString()}`)
   return {
     nodes: (res.nodes || []) as NodeInstanceConfig[],
     node_ids: Array.isArray(res.node_ids) ? res.node_ids.map((item: unknown) => String(item)) : undefined,
     version: Number(res.version || 0),
     partial: !!res.partial,
+    view: res.view === 'board' ? 'board' : 'full',
+  }
+}
+
+export async function getNodeInstanceConfig(
+  nodeId: string,
+  graphId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<{ node: NodeInstanceConfig; version: number }> {
+  const res = await apiFetch(
+    `/api/nodes/instances/${encodeURIComponent(nodeId)}/config?graph_id=${encodeURIComponent(graphId)}&view=editor`,
+    { signal: options.signal },
+  )
+  return {
+    node: res.node as NodeInstanceConfig,
+    version: Number(res.version || 0),
   }
 }
 
@@ -417,6 +533,17 @@ export async function updateNodeInstanceConfig(
   })
 }
 
+export async function setNodeInstanceVisibility(
+  nodeId: string,
+  graphId: string,
+  privateNode: boolean,
+): Promise<{ ok: boolean; graph_id: string; node_id: string; private: boolean; changed: boolean }> {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/visibility?graph_id=${encodeURIComponent(graphId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ private: privateNode }),
+  })
+}
+
 export async function setNodeInstanceState(
   nodeId: string,
   state: NodeInstanceState,
@@ -430,7 +557,7 @@ export async function setNodeInstanceState(
 
 export async function controlNodeInstance(
   nodeId: string,
-  action: 'start' | 'stop' | 'send_input',
+  action: 'start' | 'stop' | 'send_input' | 'stop_tool_call',
   graphId: string,
   extraPayload: Record<string, unknown> = {},
 ): Promise<{ ok: boolean; state: NodeInstanceState }> {
@@ -438,6 +565,18 @@ export async function controlNodeInstance(
     method: 'POST',
     body: JSON.stringify({ action, ...extraPayload }),
   })
+}
+
+export async function stopNodeToolCall(
+  nodeId: string,
+  graphId: string,
+  callId: string,
+): Promise<{ ok: boolean; state: NodeInstanceState; call_id: string }> {
+  return controlNodeInstance(nodeId, 'stop_tool_call', graphId, { call_id: callId }) as Promise<{
+    ok: boolean
+    state: NodeInstanceState
+    call_id: string
+  }>
 }
 
 export async function sendNodeInteractiveInput(
@@ -602,7 +741,7 @@ export async function saveGraph(
   return res.graph as GraphInfo
 }
 
-export async function deleteGraph(graphId: string): Promise<{ ok: boolean; graph_id: string; deleted: boolean }> {
+export async function deleteGraph(graphId: string): Promise<{ ok: boolean; graph_id: string; deleted: boolean; undo_token?: string | null }> {
   return apiFetch(`/api/graphs/${encodeURIComponent(graphId)}`, { method: 'DELETE' })
 }
 
@@ -621,6 +760,16 @@ export async function listAgentProfiles(): Promise<AgentProfile[]> {
   return res.profiles || []
 }
 
+export async function updateAgentProfile(
+  profileId: string,
+  payload: AgentProfileEditorPayload,
+): Promise<{ ok: boolean; profile: AgentProfile }> {
+  return apiFetch(`/api/profiles/agents/${encodeURIComponent(profileId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 export async function saveAgentProfileFromNode(payload: {
   graph_id: string
   node_id: string
@@ -628,6 +777,34 @@ export async function saveAgentProfileFromNode(payload: {
   profile_name?: string
 }): Promise<{ ok: boolean; profile: AgentProfile }> {
   return apiFetch('/api/profiles/agents/from-node', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function createNodeFromAgentProfile(
+  profileId: string,
+  payload: {
+    graph_id: string
+    node_id: string
+    name?: string
+    ui?: { x: number; y: number; width?: number; height?: number }
+  },
+): Promise<{ ok: boolean; node_id: string; type_id: string; graph_id: string; config_path: string }> {
+  return apiFetch(`/api/profiles/agents/${encodeURIComponent(profileId)}/create`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function loadAgentProfileIntoNode(
+  profileId: string,
+  payload: {
+    graph_id: string
+    node_id: string
+  },
+): Promise<AgentProfileLoadResponse> {
+  return apiFetch(`/api/profiles/agents/${encodeURIComponent(profileId)}/load`, {
     method: 'POST',
     body: JSON.stringify(payload),
   })
@@ -671,8 +848,8 @@ export async function startGraphRunner(graphId: string): Promise<{ ok: boolean; 
   return apiFetch(`/api/graphs/${encodeURIComponent(graphId)}/runner/start`, { method: 'POST' })
 }
 
-export function graphEventsStreamUrl(graphId: string): string {
-  return `${readActiveApiBase()}/api/graphs/${encodeURIComponent(graphId)}/events/stream`
+export function appEventsStreamUrl(): string {
+  return `${readActiveApiBase()}/api/app/events/stream`
 }
 
 export async function emitGraph(
@@ -708,6 +885,9 @@ export type RuntimeEventRule = {
     ttl?: 'current_run' | 'next_turn' | 'persistent' | string
     priority?: 'low' | 'normal' | 'high' | string
     max_chars?: number
+    profile_ids?: string[]
+    paths?: string[]
+    role?: 'developer' | 'system' | 'user' | 'assistant' | string
   }
 }
 
@@ -722,7 +902,6 @@ export type RuntimeEventReceiverGroup = {
   enabled?: boolean
   graph_id?: string
   merge_target: RuntimeEventReceiver
-  event_profiles: Record<string, string>
   receivers?: RuntimeEventReceiver[]
 }
 
@@ -760,8 +939,9 @@ export type RuntimeEventSchema = {
   actions: RuntimeEventAction[]
   ttls: string[]
   priorities: string[]
+  context_roles: string[]
   rules_shape: string
-  max_enabled_rules_per_source_node: number
+  max_enabled_handlers_per_source_node: number
   targets?: Record<RuntimeEventAction | string, string[]>
 }
 
@@ -817,6 +997,7 @@ export async function getNodeInstanceMemory(
   maxChars = 20000,
   graphId?: string,
   historyMode: MemoryHistoryMode = 'recent',
+  options: { signal?: AbortSignal } = {},
 ): Promise<{
   memory_path: string | null
   messages_path?: string | null
@@ -831,35 +1012,108 @@ export async function getNodeInstanceMemory(
   live_message?: string
   thinking_message?: string
   activity_message?: string
+  activity_blocks?: LiveActivityBlock[]
 }> {
   const query = graphId ? `&graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(
     `/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}&history_mode=${historyMode}${query}`,
+    { signal: options.signal },
   )
+}
+
+export type CodexSessionSummary = {
+  id: string
+  title: string
+  preview: string
+  created_at: string
+  updated_at: string
+  cwd: string
+  source: string
+  model_provider: string
+}
+
+export type CodexSessionListResponse = {
+  supported: boolean
+  node_id: string
+  graph_id: string
+  active_session_id: string
+  is_new_session: boolean
+  sessions: CodexSessionSummary[]
+}
+
+export async function listCodexSessions(
+  nodeId: string,
+  graphId?: string,
+): Promise<CodexSessionListResponse> {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/codex-sessions${query}`)
+}
+
+export async function selectCodexSession(
+  nodeId: string,
+  sessionId: string,
+  graphId?: string,
+): Promise<CodexSessionListResponse & { ok: boolean }> {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/codex-sessions/select${query}`, {
+    method: 'POST',
+    body: JSON.stringify({ session_id: String(sessionId || '').trim() }),
+  })
 }
 
 export async function deleteNodeInstanceMemoryMessage(
   nodeId: string,
   messageId: string,
   graphId?: string,
-): Promise<{ ok: boolean; deleted: number; message_id: string }> {
+): Promise<{ ok: boolean; deleted: number; message_id: string; undo_token?: string | null }> {
   const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory/messages/${encodeURIComponent(messageId)}${query}`, {
     method: 'DELETE',
   })
 }
 
+export async function deleteNodeInstanceMemoryMessages(
+  nodeId: string,
+  messageIds: string[],
+  graphId?: string,
+): Promise<{ ok: boolean; deleted: number; message_ids: string[]; undo_token?: string | null }> {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory/messages/delete${query}`, {
+    method: 'POST',
+    body: JSON.stringify({ message_ids: messageIds }),
+  })
+}
+
+export async function deleteNodeInstanceMemoryTurn(
+  nodeId: string,
+  userMessageId: string,
+  graphId?: string,
+): Promise<{ ok: boolean; deleted: number; message_ids: string[]; user_message_id: string; undo_token?: string | null }> {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/memory/turns/delete${query}`, {
+    method: 'POST',
+    body: JSON.stringify({ user_message_id: userMessageId }),
+  })
+}
+
+export async function undoDeletion(token: string): Promise<{
+  ok: boolean
+  token: string
+  kind: 'delete_node' | 'delete_graph' | 'delete_dialogue'
+  graph_id?: string
+  node_id?: string
+  restored?: number
+}> {
+  return apiFetch(`/api/undo/${encodeURIComponent(token)}`, { method: 'POST' })
+}
+
 export async function getNodeInstanceLive(
   nodeId: string,
   graphId?: string,
-): Promise<{ node_id: string; graph_id: string; live_message: string; thinking_message?: string; activity_message?: string }> {
+  options: { signal?: AbortSignal } = {},
+): Promise<{ node_id: string; graph_id: string; live_message: string; thinking_message?: string; activity_message?: string; activity_blocks?: LiveActivityBlock[] }> {
   const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
-  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/live${query}`)
-}
-
-export function nodeInstanceLiveStreamUrl(nodeId: string, graphId?: string): string {
-  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
-  return `${readActiveApiBase()}/api/nodes/instances/${encodeURIComponent(nodeId)}/live/stream${query}`
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/live${query}`, { signal: options.signal })
 }
 
 export type PromptLibraryKind = 'instruction' | 'system_prompt'
@@ -889,10 +1143,29 @@ export async function listFiles(path?: string, search?: string): Promise<FileLis
   return apiFetch(url)
 }
 
+export async function listNodeInstanceFiles(nodeId: string, graphId: string): Promise<NodeInstanceFileListResponse> {
+  const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/files${query}`)
+}
+
 export async function selectFolder(initialPath?: string): Promise<{ ok: boolean; path: string }> {
   return apiFetch('/api/files/select-folder', {
     method: 'POST',
     body: JSON.stringify({ initial_path: initialPath || '' }),
+  })
+}
+
+export async function selectFile(initialPath?: string): Promise<{ ok: boolean; path: string }> {
+  return apiFetch('/api/files/select-file', {
+    method: 'POST',
+    body: JSON.stringify({ initial_path: initialPath || '' }),
+  })
+}
+
+export async function openLocalFile(path: string): Promise<{ ok: boolean; path: string }> {
+  return apiFetch('/api/files/open', {
+    method: 'POST',
+    body: JSON.stringify({ path }),
   })
 }
 
@@ -1110,5 +1383,35 @@ export async function deleteMobileNodeMessage(
   return apiFetch(
     `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages/${encodeURIComponent(messageId)}`,
     { method: 'DELETE' },
+  )
+}
+
+export async function deleteMobileNodeMessages(
+  pcId: string,
+  graphId: string,
+  nodeId: string,
+  messageIds: string[],
+): Promise<{ ok: boolean; deleted: number; message_ids: string[]; undo_token?: string | null }> {
+  return apiFetch(
+    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages/delete`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ message_ids: messageIds }),
+    },
+  )
+}
+
+export async function deleteMobileNodeTurn(
+  pcId: string,
+  graphId: string,
+  nodeId: string,
+  userMessageId: string,
+): Promise<{ ok: boolean; deleted: number; message_ids: string[]; user_message_id: string; undo_token?: string | null }> {
+  return apiFetch(
+    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/turns/delete`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ user_message_id: userMessageId }),
+    },
   )
 }

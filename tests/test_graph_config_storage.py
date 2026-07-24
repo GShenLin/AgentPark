@@ -594,6 +594,7 @@ def test_runtime_graph_read_rejects_non_object_config(tmp_path, monkeypatch):
     from src.web_backend.graph_runtime_registry import GraphConfigReadError
 
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
     graph_dir = tmp_path / "memories" / "bad_graph"
     graph_dir.mkdir(parents=True)
     (graph_dir / "config.json").write_text("[]", encoding="utf-8")

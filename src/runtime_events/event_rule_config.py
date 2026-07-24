@@ -11,8 +11,6 @@ CompiledRulesPayload = dict[str, dict[str, dict[str, list[dict[str, Any]]]]]
 def compile_rules_payload(raw: object, errors: list[dict[str, Any]]) -> CompiledRulesPayload:
     if raw is None:
         raw = {}
-    if isinstance(raw, list):
-        return _compile_legacy_rule_list(raw, errors)
     if not isinstance(raw, dict):
         errors.append(_error("", "rules", "rules must be an object keyed by event"))
         return {}
@@ -36,14 +34,22 @@ def compile_rules_payload(raw: object, errors: list[dict[str, Any]]) -> Compiled
                 errors.append(_error(f"rules.{event}.{graph_id}", "", "graph rules must be an object keyed by node id"))
                 continue
             graph_rules: dict[str, list[dict[str, Any]]] = {}
-            for node_raw, rule_raw in node_rules_raw.items():
+            for node_raw, handlers_raw in node_rules_raw.items():
                 node_id = _text(node_raw)
+                path = f"rules.{event}.{graph_id}.{node_id}"
                 if not node_id:
                     errors.append(_error(f"rules.{event}.{graph_id}", "node_id", "node id is required"))
                     continue
-                rules_for_node = _normalize_node_rules(rule_raw, f"rules.{event}.{graph_id}.{node_id}", errors)
-                if rules_for_node:
-                    graph_rules[node_id] = rules_for_node
+                if not isinstance(handlers_raw, list):
+                    errors.append(_error(path, "", "node event handlers must be a list"))
+                    continue
+                handlers: list[dict[str, Any]] = []
+                for index, handler_raw in enumerate(handlers_raw):
+                    if not isinstance(handler_raw, dict):
+                        errors.append(_error(f"{path}[{index}]", "", "handler must be an object", index))
+                        continue
+                    handlers.append(dict(handler_raw))
+                graph_rules[node_id] = handlers
             if graph_rules:
                 event_rules[graph_id] = graph_rules
         if event_rules:
@@ -51,61 +57,37 @@ def compile_rules_payload(raw: object, errors: list[dict[str, Any]]) -> Compiled
     return output
 
 
+def canonicalize_rules_payload(rules: CompiledRulesPayload) -> CompiledRulesPayload:
+    return {
+        event: {
+            graph_id: {
+                node_id: [dict(handler) for handler in handlers]
+                for node_id, handlers in graph_rules.items()
+            }
+            for graph_id, graph_rules in event_rules.items()
+            if graph_rules
+        }
+        for event, event_rules in rules.items()
+        if event_rules
+    }
+
+
 def iter_rules(rules: CompiledRulesPayload) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     for event, event_rules in rules.items():
         for graph_id, graph_rules in event_rules.items():
-            for node_id, node_rules in graph_rules.items():
-                for local_index, rule in enumerate(node_rules):
+            for node_id, handlers in graph_rules.items():
+                for handler_index, handler in enumerate(handlers):
                     output.append(
                         {
                             "event": event,
                             "graph_id": graph_id,
                             "node_id": node_id,
-                            "rule": rule,
-                            "path": f"rules.{event}.{graph_id}.{node_id}[{local_index}]",
+                            "handler": handler,
+                            "handler_index": handler_index,
+                            "path": f"rules.{event}.{graph_id}.{node_id}[{handler_index}]",
                         }
                     )
-    return output
-
-
-def _compile_legacy_rule_list(raw: list[object], errors: list[dict[str, Any]]) -> CompiledRulesPayload:
-    output: CompiledRulesPayload = {}
-    for index, item in enumerate(raw):
-        if not isinstance(item, dict):
-            errors.append(_error(f"rules[{index}]", "", "rule must be an object", index))
-            continue
-        source = item.get("source")
-        source = source if isinstance(source, dict) else {}
-        event = _text(item.get("event"))
-        graph_id = _text(source.get("graph_id"))
-        node_id = _text(source.get("node_id"))
-        if not event or not graph_id or not node_id:
-            errors.append(_error(f"rules[{index}]", "rules", "legacy rule requires event and source graph_id/node_id", index))
-            continue
-        output.setdefault(event, {}).setdefault(graph_id, {}).setdefault(node_id, []).append(_rule_without_keys(item))
-    return output
-
-
-def _normalize_node_rules(raw: object, path: str, errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if isinstance(raw, list):
-        output: list[dict[str, Any]] = []
-        for index, item in enumerate(raw):
-            if not isinstance(item, dict):
-                errors.append(_error(f"{path}[{index}]", "", "rule must be an object", index))
-                continue
-            output.append(_rule_without_keys(item))
-        return output
-    if isinstance(raw, dict):
-        return [_rule_without_keys(raw)]
-    errors.append(_error(path, "", "node rules must be a rule object or a list of rule objects"))
-    return []
-
-
-def _rule_without_keys(raw: dict[str, Any]) -> dict[str, Any]:
-    output = dict(raw)
-    output.pop("source", None)
-    output.pop("event", None)
     return output
 
 
@@ -113,10 +95,10 @@ def _text(value: object) -> str:
     return str(value or "").strip()
 
 
-def _error(path: str, field: str, message: str, rule_index: int | None = None) -> dict[str, Any]:
+def _error(path: str, field: str, message: str, handler_index: int | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {"path": "config/events.json", "field": field, "message": message}
     if path:
         payload["config_path"] = path
-    if rule_index is not None:
-        payload["rule_index"] = rule_index
+    if handler_index is not None:
+        payload["handler_index"] = handler_index
     return payload

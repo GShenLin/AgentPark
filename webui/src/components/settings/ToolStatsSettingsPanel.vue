@@ -9,6 +9,7 @@ import {
   type ToolStatsProviderSummary,
 } from '../../settingsApi'
 import ToolFailurePatternsPanel from './ToolFailurePatternsPanel.vue'
+import TurnStatsPanel from './TurnStatsPanel.vue'
 import {
   callKey,
   failureReason,
@@ -22,19 +23,37 @@ import {
 const stats = ref<ToolStatsDocument | null>(null)
 const selectedProviderId = ref('')
 const selectedCallKey = ref('')
+const scopeGraphId = ref('')
+const scopeHours = ref(0)
 const loading = ref(false)
 const clearing = ref(false)
 const deletingOptionalMemory = ref(false)
 const error = ref('')
 const operationStatus = ref('')
 
-const providers = computed<ToolStatsProviderSummary[]>(() => {
-  const source = stats.value?.summary?.providers || {}
-  return Object.values(source).sort((a, b) => b.total - a.total || a.provider_id.localeCompare(b.provider_id))
+const providerOptions = computed(() => {
+  const ids = new Set([
+    ...Object.keys(stats.value?.summary?.providers || {}),
+    ...Object.keys(stats.value?.turn_stats?.providers || {}),
+  ])
+  return Array.from(ids).map((providerId) => {
+    const toolStats = stats.value?.summary?.providers?.[providerId]
+    const turnStats = stats.value?.turn_stats?.providers?.[providerId]
+    return {
+      provider_id: providerId,
+      success: toolStats?.success || 0,
+      total: toolStats?.total || 0,
+      turn_count: turnStats?.turn_count || 0,
+      usage_turn_count: turnStats?.usage_turn_count || 0,
+      missing_usage_turn_count: turnStats?.missing_usage_turn_count || 0,
+      model_turn_count: turnStats?.model_turn_count || 0,
+      usage_model_turn_count: turnStats?.usage_model_turn_count || 0,
+    }
+  }).sort((a, b) => b.total - a.total || b.turn_count - a.turn_count || a.provider_id.localeCompare(b.provider_id))
 })
 
 const selectedProvider = computed<ToolStatsProviderSummary | null>(() => {
-  return stats.value?.summary?.providers?.[selectedProviderId.value] || providers.value[0] || null
+  return stats.value?.summary?.providers?.[selectedProviderId.value] || null
 })
 
 const providerTools = computed(() => {
@@ -44,20 +63,23 @@ const providerTools = computed(() => {
 
 const recentCalls = computed<ToolCallStatRecord[]>(() => stats.value?.recent_calls || [])
 const providerRecentCalls = computed<ToolCallStatRecord[]>(() => {
-  if (!selectedProvider.value) return recentCalls.value
-  return recentCalls.value.filter((call) => call.provider_id === selectedProvider.value?.provider_id)
+  if (!selectedProviderId.value) return recentCalls.value
+  return stats.value?.recent_calls_by_provider?.[selectedProviderId.value] || []
 })
 const providerFailureCalls = computed(() => providerRecentCalls.value.filter((call) => !call.success))
-const failureAnalysis = computed(() => stats.value?.failure_analysis || null)
+const failureAnalysis = computed(() => {
+  if (!selectedProviderId.value) return stats.value?.failure_analysis || null
+  return stats.value?.failure_analysis_by_provider?.[selectedProviderId.value] || null
+})
 const selectedCall = computed<ToolCallStatRecord | null>(() => {
   return providerRecentCalls.value.find((call) => callKey(call) === selectedCallKey.value)
     || providerFailureCalls.value[0]
     || providerRecentCalls.value[0]
     || null
 })
-const totalCalls = computed(() => providers.value.reduce((sum, provider) => sum + provider.total, 0))
-const successCalls = computed(() => providers.value.reduce((sum, provider) => sum + provider.success, 0))
-const failureCalls = computed(() => providers.value.reduce((sum, provider) => sum + provider.failure, 0))
+const totalCalls = computed(() => selectedProvider.value?.total || 0)
+const successCalls = computed(() => selectedProvider.value?.success || 0)
+const failureCalls = computed(() => selectedProvider.value?.failure || 0)
 const successRate = computed(() => {
   if (!totalCalls.value) return '0%'
   return `${Math.round((successCalls.value / totalCalls.value) * 100)}%`
@@ -83,10 +105,14 @@ async function loadStats() {
   error.value = ''
   operationStatus.value = ''
   try {
-    const next = await getToolStats()
+    const next = await getToolStats(scopeGraphId.value, scopeHours.value)
     stats.value = next
-    if (!selectedProviderId.value || !next.summary.providers?.[selectedProviderId.value]) {
-      selectedProviderId.value = Object.keys(next.summary.providers || {})[0] || ''
+    const availableProviderIds = new Set([
+      ...Object.keys(next.summary.providers || {}),
+      ...Object.keys(next.turn_stats?.providers || {}),
+    ])
+    if (!selectedProviderId.value || !availableProviderIds.has(selectedProviderId.value)) {
+      selectedProviderId.value = availableProviderIds.values().next().value || ''
     }
     selectDefaultCall(selectedProviderId.value, next.recent_calls || [])
   } catch (e: any) {
@@ -96,6 +122,11 @@ async function loadStats() {
   }
 }
 
+function changeScope() {
+  selectedCallKey.value = ''
+  void loadStats()
+}
+
 async function clearStats() {
   const ok = window.confirm('Clear all tool stats?')
   if (!ok) return
@@ -103,9 +134,8 @@ async function clearStats() {
   error.value = ''
   operationStatus.value = ''
   try {
-    const next = await clearToolStats()
+    const next = await clearToolStats(scopeGraphId.value, scopeHours.value)
     stats.value = next
-    selectedProviderId.value = ''
     selectedCallKey.value = ''
   } catch (e: any) {
     error.value = String(e?.message || e)
@@ -139,7 +169,7 @@ onMounted(loadStats)
       <button type="button" class="tool-stats-action" :disabled="loading || clearing || deletingOptionalMemory" @click="loadStats">
         {{ loading ? 'Loading...' : 'Reload' }}
       </button>
-      <button type="button" class="tool-stats-action danger" :disabled="loading || clearing || deletingOptionalMemory || !totalCalls" @click="clearStats">
+      <button type="button" class="tool-stats-action danger" :disabled="loading || clearing || deletingOptionalMemory" @click="clearStats">
         {{ clearing ? 'Clearing...' : 'Clear' }}
       </button>
       <button
@@ -152,7 +182,7 @@ onMounted(loadStats)
       </button>
 
       <button
-        v-for="provider in providers"
+        v-for="provider in providerOptions"
         :key="provider.provider_id"
         type="button"
         class="tool-provider-item"
@@ -160,35 +190,59 @@ onMounted(loadStats)
         @click="selectProvider(provider.provider_id)"
       >
         <span>{{ provider.provider_id }}</span>
-        <small>{{ provider.success }} / {{ provider.total }}</small>
+        <small>
+          {{ provider.success }} / {{ provider.total }} tools · {{ provider.model_turn_count }} model turns · {{ provider.turn_count }} runs
+          <template v-if="provider.missing_usage_turn_count"> · {{ provider.missing_usage_turn_count }} missing usage</template>
+        </small>
       </button>
 
-      <div v-if="!providers.length && !loading" class="tool-stats-empty">No tool stats</div>
+      <div v-if="!providerOptions.length && !loading" class="tool-stats-empty">No provider stats</div>
     </aside>
 
     <section class="tool-stats-main">
       <div class="tool-stats-head">
         <div>
-          <h2>{{ selectedProvider?.provider_id || 'Tool Statistics' }}</h2>
-          <span>{{ stats?.summary.updated_at || '' }}</span>
+          <h2>{{ selectedProviderId || 'Tool Statistics' }}</h2>
+          <span>
+            Scope: {{ scopeGraphId || 'all graphs' }} / {{ scopeHours ? `${scopeHours}h` : 'all time' }}
+            <template v-if="stats?.summary.updated_at"> · updated {{ stats.summary.updated_at }}</template>
+          </span>
+        </div>
+        <div class="tool-stats-scope-controls">
+          <label>
+            Graph
+            <select v-model="scopeGraphId" @change="changeScope">
+              <option value="">All graphs</option>
+              <option v-for="graphId in stats?.scope.available_graph_ids || []" :key="graphId" :value="graphId">{{ graphId }}</option>
+            </select>
+          </label>
+          <label>
+            Window
+            <select v-model.number="scopeHours" @change="changeScope">
+              <option :value="0">All time</option>
+              <option :value="24">24 hours</option>
+              <option :value="168">7 days</option>
+              <option :value="720">30 days</option>
+            </select>
+          </label>
         </div>
       </div>
 
       <div class="metric-grid">
         <div class="metric-item">
-          <span>Total</span>
+          <span>Provider Tool Calls</span>
           <strong>{{ totalCalls }}</strong>
         </div>
         <div class="metric-item">
-          <span>Success</span>
+          <span>Provider Success</span>
           <strong>{{ successCalls }}</strong>
         </div>
         <div class="metric-item">
-          <span>Failure</span>
+          <span>Provider Failure</span>
           <strong>{{ failureCalls }}</strong>
         </div>
         <div class="metric-item">
-          <span>Rate</span>
+          <span>Provider Rate</span>
           <strong>{{ successRate }}</strong>
         </div>
       </div>
@@ -199,7 +253,18 @@ onMounted(loadStats)
         <span>{{ selectedProvider.last_call_at }}</span>
       </div>
 
-      <ToolFailurePatternsPanel v-if="failureAnalysis?.total_failures" :analysis="failureAnalysis" />
+      <ToolFailurePatternsPanel
+        v-if="failureAnalysis?.total_failures"
+        :analysis="failureAnalysis"
+        :graph-id="scopeGraphId"
+        :scope-hours="scopeHours"
+      />
+
+      <TurnStatsPanel
+        v-if="selectedProviderId"
+        :provider-id="selectedProviderId"
+        :provider-stats="stats?.turn_stats?.providers?.[selectedProviderId] || null"
+      />
 
       <div class="tool-section-title">Tools</div>
       <div class="tool-summary-list">

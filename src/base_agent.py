@@ -11,32 +11,42 @@ from src.providers.provider_request_summary import build_provider_request_summar
 from src.providers.provider_request_summary import next_provider_request_index
 from src.providers.provider_request_usage import extract_provider_usage
 from src.providers.provider_request_usage import ProviderRequestTracker
+from src.providers.provider_request_usage import provider_usage_tpm_tokens
+from src.providers.agent_runtime_context import get_agent_runtime_context
+from src.providers.provider_pressure import record_provider_token_usage
 from src.providers.provider_runtime_events import PROVIDER_REQUEST_COMPLETED_STAGE
 from src.providers.provider_runtime_events import PROVIDER_REQUEST_SUMMARY_STAGE
 from src.providers.provider_runtime_events import emit_provider_runtime_notice
+from src.providers.provider_message_policy import ProviderMessagePolicyMixin
 from src.tool.base_tool import BaseTool
 from src.tool_failure_memory_notice import ToolFailureMemoryNoticeMixin
 from src.tool_context_compaction_gate import ToolContextCompactionGateMixin
+from src.tool_context_compaction_trigger import ToolContextCompactionWindow
 
 
-class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, ABC):
+class BaseAgent(
+    ProviderMessagePolicyMixin,
+    ToolContextCompactionGateMixin,
+    ToolFailureMemoryNoticeMixin,
+    ABC,
+):
     def __init__(self, provider_name, memory_file_path=None, system_prompt=None, internal_memory_enabled=True):
         self.provider_name = provider_name
         self._config = {}
         self.messages = []
         self.tool_failure_memory_notice_enabled = False
-        self._tool_context_compaction_since_last = 0
+        self._tool_context_compaction_window = ToolContextCompactionWindow()
         self.internal_memory_enabled = bool(internal_memory_enabled)
         self.memory = BaseMemory(provider_name, memory_file_path=memory_file_path)
         self.tools = BaseTool(self)
         self.manager = BaseAgentManager(self)
         self._provider_request_tracker = ProviderRequestTracker()
         if isinstance(system_prompt, str) and system_prompt.strip():
-            self.Message("system", system_prompt.strip())
+            self.RuntimeInstruction(system_prompt.strip())
         if self.internal_memory_enabled:
             tail = self.memory.read_tail_lines(100)
             if isinstance(tail, str) and tail.strip():
-                self.Message("system", f"[Memory Tail]\n{tail.strip()}", persist=False)
+                self.RuntimeInstruction(f"[Memory Tail]\n{tail.strip()}", persist=False)
 
     @property
     def config(self):
@@ -179,31 +189,6 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
     def Send(self):
         pass
 
-    def _get_messages_with_memory(self):
-        current_messages = [
-            message
-            for message in self.memory.build_messages_with_memory(self.messages)
-            if str(message.get("role") or "").strip().lower() != "assistant_progress"
-            and str(message.get("context_policy") or "").strip().lower() != "exclude"
-        ]
-        if not self.internal_memory_enabled:
-            return current_messages
-
-        system_messages = []
-        last_user_index = -1
-        for i, msg in enumerate(current_messages):
-            if msg.get("role") == "system":
-                system_messages.append(msg)
-            if msg.get("role") == "user":
-                last_user_index = i
-
-        if last_user_index == -1:
-            non_system = [m for m in current_messages if m.get("role") != "system"]
-            return system_messages + non_system
-
-        tail = [m for m in current_messages[last_user_index:] if m.get("role") != "system"]
-        return system_messages + tail
-
     def _read_provider_config_from_file(self):
         provider_name = str(getattr(self, "provider_name", "") or "").strip()
         if not provider_name:
@@ -260,6 +245,9 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
         return self._provider_request_tracker_instance().snapshot()
 
     def _provider_request_tracker_instance(self) -> ProviderRequestTracker:
+        runtime_tracker = get_agent_runtime_context(self).provider_request_tracker
+        if isinstance(runtime_tracker, ProviderRequestTracker):
+            return runtime_tracker
         tracker = self.__dict__.get("_provider_request_tracker")
         if not isinstance(tracker, ProviderRequestTracker):
             tracker = ProviderRequestTracker()
@@ -273,6 +261,14 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
         completion = self._provider_request_tracker_instance().record_completion(request_summary.get("request_index"), usage)
         if completion is None:
             return None
+        tpm_tokens = provider_usage_tpm_tokens(completion.get("usage"))
+        if tpm_tokens is not None:
+            input_tokens, output_tokens = tpm_tokens
+            record_provider_token_usage(
+                self,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
         completion["request_api"] = str(request_summary.get("request_api") or "").strip()
         emit_provider_runtime_notice(
             getattr(self, "tool_event_callback", None),
@@ -474,12 +470,14 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
             )
         return None
 
-    def _append_tool_execution_messages_then_warnings(self, executions):
+    def _append_tool_execution_messages_then_warnings(self, executions, *, message_role="tool"):
+        if message_role not in {"tool", "function"}:
+            raise ValueError("Tool execution message role must be 'tool' or 'function'.")
         non_retry_warnings = []
         image_messages = []
         for execution in executions if isinstance(executions, list) else []:
             self.Message(
-                "tool",
+                message_role,
                 execution.cleaned_result,
                 tool_call_id=execution.call_id,
                 name=execution.func_name,
@@ -495,5 +493,5 @@ class BaseAgent(ToolContextCompactionGateMixin, ToolFailureMemoryNoticeMixin, AB
                 image_messages.append(image_data)
 
         for non_retry_warn in non_retry_warnings:
-            self.Message("system", non_retry_warn)
+            self.RuntimeInstruction(non_retry_warn)
         return image_messages

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { selectFolder, type GraphInfo, type GraphProfile, type LatestTurnProgressSummary, type MessageEnvelope, type NodeInstanceConfig } from '../api'
+import { selectFolder, type GraphInfo, type GraphProfile, type LatestTurnProgressSummary, type LiveActivityBlock, type MessageEnvelope, type NodeInstanceConfig } from '../api'
+import LiveActivityBlocks from './LiveActivityBlocks.vue'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
@@ -24,6 +25,9 @@ const props = defineProps<{
   liveMessage: string
   thinkingMessage: string
   activityMessage: string
+  activityBlocks: LiveActivityBlock[]
+  nodeId: string
+  graphId: string
   markdownPreview: boolean
   wordWrap: boolean
   showLineNumbers: boolean
@@ -43,6 +47,7 @@ const props = defineProps<{
   interactiveInputText: string
   interactiveInputDisabled: boolean
   interactiveSending: boolean
+  ensureLatestTurnMetadata: () => Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -67,7 +72,7 @@ const emit = defineEmits<{
   (event: 'autoScrollChange', value: boolean): void
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
-  (event: 'deleteMessage', messages: MessageEnvelope | MessageEnvelope[]): void
+  (event: 'deleteMessage', target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }): void
   (event: 'requestHistory'): void
   (event: 'requestSection', section: 'progress' | 'metadata'): void
   (event: 'sendInteractiveInput', options: InteractiveInputOptions): void
@@ -82,11 +87,9 @@ const interactiveInputRef = ref<HTMLInputElement | null>(null)
 
 const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/) : []))
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
-const renderedLiveMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.liveMessage))
-const renderedThinkingMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.thinkingMessage))
 const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.activityMessage))
 const showInteractiveBar = computed(() => props.mode === 'agent' && !!props.interactiveSessionId)
-const hasLiveActivity = computed(() => !!props.liveMessage || !!props.thinkingMessage || !!props.activityMessage)
+const hasLiveActivity = computed(() => !!props.liveMessage || !!props.thinkingMessage || !!props.activityMessage || props.activityBlocks.length > 0)
 
 function canDeleteGraph(graph: GraphInfo) {
   if (typeof graph.deletable === 'boolean') return graph.deletable
@@ -316,6 +319,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         :metadata-loaded="metadataLoaded"
         :progress-summary="progressSummary"
         :loading-section="loadingSection"
+        :ensure-latest-turn-metadata="ensureLatestTurnMetadata"
         @save-message="emit('saveMessage', $event)"
         @copy-message="emit('copyMessage', $event)"
         @delete-message="emit('deleteMessage', $event)"
@@ -337,25 +341,14 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
           ></div>
           <div v-else class="live-body">{{ activityMessage }}</div>
         </section>
+        <LiveActivityBlocks :blocks="activityBlocks" :node-id="nodeId" :graph-id="graphId" />
         <section v-if="thinkingMessage" class="live-section thinking">
           <div class="live-section-label">Thinking</div>
-          <div
-            v-if="markdownPreview"
-            class="live-body live-markdown"
-            v-html="renderedThinkingMarkdown"
-            @click="handleMarkdownCodeCopyClick"
-          ></div>
-          <div v-else class="live-body">{{ thinkingMessage }}</div>
+          <div class="live-body live-stream-text">{{ thinkingMessage }}</div>
         </section>
         <section v-if="liveMessage" class="live-section">
           <div v-if="thinkingMessage || activityMessage" class="live-section-label">Answer</div>
-        <div
-          v-if="markdownPreview"
-          class="live-body live-markdown"
-          v-html="renderedLiveMarkdown"
-          @click="handleMarkdownCodeCopyClick"
-        ></div>
-        <div v-else class="live-body">{{ liveMessage }}</div>
+        <div class="live-body live-stream-text">{{ liveMessage }}</div>
         </section>
       </div>
     </div>
@@ -783,6 +776,57 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 
 .live-section.activity {
   background: rgba(6, 78, 59, 0.18);
+}
+
+.live-section.activity-block {
+  background: rgba(30, 41, 59, 0.24);
+}
+
+.live-section.activity-web_search {
+  background: rgba(6, 78, 59, 0.18);
+}
+
+.live-web-searching {
+  padding: 8px 10px;
+  color: rgba(125, 211, 252, 0.92);
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.live-section.activity-file_search {
+  background: rgba(49, 46, 129, 0.16);
+}
+
+.live-section.activity-image_generation {
+  background: rgba(88, 28, 135, 0.16);
+}
+
+.live-section.activity-refusal {
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.live-section-label-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.live-block-status {
+  color: rgba(148, 163, 184, 0.92);
+  font-weight: 500;
+}
+
+.live-block-sources {
+  display: grid;
+  gap: 4px;
+  padding: 0 10px 10px;
+}
+
+.live-block-sources a {
+  color: rgba(125, 211, 252, 0.92);
+  overflow-wrap: anywhere;
 }
 
 .live-section-label {

@@ -6,6 +6,8 @@ import {
   deleteGraph,
   deleteGraphProfile,
   deleteNodeInstanceMemoryMessage,
+  deleteNodeInstanceMemoryMessages,
+  deleteNodeInstanceMemoryTurn,
   listGraphProfiles,
   listGraphs,
   listNodeInstanceConfigs,
@@ -23,10 +25,18 @@ import {
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
+import { useCodexSessions } from '../composables/useCodexSessions'
+import { recordDeletionUndo } from '../composables/useDeletionUndo'
 import MemoryContentView from './MemoryContentView.vue'
 import MemoryPanelHeader from './MemoryPanelHeader.vue'
 import MemorySaveDialog from './MemorySaveDialog.vue'
+import CodexSessionPicker from './CodexSessionPicker.vue'
 import { renderMemoryMarkdown } from './memoryMarkdown'
+
+const props = defineProps<{
+  initialGraphs: GraphInfo[]
+  initialGraphProfiles: GraphProfile[]
+}>()
 
 const {
   memoryText,
@@ -38,6 +48,7 @@ const {
   memoryLiveMessage,
   memoryThinkingMessage,
   memoryActivityMessage,
+  memoryActivityBlocks,
   memoryInteractiveSessionId,
   memoryInteractiveSending,
   memoryTitle,
@@ -56,12 +67,26 @@ const {
   lastError,
 } = useGlobalState()
 
+let autoScrollFrame: number | null = null
+
+function scheduleAutoScroll(focusInteractive = false) {
+  if (!memoryAutoScroll.value || memoryMode.value !== 'agent') return
+  if (autoScrollFrame != null) return
+  autoScrollFrame = window.requestAnimationFrame(async () => {
+    autoScrollFrame = null
+    if (!memoryAutoScroll.value || memoryMode.value !== 'agent') return
+    await nextTick()
+    contentViewRef.value?.scrollToBottom()
+    if (focusInteractive) contentViewRef.value?.focusInteractiveInput?.()
+  })
+}
+
 const {
   isSaving,
   memoryAutoScroll,
   loadAgentMemory,
   loadAgentLiveMessage,
-  startAgentLiveStream,
+  beginAgentSelection,
   saveCurrentFile,
   stopLoading,
   sendInteractiveInput,
@@ -85,9 +110,10 @@ const isMarkdownPreview = ref(true)
 const contentViewRef = ref<InstanceType<typeof MemoryContentView> | null>(null)
 const interactiveInputText = ref('')
 const lazySectionLoading = ref<'progress' | 'metadata' | null>(null)
+let activeLazySectionRequest: { section: 'progress' | 'metadata'; promise: Promise<void> } | null = null
 
-const graphs = ref<GraphInfo[]>([])
-const graphProfiles = ref<GraphProfile[]>([])
+const graphs = ref<GraphInfo[]>([...props.initialGraphs])
+const graphProfiles = ref<GraphProfile[]>([...props.initialGraphProfiles])
 const selectedGraphProfileId = ref('')
 const graphNameInput = ref('')
 const graphWorkingPathInput = ref('')
@@ -98,15 +124,41 @@ const expandedGraphId = ref('')
 const graphNodesLoadingId = ref('')
 const graphNodesById = ref<Record<string, NodeInstanceConfig[]>>({})
 
+function hasSelectedNodeTarget() {
+  return !!String(selectedNodeId.value || '').trim()
+}
+
+const {
+  codexSessionState,
+  codexSessionLoading,
+  refreshCodexSessions,
+  chooseCodexSession,
+  resetCodexSessions,
+  codexMemoryClearTargetLabel,
+} = useCodexSessions({
+  getNodeId: () => String(selectedNodeId.value || ''),
+  getGraphId: () => String(currentGraphId.value || 'default'),
+  isEnabled: () => memoryMode.value === 'agent' && hasSelectedNodeTarget(),
+  onAfterSelect: async () => {
+    memoryText.value = ''
+    memoryMessages.value = []
+    memoryLiveMessage.value = ''
+    memoryThinkingMessage.value = ''
+    memoryActivityMessage.value = ''
+    memoryActivityBlocks.value = []
+    beginAgentSelection()
+    await loadAgentMemory({ historyMode: 'latest_turn' })
+  },
+  onError: (error: any) => {
+    lastError.value = String(error?.message || error)
+  },
+})
+
 const structuredMessages = computed(() => (Array.isArray(memoryMessages.value) ? memoryMessages.value : []))
 const canClearMemory = computed(() => memoryMode.value === 'agent' && hasSelectedNodeTarget())
 const canSendInteractiveInput = computed(
   () => !!String(selectedNodeId.value || '').trim() && !!String(memoryInteractiveSessionId.value || '').trim() && !memoryInteractiveSending.value,
 )
-
-function hasSelectedNodeTarget() {
-  return !!String(selectedNodeId.value || '').trim()
-}
 
 function defaultMemoryMode() {
   return hasSelectedNodeTarget() ? 'agent' : 'graph'
@@ -119,7 +171,8 @@ function toggleFileMode() {
 async function clearSelectedNodeMemory() {
   const nodeId = String(selectedNodeId.value || '').trim()
   if (!nodeId) return
-  const ok = window.confirm(`Clear all memory for node "${nodeId}"?`)
+  const targetLabel = codexMemoryClearTargetLabel(nodeId)
+  const ok = window.confirm(`Clear ${targetLabel}?`)
   if (!ok) return
   try {
     await clearNodeInstanceMemory(nodeId, currentGraphId.value || 'default')
@@ -130,6 +183,7 @@ async function clearSelectedNodeMemory() {
       memoryThinkingMessage.value = ''
       memoryActivityMessage.value = ''
       await loadAgentMemory()
+      void refreshCodexSessions()
     }
   } catch (e: any) {
     lastError.value = String(e?.message || e)
@@ -166,8 +220,31 @@ async function onInteractiveEof() {
   await handleSendInteractiveInput({ appendNewline: false, sendEof: true })
 }
 
-async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[]) {
+async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }) {
   const nodeId = String(selectedNodeId.value || '').trim()
+  const isTurn = !Array.isArray(target) && (target as any)?.kind === 'turn'
+  if (isTurn) {
+    const userMessageId = String(((target as any).userMessage as any)?.id || '').trim()
+    if (!nodeId || !userMessageId) return
+    const ok = window.confirm('Delete this entire turn?')
+    if (!ok) return
+    try {
+      const result = await deleteNodeInstanceMemoryTurn(nodeId, userMessageId, currentGraphId.value || 'default')
+      recordDeletionUndo(result.undo_token ? {
+        token: result.undo_token,
+        kind: 'delete_dialogue',
+        label: 'conversation turn',
+      } : null)
+      const deletedIds = new Set(result.message_ids)
+      memoryMessages.value = memoryMessages.value.filter(
+        (item) => !deletedIds.has(String((item as any)?.id || '').trim()),
+      )
+      await loadAgentMemory()
+    } catch (e: any) {
+      lastError.value = String(e?.message || e)
+    }
+    return
+  }
   const messages = Array.isArray(target) ? target : [target]
   const messageIds = Array.from(new Set(
     messages
@@ -181,9 +258,14 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[]) 
   const ok = window.confirm(`Delete ${label}?`)
   if (!ok) return
   try {
-    for (const messageId of messageIds) {
-      await deleteNodeInstanceMemoryMessage(nodeId, messageId, currentGraphId.value || 'default')
-    }
+    const result = messageIds.length === 1
+      ? await deleteNodeInstanceMemoryMessage(nodeId, messageIds[0]!, currentGraphId.value || 'default')
+      : await deleteNodeInstanceMemoryMessages(nodeId, messageIds, currentGraphId.value || 'default')
+    recordDeletionUndo(result.undo_token ? {
+      token: result.undo_token,
+      kind: 'delete_dialogue',
+      label: messageIds.length === 1 ? 'conversation entry' : `${messageIds.length} conversation entries`,
+    } : null)
     const deletedIds = new Set(messageIds)
     memoryMessages.value = memoryMessages.value.filter(
       (item) => !deletedIds.has(String((item as any)?.id || '').trim()),
@@ -204,17 +286,37 @@ async function loadPreviousTurns() {
 }
 
 async function loadLatestTurnSection(section: 'progress' | 'metadata') {
-  if (lazySectionLoading.value) return
   if (section === 'progress' && memoryLatestTurnProgressLoaded.value) return
   if (section === 'metadata' && memoryLatestTurnMetadataLoaded.value) return
-  lazySectionLoading.value = section
-  try {
-    await loadAgentMemory({
-      historyMode: section === 'progress' ? 'latest_turn_progress' : 'latest_turn_metadata',
-    })
-  } finally {
-    lazySectionLoading.value = null
+
+  if (activeLazySectionRequest) {
+    const activeSection = activeLazySectionRequest.section
+    await activeLazySectionRequest.promise
+    if (section === 'progress' && memoryLatestTurnProgressLoaded.value) return
+    if (section === 'metadata' && memoryLatestTurnMetadataLoaded.value) return
+    if (activeSection === section) return
   }
+
+  const promise = (async () => {
+    lazySectionLoading.value = section
+    try {
+      await loadAgentMemory({
+        historyMode: section === 'progress' ? 'latest_turn_progress' : 'latest_turn_metadata',
+      })
+    } finally {
+      lazySectionLoading.value = null
+    }
+  })()
+  activeLazySectionRequest = { section, promise }
+  try {
+    await promise
+  } finally {
+    if (activeLazySectionRequest?.promise === promise) activeLazySectionRequest = null
+  }
+}
+
+async function ensureLatestTurnMetadata() {
+  await loadLatestTurnSection('metadata')
 }
 
 async function refreshGraphs() {
@@ -244,7 +346,7 @@ async function toggleGraphNodes(item: GraphInfo) {
   graphNodesLoadingId.value = graphId
   graphStatus.value = null
   try {
-    const result = await listNodeInstanceConfigs(graphId)
+    const result = await listNodeInstanceConfigs(graphId, 0, 'board')
     graphNodesById.value = {
       ...graphNodesById.value,
       [graphId]: Array.isArray(result.nodes) ? result.nodes : [],
@@ -439,12 +541,17 @@ async function navigateToGraphNode(payload: { graph: GraphInfo; nodeId: string }
 
 async function deleteGraphConfig(item: GraphInfo) {
   const name = item.name || item.id
-  const ok = window.confirm(`Delete graph "${name}"? This will remove the whole graph folder and cannot be undone.`)
+  const ok = window.confirm(`Delete graph "${name}"? Press Ctrl+Z to undo after deletion.`)
   if (!ok) return
 
   graphStatus.value = null
   try {
-    await deleteGraph(item.id)
+    const result = await deleteGraph(item.id)
+    recordDeletionUndo(result.undo_token ? {
+      token: result.undo_token,
+      kind: 'delete_graph',
+      label: `graph ${name}`,
+    } : null)
     if (currentGraphId.value === item.id) {
       currentGraphId.value = 'default'
       currentGraphName.value = 'default'
@@ -485,7 +592,7 @@ async function clearGraphMemory(item: GraphInfo) {
   graphStatus.value = null
   graphMemoryClearingId.value = graphId
   try {
-    const configs = await listNodeInstanceConfigs(graphId)
+    const configs = await listNodeInstanceConfigs(graphId, 0, 'board')
     const nodeIds = graphNodeIdsFromConfigs(configs)
     let clearedFiles = 0
     for (const nodeId of nodeIds) {
@@ -511,32 +618,21 @@ async function clearGraphMemory(item: GraphInfo) {
 }
 
 watch(
-  () => selectedNodeId.value,
-  async () => {
-    if (memoryMode.value !== 'agent') return
-    stopLoading()
-    memoryAutoScroll.value = true
-    await loadAgentMemory({ historyMode: 'latest_turn' })
-    startAgentLiveStream()
-  },
-)
-
-watch(
-  () => memoryMode.value,
-  async (mode) => {
-    stopLoading()
-
+  () => [selectedNodeId.value, currentGraphId.value, memoryMode.value] as const,
+  async ([, , mode]) => {
     if (mode === 'agent') {
       memoryAutoScroll.value = true
-      await loadAgentMemory({ historyMode: 'latest_turn' })
-      startAgentLiveStream()
+      beginAgentSelection()
+      void refreshCodexSessions()
       return
     }
+
+    resetCodexSessions()
+    stopLoading()
 
     if (mode === 'graph') {
       memoryTitle.value = currentGraphName.value || 'Graph'
       graphWorkingPathInput.value = currentGraphWorkingPath.value
-      await refreshGraphs()
     }
   },
   { immediate: true },
@@ -547,8 +643,18 @@ watch(
   async () => {
     if (memoryMode.value !== 'agent') return
     if (!hasSelectedNodeTarget()) return
-    await loadAgentMemory()
-    startAgentLiveStream()
+    void refreshCodexSessions()
+    await loadAgentMemory({
+      historyMode: memoryLatestTurnProgressLoaded.value ? 'latest_turn_progress' : 'latest_turn',
+    })
+  },
+)
+
+watch(
+  () => [memoryMessages.value.length, memoryMeta.value] as const,
+  () => {
+    if (!codexSessionState.value?.supported || memoryMode.value !== 'agent') return
+    void refreshCodexSessions()
   },
 )
 
@@ -578,40 +684,20 @@ watch(
   { immediate: true },
 )
 
-watch(memoryText, async () => {
-  if (!memoryAutoScroll.value) return
-  if (memoryMode.value !== 'agent') return
-  await nextTick()
-  contentViewRef.value?.scrollToBottom()
-})
-
-watch(memoryMessages, async () => {
-  if (!memoryAutoScroll.value) return
-  if (memoryMode.value !== 'agent') return
-  await nextTick()
-  contentViewRef.value?.scrollToBottom()
-})
-
-watch(memoryLiveMessage, async () => {
-  if (!memoryAutoScroll.value) return
-  if (memoryMode.value !== 'agent') return
-  await nextTick()
-  contentViewRef.value?.scrollToBottom()
+watch([memoryText, memoryMessages, memoryLiveMessage, memoryThinkingMessage, memoryActivityBlocks], () => {
+  scheduleAutoScroll()
 })
 
 watch(
   () => memoryInteractiveSessionId.value,
-  async (sessionId) => {
+  (sessionId) => {
     if (!sessionId) return
-    if (!memoryAutoScroll.value) return
-    if (memoryMode.value !== 'agent') return
-    await nextTick()
-    contentViewRef.value?.scrollToBottom()
-    contentViewRef.value?.focusInteractiveInput?.()
+    scheduleAutoScroll(true)
   },
 )
 
 onBeforeUnmount(() => {
+  if (autoScrollFrame != null) window.cancelAnimationFrame(autoScrollFrame)
   stopLoading()
 })
 </script>
@@ -632,6 +718,16 @@ onBeforeUnmount(() => {
       @toggle-file-mode="toggleFileMode"
     />
 
+    <CodexSessionPicker
+      v-if="codexSessionState?.supported"
+      :sessions="codexSessionState.sessions"
+      :active-session-id="codexSessionState.active_session_id"
+      :is-new-session="codexSessionState.is_new_session"
+      :loading="codexSessionLoading"
+      @select="chooseCodexSession"
+      @refresh="refreshCodexSessions"
+    />
+
     <MemoryContentView
       ref="contentViewRef"
       v-model:memory-text="memoryText"
@@ -647,6 +743,9 @@ onBeforeUnmount(() => {
       :live-message="memoryLiveMessage"
       :thinking-message="memoryThinkingMessage"
       :activity-message="memoryActivityMessage"
+      :activity-blocks="memoryActivityBlocks"
+      :node-id="String(selectedNodeId || '')"
+      :graph-id="currentGraphId || 'default'"
       :markdown-preview="isMarkdownPreview"
       :word-wrap="isWordWrap"
       :show-line-numbers="showLineNumbers"
@@ -664,6 +763,7 @@ onBeforeUnmount(() => {
       :interactive-input-disabled="!canSendInteractiveInput"
       :interactive-sending="memoryInteractiveSending"
       :interactive-input-text="interactiveInputText"
+      :ensure-latest-turn-metadata="ensureLatestTurnMetadata"
       @save-current-file="saveCurrentFile"
       @save-graph-config="saveGraphConfig"
       @save-graph-profile="saveGraphProfile"

@@ -280,7 +280,8 @@ def test_doubao_responses_appends_turn_trigger_after_terminal_assistant_context(
     assert result == "ok"
     payload = payloads[0]
     assert payload["instructions"] == "Call the maintenance tool if needed."
-    assert any(item.get("role") == "system" for item in payload["input"])
+    assert any(item.get("role") == "developer" for item in payload["input"])
+    assert not any(item.get("role") == "system" for item in payload["input"])
     assert payload["input"][-2]["role"] == "assistant"
     assert payload["input"][-1]["role"] == "user"
     assert payload["input"][-1]["content"][0]["text"].startswith("Continue by following")
@@ -438,11 +439,12 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
 
     for payload in payloads.values():
         assert payload["instructions"] == "Base instructions."
-        assert any(item.get("role") == "system" for item in payload["input"])
+        assert not any(item.get("role") == "system" for item in payload["input"])
         assert payload["input"][0]["role"] == "developer"
         developer_texts = [part["text"] for part in payload["input"][0]["content"]]
         assert developer_texts[0].startswith("<permissions instructions>")
-        assert developer_texts[1].startswith("Operational memory for this node:")
+        assert developer_texts[1] == "System prompt."
+        assert developer_texts[2].startswith("Operational memory for this node:")
         assert payload["input"][1]["role"] == "user"
         user_context_texts = [part["text"] for part in payload["input"][1]["content"]]
         assert user_context_texts[0].startswith("<environment_context>")
