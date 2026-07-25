@@ -48,6 +48,15 @@ def _capture_payload(agent, **send_options):
     return json.loads(requests[0]["payload_json"])
 
 
+def test_tavern_provider_uses_official_deepseek_non_thinking_contract():
+    config_path = Path(__file__).resolve().parents[1] / "config" / "modelProvider.json"
+    providers = json.loads(config_path.read_text(encoding="utf-8"))["providers"]
+    provider = providers["tavern_deepseek_v31"]
+
+    assert provider["type"] == "deepseek"
+    assert provider["model"] == "deepseek-v4-pro"
+
+
 def test_deepseek_explicitly_disables_thinking_and_omits_reasoning_effort():
     payload = _capture_payload(
         _build_deepseek_agent(),

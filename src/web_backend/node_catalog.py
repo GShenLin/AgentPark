@@ -66,7 +66,7 @@ class NodeCatalog(HostBoundService):
         }
         context_overrides = {PROVIDER_VISIBILITY_CONTEXT_KEY: is_local_request(request)}
         safe_provider_id = str(provider_id or "").strip()
-        if safe_type_id in {"agent_node", "codex_node"} and safe_provider_id:
+        if safe_type_id in {"agent_node", "codex_node", "claude_node"} and safe_provider_id:
             try:
                 provider_config = ConfigLoader().get_provider_config(safe_provider_id)
             except ValueError as exc:
@@ -77,7 +77,7 @@ class NodeCatalog(HostBoundService):
                 if isinstance(raw_support_modes, list)
                 else []
             )
-            if safe_type_id == "codex_node" and not any(
+            if safe_type_id in {"codex_node", "claude_node"} and not any(
                 mode in {"chat", "imagechat"} for mode in support_modes
             ):
                 raise HTTPException(

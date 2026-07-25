@@ -3,13 +3,13 @@ from __future__ import annotations
 import io
 import json
 
-from src.codex_runtime.anthropic_adapter import AnthropicMessagesAdapter
-from src.codex_runtime.contracts import CanonicalMessage
-from src.codex_runtime.contracts import CanonicalRequest
-from src.codex_runtime.contracts import CanonicalTool
-from src.codex_runtime.gemini_adapter import GeminiGenerateContentAdapter
-from src.codex_runtime.http_transport import UpstreamResponse
-from src.codex_runtime.openai_chat_adapter import OpenAIChatAdapter
+from src.cli_provider_runtime.anthropic_adapter import AnthropicMessagesAdapter
+from src.cli_provider_runtime.contracts import CanonicalMessage
+from src.cli_provider_runtime.contracts import CanonicalRequest
+from src.cli_provider_runtime.contracts import CanonicalTool
+from src.cli_provider_runtime.gemini_adapter import GeminiGenerateContentAdapter
+from src.cli_provider_runtime.http_transport import UpstreamResponse
+from src.cli_provider_runtime.openai_chat_adapter import OpenAIChatAdapter
 
 
 def _request() -> CanonicalRequest:
@@ -59,7 +59,7 @@ def test_anthropic_stream_reassembles_incremental_tool_json(monkeypatch):
         },
         {"type": "message_delta", "usage": {"output_tokens": 4}},
     ]
-    monkeypatch.setattr("src.codex_runtime.anthropic_adapter.open_json_request", lambda **_kwargs: _response(events))
+    monkeypatch.setattr("src.cli_provider_runtime.anthropic_adapter.open_json_request", lambda **_kwargs: _response(events))
     adapter = AnthropicMessagesAdapter(
         {"type": "claude", "baseUrl": "http://example.test/v1", "apiKey": "key"}
     )
@@ -78,7 +78,7 @@ def test_openai_compatible_stream_converts_reasoning_content(monkeypatch):
         {"choices": [{"index": 0, "delta": {"reasoning_content": "Reason"}}]},
         {"choices": [{"index": 0, "delta": {"content": "Answer"}}]},
     ]
-    monkeypatch.setattr("src.codex_runtime.openai_chat_adapter.open_json_request", lambda **_kwargs: _response(events))
+    monkeypatch.setattr("src.cli_provider_runtime.openai_chat_adapter.open_json_request", lambda **_kwargs: _response(events))
     adapter = OpenAIChatAdapter(
         {"type": "zhipu", "baseUrl": "http://example.test/v1", "apiKey": "key"}
     )
@@ -99,7 +99,7 @@ def test_gemini_stream_converts_text_and_function_call(monkeypatch):
             "usageMetadata": {"promptTokenCount": 2, "candidatesTokenCount": 3},
         },
     ]
-    monkeypatch.setattr("src.codex_runtime.gemini_adapter.open_json_request", lambda **_kwargs: _response(events))
+    monkeypatch.setattr("src.cli_provider_runtime.gemini_adapter.open_json_request", lambda **_kwargs: _response(events))
     adapter = GeminiGenerateContentAdapter(
         {"type": "gemini", "baseUrl": "http://example.test/v1beta", "apiKey": "key"}
     )

@@ -3,8 +3,8 @@ import os
 from types import SimpleNamespace
 
 from nodes.codex_node import Node
-from src.codex_runtime.thread_state import THREAD_STATE_FILENAME
-from src.codex_runtime.thread_state import session_runtime_key
+from nodes.codex_node.runtime.thread_state import THREAD_STATE_FILENAME
+from nodes.codex_node.runtime.thread_state import session_runtime_key
 
 
 def test_codex_node_exposes_provider_dropdown_and_runtime_configuration(monkeypatch):

@@ -27,7 +27,7 @@ export function useProviderDrivenTemplateSchema(options: {
       const [typeId = '', providerId = ''] = key.split('|')
       requestId += 1
       const currentRequest = requestId
-      if (!['agent_node', 'codex_node'].includes(typeId) || !providerId) {
+      if (!['agent_node', 'codex_node', 'claude_node'].includes(typeId) || !providerId) {
         loadedContextKey = ''
         loading.value = false
         return

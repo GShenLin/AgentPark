@@ -60,6 +60,55 @@ def test_compaction_window_ignores_disabled_limits():
     ) is False
 
 
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "toolContextCompactionEveryToolCalls",
+        "toolContextCompactionInputTokens",
+        "toolContextCompactionCurrentInputTokens",
+        "toolContextCompactionOutputTokens",
+    ],
+)
+def test_missing_compaction_limit_is_disabled(missing_key):
+    config = {
+        "toolContextCompactionEveryToolCalls": 30,
+        "toolContextCompactionInputTokens": 20_000,
+        "toolContextCompactionCurrentInputTokens": 10_000,
+        "toolContextCompactionOutputTokens": 2_000,
+    }
+    config.pop(missing_key)
+
+    limits = ToolContextCompactionLimits.from_provider_config(config)
+
+    field_by_key = {
+        "toolContextCompactionEveryToolCalls": "tool_executions",
+        "toolContextCompactionInputTokens": "input_tokens",
+        "toolContextCompactionCurrentInputTokens": "current_input_tokens",
+        "toolContextCompactionOutputTokens": "output_tokens",
+    }
+    assert getattr(limits, field_by_key[missing_key]) == 0
+
+
+def test_all_missing_compaction_limits_create_disabled_policy():
+    limits = ToolContextCompactionLimits.from_provider_config({})
+    window = ToolContextCompactionWindow(regular_tool_executions=100)
+
+    assert limits == ToolContextCompactionLimits(
+        tool_executions=0,
+        input_tokens=0,
+        current_input_tokens=0,
+        output_tokens=0,
+    )
+    assert window.reached(
+        limits,
+        {
+            "actual_input_tokens": 1_000_000,
+            "last_actual_input_tokens": 1_000_000,
+            "actual_output_tokens": 1_000_000,
+        },
+    ) is False
+
+
 def test_compaction_window_triggers_from_latest_actual_context_size():
     window = ToolContextCompactionWindow(regular_tool_executions=1)
     limits = _limits(current_input_tokens=50_000)
@@ -175,12 +224,6 @@ def test_compaction_window_reset_uses_current_usage_as_new_baseline():
 @pytest.mark.parametrize(
     "config",
     [
-        {
-            "toolContextCompactionEveryToolCalls": 0,
-            "toolContextCompactionInputTokens": 0,
-            "toolContextCompactionCurrentInputTokens": 0,
-            "toolContextCompactionOutputTokens": 0,
-        },
         {
             "toolContextCompactionEveryToolCalls": 30,
             "toolContextCompactionInputTokens": -1,

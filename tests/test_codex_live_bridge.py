@@ -1,6 +1,6 @@
 import json
 
-from src.codex_runtime.live_bridge import CodexLiveBridge
+from nodes.codex_node.runtime.live_bridge import CodexLiveBridge
 
 
 def test_codex_live_bridge_preserves_message_thinking_and_tool_event_contracts():

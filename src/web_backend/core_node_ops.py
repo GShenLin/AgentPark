@@ -1,7 +1,7 @@
 from .domain_base import DomainBase
 from .node_async_runs import NodeAsyncRuns
 from .node_catalog import NodeCatalog
-from .codex_session_runtime import CodexSessionRuntime
+from .cli_session_runtime import CliSessionRuntime
 from .node_instance_deletion import NodeInstanceDeletion
 from .node_instance_files import NodeInstanceFiles
 from .node_instance_config_query import NodeInstanceConfigQuery
@@ -21,7 +21,7 @@ class NodeOpsDomain(DomainBase):
         if cached is None:
             cached = (
                 NodeCatalog(self),
-                CodexSessionRuntime(self),
+                CliSessionRuntime(self),
                 NodeInstanceDeletion(self),
                 NodeInstanceFiles(self),
                 NodeInstanceConfigQuery(self),

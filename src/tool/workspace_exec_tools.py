@@ -5,14 +5,10 @@ from src.workspace_execution_output import serialize_workspace_result
 from src.tool.patch_requirement_schema import build_patch_requirements_schema
 from src.tool.task_direction_schema import UPDATE_PROPERTIES
 from src.tool.task_direction_schema import UPDATE_REQUIRED
-from src.workspace_checkpoint_policy import CHECKPOINT_POLICIES
-from src.workspace_checkpoint_policy import validate_workspace_checkpoint_policy
 
 
-def workspace_exec(stages, context_checkpoint="none", agent=None):
-    policy = validate_workspace_checkpoint_policy(stages, context_checkpoint)
+def workspace_exec(stages, agent=None):
     result = execute_workspace_program(stages, agent=agent)
-    result["context_checkpoint"] = policy
     return serialize_workspace_result(result, agent=agent)
 
 
@@ -154,9 +150,7 @@ workspace_exec_declaration = {
             "stage run concurrently. Use it to combine independent reads, searches, file inventories, and "
             "PowerShell commands without extra model round trips. It can also sequence an exclusive "
             "update_task_direction stage before an exclusive apply_patch stage. A failed stage stops the "
-            "program before later stages. Ordered mutation handoffs must set context_checkpoint to "
-            "retain_until_next_handoff for an intermediate patch or retire_after_verified for a "
-            "terminal implementation patch. Non-handoff programs omit it or use none. "
+            "program before later stages. The only top-level argument is stages. "
             "Every apply_patch operation declares non-empty required_changes. The runtime verifies each "
             "declared addition or old_text-to-new_text replacement against patch +/- lines before mutation. "
             "top-level output-control fields are not supported. Each operation has an explicit id, kind, and "
@@ -179,11 +173,6 @@ workspace_exec_declaration = {
                             _PATCH_MUTATION_STAGE,
                         ]
                     },
-                },
-                "context_checkpoint": {
-                    "type": "string",
-                    "enum": sorted(CHECKPOINT_POLICIES),
-                    "default": "none",
                 },
             },
             "required": ["stages"],

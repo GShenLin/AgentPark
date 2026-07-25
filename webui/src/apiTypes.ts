@@ -412,6 +412,7 @@ export type NodeInstanceConfig = {
   }
   state?: NodeInstanceState
   pending_count?: number
+  node_event_seq?: number
   inflight?: Record<string, unknown> | null
   _stop_requested?: boolean
   schema?: Record<string, any>
@@ -560,6 +561,7 @@ export type MobileNode = {
   graph_id: string
   state?: NodeInstanceState
   pending_count?: number
+  node_event_seq?: number
   has_inflight?: boolean
   stop_requested?: boolean
   last_message?: string

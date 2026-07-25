@@ -3,8 +3,8 @@ from __future__ import annotations
 import io
 import json
 
-from src.codex_runtime.http_transport import UpstreamResponse
-from src.codex_runtime.responses_passthrough import ResponsesPassthrough
+from src.cli_provider_runtime.http_transport import UpstreamResponse
+from src.cli_provider_runtime.responses_passthrough import ResponsesPassthrough
 
 
 def _request() -> dict:

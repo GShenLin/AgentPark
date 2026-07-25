@@ -32,6 +32,7 @@ function nodeConfig(graphId: string, nodeId: string): NodeInstanceConfig {
     type_id: 'agent_node',
     name: nodeId,
     state: 'idle',
+    node_event_seq: 0,
     ui: { x: 10, y: 20 },
   }
 }
@@ -47,12 +48,14 @@ function configList(graphId: string, nodeId: string, version: number): NodeInsta
 
 function createSubject(currentGraphId: Ref<string | null>) {
   const nodes = ref<NodeCard[]>([])
+  const nodeConfigs = ref<Record<string, NodeInstanceConfig>>({})
+  const nodeStates = ref<Record<string, NodeInstanceState>>({})
   const subject = createBoardNodeConfigRefresh({
     currentGraphId,
     selectedNodeId: ref<string | null>(null),
     nodes,
-    nodeConfigs: ref<Record<string, NodeInstanceConfig>>({}),
-    nodeStates: ref<Record<string, NodeInstanceState>>({}),
+    nodeConfigs,
+    nodeStates,
     nodeRuns: ref<Record<string, NodeRunState>>({}),
     activeDragItemIds: new Set<string>(),
     pendingUiPositions: new Map(),
@@ -62,7 +65,7 @@ function createSubject(currentGraphId: Ref<string | null>) {
     syncSelectedNodeWorkingPath: vi.fn(),
     requestMemoryRefresh: vi.fn(),
   })
-  return { nodes, subject }
+  return { nodeConfigs, nodeStates, nodes, subject }
 }
 
 describe('board node config refresh isolation', () => {
@@ -125,5 +128,58 @@ describe('board node config refresh isolation', () => {
     newResponse.resolve(configList('XYJ', 'current-node', 200))
     await newRefresh
     expect(nodes.value.map((node) => node.id)).toEqual(['current-node'])
+  })
+
+  it('clears inflight on the terminal runtime event and rejects an older event', async () => {
+    const working = {
+      ...nodeConfig('default', 'crash-node'),
+      state: 'working' as const,
+      node_event_seq: 340,
+      inflight: { task_id: 'task-1' },
+    }
+    apiMocks.listNodeInstanceConfigs.mockResolvedValue({
+      nodes: [working],
+      node_ids: ['crash-node'],
+      partial: false,
+      version: 1,
+    })
+
+    const currentGraphId = ref<string | null>('default')
+    const { nodeConfigs, nodeStates, subject } = createSubject(currentGraphId)
+    await subject.refreshNodeConfigs()
+
+    subject.applyNodeRuntimeEvent({
+      event: 'executor_task_finished',
+      node_id: 'crash-node',
+      node_runtime: {
+        node_id: 'crash-node',
+        state: 'idle',
+        pending_count: 0,
+        inflight: null,
+        _stop_requested: false,
+        node_event_seq: 341,
+      },
+    })
+
+    expect(nodeStates.value['crash-node']).toBe('idle')
+    expect(nodeConfigs.value['crash-node']?.inflight).toBeNull()
+    expect(subject.hasActiveNodeWork()).toBe(false)
+
+    subject.applyNodeRuntimeEvent({
+      event: 'node_message_done',
+      node_id: 'crash-node',
+      node_runtime: {
+        node_id: 'crash-node',
+        state: 'working',
+        pending_count: 0,
+        inflight: { task_id: 'task-1' },
+        _stop_requested: false,
+        node_event_seq: 340,
+      },
+    })
+
+    expect(nodeStates.value['crash-node']).toBe('idle')
+    expect(nodeConfigs.value['crash-node']?.node_event_seq).toBe(341)
+    expect(subject.hasActiveNodeWork()).toBe(false)
   })
 })

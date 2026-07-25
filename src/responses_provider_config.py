@@ -13,7 +13,6 @@ RESPONSES_COMPACTION_LIMIT_KEYS = (
 RESPONSES_REQUIRED_FIELDS = (
     "toolResultSubmissionMaxChars",
     "toolContextCompactionEnabled",
-    *RESPONSES_COMPACTION_LIMIT_KEYS,
 )
 
 
@@ -57,7 +56,7 @@ def _validate_compaction_contract(
     provider: dict[str, Any],
 ) -> None:
     for key in RESPONSES_COMPACTION_LIMIT_KEYS:
-        value = provider.get(key)
+        value = provider.get(key, 0)
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise ValueError(
                 f"Provider '{provider_name}' has invalid {key}; "
@@ -103,17 +102,6 @@ def _validate_compaction_contract(
             "expected an integer greater than or equal to 4000."
         )
 
-    if (
-        provider.get("toolContextCompactionEnabled")
-        and context_percent is None
-        and not any(provider.get(key, 0) > 0 for key in RESPONSES_COMPACTION_LIMIT_KEYS)
-    ):
-        raise ValueError(
-            f"Provider '{provider_name}' enables tool context compaction but "
-            "all compaction limits are zero."
-        )
-
-
 def _validate_context_percent(
     provider_name: str,
     provider: dict[str, Any],
@@ -136,7 +124,7 @@ def _validate_context_percent(
             f"Provider '{provider_name}' sets toolContextCompactionContextPercent "
             "without modelContextWindowTokens."
         )
-    if provider.get("toolContextCompactionCurrentInputTokens") != 0:
+    if provider.get("toolContextCompactionCurrentInputTokens", 0) != 0:
         raise ValueError(
             f"Provider '{provider_name}' must set "
             "toolContextCompactionCurrentInputTokens=0 when "
@@ -163,14 +151,6 @@ def _validate_openai_responses_contract(
             f"Provider '{provider_name}' has invalid responsesReplayReasoningItems; "
             "expected a boolean."
         )
-    checkpoint_enabled = provider.get("responsesCompletedToolCheckpointEnabled")
-    if checkpoint_enabled is not None and not isinstance(checkpoint_enabled, bool):
-        raise ValueError(
-            f"Provider '{provider_name}' has invalid "
-            "responsesCompletedToolCheckpointEnabled; expected a boolean."
-        )
-
-
 def _validate_openai_reasoning_summary(
     provider_name: str,
     provider: dict[str, Any],

@@ -166,7 +166,7 @@ def test_provider_speech_access_key_fields_reject_non_string(monkeypatch, tmp_pa
         "toolContextCompactionOutputTokens",
     ],
 )
-def test_responses_provider_requires_token_compaction_limits(monkeypatch, tmp_path, missing_key):
+def test_responses_provider_accepts_missing_optional_compaction_limits(monkeypatch, tmp_path, missing_key):
     contract = _responses_contract()
     contract.pop(missing_key)
     config_path = tmp_path / "modelProvider.json"
@@ -189,8 +189,9 @@ def test_responses_provider_requires_token_compaction_limits(monkeypatch, tmp_pa
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
-    with pytest.raises(ValueError, match=missing_key):
-        ConfigLoader().get_config()
+    provider = ConfigLoader().get_config()["providers"]["demo"]
+
+    assert missing_key not in provider
 
 
 @pytest.mark.parametrize(
@@ -216,7 +217,7 @@ def test_responses_provider_rejects_invalid_compaction_limits(
         ConfigLoader().get_config()
 
 
-def test_responses_provider_rejects_enabled_compaction_with_all_limits_zero(monkeypatch, tmp_path):
+def test_responses_provider_accepts_enabled_compaction_with_all_limits_zero(monkeypatch, tmp_path):
     config_path = _write_openai_responses_provider(
         tmp_path,
         toolContextCompactionEnabled=True,
@@ -228,8 +229,9 @@ def test_responses_provider_rejects_enabled_compaction_with_all_limits_zero(monk
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
-    with pytest.raises(ValueError, match="all compaction limits are zero"):
-        ConfigLoader().get_config()
+    provider = ConfigLoader().get_config()["providers"]["demo"]
+
+    assert provider["toolContextCompactionEnabled"] is True
 
 
 def test_responses_provider_accepts_context_window_compaction_policy(monkeypatch, tmp_path):
@@ -1015,19 +1017,33 @@ def test_stream_enabled_rejects_non_boolean(monkeypatch, tmp_path):
         ConfigLoader().get_all_providers()
 
 
-def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "toolResultSubmissionMaxChars",
+        "toolContextCompactionEnabled",
+    ],
+)
+def test_responses_api_provider_requires_explicit_hardening_fields(
+    monkeypatch,
+    tmp_path,
+    missing_key,
+):
+    provider = {
+        "type": "openai",
+        "apiKey": "openai-key",
+        "responsesApi": True,
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": True,
+    }
+    provider.pop(missing_key)
     config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
             {
                 "providers": {
-                    "openai": {
-                        "type": "openai",
-                        "apiKey": "openai-key",
-                        "responsesApi": True,
-                        "toolResultSubmissionMaxChars": 50000,
-                        "toolContextCompactionEnabled": True,
-                    }
+                    "openai": provider
                 }
             },
             ensure_ascii=False,
@@ -1038,7 +1054,7 @@ def test_responses_api_provider_requires_explicit_hardening_fields(monkeypatch, 
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
-    with pytest.raises(ValueError, match="toolContextCompactionEveryToolCalls"):
+    with pytest.raises(ValueError, match=missing_key):
         ConfigLoader().get_all_providers()
 
 

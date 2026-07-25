@@ -115,7 +115,6 @@ def test_workspace_exec_sequences_direction_update_before_patch(tmp_path):
                     ],
                 },
             ],
-            context_checkpoint="retain_until_next_handoff",
             agent=agent,
         )
     )
@@ -177,7 +176,6 @@ def test_workspace_exec_stops_before_patch_when_direction_stage_fails(tmp_path):
                     ],
                 },
             ],
-            context_checkpoint="retain_until_next_handoff",
             agent=agent,
         )
 

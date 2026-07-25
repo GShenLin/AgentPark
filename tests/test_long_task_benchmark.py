@@ -66,8 +66,6 @@ def test_benchmark_summary_counts_model_turns_tools_and_usage():
     assert summary["usage"]["total_tokens"] == 15
     assert summary["output_chars"] == 4
     assert summary["provider_gateway_requests"][0]["provider_model"] == "actual"
-
-
 def test_failed_benchmark_persists_events_summary_and_error(monkeypatch, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

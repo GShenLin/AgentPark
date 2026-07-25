@@ -21,6 +21,10 @@ import { renderMarkdownTextWithoutKatex } from './components/memoryMarkdown'
 import { usePetAvatarWindow } from './composables/usePetAvatarWindow'
 import { normalizePetPanelSize, usePetPanelResize } from './composables/usePetPanelResize'
 import { subscribeAppEvents } from './composables/useAppEventStream'
+import {
+  mergeMobileNodeRuntimeEvent,
+  mergeMobileNodeSnapshot,
+} from './nodeRuntimeProjection'
 import { uploadFiles, type UploadedFileItem } from './uploadApi'
 import './PetDesktopView.css'
 
@@ -87,6 +91,7 @@ type GraphStreamPayload = {
   node_instance_id?: string
   from_id?: string
   from_node?: string
+  node_runtime?: Record<string, unknown>
 }
 
 function readPetWindowLayoutBounds(result: unknown): PetWindowBounds | null {
@@ -312,10 +317,15 @@ async function runRefreshView() {
       window.close()
       return
     }
-    view.value = nextView
-    applyPanelSizeFromView(nextView)
-    const nextLastMessage = String(nextView.node?.last_message || '').trim()
-    if (hadView && nextLastMessage && nextLastMessage !== previousLastMessage && !String(nextView.live?.text || '').trim()) {
+    const mergedNode = mergeMobileNodeSnapshot(view.value?.node, nextView.node)
+    if (mergedNode.status === 'invalid') {
+      throw new Error(`Invalid runtime projection for node ${nextView.node_id}: ${mergedNode.error}`)
+    }
+    const reconciledView = { ...nextView, node: mergedNode.value }
+    view.value = reconciledView
+    applyPanelSizeFromView(reconciledView)
+    const nextLastMessage = String(reconciledView.node?.last_message || '').trim()
+    if (hadView && nextLastMessage && nextLastMessage !== previousLastMessage && !String(reconciledView.live?.text || '').trim()) {
       showNotificationBubble(nextLastMessage)
     }
     error.value = ''
@@ -419,6 +429,14 @@ function syncStreams() {
       return
     }
     if (!graphEventTargetsCurrentNode(workspaceEvent as GraphStreamPayload)) return
+    if (workspaceEvent.node_runtime) {
+      const merged = mergeMobileNodeRuntimeEvent(current.node, workspaceEvent.node_runtime)
+      if (merged.status === 'invalid') {
+        console.error(`Invalid runtime projection for node ${current.node_id}: ${merged.error}`, workspaceEvent.node_runtime)
+      } else if (merged.status === 'applied') {
+        view.value = { ...current, node: merged.value }
+      }
+    }
     if (petViewRefreshEvents.has(eventName)) void refreshView()
   })
 }

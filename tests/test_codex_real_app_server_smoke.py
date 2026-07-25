@@ -8,10 +8,10 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from src.codex_runtime.live_bridge import CodexLiveBridge
-from src.codex_runtime.provider_gateway import CodexProviderGateway
-from src.codex_runtime.session_manager import CodexSessionManager
-from src.codex_runtime.session_manager import CodexSessionSpec
+from nodes.codex_node.runtime.live_bridge import CodexLiveBridge
+from nodes.codex_node.runtime.provider_gateway import CodexProviderGateway
+from nodes.codex_node.runtime.session_manager import CodexSessionManager
+from nodes.codex_node.runtime.session_manager import CodexSessionSpec
 
 
 @pytest.mark.skipif(shutil.which("codex") is None and shutil.which("codex.cmd") is None, reason="Codex CLI is not installed")

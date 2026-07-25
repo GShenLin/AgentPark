@@ -30,10 +30,6 @@ class ToolContextCompactionLimits:
         values: dict[str, int] = {}
         for key in TOOL_CONTEXT_COMPACTION_LIMIT_FIELDS:
             field_name = f"provider.{key}"
-            if key not in provider_config:
-                raise ValueError(
-                    f"{field_name} is required when provider.toolContextCompactionEnabled is true."
-                )
             try:
                 parsed = parse_optional_int_value(
                     field_name,
@@ -44,11 +40,7 @@ class ToolContextCompactionLimits:
                 raise ValueError(
                     f"{field_name} must be an integer greater than or equal to zero."
                 ) from exc
-            if parsed is None:
-                raise ValueError(
-                    f"{field_name} must be an integer greater than or equal to zero."
-                )
-            values[key] = parsed
+            values[key] = parsed if parsed is not None else 0
 
         (
             current_input_tokens,
@@ -66,18 +58,6 @@ class ToolContextCompactionLimits:
             model_context_window_tokens=model_context_window_tokens,
             context_percent=context_percent,
         )
-        if not any(
-            (
-                limits.tool_executions,
-                limits.input_tokens,
-                limits.current_input_tokens,
-                limits.output_tokens,
-            )
-        ):
-            raise ValueError(
-                "At least one tool context compaction limit must be greater than zero when "
-                "provider.toolContextCompactionEnabled is true."
-            )
         return limits
 
 

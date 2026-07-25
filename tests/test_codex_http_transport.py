@@ -4,12 +4,12 @@ import json
 
 import pytest
 
-from src.codex_runtime import http_transport
-from src.codex_runtime.http_transport import UpstreamRequestPolicy
-from src.codex_runtime.http_transport import UpstreamTransportError
-from src.codex_runtime.http_transport import iter_sse_data
-from src.codex_runtime.http_transport import open_json_request
-from src.codex_runtime.http_transport import read_json_response
+from src.cli_provider_runtime import http_transport
+from src.cli_provider_runtime.http_transport import UpstreamRequestPolicy
+from src.cli_provider_runtime.http_transport import UpstreamTransportError
+from src.cli_provider_runtime.http_transport import iter_sse_data
+from src.cli_provider_runtime.http_transport import open_json_request
+from src.cli_provider_runtime.http_transport import read_json_response
 from src.providers.curl_transport import CurlResponse
 from src.providers.curl_transport import CurlTransportError
 

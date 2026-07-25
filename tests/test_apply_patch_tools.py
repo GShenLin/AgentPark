@@ -7,7 +7,6 @@ import pytest
 import functions.apply_patch_tool as patch_tools
 import functions.system_tools as system_tools
 from src.tool.base_tool import BaseTool
-from src.workspace_patch_requirements import WorkspacePatchRequirementError
 
 
 class _DummyAgent:
@@ -199,10 +198,11 @@ def test_system_tools_registers_apply_patch():
         for item in tool.tool_declarations
         if item.get("function", {}).get("name") == "apply_patch"
     )
-    assert declaration["parameters"]["required"] == ["patch", "required_changes"]
+    assert declaration["parameters"]["required"] == ["patch"]
+    assert "required_changes" not in declaration["parameters"]["properties"]
 
 
-def test_agent_apply_patch_enforces_requirements_for_direct_mutation(tmp_path):
+def test_agent_apply_patch_uses_the_r30_direct_mutation_contract(tmp_path):
     target = tmp_path / "value.txt"
     target.write_text("before\n", encoding="utf-8")
     patch = (
@@ -214,32 +214,6 @@ def test_agent_apply_patch_enforces_requirements_for_direct_mutation(tmp_path):
         "*** End Patch\n"
     )
 
-    with pytest.raises(WorkspacePatchRequirementError, match="old_text removal"):
-        system_tools.apply_patch(
-            patch=patch,
-            required_changes=[
-                {
-                    "id": "wrong",
-                    "kind": "replacement",
-                    "old_text": "missing",
-                    "new_text": "after",
-                }
-            ],
-        )
-
-    assert target.read_text(encoding="utf-8") == "before\n"
-    result = json.loads(
-        system_tools.apply_patch(
-            patch=patch,
-            required_changes=[
-                {
-                    "id": "value",
-                    "kind": "replacement",
-                    "old_text": "before",
-                    "new_text": "after",
-                }
-            ],
-        )
-    )
+    result = json.loads(system_tools.apply_patch(patch=patch))
     assert result["status"] == "success"
     assert target.read_text(encoding="utf-8") == "after\n"

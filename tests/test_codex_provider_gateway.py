@@ -6,7 +6,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 
-from src.codex_runtime.provider_gateway import CodexProviderGateway
+from nodes.codex_node.runtime.provider_gateway import CodexProviderGateway
 
 
 def test_gateway_transparently_forwards_responses_for_non_openai_provider_type(monkeypatch):
@@ -42,7 +42,7 @@ def test_gateway_transparently_forwards_responses_for_non_openai_provider_type(m
         "model": "native-responses-model",
         "supportmode": ["chat"],
     }
-    monkeypatch.setattr("src.codex_runtime.provider_gateway.ConfigLoader.get_provider_config", lambda _self, _id: dict(config))
+    monkeypatch.setattr("nodes.codex_node.runtime.provider_gateway.ConfigLoader.get_provider_config", lambda _self, _id: dict(config))
     gateway = CodexProviderGateway()
     lease = gateway.register("native-provider")
     observations = []

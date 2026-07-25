@@ -66,9 +66,7 @@ serializer; do not infer the final envelope from an internal return fragment. On
 ledger, do not reread already traced files unless a focused failure identifies a specific locus.
 Once the boundary trace is complete and the Stage 1 patch is fully planned, persist that trace and apply
 Stage 1 in one ordered workspace_exec call: an exclusive update_task_direction stage followed by an
-exclusive apply_patch stage, with context_checkpoint="retain_until_next_handoff". Stage 1 is an intermediate
-implementation boundary: its successful focused test must not retire the Stage 1 mutation before Stage 2
-is constructed. Do not spend a standalone model round on the trace update when no unresolved
+exclusive apply_patch stage. Do not spend a standalone model round on the trace update when no unresolved
 evidence is needed to construct the already-planned Stage 1 patch. The ordered program remains fail-fast,
 so Stage 1 must not mutate files if trace persistence fails.
 Execute a cross-layer canonical-contract migration in exactly two implementation stages. Stage 1 adds the
@@ -89,13 +87,10 @@ probe is justified only for an environment-specific unknown that changes the imp
 covered by a preselected focused test.
 After Stage 1 focused tests pass, perform the Stage 1-to-Stage 2 handoff in one workspace_exec call:
 an exclusive first stage calls update_task_direction with the Stage 1 evidence delta, and an exclusive
-second stage calls apply_patch with the complete Stage 2 migration, with
-context_checkpoint="retire_after_verified". Stage 2 is the terminal implementation boundary, so its
-successful structured pytest completion may retire the Stage 2 mutation before final verification. The workspace program is ordered and
+second stage calls apply_patch with the complete Stage 2 migration. The workspace program is ordered and
 fail-fast, so the patch is not attempted if direction persistence fails. Do not spend one model round on a
 standalone Stage 1 update and a later round on the already-planned Stage 2 patch.
-Every Agent-side apply_patch operation, direct or inside workspace_exec, must include non-empty
-required_changes. Use addition entries for the
+Every workspace_exec apply_patch operation must include non-empty required_changes. Use addition entries for the
 critical new Stage 1 contract/test symbols. For Stage 2, every exact old-owner/new-owner or other textual
 replacement recorded in the boundary ledger must appear as a replacement entry, alongside additions for the
 critical migrated boundaries. The runtime verifies those entries against patch removal/addition lines before

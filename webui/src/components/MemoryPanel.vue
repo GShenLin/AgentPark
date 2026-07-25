@@ -25,12 +25,12 @@ import {
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
-import { useCodexSessions } from '../composables/useCodexSessions'
+import { useCliSessions } from '../composables/useCliSessions'
 import { recordDeletionUndo } from '../composables/useDeletionUndo'
 import MemoryContentView from './MemoryContentView.vue'
 import MemoryPanelHeader from './MemoryPanelHeader.vue'
 import MemorySaveDialog from './MemorySaveDialog.vue'
-import CodexSessionPicker from './CodexSessionPicker.vue'
+import CliSessionPicker from './CliSessionPicker.vue'
 import { renderMemoryMarkdown } from './memoryMarkdown'
 
 const props = defineProps<{
@@ -129,13 +129,13 @@ function hasSelectedNodeTarget() {
 }
 
 const {
-  codexSessionState,
-  codexSessionLoading,
-  refreshCodexSessions,
-  chooseCodexSession,
-  resetCodexSessions,
-  codexMemoryClearTargetLabel,
-} = useCodexSessions({
+  cliSessionState,
+  cliSessionLoading,
+  refreshCliSessions,
+  chooseCliSession,
+  resetCliSessions,
+  cliMemoryClearTargetLabel,
+} = useCliSessions({
   getNodeId: () => String(selectedNodeId.value || ''),
   getGraphId: () => String(currentGraphId.value || 'default'),
   isEnabled: () => memoryMode.value === 'agent' && hasSelectedNodeTarget(),
@@ -171,7 +171,7 @@ function toggleFileMode() {
 async function clearSelectedNodeMemory() {
   const nodeId = String(selectedNodeId.value || '').trim()
   if (!nodeId) return
-  const targetLabel = codexMemoryClearTargetLabel(nodeId)
+  const targetLabel = cliMemoryClearTargetLabel(nodeId)
   const ok = window.confirm(`Clear ${targetLabel}?`)
   if (!ok) return
   try {
@@ -183,7 +183,7 @@ async function clearSelectedNodeMemory() {
       memoryThinkingMessage.value = ''
       memoryActivityMessage.value = ''
       await loadAgentMemory()
-      void refreshCodexSessions()
+      void refreshCliSessions()
     }
   } catch (e: any) {
     lastError.value = String(e?.message || e)
@@ -623,11 +623,11 @@ watch(
     if (mode === 'agent') {
       memoryAutoScroll.value = true
       beginAgentSelection()
-      void refreshCodexSessions()
+      void refreshCliSessions()
       return
     }
 
-    resetCodexSessions()
+    resetCliSessions()
     stopLoading()
 
     if (mode === 'graph') {
@@ -643,7 +643,7 @@ watch(
   async () => {
     if (memoryMode.value !== 'agent') return
     if (!hasSelectedNodeTarget()) return
-    void refreshCodexSessions()
+    void refreshCliSessions()
     await loadAgentMemory({
       historyMode: memoryLatestTurnProgressLoaded.value ? 'latest_turn_progress' : 'latest_turn',
     })
@@ -653,8 +653,8 @@ watch(
 watch(
   () => [memoryMessages.value.length, memoryMeta.value] as const,
   () => {
-    if (!codexSessionState.value?.supported || memoryMode.value !== 'agent') return
-    void refreshCodexSessions()
+    if (!cliSessionState.value?.supported || memoryMode.value !== 'agent') return
+    void refreshCliSessions()
   },
 )
 
@@ -718,14 +718,15 @@ onBeforeUnmount(() => {
       @toggle-file-mode="toggleFileMode"
     />
 
-    <CodexSessionPicker
-      v-if="codexSessionState?.supported"
-      :sessions="codexSessionState.sessions"
-      :active-session-id="codexSessionState.active_session_id"
-      :is-new-session="codexSessionState.is_new_session"
-      :loading="codexSessionLoading"
-      @select="chooseCodexSession"
-      @refresh="refreshCodexSessions"
+    <CliSessionPicker
+      v-if="cliSessionState?.supported"
+      :sessions="cliSessionState.sessions"
+      :session-label="cliSessionState.session_label"
+      :active-session-id="cliSessionState.active_session_id"
+      :is-new-session="cliSessionState.is_new_session"
+      :loading="cliSessionLoading"
+      @select="chooseCliSession"
+      @refresh="refreshCliSessions"
     />
 
     <MemoryContentView

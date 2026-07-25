@@ -83,6 +83,7 @@ class MobileApiDomain(DomainBase):
             "graph_id": graph_id,
             "state": item.get("state"),
             "pending_count": item.get("pending_count"),
+            "node_event_seq": int(item.get("node_event_seq") or 0),
             "has_inflight": isinstance(item.get("inflight"), dict),
             "stop_requested": bool(item.get("_stop_requested")),
             "last_message": item.get("last_message"),

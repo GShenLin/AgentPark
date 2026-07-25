@@ -1,5 +1,20 @@
 RUNTIME_STATE_FILENAME = "runtime_state.json"
 
+RUNTIME_STATE_DEFAULTS = {
+    "state": "idle",
+    "pending_count": 0,
+    "node_event_seq": 0,
+}
+
+# Event and field-scoped API projections are merged into an existing client
+# snapshot. Optional flags therefore need explicit tombstones when absent from
+# the in-memory store; omitting them would preserve stale client values.
+RUNTIME_PROJECTION_DEFAULTS = {
+    **RUNTIME_STATE_DEFAULTS,
+    "inflight": None,
+    "_stop_requested": False,
+}
+
 RUNTIME_STATE_FIELDS = {
     "state",
     "pending",
@@ -30,6 +45,7 @@ RUNTIME_STATE_FIELDS = {
 NODE_EVENT_RUNTIME_FIELDS = {
     "state",
     "pending_count",
+    "inflight",
     "_stop_requested",
     "node_event_seq",
     "last_run_at",

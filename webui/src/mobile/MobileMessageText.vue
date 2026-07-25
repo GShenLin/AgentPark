@@ -86,7 +86,7 @@ function closeFileDiff() {
       <MemoryMetadataDisclosure
         v-if="entry.kind === 'associated_metadata'"
         :created-at="entry.createdAt"
-        default-expanded
+        :default-expanded="false"
       >
         <MemoryResponseMetadataPart
           v-for="(part, index) in entry.parts"

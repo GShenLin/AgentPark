@@ -49,8 +49,12 @@ import {
 import { subscribeAppEvents } from '../composables/useAppEventStream'
 import { useGlobalState } from '../composables/useGlobalState'
 import { resolveMobileGraphTarget } from './mobileGraphTarget'
-import { useCodexSessions } from '../composables/useCodexSessions'
+import { useCliSessions } from '../composables/useCliSessions'
 import { formatLiveActivity } from '../liveActivity'
+import {
+  mergeMobileNodeRuntimeEvent,
+  mergeMobileNodeSnapshot,
+} from '../nodeRuntimeProjection'
 import {
   isLiveCompletionEvent,
   LIVE_OUTPUT_COMMITTED_EVENT,
@@ -312,13 +316,13 @@ export function useMobileWorkspace() {
   const error = ref('')
 
   const {
-    codexSessionState,
-    codexSessionLoading,
-    refreshCodexSessions,
-    chooseCodexSession,
-    resetCodexSessions,
-    codexMemoryClearTargetLabel,
-  } = useCodexSessions({
+    cliSessionState,
+    cliSessionLoading,
+    refreshCliSessions,
+    chooseCliSession,
+    resetCliSessions,
+    cliMemoryClearTargetLabel,
+  } = useCliSessions({
     getNodeId: () => String(selectedNode.value?.id || ''),
     getGraphId: () => String(selectedGraph.value?.id || 'default'),
     isEnabled: () => view.value === 'chat' && !!String(selectedNode.value?.id || '').trim(),
@@ -431,7 +435,15 @@ export function useMobileWorkspace() {
   }
 
   function applyNodes(nextNodes: MobileNode[]) {
-    nodes.value = view.value === 'nodes' ? orderNodesForSelectionView(nextNodes) : nextNodes
+    const currentById = new Map(nodes.value.map((node) => [node.id, node]))
+    const reconciled = nextNodes.map((nextNode) => {
+      const merged = mergeMobileNodeSnapshot(currentById.get(nextNode.id), nextNode)
+      if (merged.status === 'invalid') {
+        throw new Error(`Invalid runtime projection for node ${nextNode.id}: ${merged.error}`)
+      }
+      return merged.value
+    })
+    nodes.value = view.value === 'nodes' ? orderNodesForSelectionView(reconciled) : reconciled
     if (selectedNode.value) {
       const current = nodes.value.find((item) => item.id === selectedNode.value?.id)
       if (current) selectedNode.value = current
@@ -1176,7 +1188,7 @@ export function useMobileWorkspace() {
     loading.value = true
     try {
       await refreshConversationForSelection(requireChatSelection(), 'latest_turn')
-      void refreshCodexSessions()
+      void refreshCliSessions()
       startChatStreams()
     } catch (e) {
       setError(e)
@@ -1288,7 +1300,7 @@ export function useMobileWorkspace() {
         node_instance_id: nodeId,
       })
       await Promise.all([refreshNodes(), refreshConversation()])
-      void refreshCodexSessions()
+      void refreshCliSessions()
     } catch (e) {
       setError(e)
     } finally {
@@ -1462,7 +1474,7 @@ export function useMobileWorkspace() {
     graphConfig.value = null
     nodeConfigs.value = {}
     conversation.value = null
-    resetCodexSessions()
+    resetCliSessions()
     view.value = 'graphs'
   }
 
@@ -1470,7 +1482,7 @@ export function useMobileWorkspace() {
     stopChatStreams()
     selectedNode.value = null
     conversation.value = null
-    resetCodexSessions()
+    resetCliSessions()
     sortNodesForSelectionView()
     view.value = 'nodes'
     startGraphEventStream()
@@ -1503,6 +1515,7 @@ export function useMobileWorkspace() {
   }
 
   function handleGraphEventPayload(payload: Record<string, unknown>) {
+    applyGraphEventRuntimeProjection(payload)
     const eventName = String(payload?.event || '').trim()
     if (!chatNodeRefreshGraphEvents.has(eventName)) return
     if (view.value === 'nodes') {
@@ -1517,6 +1530,33 @@ export function useMobileWorkspace() {
     if (!graphEventTargetsSelectedNode(payload, nodeId)) return
     const includeConversation = chatConversationGraphEvents.has(eventName)
     scheduleGraphRefresh({ includeConversation, includeGraphConfig: !chatLightweightGraphEvents.has(eventName) })
+  }
+
+  function applyGraphEventRuntimeProjection(payload: Record<string, unknown>) {
+    const projection = payload.node_runtime
+    if (!projection || typeof projection !== 'object' || Array.isArray(projection)) return
+    const runtime = projection as Record<string, unknown>
+    const nodeId = String(runtime.node_id || payload.node_instance_id || payload.node_id || '').trim()
+    if (!nodeId) return
+
+    let projectionError = ''
+    let changed = false
+    const nextNodes = nodes.value.map((node) => {
+      if (node.id !== nodeId) return node
+      const merged = mergeMobileNodeRuntimeEvent(node, runtime)
+      if (merged.status === 'invalid') projectionError = merged.error || 'invalid runtime projection'
+      if (merged.status === 'applied') changed = true
+      return merged.value
+    })
+    if (projectionError) {
+      console.error(`Invalid runtime projection for node ${nodeId}: ${projectionError}`, runtime)
+      return
+    }
+    if (!changed) return
+    nodes.value = view.value === 'nodes' ? orderNodesForSelectionView(nextNodes) : nextNodes
+    if (selectedNode.value?.id === nodeId) {
+      selectedNode.value = nodes.value.find((node) => node.id === nodeId) || selectedNode.value
+    }
   }
 
   function scheduleGraphRefresh(options: boolean | { includeConversation?: boolean; includeGraphConfig?: boolean }) {
@@ -1545,7 +1585,7 @@ export function useMobileWorkspace() {
         if (shouldRefreshGraphConfig) tasks.push(refreshGraphConfig())
         if (shouldRefreshConversation) tasks.push(refreshConversation())
         await Promise.all(tasks)
-        if (shouldRefreshConversation) void refreshCodexSessions()
+        if (shouldRefreshConversation) void refreshCliSessions()
       } catch (e) {
         setError(e)
       } finally {
@@ -1702,11 +1742,11 @@ export function useMobileWorkspace() {
     selectedNode,
     selectedConfig,
     selectedNodeOutputRoutes,
-    codexSessionState,
-    codexSessionLoading,
-    refreshCodexSessions,
-    chooseCodexSession,
-    codexMemoryClearTargetLabel,
+    cliSessionState,
+    cliSessionLoading,
+    refreshCliSessions,
+    chooseCliSession,
+    cliMemoryClearTargetLabel,
     loading,
     sending,
     error,

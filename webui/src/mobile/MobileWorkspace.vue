@@ -6,7 +6,7 @@ import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
 import { useMemoryTurnEntries } from '../components/memoryFeedTools'
-import CodexSessionPicker from '../components/CodexSessionPicker.vue'
+import CliSessionPicker from '../components/CliSessionPicker.vue'
 import MobileLiveMessage from './MobileLiveMessage.vue'
 import MobileMemoryMessageCard from './MobileMemoryMessageCard.vue'
 import MobileNodeCreateDialog from './MobileNodeCreateDialog.vue'
@@ -498,8 +498,8 @@ async function duplicateMobileNode(node: MobileNode) {
   }
 }
 
-async function onChooseCodexSession(sessionId: string) {
-  await workspace.chooseCodexSession(sessionId)
+async function onChooseCliSession(sessionId: string) {
+  await workspace.chooseCliSession(sessionId)
   await nextTick()
   scrollFeedToBottom()
 }
@@ -507,7 +507,7 @@ async function onChooseCodexSession(sessionId: string) {
 async function clearMemory() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   const nodeId = String(workspace.selectedNode.value.id || '').trim()
-  const targetLabel = workspace.codexMemoryClearTargetLabel(nodeId)
+  const targetLabel = workspace.cliMemoryClearTargetLabel(nodeId)
   const ok = window.confirm(`Clear ${targetLabel}?`)
   if (!ok) return
   await workspace.clearSelectedNodeMemory()
@@ -739,14 +739,15 @@ onMounted(async () => {
       </section>
 
       <section v-else class="chat-view">
-        <CodexSessionPicker
-          v-if="workspace.codexSessionState.value?.supported"
-          :sessions="workspace.codexSessionState.value.sessions"
-          :active-session-id="workspace.codexSessionState.value.active_session_id"
-          :is-new-session="workspace.codexSessionState.value.is_new_session"
-          :loading="workspace.codexSessionLoading.value"
-          @select="onChooseCodexSession"
-          @refresh="workspace.refreshCodexSessions"
+        <CliSessionPicker
+          v-if="workspace.cliSessionState.value?.supported"
+          :sessions="workspace.cliSessionState.value.sessions"
+          :session-label="workspace.cliSessionState.value.session_label"
+          :active-session-id="workspace.cliSessionState.value.active_session_id"
+          :is-new-session="workspace.cliSessionState.value.is_new_session"
+          :loading="workspace.cliSessionLoading.value"
+          @select="onChooseCliSession"
+          @refresh="workspace.refreshCliSessions"
         />
         <div ref="feedRef" class="chat-feed">
           <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage && activityBlocks.length === 0" class="empty-chat">暂无消息</div>

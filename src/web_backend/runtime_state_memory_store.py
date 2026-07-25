@@ -6,7 +6,11 @@ import threading
 import time
 from typing import Any, Callable
 
-from .node_runtime_fields import RUNTIME_STATE_FIELDS
+from .node_runtime_fields import (
+    RUNTIME_PROJECTION_DEFAULTS,
+    RUNTIME_STATE_DEFAULTS,
+    RUNTIME_STATE_FIELDS,
+)
 
 
 RuntimeMutation = Callable[[dict[str, Any]], None]
@@ -62,10 +66,9 @@ class RuntimeStateMemoryStore:
                 if field in source
             }
         if include_defaults:
-            if "state" in requested and "state" not in payload:
-                payload["state"] = "idle"
-            if "pending_count" in requested and "pending_count" not in payload:
-                payload["pending_count"] = 0
+            for field, default in RUNTIME_PROJECTION_DEFAULTS.items():
+                if field in requested and field not in payload:
+                    payload[field] = copy.deepcopy(default)
         return payload
 
     def replace_from_payload(self, config_path: str, payload: dict[str, Any]) -> None:
@@ -205,8 +208,8 @@ class RuntimeStateMemoryStore:
 
     def _with_defaults(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = self._normalize(dict(payload))
-        result.setdefault("state", "idle")
-        result.setdefault("pending_count", 0)
+        for field, default in RUNTIME_STATE_DEFAULTS.items():
+            result.setdefault(field, copy.deepcopy(default))
         return result
 
     def _normalize_state(self, payload: dict[str, Any]) -> None:

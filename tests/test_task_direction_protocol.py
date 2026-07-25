@@ -56,7 +56,8 @@ def test_code_task_protocol_bounds_verification_retries_and_requires_immediate_h
     assert "exclusive\nsecond stage calls apply_patch" in CODE_TASK_PROTOCOL_CONTEXT
     assert "ordered and\nfail-fast" in CODE_TASK_PROTOCOL_CONTEXT
     assert "standalone Stage 1 update and a later round" in CODE_TASK_PROTOCOL_CONTEXT
-    assert "Every Agent-side apply_patch operation, direct or inside workspace_exec, must include non-empty" in CODE_TASK_PROTOCOL_CONTEXT
+    assert "Every workspace_exec apply_patch operation must include non-empty" in CODE_TASK_PROTOCOL_CONTEXT
+    assert "context_checkpoint" not in CODE_TASK_PROTOCOL_CONTEXT
     assert "do not submit an unrelated easy requirement" in CODE_TASK_PROTOCOL_CONTEXT
     assert "inventory every executable reference" in CODE_TASK_PROTOCOL_CONTEXT
     assert "included as its own Stage 2 replacement requirement" in CODE_TASK_PROTOCOL_CONTEXT

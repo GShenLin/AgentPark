@@ -11,6 +11,9 @@ from src.message_protocol import normalize_envelope
 from src.node_capabilities import NODE_CAPABILITY_LIST
 
 from .node_runtime_event_sink import NodeRuntimeEventSink
+from .node_module_resolver import iter_node_modules
+from .node_module_resolver import module_spec_kwargs
+from .node_module_resolver import resolve_node_module
 from .route_parser import NodeRouteParser
 from .runtime_paths import _get_nodes_dir, _get_resource_root, _get_runtime_root
 from .state_store import _transition_node_config_to_idle, _write_json_dict
@@ -65,8 +68,11 @@ def _run_node_logic(nodes_dir: str, node_id: str, message: object, context: dict
 def _run_node_logic_with_routes(nodes_dir: str, node_id: str, message: object, context: dict | None = None) -> dict:
     if not nodes_dir:
         raise HTTPException(status_code=404, detail="nodes directory not found")
-    file_path = os.path.join(nodes_dir, f"{node_id}.py")
-    if not os.path.exists(file_path):
+    try:
+        source = resolve_node_module(nodes_dir, node_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if source is None:
         raise HTTPException(status_code=404, detail="node not found")
 
     runtime_root = _get_runtime_root()
@@ -76,11 +82,20 @@ def _run_node_logic_with_routes(nodes_dir: str, node_id: str, message: object, c
     if resource_root and resource_root not in sys.path:
         sys.path.insert(0, resource_root)
 
-    spec = importlib.util.spec_from_file_location(f"nodes_{node_id}", file_path)
+    spec = importlib.util.spec_from_file_location(
+        f"nodes_{node_id}",
+        source.file_path,
+        **module_spec_kwargs(source.file_path, is_package=source.is_package),
+    )
     if not spec or not spec.loader:
         raise HTTPException(status_code=500, detail="failed to load node")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(spec.name, None)
+        raise
     node_cls = getattr(module, "Node", None)
     if node_cls is None:
         raise HTTPException(status_code=400, detail="Node class not found")
@@ -138,27 +153,38 @@ def _list_node_metas(nodes_dir: str) -> list[dict]:
     if resource_root and resource_root not in sys.path:
         sys.path.insert(0, resource_root)
 
-    for filename in os.listdir(nodes_dir):
-        if not filename.endswith(".py"):
-            continue
-        if filename in {"__init__.py", "base_node.py"}:
-            continue
-        node_id = filename[:-3]
+    try:
+        sources = iter_node_modules(nodes_dir)
+    except RuntimeError:
+        return nodes
+    for source in sources:
+        node_id = source.type_id
         node_name = node_id
         node_description = ""
         input_num = 1
         output_num = 1
         accepts = ["text"]
         produces = ["text"]
-        file_path = os.path.join(nodes_dir, filename)
         has_node_class = False
-        if os.path.exists(file_path):
+        if os.path.exists(source.file_path):
             try:
                 module_name = f"nodes_meta_{node_id}_{uuid.uuid4().hex}"
-                spec = importlib.util.spec_from_file_location(module_name, file_path)
+                spec = importlib.util.spec_from_file_location(
+                    module_name,
+                    source.file_path,
+                    **module_spec_kwargs(
+                        source.file_path,
+                        is_package=source.is_package,
+                    ),
+                )
                 if spec and spec.loader:
                     module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
+                    sys.modules[spec.name] = module
+                    try:
+                        spec.loader.exec_module(module)
+                    except Exception:
+                        sys.modules.pop(spec.name, None)
+                        raise
                     node_cls = getattr(module, "Node", None)
                     if node_cls is not None:
                         has_node_class = True

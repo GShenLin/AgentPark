@@ -10,10 +10,10 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from typing import Any
 
-from src.codex_runtime.provider_adapter import provider_protocol
-from src.codex_runtime.provider_gateway import CodexProviderGateway
-from src.codex_runtime.session_manager import CodexSessionManager
-from src.codex_runtime.session_manager import CodexSessionSpec
+from nodes.codex_node.runtime.provider_gateway import CodexProviderGateway
+from nodes.codex_node.runtime.session_manager import CodexSessionManager
+from nodes.codex_node.runtime.session_manager import CodexSessionSpec
+from src.cli_provider_runtime.provider_adapter import provider_protocol
 from src.config_loader import ConfigLoader
 
 

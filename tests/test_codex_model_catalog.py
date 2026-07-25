@@ -1,7 +1,7 @@
 import pytest
 
-from src.codex_runtime.model_catalog import CodexModelCatalogError
-from src.codex_runtime.model_catalog import resolve_codex_runtime_model
+from nodes.codex_node.runtime.model_catalog import CodexModelCatalogError
+from nodes.codex_node.runtime.model_catalog import resolve_codex_runtime_model
 
 
 def _request_for(pages):

@@ -317,9 +317,6 @@ def test_openai_chat_compaction_gate_uses_chat_completions_when_responses_api_fa
     ]
     agent.config["toolContextCompactionEnabled"] = True
     agent.config["toolContextCompactionEveryToolCalls"] = 1
-    agent.config["toolContextCompactionInputTokens"] = 0
-    agent.config["toolContextCompactionCurrentInputTokens"] = 0
-    agent.config["toolContextCompactionOutputTokens"] = 0
     agent.messages = [
         {"role": "user", "content": "inspect files"},
         {

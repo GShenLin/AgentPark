@@ -7,12 +7,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.codex_runtime.app_server_client import CodexAppServerClient
-from src.codex_runtime.session_manager import CodexSessionManager
-from src.codex_runtime.session_manager import CodexSessionSpec
-from src.codex_runtime.thread_state import read_selected_thread_id
-from src.codex_runtime.thread_state import write_selected_thread_id
-from src.web_backend.codex_session_runtime import CodexSessionRuntime
+from nodes.codex_node.runtime.app_server_client import CodexAppServerClient
+from nodes.codex_node.runtime.session_manager import CodexSessionManager
+from nodes.codex_node.runtime.session_manager import CodexSessionSpec
+from nodes.codex_node.runtime.thread_state import read_selected_thread_id
+from nodes.codex_node.runtime.thread_state import write_selected_thread_id
+from src.web_backend.cli_session_runtime import CliSessionRuntime
 from src.web_backend.node_execution_context import resolve_node_storage_paths
 
 
@@ -98,7 +98,7 @@ class _FakeManager:
         self.closed.append(runtime_key)
 
 
-def _runtime(node_dir: Path, manager: _FakeManager, monkeypatch) -> CodexSessionRuntime:
+def _runtime(node_dir: Path, manager: _FakeManager, monkeypatch) -> CliSessionRuntime:
     class GraphRuntime:
         @staticmethod
         def _sanitize_graph_id(_graph_id):
@@ -126,10 +126,10 @@ def _runtime(node_dir: Path, manager: _FakeManager, monkeypatch) -> CodexSession
         core=SimpleNamespace(node_live_outputs=live_outputs),
     )
     monkeypatch.setattr(
-        "src.web_backend.codex_session_runtime.CodexSessionManager.instance",
+        "src.web_backend.cli_session_runtime.CodexSessionManager.instance",
         lambda: manager,
     )
-    return CodexSessionRuntime(host)
+    return CliSessionRuntime(host)
 
 
 def test_thread_state_migrates_legacy_pointer_and_writes_current_contract(tmp_path):
@@ -270,12 +270,12 @@ def test_native_session_selection_projects_codex_history_to_memory(monkeypatch, 
     manager = _FakeManager()
     runtime = _runtime(node_dir, manager, monkeypatch)
 
-    initial = runtime.list_codex_sessions("Codex", "default")
+    initial = runtime.list_cli_sessions("Codex", "default")
     assert initial["is_new_session"] is True
     assert initial["sessions"][0]["id"] == THREAD_ID
     assert initial["sessions"][0]["source"] == "cli"
 
-    selected = runtime.select_codex_session(
+    selected = runtime.select_cli_session(
         "Codex",
         {"session_id": THREAD_ID},
         "default",
@@ -293,7 +293,7 @@ def test_native_session_selection_projects_codex_history_to_memory(monkeypatch, 
     assert records[2]["parts"][0]["result_preview"] == "Codex"
     assert manager.closed
 
-    new_session = runtime.select_codex_session("Codex", {"session_id": ""}, "default")
+    new_session = runtime.select_cli_session("Codex", {"session_id": ""}, "default")
     assert new_session["is_new_session"] is True
     assert read_selected_thread_id(str(node_dir / "codex_session.json")) == ""
     assert (node_dir / "messages.jsonl").read_text(encoding="utf-8") == ""
@@ -304,7 +304,7 @@ def test_native_session_selection_rejects_switch_while_working(monkeypatch, tmp_
     _write_config(node_dir, state="working")
     runtime = _runtime(node_dir, _FakeManager(), monkeypatch)
     monkeypatch.setattr(
-        "src.web_backend.codex_session_runtime._read_json_dict",
+        "src.web_backend.cli_session_runtime._read_json_dict",
         lambda _path: {
             "node_id": "Codex",
             "type_id": "codex_node",
@@ -314,7 +314,7 @@ def test_native_session_selection_rejects_switch_while_working(monkeypatch, tmp_
     )
 
     with pytest.raises(Exception, match="Cannot switch Codex Session while the node is working"):
-        runtime.select_codex_session("Codex", {"session_id": ""}, "default")
+        runtime.select_cli_session("Codex", {"session_id": ""}, "default")
 
 
 def test_codex_native_session_http_api(monkeypatch, tmp_path):
@@ -323,7 +323,7 @@ def test_codex_native_session_http_api(monkeypatch, tmp_path):
 
     manager = _FakeManager()
     monkeypatch.setattr(
-        "src.web_backend.codex_session_runtime.CodexSessionManager.instance",
+        "src.web_backend.cli_session_runtime.CodexSessionManager.instance",
         lambda: manager,
     )
     runtime_root = str(tmp_path)
@@ -336,12 +336,12 @@ def test_codex_native_session_http_api(monkeypatch, tmp_path):
         _write_config(node_dir)
         client = TestClient(backend.create_app())
 
-        listed = client.get("/api/nodes/instances/Codex/codex-sessions?graph_id=default")
+        listed = client.get("/api/nodes/instances/Codex/cli-sessions?graph_id=default")
         assert listed.status_code == 200
         assert listed.json()["sessions"][0]["id"] == THREAD_ID
 
         selected = client.post(
-            "/api/nodes/instances/Codex/codex-sessions/select?graph_id=default",
+            "/api/nodes/instances/Codex/cli-sessions/select?graph_id=default",
             json={"session_id": THREAD_ID},
         )
         assert selected.status_code == 200

@@ -11,8 +11,6 @@ from src.providers.responses_runtime_context import build_responses_agent_enviro
 from src.providers.responses_runtime_context import build_responses_turn_context
 from src.providers.responses_runtime_context import runtime_context_history_items
 from src.providers.responses_empty_message import EmptyMessageFeedbackController
-from src.providers.responses_completed_tool_checkpoint import CompletedToolContextCheckpoint
-from src.providers.responses_completed_tool_checkpoint import completed_tool_checkpoint_enabled
 from src.providers.responses_item_runtime import ResponsesItemLevelToolRunner
 from src.providers.responses_runtime_request import build_and_emit_responses_request_payload
 from src.providers.responses_runtime_mode import resolve_responses_runtime_mode
@@ -20,7 +18,6 @@ from src.providers.responses_runtime_protocol import ResponsesStreamText
 from src.providers.responses_runtime_support import ResponsesStreamCallbacks
 from src.providers.responses_runtime_support import ResponsesStructuredResultAccumulator
 from src.providers.responses_runtime_support import abort_responses_item_tool_runner
-from src.providers.responses_runtime_support import checkpoint_completed_tool_context
 from src.providers.responses_runtime_support import close_responses_item_tool_runner
 from src.providers.responses_runtime_support import consume_responses_mid_turn_input_items
 from src.providers.responses_runtime_support import emit_responses_turn_debug
@@ -63,9 +60,6 @@ def send_via_responses(
     persistent_reference_context_item = load_agent_turn_context_reference(self)
     context_history_items = runtime_context_history_items(load_agent_context_history(self))
     context_history_items_to_save, sticky_request_instructions = list(context_history_items), ""
-    completed_tool_checkpoint = CompletedToolContextCheckpoint(
-        enabled=completed_tool_checkpoint_enabled(self)
-    )
     if callable(reset_loop_guard := getattr(self, "_reset_tool_call_loop_guard", None)):
         reset_loop_guard()
     last_request_summary: dict[str, Any] | None = None
@@ -82,8 +76,6 @@ def send_via_responses(
     _emit_turn_debug = partial(emit_responses_turn_debug, self, mode_decision)
 
     while True:
-        current_input = completed_tool_checkpoint.apply(current_input)
-        explicit_context_input = completed_tool_checkpoint.apply(explicit_context_input)
         item_tool_runner = ResponsesItemLevelToolRunner(self, run_tools=run_tools) if use_item_level_mode else None
 
         _close_item_tool_runner = partial(
@@ -278,17 +270,6 @@ def send_via_responses(
             )
             followup_items = self._build_responses_followup_items(executions)
             _close_item_tool_runner()
-
-            checkpoint_items = checkpoint_completed_tool_context(
-                self,
-                completed_tool_checkpoint,
-                items=explicit_context_input,
-                function_calls=function_calls,
-                executions=executions,
-            )
-            if checkpoint_items is not None:
-                explicit_context_input = checkpoint_items
-                current_input = list(explicit_context_input)
 
             compaction_changed = bool(getattr(self, "_tool_context_compaction_changed", False))
             compaction_completed = self._tool_context_compaction_gate_completed(executions)

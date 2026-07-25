@@ -3,6 +3,10 @@ import { getNodeInstanceConfig, listNodeInstanceConfigs, type NodeInstanceConfig
 import { clampBoardPosition, type BoardPosition } from './boardDragState'
 import type { NodeCard, NodeRunState } from './context'
 import {
+  mergeNodeConfigSnapshot,
+  mergeNodeRuntimeEvent,
+} from '../../nodeRuntimeProjection'
+import {
   applyNodeConfigOutputToCard,
   applyNodeConfigToCard,
   createNodeCardFromConfig,
@@ -78,6 +82,14 @@ export function createBoardNodeConfigRefresh(options: {
     const next: Record<string, NodeInstanceState> = partial ? { ...options.nodeStates.value } : {}
     const nextConfigs: Record<string, NodeInstanceConfig> = partial ? { ...options.nodeConfigs.value } : {}
     const prevConfigs = options.nodeConfigs.value
+    const effectiveItems = (items as NodeInstanceConfig[]).map((cfg) => {
+      const nodeId = String(cfg.node_id || '').trim()
+      const merged = mergeNodeConfigSnapshot(nodeId ? prevConfigs[nodeId] : undefined, cfg)
+      if (merged.status === 'invalid') {
+        throw new Error(`Invalid runtime projection for node ${nodeId || '<missing>'}: ${merged.error}`)
+      }
+      return merged.value
+    })
 
     if (allNodeIds) {
       for (const nodeId of Object.keys(nextConfigs)) {
@@ -88,7 +100,7 @@ export function createBoardNodeConfigRefresh(options: {
       }
     }
 
-    for (const cfg of items as NodeInstanceConfig[]) {
+    for (const cfg of effectiveItems) {
       const nodeId = String(cfg.node_id || '').trim()
       if (!nodeId) continue
       const uiCfg = (cfg as any)?.ui
@@ -127,18 +139,18 @@ export function createBoardNodeConfigRefresh(options: {
       }
     }
 
-    const cfgIds = allNodeIds || new Set<string>(items.map((cfg) => String(cfg.node_id || '').trim()).filter(Boolean))
+    const cfgIds = allNodeIds || new Set<string>(effectiveItems.map((cfg) => String(cfg.node_id || '').trim()).filter(Boolean))
     if (allNodeIds || cfgIds.size > 0) {
       options.nodes.value = options.nodes.value.filter((n) => cfgIds.has(n.id))
     }
 
-    for (const cfg of items as NodeInstanceConfig[]) {
+    for (const cfg of effectiveItems) {
       const nodeId = String(cfg.node_id || '')
       if (!nodeId) continue
+      const prev = (prevConfigs as any)?.[nodeId]
       nextConfigs[nodeId] = cfg
       next[nodeId] = nodeStateFromConfig(cfg)
 
-      const prev = (prevConfigs as any)?.[nodeId]
       const { out, runAtChanged, outputChanged } = nodeConfigRunDelta(prev, cfg)
       const changed = runAtChanged || outputChanged
       const node = options.nodes.value.find((n) => n.id === nodeId)
@@ -206,10 +218,14 @@ export function createBoardNodeConfigRefresh(options: {
           `Node config response for graph ${graphId} contained node ${id} from graph ${String(responseConfig.graph_id || '').trim() || '<missing>'}`,
         )
       }
-      const cfg = { ...(previous || {}), ...responseConfig } as NodeInstanceConfig
       const previousVersion = Number((previous as any)?._config_version || 0)
-      const nextVersion = Number((cfg as any)?._config_version || response.version || 0)
+      const nextVersion = Number((responseConfig as any)?._config_version || response.version || 0)
       if (previousVersion > 0 && nextVersion > 0 && nextVersion < previousVersion) return
+      const merged = mergeNodeConfigSnapshot(previous, responseConfig)
+      if (merged.status === 'invalid') {
+        throw new Error(`Invalid runtime projection for node ${id}: ${merged.error}`)
+      }
+      const cfg = merged.value
       const nextConfigs = { ...options.nodeConfigs.value, [id]: cfg }
       const nextStates = { ...options.nodeStates.value, [id]: nodeStateFromConfig(cfg) }
       const node = options.nodes.value.find((item) => item.id === id)
@@ -251,7 +267,13 @@ export function createBoardNodeConfigRefresh(options: {
     const previous = options.nodeConfigs.value[nodeId]
     if (!previous) return
 
-    let next = { ...previous, ...delta } as NodeInstanceConfig
+    const merged = mergeNodeRuntimeEvent(previous, delta)
+    if (merged.status === 'invalid') {
+      console.error(`Invalid runtime projection for node ${nodeId}: ${merged.error}`, delta)
+      return
+    }
+    if (merged.status === 'stale') return
+    let next = merged.value
     next = applyBoardRuntimeEvent(next, payload)
     const eventName = String(payload.event || '').trim()
     const outputPreview = String(payload.output_preview || '').trim()

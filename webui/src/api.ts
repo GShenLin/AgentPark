@@ -1021,7 +1021,7 @@ export async function getNodeInstanceMemory(
   )
 }
 
-export type CodexSessionSummary = {
+export type CliSessionSummary = {
   id: string
   title: string
   preview: string
@@ -1032,30 +1032,32 @@ export type CodexSessionSummary = {
   model_provider: string
 }
 
-export type CodexSessionListResponse = {
+export type CliSessionListResponse = {
   supported: boolean
+  session_kind: string
+  session_label: string
   node_id: string
   graph_id: string
   active_session_id: string
   is_new_session: boolean
-  sessions: CodexSessionSummary[]
+  sessions: CliSessionSummary[]
 }
 
-export async function listCodexSessions(
+export async function listCliSessions(
   nodeId: string,
   graphId?: string,
-): Promise<CodexSessionListResponse> {
+): Promise<CliSessionListResponse> {
   const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
-  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/codex-sessions${query}`)
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/cli-sessions${query}`)
 }
 
-export async function selectCodexSession(
+export async function selectCliSession(
   nodeId: string,
   sessionId: string,
   graphId?: string,
-): Promise<CodexSessionListResponse & { ok: boolean }> {
+): Promise<CliSessionListResponse & { ok: boolean }> {
   const query = graphId ? `?graph_id=${encodeURIComponent(graphId)}` : ''
-  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/codex-sessions/select${query}`, {
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/cli-sessions/select${query}`, {
     method: 'POST',
     body: JSON.stringify({ session_id: String(sessionId || '').trim() }),
   })

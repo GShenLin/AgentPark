@@ -113,31 +113,6 @@ def emit_responses_turn_debug(
     )
 
 
-def checkpoint_completed_tool_context(
-    runtime: object,
-    checkpoint: object,
-    *,
-    items: object,
-    function_calls: object,
-    executions: object,
-) -> list[Any] | None:
-    from src.providers.responses_completed_tool_checkpoint import load_task_direction_snapshot
-
-    result = checkpoint.maybe_checkpoint(
-        items=items,
-        function_calls=function_calls,
-        executions=executions,
-        task_direction_loader=lambda: load_task_direction_snapshot(runtime),
-    )
-    if result is None:
-        return None
-    runtime._emit_responses_notice(
-        stage="openai_responses_completed_tool_checkpoint",
-        payload=result.to_notice_payload(),
-    )
-    return list(result.items)
-
-
 def close_responses_item_tool_runner(runner: object) -> None:
     if runner is not None:
         runner.close()

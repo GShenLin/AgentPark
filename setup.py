@@ -16,5 +16,6 @@ setup(
         "prompt_toolkit>=3.0.52",
         "PyYAML>=6.0",
         "protobuf>=7.35.0",
+        "claude-agent-sdk>=0.2.128,<0.3",
     ],
 )

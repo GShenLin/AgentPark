@@ -200,11 +200,12 @@
         "gpt-5.5",
         "gpt-5.4",
         "gpt-5.4-mini",
+        "gpt-5.3-codex-spark",
         "codex-auto-review"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:03",
+        "tested_at": "2026-07-24 23:55:34",
         "endpoint": "https://chatgpt.com/backend-api/codex/models?client_version=0.0.0",
         "status_code": 200
       }
@@ -506,6 +507,10 @@
       "available_model_ids": [
         "gpt-5.4",
         "gpt-5.4-mini",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-7",
         "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
@@ -513,6 +518,7 @@
         "qwen-image-2.0-pro",
         "qwen-image-2.0",
         "gpt-5.3-codex-spark",
+        "claude-opus-4-8",
         "GLM-5.1",
         "qwen3.6-plus",
         "minimax-m2.7-highspeed",
@@ -527,21 +533,21 @@
         "gemini-3.1-flash-lite-preview",
         "gemini-3.1-pro-preview",
         "gemini-3.5-flash",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
         "claude-sonnet-5",
+        "claude-fable-5",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
-        "grok-4.5"
+        "grok-4.5",
+        "gemini-3.6-flash",
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:05",
+        "tested_at": "2026-07-24 23:55:35",
         "endpoint": "https://api.krill-ai.com/codex/v1/models",
         "status_code": 200
       }
@@ -816,6 +822,10 @@
       "available_model_ids": [
         "gpt-5.4",
         "gpt-5.4-mini",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-7",
         "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
@@ -823,6 +833,7 @@
         "qwen-image-2.0-pro",
         "qwen-image-2.0",
         "gpt-5.3-codex-spark",
+        "claude-opus-4-8",
         "GLM-5.1",
         "qwen3.6-plus",
         "minimax-m2.7-highspeed",
@@ -837,21 +848,21 @@
         "gemini-3.1-flash-lite-preview",
         "gemini-3.1-pro-preview",
         "gemini-3.5-flash",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
         "claude-sonnet-5",
+        "claude-fable-5",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
-        "grok-4.5"
+        "grok-4.5",
+        "gemini-3.6-flash",
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:06",
+        "tested_at": "2026-07-24 23:55:36",
         "endpoint": "https://api.krill-ai.com/codex/v1/models",
         "status_code": 200
       }
@@ -1093,7 +1104,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:07",
+        "tested_at": "2026-07-24 23:55:36",
         "endpoint": "https://api.deepseek.com/models",
         "status_code": 200
       }
@@ -1335,7 +1346,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:07",
+        "tested_at": "2026-07-24 23:55:37",
         "endpoint": "https://api.deepseek.com/models",
         "status_code": 200
       }
@@ -1674,7 +1685,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:07",
+        "tested_at": "2026-07-24 23:55:37",
         "endpoint": "https://api.xiaomimimo.com/v1/models",
         "status_code": 200
       }
@@ -1896,11 +1907,6 @@
         }
       },
       "available_model_ids": [
-        "agnes-1.5-flash",
-        "agnes-2.0-flash",
-        "agnes-image-2.0-flash",
-        "agnes-image-2.1-flash",
-        "agnes-video-v2.0",
         "claude-opus-4-6",
         "claude-opus-4-7",
         "claude-opus-4-8",
@@ -1935,64 +1941,162 @@
         "firefly-gpt-image-4k-4x5",
         "firefly-gpt-image-4k-5x4",
         "firefly-gpt-image-4k-9x16",
+        "firefly-kling-o3-15s-16x9",
+        "firefly-kling-o3-15s-9x16",
+        "firefly-kling3-10s-16x9",
+        "firefly-kling3-10s-9x16",
+        "firefly-kling3-15s-16x9",
+        "firefly-kling3-15s-9x16",
         "firefly-nano-banana-1k-16x9",
         "firefly-nano-banana-1k-1x1",
+        "firefly-nano-banana-1k-21x9",
+        "firefly-nano-banana-1k-2x3",
+        "firefly-nano-banana-1k-3x2",
         "firefly-nano-banana-1k-3x4",
         "firefly-nano-banana-1k-4x3",
+        "firefly-nano-banana-1k-4x5",
+        "firefly-nano-banana-1k-5x4",
         "firefly-nano-banana-1k-9x16",
         "firefly-nano-banana-2k-16x9",
         "firefly-nano-banana-2k-1x1",
+        "firefly-nano-banana-2k-21x9",
+        "firefly-nano-banana-2k-2x3",
+        "firefly-nano-banana-2k-3x2",
         "firefly-nano-banana-2k-3x4",
         "firefly-nano-banana-2k-4x3",
+        "firefly-nano-banana-2k-4x5",
+        "firefly-nano-banana-2k-5x4",
         "firefly-nano-banana-2k-9x16",
         "firefly-nano-banana-4k-16x9",
         "firefly-nano-banana-4k-1x1",
+        "firefly-nano-banana-4k-21x9",
+        "firefly-nano-banana-4k-2x3",
+        "firefly-nano-banana-4k-3x2",
         "firefly-nano-banana-4k-3x4",
         "firefly-nano-banana-4k-4x3",
+        "firefly-nano-banana-4k-4x5",
+        "firefly-nano-banana-4k-5x4",
         "firefly-nano-banana-4k-9x16",
         "firefly-nano-banana-pro-1k-16x9",
         "firefly-nano-banana-pro-1k-1x1",
+        "firefly-nano-banana-pro-1k-21x9",
+        "firefly-nano-banana-pro-1k-2x3",
+        "firefly-nano-banana-pro-1k-3x2",
         "firefly-nano-banana-pro-1k-3x4",
         "firefly-nano-banana-pro-1k-4x3",
+        "firefly-nano-banana-pro-1k-4x5",
+        "firefly-nano-banana-pro-1k-5x4",
         "firefly-nano-banana-pro-1k-9x16",
         "firefly-nano-banana-pro-2k-16x9",
         "firefly-nano-banana-pro-2k-1x1",
+        "firefly-nano-banana-pro-2k-21x9",
+        "firefly-nano-banana-pro-2k-2x3",
+        "firefly-nano-banana-pro-2k-3x2",
         "firefly-nano-banana-pro-2k-3x4",
         "firefly-nano-banana-pro-2k-4x3",
+        "firefly-nano-banana-pro-2k-4x5",
+        "firefly-nano-banana-pro-2k-5x4",
         "firefly-nano-banana-pro-2k-9x16",
         "firefly-nano-banana-pro-4k-16x9",
         "firefly-nano-banana-pro-4k-1x1",
+        "firefly-nano-banana-pro-4k-21x9",
+        "firefly-nano-banana-pro-4k-2x3",
+        "firefly-nano-banana-pro-4k-3x2",
         "firefly-nano-banana-pro-4k-3x4",
         "firefly-nano-banana-pro-4k-4x3",
+        "firefly-nano-banana-pro-4k-4x5",
+        "firefly-nano-banana-pro-4k-5x4",
         "firefly-nano-banana-pro-4k-9x16",
         "firefly-nano-banana2-1k-16x9",
         "firefly-nano-banana2-1k-1x1",
         "firefly-nano-banana2-1k-1x4",
         "firefly-nano-banana2-1k-1x8",
+        "firefly-nano-banana2-1k-21x9",
+        "firefly-nano-banana2-1k-2x3",
+        "firefly-nano-banana2-1k-3x2",
         "firefly-nano-banana2-1k-3x4",
         "firefly-nano-banana2-1k-4x1",
         "firefly-nano-banana2-1k-4x3",
+        "firefly-nano-banana2-1k-4x5",
+        "firefly-nano-banana2-1k-5x4",
         "firefly-nano-banana2-1k-8x1",
         "firefly-nano-banana2-1k-9x16",
         "firefly-nano-banana2-2k-16x9",
         "firefly-nano-banana2-2k-1x1",
         "firefly-nano-banana2-2k-1x4",
         "firefly-nano-banana2-2k-1x8",
+        "firefly-nano-banana2-2k-21x9",
+        "firefly-nano-banana2-2k-2x3",
+        "firefly-nano-banana2-2k-3x2",
         "firefly-nano-banana2-2k-3x4",
         "firefly-nano-banana2-2k-4x1",
         "firefly-nano-banana2-2k-4x3",
+        "firefly-nano-banana2-2k-4x5",
+        "firefly-nano-banana2-2k-5x4",
         "firefly-nano-banana2-2k-8x1",
         "firefly-nano-banana2-2k-9x16",
         "firefly-nano-banana2-4k-16x9",
         "firefly-nano-banana2-4k-1x1",
         "firefly-nano-banana2-4k-1x4",
         "firefly-nano-banana2-4k-1x8",
+        "firefly-nano-banana2-4k-21x9",
+        "firefly-nano-banana2-4k-2x3",
+        "firefly-nano-banana2-4k-3x2",
         "firefly-nano-banana2-4k-3x4",
         "firefly-nano-banana2-4k-4x1",
         "firefly-nano-banana2-4k-4x3",
+        "firefly-nano-banana2-4k-4x5",
+        "firefly-nano-banana2-4k-5x4",
         "firefly-nano-banana2-4k-8x1",
         "firefly-nano-banana2-4k-9x16",
+        "firefly-sora2-12s-16x9",
+        "firefly-sora2-12s-9x16",
+        "firefly-sora2-4s-16x9",
+        "firefly-sora2-4s-9x16",
+        "firefly-sora2-8s-16x9",
+        "firefly-sora2-8s-9x16",
+        "firefly-sora2-pro-12s-16x9",
         "firefly-sora2-pro-12s-9x16",
+        "firefly-sora2-pro-4s-16x9",
+        "firefly-sora2-pro-4s-9x16",
+        "firefly-sora2-pro-8s-16x9",
+        "firefly-sora2-pro-8s-9x16",
+        "firefly-veo31-4s-16x9-1080p",
+        "firefly-veo31-4s-16x9-720p",
+        "firefly-veo31-4s-9x16-1080p",
+        "firefly-veo31-4s-9x16-720p",
+        "firefly-veo31-6s-16x9-1080p",
+        "firefly-veo31-6s-16x9-720p",
+        "firefly-veo31-6s-9x16-1080p",
+        "firefly-veo31-6s-9x16-720p",
+        "firefly-veo31-8s-16x9-1080p",
+        "firefly-veo31-8s-16x9-720p",
+        "firefly-veo31-8s-9x16-1080p",
+        "firefly-veo31-8s-9x16-720p",
+        "firefly-veo31-fast-4s-16x9-1080p",
+        "firefly-veo31-fast-4s-16x9-720p",
+        "firefly-veo31-fast-4s-9x16-1080p",
+        "firefly-veo31-fast-4s-9x16-720p",
+        "firefly-veo31-fast-6s-16x9-1080p",
+        "firefly-veo31-fast-6s-16x9-720p",
+        "firefly-veo31-fast-6s-9x16-1080p",
+        "firefly-veo31-fast-6s-9x16-720p",
+        "firefly-veo31-fast-8s-16x9-1080p",
+        "firefly-veo31-fast-8s-16x9-720p",
+        "firefly-veo31-fast-8s-9x16-1080p",
+        "firefly-veo31-fast-8s-9x16-720p",
+        "firefly-veo31-ref-4s-16x9-1080p",
+        "firefly-veo31-ref-4s-16x9-720p",
+        "firefly-veo31-ref-4s-9x16-1080p",
+        "firefly-veo31-ref-4s-9x16-720p",
+        "firefly-veo31-ref-6s-16x9-1080p",
+        "firefly-veo31-ref-6s-16x9-720p",
+        "firefly-veo31-ref-6s-9x16-1080p",
+        "firefly-veo31-ref-6s-9x16-720p",
+        "firefly-veo31-ref-8s-16x9-1080p",
+        "firefly-veo31-ref-8s-16x9-720p",
+        "firefly-veo31-ref-8s-9x16-1080p",
+        "firefly-veo31-ref-8s-9x16-720p",
         "gemini-3-pro-image-preview",
         "gemini-3-pro-preview",
         "gemini-3.0-pro-image-2k",
@@ -2010,7 +2114,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:07",
+        "tested_at": "2026-07-24 23:55:37",
         "endpoint": "https://www.371181668.xyz/v1/models",
         "status_code": 200
       }
@@ -2018,7 +2122,7 @@
     "doubao-pro": {
       "provider_id": "doubao-pro",
       "type": "doubao",
-      "model": "doubao-seed-2-1-pro-260628",
+      "model": "doubao-seed-2-1-turbo-260628",
       "tested_at": "2026-07-14 13:51:06",
       "test_channel": "responses",
       "accessible": true,
@@ -2412,8 +2516,8 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:08",
-        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
+        "tested_at": "2026-07-24 23:55:39",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
     },
@@ -2814,7 +2918,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:09",
+        "tested_at": "2026-07-24 23:55:40",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -3216,7 +3320,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:09",
+        "tested_at": "2026-07-24 23:55:40",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -3576,7 +3680,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:09",
+        "tested_at": "2026-07-24 23:55:40",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4020,7 +4124,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:10",
+        "tested_at": "2026-07-24 23:55:41",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4474,7 +4578,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:10",
+        "tested_at": "2026-07-24 23:55:41",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4698,16 +4802,16 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-14 14:46:11",
+        "tested_at": "2026-07-24 23:55:42",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217840115723894ebcb86fd234a9cf7780741b795c6db0fde56d\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021784908540269ed42e8978f7887761870c2af59029dd73f9206\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       }
     },
     "tavern_deepseek_v31": {
       "provider_id": "tavern_deepseek_v31",
-      "type": "openai",
-      "model": "deepseek-tavern-v2-pro-low",
+      "type": "deepseek",
+      "model": "deepseek-v4-pro",
       "tested_at": "2026-07-14 13:54:11",
       "test_channel": "chat_completions",
       "accessible": true,
@@ -5055,7 +5159,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:11",
+        "tested_at": "2026-07-24 23:55:42",
         "endpoint": "https://deepseektavern.com/v1/models",
         "status_code": 200
       }
@@ -5392,7 +5496,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:12",
+        "tested_at": "2026-07-24 23:55:45",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -5748,7 +5852,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:12",
+        "tested_at": "2026-07-24 23:55:45",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -5972,9 +6076,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-14 14:46:13",
+        "tested_at": "2026-07-24 23:55:45",
         "endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis/models",
-        "reason": "HTTP 400: {\"requestId\":\"d69c3790-a8cf-9052-a508-8ad0d7ffa1c0\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
+        "reason": "HTTP 400: {\"requestId\":\"1edb1df4-73ec-94f7-b5b3-500ec72182ff\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
         "status_code": 400
       }
     },
@@ -6158,7 +6262,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-14 14:46:13",
+        "tested_at": "2026-07-24 23:55:46",
         "reason": "provider type 'hyper3d' has no model discovery endpoint"
       }
     },
@@ -6480,6 +6584,7 @@
       "available_model_ids": [
         "hy3",
         "hy3-preview",
+        "kimi-k3",
         "kimi-k2.7-code-highspeed",
         "glm-5.2",
         "kimi-k2.7-code",
@@ -6539,7 +6644,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:13",
+        "tested_at": "2026-07-24 23:55:46",
         "endpoint": "https://tokenhub.tencentmaas.com/v1/models",
         "status_code": 200
       }
@@ -6764,6 +6869,10 @@
       "available_model_ids": [
         "gpt-5.4",
         "gpt-5.4-mini",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-7",
         "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
@@ -6771,6 +6880,7 @@
         "qwen-image-2.0-pro",
         "qwen-image-2.0",
         "gpt-5.3-codex-spark",
+        "claude-opus-4-8",
         "GLM-5.1",
         "qwen3.6-plus",
         "minimax-m2.7-highspeed",
@@ -6785,21 +6895,21 @@
         "gemini-3.1-flash-lite-preview",
         "gemini-3.1-pro-preview",
         "gemini-3.5-flash",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
         "claude-sonnet-5",
+        "claude-fable-5",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
-        "grok-4.5"
+        "grok-4.5",
+        "gemini-3.6-flash",
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:13",
+        "tested_at": "2026-07-24 23:55:47",
         "endpoint": "https://api.krill-ai.com/v1/models",
         "status_code": 200
       }
@@ -7024,6 +7134,10 @@
       "available_model_ids": [
         "gpt-5.4",
         "gpt-5.4-mini",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-7",
         "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
@@ -7031,6 +7145,7 @@
         "qwen-image-2.0-pro",
         "qwen-image-2.0",
         "gpt-5.3-codex-spark",
+        "claude-opus-4-8",
         "GLM-5.1",
         "qwen3.6-plus",
         "minimax-m2.7-highspeed",
@@ -7045,31 +7160,133 @@
         "gemini-3.1-flash-lite-preview",
         "gemini-3.1-pro-preview",
         "gemini-3.5-flash",
-        "claude-fable-5",
-        "claude-haiku-4-5-20251001",
-        "claude-opus-4-6",
-        "claude-opus-4-7",
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
         "claude-sonnet-5",
+        "claude-fable-5",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
-        "grok-4.5"
+        "grok-4.5",
+        "gemini-3.6-flash",
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-14 14:46:14",
+        "tested_at": "2026-07-24 23:55:48",
         "endpoint": "https://api.krill-ai.com/v1/models",
         "status_code": 200
       }
+    },
+    "Kimi_Newest": {
+      "provider_id": "Kimi_Newest",
+      "type": "kimi",
+      "model": "kimi-k3",
+      "available_model_ids": [
+        "moonshot-v1-8k",
+        "moonshot-v1-auto",
+        "kimi-k2.6",
+        "moonshot-v1-32k",
+        "kimi-k3",
+        "moonshot-v1-32k-vision-preview",
+        "moonshot-v1-128k",
+        "kimi-k2.5",
+        "moonshot-v1-8k-vision-preview",
+        "moonshot-v1-128k-vision-preview",
+        "kimi-k2.7-code",
+        "kimi-k2.7-code-highspeed"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-07-24 23:55:41",
+        "endpoint": "https://api.moonshot.cn/v1/models",
+        "status_code": 200
+      },
+      "test_channel": "chat_completions",
+      "features": {},
+      "unsupported": {},
+      "accessible": true,
+      "status": "ok"
+    },
+    "doubao-seedream-5": {
+      "provider_id": "doubao-seedream-5",
+      "type": "doubao",
+      "model": "doubao-seedream-5-0-pro-260628",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-24 23:55:42",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217849085403914d276ae6b5ce6fd767138ff54dc0bd26e39829\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "status_code": 404
+      },
+      "test_channel": "chat_completions",
+      "features": {},
+      "unsupported": {},
+      "accessible": false,
+      "status": "unavailable"
+    },
+    "doubao-seedream-5-lite": {
+      "provider_id": "doubao-seedream-5-lite",
+      "type": "doubao",
+      "model": "doubao-seedream-5-0-260128",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-24 23:55:42",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021784908540524fbcc013cde10a689f8f390ac862f8b048e98ca\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "status_code": 404
+      },
+      "test_channel": "chat_completions",
+      "features": {},
+      "unsupported": {},
+      "accessible": false,
+      "status": "unavailable"
+    },
+    "doubao-seedream-4-0-250828": {
+      "provider_id": "doubao-seedream-4-0-250828",
+      "type": "doubao",
+      "model": "doubao-seedream-4-0-250828",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-24 23:55:42",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021784908540648d6bdab3051f46472bfd942e874cc5db06e401e\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "status_code": 404
+      },
+      "test_channel": "chat_completions",
+      "features": {},
+      "unsupported": {},
+      "accessible": false,
+      "status": "unavailable"
+    },
+    "seed_audio": {
+      "provider_id": "seed_audio",
+      "type": "doubao",
+      "model": "seed-audio-1.0",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-24 23:55:48",
+        "endpoint": "https://openspeech.bytedance.com/api/v3/tts/create/models",
+        "reason": "HTTP 404: Endpoint \"tts/create/models\" does not exist",
+        "status_code": 404
+      },
+      "test_channel": "responses",
+      "features": {},
+      "unsupported": {},
+      "accessible": false,
+      "status": "unavailable"
     }
   },
   "model_refresh_status": "finished",
-  "model_refresh_completed_providers": 22,
-  "model_refresh_total_providers": 22,
+  "model_refresh_completed_providers": 27,
+  "model_refresh_total_providers": 27,
   "model_refresh_current_provider_id": "",
-  "model_refresh_started_at": "2026-07-14 14:46:03",
-  "model_refresh_duration_ms": 13125,
-  "model_refresh_finished_at": "2026-07-14 14:46:16"
+  "model_refresh_started_at": "2026-07-24 23:55:34",
+  "model_refresh_duration_ms": 14672,
+  "model_refresh_finished_at": "2026-07-24 23:55:49"
 }

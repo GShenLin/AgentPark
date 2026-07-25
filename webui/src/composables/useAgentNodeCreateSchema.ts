@@ -20,6 +20,7 @@ export const reasoningEffortOptions = [
 
 export const GUI_AGENT_NODE_TYPE = 'gui_agent_node'
 export const CODEX_NODE_TYPE = 'codex_node'
+export const CLAUDE_NODE_TYPE = 'claude_node'
 export const GUI_AGENT_MODE = 'guiagent'
 export const AUDIO_GENERATION_MODE = 'audio_generation'
 
@@ -63,7 +64,7 @@ export function agentProviderModes(provider: Pick<ProviderInfo, 'supportmode'>):
   return providerModes(provider).filter((mode) => supported.has(mode))
 }
 
-export function codexProviderModes(provider: Pick<ProviderInfo, 'supportmode'>): string[] {
+export function cliProviderModes(provider: Pick<ProviderInfo, 'supportmode'>): string[] {
   return providerModes(provider).filter((mode) => mode === 'chat' || mode === 'imagechat')
 }
 
@@ -104,8 +105,8 @@ export function useAgentNodeCreateSchema(options: {
       .filter((provider) => (
         selectedTypeId.value === GUI_AGENT_NODE_TYPE
           ? providerModes(provider).includes(GUI_AGENT_MODE)
-          : selectedTypeId.value === CODEX_NODE_TYPE
-            ? codexProviderModes(provider).length > 0
+          : [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE].includes(selectedTypeId.value)
+            ? cliProviderModes(provider).length > 0
             : agentProviderModes(provider).length > 0
       ))
       .map((provider) => String(provider.id || '').trim())
@@ -129,6 +130,7 @@ export function useAgentNodeCreateSchema(options: {
     return (
       selectedTypeId.value === 'agent_node' ||
       selectedTypeId.value === CODEX_NODE_TYPE ||
+      selectedTypeId.value === CLAUDE_NODE_TYPE ||
       selectedTypeId.value === GUI_AGENT_NODE_TYPE
     )
   }
@@ -153,6 +155,7 @@ export function useAgentNodeCreateSchema(options: {
     if (
       selectedTypeId.value !== 'agent_node' &&
       selectedTypeId.value !== CODEX_NODE_TYPE &&
+      selectedTypeId.value !== CLAUDE_NODE_TYPE &&
       selectedTypeId.value !== GUI_AGENT_NODE_TYPE
     ) return
 

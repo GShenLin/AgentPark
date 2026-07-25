@@ -21,6 +21,13 @@ def _write_node(nodes_dir, type_id: str, source: str) -> None:
         f.write(source)
 
 
+def _write_node_package(nodes_dir, type_id: str, init_source: str, implementation_source: str) -> None:
+    package_dir = nodes_dir / type_id
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text(init_source, encoding="utf-8")
+    (package_dir / "implementation.py").write_text(implementation_source, encoding="utf-8")
+
+
 def test_load_node_instance_missing_file_returns_none(monkeypatch, tmp_path):
     from src.web_backend import runtime_paths
 
@@ -45,6 +52,113 @@ def test_load_node_instance_import_error_raises_module_error(monkeypatch, tmp_pa
 
     with pytest.raises(NodeModuleLoadError, match="broken_node"):
         load_node_instance("broken_node")
+
+
+def test_load_node_instance_supports_package_with_relative_imports(monkeypatch, tmp_path):
+    from src.web_backend import runtime_paths
+
+    nodes_dir = tmp_path / "nodes"
+    nodes_dir.mkdir()
+    _write_node_package(
+        nodes_dir,
+        "package_node",
+        "from .implementation import Node\n",
+        "class Node:\n"
+        "    name = 'Package Node'\n"
+        "    version = 1\n",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_nodes_dir", lambda: str(nodes_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_resource_root", lambda: str(tmp_path))
+
+    loaded = load_node_instance("package_node")
+
+    assert loaded is not None
+    assert loaded.name == "Package Node"
+    assert loaded.version == 1
+
+
+def test_load_node_instance_rejects_ambiguous_file_and_package(monkeypatch, tmp_path):
+    from src.web_backend import runtime_paths
+
+    nodes_dir = tmp_path / "nodes"
+    nodes_dir.mkdir()
+    _write_node(nodes_dir, "ambiguous_node", "class Node:\n    pass\n")
+    _write_node_package(
+        nodes_dir,
+        "ambiguous_node",
+        "from .implementation import Node\n",
+        "class Node:\n    pass\n",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_nodes_dir", lambda: str(nodes_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_resource_root", lambda: str(tmp_path))
+
+    with pytest.raises(NodeModuleLoadError, match="ambiguous"):
+        load_node_instance("ambiguous_node")
+
+
+def test_package_node_cache_invalidates_when_submodule_changes(monkeypatch, tmp_path):
+    from src.web_backend import runtime_paths
+
+    nodes_dir = tmp_path / "nodes"
+    nodes_dir.mkdir()
+    _write_node_package(
+        nodes_dir,
+        "package_cache_node",
+        "from .implementation import Node\n",
+        "class Node:\n"
+        "    version = 1\n",
+    )
+    monkeypatch.setattr(runtime_paths, "_get_nodes_dir", lambda: str(nodes_dir))
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_resource_root", lambda: str(tmp_path))
+
+    first = load_node_instance("package_cache_node")
+    implementation_path = nodes_dir / "package_cache_node" / "implementation.py"
+    implementation_path.write_text("class Node:\n    version = 2\n", encoding="utf-8")
+    second = load_node_instance("package_cache_node")
+
+    assert first.version == 1
+    assert second.version == 2
+    assert first.__class__ is not second.__class__
+
+
+def test_package_node_is_discovered_and_executed(monkeypatch, tmp_path):
+    from src.web_backend import node_runtime
+
+    nodes_dir = tmp_path / "nodes"
+    nodes_dir.mkdir()
+    _write_node_package(
+        nodes_dir,
+        "runtime_package_node",
+        "from .implementation import Node\n",
+        "class Node:\n"
+        "    name = 'Runtime Package Node'\n"
+        "    description = 'package discovery fixture'\n"
+        "    def getInputNum(self, context=None):\n"
+        "        return 1\n"
+        "    def getOutputNum(self, context=None):\n"
+        "        return 1\n"
+        "    def on_input(self, message, context=None):\n"
+        "        return {\n"
+        "            'routes': [{'output_index': 0, 'payload': 'package-ok'}],\n"
+        "            'display': 'package-ok',\n"
+        "        }\n",
+    )
+    monkeypatch.setattr(node_runtime, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(node_runtime, "_get_resource_root", lambda: str(tmp_path))
+
+    metas = node_runtime._list_node_metas(str(nodes_dir))
+    result = node_runtime._run_node_logic_with_routes(
+        str(nodes_dir),
+        "runtime_package_node",
+        "hello",
+    )
+
+    assert [item["id"] for item in metas] == ["runtime_package_node"]
+    assert metas[0]["name"] == "Runtime Package Node"
+    assert result["text"] == "package-ok"
 
 
 def test_load_node_instance_reuses_class_until_source_changes(monkeypatch, tmp_path):

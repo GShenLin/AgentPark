@@ -69,16 +69,8 @@ def test_workspace_exec_declaration_has_kind_specific_strict_arguments():
         operation_items = stage_variant["properties"]["operations"]["items"]
         variants.extend(operation_items.get("oneOf", [operation_items]))
 
-    assert "retain_until_next_handoff" in description
-    assert "retire_after_verified" in description
-    checkpoint_schema = workspace_exec_declaration["function"]["parameters"]["properties"][
-        "context_checkpoint"
-    ]
-    assert set(checkpoint_schema["enum"]) == {
-        "none",
-        "retain_until_next_handoff",
-        "retire_after_verified",
-    }
+    assert "The only top-level argument is stages" in description
+    assert set(workspace_exec_declaration["function"]["parameters"]["properties"]) == {"stages"}
     assert {item["properties"]["kind"]["enum"][0] for item in variants} == {
         "read_file",
         "search_text",

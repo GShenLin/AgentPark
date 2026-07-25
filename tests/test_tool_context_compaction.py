@@ -351,7 +351,7 @@ def test_tool_context_compaction_requires_provider_enabled(tmp_path):
         raise AssertionError("missing provider.toolContextCompactionEnabled should fail")
 
 
-def test_tool_context_compaction_requires_provider_threshold_when_enabled(tmp_path):
+def test_tool_context_compaction_with_no_thresholds_is_noop(tmp_path):
     memory_path = tmp_path / "agent.md"
     memory_path.write_text("", encoding="utf-8")
     agent = DummyCompactionAgent(memory_path)
@@ -362,14 +362,12 @@ def test_tool_context_compaction_requires_provider_threshold_when_enabled(tmp_pa
         {"role": "tool", "content": "alpha raw file content", "tool_call_id": "call-1", "name": "read_file"},
     ]
 
-    try:
-        agent._run_tool_context_compaction_gate_if_needed(
-            [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
-        )
-    except ValueError as exc:
-        assert "provider.toolContextCompactionEveryToolCalls is required" in str(exc)
-    else:
-        raise AssertionError("missing provider.toolContextCompactionEveryToolCalls should fail")
+    ran = agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
+    )
+
+    assert ran is False
+    assert agent._tool_context_compaction_gate_active_now() is False
 
 
 @pytest.mark.parametrize(
@@ -379,15 +377,24 @@ def test_tool_context_compaction_requires_provider_threshold_when_enabled(tmp_pa
         "toolContextCompactionOutputTokens",
     ],
 )
-def test_tool_context_compaction_requires_all_limit_fields_when_enabled(tmp_path, missing_key):
+def test_tool_context_compaction_ignores_missing_limit_fields(tmp_path, missing_key):
     memory_path = tmp_path / "agent.md"
     memory_path.write_text("", encoding="utf-8")
     agent = DummyCompactionAgent(memory_path)
     agent.config = _compaction_config(tool_calls=1)
     agent.config.pop(missing_key)
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        _tool_call_message("call-1", "read_file"),
+        {"role": "tool", "content": "alpha raw file content", "tool_call_id": "call-1", "name": "read_file"},
+    ]
 
-    with pytest.raises(ValueError, match=missing_key):
-        agent._tool_context_compaction_limits()
+    ran = agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
+    )
+
+    assert ran is True
+    assert agent._tool_context_compaction_gate_active is True
 
 
 def test_tool_context_compaction_rejects_boolean_threshold(tmp_path):

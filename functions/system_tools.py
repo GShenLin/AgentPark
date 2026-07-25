@@ -1,5 +1,5 @@
-from functions.agent_patch_tools import apply_patch
-from functions.agent_patch_tools import apply_patch_declaration
+from functions.apply_patch_tool import apply_patch
+from functions.apply_patch_tool import apply_patch_declaration
 from functions.console_tools import (
     execute_console_command,
     execute_console_command_declaration,

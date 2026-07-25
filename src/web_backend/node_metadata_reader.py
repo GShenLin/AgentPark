@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import inspect
 import os
@@ -10,6 +11,8 @@ from copy import deepcopy
 from collections.abc import Callable
 
 from . import runtime_paths
+from .node_module_resolver import module_spec_kwargs
+from .node_module_resolver import resolve_node_module
 from .route_parser import NodeRouteParser
 
 
@@ -33,16 +36,57 @@ class NodeMetadataSignatureError(NodeMetadataError):
     pass
 
 
-_NODE_CLASS_CACHE: dict[str, tuple[tuple[int, int], type]] = {}
+_NODE_CLASS_CACHE: dict[str, tuple[str, type]] = {}
 _NODE_CLASS_CACHE_LOCK = threading.RLock()
 
 
-def _node_source_version(file_path: str) -> tuple[int, int]:
-    stat = os.stat(file_path)
-    return (int(stat.st_mtime_ns), int(stat.st_size))
+def _node_source_version(file_path: str) -> str:
+    package_dir = os.path.dirname(file_path) if os.path.basename(file_path) == "__init__.py" else ""
+    source_paths = (
+        sorted(
+            os.path.join(root, name)
+            for root, _dirs, names in os.walk(package_dir)
+            for name in names
+            if name.endswith(".py")
+        )
+        if package_dir
+        else [file_path]
+    )
+    digest = hashlib.sha256()
+    for source_path in source_paths:
+        relative_path = os.path.relpath(source_path, package_dir) if package_dir else os.path.basename(source_path)
+        digest.update(relative_path.encode("utf-8"))
+        with open(source_path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _load_node_class(file_path: str, safe_type_id: str) -> type | None:
+def _remove_package_bytecode(file_path: str) -> None:
+    package_dir = os.path.dirname(file_path)
+    for root, _dirs, names in os.walk(package_dir):
+        for name in names:
+            if not name.endswith(".py"):
+                continue
+            source_path = os.path.join(root, name)
+            bytecode_path = importlib.util.cache_from_source(source_path)
+            try:
+                os.remove(bytecode_path)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise NodeModuleLoadError(
+                    f"Cannot invalidate node bytecode {bytecode_path!r}: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+
+
+def _load_node_class(
+    file_path: str,
+    safe_type_id: str,
+    *,
+    is_package: bool = False,
+) -> type | None:
     normalized_path = os.path.normcase(os.path.abspath(file_path))
     try:
         source_version = _node_source_version(normalized_path)
@@ -58,11 +102,22 @@ def _load_node_class(file_path: str, safe_type_id: str) -> type | None:
 
         module_name = f"nodes_init_{safe_type_id}_{uuid.uuid4().hex}"
         try:
-            spec = importlib.util.spec_from_file_location(module_name, normalized_path)
+            if is_package:
+                _remove_package_bytecode(normalized_path)
+            spec = importlib.util.spec_from_file_location(
+                module_name,
+                normalized_path,
+                **module_spec_kwargs(normalized_path, is_package=is_package),
+            )
             if not spec or not spec.loader:
                 raise NodeModuleLoadError(f"Cannot build import spec for node {safe_type_id!r}.")
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(module_name, None)
+                raise
             node_cls = getattr(module, "Node", None)
             if node_cls is None:
                 _NODE_CLASS_CACHE.pop(normalized_path, None)
@@ -86,8 +141,11 @@ def load_node_instance(type_id: str):
     nodes_dir = runtime_paths._get_nodes_dir()
     if not nodes_dir or not os.path.isdir(nodes_dir):
         return None
-    file_path = os.path.join(nodes_dir, f"{safe_type_id}.py")
-    if not os.path.exists(file_path):
+    try:
+        source = resolve_node_module(nodes_dir, safe_type_id)
+    except RuntimeError as exc:
+        raise NodeModuleLoadError(str(exc)) from exc
+    if source is None:
         return None
 
     runtime_root = runtime_paths._get_runtime_root()
@@ -98,7 +156,11 @@ def load_node_instance(type_id: str):
         sys.path.insert(0, resource_root)
 
     try:
-        node_cls = _load_node_class(file_path, safe_type_id)
+        node_cls = _load_node_class(
+            source.file_path,
+            safe_type_id,
+            is_package=source.is_package,
+        )
         if node_cls is None:
             return None
         return node_cls()

@@ -57,6 +57,9 @@ def test_graph_event_contains_node_runtime_delta(monkeypatch, tmp_path):
         "node_id": "Agent",
         "state": "working",
         "pending_count": 0,
+        "inflight": None,
+        "_stop_requested": False,
+        "node_event_seq": 0,
         "last_run_at": "2026-07-22 12:00:00.000000",
     }
 

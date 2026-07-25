@@ -4,7 +4,8 @@ import { getPrompt, listPrompts, savePrompt, type PromptLibraryKind, type Provid
 import { ASSET_FIELD_KEYS } from '../../composables/droppedPaths'
 import {
   agentProviderModes,
-  codexProviderModes,
+  cliProviderModes,
+  CLAUDE_NODE_TYPE,
   dedupeStrings,
   GUI_AGENT_NODE_TYPE,
   normalizeSwitch,
@@ -77,7 +78,7 @@ const providerOptions = computed(() => dedupeStrings(
   props.providers
     .filter((provider) => {
       if (props.typeId === 'agent_node') return agentProviderModes(provider).length > 0
-      if (props.typeId === 'codex_node') return codexProviderModes(provider).length > 0
+      if (['codex_node', CLAUDE_NODE_TYPE].includes(props.typeId)) return cliProviderModes(provider).length > 0
       return true
     })
     .map((provider) => String(provider.id || '').trim())
@@ -236,6 +237,7 @@ function isProviderField(key: string) {
   return (
     props.typeId === 'agent_node' ||
     props.typeId === 'codex_node' ||
+    props.typeId === CLAUDE_NODE_TYPE ||
     props.typeId === GUI_AGENT_NODE_TYPE
   )
 }

@@ -3,14 +3,14 @@ from unittest.mock import ANY
 
 import pytest
 
-from src.codex_runtime.anthropic_adapter import _tool_choice as anthropic_tool_choice
-from src.codex_runtime.gemini_adapter import _tool_choice as gemini_tool_choice
-from src.codex_runtime.openai_chat_adapter import OpenAIChatAdapter
-from src.codex_runtime.openai_chat_adapter import _chat_tool_choice
-from src.codex_runtime.provider_adapter import provider_protocol
-from src.codex_runtime.contracts import CodexProtocolError
-from src.codex_runtime.responses_conversion import responses_request_to_canonical
-from src.codex_runtime.responses_conversion import tool_call_item
+from src.cli_provider_runtime.anthropic_adapter import _tool_choice as anthropic_tool_choice
+from src.cli_provider_runtime.contracts import CodexProtocolError
+from src.cli_provider_runtime.gemini_adapter import _tool_choice as gemini_tool_choice
+from src.cli_provider_runtime.openai_chat_adapter import OpenAIChatAdapter
+from src.cli_provider_runtime.openai_chat_adapter import _chat_tool_choice
+from src.cli_provider_runtime.provider_adapter import provider_protocol
+from src.cli_provider_runtime.responses_conversion import responses_request_to_canonical
+from src.cli_provider_runtime.responses_conversion import tool_call_item
 
 
 def test_responses_custom_tool_round_trip_through_chat_wrapper():

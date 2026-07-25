@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.codex_runtime import app_server_client
+from nodes.codex_node.runtime import app_server_client
 
 
 def _windows_apps_codex() -> str:
