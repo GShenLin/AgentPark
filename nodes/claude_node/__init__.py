@@ -68,6 +68,8 @@ class Node(BaseNode):
             config_path = os.path.join(node_directory, "config.json")
 
         request = load_claude_node_run_request(ctx, config_path=config_path)
+        access_role = str(ctx.get("access_role") or "").strip().lower()
+        permission_mode = "plan" if access_role == "nondeveloper" else request.permission_mode
         provider_config = ConfigLoader().get_provider_config(request.provider_id)
         model = str(provider_config.get("model") or "").strip()
         if not model:
@@ -94,7 +96,7 @@ class Node(BaseNode):
                 model=model,
                 command=request.command,
                 cwd=request.cwd,
-                permission_mode=request.permission_mode,
+                permission_mode=permission_mode,
                 state_path=state_path,
                 instruction=request.instruction,
                 reasoning_effort=request.reasoning_effort,

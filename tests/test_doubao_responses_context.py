@@ -151,6 +151,20 @@ def test_doubao_send_uses_config_reasoning_effort_when_node_value_empty():
     assert payloads[0]["reasoning"] == {"effort": "high"}
 
 
+def test_doubao_responses_disabled_thinking_omits_reasoning_effort():
+    from src.providers.doubao_agent import DouBaoAgent
+
+    agent = DouBaoAgent.__new__(DouBaoAgent)
+    agent.config = {"model": "doubao-test"}
+
+    payload = agent._responses_payload_extra(
+        thinking_mode="disabled",
+        reasoning_effort="high",
+    )
+
+    assert payload == {"thinking": {"type": "disabled"}}
+
+
 def test_doubao_responses_rejects_unknown_reasoning_effort_before_request():
     import pytest
 

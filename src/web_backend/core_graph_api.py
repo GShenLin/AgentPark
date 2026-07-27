@@ -316,6 +316,7 @@ class GraphApiDomain(DomainBase):
             "from": safe_from_id,
             "source": "emit",
             "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
+            **self.core.access_api.message_access_metadata(request),
         }
         _set_node_config_last_message(config_path, text_full or text_preview)
         _append_node_pending(config_path, item)

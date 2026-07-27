@@ -4,7 +4,11 @@ import json
 import os
 import urllib.error
 import urllib.request
+import uuid
 from typing import Any
+
+from src.runtime_cancellation import raise_if_cancel_requested
+from src.runtime_cancellation import register_cancel_callback
 
 from .routing import remote_workspace_target
 
@@ -15,18 +19,40 @@ def dispatch_remote_workspace_tool(
     args: Any,
     *,
     timeout_seconds: float | None,
+    cancel_source: Any = None,
 ) -> tuple[bool, Any]:
     target = remote_workspace_target(agent, tool_name)
     if target is None:
         return False, None
+    task_id = uuid.uuid4().hex
     payload = {
+        "task_id": task_id,
         "worker_id": target.worker_id,
         "tool_name": str(tool_name),
         "arguments": args if isinstance(args, dict) else {},
         "working_path": target.working_path,
         "timeout_seconds": _request_timeout_seconds(tool_name, args, timeout_seconds),
     }
-    return True, _post_internal_json("/api/remote-workers/internal/execute", payload, payload["timeout_seconds"] + 10.0)
+    unregister_cancel = register_cancel_callback(
+        cancel_source,
+        lambda: _post_internal_request(
+            f"/api/remote-workers/internal/tasks/{task_id}/cancel",
+            {"worker_id": target.worker_id},
+            10.0,
+        ),
+    )
+    try:
+        raise_if_cancel_requested(cancel_source)
+        response = _post_internal_request(
+            "/api/remote-workers/internal/execute",
+            payload,
+            payload["timeout_seconds"] + 10.0,
+        )
+        if not response.get("ok"):
+            raise RuntimeError(str(response.get("error") or "Remote workspace execution failed."))
+        return True, response.get("result")
+    finally:
+        unregister_cancel()
 
 
 def _request_timeout_seconds(tool_name: str, args: Any, configured: float | None) -> float:
@@ -43,7 +69,7 @@ def _request_timeout_seconds(tool_name: str, args: Any, configured: float | None
     return 3600.0
 
 
-def _post_internal_json(path: str, payload: dict[str, Any], timeout: float) -> Any:
+def _post_internal_request(path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     port = str(os.environ.get("AGENTPARK_SERVER_PORT") or "8766").strip() or "8766"
     url = f"http://127.0.0.1:{port}{path}"
     request = urllib.request.Request(
@@ -66,6 +92,4 @@ def _post_internal_json(path: str, payload: dict[str, Any], timeout: float) -> A
         raise RuntimeError("Remote workspace returned invalid JSON.") from exc
     if not isinstance(decoded, dict):
         raise RuntimeError("Remote workspace returned a non-object response.")
-    if not decoded.get("ok"):
-        raise RuntimeError(str(decoded.get("error") or "Remote workspace execution failed."))
-    return decoded.get("result")
+    return decoded

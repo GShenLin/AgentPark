@@ -10,6 +10,7 @@ from src.web_backend.profile_storage import AGENT_PROFILE_DIR, get_profile, prof
 from .event_config_store import load_or_create_event_config, write_event_config
 from .event_models import CompiledReceiver, CompiledReceiverGroup, CompiledRule, EMPTY_REGISTRY, RuntimeEventRegistry
 from .event_rule_config import canonicalize_rules_payload, compile_rules_payload, iter_rules
+from .event_rule_deletion import delete_configured_event, remove_active_event
 from .event_schema import ACTIONS, CONTEXT_ROLES, EVENTS, PRIORITIES, TTLS
 from .file_context import validate_context_file_path
 from .source_rule_transfer import (
@@ -155,6 +156,38 @@ class RuntimeEventRegistryManager:
     ) -> dict[str, Any]:
         source_rules = self.export_source_event_rules(source_graph_id, source_node_id)
         return self.replace_source_event_rules(target_graph_id, target_node_id, source_rules)
+
+    def delete_configured_event(
+        self,
+        *,
+        event: str,
+        graph_id: str,
+        node_id: str,
+        handler_index: int | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            config = load_or_create_event_config()
+            updated, removed_handlers = delete_configured_event(
+                config,
+                event=event,
+                graph_id=graph_id,
+                node_id=node_id,
+                handler_index=handler_index,
+            )
+            write_event_config(updated)
+            self._active = remove_active_event(
+                self._active,
+                config=updated,
+                event=event,
+                graph_id=graph_id,
+                node_id=node_id,
+                handler_index=handler_index,
+            )
+        return {
+            "ok": True,
+            "config": updated,
+            "removed_handlers": removed_handlers,
+        }
 
     def compile(
         self,

@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 DISCOVERY_HOST = "127.0.0.1"
 DISCOVERY_PORT = 18766
 DISCOVERY_PATH = "/agentpark/discover"

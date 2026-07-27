@@ -51,8 +51,8 @@ AGENT_CONFIG_SCHEMA = {
         "type": "select",
         "label": "reasoning_effort",
         "options": [
-            {"value": value, "label": value}
-            for value in ("minimal", "low", "medium", "high", "xhigh")
+            {"value": value, "label": "None" if value == "none" else value}
+            for value in ("none", "minimal", "low", "medium", "high", "xhigh", "max")
         ],
     },
     "reasoning_summary": {

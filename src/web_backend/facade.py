@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from nodes.agent_plugin_api_loader import register_installed_plugin_apis
 from nodes.agent_plugin_loader import default_plugin_root
+from src.public_gateway.routes import register_public_gateway_routes
 
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
@@ -40,6 +41,7 @@ class WebBackendFacade:
 
     def register_routes(self) -> None:
         ApiRouteRegistry.register(self.app, self.core)
+        register_public_gateway_routes(self.app, self.core.public_gateway_api.service)
         register_installed_plugin_apis(
             self.app,
             plugin_root=default_plugin_root(),

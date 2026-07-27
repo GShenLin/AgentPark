@@ -16,21 +16,44 @@ class NodeInstanceDeletion(HostBoundService):
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         node_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
         memory_root = runtime_paths._get_graphs_dir()
-        undo_entry = deletion_undo_store.begin(
-            "delete_node",
-            {"graph_id": safe_graph_id, "node_id": safe_node_id},
-        )
+        if not node_dir or not os.path.isdir(node_dir):
+            raise HTTPException(status_code=404, detail="node instance not found")
+
+        try:
+            undo_entry = deletion_undo_store.begin(
+                "delete_node",
+                {"graph_id": safe_graph_id, "node_id": safe_node_id},
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"failed to initialize node deletion: {type(exc).__name__}: {str(exc)}",
+            ) from exc
+
         archived = False
+        schedule_unregistered = False
         removed_event_rules: dict = {}
         try:
             event_cleanup = self.core.runtime_events.remove_source_rules(safe_graph_id, safe_node_id)
             removed_event_rules = dict(event_cleanup.get("removed_rules") or {})
             if undo_entry is not None and removed_event_rules:
                 deletion_undo_store.write_json(undo_entry, "runtime-event-rules.json", removed_event_rules)
+            schedule_unregistered = True
+            self.graph_runtime._unregister_scheduled_node(safe_graph_id, safe_node_id)
         except Exception as exc:
-            deletion_undo_store.discard(undo_entry)
-            raise HTTPException(status_code=500, detail=f"failed to remove node event config: {str(exc)}") from exc
-        self.graph_runtime._unregister_scheduled_node(safe_graph_id, safe_node_id)
+            rollback_errors = self._rollback_delete_preparation(
+                safe_graph_id,
+                safe_node_id,
+                node_dir,
+                undo_entry,
+                removed_event_rules,
+                schedule_unregistered=schedule_unregistered,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=self._failure_detail("failed to prepare node deletion", exc, rollback_errors),
+            ) from exc
+
         try:
             result = delete_node_directory(
                 core=self.core,
@@ -48,25 +71,49 @@ class NodeInstanceDeletion(HostBoundService):
             )
             archived = undo_entry is not None
         except FileNotFoundError:
-            deletion_undo_store.discard(undo_entry)
-            raise HTTPException(status_code=404, detail="node instance not found")
+            rollback_errors = self._rollback_delete_preparation(
+                safe_graph_id,
+                safe_node_id,
+                node_dir,
+                undo_entry,
+                removed_event_rules,
+                schedule_unregistered=schedule_unregistered,
+            )
+            detail = "node instance not found"
+            if rollback_errors:
+                detail += "; rollback errors: " + "; ".join(rollback_errors)
+            raise HTTPException(status_code=404, detail=detail)
         except NodeDeletionBlocked as exc:
-            if removed_event_rules:
-                self.core.runtime_events.restore_source_rules(removed_event_rules)
-            deletion_undo_store.discard(undo_entry)
-            raise HTTPException(status_code=409, detail=f"node deletion is blocked: {str(exc)}")
+            rollback_errors = self._rollback_delete_preparation(
+                safe_graph_id,
+                safe_node_id,
+                node_dir,
+                undo_entry,
+                removed_event_rules,
+                schedule_unregistered=schedule_unregistered,
+            )
+            detail = f"node deletion is blocked: {str(exc)}"
+            if rollback_errors:
+                detail += "; rollback errors: " + "; ".join(rollback_errors)
+            raise HTTPException(status_code=409, detail=detail)
         except Exception as exc:
             if archived and undo_entry is not None:
                 archived_node = os.path.join(str(undo_entry["temp_dir"]), "node")
                 if os.path.exists(archived_node) and not os.path.exists(node_dir):
                     os.makedirs(os.path.dirname(node_dir), exist_ok=True)
                     os.replace(archived_node, node_dir)
-            deletion_undo_store.discard(undo_entry)
-            if os.path.exists(node_dir):
-                self.graph_runtime._refresh_scheduled_node(safe_graph_id, safe_node_id)
-            if removed_event_rules:
-                self.core.runtime_events.restore_source_rules(removed_event_rules)
-            raise HTTPException(status_code=500, detail=f"failed to delete node instance: {str(exc)}")
+            rollback_errors = self._rollback_delete_preparation(
+                safe_graph_id,
+                safe_node_id,
+                node_dir,
+                undo_entry,
+                removed_event_rules,
+                schedule_unregistered=schedule_unregistered,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=self._failure_detail("failed to delete node instance", exc, rollback_errors),
+            ) from exc
         graph_config_path = os.path.join(self.graph_runtime._graph_dir(safe_graph_id), "config.json")
         graph_config_before = b""
         if os.path.isfile(graph_config_path):
@@ -110,3 +157,37 @@ class NodeInstanceDeletion(HostBoundService):
             "removed_event_handlers": int(event_cleanup.get("removed_handlers") or 0),
             **result.to_payload(),
         }
+
+    def _rollback_delete_preparation(
+        self,
+        graph_id: str,
+        node_id: str,
+        node_dir: str,
+        undo_entry: dict | None,
+        removed_event_rules: dict,
+        *,
+        schedule_unregistered: bool,
+    ) -> list[str]:
+        errors: list[str] = []
+        try:
+            deletion_undo_store.discard(undo_entry)
+        except Exception as exc:
+            errors.append(f"discard undo entry: {type(exc).__name__}: {str(exc)}")
+        if removed_event_rules:
+            try:
+                self.core.runtime_events.restore_source_rules(removed_event_rules)
+            except Exception as exc:
+                errors.append(f"restore event rules: {type(exc).__name__}: {str(exc)}")
+        if schedule_unregistered and os.path.exists(node_dir):
+            try:
+                self.graph_runtime._refresh_scheduled_node(graph_id, node_id)
+            except Exception as exc:
+                errors.append(f"restore schedule: {type(exc).__name__}: {str(exc)}")
+        return errors
+
+    @staticmethod
+    def _failure_detail(prefix: str, error: Exception, rollback_errors: list[str]) -> str:
+        detail = f"{prefix}: {type(error).__name__}: {str(error)}"
+        if rollback_errors:
+            detail += "; rollback errors: " + "; ".join(rollback_errors)
+        return detail

@@ -1,6 +1,8 @@
 import os
 import uuid
 
+from fastapi import Request
+
 from .route_parser import NodeRouteParser
 from .service_host import HostBoundService
 from .shared import (
@@ -16,7 +18,13 @@ from .state_store import NodeDeletingError
 
 
 class NodeInstanceQueue(HostBoundService):
-    def enqueue_node_instance_pending(self, node_id: str, payload: dict, graph_id: str = ""):
+    def enqueue_node_instance_pending(
+        self,
+        node_id: str,
+        payload: dict,
+        graph_id: str = "",
+        request: Request = None,
+    ):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
@@ -36,6 +44,13 @@ class NodeInstanceQueue(HostBoundService):
             "to_input_index": NodeRouteParser.parse_port_index((payload or {}).get("to_input_index")) or 0,
             "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
         }
+        if request is not None:
+            item.update(self.core.access_api.message_access_metadata(request))
+        else:
+            for key in ("_access_client_id", "_access_username", "_access_role"):
+                value = (payload or {}).get(key)
+                if isinstance(value, str) and value.strip():
+                    item[key] = value.strip()
         if isinstance((payload or {}).get("link_id"), str) and str((payload or {}).get("link_id")).strip():
             item["link_id"] = str((payload or {}).get("link_id")).strip()
         if isinstance((payload or {}).get("from"), str) and str((payload or {}).get("from")).strip():

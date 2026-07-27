@@ -291,7 +291,7 @@ def test_update_node_instance_config_persists_ui():
     from fastapi.testclient import TestClient
 
     try:
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         r = client.post(
             "/api/nodes/instances",
             json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
@@ -324,7 +324,7 @@ def test_list_node_instance_configs_supports_incremental_refresh():
     from fastapi.testclient import TestClient
 
     try:
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         created = client.post(
             "/api/nodes/instances",
             json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
@@ -425,7 +425,7 @@ def test_get_node_instance_config_returns_only_the_requested_node():
     from fastapi.testclient import TestClient
 
     try:
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         for node_id in ("n1", "n2"):
             created = client.post(
                 "/api/nodes/instances",
@@ -510,7 +510,7 @@ def test_update_node_instance_config_recomputes_dynamic_input_ports():
     from fastapi.testclient import TestClient
 
     try:
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         created = client.post(
             "/api/nodes/instances",
             json={"node_id": node_id, "type_id": "multi_input_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
@@ -865,6 +865,78 @@ def test_delete_node_instance_uses_undo_archive_instead_of_rmtree(monkeypatch, t
     assert not os.path.exists(tmp_path / "memories" / "ut_delete_fail" / "delete_fail")
 
 
+def test_delete_node_instance_reports_undo_initialization_failure(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+    from src.web_backend.node_instance_deletion import deletion_undo_store
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": "delete_init_fail", "type_id": "missing_node", "graph_id": "ut_delete_init_fail"},
+    )
+    assert created.status_code == 200
+    node_dir = tmp_path / "memories" / "ut_delete_init_fail" / "delete_init_fail"
+
+    def fail_begin(_kind, _metadata):
+        raise PermissionError("undo directory is locked")
+
+    monkeypatch.setattr(deletion_undo_store, "begin", fail_begin)
+    response = client.delete(
+        "/api/nodes/instances/delete_init_fail?graph_id=ut_delete_init_fail"
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "failed to initialize node deletion: PermissionError: undo directory is locked"
+    )
+    assert node_dir.is_dir()
+
+
+def test_delete_node_instance_rolls_back_schedule_preparation_failure(monkeypatch, tmp_path):
+    import src.web_backend as backend
+    from src.web_backend import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    facade = backend.WebBackendFacade()
+    app = facade.build()
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": "delete_prepare_fail", "type_id": "missing_node", "graph_id": "ut_delete_prepare_fail"},
+    )
+    assert created.status_code == 200
+    node_dir = tmp_path / "memories" / "ut_delete_prepare_fail" / "delete_prepare_fail"
+    refresh_calls = []
+
+    def fail_unregister(_graph_id, _node_id):
+        raise PermissionError("schedule index is locked")
+
+    def record_refresh(graph_id, node_id):
+        refresh_calls.append((graph_id, node_id))
+
+    monkeypatch.setattr(facade.core.node_ops.graph_runtime, "_unregister_scheduled_node", fail_unregister)
+    monkeypatch.setattr(facade.core.node_ops.graph_runtime, "_refresh_scheduled_node", record_refresh)
+    response = client.delete(
+        "/api/nodes/instances/delete_prepare_fail?graph_id=ut_delete_prepare_fail"
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "failed to prepare node deletion: PermissionError: schedule index is locked"
+    )
+    assert node_dir.is_dir()
+    assert refresh_calls == [("ut_delete_prepare_fail", "delete_prepare_fail")]
+    undo_root = tmp_path / ".cache" / "undo"
+    assert not list(undo_root.glob(".tmp-*"))
+
+
 def test_delete_node_instance_without_undo_retries_transient_permission_errors(monkeypatch, tmp_path):
     import src.web_backend as backend
     from src.web_backend import runtime_paths
@@ -1037,7 +1109,7 @@ def test_enqueue_pending_rejects_node_being_deleted(tmp_path, monkeypatch):
     app = backend.create_app()
     from fastapi.testclient import TestClient
 
-    client = TestClient(app)
+    client = TestClient(app, client=("127.0.0.1", 12345))
     created = client.post(
         "/api/nodes/instances",
         json={"node_id": "delete_pending", "type_id": "missing_node", "graph_id": "ut_delete_pending"},

@@ -25,6 +25,13 @@ def test_workspace_bootstrap_uses_true_startup_graph_and_returns_mount_snapshot(
     request = object()
     core = SimpleNamespace(
         graph_api=graph_api,
+        access_api=SimpleNamespace(
+            get_status=lambda request=None: {
+                "role": "developer",
+                "is_developer": True,
+                "is_local_client": True,
+            }
+        ),
         remote_api=SimpleNamespace(
             get_remote_status=lambda request=None: {"is_local_client": True},
             list_remotes=lambda request=None: {"remotes": [{"id": "local"}]},
@@ -48,6 +55,7 @@ def test_workspace_bootstrap_uses_true_startup_graph_and_returns_mount_snapshot(
 
     assert graph_api.calls[:2] == [("startup", request), ("graph", "test", request)]
     assert payload["startup_graph"]["id"] == "test"
+    assert payload["access"]["is_developer"] is True
     assert payload["remote_status"] == {"is_local_client": True}
     assert payload["providers"] == [{"id": "openai"}]
     assert payload["nodes"] == [{"type_id": "agent_node"}]

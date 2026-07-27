@@ -23,7 +23,7 @@ def test_event_dispatch_cross_graph(tmp_path):
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
 
         g1 = {
             "id": "g1",

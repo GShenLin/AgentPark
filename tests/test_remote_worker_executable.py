@@ -53,7 +53,7 @@ def _handler_type(state: _ProtocolState):
                         "ok": True,
                         "worker_id": "executable-worker",
                         "token": "executable-secret",
-                        "protocol_version": 1,
+                        "protocol_version": 2,
                     }
                 )
                 return
@@ -81,6 +81,9 @@ def _handler_type(state: _ProtocolState):
                 return
             if self.path == "/api/remote-workers/executable-worker/heartbeat":
                 self._respond({"ok": True})
+                return
+            if self.path == "/api/remote-workers/executable-worker/cancellations/poll":
+                self._respond({"ok": True, "task_ids": []})
                 return
             self._respond({"ok": False}, status=404)
 

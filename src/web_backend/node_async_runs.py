@@ -34,6 +34,12 @@ class NodeAsyncRuns(HostBoundService):
         if context is not None and not isinstance(context, dict):
             raise HTTPException(status_code=400, detail="context must be object")
         context = dict(context or {})
+        context.update(
+            {
+                key.removeprefix("_"): value
+                for key, value in self.core.access_api.message_access_metadata(request).items()
+            }
+        )
         message = normalize_envelope(message, default_role="user")
         message_full = envelope_text(message).strip()
         message_preview = envelope_preview(message)

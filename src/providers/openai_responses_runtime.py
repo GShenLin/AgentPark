@@ -14,14 +14,18 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
         if self.config.get("fastMode") is True:
             payload["service_tier"] = "priority"
 
+        thinking_mode = str(provider_options.get("thinking_mode") or "").strip().lower()
         reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
+        if thinking_mode == "disabled":
+            reasoning_effort = "none"
         if reasoning_effort:
             reasoning = {"effort": reasoning_effort}
             reasoning_summary = self._resolve_reasoning_summary(provider_options.get("reasoning_summary"))
-            if reasoning_summary != "disabled":
+            if reasoning_effort != "none" and reasoning_summary != "disabled":
                 reasoning["summary"] = reasoning_summary
             payload["reasoning"] = reasoning
-            payload["include"] = ["reasoning.encrypted_content"]
+            if reasoning_effort != "none":
+                payload["include"] = ["reasoning.encrypted_content"]
         return payload
 
     def _responses_required_includes(self, tools_payload) -> list[str]:

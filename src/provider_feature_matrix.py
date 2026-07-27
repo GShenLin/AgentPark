@@ -29,12 +29,18 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             },
             tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={
-                "supported": not responses_api,
-                "values": ["enabled", "disabled", "auto"] if not responses_api else [],
-                "requires": "responsesApi=false",
-                "transport": "chat_completions" if not responses_api else "",
+                "supported": True,
+                "values": ["enabled", "disabled"] if responses_api else ["enabled", "disabled", "auto"],
+                "transport": "responses" if responses_api else "chat_completions",
             },
-            reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh"]},
+            reasoning_effort={
+                "supported": True,
+                "values": (
+                    ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+                    if responses_api
+                    else ["minimal", "low", "medium", "high", "xhigh", "max"]
+                ),
+            },
             reasoning_summary={
                 "supported": responses_api,
                 "values": ["auto", "concise", "detailed", "disabled"] if responses_api else [],
@@ -151,7 +157,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             web_search={"supported": False, "values": []},
             tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={"supported": True, "values": ["enabled", "disabled"]},
-            reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh"]},
+            reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh", "max"]},
             reasoning_summary={"supported": False, "values": []},
         )
     if provider_type == "claude":

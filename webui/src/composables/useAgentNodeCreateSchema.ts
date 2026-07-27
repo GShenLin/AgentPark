@@ -11,11 +11,13 @@ export const switchOptions = [
 ]
 
 export const reasoningEffortOptions = [
+  { value: 'none', label: 'None' },
   { value: 'minimal', label: 'minimal' },
   { value: 'low', label: 'low' },
   { value: 'medium', label: 'medium' },
   { value: 'high', label: 'high' },
   { value: 'xhigh', label: 'xhigh' },
+  { value: 'max', label: 'max' },
 ]
 
 export const GUI_AGENT_NODE_TYPE = 'gui_agent_node'
@@ -53,7 +55,22 @@ export function normalizeSwitch(value: unknown, fallback: 'enabled' | 'disabled'
   return fallback
 }
 
-export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export function providerReasoningEffortOptions(
+  provider: Pick<ProviderInfo, 'features'> | null | undefined,
+) {
+  const feature = provider?.features?.reasoning_effort
+  const values = Array.isArray(feature?.values)
+    ? dedupeStrings(feature.values.map((value) => String(value || '').trim()))
+    : []
+  if (!feature?.supported || values.length === 0) return reasoningEffortOptions
+  const labels = new Map(reasoningEffortOptions.map((option) => [option.value, option.label]))
+  return values.map((value) => ({
+    value,
+    label: labels.get(value) || value,
+  }))
+}
 
 export function providerModes(provider: Pick<ProviderInfo, 'supportmode'>) {
   return normalizeModeList(provider?.supportmode)

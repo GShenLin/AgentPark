@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import os
 import secrets
 import threading
 import time
@@ -14,7 +13,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from src.file_transaction import atomic_write_text, run_with_interprocess_lock
+from src.file_transaction import run_with_interprocess_lock
+from .store import (
+    AuthStoreError,
+    get_account,
+    list_accounts,
+    provider_auth_dir,
+    save_account,
+    update_account_credential,
+)
 
 
 ISSUER = "https://auth.openai.com"
@@ -35,13 +42,8 @@ class CodexCredentials:
     expires_at: int | None
 
 
-def codex_home() -> str:
-    configured = str(os.environ.get("CODEX_HOME") or "").strip()
-    return os.path.abspath(os.path.expanduser(configured or os.path.join("~", ".codex")))
-
-
 def auth_json_path() -> str:
-    return os.path.join(codex_home(), "auth.json")
+    return provider_auth_dir("openai")
 
 
 def _decode_jwt(token: str) -> dict:
@@ -71,18 +73,17 @@ def _token_profile(id_token: str) -> dict:
     }
 
 
-def _read_auth() -> dict:
-    path = auth_json_path()
+def _read_auth(account_id: str | None = None) -> tuple[dict, str]:
     try:
-        with open(path, "r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except FileNotFoundError as exc:
-        raise CodexOAuthError(f"OpenAI official authorization was not found at {path}.") from exc
-    except (OSError, json.JSONDecodeError) as exc:
-        raise CodexOAuthError(f"Failed to read OpenAI official authorization: {exc}") from exc
+        account = get_account("openai", account_id)
+    except AuthStoreError as exc:
+        raise CodexOAuthError(str(exc)) from exc
+    if account is None:
+        raise CodexOAuthError(f"OpenAI official authorization was not found in {auth_json_path()}.")
+    payload = account.credential
     if not isinstance(payload, dict):
         raise CodexOAuthError("OpenAI official authorization must be a JSON object.")
-    return payload
+    return payload, account.id
 
 
 def _validate_auth(payload: dict) -> tuple[dict, dict]:
@@ -127,18 +128,25 @@ def _request_json(url: str, *, data: dict, form: bool = False, timeout: float = 
     return payload
 
 
-def _write_auth(payload: dict) -> None:
-    path = auth_json_path()
-    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    if os.name != "nt":
-        os.chmod(path, 0o600)
+def _write_auth(payload: dict, *, account_id: str | None = None, activate: bool = True) -> str:
+    tokens, profile = _validate_auth(payload)
+    identity = str(profile.get("email") or tokens["account_id"])
+    if account_id:
+        return update_account_credential("openai", account_id, payload).id
+    return save_account(
+        "openai",
+        kind="oauth",
+        credential=payload,
+        identity=identity,
+        activate=activate,
+    ).id
 
 
-def refresh_authorization(*, force: bool = False) -> CodexCredentials:
-    path = auth_json_path()
+def refresh_authorization(*, force: bool = False, account_id: str | None = None) -> CodexCredentials:
+    path = provider_auth_dir("openai")
 
     def refresh_locked() -> CodexCredentials:
-        payload = _read_auth()
+        payload, selected_account_id = _read_auth(account_id)
         tokens, _profile = _validate_auth(payload)
         attempted_access_token = str(tokens["access_token"])
         attempted_refresh_token = str(tokens["refresh_token"])
@@ -153,7 +161,7 @@ def refresh_authorization(*, force: bool = False) -> CodexCredentials:
             value = str(refreshed.get(key) or "").strip()
             if value:
                 tokens[key] = value
-        current_payload = _read_auth()
+        current_payload, _ = _read_auth(selected_account_id)
         current_tokens, _current_profile = _validate_auth(current_payload)
         if (
             str(current_tokens["access_token"]) != attempted_access_token
@@ -167,7 +175,7 @@ def refresh_authorization(*, force: bool = False) -> CodexCredentials:
             )
         _validate_auth(payload)
         payload["last_refresh"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        _write_auth(payload)
+        _write_auth(payload, account_id=selected_account_id, activate=False)
         return CodexCredentials(str(tokens["access_token"]), str(tokens["account_id"]), _expires_at(str(tokens["access_token"])))
 
     return run_with_interprocess_lock(f"{path}.lock", refresh_locked)
@@ -175,7 +183,7 @@ def refresh_authorization(*, force: bool = False) -> CodexCredentials:
 
 def authorization_status() -> dict:
     try:
-        payload = _read_auth()
+        payload, active_account_id = _read_auth()
         tokens, profile = _validate_auth(payload)
         expires_at = _expires_at(str(tokens["access_token"]))
         return {
@@ -186,10 +194,12 @@ def authorization_status() -> dict:
             "expiresAt": datetime.fromtimestamp(expires_at, timezone.utc).isoformat().replace("+00:00", "Z") if expires_at else "",
             "needsRefresh": expires_at is not None and expires_at <= int(time.time()) + REFRESH_MARGIN_SECONDS,
             "authPath": auth_json_path(),
+            "activeAccountId": active_account_id,
+            "accounts": list_accounts("openai"),
             "error": "",
         }
     except CodexOAuthError as exc:
-        return {"authorized": False, "email": "", "planType": "", "accountIdSuffix": "", "expiresAt": "", "needsRefresh": False, "authPath": auth_json_path(), "error": str(exc)}
+        return {"authorized": False, "email": "", "planType": "", "accountIdSuffix": "", "expiresAt": "", "needsRefresh": False, "authPath": auth_json_path(), "activeAccountId": "", "accounts": list_accounts("openai"), "error": str(exc)}
 
 
 class CodexOAuthLoginManager:

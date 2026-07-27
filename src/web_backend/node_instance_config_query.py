@@ -131,6 +131,8 @@ class NodeInstanceConfigQuery(HostBoundService):
         safe_view = str(view or "full").strip().lower()
         if safe_view not in {"full", "editor"}:
             raise HTTPException(status_code=400, detail="view must be 'full' or 'editor'")
+        if safe_view == "editor":
+            self.core.access_api.require_developer(request)
         cfg = (
             node_config_service.with_runtime_fields(config_path, persistent_cfg, EDITOR_RUNTIME_FIELDS)
             if safe_view == "editor"

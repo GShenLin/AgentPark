@@ -205,7 +205,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:34",
+        "tested_at": "2026-07-27 02:12:19",
         "endpoint": "https://chatgpt.com/backend-api/codex/models?client_version=0.0.0",
         "status_code": 200
       }
@@ -543,11 +543,12 @@
         "gemini-3-pro-preview",
         "gemini-3-flash-preview",
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-2.5-flash-lite",
+        "claude-opus-5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:35",
+        "tested_at": "2026-07-27 02:12:20",
         "endpoint": "https://api.krill-ai.com/codex/v1/models",
         "status_code": 200
       }
@@ -858,11 +859,12 @@
         "gemini-3-pro-preview",
         "gemini-3-flash-preview",
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-2.5-flash-lite",
+        "claude-opus-5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:36",
+        "tested_at": "2026-07-27 02:12:21",
         "endpoint": "https://api.krill-ai.com/codex/v1/models",
         "status_code": 200
       }
@@ -1104,7 +1106,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:36",
+        "tested_at": "2026-07-27 02:12:22",
         "endpoint": "https://api.deepseek.com/models",
         "status_code": 200
       }
@@ -1346,7 +1348,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:37",
+        "tested_at": "2026-07-27 02:12:22",
         "endpoint": "https://api.deepseek.com/models",
         "status_code": 200
       }
@@ -1685,7 +1687,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:37",
+        "tested_at": "2026-07-27 02:12:22",
         "endpoint": "https://api.xiaomimimo.com/v1/models",
         "status_code": 200
       }
@@ -1907,6 +1909,7 @@
         }
       },
       "available_model_ids": [
+        "claude-fable-5",
         "claude-opus-4-6",
         "claude-opus-4-7",
         "claude-opus-4-8",
@@ -2114,7 +2117,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:37",
+        "tested_at": "2026-07-27 02:12:22",
         "endpoint": "https://www.371181668.xyz/v1/models",
         "status_code": 200
       }
@@ -2516,7 +2519,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:39",
+        "tested_at": "2026-07-27 02:12:23",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -2918,7 +2921,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:40",
+        "tested_at": "2026-07-27 02:12:24",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -3320,7 +3323,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:40",
+        "tested_at": "2026-07-27 02:12:24",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -3680,7 +3683,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:40",
+        "tested_at": "2026-07-27 02:12:24",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4124,7 +4127,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:41",
+        "tested_at": "2026-07-27 02:12:24",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4578,7 +4581,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:41",
+        "tested_at": "2026-07-27 02:12:27",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4802,16 +4805,16 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-24 23:55:42",
+        "tested_at": "2026-07-27 02:12:27",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021784908540269ed42e8978f7887761870c2af59029dd73f9206\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217850895449863799d76546dcc4f1e7db5f4ad99e15a1d302ff\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       }
     },
     "tavern_deepseek_v31": {
       "provider_id": "tavern_deepseek_v31",
       "type": "deepseek",
-      "model": "deepseek-v4-pro",
+      "model": "deepseek-tavern-v2-pro",
       "tested_at": "2026-07-14 13:54:11",
       "test_channel": "chat_completions",
       "accessible": true,
@@ -5159,7 +5162,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:42",
+        "tested_at": "2026-07-27 02:12:28",
         "endpoint": "https://deepseektavern.com/v1/models",
         "status_code": 200
       }
@@ -5496,7 +5499,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:45",
+        "tested_at": "2026-07-27 02:12:28",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -5852,7 +5855,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:45",
+        "tested_at": "2026-07-27 02:12:29",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -6076,9 +6079,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-24 23:55:45",
+        "tested_at": "2026-07-27 02:12:29",
         "endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis/models",
-        "reason": "HTTP 400: {\"requestId\":\"1edb1df4-73ec-94f7-b5b3-500ec72182ff\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
+        "reason": "HTTP 400: {\"requestId\":\"208ce842-c51f-9acd-a747-9669ffba78ca\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
         "status_code": 400
       }
     },
@@ -6262,7 +6265,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-24 23:55:46",
+        "tested_at": "2026-07-27 02:12:29",
         "reason": "provider type 'hyper3d' has no model discovery endpoint"
       }
     },
@@ -6644,7 +6647,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:46",
+        "tested_at": "2026-07-27 02:12:29",
         "endpoint": "https://tokenhub.tencentmaas.com/v1/models",
         "status_code": 200
       }
@@ -6905,11 +6908,12 @@
         "gemini-3-pro-preview",
         "gemini-3-flash-preview",
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-2.5-flash-lite",
+        "claude-opus-5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:47",
+        "tested_at": "2026-07-27 02:12:30",
         "endpoint": "https://api.krill-ai.com/v1/models",
         "status_code": 200
       }
@@ -7170,11 +7174,12 @@
         "gemini-3-pro-preview",
         "gemini-3-flash-preview",
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-2.5-flash-lite",
+        "claude-opus-5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:48",
+        "tested_at": "2026-07-27 02:12:30",
         "endpoint": "https://api.krill-ai.com/v1/models",
         "status_code": 200
       }
@@ -7184,22 +7189,22 @@
       "type": "kimi",
       "model": "kimi-k3",
       "available_model_ids": [
-        "moonshot-v1-8k",
-        "moonshot-v1-auto",
-        "kimi-k2.6",
-        "moonshot-v1-32k",
-        "kimi-k3",
         "moonshot-v1-32k-vision-preview",
         "moonshot-v1-128k",
+        "moonshot-v1-128k-vision-preview",
+        "moonshot-v1-8k",
+        "kimi-k2.6",
+        "kimi-k2.7-code-highspeed",
+        "kimi-k2.7-code",
+        "moonshot-v1-auto",
         "kimi-k2.5",
         "moonshot-v1-8k-vision-preview",
-        "moonshot-v1-128k-vision-preview",
-        "kimi-k2.7-code",
-        "kimi-k2.7-code-highspeed"
+        "kimi-k3",
+        "moonshot-v1-32k"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-24 23:55:41",
+        "tested_at": "2026-07-27 02:12:25",
         "endpoint": "https://api.moonshot.cn/v1/models",
         "status_code": 200
       },
@@ -7216,9 +7221,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-24 23:55:42",
+        "tested_at": "2026-07-27 02:12:27",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217849085403914d276ae6b5ce6fd767138ff54dc0bd26e39829\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217850895451308147a36f92134ad55b04f079dd3dc4de8dd262\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       },
       "test_channel": "chat_completions",
@@ -7234,9 +7239,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-24 23:55:42",
+        "tested_at": "2026-07-27 02:12:27",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021784908540524fbcc013cde10a689f8f390ac862f8b048e98ca\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021785089545275abef7db0e51ae42a75ef9551e31b2ffac8473c\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       },
       "test_channel": "chat_completions",
@@ -7252,9 +7257,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-24 23:55:42",
+        "tested_at": "2026-07-27 02:12:27",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021784908540648d6bdab3051f46472bfd942e874cc5db06e401e\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217850895454168e51dc06ab515804a61f8066ae6218c171e4c3\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       },
       "test_channel": "chat_completions",
@@ -7270,9 +7275,75 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-24 23:55:48",
+        "tested_at": "2026-07-27 02:12:31",
         "endpoint": "https://openspeech.bytedance.com/api/v3/tts/create/models",
         "reason": "HTTP 404: Endpoint \"tts/create/models\" does not exist",
+        "status_code": 404
+      },
+      "test_channel": "responses",
+      "features": {},
+      "unsupported": {},
+      "accessible": false,
+      "status": "unavailable"
+    },
+    "Agnes": {
+      "provider_id": "Agnes",
+      "type": "agnes",
+      "model": "agnes-2.0-flash",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-27 02:12:31",
+        "reason": "provider type 'agnes' has no model discovery endpoint"
+      },
+      "test_channel": "native",
+      "features": {},
+      "unsupported": {},
+      "accessible": true,
+      "status": "ok"
+    },
+    "Agnes_image": {
+      "provider_id": "Agnes_image",
+      "type": "agnes",
+      "model": "agnes-image-2.0-flash",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-27 02:12:31",
+        "reason": "provider type 'agnes' has no model discovery endpoint"
+      },
+      "test_channel": "native",
+      "features": {},
+      "unsupported": {},
+      "accessible": true,
+      "status": "ok"
+    },
+    "Agnes_video": {
+      "provider_id": "Agnes_video",
+      "type": "agnes",
+      "model": "agnes-video-v2.0",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-27 02:12:31",
+        "reason": "provider type 'agnes' has no model discovery endpoint"
+      },
+      "test_channel": "native",
+      "features": {},
+      "unsupported": {},
+      "accessible": true,
+      "status": "ok"
+    },
+    "doubao-evol-AgentPlan": {
+      "provider_id": "doubao-evol-AgentPlan",
+      "type": "doubao",
+      "model": "doubao-seed-2.0-code",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-07-27 02:12:31",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/plan/v3/models",
+        "reason": "HTTP 404:",
         "status_code": 404
       },
       "test_channel": "responses",
@@ -7283,10 +7354,10 @@
     }
   },
   "model_refresh_status": "finished",
-  "model_refresh_completed_providers": 27,
-  "model_refresh_total_providers": 27,
+  "model_refresh_completed_providers": 31,
+  "model_refresh_total_providers": 31,
   "model_refresh_current_provider_id": "",
-  "model_refresh_started_at": "2026-07-24 23:55:34",
-  "model_refresh_duration_ms": 14672,
-  "model_refresh_finished_at": "2026-07-24 23:55:49"
+  "model_refresh_started_at": "2026-07-27 02:12:19",
+  "model_refresh_duration_ms": 12577,
+  "model_refresh_finished_at": "2026-07-27 02:12:31"
 }

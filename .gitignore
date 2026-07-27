@@ -62,3 +62,4 @@ logs/
 benchmarks/
 tmp/
 config/events.json
+.auth/

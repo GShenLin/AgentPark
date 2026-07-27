@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+import src.remote_workspace.client as remote_client
+from src.runtime_cancellation import CancellationSignal
 from src.remote_workspace.broker import PROTOCOL_VERSION, RemoteWorkspaceBroker
 from src.remote_workspace.routing import REMOTE_WORKSPACE_TOOL_NAMES, remote_workspace_target
 
@@ -118,6 +120,144 @@ def test_broker_round_trip_preserves_worker_result():
     assert received["working_path"] == r"D:\Projects\Game"
     assert received["arguments"] == {"file_path": "README.md"}
     assert result == '{"status":"success","content":"remote"}'
+
+
+def test_broker_cancels_active_remote_task_through_worker_control_channel():
+    broker = RemoteWorkspaceBroker()
+    credentials = _register(broker)
+    result_holder = []
+
+    def execute():
+        result_holder.append(
+            broker.execute(
+                {
+                    "task_id": "task-active",
+                    "worker_id": credentials["worker_id"],
+                    "tool_name": "rg_search_text",
+                    "working_path": r"D:\Projects\Game",
+                    "arguments": {"query": "needle"},
+                    "timeout_seconds": 2,
+                }
+            )
+        )
+
+    thread = threading.Thread(target=execute)
+    thread.start()
+    task = broker.poll(credentials["worker_id"], credentials["token"], 1)
+    assert task is not None
+
+    assert broker.cancel(credentials["worker_id"], task["task_id"]) == "cancel_requested"
+    assert broker.poll_cancellations(
+        credentials["worker_id"],
+        credentials["token"],
+        1,
+    ) == ["task-active"]
+    broker.submit_result(
+        credentials["worker_id"],
+        credentials["token"],
+        task["task_id"],
+        {
+            "ok": True,
+            "result": '{"status":"stopped","error":"Operation cancelled."}',
+        },
+    )
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert result_holder == ['{"status":"stopped","error":"Operation cancelled."}']
+
+
+def test_broker_cancels_pending_remote_task_without_dispatching_to_worker():
+    broker = RemoteWorkspaceBroker()
+    credentials = _register(broker)
+    result_holder = []
+
+    thread = threading.Thread(
+        target=lambda: result_holder.append(
+            broker.execute(
+                {
+                    "task_id": "task-pending",
+                    "worker_id": credentials["worker_id"],
+                    "tool_name": "rg_search_text",
+                    "working_path": r"D:\Projects\Game",
+                    "arguments": {"query": "needle"},
+                    "timeout_seconds": 2,
+                }
+            )
+        )
+    )
+    thread.start()
+    deadline = time.monotonic() + 1
+    while not broker._workers[credentials["worker_id"]].pending and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert broker.cancel(credentials["worker_id"], "task-pending") == "cancelled_pending"
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert '"status": "stopped"' in result_holder[0]
+    assert broker.poll(credentials["worker_id"], credentials["token"], 0) is None
+
+
+def test_remote_dispatch_sends_exact_task_cancellation(monkeypatch):
+    cancel_signal = CancellationSignal()
+    execute_started = threading.Event()
+    cancel_received = threading.Event()
+    requests = []
+
+    def fake_post(path, payload, timeout):
+        requests.append((path, dict(payload), timeout))
+        if path == "/api/remote-workers/internal/execute":
+            execute_started.set()
+            assert cancel_received.wait(timeout=1)
+            return {
+                "ok": True,
+                "result": '{"status":"stopped","error":"Remote tool execution cancelled."}',
+            }
+        if path.endswith("/cancel"):
+            cancel_received.set()
+            return {"ok": True, "state": "cancel_requested"}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(remote_client, "_post_internal_request", fake_post)
+    agent = SimpleNamespace(
+        config={
+            "remote_enabled": True,
+            "remote_worker_id": "worker-1",
+            "working_path": r"D:\Projects\Game",
+        }
+    )
+    result_holder = []
+    thread = threading.Thread(
+        target=lambda: result_holder.append(
+            remote_client.dispatch_remote_workspace_tool(
+                agent,
+                "rg_search_text",
+                {"query": "needle"},
+                timeout_seconds=30,
+                cancel_source=cancel_signal,
+            )
+        )
+    )
+    thread.start()
+    assert execute_started.wait(timeout=1)
+
+    cancel_signal.set()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert result_holder == [
+        (
+            True,
+            '{"status":"stopped","error":"Remote tool execution cancelled."}',
+        )
+    ]
+    execute_request = next(item for item in requests if item[0].endswith("/execute"))
+    cancel_request = next(item for item in requests if item[0].endswith("/cancel"))
+    assert cancel_request[0].endswith(
+        f"/tasks/{execute_request[1]['task_id']}/cancel"
+    )
+    assert cancel_request[1] == {"worker_id": "worker-1"}
 
 
 def test_wait_for_worker_online_returns_the_bound_worker_without_repairing():

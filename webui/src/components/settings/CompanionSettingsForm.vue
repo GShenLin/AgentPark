@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { getPrompt, listPrompts, savePrompt, type ProviderInfo } from '../../api'
+import { providerReasoningEffortOptions } from '../../composables/useAgentNodeCreateSchema'
 import CompanionCapabilitySelect, { type CompanionCapabilityOption } from './CompanionCapabilitySelect.vue'
 
 const props = defineProps<{
@@ -16,7 +17,6 @@ const emit = defineEmits<{
 
 const modeOptions = ['chat', 'imagechat', 'vision_understand']
 const switchOptions = ['disabled', 'enabled']
-const reasoningEffortOptions = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto']
 const promptActionBusy = ref('')
 const promptActionMessage = ref('')
 const promptLibraryMode = ref<'' | 'save' | 'load'>('')
@@ -30,6 +30,14 @@ const providerOptions = computed(() =>
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b)),
 )
+const selectedProvider = computed(() => {
+  const providerId = String(props.data.provider_id || '').trim()
+  return props.providers.find((provider) => String(provider.id || '').trim() === providerId) || null
+})
+const reasoningEffortOptions = computed(() => [
+  { value: '', label: 'Unset' },
+  ...providerReasoningEffortOptions(selectedProvider.value),
+])
 const fallbackToolOptions = computed(() => props.availableTools.map((value) => ({ value, label: value })))
 
 function cloneData() {
@@ -194,7 +202,7 @@ async function loadSystemPrompt() {
         <label>
           <span>Reasoning Effort</span>
           <select :value="stringValue('reasoning_effort')" @change="setField('reasoning_effort', ($event.target as HTMLSelectElement).value)">
-            <option v-for="option in reasoningEffortOptions" :key="option || 'unset'" :value="option">{{ option || 'Unset' }}</option>
+            <option v-for="option in reasoningEffortOptions" :key="option.value || 'unset'" :value="option.value">{{ option.label }}</option>
           </select>
         </label>
         <label>

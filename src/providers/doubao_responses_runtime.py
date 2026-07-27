@@ -16,7 +16,7 @@ class DoubaoResponsesRuntime(ResponsesRuntime):
         if thinking_mode in {"enabled", "disabled", "auto"}:
             payload["thinking"] = {"type": thinking_mode}
         reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
-        if reasoning_effort:
+        if reasoning_effort and thinking_mode != "disabled":
             effort = require_doubao_reasoning_effort(reasoning_effort)
             payload["reasoning"] = {"effort": effort}
         return payload

@@ -53,6 +53,7 @@ def test_claude_node_uses_native_session_state_and_live_bridge(tmp_path, monkeyp
                 "type_id": "claude_node",
                 "provider_id": "provider-a",
                 "working_path": str(tmp_path),
+                "permission_mode": "bypassPermissions",
             }
         ),
         encoding="utf-8",
@@ -100,6 +101,7 @@ def test_claude_node_uses_native_session_state_and_live_bridge(tmp_path, monkeyp
     state_path = os.path.join(str(node_dir), SESSION_STATE_FILENAME)
     assert captured["spec"].state_path == state_path
     assert captured["spec"].session_key == session_runtime_key("default", "Claude", state_path)
+    assert captured["spec"].permission_mode == "bypassPermissions"
     assert captured["text"] == "Start this session"
     assert result["display"] == "done"
     assert [event["type"] for event in stream_events] == [
@@ -110,3 +112,7 @@ def test_claude_node_uses_native_session_state_and_live_bridge(tmp_path, monkeyp
     assert result["memory_sidecars"][0]["parts"][0]["data"]["response_metadata"][
         "provider_gateway_requests"
     ][0]["provider_protocol"] == "openai_chat"
+
+    context["access_role"] = "nondeveloper"
+    Node().on_input("Restricted session", context)
+    assert captured["spec"].permission_mode == "plan"

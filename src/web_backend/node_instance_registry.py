@@ -383,7 +383,14 @@ class NodeInstanceRegistry(HostBoundService):
             "source": "work_folder",
         }
 
-    def update_node_instance_config(self, node_id: str, payload: dict, graph_id: str = ""):
+    def update_node_instance_config(
+        self,
+        node_id: str,
+        payload: dict,
+        graph_id: str = "",
+        request: Request = None,
+    ):
+        self.core.access_api.require_developer(request)
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)

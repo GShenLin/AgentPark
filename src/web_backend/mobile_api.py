@@ -282,6 +282,7 @@ class MobileApiDomain(DomainBase):
                 "visited": [],
                 "from": safe_node_id,
                 "source": "emit",
+                **self.core.access_api.message_access_metadata(request),
             },
             graph_id=safe_graph_id,
         )

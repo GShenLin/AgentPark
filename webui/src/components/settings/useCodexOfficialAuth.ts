@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref } from 'vue'
-import { getCodexAuthStatus, startCodexLogin, type CodexAuthStatus } from '../../settingsApi'
+import { getProviderAuthStatus, startProviderLogin, submitProviderLoginCode, type CodexAuthStatus } from '../../settingsApi'
 
 
 export function useCodexOfficialAuth() {
@@ -7,6 +7,7 @@ export function useCodexOfficialAuth() {
   const busy = ref(false)
   const error = ref('')
   let statusTimer = 0
+  let activeProvider = 'openai'
 
   function stopStatusPolling() {
     if (statusTimer) window.clearInterval(statusTimer)
@@ -23,30 +24,40 @@ export function useCodexOfficialAuth() {
     }, 2000)
   }
 
-  async function loadStatus() {
+  async function loadStatus(provider = activeProvider) {
+    activeProvider = provider
     try {
-      status.value = await getCodexAuthStatus()
-      error.value = ''
+      const next = await getProviderAuthStatus(provider)
+      if (provider === activeProvider) {
+        status.value = next
+        error.value = ''
+      }
     } catch (loadError) {
-      error.value = String((loadError as Error)?.message || loadError)
+      if (provider === activeProvider) {
+        error.value = String((loadError as Error)?.message || loadError)
+      }
     }
   }
 
-  async function beginLogin() {
+  async function beginLogin(provider = activeProvider) {
+    activeProvider = provider
     const loginWindow = window.open('about:blank', '_blank')
     busy.value = true
     error.value = ''
     try {
-      await loadStatus()
-      if (status.value?.authorized) {
-        loginWindow?.close()
-        return
-      }
-      const login = await startCodexLogin()
+      await loadStatus(provider)
+      const login = await startProviderLogin(provider)
       if (loginWindow) {
         loginWindow.opener = null
         loginWindow.location.href = login.authUrl
         startStatusPolling()
+        if (login.manualCode) {
+          const code = window.prompt('完成 Claude 登录后，如页面显示授权码，请粘贴授权码或最终跳转 URL：')
+          if (code?.trim()) {
+            status.value = await submitProviderLoginCode(provider, code.trim())
+            stopStatusPolling()
+          }
+        }
       } else {
         error.value = '浏览器阻止了登录窗口，请允许弹出窗口后重试。'
       }
@@ -60,5 +71,9 @@ export function useCodexOfficialAuth() {
 
   onBeforeUnmount(stopStatusPolling)
 
-  return { status, busy, error, loadStatus, beginLogin }
+  function setStatus(value: CodexAuthStatus) {
+    status.value = value
+  }
+
+  return { status, busy, error, loadStatus, beginLogin, setStatus }
 }

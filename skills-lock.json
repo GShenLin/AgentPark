@@ -1,0 +1,334 @@
+{
+  "version": 1,
+  "skills": {
+    "ab-testing": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/ab-testing/SKILL.md",
+      "computedHash": "4ea04d576507f4a683e6203737c33993fb36add719f628b7200649a9cb87b5fe"
+    },
+    "ad-creative": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/ad-creative/SKILL.md",
+      "computedHash": "df7b2b5d85fda0b83d02880b930b6f51292194b708f6e2b67a800a445ca88c13"
+    },
+    "ads": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/ads/SKILL.md",
+      "computedHash": "c48e96ad74d2442d839cf85427b730e14771fd4dc0b547c2451a3ab5a762a4b1"
+    },
+    "ai-seo": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/ai-seo/SKILL.md",
+      "computedHash": "9e9ea19c98f59261b7ee45c81edbce64b4011b597e1b67b37b6679e13e864448"
+    },
+    "analytics": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/analytics/SKILL.md",
+      "computedHash": "0746ff2fcdd0e74db43934487c0003265d7fe46dd232b3e17dbc3bcaf7aab850"
+    },
+    "aso": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/aso/SKILL.md",
+      "computedHash": "4d62e3140773159b279b00810c8f46048333d91dfb6114cc0d3667ed1a7ed5f9"
+    },
+    "churn-prevention": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/churn-prevention/SKILL.md",
+      "computedHash": "3a087f28bb3ae7864a5b832a6966c31246ddc00ec910e4332f7cf02c628c236d"
+    },
+    "co-marketing": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/co-marketing/SKILL.md",
+      "computedHash": "4551fc47821100ee18eb39165ab0b3b9c41ff756eff7f5c67ce82368b26fa9e6"
+    },
+    "cold-email": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/cold-email/SKILL.md",
+      "computedHash": "a92d0fc0d4740d751716d0fa123851deecc12d56d6f30515ffc051f312362503"
+    },
+    "community-marketing": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/community-marketing/SKILL.md",
+      "computedHash": "497b172d05ce2b8de9297bbee02b71bb78e219c2a698f999f3ea23cffc284a14"
+    },
+    "competitor-profiling": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/competitor-profiling/SKILL.md",
+      "computedHash": "0e30672d0729bf38b6977ef95210b9912a20ba66ee8a9faade4be7483fbb5472"
+    },
+    "competitors": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/competitors/SKILL.md",
+      "computedHash": "28d933d676811df76d1c59ccbb99d8768b107ac9f17a721a67dd5a239847984e"
+    },
+    "content-strategy": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/content-strategy/SKILL.md",
+      "computedHash": "1b337a892b4aaa0665a6af0d6ffcdc77fd728c3c34e25b6e3ff474105d4c0b69"
+    },
+    "copy-editing": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/copy-editing/SKILL.md",
+      "computedHash": "b70d360d6d7e49adf84d595c62103583787008e16acb7b4b4b9c449dbbb768d9"
+    },
+    "copywriting": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/copywriting/SKILL.md",
+      "computedHash": "cb9761b92e140cd68c1de6397c51dd9952da198382abfdbf26589ef26f6572b4"
+    },
+    "cro": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/cro/SKILL.md",
+      "computedHash": "de0b62824a4e18aad09536611e6ce94ffc5a655b354776fd69ba9b8876a26e6b"
+    },
+    "customer-research": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/customer-research/SKILL.md",
+      "computedHash": "fe1206af3520f39f23cd44c727e3981f92d5e965b4370f9543ca502c5e52523b"
+    },
+    "directory-submissions": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/directory-submissions/SKILL.md",
+      "computedHash": "c35a0f39c1fb25a56241cb9f59d0eae9bad33d1c3e55c76ec51ebea9e79a788a"
+    },
+    "emails": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/emails/SKILL.md",
+      "computedHash": "24be312d773945dda1d21b52fa172a523e9cb005cb3b700fe81f787980d5381c"
+    },
+    "free-tools": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/free-tools/SKILL.md",
+      "computedHash": "0266eedaea37e19e4c9e2f1cc7ef6cdc8c7ee0726c6f2b5837a061c6ac7f9376"
+    },
+    "image": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/image/SKILL.md",
+      "computedHash": "179c3e3a8b786b90361ee135279cc8d42e4082e3f545cd7b484a00db27be1dca"
+    },
+    "launch": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/launch/SKILL.md",
+      "computedHash": "7473cc83093b5657ff22a61dec591a72e16c9f6ba2d6b2b44f40fdd7f1282ba0"
+    },
+    "lead-magnets": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/lead-magnets/SKILL.md",
+      "computedHash": "6a36a8582d2a179826712d9c05d1210ffc46ca42a3c8eaa8fd5862a526430bab"
+    },
+    "marketing-council": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/marketing-council/SKILL.md",
+      "computedHash": "b98fba2987dedb894f2b7e04ba3d668d630ae7534ddcb5f78f198a9c79d64f81"
+    },
+    "marketing-ideas": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/marketing-ideas/SKILL.md",
+      "computedHash": "2548b6a76f7ac7a4968ed16d9ac7bb139a5c9f97f6710265c856d5fb84b893f1"
+    },
+    "marketing-loops": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/marketing-loops/SKILL.md",
+      "computedHash": "8347671a89b2741c4521be12a289973338ccb8d9e6c3f0b1d97c08f1f9a89b6d"
+    },
+    "marketing-plan": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/marketing-plan/SKILL.md",
+      "computedHash": "c1541262368129976b3bd8f3706587d717f6f9db5e532af54c5d5c119f85d8c7"
+    },
+    "marketing-psychology": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/marketing-psychology/SKILL.md",
+      "computedHash": "d057044710ce7b7f9b90b84b3ab64e9359aaf47982b922ec10daca3822185ede"
+    },
+    "offers": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/offers/SKILL.md",
+      "computedHash": "c2f81befcac9951da1bb715f7139123902a2108c4bd4e8584bd68d78fce8a111"
+    },
+    "onboarding": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/onboarding/SKILL.md",
+      "computedHash": "38ae7da6cadf48792ac882198934ef4be52a47fb1efcf756a3d39f96fd382f09"
+    },
+    "paywalls": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/paywalls/SKILL.md",
+      "computedHash": "2f85b43846a4e88633e504fcae9165d0c104fd7ca7ae9c4748a13e4dc35bf12b"
+    },
+    "popups": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/popups/SKILL.md",
+      "computedHash": "f6a8d630cee8d07bcb8dced3e4717b9533fd79a8f31bfeb3f244058520900512"
+    },
+    "pricing": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/pricing/SKILL.md",
+      "computedHash": "6242ce16c6a31520a4bff27eb531d06091f02951bd743a5616c0468e330f1b4e"
+    },
+    "product-marketing": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/product-marketing/SKILL.md",
+      "computedHash": "709145cb3cd36bab03d5dfe4ecd41af3120ed5a9d293c7ba9d7d9648c39f34b9"
+    },
+    "programmatic-seo": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/programmatic-seo/SKILL.md",
+      "computedHash": "a53dc8741b0df338766ef8fc7d704bdfc75b8c8e7e1b1b2a5947d81d8c9508ff"
+    },
+    "prospecting": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/prospecting/SKILL.md",
+      "computedHash": "0228ac277e4944c3c52a9936f661f2af2e481fe51fce9e0f20f38d9378c440e7"
+    },
+    "public-relations": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/public-relations/SKILL.md",
+      "computedHash": "a1c913e448992b2d9691da683d27b9cd5768ae13ffa6265553bcbe4ae642465c"
+    },
+    "referrals": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/referrals/SKILL.md",
+      "computedHash": "f79ec55ebeac33f9ab0b52c27fd82ecbc5537bd02f6410ca014085e3974fe8aa"
+    },
+    "revops": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/revops/SKILL.md",
+      "computedHash": "c05345d2db25fff632dbce95a07324d973ed381b10f88b443f75db1d79cc7481"
+    },
+    "sales-enablement": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/sales-enablement/SKILL.md",
+      "computedHash": "d3f3cf16e3b766d6f15cc302de362b808060f9a9068c839140add85248c33115"
+    },
+    "schema": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/schema/SKILL.md",
+      "computedHash": "13693bae311fd444da31a82b3aa46003e12a21220aae98c77ee479fe34116067"
+    },
+    "seo-audit": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/seo-audit/SKILL.md",
+      "computedHash": "606da61224d9d5687020816292c88152a7fcb27ce375b22f92f429e074f07f34"
+    },
+    "signup": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/signup/SKILL.md",
+      "computedHash": "c373af5ec8a394eaed5f6a3727a8a9e55c8be47146481955fe91de97b7a5fb1d"
+    },
+    "site-architecture": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/site-architecture/SKILL.md",
+      "computedHash": "cf98bb28d2a26e2e5f086f2418352975608e52907b05bc7d54a2d67b3d93b7aa"
+    },
+    "sms": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/sms/SKILL.md",
+      "computedHash": "09d1295131e754db7fd1aba5dc761553aa0093d45681eae8369f54575da82b2f"
+    },
+    "social": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/social/SKILL.md",
+      "computedHash": "97ec8a7e9f1865b2c6a052df7b46864e3c9e0cda82207a7223adb5248c6c9703"
+    },
+    "video": {
+      "source": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceUrl": ".\\memories\\default\\GPT1111\\tool_artifacts\\marketingskills-research",
+      "sourceType": "git",
+      "skillPath": "skills/video/SKILL.md",
+      "computedHash": "d0868ef8e927fec183f13aea40e50ccc16d61fd9ecce6da4488715b43b821245"
+    }
+  }
+}

@@ -3,6 +3,7 @@ import threading
 import uuid
 
 from .agent_domain import AgentDomain
+from .access_api import AccessApiDomain
 from .core_graph_api import GraphApiDomain
 from .core_graph_runtime import GraphRuntimeDomain
 from .core_node_ops import NodeOpsDomain
@@ -17,6 +18,7 @@ from .tool_call_cancellation import ToolCallCancellationRegistry
 from .node_config_service import RUNTIME_STATE_FIELDS
 from .pet_avatar import PetAvatarDomain
 from .profile_api import ProfileApi
+from .public_gateway_api import PublicGatewayApiDomain
 from .provider_auth_api import ProviderAuthApiDomain
 from .remote_api import RemoteApiDomain
 from .remote_workspace_api import RemoteWorkspaceApiDomain
@@ -63,12 +65,14 @@ class BackendCore:
         }
 
         self.graph_runtime = GraphRuntimeDomain(self)
+        self.access_api = AccessApiDomain()
         self.channel_service = ChannelService(self)
         self.agent_domain = AgentDomain(self, self.graph_runtime)
         self.node_ops = NodeOpsDomain(self, self.graph_runtime)
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
         self.provider_auth_api = ProviderAuthApiDomain(self)
+        self.public_gateway_api = PublicGatewayApiDomain()
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
         self.node_desktop_views = NodeDesktopViewDomain(self, self.graph_runtime)
         self.pet_avatars = PetAvatarDomain(self)

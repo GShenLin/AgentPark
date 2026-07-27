@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from src.runtime_cancellation import raise_if_cancel_requested
 from src.remote_worker.client import JsonHttpTransport, RemoteWorkerClient
 from src.remote_worker.discovery import DiscoveryServer
 from src.remote_worker.identity import IdentityStore, WorkerConfiguration
@@ -120,6 +121,37 @@ def test_standalone_operations_reuse_workspace_tool_contracts(tmp_path):
     assert "select_folder" in operations.capabilities
 
 
+def test_standalone_operation_receives_remote_task_cancellation(tmp_path):
+    operations = StandaloneOperationRegistry()
+
+    def waiting_operation(agent=None):
+        while True:
+            raise_if_cancel_requested(agent.cancel_event)
+            agent.cancel_event.wait(0.01)
+
+    operations._operations["rg_search_text"] = waiting_operation
+    task = RemoteTask(
+        task_id="task-cancel",
+        tool_name="rg_search_text",
+        arguments={},
+        working_path=str(tmp_path),
+        timeout_seconds=10,
+    )
+    cancel_event = threading.Event()
+    result_holder = []
+    thread = threading.Thread(
+        target=lambda: result_holder.append(
+            json.loads(operations.execute(task, cancel_event=cancel_event))
+        )
+    )
+    thread.start()
+    cancel_event.set()
+    thread.join(timeout=1)
+
+    assert not thread.is_alive()
+    assert result_holder[0]["status"] == "stopped"
+
+
 class _ScriptedTransport(JsonHttpTransport):
     def __init__(self) -> None:
         self.requests = []
@@ -132,8 +164,10 @@ class _ScriptedTransport(JsonHttpTransport):
                 "ok": True,
                 "worker_id": "worker-1",
                 "token": "secret-token",
-                "protocol_version": 1,
+                "protocol_version": 2,
             }
+        if url.endswith("/cancellations/poll"):
+            return {"ok": True, "task_ids": []}
         if url.endswith("/poll"):
             return {
                 "ok": True,

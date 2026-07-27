@@ -70,6 +70,17 @@ def build_agent_config_schema(base_schema: dict, context: dict | None) -> dict:
         if isinstance(feature, dict):
             field_schema["provider_feature"] = dict(feature)
             field_schema["description"] = provider_feature_description(field, feature)
+            if field == "reasoning_effort" and feature.get("supported") is True:
+                values = feature.get("values")
+                if isinstance(values, list) and values:
+                    field_schema["options"] = [
+                        {
+                            "value": str(value),
+                            "label": "None" if str(value) == "none" else str(value),
+                        }
+                        for value in values
+                        if str(value or "").strip()
+                    ]
         schema[field] = field_schema
 
     terminal_keys = ("tools", "mcp_servers", "skills", "plugins")

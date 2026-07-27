@@ -1,13 +1,97 @@
 from __future__ import annotations
 
+import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Callable
 
 
 class CancellationRequested(RuntimeError):
     """Raised when node execution is actively cancelled by the runtime."""
+
+
+class CancellationSignal:
+    """Thread-safe cancellation source with explicit cancellation callbacks."""
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+        self._lock = threading.Lock()
+        self._callbacks: dict[int, Callable[[], None]] = {}
+        self._next_callback_id = 0
+
+    def is_set(self) -> bool:
+        return self._event.is_set()
+
+    def set(self) -> None:
+        with self._lock:
+            if self._event.is_set():
+                return
+            self._event.set()
+            callbacks = list(self._callbacks.values())
+            self._callbacks.clear()
+        errors: list[Exception] = []
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[0]
+
+    def register(self, callback: Callable[[], None]) -> Callable[[], None]:
+        if not callable(callback):
+            raise TypeError("cancellation callback must be callable")
+        with self._lock:
+            if self._event.is_set():
+                invoke_now = True
+                callback_id = None
+            else:
+                invoke_now = False
+                callback_id = self._next_callback_id
+                self._next_callback_id += 1
+                self._callbacks[callback_id] = callback
+        if invoke_now:
+            callback()
+
+        def unregister() -> None:
+            if callback_id is None:
+                return
+            with self._lock:
+                self._callbacks.pop(callback_id, None)
+
+        return unregister
+
+
+class CombinedCancellationSource:
+    def __init__(self, sources: tuple[Any, ...]) -> None:
+        self.sources = sources
+
+    def is_set(self) -> bool:
+        return any(is_cancel_requested(source) for source in self.sources)
+
+    def register(self, callback: Callable[[], None]) -> Callable[[], None]:
+        callback_lock = threading.Lock()
+        callback_invoked = False
+
+        def invoke_once() -> None:
+            nonlocal callback_invoked
+            with callback_lock:
+                if callback_invoked:
+                    return
+                callback_invoked = True
+            callback()
+
+        unregister_callbacks = [
+            register_cancel_callback(source, invoke_once)
+            for source in self.sources
+        ]
+
+        def unregister() -> None:
+            for unregister_callback in unregister_callbacks:
+                unregister_callback()
+
+        return unregister
 
 
 _TOOL_CALL_CANCEL_SOURCE: ContextVar[Any] = ContextVar(
@@ -64,7 +148,20 @@ def combine_cancel_sources(*sources: Any) -> Any:
         return None
     if len(active) == 1:
         return active[0]
-    return lambda: any(is_cancel_requested(source) for source in active)
+    return CombinedCancellationSource(active)
+
+
+def register_cancel_callback(
+    cancel_source: Any,
+    callback: Callable[[], None],
+) -> Callable[[], None]:
+    if cancel_source is None:
+        return lambda: None
+    register = getattr(cancel_source, "register", None)
+    if not callable(register):
+        return lambda: None
+    unregister = register(callback)
+    return unregister if callable(unregister) else lambda: None
 
 
 @contextmanager

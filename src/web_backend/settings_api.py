@@ -36,6 +36,7 @@ from .default_settings_storage import (
 )
 from .settings_maintenance import MemoryMaintenanceError, run_memory_maintenance
 from .tool_stats_document import build_scoped_tool_failure_history, build_scoped_tool_stats_document
+from .turn_audit_query import get_turn_audit, list_turn_audits
 
 
 SETTINGS_SECTIONS = {
@@ -422,6 +423,39 @@ class SettingsApiDomain(DomainBase):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to read tool failure history: {exc}") from exc
+
+    def list_turn_audits(
+        self,
+        start_date: str,
+        end_date: str,
+        graph_id: str = "",
+        node_id: str = "",
+    ):
+        try:
+            return list_turn_audits(
+                start_date_text=start_date,
+                end_date_text=end_date,
+                graph_id=graph_id,
+                node_id=node_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to read turn audits: {exc}") from exc
+
+    def get_turn_audit(self, trace_id: str, graph_id: str, node_id: str):
+        try:
+            return get_turn_audit(
+                trace_id=trace_id,
+                graph_id=graph_id,
+                node_id=node_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to read turn audit: {exc}") from exc
 
     def clear_tool_stats(self, graph_id: str = "", scope_hours: int = 0):
         try:

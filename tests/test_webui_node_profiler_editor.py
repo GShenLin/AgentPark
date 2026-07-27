@@ -150,11 +150,30 @@ def test_doubao_audio_provider_uses_dedicated_x_api_key_and_primary_url():
     assert ':show-doubao-speech-auth="isDoubaoAudioProvider"' in settings
     assert "X-Api-Key" in auth_fields
     assert "for Doubao speech APIs" in auth_fields
-    assert ".env/apiKey.json" in auth_fields
+    assert ".auth/api-keys/aliases.json" in auth_fields
     assert "Speech Access Key ID" in auth_fields
     assert "Speech Secret Access Key" in auth_fields
     assert "speechBaseUrl" not in runtime
     assert "speechApiKey" not in runtime
+
+
+def test_provider_settings_supports_frontend_multi_account_selection():
+    settings = _read("webui/src/components/settings/ModelProviderSettingsForm.vue")
+    auth_fields = _read("webui/src/components/settings/ProviderAuthFields.vue")
+    account_control = _read("webui/src/components/settings/ProviderOfficialAuthControl.vue")
+    api = _read("webui/src/settingsApi.ts")
+
+    assert ':auth-account-id="stringValue(\'authAccountId\')"' in settings
+    assert "@account=\"setField('authAccountId', $event)\"" in settings
+    assert ":provider-auth-id=\"providerAuthId\"" in settings
+    assert "watch(" in settings and "loadCodexAuthStatus(providerId)" in settings
+    assert "account: [accountId: string]" in auth_fields
+    assert "addProviderApiKeyAccount" in account_control
+    assert "activateProviderAccount" in account_control
+    assert "deleteProviderAccount" in account_control
+    assert "添加 API Key 账号" in account_control
+    assert "当前 Provider" in account_control
+    assert "export async function addProviderApiKeyAccount" in api
 
 
 def test_agent_combobox_uses_explicit_reopenable_dropdown():

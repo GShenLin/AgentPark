@@ -297,6 +297,35 @@ def test_claude_agent_converts_openai_tools_to_claude_tool_declarations():
     ]
 
 
+def test_claude_oauth_uses_bearer_beta_system_and_tool_prefix():
+    from src.provider_auth.anthropic_oauth import CLAUDE_CODE_SYSTEM_INSTRUCTION
+
+    agent = _build_agent()
+    agent.config["authMode"] = "oauth"
+    captured = {}
+
+    def fake_send(payload, **_kwargs):
+        captured.update(payload)
+        return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+    agent.send_messages = fake_send
+    assert agent.Send(tools=[{
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read.",
+            "parameters": {"type": "object"},
+        },
+    }]) == "ok"
+
+    assert captured["system"].startswith(CLAUDE_CODE_SYSTEM_INSTRUCTION)
+    assert captured["tools"][0]["name"] == "custom_read_file"
+    headers = agent._claude_headers()
+    assert headers["Authorization"] == "Bearer test-key"
+    assert "x-api-key" not in headers
+    assert "oauth-2025-04-20" in headers["anthropic-beta"]
+
+
 def test_claude_agent_rejects_malformed_tools_before_provider_request():
     agent = _build_agent()
     called = False

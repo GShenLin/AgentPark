@@ -335,6 +335,62 @@ export type ToolStatsDocument = {
   scope: ToolStatsScope
 }
 
+export type TurnAuditSummary = {
+  trace_id: string
+  graph_id: string
+  node_id: string
+  provider_id: string
+  started_at: string
+  completed_at: string
+  status: string
+  duration_ms: number | null
+  error: string
+  question: string
+  answer_preview: string
+  tool_call_count: number
+  server_tool_call_count: number
+  file_change_count: number
+  audit_completeness: 'complete' | 'partial' | 'running'
+}
+
+export type TurnAuditTimelineEntry = {
+  id: string
+  at: string
+  kind: 'run_start' | 'run_end' | 'user' | 'assistant' | 'model_round' | 'tool_call'
+  title: string
+  status: string
+  summary: string
+  details: Record<string, unknown>
+}
+
+export type TurnAuditFileChange = {
+  path: string
+  operation: string
+  call_id: string
+  artifact_path: string
+}
+
+export type TurnAuditListDocument = {
+  ok: boolean
+  start_date: string
+  end_date: string
+  memories_root: string
+  available_graph_ids: string[]
+  available_node_ids: string[]
+  turns: TurnAuditSummary[]
+}
+
+export type TurnAuditDetailDocument = {
+  ok: boolean
+  turn: TurnAuditSummary
+  messages: Array<Record<string, unknown>>
+  model_rounds: Array<Record<string, unknown>>
+  tool_calls: Array<Record<string, unknown>>
+  server_tool_calls: Array<Record<string, unknown>>
+  file_changes: TurnAuditFileChange[]
+  timeline: TurnAuditTimelineEntry[]
+}
+
 export type DeleteOptionalMemoryResponse = {
   ok: boolean
   returncode: number
@@ -343,6 +399,7 @@ export type DeleteOptionalMemoryResponse = {
 }
 
 export type CodexAuthStatus = {
+  provider?: string
   authorized: boolean
   email: string
   planType: string
@@ -351,18 +408,169 @@ export type CodexAuthStatus = {
   needsRefresh: boolean
   authPath: string
   error: string
+  activeAccountId?: string
+  authModes?: string[]
+  accounts?: Array<{
+    id: string
+    alias: string
+    identity: string
+    kind: 'oauth' | 'api_key'
+    active: boolean
+    needsReauth: boolean
+  }>
 }
 
 export type CodexLoginStart = {
   started: boolean
   authUrl: string
   port: number
+  deviceCode?: string
+  manualCode?: boolean
 }
 
 export type ClearLogsResponse = DeleteOptionalMemoryResponse
 
+export type GatewayProtocol = 'responses' | 'chat_completions' | 'messages'
+
+export type GatewayAccount = {
+  id: string
+  alias: string
+  identity: string
+  kind: 'oauth' | 'api_key'
+  active: boolean
+  needsReauth: boolean
+}
+
+export type GatewayProvider = {
+  id: string
+  model: string
+  protocol: 'responses' | 'openai_chat' | 'anthropic' | 'gemini'
+  authProvider: string
+  accounts: GatewayAccount[]
+}
+
+export type GatewayModel = {
+  id: string
+  providerId: string
+  accountId: string
+  protocols: GatewayProtocol[]
+  enabled: boolean
+}
+
+export type GatewayKey = {
+  id: string
+  name: string
+  prefix: string
+  createdAt: number
+}
+
+export type GatewaySettings = {
+  enabled: boolean
+  requireApiKey: boolean
+  models: GatewayModel[]
+  keys: GatewayKey[]
+  providers: GatewayProvider[]
+}
+
+export type GatewayCreateKeyResponse = {
+  created: GatewayKey & { key: string }
+  keys: GatewayKey[]
+}
+
+export type GatewayTestResponse = {
+  ok: boolean
+  status: number
+  protocol: GatewayProtocol
+  model: string
+  response: Record<string, unknown>
+}
+
 async function requestJson(path: string, init?: RequestInit) {
   return requestApiJson(getActiveApiBase(), path, init)
+}
+
+export type AccessPolicyUser = {
+  clientId: string
+  username: string
+  developer: boolean
+  ips: string[]
+  firstSeenAt: string
+  lastSeenAt: string
+}
+
+export type AccessPolicyData = {
+  users: AccessPolicyUser[]
+  nonDeveloperFilteredTools: string[]
+}
+
+export type AccessSettingsDocument = {
+  path: string
+  data: AccessPolicyData
+}
+
+export async function getAccessSettings(): Promise<AccessSettingsDocument> {
+  return requestJson('/api/access/settings') as Promise<AccessSettingsDocument>
+}
+
+export async function updateAccessSettings(data: AccessPolicyData): Promise<AccessSettingsDocument> {
+  return requestJson('/api/access/settings', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }) as Promise<AccessSettingsDocument>
+}
+
+export async function getGatewaySettings(): Promise<GatewaySettings> {
+  return requestJson('/api/gateway') as Promise<GatewaySettings>
+}
+
+export async function updateGatewayOptions(payload: {
+  enabled: boolean
+  requireApiKey: boolean
+}): Promise<GatewaySettings> {
+  return requestJson('/api/gateway/options', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }) as Promise<GatewaySettings>
+}
+
+export async function upsertGatewayModel(payload: GatewayModel): Promise<GatewaySettings> {
+  return requestJson('/api/gateway/models', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<GatewaySettings>
+}
+
+export async function deleteGatewayModel(modelId: string): Promise<GatewaySettings> {
+  return requestJson(`/api/gateway/models/${encodeURIComponent(modelId)}`, {
+    method: 'DELETE',
+  }) as Promise<GatewaySettings>
+}
+
+export async function createGatewayKey(payload: {
+  name: string
+  key?: string
+}): Promise<GatewayCreateKeyResponse> {
+  return requestJson('/api/gateway/keys', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<GatewayCreateKeyResponse>
+}
+
+export async function deleteGatewayKey(keyId: string): Promise<{ deleted: boolean; keys: GatewayKey[] }> {
+  return requestJson(`/api/gateway/keys/${encodeURIComponent(keyId)}`, {
+    method: 'DELETE',
+  }) as Promise<{ deleted: boolean; keys: GatewayKey[] }>
+}
+
+export async function testGateway(payload: {
+  model: string
+  protocol: GatewayProtocol
+  prompt?: string
+}): Promise<GatewayTestResponse> {
+  return requestJson('/api/gateway/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<GatewayTestResponse>
 }
 
 export async function listSettingsSections(): Promise<SettingsSectionInfo[]> {
@@ -379,6 +587,32 @@ export async function updateSettingsSection(section: string, content: string): P
     method: 'POST',
     body: JSON.stringify({ content }),
   }) as Promise<SettingsDocument>
+}
+
+export async function listTurnAudits(
+  startDate: string,
+  endDate: string,
+  graphId = '',
+  nodeId = '',
+): Promise<TurnAuditListDocument> {
+  const query = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+  })
+  if (graphId) query.set('graph_id', graphId)
+  if (nodeId) query.set('node_id', nodeId)
+  return requestJson(`/api/turn-audits?${query.toString()}`) as Promise<TurnAuditListDocument>
+}
+
+export async function getTurnAudit(
+  traceId: string,
+  graphId: string,
+  nodeId: string,
+): Promise<TurnAuditDetailDocument> {
+  const query = new URLSearchParams({ graph_id: graphId, node_id: nodeId })
+  return requestJson(
+    `/api/turn-audits/${encodeURIComponent(traceId)}?${query.toString()}`,
+  ) as Promise<TurnAuditDetailDocument>
 }
 
 export async function listThemePresets(): Promise<ThemePresetCatalog> {
@@ -447,6 +681,39 @@ export async function getCodexAuthStatus(): Promise<CodexAuthStatus> {
 
 export async function startCodexLogin(): Promise<CodexLoginStart> {
   return requestJson('/api/provider-auth/codex/login', { method: 'POST' }) as Promise<CodexLoginStart>
+}
+
+export async function getProviderAuthStatus(provider: string): Promise<CodexAuthStatus> {
+  return requestJson(`/api/provider-auth/${encodeURIComponent(provider)}/status`) as Promise<CodexAuthStatus>
+}
+
+export async function startProviderLogin(provider: string): Promise<CodexLoginStart> {
+  return requestJson(`/api/provider-auth/${encodeURIComponent(provider)}/login`, { method: 'POST' }) as Promise<CodexLoginStart>
+}
+
+export async function addProviderApiKeyAccount(
+  provider: string,
+  payload: { apiKey: string; alias: string; identity: string },
+): Promise<CodexAuthStatus> {
+  return requestJson(`/api/provider-auth/${encodeURIComponent(provider)}/api-key`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<CodexAuthStatus>
+}
+
+export async function submitProviderLoginCode(provider: string, code: string): Promise<CodexAuthStatus> {
+  return requestJson(`/api/provider-auth/${encodeURIComponent(provider)}/login/code`, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  }) as Promise<CodexAuthStatus>
+}
+
+export async function activateProviderAccount(provider: string, accountId: string): Promise<CodexAuthStatus> {
+  return requestJson(`/api/provider-auth/${encodeURIComponent(provider)}/accounts/${encodeURIComponent(accountId)}/activate`, { method: 'POST' }) as Promise<CodexAuthStatus>
+}
+
+export async function deleteProviderAccount(provider: string, accountId: string): Promise<CodexAuthStatus> {
+  return requestJson(`/api/provider-auth/${encodeURIComponent(provider)}/accounts/${encodeURIComponent(accountId)}`, { method: 'DELETE' }) as Promise<CodexAuthStatus>
 }
 
 export async function getProviderPressure(): Promise<ProviderPressureDocument> {

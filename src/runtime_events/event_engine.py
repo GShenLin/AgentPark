@@ -79,6 +79,20 @@ class RuntimeEventDomain:
             target_node_id,
         )
 
+    def delete_configured_event(self, payload: dict | None = None) -> dict[str, Any]:
+        body = payload if isinstance(payload, dict) else {}
+        raw_handler_index = body.get("handler_index")
+        try:
+            handler_index = None if raw_handler_index is None else int(raw_handler_index)
+            return self.registry.delete_configured_event(
+                event=str(body.get("event") or ""),
+                graph_id=str(body.get("graph_id") or ""),
+                node_id=str(body.get("node_id") or ""),
+                handler_index=handler_index,
+            )
+        except (TypeError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
     def diagnostics(self):
         active = self.registry.active()
         return {

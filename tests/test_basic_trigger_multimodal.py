@@ -16,7 +16,7 @@ def test_basic_trigger_preserves_image_resource_for_downstream_node(tmp_path):
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         graph = {
             "id": "default",
             "name": "default",

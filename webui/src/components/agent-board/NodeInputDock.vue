@@ -331,7 +331,7 @@ watch(
   align-items: flex-start;
   gap: 8px;
   box-sizing: border-box;
-  max-height: 24vh;
+  max-height: calc(100vh - 52px);
   overflow: auto;
   padding: 8px 10px;
   border-top: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.24));

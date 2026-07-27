@@ -16,6 +16,7 @@ from .http_transport import read_json_response
 from .http_transport import resolve_upstream_request_policy
 from .responses_payload import canonical_request_to_responses
 from .responses_passthrough import ResponsesPassthrough
+from .responses_stream import collect_responses_stream
 
 
 class ResponsesConversationAdapter:
@@ -24,11 +25,20 @@ class ResponsesConversationAdapter:
 
     def complete(self, request: CanonicalRequest) -> CanonicalResult:
         payload = canonical_request_to_responses(request)
-        payload["stream"] = False
+        requires_stream = str(self.config.get("authMode") or "").strip().lower() == "codex"
+        payload["stream"] = requires_stream
         passthrough = ResponsesPassthrough(self.config)
         prepared = passthrough.prepare_request(payload)
-        response = self._open(prepared.payload, stream=False)
-        value = passthrough.transform_response(read_json_response(response), prepared.tools_by_wire_name)
+        response = self._open(prepared.payload, stream=requires_stream)
+        if requires_stream:
+            value = collect_responses_stream(
+                passthrough.transform_stream(response, prepared.tools_by_wire_name)
+            )
+        else:
+            value = passthrough.transform_response(
+                read_json_response(response),
+                prepared.tools_by_wire_name,
+            )
         return _result(value)
 
     def stream(self, request: CanonicalRequest, *, response_id: str = "") -> Iterable[bytes]:
@@ -81,6 +91,8 @@ def _result(payload: dict[str, Any]) -> CanonicalResult:
             if not call_id or not name:
                 raise CodexProtocolError("Responses provider tool call requires call_id and name.")
             result.tool_calls.append(CanonicalToolCall(call_id=call_id, name=name, arguments=arguments))
+    if not result.text and isinstance(payload.get("output_text"), str):
+        result.text = payload["output_text"]
     usage = payload.get("usage")
     if isinstance(usage, dict):
         result.input_tokens = _count(usage.get("input_tokens"))

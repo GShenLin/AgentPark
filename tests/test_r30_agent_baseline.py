@@ -18,8 +18,8 @@ def test_gpt1_keeps_the_single_system_tool_r30_profile():
     assert profile["fields"]["provider_id"] == "GPT_Official"
     assert profile["fields"]["tools"] == ["system_tools"]
     assert profile["fields"]["plugins"] == []
-    assert profile["fields"]["skills"] == []
-    assert profile["fields"]["mcp_servers"] == []
+    assert profile["fields"]["skills"] == ["ark-doc-cli"]
+    assert profile["fields"]["mcp_servers"] == ["ark-docs-mcp"]
 
 
 def test_r30_tool_wire_contract_has_no_post_r30_lifecycle_fields():

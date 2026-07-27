@@ -3,6 +3,9 @@ import time
 
 from src.tool.base_tool import BaseTool
 from src.runtime_cancellation import CancellationRequested
+from src.runtime_cancellation import CancellationSignal
+from src.runtime_cancellation import combine_cancel_sources
+from src.runtime_cancellation import register_cancel_callback
 from src.runtime_cancellation import cancel_source_from_agent
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.tool.tool_call_protocol import ToolCallEnvelope
@@ -42,6 +45,23 @@ def test_tool_call_cancellation_registry_targets_only_requested_call(tmp_path):
 
     assert not registry.is_active(config_path, "call-1")
     assert not registry.is_active(config_path, "call-2")
+
+
+def test_tool_call_cancellation_invokes_registered_hard_cancel_callback(tmp_path):
+    config_path = str(tmp_path / "config.json")
+    registry = ToolCallCancellationRegistry()
+    signal = registry.begin(config_path, "call-1")
+    invoked = []
+    unregister = register_cancel_callback(
+        combine_cancel_sources(threading.Event(), signal),
+        lambda: invoked.append("cancelled"),
+    )
+    try:
+        assert registry.request(config_path, "call-1") is True
+        assert invoked == ["cancelled"]
+    finally:
+        unregister()
+        registry.end(config_path, "call-1", signal)
 
 
 def test_cancel_node_work_marks_inflight_for_active_cancel(tmp_path):

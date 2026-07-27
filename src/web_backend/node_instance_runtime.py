@@ -161,13 +161,20 @@ class NodeInstanceRuntime(HostBoundService):
             raise HTTPException(status_code=400, detail="input is required")
         if context is not None and not isinstance(context, dict):
             raise HTTPException(status_code=400, detail="context must be object")
+        context = dict(context or {})
+        context.update(
+            {
+                key.removeprefix("_"): value
+                for key, value in self.core.access_api.message_access_metadata(request).items()
+            }
+        )
         message = normalize_envelope(message, default_role="user")
         message_full = envelope_text(message).strip()
         message_preview = envelope_preview(message)
 
         try:
             node_config_path = None
-            if isinstance(context, dict):
+            if context:
                 graph_id = context.get("graph_id")
                 node_instance_id = context.get("node_instance_id")
                 if isinstance(graph_id, str) and graph_id.strip() and isinstance(node_instance_id, str) and node_instance_id.strip():

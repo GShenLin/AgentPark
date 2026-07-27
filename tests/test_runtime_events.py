@@ -1179,3 +1179,48 @@ def test_events_apply_without_config_reloads_existing_file(tmp_path, monkeypatch
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert response.json()["compiled"]["enabled_rules"] == 1
+
+
+def test_event_delete_api_removes_only_selected_event_from_invalid_config(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    invalid_config = _event_config()
+    invalid_config["receiver_groups"] = {
+        "broken": {
+            "enabled": True,
+            "merge_target": {"node_id": "EventArchive"},
+            "receivers": [],
+        }
+    }
+    invalid_config["rules"]["WorkFailed"] = {
+        "Other": {
+            "Worker": [{
+                "enabled": True,
+                "action": "node.dispatch",
+                "target": "broken",
+                "params": {"profile_ids": ["missing_profile"]},
+            }]
+        }
+    }
+    (config_dir / "events.json").write_text(
+        json.dumps(invalid_config, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    import src.web_backend as backend
+    from fastapi.testclient import TestClient
+
+    client = TestClient(backend.create_app())
+    response = client.post(
+        "/api/events/delete",
+        json={"event": "OnInput", "graph_id": "Test", "node_id": "Agent"},
+    )
+    saved = json.loads((config_dir / "events.json").read_text(encoding="utf-8"))
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["removed_handlers"] == 1
+    assert "OnInput" not in saved["rules"]
+    assert saved["rules"]["WorkFailed"] == invalid_config["rules"]["WorkFailed"]
+    assert saved["receiver_groups"] == invalid_config["receiver_groups"]

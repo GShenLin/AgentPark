@@ -4,7 +4,7 @@ import json
 import os
 
 
-API_KEY_STORE_RELATIVE_PATH = os.path.join(".env", "apiKey.json")
+API_KEY_STORE_RELATIVE_PATH = os.path.join(".auth", "api-keys", "aliases.json")
 PROVIDER_CREDENTIAL_REFERENCE_FIELDS = (
     "apiKey",
     "xApiKey",

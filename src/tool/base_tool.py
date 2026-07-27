@@ -148,6 +148,7 @@ class BaseTool:
                 name,
                 args,
                 timeout_seconds=remote_timeout_seconds,
+                cancel_source=cancel_source,
             )
             if remote_handled:
                 return normalize_tool_execution_result(remote_result, tool_name=name)

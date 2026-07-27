@@ -18,7 +18,7 @@ def test_basic_trigger_node_click_emit_flows_to_next_node(tmp_path):
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
 
         graph = {
             "id": "default",
@@ -72,7 +72,7 @@ def test_basic_trigger_node_click_emit_flows_to_next_node(tmp_path):
             if cfgs.status_code == 200:
                 nodes = cfgs.json().get("nodes") or []
                 a1_cfg = next((item for item in nodes if str(item.get("node_id") or "") == "a1"), None)
-                if isinstance(a1_cfg, dict) and str(a1_cfg.get("last_message") or "") == "hello-trigger-done":
+                if isinstance(a1_cfg, dict) and str(a1_cfg.get("last_message") or "") == "hello-trigger\n-done":
                     ok = True
                     break
             time.sleep(0.1)
@@ -98,7 +98,7 @@ def test_console_command_trigger_persists_config_command_as_user_message(tmp_pat
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
 
         graph = {
             "id": "default",
@@ -155,7 +155,7 @@ def test_output_routes_fan_out_to_multiple_targets(tmp_path):
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         graph = {
             "id": "default",
             "name": "default",
@@ -203,9 +203,9 @@ def test_output_routes_fan_out_to_multiple_targets(tmp_path):
             cfgs = client.get("/api/nodes/instances/configs?graph_id=default")
             nodes = cfgs.json().get("nodes") if cfgs.status_code == 200 else []
             for item in nodes or []:
-                if item.get("node_id") == "a1" and item.get("last_message") == "fanout-one":
+                if item.get("node_id") == "a1" and item.get("last_message") == "fanout\n-one":
                     seen.add("a1")
-                if item.get("node_id") == "a2" and item.get("last_message") == "fanout-two":
+                if item.get("node_id") == "a2" and item.get("last_message") == "fanout\n-two":
                     seen.add("a2")
             if seen == {"a1", "a2"}:
                 break
@@ -231,7 +231,7 @@ def test_output_routes_preserve_target_input_index_for_multi_input_node(tmp_path
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         graph = {
             "id": "default",
             "name": "default",
@@ -286,7 +286,7 @@ def test_output_routes_preserve_target_input_index_for_multi_input_node(tmp_path
             cfgs = client.get("/api/nodes/instances/configs?graph_id=default")
             nodes = cfgs.json().get("nodes") if cfgs.status_code == 200 else []
             a1_cfg = next((item for item in nodes or [] if item.get("node_id") == "a1"), None)
-            if isinstance(a1_cfg, dict) and a1_cfg.get("last_message") == "AB-done":
+            if isinstance(a1_cfg, dict) and a1_cfg.get("last_message") == "AB\n-done":
                 ok = True
                 break
             time.sleep(0.1)
@@ -316,7 +316,7 @@ def test_runner_recovers_working_node_without_inflight(tmp_path):
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
 
         graph = {"id": "default", "name": "default", "nodes": [], "output_routes": {}}
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
@@ -508,7 +508,7 @@ def test_pause_during_work_holds_output_until_resume(monkeypatch, tmp_path):
 
     try:
         app = backend.create_app()
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
         graph = {
             "id": "default",
             "name": "default",

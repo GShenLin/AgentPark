@@ -199,6 +199,10 @@ class GraphMessageDispatch(HostBoundService):
             "source": str(task.get("source") or "propagate"),
             "_runtime_owner_id": getattr(self.core, "runtime_owner_id", ""),
         }
+        for key in ("_access_client_id", "_access_username", "_access_role"):
+            value = task.get(key)
+            if isinstance(value, str) and value.strip():
+                next_item[key] = value.strip()
         link_id = str(task.get("link_id") or "")
         if link_id:
             next_item["link_id"] = link_id

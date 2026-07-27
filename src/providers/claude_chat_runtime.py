@@ -10,6 +10,7 @@ from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.providers.tool_call_execution import parse_openai_tool_call_items
 from src.providers.tool_call_runtime import ToolCallExecutionMixin
+from src.provider_auth.anthropic_oauth import CLAUDE_CODE_SYSTEM_INSTRUCTION, OAUTH_BETA
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import sleep_with_cancel
 from src.service_host import HostBoundService
@@ -17,6 +18,16 @@ from src.tool.tool_call_protocol import to_openai_tool_call
 
 
 class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, ProviderRuntimeEventMixin, CurlHttpTransport, HostBoundService):
+    _OAUTH_BUILTIN_TOOLS = {"web_search", "code_execution", "text_editor", "computer"}
+
+    def _oauth_tool_name(self, name: str) -> str:
+        normalized = str(name or "").strip()
+        if str(self.config.get("authMode") or "").lower() != "oauth":
+            return normalized
+        if normalized.lower() in self._OAUTH_BUILTIN_TOOLS or normalized.lower().startswith("custom_"):
+            return normalized
+        return f"custom_{normalized}"
+
     def to_claude_tool_declarations(self, tools) -> list[dict]:
         if not isinstance(tools, list):
             raise ValueError("Claude tools must be a list of tool declarations.")
@@ -27,7 +38,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
             raise ValueError("Claude tool declaration must be an object.")
         if self._is_claude_tool_declaration(tool):
             return {
-                "name": str(tool["name"]).strip(),
+                "name": self._oauth_tool_name(str(tool["name"]).strip()),
                 "description": str(tool.get("description") or ""),
                 "input_schema": dict(tool["input_schema"]),
             }
@@ -41,7 +52,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
         if not isinstance(parameters, dict):
             raise ValueError(f"Claude tool declaration {name!r} requires function.parameters object.")
         return {
-            "name": name,
+            "name": self._oauth_tool_name(name),
             "description": str(function_decl.get("description") or ""),
             "input_schema": dict(parameters),
         }
@@ -69,6 +80,13 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
         }
         if system:
             payload["system"] = system
+        if str(self.config.get("authMode") or "").lower() == "oauth":
+            existing_system = str(payload.get("system") or "").strip()
+            payload["system"] = (
+                f"{CLAUDE_CODE_SYSTEM_INSTRUCTION}\n\n{existing_system}"
+                if existing_system and CLAUDE_CODE_SYSTEM_INSTRUCTION not in existing_system
+                else existing_system or CLAUDE_CODE_SYSTEM_INSTRUCTION
+            )
         merged_tools = list(tools or [])
         if web_search_mode == "enabled":
             merged_tools.append(self._build_claude_web_search_tool())
@@ -83,12 +101,15 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
         return payload
 
     def _claude_headers(self) -> dict[str, str]:
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": str(self.config["apiKey"]),
-            "anthropic-version": str(self.config.get("anthropicVersion") or "2023-06-01"),
-        }
+        oauth = str(self.config.get("authMode") or "").lower() == "oauth"
+        headers = {"Content-Type": "application/json", "anthropic-version": str(self.config.get("anthropicVersion") or "2023-06-01")}
+        if oauth:
+            headers["Authorization"] = f"Bearer {self.config['apiKey']}"
+        else:
+            headers["x-api-key"] = str(self.config["apiKey"])
         beta = str(self.config.get("anthropicBeta") or "").strip()
+        if oauth:
+            beta = ",".join(dict.fromkeys([*OAUTH_BETA.split(","), *beta.split(",")])).strip(",")
         if beta:
             headers["anthropic-beta"] = beta
         return headers
@@ -247,7 +268,7 @@ class ClaudeChatRuntime(ProviderStreamEmitMixin, ToolCallExecutionMixin, Provide
                             "id": str(block.get("id") or ""),
                             "type": "function",
                             "function": {
-                                "name": name,
+                                "name": name.removeprefix("custom_"),
                                 "arguments": json.dumps(block.get("input") if isinstance(block.get("input"), dict) else {}, ensure_ascii=False),
                             },
                         }

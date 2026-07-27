@@ -27,6 +27,7 @@ const {
   error: codexAuthError,
   loadStatus: loadCodexAuthStatus,
   beginLogin: beginOfficialLogin,
+  setStatus: setProviderAuthStatus,
 } = useCodexOfficialAuth()
 
 const providers = computed<Record<string, Record<string, unknown>>>(() => {
@@ -63,6 +64,17 @@ const activeLimitWarnings = computed(() => {
   return warnings
 })
 const isOpenAIProvider = computed(() => stringValue('type').trim().toLowerCase() === 'openai')
+const oauthProviderType = computed(() => {
+  const providerType = stringValue('type').trim().toLowerCase()
+  if (providerType === 'claude') return 'anthropic'
+  if (providerType === 'grok') return 'xai'
+  return ['openai', 'kimi'].includes(providerType) ? providerType : ''
+})
+const providerAuthId = computed(() => (
+  stringValue('authProvider').trim().toLowerCase()
+  || oauthProviderType.value
+  || stringValue('type').trim().toLowerCase()
+))
 
 watch(
   providerIds,
@@ -79,6 +91,14 @@ watch(
   (providerId) => {
     editableProviderId.value = providerId
     providerIdError.value = ''
+  },
+  { immediate: true },
+)
+
+watch(
+  providerAuthId,
+  (providerId) => {
+    if (providerId) void loadCodexAuthStatus(providerId)
   },
   { immediate: true },
 )
@@ -151,20 +171,30 @@ function setField(key: string, value: unknown) {
 }
 
 function setOfficialAuthEnabled(enabled: boolean) {
-  if (!selectedProviderId.value || !selectedProvider.value || !isOpenAIProvider.value) return
+  if (!selectedProviderId.value || !selectedProvider.value || !oauthProviderType.value) return
   const provider = { ...selectedProvider.value }
   if (enabled) {
-    provider.authMode = 'codex'
-    provider.responsesApi = true
-    provider.baseUrl = 'https://chatgpt.com/backend-api/codex'
+    provider.authMode = oauthProviderType.value === 'openai' ? 'codex' : 'oauth'
+    provider.authProvider = oauthProviderType.value
     delete provider.apiKey
-    applyResponsesApiDefaults(provider)
+    if (oauthProviderType.value === 'openai') {
+      provider.responsesApi = true
+      provider.baseUrl = 'https://chatgpt.com/backend-api/codex'
+      applyResponsesApiDefaults(provider)
+    } else if (oauthProviderType.value === 'anthropic') {
+      provider.baseUrl = 'https://api.anthropic.com/v1'
+    } else if (oauthProviderType.value === 'kimi') {
+      provider.baseUrl ||= 'https://api.kimi.com/coding/v1'
+    } else if (oauthProviderType.value === 'xai') {
+      provider.baseUrl ||= 'https://api.x.ai/v1'
+    }
   } else {
     provider.authMode = 'api_key'
-    delete provider.baseUrl
+    delete provider.authProvider
+    if (oauthProviderType.value === 'openai') delete provider.baseUrl
   }
   emitProvider(selectedProviderId.value, provider)
-  if (enabled) void beginOfficialLogin()
+  if (enabled) void beginOfficialLogin(oauthProviderType.value)
 }
 
 function setNumberField(key: string, raw: string) {
@@ -310,7 +340,6 @@ async function loadProviderLimits() {
 
 onMounted(() => {
   void loadProviderLimits()
-  void loadCodexAuthStatus()
 })
 </script>
 
@@ -353,12 +382,12 @@ onMounted(() => {
           <button
             type="button"
             class="oauth-button"
-            :class="{ active: isOpenAIProvider && stringValue('authMode') === 'codex' }"
-            :disabled="codexAuthBusy || !isOpenAIProvider"
-            :title="isOpenAIProvider ? '切换当前 Provider 的 OpenAI OAuth 授权' : 'OAuth 仅支持 type 为 openai 的 Provider'"
-            @click="setOfficialAuthEnabled(stringValue('authMode') !== 'codex')"
+            :class="{ active: oauthProviderType && ['codex', 'oauth'].includes(stringValue('authMode')) }"
+            :disabled="codexAuthBusy || !oauthProviderType"
+            :title="oauthProviderType ? `切换当前 Provider 的 ${oauthProviderType} OAuth 授权` : '该 Provider 暂无 OAuth 协议实现，可使用 API Key 多账号'"
+            @click="setOfficialAuthEnabled(!['codex', 'oauth'].includes(stringValue('authMode')))"
           >
-            {{ stringValue('authMode') === 'codex' ? 'OAuth ✓' : 'OAuth' }}
+            {{ ['codex', 'oauth'].includes(stringValue('authMode')) ? 'OAuth ✓' : 'OAuth' }}
           </button>
           <button type="button" @click="duplicateProvider">Duplicate</button>
           <button type="button" class="danger" @click="deleteProvider">Delete</button>
@@ -373,7 +402,10 @@ onMounted(() => {
       <div class="form-grid">
         <ProviderAuthFields
           :provider-type="stringValue('type')"
+          :provider-auth-id="providerAuthId"
           :auth-mode="stringValue('authMode') || 'api_key'"
+          :auth-account-id="stringValue('authAccountId')"
+          :oauth-supported="Boolean(oauthProviderType)"
           :base-url="stringValue('baseUrl')"
           :api-key="stringValue('apiKey')"
           :x-api-key="stringValue('xApiKey')"
@@ -385,7 +417,9 @@ onMounted(() => {
           :error="codexAuthError"
           @field="setField"
           @official-auth="setOfficialAuthEnabled"
-          @login="beginOfficialLogin"
+          @login="beginOfficialLogin(oauthProviderType || 'openai')"
+          @status="setProviderAuthStatus"
+          @account="setField('authAccountId', $event)"
         />
         <label>
           <span>Model</span>

@@ -56,6 +56,11 @@ class GraphNodeExecution(HostBoundService):
             pending_item
         )
         from_node = str(pending_item.get("from") or "").strip()
+        access_metadata = {
+            key: str(pending_item.get(key) or "").strip()
+            for key in ("_access_client_id", "_access_username", "_access_role")
+            if str(pending_item.get(key) or "").strip()
+        }
 
         if os.path.exists(config_path):
             cfg = _read_json_dict(config_path)
@@ -76,6 +81,9 @@ class GraphNodeExecution(HostBoundService):
             "from_output_index": from_output_index,
             "from_output_port_index": from_output_index,
             "source": source,
+            "access_client_id": access_metadata.get("_access_client_id", ""),
+            "access_username": access_metadata.get("_access_username", ""),
+            "access_role": access_metadata.get("_access_role", ""),
         }
         self._inject_node_config_into_context(context, cfg)
         bind_node_storage_context(context, config_path)
@@ -507,6 +515,7 @@ class GraphNodeExecution(HostBoundService):
                         "next_depth": depth + 1,
                         "route_payload": route_payload,
                         "link_id": str((link or {}).get("id") or "").strip(),
+                        **access_metadata,
                     }
                 )
 
@@ -525,6 +534,8 @@ class GraphNodeExecution(HostBoundService):
                                 next_visited=next_visited,
                             )
                         )
+        for task in propagation_tasks:
+            task.update(access_metadata)
 
         if not propagation_tasks:
             _complete_node_config_work_with_held_output(config_path, {})

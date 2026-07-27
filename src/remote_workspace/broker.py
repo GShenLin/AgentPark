@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 import threading
 import time
@@ -9,9 +10,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 ONLINE_TTL_SECONDS = 45.0
 RECONNECT_WAIT_SECONDS = 5.0
+PRE_CANCEL_TTL_SECONDS = 60.0
+REMOTE_CANCELLED_RESULT = json.dumps(
+    {"status": "stopped", "error": "Remote tool execution cancelled."},
+    ensure_ascii=False,
+)
 
 
 @dataclass
@@ -32,6 +38,9 @@ class WorkerSession:
     capabilities: frozenset[str]
     last_seen: float = field(default_factory=time.monotonic)
     pending: deque[RemoteTask] = field(default_factory=deque)
+    active_task_ids: set[str] = field(default_factory=set)
+    cancellation_requests: deque[str] = field(default_factory=deque)
+    pre_cancelled: dict[str, float] = field(default_factory=dict)
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
     condition: threading.Condition = field(default_factory=threading.Condition)
 
@@ -128,7 +137,28 @@ class RemoteWorkspaceBroker:
             if self._closed or not session.pending:
                 return None
             task = session.pending.popleft()
+            session.active_task_ids.add(task.task_id)
             return {"task_id": task.task_id, **task.payload}
+
+    def poll_cancellations(
+        self,
+        worker_id: str,
+        token: str,
+        timeout_seconds: float,
+    ) -> list[str]:
+        session = self._require_worker(worker_id, token)
+        deadline = time.monotonic() + max(0.0, min(float(timeout_seconds), 25.0))
+        with session.condition:
+            session.last_seen = time.monotonic()
+            while not self._closed and not session.cancellation_requests:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return []
+                session.condition.wait(timeout=remaining)
+                session.last_seen = time.monotonic()
+            task_ids = list(session.cancellation_requests)
+            session.cancellation_requests.clear()
+            return task_ids
 
     def heartbeat(self, worker_id: str, token: str) -> None:
         session = self._require_worker(worker_id, token)
@@ -140,8 +170,42 @@ class RemoteWorkspaceBroker:
         session = self._require_worker(worker_id, token)
         with session.condition:
             session.last_seen = time.monotonic()
-            session.results[str(task_id)] = dict(result)
+            normalized_task_id = str(task_id)
+            session.active_task_ids.discard(normalized_task_id)
+            session.results[normalized_task_id] = dict(result)
             session.condition.notify_all()
+
+    def cancel(self, worker_id: str, task_id: str) -> str:
+        worker_key = str(worker_id or "").strip()
+        task_key = str(task_id or "").strip()
+        if not worker_key or not task_key:
+            raise ValueError("worker_id and task_id are required")
+        with self._lock:
+            session = self._workers.get(worker_key)
+        if session is None:
+            raise LookupError(f"Remote worker is not registered: {worker_key}")
+        with session.condition:
+            self._discard_expired_pre_cancellations(session)
+            if task_key in session.results:
+                return "completed"
+            for task in tuple(session.pending):
+                if task.task_id != task_key:
+                    continue
+                session.pending.remove(task)
+                session.results[task_key] = {
+                    "ok": True,
+                    "result": REMOTE_CANCELLED_RESULT,
+                }
+                session.condition.notify_all()
+                return "cancelled_pending"
+            if task_key in session.active_task_ids:
+                if task_key not in session.cancellation_requests:
+                    session.cancellation_requests.append(task_key)
+                session.condition.notify_all()
+                return "cancel_requested"
+            session.pre_cancelled[task_key] = time.monotonic()
+            session.condition.notify_all()
+            return "cancel_recorded"
 
     def execute(self, payload: dict[str, Any]) -> Any:
         worker_id = str(payload.get("worker_id") or "").strip()
@@ -153,7 +217,7 @@ class RemoteWorkspaceBroker:
         if tool_name not in session.capabilities:
             raise ValueError(f"Remote worker does not support tool: {tool_name}")
         timeout_seconds = max(1.0, min(float(payload.get("timeout_seconds") or 3600.0), 86400.0))
-        task_id = uuid.uuid4().hex
+        task_id = str(payload.get("task_id") or "").strip() or uuid.uuid4().hex
         task = RemoteTask(
             task_id=task_id,
             payload={
@@ -166,6 +230,16 @@ class RemoteWorkspaceBroker:
         deadline = time.monotonic() + timeout_seconds
         try:
             with session.condition:
+                self._discard_expired_pre_cancellations(session)
+                if task_id in session.pre_cancelled:
+                    session.pre_cancelled.pop(task_id, None)
+                    return REMOTE_CANCELLED_RESULT
+                if (
+                    task_id in session.active_task_ids
+                    or task_id in session.results
+                    or any(item.task_id == task_id for item in session.pending)
+                ):
+                    raise ValueError(f"duplicate remote task_id: {task_id}")
                 session.pending.append(task)
                 session.condition.notify_all()
                 while not self._closed:
@@ -183,6 +257,12 @@ class RemoteWorkspaceBroker:
         finally:
             with session.condition:
                 session.results.pop(task_id, None)
+                session.active_task_ids.discard(task_id)
+                session.pre_cancelled.pop(task_id, None)
+                if task_id in session.cancellation_requests:
+                    session.cancellation_requests = deque(
+                        item for item in session.cancellation_requests if item != task_id
+                    )
         raise RuntimeError("Remote workspace broker is shutting down.")
 
     def close(self) -> None:
@@ -219,6 +299,17 @@ class RemoteWorkspaceBroker:
     @staticmethod
     def _is_online(session: WorkerSession) -> bool:
         return time.monotonic() - session.last_seen <= ONLINE_TTL_SECONDS
+
+    @staticmethod
+    def _discard_expired_pre_cancellations(session: WorkerSession) -> None:
+        cutoff = time.monotonic() - PRE_CANCEL_TTL_SECONDS
+        expired = [
+            task_id
+            for task_id, cancelled_at in session.pre_cancelled.items()
+            if cancelled_at < cutoff
+        ]
+        for task_id in expired:
+            session.pre_cancelled.pop(task_id, None)
 
     def _public_worker(self, session: WorkerSession) -> dict[str, Any]:
         return {

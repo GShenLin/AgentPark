@@ -126,7 +126,6 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
       aria-label="Node input"
       :rows="2"
       min-height="52px"
-      max-height="108px"
       placeholder="Type input for this node, or drop files here."
       @update:model-value="emit('update:inputText', $event)"
       @keydown="onInputKeyDown"

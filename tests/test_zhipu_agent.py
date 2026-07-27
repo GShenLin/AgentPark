@@ -512,6 +512,21 @@ def test_zhipu_stream_payload_requests_usage():
     assert payload["stream_options"] == {"include_usage": True}
 
 
+def test_zhipu_disabled_thinking_omits_reasoning_effort():
+    agent = _make_zhipu_agent()
+
+    payload = agent._build_payload(
+        messages=[{"role": "user", "content": "hello"}],
+        active_tools=None,
+        reasoning_effort="high",
+        thinking_mode="disabled",
+        stream=False,
+    )
+
+    assert payload["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in payload
+
+
 def test_zhipu_rejects_unsupported_thinking_auto():
     agent = _make_zhipu_agent()
     agent.messages = [{"role": "user", "content": "hello"}]

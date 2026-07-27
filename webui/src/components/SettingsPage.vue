@@ -21,15 +21,17 @@ import {
   type ThemePresetInfo,
 } from '../settingsApi'
 import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
+import AccessSettingsPanel from './settings/AccessSettingsPanel.vue'
 import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySelect.vue'
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
+import GatewaySettingsPanel from './settings/GatewaySettingsPanel.vue'
 import ModelProviderSettingsForm from './settings/ModelProviderSettingsForm.vue'
 import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
 import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
+import StaticSettingsPanel from './settings/StaticSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
 import ThemeSettingsForm from './settings/ThemeSettingsForm.vue'
-import ToolStatsSettingsPanel from './settings/ToolStatsSettingsPanel.vue'
 import { applyWorkspaceTheme } from '../theme'
 
 const AnimEditor = defineAsyncComponent(() => import('./settings/AnimEditor.vue'))
@@ -90,6 +92,22 @@ const nodeProfilerDirty = ref(false)
 
 const displaySections = computed<SettingsSectionInfo[]>(() => {
   const base = sections.value.slice()
+  if (!base.some((item) => item.id === 'authorization')) {
+    base.unshift({
+      id: 'authorization',
+      label: 'Authorization',
+      path: '.auth/access-control.json',
+      filename: 'access-control.json',
+    })
+  }
+  if (!base.some((item) => item.id === 'gateway')) {
+    base.splice(Math.min(1, base.length), 0, {
+      id: 'gateway',
+      label: 'Gateway',
+      path: 'config/publicGateway.json · .auth/gateway/keys.json',
+      filename: 'publicGateway.json',
+    })
+  }
   if (!base.some((item) => item.id === 'provider-test')) {
     base.push({
       id: 'provider-test',
@@ -146,7 +164,9 @@ const currentSection = computed(() => {
 })
 
 const activeLabel = computed(() => {
+  if (activeSection.value === 'authorization') return 'Authorization'
   if (activeSection.value === 'model-provider') return 'modelProvider'
+  if (activeSection.value === 'gateway') return 'Gateway'
   if (activeSection.value === 'defaults') return 'Default settings'
   if (activeSection.value === 'companion') return 'Companion'
   if (activeSection.value === 'events') return 'Runtime Events'
@@ -160,12 +180,14 @@ const activeLabel = computed(() => {
 })
 
 const isProviderTest = computed(() => activeSection.value === 'provider-test')
+const isAuthorization = computed(() => activeSection.value === 'authorization')
+const isGateway = computed(() => activeSection.value === 'gateway')
 const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
 const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
 const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profiler-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
-const isVirtualSection = computed(() => isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isExitSection.value)
+const isVirtualSection = computed(() => isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isExitSection.value)
 const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 const validationWarnings = computed(() => Array.isArray(loadedDocument.value?.warnings)
   ? loadedDocument.value.warnings.map((item) => String(item || '').trim()).filter(Boolean)
@@ -181,7 +203,9 @@ const formData = computed<Record<string, unknown> | null>(() => {
 })
 
 function labelFor(section: SettingsSectionInfo) {
+  if (section.id === 'authorization') return 'Authorization'
   if (section.id === 'model-provider') return 'modelProvider'
+  if (section.id === 'gateway') return 'Gateway'
   if (section.id === 'defaults') return 'Default settings'
   if (section.id === 'companion') return 'Companion'
   if (section.id === 'events') return 'Runtime Events'
@@ -244,7 +268,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
+  if (sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -405,7 +429,7 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>Settings</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? '.cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
         <button type="button" class="settings-btn" @click="handleBack">{{ props.backLabel }}</button>
@@ -450,9 +474,11 @@ onMounted(async () => {
           <span v-for="warning in validationWarnings" :key="warning">{{ warning }}</span>
         </div>
 
-        <ProviderTestSettingsPanel v-if="isProviderTest" />
+        <AccessSettingsPanel v-if="isAuthorization" />
+        <GatewaySettingsPanel v-else-if="isGateway" />
+        <ProviderTestSettingsPanel v-else-if="isProviderTest" />
         <PressureSettingsPanel v-else-if="isPressure" />
-        <ToolStatsSettingsPanel v-else-if="isToolStats" />
+        <StaticSettingsPanel v-else-if="isToolStats" />
         <AnimEditor v-else-if="isAnimEditor" @error="error = $event" @status="status = $event" />
         <NodeProfilerEditor
           v-else-if="isNodeProfilerEditor"

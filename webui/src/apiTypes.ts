@@ -11,7 +11,18 @@ export type RemoteStatus = {
   is_local_client: boolean
 }
 
+export type AccessStatus = {
+  client_id: string
+  username: string
+  role: 'developer' | 'nondeveloper'
+  is_developer: boolean
+  is_local_client: boolean
+  username_required: boolean
+  ip: string
+}
+
 export type WorkspaceBootstrap = {
+  access: AccessStatus
   startup_graph: GraphConfig
   remote_status: RemoteStatus
   remotes: RemoteEndpoint[]

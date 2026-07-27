@@ -10,8 +10,8 @@ import {
   GUI_AGENT_NODE_TYPE,
   normalizeSwitch,
   normalizeToolSelection,
+  providerReasoningEffortOptions,
   providerModes,
-  reasoningEffortOptions,
   switchOptions,
 } from '../../composables/useAgentNodeCreateSchema'
 import {
@@ -432,6 +432,10 @@ function getReasoningEffortValue() {
   return props.fields.reasoning_effort ?? 'high'
 }
 
+function getReasoningEffortOptions() {
+  return providerReasoningEffortOptions(getSelectedProvider())
+}
+
 function resetFieldGroups() {
   fieldGroupOpen.value = {}
 }
@@ -570,7 +574,7 @@ watch(
         :value="getReasoningEffortValue()"
         @change="setField('reasoning_effort', ($event.target as HTMLSelectElement).value)"
       >
-        <option v-for="option in reasoningEffortOptions" :key="`reasoning-${option.value}`" :value="option.value">
+        <option v-for="option in getReasoningEffortOptions()" :key="`reasoning-${option.value}`" :value="option.value">
           {{ option.label }}
         </option>
       </select>

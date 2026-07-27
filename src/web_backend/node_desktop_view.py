@@ -7,6 +7,8 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from fastapi import Request
+
 from src.file_transaction import atomic_write_text
 
 from .domain_base import DomainBase
@@ -429,7 +431,12 @@ class NodeDesktopViewDomain(DomainBase):
         self.graph_runtime._log_graph_event(graph_id, "node_desktop_view_deleted", node_id=node_id, view_id=view_id)
         return {"ok": True, "view_id": view_id, "graph_id": graph_id, "node_id": node_id}
 
-    def send_node_desktop_view_message(self, view_id: str, payload: dict):
+    def send_node_desktop_view_message(
+        self,
+        view_id: str,
+        payload: dict,
+        request: Request = None,
+    ):
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="payload must be object")
         with self._lock:
@@ -450,6 +457,7 @@ class NodeDesktopViewDomain(DomainBase):
             graph_id,
             node_id,
             {"payload": normalized, "trace_id": payload.get("trace_id")},
+            request=request,
         )
         self.graph_runtime._log_graph_event(
             graph_id,

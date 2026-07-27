@@ -29,3 +29,20 @@ def test_curl_post_command_uses_platform_executable(monkeypatch):
 
     assert command[0] == "curl"
     assert "curl.exe" not in command
+
+
+def test_streaming_curl_command_keeps_total_request_timeout(monkeypatch):
+    monkeypatch.setattr(curl_transport.os, "name", "posix")
+
+    command = CurlHttpTransport._build_curl_post_command(
+        url="https://example.test/v1/responses",
+        headers={},
+        payload_path="/tmp/request.json",
+        timeout_val=60,
+        connect_timeout=15,
+        marker="__STATUS__",
+        no_buffer=True,
+    )
+
+    assert "--no-buffer" in command
+    assert command[command.index("--max-time") + 1] == "60"

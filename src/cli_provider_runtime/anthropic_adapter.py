@@ -7,6 +7,8 @@ import uuid
 from collections.abc import Iterable
 from typing import Any
 
+from src.provider_auth.credentials import resolve_provider_request_credentials
+
 from .contracts import CanonicalMessage
 from .contracts import CanonicalRequest
 from .contracts import CanonicalResult
@@ -33,9 +35,10 @@ class AnthropicMessagesAdapter:
         self._tools_by_wire = {}
 
     def complete(self, request: CanonicalRequest) -> CanonicalResult:
+        url, headers = self._request_target()
         response = open_json_request(
-            url=self._url(),
-            headers=self._headers(),
+            url=url,
+            headers=headers,
             payload=self._payload(request, stream=False),
             policy=resolve_upstream_request_policy(self.config),
             stream=False,
@@ -49,9 +52,10 @@ class AnthropicMessagesAdapter:
         message_started = False
         reasoning = ResponsesReasoningStream()
         blocks: dict[int, dict[str, Any]] = {}
+        url, headers = self._request_target()
         response = open_json_request(
-            url=self._url(),
-            headers=self._headers(),
+            url=url,
+            headers=headers,
             payload=self._payload(request, stream=True),
             policy=resolve_upstream_request_policy(self.config),
             stream=True,
@@ -225,17 +229,13 @@ class AnthropicMessagesAdapter:
             namespace=tool.namespace,
         )
 
-    def _url(self) -> str:
-        base_url = str(self.config.get("baseUrl") or "").rstrip("/")
+    def _request_target(self) -> tuple[str, dict[str, str]]:
+        credentials = resolve_provider_request_credentials(self.config)
+        base_url = credentials.base_url.rstrip("/")
         if not base_url:
             raise ValueError("Provider baseUrl is required.")
-        return base_url if base_url.endswith("/messages") else f"{base_url}/messages"
-
-    def _headers(self) -> dict[str, str]:
-        api_key = str(self.config.get("apiKey") or "")
-        if not api_key:
-            raise ValueError("Anthropic provider apiKey is required.")
-        return {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        url = base_url if base_url.endswith("/messages") else f"{base_url}/messages"
+        return url, credentials.headers
 
 
 def _anthropic_content(raw: str | list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -57,6 +57,7 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
             "type_id": "codex_node",
             "provider_id": "provider-a",
             "working_path": str(tmp_path),
+            "sandbox": "danger-full-access",
         }),
         encoding="utf-8",
     )
@@ -94,5 +95,10 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
     assert context["messages_path"] == str(node_dir / "messages.jsonl")
     assert captured["spec"].state_path == state_path
     assert captured["spec"].session_key == session_runtime_key("default", "Codex", state_path)
+    assert captured["spec"].sandbox == "danger-full-access"
     assert captured["text"] == "Start this session"
     assert result["display"] == "done"
+
+    context["access_role"] = "nondeveloper"
+    Node().on_input("Restricted session", context)
+    assert captured["spec"].sandbox == "read-only"

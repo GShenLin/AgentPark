@@ -14,17 +14,10 @@ from http.server import ThreadingHTTPServer
 from typing import Any, Iterator
 
 from src.cli_provider_runtime.http_transport import UpstreamHttpError
-from src.cli_provider_runtime.http_transport import open_json_request
-from src.cli_provider_runtime.http_transport import read_json_response
-from src.cli_provider_runtime.http_transport import resolve_upstream_request_policy
-from src.cli_provider_runtime.provider_adapter import create_chat_adapter
+from src.cli_provider_runtime.gateway_dispatch import dispatch_responses
 from src.cli_provider_runtime.provider_adapter import provider_protocol
-from src.cli_provider_runtime.responses_conversion import canonical_result_to_response
-from src.cli_provider_runtime.responses_conversion import responses_request_to_canonical
 from src.cli_provider_runtime.responses_conversion import stream_failed
-from src.cli_provider_runtime.responses_passthrough import ResponsesPassthrough
 from src.config_loader import ConfigLoader
-from src.provider_auth.credentials import resolve_provider_request_credentials
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 logger = logging.getLogger(__name__)
@@ -235,74 +228,26 @@ class CodexProviderGateway:
                     provider_model=model,
                     payload=payload,
                 )
-                protocol = provider_protocol(config)
-                if protocol == "responses":
-                    self._forward_responses(config, payload)
-                    return
-                canonical = responses_request_to_canonical(payload, model=model)
-                adapter = create_chat_adapter(config)
-                if canonical.stream:
+                result = dispatch_responses(config, payload)
+                if result.stream is not None:
                     response_id = f"resp_agentpark_{uuid.uuid4().hex}"
                     self._streaming = True
                     self._stream_response_id = response_id
-                    self._start_stream()
+                    self._start_stream(result.content_type)
                     try:
-                        for chunk in adapter.stream(canonical, response_id=response_id):
+                        for chunk in result.stream:
                             self.wfile.write(chunk)
                             self.wfile.flush()
                     except Exception as exc:
                         self._send_error(500, str(exc))
                     return
-                result = adapter.complete(canonical)
-                self._json_response(200, canonical_result_to_response(result, model=model))
+                if result.json_body is None:
+                    raise RuntimeError("Gateway dispatch returned no JSON body.")
+                self._json_response(result.status, result.json_body)
 
-            def _forward_responses(self, config: dict[str, Any], payload: dict[str, Any]) -> None:
-                passthrough = ResponsesPassthrough(config)
-                prepared = passthrough.prepare_request(payload)
-                response = self._open_responses(config, prepared.payload, force_refresh=False)
-                content_type = response.headers.get("content-type", "application/json")
-                if bool(prepared.payload.get("stream")):
-                    self._streaming = True
-                    self.send_response(response.status)
-                    self.send_header("Content-Type", content_type)
-                    self.send_header("Cache-Control", "no-cache")
-                    self.send_header("Connection", "close")
-                    self.end_headers()
-                    self._response_started = True
-                    for line in passthrough.transform_stream(response, prepared.tools_by_wire_name):
-                        self.wfile.write(line)
-                        self.wfile.flush()
-                    return
-                value = read_json_response(response)
-                value = passthrough.transform_response(value, prepared.tools_by_wire_name)
-                self._json_response(200, value)
-
-            def _open_responses(
-                self,
-                config: dict[str, Any],
-                payload: dict[str, Any],
-                *,
-                force_refresh: bool,
-            ):
-                credentials = resolve_provider_request_credentials(config, force_refresh=force_refresh)
-                base_url = credentials.base_url.rstrip("/")
-                url = base_url if base_url.endswith("/responses") else f"{base_url}/responses"
-                try:
-                    return open_json_request(
-                        url=url,
-                        headers=credentials.headers,
-                        payload=payload,
-                        policy=resolve_upstream_request_policy(config),
-                        stream=bool(payload.get("stream")),
-                    )
-                except UpstreamHttpError as exc:
-                    if exc.status == 401 and str(config.get("authMode") or "").lower() == "codex" and not force_refresh:
-                        return self._open_responses(config, payload, force_refresh=True)
-                    raise
-
-            def _start_stream(self) -> None:
+            def _start_stream(self, content_type: str = "text/event-stream") -> None:
                 self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Content-Type", content_type)
                 self.send_header("Cache-Control", "no-cache")
                 self.send_header("Connection", "close")
                 self.end_headers()

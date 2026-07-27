@@ -1,4 +1,4 @@
-# AgentPark Remote Workspace Protocol v1
+# AgentPark Remote Workspace Protocol v2
 
 The remote workspace protocol is host-neutral. Current worker implementations are:
 
@@ -11,14 +11,15 @@ Only one worker should be online from a browser machine while the user enables a
 
 1. Register with `POST /api/remote-workers/register`.
 2. Long-poll `POST /api/remote-workers/{worker_id}/poll`.
-3. Submit results to `POST /api/remote-workers/{worker_id}/tasks/{task_id}/result`.
-4. Send heartbeats to `POST /api/remote-workers/{worker_id}/heartbeat`.
+3. Independently long-poll `POST /api/remote-workers/{worker_id}/cancellations/poll`.
+4. Submit results to `POST /api/remote-workers/{worker_id}/tasks/{task_id}/result`.
+5. Send heartbeats to `POST /api/remote-workers/{worker_id}/heartbeat`.
 
 Registration fields:
 
 ```json
 {
-  "protocol_version": 1,
+  "protocol_version": 2,
   "worker_id": "persistent-worker-id",
   "token": "persistent-secret-token",
   "display_name": "Alice-PC / ProjectName",
@@ -85,6 +86,19 @@ Failed result:
   }
 }
 ```
+
+The cancellation poll response contains exact task IDs:
+
+```json
+{
+  "ok": true,
+  "task_ids": ["task-id"]
+}
+```
+
+Workers must keep this control poll active while a tool is executing. Each task owns a cancellation
+signal; workspace loops must check it at bounded intervals, and child-process tools must terminate the
+full process tree before returning a `stopped` result.
 
 ## Standalone process behavior
 

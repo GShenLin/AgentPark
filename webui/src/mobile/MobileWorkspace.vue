@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { MessageEnvelope, MobileGraph, MobileNode, ResourceKind } from '../api'
-import { getRemoteStatus, restartServer } from '../api'
+import type { AccessStatus, MessageEnvelope, MobileGraph, MobileNode, ResourceKind } from '../api'
+import { restartServer } from '../api'
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
@@ -20,6 +20,7 @@ import { useWorkAlerts } from '../composables/useWorkAlerts'
 import { useMobileWorkspace } from './useMobileWorkspace'
 import { buildMessageSignature } from './mobileMessageRender'
 
+const props = defineProps<{ access: AccessStatus }>()
 const workspace = useMobileWorkspace()
 const { navigationRequest, completeWorkAlertNavigation } = useWorkAlerts()
 const {
@@ -43,7 +44,7 @@ const submittingDraft = ref(false)
 const configOpen = ref(false)
 const createNodeOpen = ref(false)
 const settingsOpen = ref(false)
-const isLocalClient = ref(false)
+const isDeveloper = computed(() => props.access.is_developer === true)
 const isRestarting = ref(false)
 const graphNameInput = ref('')
 const selectedGraphProfileId = ref('')
@@ -364,7 +365,7 @@ async function stopSelectedNode() {
 }
 
 async function openConfig() {
-  if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
+  if (!isDeveloper.value || workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   configOpen.value = true
   await Promise.all([
     workspace.refreshSelectedNodeConfig(),
@@ -375,7 +376,7 @@ async function openConfig() {
 }
 
 function openSettings() {
-  if (!isLocalClient.value || workspace.view.value !== 'graphs') return
+  if (!isDeveloper.value || workspace.view.value !== 'graphs') return
   settingsOpen.value = true
 }
 
@@ -629,13 +630,6 @@ onMounted(async () => {
   await workspace.loadPcs()
   workspaceMounted.value = true
   if (navigationRequest.value) consumeWorkAlertNavigation(navigationRequest.value)
-  void getRemoteStatus()
-    .then((status) => {
-      isLocalClient.value = status.is_local_client === true
-    })
-    .catch((error: any) => {
-      workspace.error.value = String(error?.message || error)
-    })
 })
 </script>
 
@@ -649,9 +643,9 @@ onMounted(async () => {
       <div v-else class="header-spacer"></div>
       <div class="header-title">{{ headerTitle }}</div>
       <div class="header-actions">
-        <button v-if="isLocalClient && !settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" aria-label="Open settings" @click="openSettings">Settings</button>
+        <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" aria-label="Open settings" @click="openSettings">Settings</button>
         <button v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn danger" type="button" aria-label="Clear memory" @click="clearMemory">ClearMemory</button>
-        <button v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" aria-label="打开节点配置" @click="openConfig">配置</button>
+        <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" aria-label="打开节点配置" @click="openConfig">配置</button>
         <button v-if="!settingsOpen" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" aria-label="Restart" @click="restartWorkspace">
           {{ isRestarting ? 'Restarting...' : 'Restart' }}
         </button>

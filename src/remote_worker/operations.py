@@ -4,6 +4,7 @@ import json
 import ntpath
 import os
 import posixpath
+import threading
 from dataclasses import dataclass
 from typing import Callable
 
@@ -12,6 +13,8 @@ from functions.console_tools import execute_console_command
 from functions.file_read_tools import read_file
 from functions.file_write_tools import write_file
 from functions.rg_tools import rg_list_files, rg_search_text
+from src.runtime_cancellation import CancellationRequested
+from src.runtime_cancellation import raise_if_cancel_requested
 
 from .protocol import ProtocolError, RemoteTask
 
@@ -32,6 +35,7 @@ STANDALONE_CAPABILITIES = frozenset(
 @dataclass
 class _WorkspaceAgent:
     config: dict[str, object]
+    cancel_event: threading.Event
 
 
 ToolOperation = Callable[..., str]
@@ -56,7 +60,23 @@ class StandaloneOperationRegistry:
     def capabilities(self) -> tuple[str, ...]:
         return tuple(sorted(STANDALONE_CAPABILITIES))
 
-    def execute(self, task: RemoteTask) -> str:
+    def execute(
+        self,
+        task: RemoteTask,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> str:
+        task_cancel_event = cancel_event or threading.Event()
+        try:
+            raise_if_cancel_requested(task_cancel_event)
+            return self._execute(task, task_cancel_event)
+        except CancellationRequested as exc:
+            return json.dumps(
+                {"status": "stopped", "error": str(exc)},
+                ensure_ascii=False,
+            )
+
+    def _execute(self, task: RemoteTask, cancel_event: threading.Event) -> str:
         working_path = validate_working_path(task.working_path)
         if task.tool_name == "select_folder":
             return self._select_folder(task, working_path)
@@ -68,7 +88,10 @@ class StandaloneOperationRegistry:
             raise ProtocolError("tool arguments must not contain the reserved agent field")
         if task.tool_name == "execute_console_command":
             arguments["timeout_seconds"] = task.timeout_seconds
-        agent = _WorkspaceAgent(config={"working_path": working_path, "remote_enabled": False})
+        agent = _WorkspaceAgent(
+            config={"working_path": working_path, "remote_enabled": False},
+            cancel_event=cancel_event,
+        )
         result = operation(agent=agent, **arguments)
         if not isinstance(result, str):
             raise ProtocolError(f"remote tool {task.tool_name} returned a non-string result")

@@ -121,17 +121,69 @@ def test_clock_node_normalizes_overflowed_time_parts():
     assert cfg.get("IntervalSeconds") == "5"
 
 
-def test_append_node_appends_text():
+def test_append_node_defaults_to_appending_text_at_end_with_newline():
     from nodes.append_node import Node
 
     node = Node()
     cfg = {}
     node.on_create(cfg, None)
 
+    assert cfg.get("AppendText") == ""
+    assert cfg.get("AppendAtFront") is False
+    assert cfg.get("AutoNewline") is True
+    schema = node.get_config_schema(None)
+    assert schema["AppendAtFront"]["type"] == "boolean"
+    assert schema["AutoNewline"]["type"] == "boolean"
+
     out = node.on_input("abc", {"AppendText": "-tail"})
     routes = out.get("routes")
     assert isinstance(routes, list) and routes
-    assert envelope_text(routes[0].get("payload")) == "abc-tail"
+    assert envelope_text(routes[0].get("payload")) == "abc\n-tail"
+
+
+def test_append_node_supports_front_position_and_automatic_newline():
+    from nodes.append_node import Node
+
+    node = Node()
+
+    front = node.on_input(
+        "input",
+        {"AppendText": "prefix", "AppendAtFront": True, "AutoNewline": True},
+    )
+    assert envelope_text(front["routes"][0]["payload"]) == "prefix\ninput"
+
+    end = node.on_input(
+        "input",
+        {"AppendText": "suffix", "AppendAtFront": False, "AutoNewline": True},
+    )
+    assert envelope_text(end["routes"][0]["payload"]) == "input\nsuffix"
+
+
+def test_append_node_can_disable_automatic_newline():
+    from nodes.append_node import Node
+
+    node = Node()
+
+    end = node.on_input(
+        "input",
+        {"AppendText": "suffix", "AppendAtFront": False, "AutoNewline": False},
+    )
+    assert envelope_text(end["routes"][0]["payload"]) == "inputsuffix"
+
+
+def test_append_node_does_not_add_newline_when_either_text_is_empty():
+    from nodes.append_node import Node
+
+    node = Node()
+
+    no_append_text = node.on_input("input", {"AppendText": "", "AutoNewline": True})
+    assert envelope_text(no_append_text["routes"][0]["payload"]) == "input"
+
+    no_input_text = node.on_input(
+        "",
+        {"AppendText": "prefix", "AppendAtFront": True, "AutoNewline": True},
+    )
+    assert envelope_text(no_input_text["routes"][0]["payload"]) == "prefix"
 
 
 def test_save_file_node_uses_first_six_chars_when_filename_empty(tmp_path):

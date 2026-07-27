@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { listMobilePcs, loadWorkspaceBootstrap, type WorkspaceBootstrap } from './api'
+import { getAccessStatus, listMobilePcs, loadWorkspaceBootstrap, type AccessStatus, type WorkspaceBootstrap } from './api'
+import { setAccessUsername } from './accessIdentity'
+import AccessUsernameDialog from './components/AccessUsernameDialog.vue'
 import UserInteractionDialog from './components/UserInteractionDialog.vue'
 import WorkAlertToast from './components/WorkAlertToast.vue'
 import { startAppEventStream } from './composables/useAppEventStream'
@@ -26,6 +28,11 @@ const isAskHereView = ref(
 )
 const isMobile = ref(typeof window !== 'undefined' ? window.matchMedia(MOBILE_QUERY).matches : false)
 const workspaceBootstrap = ref<WorkspaceBootstrap | null>(null)
+const accessStatus = ref<AccessStatus | null>(null)
+const accessReady = ref(false)
+const accessPromptOpen = ref(false)
+const accessBusy = ref(false)
+const accessError = ref('')
 const bootstrapError = ref('')
 let mediaQuery: MediaQueryList | null = null
 let stopForegroundAlerts: (() => void) | null = null
@@ -54,27 +61,54 @@ async function syncDocumentTitle() {
   }
 }
 
+async function mountWorkspace() {
+  const desktopWorkspace = !isPetView.value && !isAskHereView.value && !isMobile.value
+  if (desktopWorkspace) {
+    const bootstrap = await loadWorkspaceBootstrap()
+    workspaceBootstrap.value = bootstrap
+    accessStatus.value = bootstrap.access
+    primeUserInteractions(bootstrap.user_interactions)
+    applyThemeConfig(bootstrap.theme.data, bootstrap.theme.active_preset_id)
+    const name = String(bootstrap.mobile_pcs.find((pc) => pc.id === 'local')?.name || '').trim()
+    document.title = name || 'AgentPark'
+  } else {
+    await Promise.all([applyWorkspaceTheme(), syncDocumentTitle(), useUserInteractions().refreshRequests()])
+  }
+  stopAppEventStream = startAppEventStream()
+}
+
+async function initializeAccess() {
+  accessBusy.value = true
+  accessError.value = ''
+  try {
+    const status = await getAccessStatus()
+    accessStatus.value = status
+    if (status.username_required) {
+      accessPromptOpen.value = true
+      return
+    }
+    accessPromptOpen.value = false
+    accessReady.value = true
+    await mountWorkspace()
+  } catch (error) {
+    accessError.value = error instanceof Error ? error.message : String(error)
+    bootstrapError.value = accessError.value
+  } finally {
+    accessBusy.value = false
+  }
+}
+
+async function submitAccessUsername(username: string) {
+  setAccessUsername(username)
+  await initializeAccess()
+}
+
 onMounted(async () => {
   stopForegroundAlerts = initializeForegroundAlerts()
   mediaQuery = window.matchMedia(MOBILE_QUERY)
   syncViewportMode()
   mediaQuery.addEventListener('change', syncViewportMode)
-  const desktopWorkspace = !isPetView.value && !isAskHereView.value && !isMobile.value
-  try {
-    if (desktopWorkspace) {
-      const bootstrap = await loadWorkspaceBootstrap()
-      workspaceBootstrap.value = bootstrap
-      primeUserInteractions(bootstrap.user_interactions)
-      applyThemeConfig(bootstrap.theme.data, bootstrap.theme.active_preset_id)
-      const name = String(bootstrap.mobile_pcs.find((pc) => pc.id === 'local')?.name || '').trim()
-      document.title = name || 'AgentPark'
-    } else {
-      await Promise.all([applyWorkspaceTheme(), syncDocumentTitle(), useUserInteractions().refreshRequests()])
-    }
-  } catch (error) {
-    bootstrapError.value = error instanceof Error ? error.message : String(error)
-  }
-  stopAppEventStream = startAppEventStream()
+  await initializeAccess()
 })
 
 onBeforeUnmount(() => {
@@ -89,9 +123,15 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell">
-    <PetDesktopView v-if="isPetView" />
-    <PetPickerView v-else-if="isAskHereView" />
-    <MobileWorkspace v-else-if="isMobile" />
+    <AccessUsernameDialog
+      v-if="accessPromptOpen"
+      :busy="accessBusy"
+      :error="accessError"
+      @submit="submitAccessUsername"
+    />
+    <PetDesktopView v-else-if="accessReady && isPetView" />
+    <PetPickerView v-else-if="accessReady && isAskHereView" />
+    <MobileWorkspace v-else-if="accessReady && isMobile && accessStatus" :access="accessStatus" />
     <DesktopWorkspace v-else-if="workspaceBootstrap" :bootstrap="workspaceBootstrap" />
     <div v-else class="workspace-bootstrap-status">
       {{ bootstrapError || 'Loading workspace…' }}

@@ -6,6 +6,10 @@ from src.provider_feature_matrix import build_provider_feature_matrix
 from src.doubao_reasoning_effort import require_doubao_reasoning_effort
 from src.grok_reasoning_effort import require_grok_reasoning_effort
 from src.provider_api_key_store import api_key_store_path, resolve_provider_credential_references
+from src.provider_auth.store import get_account
+from src.provider_auth.kimi_oauth import refresh_authorization as refresh_kimi_authorization
+from src.provider_auth.xai_oauth import refresh_authorization as refresh_xai_authorization
+from src.provider_auth.anthropic_oauth import refresh_authorization as refresh_anthropic_authorization
 from src.responses_provider_config import validate_responses_provider_config
 from .workspace_settings import get_workspace_root
 
@@ -180,12 +184,16 @@ class ConfigLoader:
             self._validate_grok_reasoning_effort_fields(provider)
 
         auth_mode = str(provider.get("authMode") or "api_key").strip().lower()
-        if auth_mode not in {"api_key", "codex"}:
+        if auth_mode not in {"api_key", "codex", "oauth"}:
             raise ValueError(
-                f"Provider '{provider_name}' has invalid authMode; expected 'api_key' or 'codex'."
+                f"Provider '{provider_name}' has invalid authMode; expected 'api_key', 'oauth', or 'codex'."
             )
         if auth_mode == "codex" and provider_type != "openai":
             raise ValueError(f"Provider '{provider_name}' can use authMode 'codex' only with type 'openai'.")
+        if auth_mode == "oauth" and provider_type not in {"openai", "claude", "kimi", "grok"}:
+            raise ValueError(
+                f"Provider '{provider_name}' does not have an OAuth protocol implementation; use an API-key account."
+            )
 
         provider["supportmode"] = self._validate_support_modes(
             provider_name, provider.get("supportmode")
@@ -257,18 +265,49 @@ class ConfigLoader:
         validate_responses_provider_config(provider_name, provider, provider_type)
 
         provider.pop("apiKeyEnv", None)
-        if auth_mode == "codex":
+        if auth_mode in {"codex", "oauth"}:
             if str(provider.get("apiKey") or "").strip():
-                raise ValueError(f"Provider '{provider_name}' with authMode 'codex' must not contain apiKey.")
-            provider["authMode"] = "codex"
+                raise ValueError(f"Provider '{provider_name}' with authMode '{auth_mode}' must not contain apiKey.")
+            provider["authMode"] = auth_mode
+            provider["authProvider"] = str(provider.get("authProvider") or provider_type).strip().lower()
             provider.pop("apiKey", None)
-            provider["baseUrl"] = "https://chatgpt.com/backend-api/codex"
+            if provider_type == "openai":
+                provider["baseUrl"] = "https://chatgpt.com/backend-api/codex"
         else:
             provider["authMode"] = "api_key"
             provider["apiKey"] = str(provider.get("apiKey") or "").strip()
+            auth_provider_id = str(provider.get("authProvider") or provider_type).strip().lower()
+            stored_account = get_account(
+                auth_provider_id,
+                str(provider.get("authAccountId") or "").strip() or None,
+            ) if auth_provider_id else None
+            if stored_account and stored_account.kind == "api_key":
+                provider["apiKey"] = str(stored_account.credential.get("apiKey") or "").strip()
+        if require_api_key and auth_mode == "oauth" and provider_type == "kimi":
+            oauth_credential = refresh_kimi_authorization(
+                account_id=str(provider.get("authAccountId") or "").strip() or None
+            )
+            provider["apiKey"] = str(oauth_credential["accessToken"])
+        if require_api_key and auth_mode == "oauth" and provider_type == "grok":
+            oauth_credential = refresh_xai_authorization(
+                account_id=str(provider.get("authAccountId") or "").strip() or None
+            )
+            provider["apiKey"] = str(oauth_credential["accessToken"])
+        if require_api_key and auth_mode == "oauth" and provider_type == "claude":
+            oauth_credential = refresh_anthropic_authorization(
+                account_id=str(provider.get("authAccountId") or "").strip() or None
+            )
+            provider["apiKey"] = str(oauth_credential["accessToken"])
         provider["features"] = build_provider_feature_matrix(provider)
 
-        if require_api_key and auth_mode == "api_key" and not provider["apiKey"]:
+        auth_provider_id = str(provider.get("authProvider") or provider_type).strip().lower()
+        stored_api_key = get_account(
+            auth_provider_id,
+            str(provider.get("authAccountId") or "").strip() or None,
+        ) if auth_provider_id else None
+        if require_api_key and auth_mode == "api_key" and not provider["apiKey"] and not (
+            stored_api_key and stored_api_key.kind == "api_key"
+        ):
             raise ValueError(
                 f"Provider '{provider_name}' requires a non-empty apiKey."
             )
@@ -350,6 +389,27 @@ class ConfigLoader:
             resolved_providers[provider_id],
             require_api_key=True,
         )
+
+    def get_provider_catalog(self):
+        """Return validated Provider metadata without resolving local credentials."""
+        _, _, providers = self._load_provider_document()
+        catalog = {}
+        for raw_provider_name, provider_payload in providers.items():
+            provider_name = str(raw_provider_name)
+            provider = self._validate_provider_config(
+                provider_name,
+                provider_payload,
+                require_api_key=False,
+            )
+            catalog[provider_name] = {
+                "model": str(provider.get("model") or ""),
+                "supportmode": list(provider["supportmode"]),
+                "type": str(provider.get("type") or ""),
+                "authMode": str(provider.get("authMode") or ""),
+                "authProvider": str(provider.get("authProvider") or ""),
+                "responsesApi": provider.get("responsesApi") is True,
+            }
+        return catalog
 
     def get_all_providers(self):
         return self.get_config().get("providers", {})

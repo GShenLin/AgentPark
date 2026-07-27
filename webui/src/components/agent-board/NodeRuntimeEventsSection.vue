@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   applyRuntimeEventConfig,
+  deleteRuntimeEventConfigEntry,
   listAgentProfiles,
   listNodeInstanceFiles,
   loadRuntimeEventConfig,
@@ -17,7 +18,6 @@ import {
   addRuntimeEventNode,
   cloneRuntimeEventConfig,
   defaultTargetForAction,
-  deleteRuntimeEventHandler,
   deleteRuntimeEventNode,
   ensureCompanionReceiverGroup,
   eventNodesForNode,
@@ -344,18 +344,47 @@ async function deleteHandler(eventIndex: number, handlerIndex: number) {
   if (!config.value) return
   const eventNode = eventNodes.value[eventIndex]
   if (!eventNode) return
-  const next = cloneRuntimeEventConfig(config.value)
-  deleteRuntimeEventHandler(next, { ...eventNode, handlerIndex })
-  await applyConfig(next, `${eventNode.event} 的处理方式已删除`)
+  applying.value = true
+  showError('')
+  status.value = ''
+  try {
+    const result = await deleteRuntimeEventConfigEntry({
+      event: eventNode.event,
+      graph_id: eventNode.graphId,
+      node_id: eventNode.nodeId,
+      handler_index: handlerIndex,
+    })
+    if (!result.ok || !result.config) throw new Error(result.error || '删除事件处理方式失败')
+    config.value = cloneRuntimeEventConfig(result.config)
+    status.value = `${eventNode.event} 的处理方式已删除`
+  } catch (error: any) {
+    showError(String(error?.message || error))
+  } finally {
+    applying.value = false
+  }
 }
 
 async function deleteEventNode(index: number) {
   if (!config.value) return
   const eventNode = eventNodes.value[index]
   if (!eventNode) return
-  const next = cloneRuntimeEventConfig(config.value)
-  deleteRuntimeEventNode(next, eventNode)
-  await applyConfig(next, `${eventNode.event} 已删除`)
+  applying.value = true
+  showError('')
+  status.value = ''
+  try {
+    const result = await deleteRuntimeEventConfigEntry({
+      event: eventNode.event,
+      graph_id: eventNode.graphId,
+      node_id: eventNode.nodeId,
+    })
+    if (!result.ok || !result.config) throw new Error(result.error || '删除事件失败')
+    config.value = cloneRuntimeEventConfig(result.config)
+    status.value = `${eventNode.event} 已删除`
+  } catch (error: any) {
+    showError(String(error?.message || error))
+  } finally {
+    applying.value = false
+  }
 }
 
 watch(() => [props.graphId, props.node.id], refreshEvents)

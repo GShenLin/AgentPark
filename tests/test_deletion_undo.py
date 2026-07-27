@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import uuid
 
 
@@ -307,3 +308,58 @@ def test_undo_retention_uses_configured_max_steps(monkeypatch, tmp_path):
 
     assert client.post(f"/api/undo/{tokens[0]}").status_code == 404
     assert client.post(f"/api/undo/{tokens[1]}").status_code == 200
+
+
+def test_begin_removes_only_stale_undo_temp_directories(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.web_backend import runtime_paths
+    from src.web_backend.deletion_undo_store import DeletionUndoStore
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.json").write_text(
+        json.dumps({"undo": {"maxSteps": 5}}),
+        encoding="utf-8",
+    )
+    undo_root = tmp_path / ".cache" / "undo"
+    stale = undo_root / f".tmp-{'a' * 32}"
+    recent = undo_root / f".tmp-{'b' * 32}"
+    stale.mkdir(parents=True)
+    recent.mkdir()
+    old_time = time.time() - (25 * 60 * 60)
+    os.utime(stale, (old_time, old_time))
+
+    store = DeletionUndoStore()
+    entry = store.begin("delete_node", {"graph_id": "g", "node_id": "n"})
+
+    assert entry is not None
+    assert not stale.exists()
+    assert recent.is_dir()
+    store.discard(entry)
+
+
+def test_undo_commit_uses_stable_entry_directory(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.web_backend import runtime_paths
+    from src.web_backend.deletion_undo_store import DeletionUndoStore
+
+    monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.json").write_text(
+        json.dumps({"undo": {"maxSteps": 5}}),
+        encoding="utf-8",
+    )
+    store = DeletionUndoStore()
+    entry = store.begin("delete_node", {"graph_id": "g", "node_id": "n"})
+
+    assert entry is not None
+    assert entry["temp_dir"] == entry["entry_dir"]
+    token = store.commit(entry)
+
+    metadata, entry_dir = store.load(token)
+    assert metadata["node_id"] == "n"
+    assert entry_dir == entry["entry_dir"]

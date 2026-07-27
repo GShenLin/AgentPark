@@ -4,6 +4,7 @@ import time
 
 from src.provider_auth import codex_oauth
 from src.provider_auth.credentials import resolve_provider_request_credentials
+from src.provider_auth.store import get_account, save_account
 from src.providers.openai_transport import OpenAITransport
 from src.providers.openai_transport_errors import OpenAIHttpError
 
@@ -13,32 +14,33 @@ def _jwt(payload):
     return f"header.{encoded}.signature"
 
 
-def _write_auth(tmp_path, *, expires_at):
+def _write_auth(monkeypatch, tmp_path, *, expires_at, email="user@example.com", account_id="account-123456"):
+    monkeypatch.setattr("src.provider_auth.store.get_workspace_root", lambda: str(tmp_path))
     id_token = _jwt({
-        "email": "user@example.com",
+        "email": email,
         "https://api.openai.com/auth": {
-            "chatgpt_account_id": "account-123456",
+            "chatgpt_account_id": account_id,
             "chatgpt_plan_type": "plus",
         },
     })
     access_token = _jwt({"exp": expires_at})
-    (tmp_path / "auth.json").write_text(json.dumps({
+    payload = {
         "auth_mode": "chatgpt",
         "OPENAI_API_KEY": None,
         "tokens": {
             "id_token": id_token,
             "access_token": access_token,
             "refresh_token": "refresh-token",
-            "account_id": "account-123456",
+            "account_id": account_id,
         },
         "last_refresh": "2026-01-01T00:00:00Z",
-    }), encoding="utf-8")
+    }
+    save_account("openai", kind="oauth", credential=payload, identity=email)
     return access_token
 
 
 def test_codex_credentials_load_existing_auth_without_refresh(monkeypatch, tmp_path):
-    access_token = _write_auth(tmp_path, expires_at=int(time.time()) + 3600)
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    access_token = _write_auth(monkeypatch, tmp_path, expires_at=int(time.time()) + 3600)
     monkeypatch.setattr(codex_oauth, "_request_json", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not refresh")))
 
     credentials = resolve_provider_request_credentials({"authMode": "codex"})
@@ -49,8 +51,7 @@ def test_codex_credentials_load_existing_auth_without_refresh(monkeypatch, tmp_p
 
 
 def test_codex_credentials_refresh_expired_token_and_persist(monkeypatch, tmp_path):
-    _write_auth(tmp_path, expires_at=int(time.time()) - 60)
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    _write_auth(monkeypatch, tmp_path, expires_at=int(time.time()) - 60)
     next_access_token = _jwt({"exp": int(time.time()) + 7200})
     monkeypatch.setattr(codex_oauth, "_request_json", lambda *_args, **_kwargs: {
         "access_token": next_access_token,
@@ -58,7 +59,7 @@ def test_codex_credentials_refresh_expired_token_and_persist(monkeypatch, tmp_pa
     })
 
     credentials = codex_oauth.refresh_authorization()
-    persisted = json.loads((tmp_path / "auth.json").read_text(encoding="utf-8"))
+    persisted = get_account("openai").credential
 
     assert credentials.access_token == next_access_token
     assert persisted["tokens"]["refresh_token"] == "next-refresh-token"
@@ -66,8 +67,7 @@ def test_codex_credentials_refresh_expired_token_and_persist(monkeypatch, tmp_pa
 
 
 def test_codex_status_never_returns_tokens(monkeypatch, tmp_path):
-    _write_auth(tmp_path, expires_at=int(time.time()) + 3600)
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    _write_auth(monkeypatch, tmp_path, expires_at=int(time.time()) + 3600)
 
     status = codex_oauth.authorization_status()
 
@@ -76,6 +76,29 @@ def test_codex_status_never_returns_tokens(monkeypatch, tmp_path):
     assert status["accountIdSuffix"] == "123456"
     assert "access_token" not in status
     assert "refresh_token" not in status
+
+
+def test_codex_multi_account_switches_active_credentials(monkeypatch, tmp_path):
+    first_access = _write_auth(
+        monkeypatch,
+        tmp_path,
+        expires_at=int(time.time()) + 3600,
+        email="first@example.com",
+        account_id="account-first",
+    )
+    second_access = _write_auth(
+        monkeypatch,
+        tmp_path,
+        expires_at=int(time.time()) + 3600,
+        email="second@example.com",
+        account_id="account-second",
+    )
+
+    assert resolve_provider_request_credentials({"authMode": "codex"}).headers["Authorization"] == f"Bearer {second_access}"
+    from src.provider_auth.store import list_accounts, set_active_account
+    first_id = next(item["id"] for item in list_accounts("openai") if item["identity"] == "first@example.com")
+    assert set_active_account("openai", first_id) is True
+    assert resolve_provider_request_credentials({"authMode": "codex"}).headers["Authorization"] == f"Bearer {first_access}"
 
 
 def test_unauthorized_response_refreshes_once_even_when_retries_disabled():

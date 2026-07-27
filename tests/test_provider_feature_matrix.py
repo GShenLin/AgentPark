@@ -22,10 +22,9 @@ def test_provider_feature_matrix_covers_all_supported_provider_transports():
         thinking=_feature(
             True,
             ["enabled", "disabled", "auto"],
-            requires="responsesApi=false",
             transport="chat_completions",
         ),
-        reasoning_effort=_feature(True, ["minimal", "low", "medium", "high", "xhigh"]),
+        reasoning_effort=_feature(True, ["minimal", "low", "medium", "high", "xhigh", "max"]),
         reasoning_summary=_feature(False, [], requires="responsesApi=true"),
     )
 
@@ -33,8 +32,8 @@ def test_provider_feature_matrix_covers_all_supported_provider_transports():
         responses_api=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
         web_search=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
         tools=_feature(True, ["enabled", "disabled"]),
-        thinking=_feature(False, [], requires="responsesApi=false"),
-        reasoning_effort=_feature(True, ["minimal", "low", "medium", "high", "xhigh"]),
+        thinking=_feature(True, ["enabled", "disabled"], transport="responses"),
+        reasoning_effort=_feature(True, ["none", "minimal", "low", "medium", "high", "xhigh", "max"]),
         reasoning_summary=_feature(
             True,
             ["auto", "concise", "detailed", "disabled"],
@@ -93,7 +92,7 @@ def test_provider_feature_matrix_covers_all_supported_provider_transports():
         web_search=_feature(False, []),
         tools=_feature(True, ["enabled", "disabled"]),
         thinking=_feature(True, ["enabled", "disabled"]),
-        reasoning_effort=_feature(True, ["minimal", "low", "medium", "high", "xhigh"]),
+        reasoning_effort=_feature(True, ["minimal", "low", "medium", "high", "xhigh", "max"]),
         reasoning_summary=_feature(False, []),
     )
 

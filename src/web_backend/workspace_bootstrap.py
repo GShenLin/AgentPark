@@ -9,6 +9,7 @@ class WorkspaceBootstrapDomain(DomainBase):
     """Build the immutable snapshot required to mount the workspace UI."""
 
     def get_workspace_bootstrap(self, request: Request = None) -> dict:
+        access = self.core.access_api.get_status(request)
         startup = self.core.graph_api.get_startup_graph_config(request=request)
         graph_id = str(startup["graph_id"])
         graph_response = self.core.graph_api.get_graph(graph_id, request=request)
@@ -24,6 +25,7 @@ class WorkspaceBootstrapDomain(DomainBase):
         mobile_pcs = self.core.mobile_api.list_mobile_pcs()
         interactions = self.core.user_interaction_api.list_user_interactions(request=request)
         return {
+            "access": access,
             "startup_graph": graph,
             "remote_status": remote_status,
             "remotes": remotes.get("remotes", []),

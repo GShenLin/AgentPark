@@ -37,6 +37,11 @@ class ResponsesPassthrough:
 
     def prepare_request(self, payload: dict[str, Any]) -> PreparedResponsesRequest:
         request = copy.deepcopy(payload)
+        if str(self.config.get("authMode") or "").strip().lower() == "codex":
+            # ChatGPT's Codex Responses endpoint is stateless and rejects stored responses.
+            request["store"] = False
+            # Codex controls its own output budget and rejects the public Responses field.
+            request.pop("max_output_tokens", None)
         if not self.flattens_namespace_tools:
             return PreparedResponsesRequest(payload=request, tools_by_wire_name={})
 

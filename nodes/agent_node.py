@@ -44,6 +44,7 @@ from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
 from src.config_loader import ConfigLoader
+from src.access_policy import nondeveloper_filtered_tools
 from src.media_resource_utils import resolve_public_base_url
 from src.message_protocol import envelope_text, normalize_envelope
 from src.operational_memory import build_operational_memory_summary
@@ -54,6 +55,9 @@ from src.runtime_events.context_injection import runtime_event_context_from_cont
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.switch_utils import parse_switch_mode
 from src.tool.tool_stats_store import ToolCallStatsRecorder
+from src.tool.access_filter import filter_configured_tool_modules
+from src.tool.access_filter import filter_registered_agent_tools
+from src.tool.access_filter import is_nondeveloper_context
 from src.task_direction_context import inject_task_direction_context
 from src.task_direction_store import archive_legacy_task_artifacts
 from src.workspace_settings import get_workspace_root
@@ -95,6 +99,11 @@ class Node(BaseNode):
             )
             if capability_mode(run_mode)
             else AgentCapabilityPlan()
+        )
+        filtered_tool_names = (
+            nondeveloper_filtered_tools()
+            if is_nondeveloper_context(ctx)
+            else ()
         )
         mcp_settings = with_mcp_caller_context(
             capability_plan.mcp_settings,
@@ -184,7 +193,10 @@ class Node(BaseNode):
         instruction_role = resolve_instruction_role(agent)
         effective_system_prompt = str(run_request.system_prompt or "").strip()
 
-        load_configured_tools(agent, capability_plan.tool_names)
+        load_configured_tools(
+            agent,
+            filter_configured_tool_modules(capability_plan.tool_names, filtered_tool_names),
+        )
         if capability_plan.plugin_capabilities.tool_definitions:
             register_plugin_tool_definitions(agent, capability_plan.plugin_capabilities.tool_definitions)
         skill_definitions = [
@@ -198,6 +210,8 @@ class Node(BaseNode):
                 list(capability_plan.mcp_server_names),
                 settings=mcp_settings,
             )
+        if filtered_tool_names:
+            filter_registered_agent_tools(agent, filtered_tool_names)
 
         if effective_system_prompt:
             has_system = any((msg or {}).get("role") == "system" for msg in getattr(agent, "messages", []) or [])

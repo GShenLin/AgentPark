@@ -159,6 +159,13 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
     assert schema["thinking"]["provider_feature"]["values"] == ["enabled", "disabled"]
     assert "Supported values: enabled, disabled" in schema["thinking"]["description"]
     assert schema["reasoning_effort"]["provider_feature"]["supported"] is True
+    assert schema["reasoning_effort"]["options"] == [
+        {"value": "minimal", "label": "minimal"},
+        {"value": "low", "label": "low"},
+        {"value": "medium", "label": "medium"},
+        {"value": "high", "label": "high"},
+        {"value": "xhigh", "label": "xhigh"},
+    ]
     assert schema["reasoning_summary"]["type"] == "select"
     assert schema["reasoning_summary"]["provider_feature"]["values"] == ["auto", "concise", "detailed", "disabled"]
 
@@ -1839,7 +1846,7 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
 
         graph = {"id": "default", "name": "default", "output_routes": {}}
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200

@@ -22,7 +22,7 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
         if stream:
             payload["stream"] = True
             payload["stream_options"] = {"include_usage": True}
-        if reasoning_effort:
+        if reasoning_effort and thinking_mode != "disabled":
             payload["reasoning_effort"] = str(reasoning_effort)
         if thinking_mode in {"enabled", "disabled"}:
             payload["thinking"] = {"type": thinking_mode}

@@ -12,7 +12,7 @@ from claude_agent_sdk import ToolUseBlock
 from claude_agent_sdk import UserMessage
 
 from nodes.claude_node.runtime.live_bridge import ClaudeLiveBridge
-from nodes.claude_node.runtime.messages_conversion import messages_request_to_canonical
+from src.cli_provider_runtime.messages_conversion import messages_request_to_canonical
 from nodes.claude_node.runtime.provider_gateway import ClaudeProviderGateway
 from nodes.claude_node.runtime.session_projection import project_session_records
 from src.cli_provider_runtime.contracts import CanonicalResult
@@ -232,7 +232,7 @@ def test_provider_gateway_serves_claude_messages_over_canonical_adapter(monkeypa
         lambda _config: "openai_chat",
     )
     monkeypatch.setattr(
-        "nodes.claude_node.runtime.provider_gateway.create_chat_adapter",
+        "src.cli_provider_runtime.gateway_dispatch.create_chat_adapter",
         lambda _config: Adapter(),
     )
     gateway = ClaudeProviderGateway()

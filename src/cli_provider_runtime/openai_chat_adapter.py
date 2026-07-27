@@ -6,6 +6,8 @@ import uuid
 from collections.abc import Iterable
 from typing import Any
 
+from src.provider_auth.credentials import resolve_provider_request_credentials
+
 from .contracts import CanonicalMessage
 from .contracts import CanonicalRequest
 from .contracts import CanonicalResult
@@ -32,9 +34,10 @@ class OpenAIChatAdapter:
         self._tools_by_wire = {}
 
     def complete(self, request: CanonicalRequest) -> CanonicalResult:
+        url, headers = self._request_target()
         response = open_json_request(
-            url=self._url(),
-            headers=self._headers(),
+            url=url,
+            headers=headers,
             payload=self._payload(request, stream=False),
             policy=resolve_upstream_request_policy(self.config),
             stream=False,
@@ -48,9 +51,10 @@ class OpenAIChatAdapter:
         message_started = False
         reasoning = ResponsesReasoningStream()
         tool_calls: dict[int, dict[str, str]] = {}
+        url, headers = self._request_target()
         response = open_json_request(
-            url=self._url(),
-            headers=self._headers(),
+            url=url,
+            headers=headers,
             payload=self._payload(request, stream=True),
             policy=resolve_upstream_request_policy(self.config),
             stream=True,
@@ -230,17 +234,13 @@ class OpenAIChatAdapter:
         result.input_tokens = _non_negative_int(usage.get("prompt_tokens"))
         result.output_tokens = _non_negative_int(usage.get("completion_tokens"))
 
-    def _url(self) -> str:
-        base_url = str(self.config.get("baseUrl") or "").rstrip("/")
+    def _request_target(self) -> tuple[str, dict[str, str]]:
+        credentials = resolve_provider_request_credentials(self.config)
+        base_url = credentials.base_url.rstrip("/")
         if not base_url:
             raise ValueError("Provider baseUrl is required.")
-        return base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
-
-    def _headers(self) -> dict[str, str]:
-        api_key = str(self.config.get("apiKey") or "")
-        if not api_key:
-            raise ValueError("Chat Completions provider apiKey is required.")
-        return {"Authorization": f"Bearer {api_key}"}
+        url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        return url, credentials.headers
 
     def _apply_reasoning(self, payload: dict[str, Any], effort: str) -> None:
         if not effort:

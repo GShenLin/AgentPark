@@ -1,4 +1,5 @@
 import type {
+  AccessStatus,
   FileListResponse,
   AgentProfile,
   AgentProfileEditorPayload,
@@ -41,8 +42,10 @@ import type {
   UserInteractionRequest,
   WorkspaceBootstrap,
 } from './apiTypes'
+import { accessRequestHeaders, syncCanonicalAccessUsername } from './accessIdentity'
 
 export type {
+  AccessStatus,
   FileItem,
   FileListResponse,
   AgentProfile,
@@ -187,6 +190,9 @@ export function createApiNetworkError(baseUrl: string, path: string, init: Reque
 
 export async function requestApiJson(baseUrl: string, path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers)
+  for (const [name, value] of Object.entries(accessRequestHeaders())) {
+    if (!headers.has(name)) headers.set(name, value)
+  }
   if (init?.body != null && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
@@ -216,6 +222,14 @@ export async function requestApiJson(baseUrl: string, path: string, init?: Reque
     throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`)
   }
   return res.json()
+}
+
+export async function getAccessStatus(): Promise<AccessStatus> {
+  const status = await requestApiJson(readActiveApiBase(), '/api/access/status') as AccessStatus
+  if (!status.username_required && !status.is_local_client) {
+    syncCanonicalAccessUsername(status.username)
+  }
+  return status
 }
 
 async function apiFetch(path: string, init?: RequestInit) {
@@ -923,6 +937,13 @@ export type RuntimeEventApplyResponse = {
   errors?: Array<Record<string, unknown>>
 }
 
+export type RuntimeEventDeleteResponse = {
+  ok: boolean
+  config?: RuntimeEventConfig
+  removed_handlers?: number
+  error?: string
+}
+
 export type RuntimeEventDiagnostics = {
   ok: boolean
   enabled: boolean
@@ -964,6 +985,18 @@ export async function applyRuntimeEventConfig(config?: RuntimeEventConfig | Reco
     method: 'POST',
     body: JSON.stringify(body),
   }) as Promise<RuntimeEventApplyResponse>
+}
+
+export async function deleteRuntimeEventConfigEntry(payload: {
+  event: string
+  graph_id: string
+  node_id: string
+  handler_index?: number
+}): Promise<RuntimeEventDeleteResponse> {
+  return apiFetch('/api/events/delete', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<RuntimeEventDeleteResponse>
 }
 
 export async function getRuntimeEventDiagnostics(): Promise<RuntimeEventDiagnostics> {

@@ -5,23 +5,17 @@ import logging
 import secrets
 import threading
 import urllib.parse
-import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
-from dataclasses import replace
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from typing import Any, Iterator
 
 from src.cli_provider_runtime.http_transport import UpstreamHttpError
-from src.cli_provider_runtime.provider_adapter import create_chat_adapter
+from src.cli_provider_runtime.gateway_dispatch import dispatch_messages
 from src.cli_provider_runtime.provider_adapter import provider_protocol
 from src.config_loader import ConfigLoader
-
-from .messages_conversion import messages_request_to_canonical
-from .messages_wire import canonical_result_to_message
-from .messages_wire import responses_sse_to_messages
 
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
@@ -264,38 +258,51 @@ class ClaudeProviderGateway:
                 if not model:
                     raise ValueError(f"Provider {provider_id!r} has no model.")
                 requested_model = str(payload.get("model") or "").strip()
-                request = messages_request_to_canonical(payload, model=model)
                 protocol = provider_protocol(config)
+                request_payload = dict(payload)
                 if reasoning_effort:
                     _validate_provider_reasoning_effort(
                         config,
                         protocol=protocol,
                         reasoning_effort=reasoning_effort,
                     )
-                    request = replace(request, reasoning_effort=reasoning_effort)
+                    output_config = request_payload.get("output_config")
+                    request_payload["output_config"] = {
+                        **(output_config if isinstance(output_config, dict) else {}),
+                        "effort": reasoning_effort,
+                    }
+                effective_effort = reasoning_effort
+                if not effective_effort:
+                    output_config = request_payload.get("output_config")
+                    effective_effort = (
+                        str(output_config.get("effort") or "").strip()
+                        if isinstance(output_config, dict)
+                        else ""
+                    )
                 self.server.gateway._observe(  # type: ignore[attr-defined]
                     token,
                     provider_id=provider_id,
                     protocol=protocol,
                     requested_model=requested_model,
                     provider_model=model,
-                    reasoning_effort=request.reasoning_effort,
-                    payload=payload,
+                    reasoning_effort=effective_effort,
+                    payload=request_payload,
                 )
-                adapter = create_chat_adapter(config)
-                if request.stream:
+                result = dispatch_messages(config, request_payload)
+                if result.stream is not None:
                     self.send_response(200)
-                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                    self.send_header("Content-Type", result.content_type)
                     self.send_header("Cache-Control", "no-cache")
                     self.send_header("Connection", "close")
                     self.end_headers()
                     self._response_started = True
-                    for frame in responses_sse_to_messages(adapter.stream(request), model=model):
+                    for frame in result.stream:
                         self.wfile.write(frame)
                         self.wfile.flush()
                     return
-                result = adapter.complete(request)
-                self._json_response(200, canonical_result_to_message(result, model=model))
+                if result.json_body is None:
+                    raise RuntimeError("Gateway dispatch returned no JSON body.")
+                self._json_response(result.status, result.json_body)
 
             def _count_tokens(self, provider_id: str) -> None:
                 config = ConfigLoader().get_provider_config(provider_id)

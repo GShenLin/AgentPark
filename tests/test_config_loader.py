@@ -510,6 +510,43 @@ def test_get_provider_config_resolves_api_key_name(monkeypatch, tmp_path):
     assert payload["type"] == "doubao"
 
 
+def test_provider_catalog_does_not_resolve_machine_local_api_key_names(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "remote-only": {
+                        "type": "openai",
+                        "apiKey": "key-owned-by-another-machine",
+                        "model": "remote-model",
+                        "supportmode": ["chat"],
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    catalog = ConfigLoader().get_provider_catalog()
+
+    assert catalog == {
+        "remote-only": {
+            "model": "remote-model",
+            "supportmode": ["chat"],
+            "type": "openai",
+            "authMode": "api_key",
+            "authProvider": "",
+            "responsesApi": False,
+        }
+    }
+    with pytest.raises(ValueError, match="missing API key name 'key-owned-by-another-machine'"):
+        ConfigLoader().get_provider_config("remote-only")
+
+
 def test_openai_codex_auth_does_not_require_api_key(monkeypatch, tmp_path):
     config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
@@ -887,7 +924,17 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
     assert providers["openai"]["features"]["reasoning_summary"]["supported"] is False
     assert providers["openai"]["features"]["web_search"]["requires"] == "responsesApi=true"
     assert providers["openai-responses"]["features"]["responses_api"]["supported"] is True
-    assert providers["openai-responses"]["features"]["thinking"]["supported"] is False
+    assert providers["openai-responses"]["features"]["thinking"]["supported"] is True
+    assert providers["openai-responses"]["features"]["thinking"]["values"] == ["enabled", "disabled"]
+    assert providers["openai-responses"]["features"]["reasoning_effort"]["values"] == [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    ]
     assert providers["openai-responses"]["features"]["web_search"]["supported"] is True
     assert providers["openai-responses"]["features"]["reasoning_summary"]["values"] == [
         "auto",
@@ -904,6 +951,14 @@ def test_provider_feature_matrix_is_explicit(monkeypatch, tmp_path):
     assert providers["doubao-responses"]["features"]["reasoning_effort"]["values"] == ["low", "medium", "high"]
     assert providers["zhipu"]["features"]["thinking"]["values"] == ["enabled", "disabled"]
     assert providers["zhipu"]["features"]["reasoning_effort"]["supported"] is True
+    assert providers["zhipu"]["features"]["reasoning_effort"]["values"] == [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    ]
     assert providers["zhipu"]["features"]["tools"]["supported"] is True
     assert providers["claude"]["features"]["tools"]["supported"] is True
     assert providers["claude"]["features"]["reasoning_effort"]["supported"] is True

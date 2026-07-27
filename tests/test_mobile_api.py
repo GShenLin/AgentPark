@@ -38,7 +38,7 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
         app = facade.build()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
 
         graph = {"id": "default", "name": "Default", "output_routes": {}}
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200

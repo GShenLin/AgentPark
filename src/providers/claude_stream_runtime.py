@@ -175,7 +175,7 @@ class ClaudeStreamRuntime(ProviderStreamEmitMixin, CurlHttpTransport, ProviderRu
             block = content_blocks.get(index)
             if not isinstance(block, dict) or str(block.get("type") or "") != "tool_use":
                 continue
-            name = str(block.get("name") or "").strip()
+            name = str(block.get("name") or "").strip().removeprefix("custom_")
             if not name:
                 continue
             input_text = "".join(tool_input_json.get(index) or [])

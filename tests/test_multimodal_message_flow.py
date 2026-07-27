@@ -16,7 +16,7 @@ def test_emit_graph_accepts_message_envelope_and_persists_messages(tmp_path):
         app = backend.create_app()
         from fastapi.testclient import TestClient
 
-        client = TestClient(app)
+        client = TestClient(app, client=("127.0.0.1", 12345))
 
         graph = {
             "id": "default",

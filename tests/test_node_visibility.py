@@ -10,6 +10,7 @@ def _write_json(path, payload: dict) -> None:
 
 
 def _build_visibility_app(tmp_path, monkeypatch):
+    import src.access_policy as access_policy
     import src.web_backend as backend
     from src.web_backend import runtime_paths
 
@@ -55,6 +56,7 @@ def _build_visibility_app(tmp_path, monkeypatch):
 
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
     monkeypatch.setattr(runtime_paths, "_get_runtime_root", lambda: str(tmp_path))
+    monkeypatch.setattr(access_policy, "get_workspace_root", lambda: str(tmp_path))
     return backend.create_app(), graph_dir
 
 
@@ -62,6 +64,10 @@ def test_private_node_is_hidden_from_external_clients(tmp_path, monkeypatch):
     app, _graph_dir = _build_visibility_app(tmp_path, monkeypatch)
     local = TestClient(app, client=("127.0.0.1", 12345))
     remote = TestClient(app, client=("10.0.0.9", 12345))
+    remote_headers = {
+        "X-AgentPark-Client-Id": "visibility-test",
+        "X-AgentPark-Username": "Remote Tester",
+    }
 
     local_nodes = {
         item["node_id"]: item
@@ -81,6 +87,7 @@ def test_private_node_is_hidden_from_external_clients(tmp_path, monkeypatch):
     ).status_code == 404
     assert remote.post(
         "/api/nodes/run",
+        headers=remote_headers,
         json={
             "node_id": "basic_trigger_node",
             "input": "hidden",
@@ -89,6 +96,7 @@ def test_private_node_is_hidden_from_external_clients(tmp_path, monkeypatch):
     ).status_code == 404
     assert remote.post(
         "/api/nodes/run_async",
+        headers=remote_headers,
         json={
             "node_id": "basic_trigger_node",
             "input": "hidden",

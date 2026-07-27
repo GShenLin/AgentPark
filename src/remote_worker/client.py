@@ -16,6 +16,7 @@ from .protocol import PROTOCOL_VERSION, ProtocolError, RemoteTask, decode_json_o
 
 
 POLL_TIMEOUT_SECONDS = 20.0
+CANCELLATION_POLL_TIMEOUT_SECONDS = 20.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
 RETRY_DELAY_SECONDS = 3.0
 MAX_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -77,6 +78,10 @@ class RemoteWorkerClient:
         self._session_lock = threading.Lock()
         self._session: RegisteredSession | None = None
         self._heartbeat_thread: threading.Thread | None = None
+        self._cancellation_thread: threading.Thread | None = None
+        self._active_tasks_lock = threading.Lock()
+        self._active_task_cancellations: dict[str, threading.Event] = {}
+        self._early_cancellations: set[str] = set()
 
     def run_forever(self) -> None:
         self._heartbeat_thread = threading.Thread(
@@ -85,6 +90,12 @@ class RemoteWorkerClient:
             daemon=True,
         )
         self._heartbeat_thread.start()
+        self._cancellation_thread = threading.Thread(
+            target=self._cancellation_loop,
+            name="remote-cancellation",
+            daemon=True,
+        )
+        self._cancellation_thread.start()
         while not self._stop_event.is_set():
             pending = self._configuration.wait_for_server(self._stop_event)
             if pending is None:
@@ -104,10 +115,14 @@ class RemoteWorkerClient:
 
     def stop(self) -> None:
         self._stop_event.set()
+        with self._active_tasks_lock:
+            active_cancellations = list(self._active_task_cancellations.values())
+        for cancel_event in active_cancellations:
+            cancel_event.set()
         self._configuration.wake()
-        thread = self._heartbeat_thread
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=5)
+        for thread in (self._heartbeat_thread, self._cancellation_thread):
+            if thread is not None and thread is not threading.current_thread():
+                thread.join(timeout=5)
 
     def _register(self, identity: WorkerIdentity, generation: int) -> RegisteredSession | None:
         response = self._transport.post(
@@ -159,25 +174,89 @@ class RemoteWorkerClient:
             self._execute_and_submit(session, task)
 
     def _execute_and_submit(self, session: RegisteredSession, task: RemoteTask) -> None:
+        cancel_event = self._begin_task(task.task_id)
         try:
-            result = self._operations.execute(task)
+            result = self._operations.execute(task, cancel_event=cancel_event)
             envelope: dict[str, Any] = {"ok": True, "result": result}
         except Exception as exc:
             self._logger.exception("Remote tool %s failed for task %s", task.tool_name, task.task_id)
             envelope = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        if not self._is_current(session):
-            self._logger.warning("Discarding task result after AgentPark server changed: %s", task.task_id)
+        try:
+            if not self._is_current(session):
+                self._logger.warning("Discarding task result after AgentPark server changed: %s", task.task_id)
+                return
+            worker_id = quote(session.identity.worker_id, safe="")
+            task_id = quote(task.task_id, safe="")
+            url = session.identity.server_url + f"/api/remote-workers/{worker_id}/tasks/{task_id}/result"
+            response = self._transport.post(
+                url,
+                {"token": session.identity.token, "result": envelope},
+                timeout=30.0,
+            )
+            if response.get("ok") is not True:
+                raise ProtocolError("task result response did not report ok=true")
+        finally:
+            self._end_task(task.task_id, cancel_event)
+
+    def _cancellation_loop(self) -> None:
+        while not self._stop_event.is_set():
+            session = self._get_session()
+            if session is None or not self._is_current(session):
+                self._stop_event.wait(self._retry_delay_seconds)
+                continue
+            worker_id = quote(session.identity.worker_id, safe="")
+            url = session.identity.server_url + f"/api/remote-workers/{worker_id}/cancellations/poll"
+            try:
+                response = self._transport.post(
+                    url,
+                    {
+                        "token": session.identity.token,
+                        "timeout_seconds": CANCELLATION_POLL_TIMEOUT_SECONDS,
+                    },
+                    timeout=CANCELLATION_POLL_TIMEOUT_SECONDS + 10.0,
+                )
+                require_object(response, "cancellation poll response")
+                if response.get("ok") is not True:
+                    raise ProtocolError("cancellation poll response did not report ok=true")
+                task_ids = response.get("task_ids")
+                if not isinstance(task_ids, list) or not all(isinstance(item, str) for item in task_ids):
+                    raise ProtocolError("cancellation poll response task_ids must be a string array")
+                if self._is_current(session):
+                    for task_id in task_ids:
+                        self._cancel_task(task_id)
+            except Exception:
+                if not self._stop_event.is_set() and self._is_current(session):
+                    self._logger.exception(
+                        "AgentPark Remote cancellation channel failed for %s",
+                        session.identity.server_url,
+                    )
+                    self._stop_event.wait(self._retry_delay_seconds)
+
+    def _begin_task(self, task_id: str) -> threading.Event:
+        cancel_event = threading.Event()
+        with self._active_tasks_lock:
+            if task_id in self._early_cancellations:
+                self._early_cancellations.discard(task_id)
+                cancel_event.set()
+            self._active_task_cancellations[task_id] = cancel_event
+        return cancel_event
+
+    def _cancel_task(self, task_id: str) -> None:
+        normalized_task_id = str(task_id or "").strip()
+        if not normalized_task_id:
             return
-        worker_id = quote(session.identity.worker_id, safe="")
-        task_id = quote(task.task_id, safe="")
-        url = session.identity.server_url + f"/api/remote-workers/{worker_id}/tasks/{task_id}/result"
-        response = self._transport.post(
-            url,
-            {"token": session.identity.token, "result": envelope},
-            timeout=30.0,
-        )
-        if response.get("ok") is not True:
-            raise ProtocolError("task result response did not report ok=true")
+        with self._active_tasks_lock:
+            cancel_event = self._active_task_cancellations.get(normalized_task_id)
+            if cancel_event is None:
+                self._early_cancellations.add(normalized_task_id)
+                return
+        cancel_event.set()
+
+    def _end_task(self, task_id: str, cancel_event: threading.Event) -> None:
+        with self._active_tasks_lock:
+            if self._active_task_cancellations.get(task_id) is cancel_event:
+                self._active_task_cancellations.pop(task_id, None)
+            self._early_cancellations.discard(task_id)
 
     def _heartbeat_loop(self) -> None:
         while not self._stop_event.wait(HEARTBEAT_INTERVAL_SECONDS):

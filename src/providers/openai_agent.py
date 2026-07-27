@@ -85,6 +85,12 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             parse_switch_mode(thinking, default="disabled"),
             supported_default=not self._supports_responses_api(),
         )
+        if (
+            self._supports_responses_api()
+            and (thinking is None or thinking == "")
+            and str(effort_source or "").strip()
+        ):
+            thinking_mode = "enabled"
         if not self._supports_responses_api():
             chat_active_tools = self._build_chat_active_tools(
                 active_tools,
@@ -106,6 +112,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             active_tools=active_tools,
             regular_active_tools=regular_active_tools,
             run_tools=run_tools,
+            thinking_mode=thinking_mode,
             reasoning_effort=effort_source,
             reasoning_summary=summary_source,
             web_search_mode=web_search_mode,

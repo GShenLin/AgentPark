@@ -46,31 +46,31 @@ Provider 实现类型。运行时根据它选择具体 Agent / runtime。
 
 ### `apiKey`
 
-Provider 认证密钥在 `.env/apiKey.json` 中的引用名称。例如，
+Provider 认证密钥在 `.auth/api-keys/aliases.json` 中的引用名称。例如，
 `modelProvider.json` 使用 `"apiKey": "Ark"`，本机密钥文件使用
 `{"Ark": "实际密钥"}`。
 
 要求：
 
 - 必须是非空字符串，且首尾不能有空白字符。
-- 引用名称必须存在于 `.env/apiKey.json`，对应值必须是非空字符串。
+- 引用名称必须存在于 `.auth/api-keys/aliases.json`，对应值必须是非空字符串。
 - `ConfigLoader.get_provider_config()` 只在运行时解析真实密钥。
 - `modelProvider.json` 不允许保存真实密钥。
 
 注意：
 
 - `apiKeyEnv` 不属于当前配置合同。
-- `.env/apiKey.json` 是本机文件并由 Git 忽略；每台机器需要单独配置。
+- `.auth/api-keys/aliases.json` 是本机文件并由 Git 忽略；每台机器需要单独配置。
 
 ### `xApiKey`
 
 豆包语音数据面接口使用的独立鉴权引用名称。真实值同样从
-`.env/apiKey.json` 解析；运行时仅在接口协议要求 `X-Api-Key` 请求头时读取，
+`.auth/api-keys/aliases.json` 解析；运行时仅在接口协议要求 `X-Api-Key` 请求头时读取，
 不会回退到通用的 `apiKey`。
 
 要求：
 
-- 配置该字段时必须引用 `.env/apiKey.json` 中存在的非空条目。
+- 配置该字段时必须引用 `.auth/api-keys/aliases.json` 中存在的非空条目。
 - 使用 `X-Api-Key` 的语音能力在字段缺失时会明确报错。
 - `apiKey` 仍用于 Provider 的通用鉴权；两者不要互相替代。
 - 密钥文件中的对应值必须来自“豆包语音控制台 > API Key 管理”的单一语音

@@ -315,7 +315,7 @@ class CurlHttpTransport:
                 url=url,
                 headers=headers,
                 payload_path=payload_path,
-                timeout_val=None,
+                timeout_val=timeout_val,
                 connect_timeout=connect_timeout,
                 marker=marker,
                 no_buffer=True,

@@ -23,6 +23,7 @@ def test_openai_send_uses_responses_endpoint_when_responses_api_enabled():
         "baseUrl": "https://api.openai.test/v1",
         "model": "gpt-test",
         "responsesApi": True,
+        "reasoningEffort": "high",
         "maxRetries": 0,
         "retryDelaySec": 0,
         "responsesReplayReasoningItems": False,
@@ -73,6 +74,24 @@ def test_openai_send_uses_responses_endpoint_when_responses_api_enabled():
         "content": [{"type": "input_text", "text": "hello"}],
     }
     assert "messages" not in payload
+    assert payload["reasoning"] == {"effort": "none"}
+    assert "include" not in payload
+
+
+def test_openai_responses_enabled_thinking_preserves_selected_effort():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"model": "gpt-test"}
+
+    payload = agent._responses_payload_extra(
+        thinking_mode="enabled",
+        reasoning_effort="high",
+        reasoning_summary="disabled",
+    )
+
+    assert payload["reasoning"] == {"effort": "high"}
+    assert payload["include"] == ["reasoning.encrypted_content"]
 
 
 def test_responses_web_search_requests_structured_sources():

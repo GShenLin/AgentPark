@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DialogCloseButton from './DialogCloseButton.vue'
 
 defineOptions({
   inheritAttrs: false,
 })
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     modelValue: string
     rows?: number
@@ -40,10 +40,24 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(false)
+const inputTextarea = ref<HTMLTextAreaElement | null>(null)
 const expandedTextarea = ref<HTMLTextAreaElement | null>(null)
+let inputResizeObserver: ResizeObserver | null = null
+let observedInputWidth = 0
 
 function updateValue(event: Event) {
-  emit('update:modelValue', (event.target as HTMLTextAreaElement).value)
+  const textarea = event.target as HTMLTextAreaElement
+  emit('update:modelValue', textarea.value)
+  resizeInputToContent(textarea)
+}
+
+function resizeInputToContent(textarea = inputTextarea.value) {
+  if (!textarea) return
+
+  textarea.style.height = '0px'
+  const borderHeight = textarea.offsetHeight - textarea.clientHeight
+  textarea.style.height = `${textarea.scrollHeight + borderHeight}px`
+  textarea.style.overflowY = textarea.scrollHeight > textarea.clientHeight ? 'auto' : 'hidden'
 }
 
 async function openEditor() {
@@ -55,6 +69,34 @@ async function openEditor() {
 function closeEditor() {
   expanded.value = false
 }
+
+watch(
+  () => props.modelValue,
+  async () => {
+    await nextTick()
+    resizeInputToContent()
+  },
+  { flush: 'post' },
+)
+
+onMounted(async () => {
+  await nextTick()
+  resizeInputToContent()
+
+  inputResizeObserver = new ResizeObserver(([entry]) => {
+    const width = entry?.contentRect.width || 0
+    if (width === observedInputWidth) return
+    observedInputWidth = width
+    resizeInputToContent()
+  })
+  if (inputTextarea.value) {
+    inputResizeObserver.observe(inputTextarea.value)
+  }
+})
+
+onBeforeUnmount(() => {
+  inputResizeObserver?.disconnect()
+})
 </script>
 
 <template>
@@ -66,6 +108,7 @@ function closeEditor() {
     }"
   >
     <textarea
+      ref="inputTextarea"
       class="expandable-textarea__input"
       :value="modelValue"
       :rows="rows"
@@ -142,7 +185,8 @@ function closeEditor() {
   width: 100%;
   min-height: var(--expandable-textarea-min-height, 78px);
   max-height: var(--expandable-textarea-max-height, none);
-  resize: vertical;
+  overflow-y: hidden;
+  resize: none;
   border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
   outline: none;
@@ -153,6 +197,11 @@ function closeEditor() {
   font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
   line-height: 1.4;
   box-sizing: border-box;
+  transition:
+    border-color var(--transition-normal),
+    background-color var(--transition-normal),
+    color var(--transition-normal),
+    box-shadow var(--transition-normal);
 }
 
 .expandable-textarea__input:focus {

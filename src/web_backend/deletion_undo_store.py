@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -16,6 +17,7 @@ from . import runtime_paths
 
 
 _TOKEN_RE = re.compile(r"^[a-f0-9]{32}$")
+_STALE_TEMP_SECONDS = 24 * 60 * 60
 
 
 class DeletionUndoStore:
@@ -30,15 +32,17 @@ class DeletionUndoStore:
             return None
         token = uuid.uuid4().hex
         root = self._root_dir()
-        os.makedirs(root, exist_ok=True)
-        temp_dir = os.path.join(root, f".tmp-{token}")
-        os.makedirs(temp_dir)
+        with self._lock:
+            os.makedirs(root, exist_ok=True)
+            self._remove_stale_working_directories_locked(root)
+            entry_dir = os.path.join(root, token)
+            os.makedirs(entry_dir)
         return {
             "token": token,
             "kind": str(kind or "").strip(),
             "metadata": dict(metadata or {}),
-            "temp_dir": temp_dir,
-            "entry_dir": os.path.join(root, token),
+            "temp_dir": entry_dir,
+            "entry_dir": entry_dir,
         }
 
     def archive_directory(self, entry: dict[str, Any], source_dir: str, name: str) -> str:
@@ -70,7 +74,10 @@ class DeletionUndoStore:
         }
         with self._lock:
             self.write_json(entry, "metadata.json", metadata)
-            os.replace(str(entry["temp_dir"]), str(entry["entry_dir"]))
+            temp_dir = str(entry["temp_dir"])
+            entry_dir = str(entry["entry_dir"])
+            if os.path.normcase(os.path.abspath(temp_dir)) != os.path.normcase(os.path.abspath(entry_dir)):
+                os.replace(temp_dir, entry_dir)
             try:
                 self._trim_locked()
             except OSError:
@@ -105,6 +112,7 @@ class DeletionUndoStore:
         root = self._root_dir()
         if not os.path.isdir(root):
             return
+        self._remove_stale_working_directories_locked(root)
         max_steps = self.max_steps()
         entries: list[tuple[int, str]] = []
         for name in os.listdir(root):
@@ -113,14 +121,35 @@ class DeletionUndoStore:
                 continue
             if not _TOKEN_RE.fullmatch(name) or not os.path.isdir(path):
                 continue
+            metadata_path = os.path.join(path, "metadata.json")
+            if not os.path.isfile(metadata_path):
+                continue
             try:
-                created = os.stat(os.path.join(path, "metadata.json")).st_mtime_ns
+                created = os.stat(metadata_path).st_mtime_ns
             except OSError:
                 created = os.stat(path).st_mtime_ns
             entries.append((created, path))
         entries.sort(reverse=True)
         for _, path in entries[max_steps:]:
             shutil.rmtree(path, ignore_errors=True)
+
+    def _remove_stale_working_directories_locked(self, root: str) -> None:
+        cutoff = time.time() - _STALE_TEMP_SECONDS
+        for name in os.listdir(root):
+            is_legacy_temp = name.startswith(".tmp-")
+            is_uncommitted_entry = bool(_TOKEN_RE.fullmatch(name)) and not os.path.isfile(
+                os.path.join(root, name, "metadata.json")
+            )
+            if not is_legacy_temp and not is_uncommitted_entry:
+                continue
+            path = os.path.join(root, name)
+            if not os.path.isdir(path):
+                continue
+            try:
+                if os.stat(path).st_mtime <= cutoff:
+                    shutil.rmtree(path, ignore_errors=True)
+            except OSError:
+                continue
 
     def _root_dir(self) -> str:
         return os.path.join(runtime_paths._get_runtime_root(), ".cache", "undo")

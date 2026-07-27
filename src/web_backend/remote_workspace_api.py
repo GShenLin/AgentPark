@@ -65,6 +65,20 @@ class RemoteWorkspaceApiDomain:
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
+    def poll_worker_cancellations(self, worker_id: str, payload: dict):
+        body = payload if isinstance(payload, dict) else {}
+        try:
+            task_ids = self.broker.poll_cancellations(
+                worker_id,
+                str(body.get("token") or ""),
+                float(body.get("timeout_seconds") or 20.0),
+            )
+            return {"ok": True, "task_ids": task_ids}
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     def submit_worker_result(self, worker_id: str, task_id: str, payload: dict):
         body = payload if isinstance(payload, dict) else {}
         result = body.get("result")
@@ -111,6 +125,18 @@ class RemoteWorkspaceApiDomain:
         except TimeoutError as exc:
             raise HTTPException(status_code=504, detail=str(exc)) from exc
         except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def cancel_internal_task(self, task_id: str, payload: dict, request: Request = None):
+        if not is_local_request(request):
+            raise HTTPException(status_code=403, detail="remote workspace internal cancellation is loopback-only")
+        body = payload if isinstance(payload, dict) else {}
+        try:
+            state = self.broker.cancel(str(body.get("worker_id") or ""), task_id)
+            return {"ok": True, "task_id": task_id, "state": state}
+        except LookupError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def close(self) -> None:

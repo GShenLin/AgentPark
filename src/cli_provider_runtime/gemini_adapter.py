@@ -8,6 +8,8 @@ import uuid
 from collections.abc import Iterable
 from typing import Any
 
+from src.provider_auth.credentials import resolve_provider_api_key
+
 from .contracts import CanonicalMessage
 from .contracts import CanonicalRequest
 from .contracts import CanonicalResult
@@ -196,11 +198,9 @@ class GeminiGenerateContentAdapter:
             raise ValueError("Provider baseUrl is required.")
         method = "streamGenerateContent" if stream else "generateContent"
         path = f"{base_url}/models/{urllib.parse.quote(model, safe='')}:{method}"
-        query = {"key": str(self.config.get("apiKey") or "")}
+        query = {"key": resolve_provider_api_key(self.config)}
         if stream:
             query["alt"] = "sse"
-        if not query["key"]:
-            raise ValueError("Gemini provider apiKey is required.")
         return f"{path}?{urllib.parse.urlencode(query)}"
 
 

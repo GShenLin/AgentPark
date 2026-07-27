@@ -80,6 +80,7 @@ const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
 const isLocalClient = ref(false)
 const canAccessLocalFiles = computed(() => isLocalClient.value)
+const isDeveloper = computed(() => props.bootstrap.access.is_developer === true)
 const fileExplorerRootPath = ref('')
 const activeView = ref<'board' | 'settings'>('board')
 let graphNavigationVersion = 0
@@ -326,7 +327,7 @@ watch(
       :left-collapsed="leftCollapsed"
       :right-collapsed="rightCollapsed"
       :can-access-local-files="canAccessLocalFiles"
-      :can-open-settings="isLocalClient"
+      :can-open-settings="isDeveloper"
       :initial-remotes="props.bootstrap.remotes"
       @toggle-left="toggleLeftSidebar"
       @toggle-right="toggleRightPanel"
@@ -344,7 +345,7 @@ watch(
 
       <div class="center">
         <main class="agent-stage">
-          <NodeConfigDock />
+          <NodeConfigDock v-if="isDeveloper" />
           <AgentBoard v-if="workspaceReady" />
           <div v-if="lastError" class="error">{{ lastError }}</div>
         </main>
