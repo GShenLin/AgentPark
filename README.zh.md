@@ -1,7 +1,7 @@
 # AgentPark
 
 [English](./README.md) | [中文](./README.zh.md)
-<img width="1008" height="650" alt="image" src="https://github.com/user-attachments/assets/390bb88d-0e4d-4f86-a534-e2e7cafaaafb" />
+<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
 AgentPark 是一个用于构建、运行和分享 Agent、工具与 Graph 工作流的 Agent 平台。它从本地优先的工作区出发，但产品方向不止于本地执行：让 Agent 可以复用，让工具能力显式化，让 Graph 成为可以沉淀和分享的自动化资产，而不是一次性的本地实验。
 
 后端使用 FastAPI 管理节点、图执行、模型服务商、文件、设置和运行时状态。前端使用 Vue 3 + Vite，提供可视化图编辑、节点执行控制、记忆浏览、文件操作、桌面端设置，以及适合手机访问的移动端工作区。
