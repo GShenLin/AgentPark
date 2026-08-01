@@ -2,7 +2,6 @@
 <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
 
 [English](./README.md) | [中文](./README.zh.md)
-<img width="1008" height="650" alt="image" src="https://github.com/user-attachments/assets/390bb88d-0e4d-4f86-a534-e2e7cafaaafb" />
 
 
 AgentPark is an Agent platform for Any work with AI . It starts from a local-first workspace, but its product direction is broader: make Agents reusable, make tools explicit, and make Graphs portable enough to become shared automation assets instead of one-off local experiments.
