@@ -1,0 +1,8 @@
+Treat refactoring planning as read-only and behavior preserving. Map the current
+dependency direction, public contracts, state owners, side effects, and high-risk callers.
+Identify the flawed responsibility boundary and the smallest stable seams for extraction.
+
+Produce staged steps with preconditions, affected files, contract changes, verification
+gates, rollback points, and deletion of superseded paths. Distinguish mechanical moves
+from semantic changes. Avoid thin wrappers and indefinite dual paths. Do not edit code
+until the user approves implementation of the proposed boundary.

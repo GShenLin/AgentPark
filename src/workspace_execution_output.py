@@ -10,7 +10,10 @@ from src.workspace_execution import WorkspaceExecutionContractError
 def serialize_workspace_result(result: dict[str, Any], *, agent: object) -> str:
     serialized = json.dumps(result, ensure_ascii=False)
     submission_limit = _submission_limit(agent)
-    if submission_limit is None or len(serialized) <= submission_limit:
+    if submission_limit is None:
+        return serialized
+    serialization_limit = submission_limit - min(512, submission_limit // 10)
+    if len(serialized) <= serialization_limit:
         return serialized
 
     artifact_path = store_tool_result_artifact(
@@ -31,7 +34,7 @@ def serialize_workspace_result(result: dict[str, Any], *, agent: object) -> str:
         ),
         default=0,
     )
-    low, high = 0, min(maximum_result_chars, submission_limit)
+    low, high = 0, min(maximum_result_chars, serialization_limit)
     best_serialized = None
     while low <= high:
         preview_limit = (low + high) // 2
@@ -39,11 +42,11 @@ def serialize_workspace_result(result: dict[str, Any], *, agent: object) -> str:
             result,
             artifact_path=artifact_path,
             original_result_chars=len(serialized),
-            submission_limit=submission_limit,
+            submission_limit=serialization_limit,
             preview_limit=preview_limit,
         )
         candidate_serialized = json.dumps(candidate, ensure_ascii=False)
-        if len(candidate_serialized) <= submission_limit:
+        if len(candidate_serialized) <= serialization_limit:
             best_serialized = candidate_serialized
             low = preview_limit + 1
         else:

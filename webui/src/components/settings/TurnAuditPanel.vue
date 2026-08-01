@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import ActionButton from '../ActionButton.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
 import {
   getTurnAudit,
   listTurnAudits,
@@ -124,29 +127,29 @@ onMounted(loadTurns)
       <div class="audit-filters">
         <label class="audit-date-filter">
           From
-          <input v-model="startDate" type="date" />
+          <FormTextInput v-model="startDate" type="date" />
         </label>
         <label class="audit-date-filter">
           To
-          <input v-model="endDate" type="date" />
+          <FormTextInput v-model="endDate" type="date" />
         </label>
         <label>
           Graph
-          <select v-model="graphId" @change="changeScope">
+          <FormSelect v-model="graphId" @change="changeScope">
             <option value="">All graphs</option>
             <option v-for="item in catalog?.available_graph_ids || []" :key="item" :value="item">{{ item }}</option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           Node
-          <select v-model="nodeId" @change="changeScope">
+          <FormSelect v-model="nodeId" @change="changeScope">
             <option value="">All nodes</option>
             <option v-for="item in catalog?.available_node_ids || []" :key="item" :value="item">{{ item }}</option>
-          </select>
+          </FormSelect>
         </label>
-        <button type="button" :disabled="loadingList" @click="loadTurns">
+        <ActionButton class="audit-filter-action" compact block :disabled="loadingList" @click="loadTurns">
           {{ loadingList ? 'Loading...' : 'Reload' }}
-        </button>
+        </ActionButton>
       </div>
 
       <div class="audit-turn-list">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { NodeSchemaOption } from '../../composables/nodeSchemaFields'
+import FormTextInput from '../FormTextInput.vue'
 
 const props = defineProps<{
   id: string
@@ -75,19 +76,18 @@ function handleFocusOut(event: FocusEvent) {
 <template>
   <div class="field-combobox" @focusout="handleFocusOut">
     <div class="field-combobox-control">
-      <input
+      <FormTextInput
         :id="id"
         class="field-input field-combobox-input"
-        type="text"
         role="combobox"
         autocomplete="off"
         :aria-expanded="open"
         :aria-controls="listboxId"
-        :value="value"
+        :model-value="value"
         @focus="openMenu"
         @click="openMenu"
         @keydown.escape.prevent="closeMenu"
-        @input="updateValue(($event.target as HTMLInputElement).value)"
+        @update:model-value="updateValue"
       />
       <button
         class="field-combobox-toggle"

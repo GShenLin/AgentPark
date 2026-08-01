@@ -1,8 +1,6 @@
-import { clampX } from './boardModel'
-
 export type BoardPosition = {
-  x: number
-  y: number
+  grid_x: number
+  grid_y: number
 }
 
 export function traceBoardDrag(event: string, payload: Record<string, unknown>) {
@@ -20,13 +18,6 @@ export function traceBoardDrag(event: string, payload: Record<string, unknown>) 
   console.debug('[board-drag]', entry)
 }
 
-export function clampBoardPosition(pos: BoardPosition): BoardPosition {
-  return {
-    x: clampX(pos.x),
-    y: Math.max(0, pos.y),
-  }
-}
-
 export function rememberPendingBoardPositions(options: {
   itemIds: Iterable<string>
   pending: Map<string, BoardPosition>
@@ -36,9 +27,12 @@ export function rememberPendingBoardPositions(options: {
   for (const itemId of options.itemIds) {
     const rawPosition = options.getPosition(itemId)
     if (!rawPosition) continue
-    const pos = clampBoardPosition(rawPosition)
+    const pos = {
+      grid_x: Math.max(0, Math.round(rawPosition.grid_x)),
+      grid_y: Math.max(0, Math.round(rawPosition.grid_y)),
+    }
     options.pending.set(itemId, pos)
-    traceBoardDrag('ui_pending', { itemId, reason: options.reason, x: pos.x, y: pos.y })
+    traceBoardDrag('ui_pending', { itemId, reason: options.reason, gridX: pos.grid_x, gridY: pos.grid_y })
   }
 }
 

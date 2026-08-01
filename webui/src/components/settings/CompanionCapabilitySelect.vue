@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import ActionButton from '../ActionButton.vue'
+import FormTextInput from '../FormTextInput.vue'
 import FieldMultiSelect from '../agent-board/FieldMultiSelect.vue'
 
 export type CompanionCapabilityOption = {
@@ -94,8 +96,8 @@ function addCustomValue() {
     <div class="capability-head">
       <h3>{{ title }}</h3>
       <div class="capability-add">
-        <input v-model="newValue" :placeholder="addPlaceholder" @keydown.enter.prevent="addCustomValue" />
-        <button type="button" @click="addCustomValue">Add</button>
+        <FormTextInput v-model="newValue" :placeholder="addPlaceholder" @keydown.enter.prevent="addCustomValue" />
+        <ActionButton compact @click="addCustomValue">Add</ActionButton>
       </div>
     </div>
     <FieldMultiSelect
@@ -134,22 +136,9 @@ function addCustomValue() {
   gap: 6px;
 }
 
-.capability-add input {
+.capability-add .form-text-input {
   min-width: 0;
   flex: 1;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 7px 8px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.5);
-  font: inherit;
-  font-size: 12px;
-}
-
-.capability-add button {
-  min-height: 32px;
-  padding: 0 9px;
-  font-size: 12px;
 }
 
 @media (max-width: 760px) {

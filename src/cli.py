@@ -11,9 +11,11 @@ from src.cli_commands.capabilities import list_capabilities, mutate_capability
 from src.cli_commands.chat import run_chat
 from src.cli_commands.config import diff_config, validate_config
 from src.cli_commands.doctor import run_doctor
+from src.project_process_environment import apply_project_process_environment
 
 
 def main(argv: list[str] | None = None) -> int:
+    apply_project_process_environment()
     _configure_stdio()
     parser = _build_parser()
     args = parser.parse_args(argv)

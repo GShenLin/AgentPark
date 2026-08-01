@@ -2,9 +2,11 @@
 withDefaults(
   defineProps<{
     ariaLabel?: string
+    disabled?: boolean
   }>(),
   {
     ariaLabel: 'Close',
+    disabled: false,
   },
 )
 
@@ -18,6 +20,7 @@ const emit = defineEmits<{
     class="dialog-close-button"
     type="button"
     :aria-label="ariaLabel"
+    :disabled="disabled"
     title="Close"
     @click="emit('click', $event)"
   >
@@ -55,6 +58,11 @@ const emit = defineEmits<{
 .dialog-close-button:focus-visible {
   outline: 2px solid rgba(252, 165, 165, 0.92);
   outline-offset: 2px;
+}
+
+.dialog-close-button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .dialog-close-button svg {

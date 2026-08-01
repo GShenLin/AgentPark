@@ -51,6 +51,12 @@ the accepted server origin and its protocol identity, then registers through the
 
 When a node has `Remote` enabled, its `WorkingPath` is an absolute path on the paired worker. Every workspace tool is routed through the same central AgentPark tool dispatcher. Workers must reject missing, relative, or nonexistent WorkingPath values and must never silently execute on the AgentPark server.
 
+`workspace_exec` remains a server-side orchestration boundary because it may contain server-owned
+operations such as `update_task_direction`. Each file-system operation inside the program
+(`read_file`, `search_text`, `list_files`, `run_command`, and `apply_patch`) is dispatched separately
+through the same remote workspace router. This keeps task state local while ensuring that all path
+resolution and workspace I/O happens on the paired worker.
+
 ## Task envelope
 
 ```json

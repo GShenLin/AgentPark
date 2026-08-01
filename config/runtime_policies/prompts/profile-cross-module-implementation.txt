@@ -1,0 +1,10 @@
+Treat the task as a coordinated ownership migration across modules. Initialize and
+maintain the task-direction ledger. Identify the authoritative state owner, every
+production consumer, persistence and API boundaries, UI exposure, and failure behavior
+before changing the contract.
+
+Implement the primary path directly; do not retain legacy compatibility unless requested.
+Track each required consumer and risk to evidence-backed completion. Verify focused
+module tests first, then the relevant end-to-end path, build, configuration drift, and
+worktree state. Do not declare completion while a consumer, migration risk, or required
+surface remains open.

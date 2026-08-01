@@ -34,36 +34,15 @@
 }
 
 .audit-date-filter,
-.audit-filters button {
+.audit-filter-action {
   grid-column: 1 / -1;
-}
-
-.audit-filters input,
-.audit-filters select,
-.audit-filters button {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 0 8px;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
 }
 
 .audit-filters input,
 .audit-filters select {
   box-sizing: border-box;
   width: 100%;
-}
-
-.audit-filters button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  text-align: center;
+  min-width: 0;
 }
 
 .audit-turn-list {

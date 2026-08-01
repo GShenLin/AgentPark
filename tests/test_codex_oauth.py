@@ -3,10 +3,12 @@ import json
 import time
 
 from src.provider_auth import codex_oauth
+from src.provider_auth.credentials import ProviderRequestCredentials
 from src.provider_auth.credentials import resolve_provider_request_credentials
 from src.provider_auth.store import get_account, save_account
 from src.providers.openai_transport import OpenAITransport
 from src.providers.openai_transport_errors import OpenAIHttpError
+from src.providers.responses_runtime_methods import ResponsesRuntimeMethods
 
 
 def _jwt(payload):
@@ -48,6 +50,8 @@ def test_codex_credentials_load_existing_auth_without_refresh(monkeypatch, tmp_p
     assert credentials.base_url == "https://chatgpt.com/backend-api/codex"
     assert credentials.headers["Authorization"] == f"Bearer {access_token}"
     assert credentials.headers["ChatGPT-Account-ID"] == "account-123456"
+    assert credentials.headers["originator"] == "codex_cli_rs"
+    assert credentials.headers["User-Agent"] == "codex_cli_rs/0.0.0 (Windows; x86_64) AgentPark"
 
 
 def test_codex_credentials_refresh_expired_token_and_persist(monkeypatch, tmp_path):
@@ -135,3 +139,69 @@ def test_unauthorized_response_refreshes_once_even_when_retries_disabled():
     assert refreshed == [True]
     assert len(attempts) == 2
     assert attempts[1]["Authorization"] == "Bearer refreshed"
+
+
+def test_codex_401_reloads_newer_credentials_before_forcing_refresh(monkeypatch):
+    runtime = ResponsesRuntimeMethods()
+    runtime.config = {"authMode": "codex"}
+    calls = []
+
+    def resolve(_config, *, force_refresh=False):
+        calls.append(force_refresh)
+        return ProviderRequestCredentials(
+            base_url="https://chatgpt.com/backend-api/codex",
+            headers={
+                "Authorization": "Bearer reloaded",
+                "ChatGPT-Account-ID": "account-1",
+            },
+        )
+
+    monkeypatch.setattr(
+        "src.provider_auth.resolve_provider_request_credentials",
+        resolve,
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer expired",
+        "ChatGPT-Account-ID": "account-1",
+    }
+
+    assert runtime._reload_responses_auth_headers(headers) is True
+
+    assert calls == [False]
+    assert headers["Authorization"] == "Bearer reloaded"
+
+
+def test_codex_401_forces_refresh_when_reloaded_credentials_are_unchanged(
+    monkeypatch,
+):
+    runtime = ResponsesRuntimeMethods()
+    runtime.config = {"authMode": "codex"}
+    calls = []
+
+    def resolve(_config, *, force_refresh=False):
+        calls.append(force_refresh)
+        token = "refreshed" if force_refresh else "expired"
+        return ProviderRequestCredentials(
+            base_url="https://chatgpt.com/backend-api/codex",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "ChatGPT-Account-ID": "account-1",
+            },
+        )
+
+    monkeypatch.setattr(
+        "src.provider_auth.resolve_provider_request_credentials",
+        resolve,
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer expired",
+        "ChatGPT-Account-ID": "account-1",
+    }
+
+    assert runtime._reload_responses_auth_headers(headers) is False
+    assert runtime._refresh_responses_auth_headers(headers) is True
+
+    assert calls == [False, True]
+    assert headers["Authorization"] == "Bearer refreshed"

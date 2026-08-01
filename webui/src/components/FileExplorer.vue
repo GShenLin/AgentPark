@@ -1,7 +1,10 @@
 ﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { deleteFilePath, listFiles, renameFilePath, saveFile, type FileItem } from '../api'
+import ActionButton from './ActionButton.vue'
+import DangerButton from './DangerButton.vue'
 import FileNode from './FileNode.vue'
+import FormTextInput from './FormTextInput.vue'
 import type { FileTreeItem } from './fileTree'
 
 const props = withDefaults(defineProps<{
@@ -275,14 +278,14 @@ watch(
   <div class="file-explorer">
     <div v-if="showHeader" class="header-group">
       <div class="toolbar">
-        <button class="tool-btn" type="button" @click="goUp">Up</button>
-        <button class="tool-btn" type="button" @click="refresh">Refresh</button>
-        <button class="tool-btn" type="button" :disabled="!searchQuery" @click="clearSearch">Clear Search</button>
+        <ActionButton compact @click="goUp">Up</ActionButton>
+        <ActionButton compact @click="refresh">Refresh</ActionButton>
+        <ActionButton compact :disabled="!searchQuery" @click="clearSearch">Clear Search</ActionButton>
       </div>
 
       <label class="input-row">
         <span class="input-label">Path</span>
-        <input
+        <FormTextInput
           v-model="rootPath"
           class="path-input"
           placeholder="Enter path and press Enter"
@@ -292,7 +295,7 @@ watch(
 
       <label class="input-row">
         <span class="input-label">Filter</span>
-        <input
+        <FormTextInput
           v-model="searchQuery"
           class="search-input"
           placeholder="Filter file name"
@@ -329,15 +332,15 @@ watch(
         @pointerdown.stop
       >
         <template v-if="!menuTarget">
-          <button class="menu-item" type="button" @click="createFileInCurrentFolder">Create File</button>
+          <ActionButton variant="menu" @click="createFileInCurrentFolder">Create File</ActionButton>
         </template>
         <template v-else>
           <div class="menu-title">{{ menuTarget.name }}</div>
-          <button v-if="isMenuTargetDir" class="menu-item" type="button" @click="createFileInTargetFolder">
+          <ActionButton v-if="isMenuTargetDir" variant="menu" @click="createFileInTargetFolder">
             Create File Here
-          </button>
-          <button class="menu-item" type="button" @click="renameTarget">Rename</button>
-          <button class="menu-item danger" type="button" @click="deleteTarget">Delete</button>
+          </ActionButton>
+          <ActionButton variant="menu" @click="renameTarget">Rename</ActionButton>
+          <DangerButton variant="menu" @click="deleteTarget">Delete</DangerButton>
         </template>
       </div>
     </div>
@@ -351,6 +354,13 @@ watch(
   height: 100%;
   overflow: hidden;
   color: var(--theme-panel-file-panel-text-primary, rgba(255, 255, 255, 0.92));
+  --form-control-border: var(--theme-panel-file-panel-input-border, rgba(148, 163, 184, 0.28));
+  --form-control-background: var(--theme-panel-file-panel-input-background, rgba(15, 23, 42, 0.55));
+  --form-control-text: var(--theme-panel-file-panel-input-text, rgba(226, 232, 240, 0.96));
+  --form-control-focus: var(--theme-panel-file-panel-input-focus-border, rgba(56, 189, 248, 0.7));
+  --ui-button-border: var(--theme-panel-file-panel-button-border, rgba(148, 163, 184, 0.35));
+  --ui-button-background: var(--theme-panel-file-panel-button-background, rgba(15, 23, 42, 0.75));
+  --ui-button-text: var(--theme-panel-file-panel-button-text, rgba(226, 232, 240, 0.95));
 }
 
 .header-group {
@@ -365,19 +375,6 @@ watch(
 .toolbar {
   display: flex;
   gap: 6px;
-}
-
-.tool-btn {
-  border: 1px solid var(--theme-panel-file-panel-button-border, rgba(148, 163, 184, 0.35));
-  background: var(--theme-panel-file-panel-button-background, rgba(15, 23, 42, 0.75));
-  color: var(--theme-panel-file-panel-button-text, rgba(226, 232, 240, 0.95));
-  border-radius: 8px;
-  font-size: 11px;
-  padding: 4px 8px;
-}
-
-.tool-btn:disabled {
-  opacity: 0.45;
 }
 
 .input-row {
@@ -396,18 +393,7 @@ watch(
 .path-input,
 .search-input {
   flex: 1;
-  border: 1px solid var(--theme-panel-file-panel-input-border, rgba(148, 163, 184, 0.28));
-  background: var(--theme-panel-file-panel-input-background, rgba(15, 23, 42, 0.55));
-  color: var(--theme-panel-file-panel-input-text, rgba(226, 232, 240, 0.96));
-  border-radius: 8px;
-  padding: 6px 8px;
   font-size: 12px;
-  outline: none;
-}
-
-.path-input:focus,
-.search-input:focus {
-  border-color: var(--theme-panel-file-panel-input-focus-border, rgba(56, 189, 248, 0.7));
 }
 
 .path-hint {
@@ -462,23 +448,4 @@ watch(
   text-overflow: ellipsis;
 }
 
-.menu-item {
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--theme-panel-file-panel-button-text, rgba(226, 232, 240, 0.95));
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 12px;
-}
-
-.menu-item:hover {
-  background: var(--theme-panel-file-panel-button-hover-background, rgba(51, 65, 85, 0.7));
-}
-
-.menu-item.danger:hover {
-  background: rgba(127, 29, 29, 0.7);
-  color: rgba(254, 226, 226, 0.98);
-}
 </style>

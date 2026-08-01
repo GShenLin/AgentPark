@@ -12,6 +12,11 @@ import {
   type GatewayProtocol,
   type GatewaySettings,
 } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormCheckbox from '../FormCheckbox.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const settings = ref<GatewaySettings | null>(null)
 const loading = ref(false)
@@ -229,16 +234,19 @@ onMounted(load)
           <h2>Public Gateway</h2>
           <p>AgentPark exposes OpenAI Responses, Chat Completions, and Anthropic Messages on the same server.</p>
         </div>
-        <button type="button" :disabled="loading || saving" @click="load">Reload</button>
+        <ActionButton compact :disabled="loading || saving" @click="load">Reload</ActionButton>
       </div>
       <div class="endpoint-row">
         <code>{{ endpointBase }}</code>
         <span>Models: /models · Responses: /responses · Chat: /chat/completions · Messages: /messages</span>
       </div>
       <div v-if="settings" class="option-row">
-        <label><input v-model="settings.enabled" type="checkbox"> Enable Public Gateway</label>
-        <label><input v-model="settings.requireApiKey" type="checkbox"> Require Endpoint Key</label>
-        <button type="button" class="primary" :disabled="saving" @click="saveOptions">Save options</button>
+        <label><FormCheckbox v-model="settings.enabled" /> Enable Public Gateway</label>
+        <label><FormCheckbox v-model="settings.requireApiKey" /> Require Endpoint Key</label>
+        <ActionButton variant="primary" compact :disabled="saving" @click="saveOptions">Save options</ActionButton>
+      </div>
+      <div v-for="sourceError in settings?.sourceErrors || []" :key="sourceError.id" class="notice error">
+        {{ sourceError.id }} unavailable: {{ sourceError.error }}
       </div>
     </section>
 
@@ -246,46 +254,45 @@ onMounted(load)
       <div class="card-head">
         <div>
           <h2>Public models</h2>
-          <p>A public model id maps to one AgentPark Provider and, optionally, one explicit OAuth/API-key account.</p>
+          <p>A public model id maps to one AgentPark modelProvider entry.</p>
         </div>
       </div>
       <div class="model-form">
         <label>
           Public model id
-          <input v-model="modelId" placeholder="agentpark-codex">
+          <FormTextInput v-model="modelId" placeholder="agentpark-codex" />
         </label>
         <label>
           Provider
-          <select v-model="providerId" @change="accountId = ''">
+          <FormSelect v-model="providerId" @change="accountId = ''">
             <option v-for="provider in settings?.providers || []" :key="provider.id" :value="provider.id">
               {{ provider.id }} · {{ provider.model }}
             </option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           Fixed account
-          <select v-model="accountId">
+          <FormSelect v-model="accountId">
             <option value="">Provider default / configured account</option>
             <option v-for="account in selectedProvider?.accounts || []" :key="account.id" :value="account.id">
               {{ account.alias || account.identity || account.id }} · {{ account.id }}
             </option>
-          </select>
+          </FormSelect>
         </label>
         <div class="protocol-field">
           <span>Protocols</span>
           <label v-for="option in protocolOptions" :key="option.id">
-            <input
-              type="checkbox"
-              :checked="protocols.includes(option.id)"
-              @change="toggleProtocol(option.id, ($event.target as HTMLInputElement).checked)"
-            >
+            <FormCheckbox
+              :model-value="protocols.includes(option.id)"
+              @update:model-value="toggleProtocol(option.id, $event)"
+            />
             {{ option.label }}
           </label>
         </div>
-        <label class="enabled-field"><input v-model="modelEnabled" type="checkbox"> Enabled</label>
+        <label class="enabled-field"><FormCheckbox v-model="modelEnabled" /> Enabled</label>
         <div class="form-actions">
-          <button type="button" class="primary" :disabled="saving" @click="saveModel">Save model</button>
-          <button type="button" :disabled="saving" @click="resetModelForm">Clear</button>
+          <ActionButton variant="primary" compact :disabled="saving" @click="saveModel">Save model</ActionButton>
+          <ActionButton compact :disabled="saving" @click="resetModelForm">Clear</ActionButton>
         </div>
       </div>
       <div class="item-list">
@@ -296,8 +303,8 @@ onMounted(load)
             <small>{{ model.protocols.join(', ') }} · {{ model.enabled ? 'Enabled' : 'Disabled' }}</small>
           </div>
           <div class="row-actions">
-            <button type="button" @click="editModel(model)">Edit</button>
-            <button type="button" class="danger" @click="removeModel(model.id)">Delete</button>
+            <ActionButton compact @click="editModel(model)">Edit</ActionButton>
+            <DangerButton @click="removeModel(model.id)">Delete</DangerButton>
           </div>
         </article>
         <p v-if="settings && !settings.models.length" class="empty">No public model mappings yet.</p>
@@ -312,14 +319,14 @@ onMounted(load)
         </div>
       </div>
       <div class="key-form">
-        <label>Key name <input v-model="keyName" placeholder="Laptop / App name"></label>
-        <label>Custom value (optional) <input v-model="customKey" autocomplete="off" placeholder="Leave blank to generate"></label>
-        <button type="button" class="primary" :disabled="saving" @click="addKey">Add Key</button>
+        <label>Key name <FormTextInput v-model="keyName" placeholder="Laptop / App name" /></label>
+        <label>Custom value (optional) <FormTextInput v-model="customKey" autocomplete="off" placeholder="Leave blank to generate" /></label>
+        <ActionButton variant="primary" compact :disabled="saving" @click="addKey">Add Key</ActionButton>
       </div>
       <div v-if="createdKey" class="created-key">
         <strong>Copy this key now. It is shown only once.</strong>
         <code>{{ createdKey }}</code>
-        <button type="button" @click="copyCreatedKey">Copy</button>
+        <ActionButton compact @click="copyCreatedKey">Copy</ActionButton>
       </div>
       <div class="item-list">
         <article v-for="key in settings?.keys || []" :key="key.id" class="item-row">
@@ -328,7 +335,7 @@ onMounted(load)
             <span>{{ key.prefix }}</span>
             <small>{{ new Date(key.createdAt).toLocaleString() }}</small>
           </div>
-          <button type="button" class="danger" @click="removeKey(key.id, key.name)">Delete</button>
+          <DangerButton @click="removeKey(key.id, key.name)">Delete</DangerButton>
         </article>
         <p v-if="settings && !settings.keys.length" class="empty">No Endpoint Keys yet.</p>
       </div>
@@ -342,16 +349,16 @@ onMounted(load)
         </div>
       </div>
       <div class="test-form">
-        <select v-model="testModel" @change="syncTestProtocol">
+        <FormSelect v-model="testModel" @change="syncTestProtocol">
           <option v-for="model in settings?.models || []" :key="model.id" :value="model.id">{{ model.id }}</option>
-        </select>
-        <select v-model="testProtocol">
+        </FormSelect>
+        <FormSelect v-model="testProtocol">
           <option v-for="protocol in availableTestProtocols" :key="protocol" :value="protocol">
             {{ protocolOptions.find((item) => item.id === protocol)?.label || protocol }}
           </option>
-        </select>
-        <input v-model="testPrompt" placeholder="Test prompt">
-        <button type="button" class="primary" :disabled="saving || !testModel" @click="runTest">Test</button>
+        </FormSelect>
+        <FormTextInput v-model="testPrompt" placeholder="Test prompt" />
+        <ActionButton variant="primary" compact :disabled="saving || !testModel" @click="runTest">Test</ActionButton>
       </div>
       <pre v-if="testResult" class="test-result">{{ testResult }}</pre>
     </section>

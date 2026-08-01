@@ -12,7 +12,7 @@ def test_agent_video_generation_schema_excludes_provider_owned_and_advanced_task
         "video_safety_identifier",
     }
     monkeypatch.setattr(
-        "nodes.agent_node_schema.ConfigLoader.get_all_providers",
+        "nodes.agent_node_schema.ConfigLoader.get_provider_catalog",
         lambda _self: {
             "doubao-video": {
                 "type": "doubao",

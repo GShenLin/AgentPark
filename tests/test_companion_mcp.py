@@ -792,6 +792,52 @@ def test_node_event_seq_increments_on_last_message(tmp_path):
     assert payload["node_event_seq"] == 3
 
 
+def test_last_output_resources_follow_the_last_message_contract(tmp_path):
+    from src.web_backend.state_store import (
+        _read_json_dict,
+        _set_node_config_last_message,
+        _set_node_config_last_output,
+    )
+
+    config_path = tmp_path / "config.json"
+    _write_json(config_path, {"schemaVersion": 1, "node_id": "n1"})
+    output_message = {
+        "role": "assistant",
+        "parts": [
+            {
+                "type": "resource",
+                "resource": {
+                    "uri": "C:/output/matted.png",
+                    "kind": "image",
+                    "source": "image_matting",
+                    "metadata": {"large": "not projected"},
+                },
+            },
+            {"type": "structured", "data": {"alpha_min": 0, "alpha_max": 255}},
+        ],
+    }
+
+    _set_node_config_last_output(str(config_path), "matted.png", output_message)
+    completed = _read_json_dict(str(config_path))
+
+    assert completed["last_message"] == "matted.png"
+    assert completed["last_output_resources"] == [
+        {
+            "type": "resource",
+            "resource": {
+                "id": completed["last_output_resources"][0]["resource"]["id"],
+                "uri": "C:/output/matted.png",
+                "kind": "image",
+                "source": "image_matting",
+            },
+        }
+    ]
+
+    _set_node_config_last_message(str(config_path), "next text message")
+    replaced = _read_json_dict(str(config_path))
+    assert replaced["last_output_resources"] == []
+
+
 def test_companion_mcp_endpoint_exposes_requested_tools(monkeypatch, tmp_path):
     import src.web_backend as backend
     from src.web_backend import runtime_paths

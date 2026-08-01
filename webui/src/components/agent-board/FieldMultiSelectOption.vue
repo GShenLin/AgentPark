@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FormCheckbox from '../FormCheckbox.vue'
+
 type DisplayOption = {
   value: string
   title: string
@@ -38,12 +40,11 @@ function toggle() {
     @keydown.enter.prevent="toggle"
     @keydown.space.prevent="toggle"
   >
-    <input
-      type="checkbox"
-      :checked="selected"
+    <FormCheckbox
+      :model-value="selected"
       tabindex="-1"
-      @click.stop="toggle"
-      @change.stop
+      @click.stop
+      @update:model-value="toggle"
     />
     <span class="multi-select-copy">
       <span class="multi-select-title">{{ option.title }}</span>
@@ -98,14 +99,6 @@ function toggle() {
 .multi-select-option.is-selected {
   border-color: rgba(56, 189, 248, 0.46);
   background: rgba(8, 47, 73, 0.55);
-}
-
-.multi-select-option input {
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: #38bdf8;
 }
 
 .multi-select-copy {

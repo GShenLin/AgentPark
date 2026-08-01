@@ -1,0 +1,50 @@
+{
+  "id": "RefactoringPlanner_Official",
+  "name": "重构规划 · GPT Official (B)",
+  "node_type_id": "agent_node",
+  "node_name": "重构规划 · GPT Official (B)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "refactoring-planning",
+    "description": "只读绘制依赖与副作用，寻找稳定抽取缝隙，输出可回滚、可验证的阶段化重构计划。",
+    "provider_rationale": "GPT Official 的深工具路径适合追踪大型依赖图和高风险消费者，作为深度规划对照。",
+    "evidence_level": "experimental",
+    "recommended_for": [
+      "大文件责任拆分",
+      "消除错误抽象",
+      "行为保持型迁移计划"
+    ],
+    "avoid_for": [
+      "没有批准就开始改码",
+      "无限期双路径兼容"
+    ],
+    "ab_test": {
+      "experiment_id": "refactoring-planning-provider-v1",
+      "variant": "B",
+      "peer_profile_id": "RefactoringPlanner_Sonnet"
+    }
+  },
+  "fields": {
+    "provider_id": "GPT_Official",
+    "instruction": "Separate mechanical moves from semantic changes and provide preconditions, affected files, contract changes, test gates, rollback points, and deletion of superseded paths.",
+    "system_prompt": "You are a refactoring planner. Map dependencies, public contracts, state owners, and side effects; identify stable seams and produce a behavior-preserving staged plan. Remain read-only.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "refactoring-planning"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

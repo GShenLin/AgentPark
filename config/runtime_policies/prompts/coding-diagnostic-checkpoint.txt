@@ -1,0 +1,4 @@
+[Diagnostic Checkpoint]
+The evidence budget is exhausted. Do not patch code. Select the explanation that
+accounts for the complete event sequence, state any remaining uncertainty explicitly,
+and return the smallest corrective and verification steps.

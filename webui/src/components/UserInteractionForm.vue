@@ -2,6 +2,11 @@
 import { computed, reactive, watch } from 'vue'
 import type { UserInteractionField, UserInteractionRequest } from '../api'
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
+import ActionButton from './ActionButton.vue'
+import ExpandableTextarea from './ExpandableTextarea.vue'
+import FormCheckbox from './FormCheckbox.vue'
+import FormSelect from './FormSelect.vue'
+import FormTextInput from './FormTextInput.vue'
 import UserInteractionCustomFrame from './UserInteractionCustomFrame.vue'
 
 const props = defineProps<{
@@ -55,8 +60,8 @@ function stringValue(field: UserInteractionField) {
   return typeof value === 'string' || typeof value === 'number' ? value : ''
 }
 
-function setTextValue(field: UserInteractionField, event: Event) {
-  values[fieldKey(field)] = (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null)?.value || ''
+function setTextValue(field: UserInteractionField, value: string) {
+  values[fieldKey(field)] = value
 }
 
 function setFiles(field: UserInteractionField, event: Event) {
@@ -132,16 +137,16 @@ watch(() => props.request.id, resetForm, { immediate: true })
     <label v-for="field in fields" :key="field.id" class="interaction-field">
       <span class="interaction-label">{{ field.label }}<b v-if="field.required">*</b></span>
       <small v-if="field.description">{{ field.description }}</small>
-      <input v-if="field.type === 'text'" type="text" :value="stringValue(field)" :placeholder="field.placeholder || ''" :required="field.required" @input="setTextValue(field, $event)" />
-      <textarea v-else-if="field.type === 'textarea'" rows="5" :value="stringValue(field)" :placeholder="field.placeholder || ''" :required="field.required" @input="setTextValue(field, $event)"></textarea>
-      <select v-else-if="field.type === 'select'" :value="stringValue(field)" :required="field.required" @change="setTextValue(field, $event)">
+      <FormTextInput v-if="field.type === 'text'" :model-value="stringValue(field)" :placeholder="field.placeholder || ''" :required="field.required" @update:model-value="setTextValue(field, $event)" />
+      <ExpandableTextarea v-else-if="field.type === 'textarea'" :model-value="String(stringValue(field))" :placeholder="field.placeholder || ''" :aria-label="field.label" :required="field.required" @update:model-value="setTextValue(field, $event)" />
+      <FormSelect v-else-if="field.type === 'select'" :model-value="stringValue(field)" :required="field.required" @change="setTextValue(field, $event)">
         <option value="" disabled>请选择</option>
         <option v-for="option in field.options || []" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label || option.value }}</option>
-      </select>
+      </FormSelect>
       <div v-else-if="field.type === 'multiselect'" class="interaction-options">
         <button v-for="option in field.options || []" :key="option.value" type="button" :disabled="option.disabled" :class="{ selected: isMultiSelected(field, option.value) }" @click="toggleMulti(field, option.value)">{{ option.label || option.value }}</button>
       </div>
-      <input v-else-if="field.type === 'checkbox'" v-model="values[field.id]" type="checkbox" />
+      <FormCheckbox v-else-if="field.type === 'checkbox'" :model-value="Boolean(values[field.id])" @update:model-value="values[field.id] = $event" />
       <input v-else-if="field.type === 'file'" type="file" :accept="field.accept || undefined" :multiple="field.multiple" :required="field.required" @change="setFiles(field, $event)" />
       <UserInteractionCustomFrame v-else-if="field.type === 'custom_html'" :field="field" :request-id="request.id" @change="mergeCustomValue(field, $event)" @submit="submitCustomValue(field, $event)" @error="emit('error', $event)" />
     </label>
@@ -149,6 +154,6 @@ watch(() => props.request.id, resetForm, { immediate: true })
 
   <div v-if="error" class="interaction-error">{{ error }}</div>
   <footer class="interaction-actions">
-    <button type="button" :disabled="submitting" @click="submitForm">{{ submitting ? '提交中…' : request.schema.confirm_label || '确认' }}</button>
+    <ActionButton variant="primary" :disabled="submitting" @click="submitForm">{{ submitting ? '提交中…' : request.schema.confirm_label || '确认' }}</ActionButton>
   </footer>
 </template>

@@ -6,9 +6,11 @@ import os
 from fastapi import File, Form, HTTPException, UploadFile
 
 from src import workspace_settings
+from src.board_layout_settings import normalize_board_layout_settings
 from src.companion_paths import companion_node_config_path
 from src.config_loader import ConfigLoader
 from src.file_transaction import atomic_write_text
+from src.project_process_environment import DEFAULT_NO_PROXY, read_project_proxy_settings
 from src.provider_limit_schema import read_provider_limit_file
 from src.providers.provider_pressure import get_provider_pressure_manager
 from src.runtime_events.event_config_store import event_config_path, load_or_create_event_config
@@ -109,12 +111,30 @@ class SettingsApiDomain(DomainBase):
             return {}
         try:
             local_config = memory_local_config_from_defaults(payload)
+            proxy_config = read_project_proxy_settings(payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         configured_root = workspace_settings.resolve_memories_root(local_config)
         active_root = os.path.abspath(runtime_paths._get_graphs_dir())
+        proxy_restart_required = False
+        if "network" in payload:
+            configured_http_proxy = proxy_config["http_proxy"]
+            configured_no_proxy = proxy_config["no_proxy"]
+            if configured_http_proxy and not configured_no_proxy:
+                configured_no_proxy = DEFAULT_NO_PROXY
+            active_http_proxy = str(os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy") or "")
+            active_https_proxy = str(os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or "")
+            active_no_proxy = str(os.environ.get("NO_PROXY") or os.environ.get("no_proxy") or "")
+            proxy_restart_required = (
+                configured_http_proxy != active_http_proxy
+                or configured_http_proxy != active_https_proxy
+                or configured_no_proxy != active_no_proxy
+            )
         return {
-            "restart_required": os.path.normcase(configured_root) != os.path.normcase(active_root),
+            "restart_required": (
+                os.path.normcase(configured_root) != os.path.normcase(active_root)
+                or proxy_restart_required
+            ),
             "runtime": {
                 "active_memories_root": active_root,
                 "configured_memories_root": configured_root,
@@ -209,13 +229,17 @@ class SettingsApiDomain(DomainBase):
                 "consoleCommand",
                 "nodeMemory",
                 "mcpServers",
+                "network",
                 "undo",
+                "boardLayout",
             ):
                 value = payload.get(key)
                 if value is not None and not isinstance(value, dict):
                     raise HTTPException(status_code=400, detail=f"config.json field '{key}' must be an object")
             try:
                 memory_local_config_from_defaults(payload)
+                read_project_proxy_settings(payload)
+                normalize_board_layout_settings(payload.get("boardLayout"))
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             undo = payload.get("undo")

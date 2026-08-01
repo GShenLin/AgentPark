@@ -37,12 +37,13 @@ Provider 实现类型。运行时根据它选择具体 Agent / runtime。
 - `gemini`: Gemini chat / image generation 实现。
 - `zhipu`: 智谱 GLM chat 实现。
 - `hyper3d`: Hyper3D Rodin 3D 模型和贴图生成实现。
+- `alpha_matting`: 本机透明通道抠图 endpoint；只允许 `authMode: "none"` 与 loopback HTTP。
 
 要求：
 
 - 必须是字符串。
 - 配置加载时会转成小写。
-- 新增 Provider 类型时，必须同步 `src/providers/__init__.py` 的创建逻辑和本文档。
+- 新增 Provider 类型时，必须同步 `src/providers/registry.py` 的注册表和本文档。
 
 ### `apiKey`
 
@@ -61,6 +62,12 @@ Provider 认证密钥在 `.auth/api-keys/aliases.json` 中的引用名称。例�
 
 - `apiKeyEnv` 不属于当前配置合同。
 - `.auth/api-keys/aliases.json` 是本机文件并由 Git 忽略；每台机器需要单独配置。
+
+### `authMode`
+
+认证模式。通用 Provider 使用 `api_key`、`oauth` 或 `codex`。
+`none` 只允许用于 `type: "alpha_matting"`，且该 Provider 不得配置
+`apiKey`、`authProvider` 或 `authAccountId`。
 
 ### `xApiKey`
 
@@ -89,6 +96,7 @@ Provider API 根地址。
 - `zhipu`: HTTP transport 会基于该地址构造 chat 请求；缺失时使用 Zhipu transport 内部默认地址。
 - `gemini`: 用于 Gemini API 请求。
 - `hyper3d`: 用于 Hyper3D API 请求；缺失时 Hyper3D runtime 有内部默认值 `https://api.hyper3d.com/api/v2`，但实际配置仍建议显式写出。
+- `alpha_matting`: 必须是无路径的 HTTP loopback 根地址；运行时固定调用 `/health` 和 `/v1/matting`。
 
 要求：
 
@@ -118,6 +126,7 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 - `chat`: 普通文本对话。
 - `imagechat`: 多模态图片对话。
 - `image_generation`: 图片生成节点可选。
+- `image_matting`: 单图抠图节点可选。
 - `vision_understand`: 视觉理解节点可选。
 - `GUIAgent`: GUI Agent 相关工具可选。
 - `video_generation`: 视频生成节点可选。
@@ -133,11 +142,14 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 
 ### `timeoutMs`
 
-单次 HTTP 请求超时时间，单位毫秒。
+HTTP 传输超时时间，单位毫秒。
 
 用途：
 
 - `openai` / `doubao` / `gemini` / `zhipu` / `hyper3d` 的 HTTP transport 都会读取它。
+- 非流式 HTTP 请求将其作为单次请求总超时。
+- SSE 流式请求将其作为空闲超时；每收到一行流数据都会重新计时，持续活跃的流不受请求总时长限制。
+- `alpha_matting` 的健康检查与抠图请求都会读取它。
 - 部分长任务还有独立的轮询总等待时间，例如 Hyper3D 的 `maxWaitSec`。
 
 要求：
@@ -147,8 +159,7 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 
 建议：
 
-- 普通 chat Provider 通常使用 `60000`。
-- 生成类或长上下文 Provider 可以使用 `180000` 或更高。
+- 当前 Provider 统一使用 `120000`。
 - 不要把 `timeoutMs` 当成长任务总等待时间；轮询类任务应配置对应的 `maxWaitSec`。
 
 ### `streamEnabled`
@@ -291,6 +302,19 @@ Rules:
 - The Responses runtime uses item-level function-call handling: a complete `function_call` output item can start tool execution during streaming, and tool outputs are submitted on the next Responses request after `response.completed`.
 - Providers that do not declare `responsesApi: true` are treated as not supporting Responses features.
 - Item-level handling is the normal Responses path; there is no separate runtime-mode switch.
+
+### `responsesWebSocket`
+
+控制流式 Responses 请求是否优先使用可选的 WebSocket transport。
+
+规则：
+
+- 必须是布尔值。
+- `false` 固定使用 HTTP SSE，适用于 DeepSeek 等只支持 HTTP `/responses` 的 Provider。
+- `true` 允许流式请求优先尝试 WebSocket；非流式请求仍使用 HTTP。
+- 缺失时按 `false` 处理；WebSocket 必须由 Provider 显式选择加入。
+- 设置页新启用 Responses API 时默认写入 `false`，需要 WebSocket 的 Provider 必须显式开启。
+- WebSocket 握手返回 404、405 或 426 时，当前 Provider 会在本次会话内自动降级为 HTTP SSE。
 
 ## 工具上下文压缩字段
 
@@ -473,6 +497,28 @@ Zhipu chat 请求的最大输出 token 数。
 注意：
 
 - `modelProvider.json` only accepts `maxTokens`; `max_tokens` is rejected.
+
+## Alpha Matting 字段
+
+`type: "alpha_matting"` 使用专用 Image Matting 节点，要求：
+
+- `supportmode` 必须严格等于 `["image_matting"]`。
+- `model` 必须与 `/health` 返回的 `model_id` 一致。
+- `modelRevision` 必须与 `/health` 返回的 `model_revision` 一致。
+- `/v1/matting` 必须返回 `image/png`、RGBA 像素和匹配的尺寸/alpha 响应头。
+- 输出 alpha 必须具有非平凡范围；全透明或全不透明结果会被拒绝。
+
+### `localRuntime`
+
+本地 endpoint 的托管启动契约：
+
+- `managed`: 是否允许 Provider 在健康检查连接失败时启动服务。
+- `startupCommand`: `managed: true` 时必需；非空参数数组，使用 `shell=false` 原样执行。
+- `workingDirectory`: `managed: true` 时必需；绝对路径。
+- `healthUrl`: 必须严格等于 `{baseUrl}/health`。
+- `startupTimeoutMs`: 启动健康检查的正整数超时。
+
+服务可连接但健康协议、模型或输出不匹配时会直接报错，不会尝试重启或静默降级。
 
 ## Hyper3D 字段
 

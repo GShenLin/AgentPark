@@ -13,6 +13,11 @@ import {
 } from '../../api'
 import AnimTrackEditor from './AnimTrackEditor.vue'
 import PetAvatarRenderer from '../pet-avatar/PetAvatarRenderer.vue'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormCheckbox from '../FormCheckbox.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const emit = defineEmits<{
   error: [message: string]
@@ -218,6 +223,15 @@ function stopResize() {
   window.removeEventListener('pointerup', stopResize)
 }
 
+function updateFrameName(value: string) {
+  if (frame.value) frame.value.name = value
+}
+
+function updateFrameFps(value: string) {
+  if (!frame.value) return
+  frame.value.fps = Math.max(1, Math.min(60, Number(value) || 1))
+}
+
 function clampPlayhead(value: number) {
   const frame = Number.isFinite(value) ? value : 0
   return Math.max(0, Math.min(totalFrames.value, frame))
@@ -309,9 +323,9 @@ watch(() => [selectedState.value, totalFrames.value], () => {
   <div class="anim-editor">
     <aside class="anim-sidebar">
       <div class="anim-create">
-        <input v-model="newAvatarId" type="text" placeholder="avatar-id" spellcheck="false" />
-        <input v-model="newAvatarName" type="text" placeholder="Name" />
-        <button type="button" class="settings-btn" :disabled="loading || !newAvatarId.trim()" @click="createAvatar">New</button>
+        <FormTextInput v-model="newAvatarId" compact placeholder="avatar-id" spellcheck="false" />
+        <FormTextInput v-model="newAvatarName" compact placeholder="Name" />
+        <ActionButton compact :disabled="loading || !newAvatarId.trim()" @click="createAvatar">New</ActionButton>
       </div>
 
       <div class="anim-avatar-list">
@@ -334,33 +348,33 @@ watch(() => [selectedState.value, totalFrames.value], () => {
       <div class="anim-row anim-top-row">
         <label>
           <span>Avatar</span>
-          <input v-if="frame" v-model="frame.name" type="text" />
+          <FormTextInput v-if="frame" :model-value="frame.name" compact @update:model-value="updateFrameName" />
         </label>
         <label>
           <span>FPS</span>
-          <input v-if="frame" v-model.number="frame.fps" type="number" min="1" max="60" />
+          <FormTextInput v-if="frame" :model-value="frame.fps" compact type="number" min="1" max="60" @change="updateFrameFps" />
         </label>
-        <button type="button" class="settings-btn" :disabled="loading || !selectedAvatarId" @click="loadAvatar()">Reload</button>
-        <button type="button" class="settings-btn primary" :disabled="saving || !dirty || !frame" @click="saveFrame">
+        <ActionButton compact :disabled="loading || !selectedAvatarId" @click="loadAvatar()">Reload</ActionButton>
+        <ActionButton variant="primary" compact :disabled="saving || !dirty || !frame" @click="saveFrame">
           {{ saving ? 'Saving...' : 'Save' }}
-        </button>
+        </ActionButton>
       </div>
 
       <div v-if="frame" class="anim-workspace">
         <div class="anim-row">
           <label>
             <span>State</span>
-            <select v-model="selectedState">
+            <FormSelect v-model="selectedState" compact>
               <option v-for="state in availableStates" :key="state" :value="state">{{ state }}</option>
-            </select>
+            </FormSelect>
           </label>
           <label>
             <span>NewState</span>
-            <input v-model="newStateId" type="text" placeholder="celebrate" spellcheck="false" />
+            <FormTextInput v-model="newStateId" compact placeholder="celebrate" spellcheck="false" />
           </label>
-          <button type="button" class="settings-btn" :disabled="!newStateId.trim()" @click="createState">Add</button>
+          <ActionButton compact :disabled="!newStateId.trim()" @click="createState">Add</ActionButton>
           <label class="anim-check">
-            <input type="checkbox" :checked="!!activeState?.loop" :disabled="!activeState" @change="updateLoop(($event.target as HTMLInputElement).checked)" />
+            <FormCheckbox :model-value="!!activeState?.loop" :disabled="!activeState" @update:model-value="updateLoop" />
             <span>Loop</span>
           </label>
         </div>
@@ -375,7 +389,7 @@ watch(() => [selectedState.value, totalFrames.value], () => {
               <template v-if="activeState?.type === 'gif'">
                 <div class="anim-gif-block">
                   <span>{{ activeState.src }}</span>
-                  <button type="button" class="settings-btn" @click="frame.states[selectedState] = { type: 'sequence', loop: true, frames: [] }">Sequence</button>
+                  <ActionButton compact @click="frame.states[selectedState] = { type: 'sequence', loop: true, frames: [] }">Sequence</ActionButton>
                 </div>
               </template>
               <template v-else-if="isSequence">
@@ -387,7 +401,7 @@ watch(() => [selectedState.value, totalFrames.value], () => {
                 >
                   <img :src="item.url" alt="" draggable="false" />
                   <span>{{ item.holdFrames }}</span>
-                  <button type="button" title="Remove" @click="removeFrame(index)">x</button>
+                  <DangerButton icon aria-label="Remove frame" title="Remove" @click="removeFrame(index)">×</DangerButton>
                   <i class="anim-resize" @pointerdown="startResize($event, index)"></i>
                 </div>
               </template>
@@ -418,9 +432,9 @@ watch(() => [selectedState.value, totalFrames.value], () => {
               <PetAvatarRenderer :avatar="frame" :state="selectedState" :playing="false" :display-frame="playheadFrame" />
             </div>
             <div class="anim-test-actions">
-              <button type="button" class="settings-btn primary" :disabled="!activeState" @click="togglePreview">
+              <ActionButton variant="primary" compact :disabled="!activeState" @click="togglePreview">
                 {{ previewPlaying ? 'Pause' : 'Play' }}
-              </button>
+              </ActionButton>
             </div>
           </section>
         </div>

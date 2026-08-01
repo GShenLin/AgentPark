@@ -57,6 +57,48 @@ def test_tavern_provider_uses_official_deepseek_non_thinking_contract():
     assert provider["model"] == "deepseek-v4-pro"
 
 
+def test_deepseek_send_uses_responses_endpoint_when_enabled():
+    agent = _build_deepseek_agent()
+    agent.config["responsesApi"] = True
+    agent.config["reasoningEffort"] = "high"
+    agent.config["responsesReplayReasoningItems"] = False
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(kwargs)
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "responses ok"}],
+                }
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+    agent._stream_chat_completions_with_retry = lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("responsesApi=true must not use chat/completions")
+    )
+
+    result = agent.Send(
+        web_search="disabled",
+        thinking="enabled",
+        reasoning_effort="high",
+        reasoning_summary="disabled",
+        stream=False,
+    )
+
+    assert result == "responses ok"
+    assert requests[0]["endpoint"] == "responses"
+    assert requests[0]["url"] == "https://api.deepseek.test/responses"
+    payload = json.loads(requests[0]["payload_json"])
+    assert payload["model"] == "deepseek-test"
+    assert "input" in payload
+    assert "messages" not in payload
+    assert payload["reasoning"] == {"effort": "high"}
+
+
 def test_deepseek_explicitly_disables_thinking_and_omits_reasoning_effort():
     payload = _capture_payload(
         _build_deepseek_agent(),

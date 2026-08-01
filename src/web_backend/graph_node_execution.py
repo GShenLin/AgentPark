@@ -22,6 +22,7 @@ from .shared import (
     _is_node_stop_requested,
     _set_node_config_inflight,
     _set_node_config_last_message,
+    _set_node_config_last_output,
     _set_node_config_runtime_event,
     _touch_node_config_last_run_at,
     _transition_node_config_to_idle,
@@ -336,7 +337,7 @@ class GraphNodeExecution(HostBoundService):
         )
         _set_node_config_inflight(config_path, None)
         _set_node_config_runtime_event(config_path, None)
-        _set_node_config_last_message(config_path, final_message)
+        _set_node_config_last_output(config_path, final_message, output_message)
         try:
             self._append_node_memory_entry(safe_graph_id, entry, "assistant", output_message)
             for sidecar in memory_sidecars:

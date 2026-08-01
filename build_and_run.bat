@@ -72,21 +72,15 @@ if /I "%~1"=="ask-here" (
     set "AGENTPARK_ASK_HERE_PATH=%~2"
     set "AGENTPARK_NO_PAUSE=1"
 )
-set "PYTHON_EXE="
-call :select_python "%LocalAppData%\Programs\Python\Python314\python.exe"
-if not defined PYTHON_EXE call :select_python "%UserProfile%\Miniconda3\python.exe"
-if not defined PYTHON_EXE call :select_python "%LocalAppData%\Programs\Python\Python312\python.exe"
-if not defined PYTHON_EXE call :select_python "%LocalAppData%\Programs\Python\Python311\python.exe"
-if not defined PYTHON_EXE call :select_python "python"
-
-if not defined PYTHON_EXE (
-    echo [ERROR] Python is required to run AgentPark, but no usable Python installation was found.
-    echo [ERROR] Please install Python, then run build_and_run.bat again.
-    echo [ERROR] Download Python from: https://www.python.org/downloads/windows/
+if /I "%AGENTPARK_LAUNCH_MODE%"=="ask_here" (
+    call "%AGENTPARK_WORKSPACE_ROOT%\scripts\bootstrap_windows_toolchain.bat" python-only
+) else (
+    call "%AGENTPARK_WORKSPACE_ROOT%\scripts\bootstrap_windows_toolchain.bat"
+)
+if errorlevel 1 (
     call :maybe_pause
     exit /b 1
 )
-
 echo [INFO] Using Python: %PYTHON_EXE%
 
 if /I "%AGENTPARK_LAUNCH_MODE%"=="ask_here" (
@@ -123,9 +117,9 @@ echo [INFO] WebUI build successful.
 rem Return to root directory
 cd ..
 
-echo [INFO] Installing/updating Python dependencies...
-set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install -e ."
-call :run_optional_dependency_update "Python dependency update"
+echo [INFO] Installing/updating AgentPark Python dependencies...
+set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install --no-build-isolation -e ."
+call :run_optional_dependency_update "AgentPark Python dependency update"
 
 if exist "desktop\pet\package.json" (
     echo [INFO] Installing/updating Desktop pet dependencies...
@@ -295,13 +289,4 @@ if errorlevel 1 (
 ) else (
     echo [INFO] ripgrep installed successfully.
 )
-exit /b 0
-
-:select_python
-set "CANDIDATE=%~1"
-if "%CANDIDATE%"=="" exit /b 0
-if not "%CANDIDATE%"=="python" if not exist "%CANDIDATE%" exit /b 0
-"%CANDIDATE%" --version >nul 2>nul
-if errorlevel 1 exit /b 0
-set "PYTHON_EXE=%CANDIDATE%"
 exit /b 0

@@ -1,3 +1,5 @@
+import uuid
+
 from src.base_agent import BaseAgent
 from src.providers.openai_chat_runtime import OpenAIChatRuntime
 from src.providers.openai_mapping import OpenAIResponsesMapping
@@ -17,6 +19,9 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             system_prompt=system_prompt,
             internal_memory_enabled=internal_memory_enabled,
         )
+        # Match Codex's session-scoped Responses cache contract. The value is
+        # stable for this agent conversation and distinct across agent instances.
+        self._responses_prompt_cache_key = str(uuid.uuid4())
         self.config = self._read_provider_config_from_file()
         self.system_prompt = system_prompt
         self._service_targets_cache = None

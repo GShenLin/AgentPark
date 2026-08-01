@@ -4,11 +4,6 @@
 .card-head { justify-content: space-between; margin-bottom: 14px; }
 h2 { margin: 0 0 4px; font-size: 16px; }
 p { margin: 0; color: var(--text-muted, #94a3b8); font-size: 12px; }
-button, input, select { border: 1px solid var(--border-color, #3b4658); border-radius: 6px; background: var(--input-bg, #111827); color: inherit; padding: 7px 9px; }
-button { cursor: pointer; }
-button:disabled { cursor: default; opacity: .55; }
-button.primary { background: #2563eb; border-color: #2563eb; color: white; }
-button.danger { color: #fda4af; border-color: rgba(244, 63, 94, .45); }
 .endpoint-row { display: grid; gap: 5px; margin-bottom: 14px; }
 .endpoint-row code, .created-key code { overflow-wrap: anywhere; color: #93c5fd; }
 .endpoint-row span, label, small { color: var(--text-muted, #94a3b8); font-size: 12px; }

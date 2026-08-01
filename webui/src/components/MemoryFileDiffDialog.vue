@@ -54,7 +54,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(2, 6, 23, 0.78);
+  background: var(--ui-dialog-backdrop);
 }
 
 .diff-dialog {
@@ -63,11 +63,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
   width: min(1400px, 96vw);
   max-height: 92vh;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 12px;
-  background: #0b1220;
-  color: rgba(226, 232, 240, 0.96);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--ui-dialog-border);
+  border-radius: var(--ui-dialog-radius);
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 .diff-dialog-head {
@@ -76,7 +76,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid var(--ui-dialog-divider);
 }
 
 .diff-dialog-title {

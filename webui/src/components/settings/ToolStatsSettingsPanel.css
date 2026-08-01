@@ -24,11 +24,6 @@
   border-radius: 6px;
 }
 
-.tool-stats-action.danger {
-  border-color: rgba(239, 68, 68, 0.32);
-  color: #fca5a5;
-}
-
 .tool-provider-item {
   display: flex;
   align-items: center;
@@ -104,12 +99,6 @@
 
 .tool-stats-scope-controls select {
   min-width: 130px;
-  min-height: 34px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 0 9px;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
 }
 
 .call-review-head h3 {

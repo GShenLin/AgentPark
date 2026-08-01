@@ -8,6 +8,11 @@ import {
   RUNTIME_EVENT_NAMES,
   RUNTIME_EVENT_TTLS,
 } from '../../runtimeEventsConfig'
+import DangerButton from '../DangerButton.vue'
+import ActionButton from '../ActionButton.vue'
+import FormCheckbox from '../FormCheckbox.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const COMPANION_GROUP_ID = 'companion'
 const props = defineProps<{ data: Record<string, unknown> }>()
@@ -135,24 +140,24 @@ onMounted(refreshDiagnostics)
     <section class="settings-group">
       <div class="group-head">
         <h2>Runtime Events</h2>
-        <button type="button" @click="refreshDiagnostics">{{ diagnosticsLoading ? 'Refreshing...' : 'Refresh' }}</button>
+        <ActionButton compact @click="refreshDiagnostics">{{ diagnosticsLoading ? 'Refreshing...' : 'Refresh' }}</ActionButton>
       </div>
       <div class="form-grid">
-        <label class="checkbox-label"><span>Enabled</span><input :checked="config.enabled" type="checkbox" @change="updateRoot('enabled', ($event.target as HTMLInputElement).checked)" /></label>
-        <label><span>Default TTL</span><select :value="String(config.context_policy?.default_ttl || 'next_turn')" @change="updatePolicy('default_ttl', ($event.target as HTMLSelectElement).value)"><option v-for="ttl in RUNTIME_EVENT_TTLS" :key="ttl" :value="ttl">{{ ttl }}</option></select></label>
-        <label><span>Max Fragment Chars</span><input :value="String(config.context_policy?.max_fragment_chars || 8000)" type="number" min="1" @input="updatePolicy('max_fragment_chars', Number(($event.target as HTMLInputElement).value || 0))" /></label>
-        <label><span>Dedupe Window Ms</span><input :value="String(config.context_policy?.dedupe_window_ms || 30000)" type="number" min="0" @input="updatePolicy('dedupe_window_ms', Number(($event.target as HTMLInputElement).value || 0))" /></label>
+        <label class="checkbox-label"><span>Enabled</span><FormCheckbox :model-value="config.enabled" @update:model-value="updateRoot('enabled', $event)" /></label>
+        <label><span>Default TTL</span><FormSelect :model-value="String(config.context_policy?.default_ttl || 'next_turn')" @change="updatePolicy('default_ttl', $event)"><option v-for="ttl in RUNTIME_EVENT_TTLS" :key="ttl" :value="ttl">{{ ttl }}</option></FormSelect></label>
+        <label><span>Max Fragment Chars</span><FormTextInput :model-value="String(config.context_policy?.max_fragment_chars || 8000)" type="number" min="1" @update:model-value="updatePolicy('max_fragment_chars', Number($event || 0))" /></label>
+        <label><span>Dedupe Window Ms</span><FormTextInput :model-value="String(config.context_policy?.dedupe_window_ms || 30000)" type="number" min="0" @update:model-value="updatePolicy('dedupe_window_ms', Number($event || 0))" /></label>
       </div>
       <div class="diagnostics-line"><span>{{ diagnostics ? compiledText : 'Diagnostics not loaded' }}</span><span v-if="diagnosticsError" class="inline-error">{{ diagnosticsError }}</span></div>
     </section>
 
     <section class="settings-group">
-      <div class="group-head"><h2>Explicit Receivers</h2><button type="button" @click="addReceiver">Add Receiver</button></div>
+      <div class="group-head"><h2>Explicit Receivers</h2><ActionButton compact @click="addReceiver">Add Receiver</ActionButton></div>
       <div class="receiver-list">
         <div v-for="(receiver, index) in companionGroup?.receivers || []" :key="index" class="receiver-row">
-          <input :value="receiver.graph_id || 'Companion'" placeholder="Graph" @input="updateReceiver(index, 'graph_id', ($event.target as HTMLInputElement).value)" />
-          <input :value="receiver.node_id || ''" placeholder="Node" @input="updateReceiver(index, 'node_id', ($event.target as HTMLInputElement).value)" />
-          <button type="button" class="danger" @click="deleteReceiver(index)">Delete</button>
+          <FormTextInput :model-value="receiver.graph_id || 'Companion'" placeholder="Graph" @update:model-value="updateReceiver(index, 'graph_id', $event)" />
+          <FormTextInput :model-value="receiver.node_id || ''" placeholder="Node" @update:model-value="updateReceiver(index, 'node_id', $event)" />
+          <DangerButton @click="deleteReceiver(index)">Delete</DangerButton>
         </div>
         <div v-if="!(companionGroup?.receivers || []).length" class="empty-hint">No explicit receivers. A dispatch handler can create a temporary Companion node from its Agent Profile.</div>
       </div>
@@ -170,7 +175,7 @@ onMounted(refreshDiagnostics)
               <span>{{ node.handler.action }}</span>
               <span>{{ node.handler.action === 'node.dispatch' ? (node.handler.params?.profile_ids || []).join(', ') : (node.handler.action === 'context.append_file' ? `${(node.handler.params?.paths || []).join(', ')} (${node.handler.params?.role || 'developer'})` : node.handler.target) }}</span>
               <span>{{ node.handler.enabled === false ? 'disabled' : 'enabled' }}</span>
-              <button type="button" class="danger" @click="deleteHandler(eventGroup.event, graphGroup.graphId, node.nodeId, node.handlerIndex)">Delete</button>
+              <DangerButton @click="deleteHandler(eventGroup.event, graphGroup.graphId, node.nodeId, node.handlerIndex)">Delete</DangerButton>
             </div>
           </div>
         </div>
@@ -200,9 +205,5 @@ onMounted(refreshDiagnostics)
 .inline-error { color: #fca5a5; }
 label { color: rgba(226, 232, 240, 0.94); font-size: 12px; }
 .checkbox-label { display: flex; flex-direction: column; gap: 5px; }
-.checkbox-label input { width: auto; align-self: flex-start; }
-input, select { width: 100%; border: 1px solid rgba(148, 163, 184, 0.24); border-radius: 8px; padding: 8px 9px; color: rgba(226, 232, 240, 0.96); background: rgba(2, 6, 23, 0.5); font: inherit; }
-button { border: 1px solid rgba(148, 163, 184, 0.26); border-radius: 8px; background: rgba(15, 23, 42, 0.92); color: #f8fafc; cursor: pointer; padding: 7px 10px; font-size: 12px; }
-button.danger { border-color: rgba(248, 113, 113, 0.35); color: rgba(254, 202, 202, 0.95); }
 @media (max-width: 1120px) { .form-grid, .receiver-row, .event-route-head, .node-route-row { grid-template-columns: 1fr; } .graph-route-group { margin-left: 0; } }
 </style>

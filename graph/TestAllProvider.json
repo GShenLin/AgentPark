@@ -58,8 +58,8 @@
         "typeId": "basic_trigger_node",
         "name": "BasicTrigger",
         "ui": {
-          "x": 178,
-          "y": 11,
+          "grid_x": 1,
+          "grid_y": 0,
           "width": 230,
           "height": 250
         },
@@ -71,8 +71,8 @@
         "typeId": "agent_node",
         "name": "Claude",
         "ui": {
-          "x": 759,
-          "y": 367,
+          "grid_x": 3,
+          "grid_y": 1,
           "width": 343,
           "height": 323
         },
@@ -84,8 +84,8 @@
         "typeId": "agent_node",
         "name": "DeepSeek",
         "ui": {
-          "x": 805,
-          "y": 709,
+          "grid_x": 3,
+          "grid_y": 3,
           "width": 383,
           "height": 377
         },
@@ -97,8 +97,8 @@
         "typeId": "agent_node",
         "name": "Doubao",
         "ui": {
-          "x": 454,
-          "y": 9,
+          "grid_x": 1,
+          "grid_y": 1,
           "width": 309,
           "height": 343
         },
@@ -110,8 +110,8 @@
         "typeId": "agent_node",
         "name": "GLM",
         "ui": {
-          "x": 1512,
-          "y": 400,
+          "grid_x": 5,
+          "grid_y": 1,
           "width": 316,
           "height": 323
         },
@@ -123,8 +123,8 @@
         "typeId": "agent_node",
         "name": "GPT",
         "ui": {
-          "x": 776,
-          "y": 8,
+          "grid_x": 7,
+          "grid_y": 0,
           "width": 348,
           "height": 342
         },
@@ -136,8 +136,8 @@
         "typeId": "agent_node",
         "name": "Grok",
         "ui": {
-          "x": 1510,
-          "y": 13,
+          "grid_x": 5,
+          "grid_y": 3,
           "width": 382,
           "height": 357
         },
@@ -149,8 +149,8 @@
         "typeId": "agent_node",
         "name": "Kimi",
         "ui": {
-          "x": 1163,
-          "y": 25,
+          "grid_x": 9,
+          "grid_y": 0,
           "width": 330,
           "height": 349
         },
@@ -162,8 +162,8 @@
         "typeId": "agent_node",
         "name": "MiniMax",
         "ui": {
-          "x": 450,
-          "y": 366,
+          "grid_x": 0,
+          "grid_y": 1,
           "width": 294,
           "height": 326
         },
@@ -175,15 +175,21 @@
         "typeId": "agent_node",
         "name": "hy3",
         "ui": {
-          "x": 1186,
-          "y": 390,
+          "grid_x": 4,
+          "grid_y": 0,
           "width": 285,
           "height": 307
         },
         "input_num": 1,
         "output_num": 1
       }
-    ]
+    ],
+    "layout": {
+      "grid": {
+        "cell_width": 300,
+        "cell_height": 320
+      }
+    }
   },
   "node_configs": [
     {
@@ -198,8 +204,8 @@
         "OutputText": "浏览项目现状 详细分析源码细节 并梳理架构"
       },
       "ui": {
-        "x": 178,
-        "y": 11,
+        "grid_x": 1,
+        "grid_y": 0,
         "width": 230,
         "height": 250
       },
@@ -228,8 +234,8 @@
         "collaboration_mode": "default"
       },
       "ui": {
-        "x": 759,
-        "y": 367,
+        "grid_x": 3,
+        "grid_y": 1,
         "width": 343,
         "height": 323
       },
@@ -259,8 +265,8 @@
         "instruction": ""
       },
       "ui": {
-        "x": 805,
-        "y": 709,
+        "grid_x": 3,
+        "grid_y": 3,
         "width": 383,
         "height": 377
       },
@@ -288,8 +294,8 @@
         "plugins": []
       },
       "ui": {
-        "x": 454,
-        "y": 9,
+        "grid_x": 1,
+        "grid_y": 1,
         "width": 309,
         "height": 343
       },
@@ -319,8 +325,8 @@
         "instruction": ""
       },
       "ui": {
-        "x": 1512,
-        "y": 400,
+        "grid_x": 5,
+        "grid_y": 1,
         "width": 316,
         "height": 323
       },
@@ -348,8 +354,8 @@
         "plugins": []
       },
       "ui": {
-        "x": 776,
-        "y": 8,
+        "grid_x": 7,
+        "grid_y": 0,
         "width": 348,
         "height": 342
       },
@@ -380,8 +386,8 @@
         "reasoning_summary": ""
       },
       "ui": {
-        "x": 1510,
-        "y": 13,
+        "grid_x": 5,
+        "grid_y": 3,
         "width": 382,
         "height": 357
       },
@@ -411,8 +417,8 @@
         "instruction": ""
       },
       "ui": {
-        "x": 1163,
-        "y": 25,
+        "grid_x": 9,
+        "grid_y": 0,
         "width": 330,
         "height": 349
       },
@@ -442,8 +448,8 @@
         "instruction": ""
       },
       "ui": {
-        "x": 450,
-        "y": 366,
+        "grid_x": 0,
+        "grid_y": 1,
         "width": 294,
         "height": 326
       },
@@ -473,8 +479,8 @@
         "instruction": ""
       },
       "ui": {
-        "x": 1186,
-        "y": 390,
+        "grid_x": 4,
+        "grid_y": 0,
         "width": 285,
         "height": 307
       },

@@ -29,7 +29,9 @@ def build_provider_options_for_support_modes(
         raise TypeError("include_private must be a boolean")
     if providers is None:
         try:
-            providers = ConfigLoader().get_all_providers()
+            loader = ConfigLoader()
+            catalog = getattr(loader, "get_provider_catalog", None)
+            providers = catalog() if callable(catalog) else loader.get_all_providers()
         except Exception:
             providers = {}
 
@@ -64,7 +66,9 @@ def build_provider_support_list(
         raise TypeError("include_private must be a boolean")
     if providers is None:
         try:
-            providers = ConfigLoader().get_all_providers()
+            loader = ConfigLoader()
+            catalog = getattr(loader, "get_provider_catalog", None)
+            providers = catalog() if callable(catalog) else loader.get_all_providers()
         except Exception:
             providers = {}
 
@@ -79,7 +83,11 @@ def build_provider_support_list(
             provider_id = str(provider_id)
         modes: list[str] = []
         features: dict = {}
+        provider_type = ""
+        description = ""
         if isinstance(config, dict):
+            provider_type = str(config.get("type") or "").strip().lower()
+            description = str(config.get("description") or "").strip()
             raw_modes = config.get("supportmode")
             if isinstance(raw_modes, (list, tuple, set)):
                 for mode in raw_modes:
@@ -91,7 +99,15 @@ def build_provider_support_list(
             raw_features = config.get("features")
             if isinstance(raw_features, dict):
                 features = dict(raw_features)
-        items.append({"id": provider_id, "supportmode": modes, "features": features})
+        items.append(
+            {
+                "id": provider_id,
+                "type": provider_type,
+                "description": description,
+                "supportmode": modes,
+                "features": features,
+            }
+        )
 
     items.sort(key=lambda item: item.get("id", ""))
     return items

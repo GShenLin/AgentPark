@@ -1,0 +1,487 @@
+{
+  "id": "TestAllProvider",
+  "name": "TestAllProvider",
+  "source_graph_id": "test",
+  "graph": {
+    "id": "test",
+    "name": "test",
+    "working_path": "",
+    "output_routes": {
+      "BasicTrigger": [
+        {
+          "output_index": 0,
+          "targets": [
+            {
+              "node_id": "Claude",
+              "input_index": 0
+            },
+            {
+              "node_id": "GPT",
+              "input_index": 0
+            },
+            {
+              "node_id": "Doubao",
+              "input_index": 0
+            },
+            {
+              "node_id": "DeepSeek",
+              "input_index": 0
+            },
+            {
+              "node_id": "GLM",
+              "input_index": 0
+            },
+            {
+              "node_id": "MiniMax",
+              "input_index": 0
+            },
+            {
+              "node_id": "Kimi",
+              "input_index": 0
+            },
+            {
+              "node_id": "hy3",
+              "input_index": 0
+            },
+            {
+              "node_id": "Grok",
+              "input_index": 0
+            }
+          ]
+        }
+      ]
+    },
+    "version": 1784286916029571000,
+    "nodes": [
+      {
+        "id": "BasicTrigger",
+        "typeId": "basic_trigger_node",
+        "name": "BasicTrigger",
+        "ui": {
+          "x": 178,
+          "y": 11,
+          "width": 230,
+          "height": 250
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Claude",
+        "typeId": "agent_node",
+        "name": "Claude",
+        "ui": {
+          "x": 759,
+          "y": 367,
+          "width": 343,
+          "height": 323
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "DeepSeek",
+        "typeId": "agent_node",
+        "name": "DeepSeek",
+        "ui": {
+          "x": 805,
+          "y": 709,
+          "width": 383,
+          "height": 377
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Doubao",
+        "typeId": "agent_node",
+        "name": "Doubao",
+        "ui": {
+          "x": 454,
+          "y": 9,
+          "width": 309,
+          "height": 343
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "GLM",
+        "typeId": "agent_node",
+        "name": "GLM",
+        "ui": {
+          "x": 1512,
+          "y": 400,
+          "width": 316,
+          "height": 323
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "GPT",
+        "typeId": "agent_node",
+        "name": "GPT",
+        "ui": {
+          "x": 776,
+          "y": 8,
+          "width": 348,
+          "height": 342
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Grok",
+        "typeId": "agent_node",
+        "name": "Grok",
+        "ui": {
+          "x": 1510,
+          "y": 13,
+          "width": 382,
+          "height": 357
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "Kimi",
+        "typeId": "agent_node",
+        "name": "Kimi",
+        "ui": {
+          "x": 1163,
+          "y": 25,
+          "width": 330,
+          "height": 349
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "MiniMax",
+        "typeId": "agent_node",
+        "name": "MiniMax",
+        "ui": {
+          "x": 450,
+          "y": 366,
+          "width": 294,
+          "height": 326
+        },
+        "input_num": 1,
+        "output_num": 1
+      },
+      {
+        "id": "hy3",
+        "typeId": "agent_node",
+        "name": "hy3",
+        "ui": {
+          "x": 1186,
+          "y": 390,
+          "width": 285,
+          "height": 307
+        },
+        "input_num": 1,
+        "output_num": 1
+      }
+    ]
+  },
+  "node_configs": [
+    {
+      "node_id": "BasicTrigger",
+      "graph_id": "test",
+      "type_id": "basic_trigger_node",
+      "name": "BasicTrigger",
+      "fields": {
+        "plugins": [],
+        "skills": [],
+        "working_path": "",
+        "OutputText": "浏览项目现状 详细分析源码细节 并梳理架构"
+      },
+      "ui": {
+        "x": 178,
+        "y": 11,
+        "width": 230,
+        "height": 250
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Claude",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "Claude",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "sonnet-5-krill",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": [],
+        "collaboration_mode": "default"
+      },
+      "ui": {
+        "x": 759,
+        "y": 367,
+        "width": 343,
+        "height": 323
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "DeepSeek",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "DeepSeek",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "deepseek_v4_flash",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 805,
+        "y": 709,
+        "width": 383,
+        "height": 377
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Doubao",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "Doubao",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "doubao-seed-evolving",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": []
+      },
+      "ui": {
+        "x": 454,
+        "y": 9,
+        "width": 309,
+        "height": 343
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "GLM",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "GLM",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "GLM_CodingPlan",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 1512,
+        "y": 400,
+        "width": 316,
+        "height": 323
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "GPT",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "GPT",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "krill_gpt_Newest",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": []
+      },
+      "ui": {
+        "x": 776,
+        "y": 8,
+        "width": 348,
+        "height": 342
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Grok",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "Grok",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "Grok_krill",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": [],
+        "instruction": "",
+        "collaboration_mode": "default",
+        "reasoning_summary": ""
+      },
+      "ui": {
+        "x": 1510,
+        "y": 13,
+        "width": 382,
+        "height": 357
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "Kimi",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "Kimi",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "Kimi_CodingPlan",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "disabled",
+        "reasoning_effort": "max",
+        "mcp_servers": [],
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 1163,
+        "y": 25,
+        "width": 330,
+        "height": 349
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "MiniMax",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "MiniMax",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "MiniMax_CodingPlan",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 450,
+        "y": 366,
+        "width": 294,
+        "height": 326
+      },
+      "input_num": 1,
+      "output_num": 1
+    },
+    {
+      "node_id": "hy3",
+      "graph_id": "test",
+      "type_id": "agent_node",
+      "name": "hy3",
+      "fields": {
+        "skills": [],
+        "working_path": "",
+        "provider_id": "hy3",
+        "system_prompt": "",
+        "mode": "chat",
+        "tools": [
+          "system_tools"
+        ],
+        "web_search": "enabled",
+        "thinking": "enabled",
+        "reasoning_effort": "high",
+        "mcp_servers": [],
+        "plugins": [],
+        "collaboration_mode": "default",
+        "instruction": ""
+      },
+      "ui": {
+        "x": 1186,
+        "y": 390,
+        "width": 285,
+        "height": 307
+      },
+      "input_num": 1,
+      "output_num": 1
+    }
+  ],
+  "updated_at": "2026-07-17T19:25:05+08:00",
+  "created_at": "2026-07-17T19:25:05+08:00"
+}

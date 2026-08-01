@@ -33,7 +33,7 @@ function nodeConfig(graphId: string, nodeId: string): NodeInstanceConfig {
     name: nodeId,
     state: 'idle',
     node_event_seq: 0,
-    ui: { x: 10, y: 20 },
+    ui: { grid_x: 1, grid_y: 2 },
   }
 }
 
@@ -181,5 +181,43 @@ describe('board node config refresh isolation', () => {
     expect(nodeStates.value['crash-node']).toBe('idle')
     expect(nodeConfigs.value['crash-node']?.node_event_seq).toBe(341)
     expect(subject.hasActiveNodeWork()).toBe(false)
+  })
+
+  it('keeps board diagnostics when the selected node loads its editor config', async () => {
+    const boardConfig = {
+      ...nodeConfig('default', 'diagnostic-node'),
+      runtime_events: [{
+        type: 'runtime_notice',
+        stage: 'provider_request_summary',
+        message: '{"request_index":1,"approx_input_chars":3000}',
+      }],
+      runtime_tool_calls: [{ call_id: 'call-1', name: 'workspace_exec' }],
+      provider_request_summaries: [{ request_index: 1, approx_input_chars: 3000 }],
+      provider_request_totals: { request_count: 1, approx_input_chars: 3000 },
+    }
+    apiMocks.listNodeInstanceConfigs.mockResolvedValue({
+      nodes: [boardConfig],
+      node_ids: ['diagnostic-node'],
+      partial: false,
+      version: 1,
+    })
+    apiMocks.getNodeInstanceConfig.mockResolvedValue({
+      node: {
+        ...nodeConfig('default', 'diagnostic-node'),
+        name: 'Diagnostic node',
+      },
+      version: 1,
+    })
+
+    const currentGraphId = ref<string | null>('default')
+    const { nodeConfigs, nodes, subject } = createSubject(currentGraphId)
+    await subject.refreshNodeConfigs()
+    await subject.refreshNodeConfig('diagnostic-node')
+
+    expect(nodeConfigs.value['diagnostic-node']?.runtime_events).toEqual(boardConfig.runtime_events)
+    expect(nodes.value[0]?.runtimeEvents?.[0]).toMatchObject(boardConfig.runtime_events[0])
+    expect(nodes.value[0]?.runtimeToolCalls?.[0]).toMatchObject(boardConfig.runtime_tool_calls[0])
+    expect(nodes.value[0]?.providerRequestSummaries).toEqual(boardConfig.provider_request_summaries)
+    expect(nodes.value[0]?.providerRequestTotals).toMatchObject(boardConfig.provider_request_totals)
   })
 })

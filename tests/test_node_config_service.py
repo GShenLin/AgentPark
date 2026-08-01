@@ -155,19 +155,19 @@ def test_apply_webui_payload_preserves_node_ui_size(tmp_path):
         {
             "node_id": "n1",
             "type_id": "agent_node",
-            "ui": {"x": 10, "y": 20},
+            "ui": {"grid_x": 1, "grid_y": 2},
         },
     )
 
     result = node_config_service.apply_webui_payload(
         str(config_path),
-        {"ui": {"x": 30, "y": 40, "width": 360, "height": 420}},
+        {"ui": {"grid_x": 3, "grid_y": 4, "width": 360, "height": 420}},
     )
 
-    assert result.after["ui"] == {"x": 30, "y": 40, "width": 360, "height": 420}
+    assert result.after["ui"] == {"grid_x": 3, "grid_y": 4, "width": 360, "height": 420}
     assert json.loads(config_path.read_text(encoding="utf-8"))["ui"] == {
-        "x": 30,
-        "y": 40,
+        "grid_x": 3,
+        "grid_y": 4,
         "width": 360,
         "height": 420,
     }

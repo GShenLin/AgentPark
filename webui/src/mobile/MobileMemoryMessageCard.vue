@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { MessageEnvelope } from '../api'
+import ActionButton from '../components/ActionButton.vue'
+import DangerButton from '../components/DangerButton.vue'
 import { extractMemoryMessageText } from '../components/memoryMessageText'
 import { feedRoleClass, memoryRoleLabel } from '../components/memoryFeedTools'
 import MobileMessageText from './MobileMessageText.vue'
@@ -40,9 +42,9 @@ function canDelete() {
     <div class="mobile-memory-card-body">
       <MobileMessageText :message="message" />
       <div v-if="messageText() || canDelete()" class="mobile-memory-card-actions">
-        <button v-if="messageText()" type="button" class="mobile-card-action save" @click="emit('save', messageText())">Save</button>
-        <button v-if="messageText()" type="button" class="mobile-card-action copy" @click="emit('copy', messageText())">Copy</button>
-        <button v-if="canDelete()" type="button" class="mobile-card-action delete" @click="emit('delete', message)">Delete</button>
+        <ActionButton v-if="messageText()" variant="primary" compact @click="emit('save', messageText())">Save</ActionButton>
+        <ActionButton v-if="messageText()" compact @click="emit('copy', messageText())">Copy</ActionButton>
+        <DangerButton v-if="canDelete()" compact @click="emit('delete', message)">Delete</DangerButton>
       </div>
     </div>
   </article>
@@ -95,17 +97,4 @@ function canDelete() {
   margin-top: 8px;
 }
 
-.mobile-card-action {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: rgba(15, 23, 42, 0.74);
-  color: rgba(226, 232, 240, 0.94);
-  font-size: 12px;
-}
-
-.mobile-card-action.save { border-color: rgba(74, 222, 128, 0.4); color: rgba(187, 247, 208, 0.96); }
-.mobile-card-action.copy { border-color: rgba(125, 211, 252, 0.4); color: rgba(186, 230, 253, 0.96); }
-.mobile-card-action.delete { border-color: rgba(248, 113, 113, 0.45); color: rgba(254, 202, 202, 0.98); background: rgba(127, 29, 29, 0.28); }
 </style>

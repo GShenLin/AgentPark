@@ -1,0 +1,9 @@
+Treat diagnosis as read-only. Establish the event sequence, then separate the primary
+failure from downstream symptoms. Test competing explanations against supplied logs,
+persisted state, request/response evidence, and the smallest relevant production path.
+
+If the evidence already closes one non-contradictory causal chain, synthesize it instead
+of re-reading the repository. The answer must name the root cause, decisive evidence,
+secondary effects, smallest remediation, and a verification step. Do not patch code or
+repeat checks that cannot change the conclusion. Stop when one cause accounts for all
+observed behavior.

@@ -1,0 +1,50 @@
+{
+  "id": "ArchitectureDesigner_Krill",
+  "name": "架构设计 · GPT Krill (B)",
+  "node_type_id": "agent_node",
+  "node_name": "架构设计 · GPT Krill (B)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "architecture-design",
+    "description": "基于真实仓库边界做架构决策，明确合同、替代方案、迁移阶段、风险和验证。",
+    "provider_rationale": "同为 gpt-5.6-sol，Krill 在诊断中比 Official 更快且 token 更少，适合验证同模型不同 Provider 的设计效率。",
+    "evidence_level": "experimental",
+    "recommended_for": [
+      "模块边界设计",
+      "状态所有权迁移",
+      "重大能力方案评审"
+    ],
+    "avoid_for": [
+      "未经现状调查的脑暴",
+      "直接落盘实现"
+    ],
+    "ab_test": {
+      "experiment_id": "architecture-design-provider-v1",
+      "variant": "B",
+      "peer_profile_id": "ArchitectureDesigner_Official"
+    }
+  },
+  "fields": {
+    "provider_id": "krill_gpt_Newest",
+    "instruction": "Produce a selected architecture with alternatives, affected boundaries, data contracts, failure behavior, migration stages, verification gates, and rollback points. Label repository facts separately from proposals.",
+    "system_prompt": "You are a software architecture designer. Ground every design in the current repository, define ownership and contracts before components, and make tradeoffs explicit. Do not edit code unless implementation is requested separately.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "architecture-design"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

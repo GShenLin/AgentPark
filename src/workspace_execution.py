@@ -13,6 +13,7 @@ from functions.rg_tools import rg_list_files
 from functions.rg_tools import rg_search_text
 from src.runtime_cancellation import cancel_source_from_agent
 from src.runtime_cancellation import raise_if_cancel_requested
+from src.remote_workspace import dispatch_remote_workspace_tool
 from src.tool.task_direction_tools import update_task_direction
 
 
@@ -74,6 +75,13 @@ _REQUIRED_ARGUMENTS: dict[str, frozenset[str]] = {
     ),
 }
 _MUTATING_OPERATION_KINDS = frozenset({"apply_patch", "update_task_direction"})
+_REMOTE_OPERATION_TOOL_NAMES = {
+    "read_file": "read_file",
+    "search_text": "rg_search_text",
+    "list_files": "rg_list_files",
+    "run_command": "execute_console_command",
+    "apply_patch": "apply_patch",
+}
 
 
 def execute_workspace_program(stages: object, *, agent: object) -> dict[str, Any]:
@@ -301,7 +309,12 @@ def _execute_operation(operation: WorkspaceOperation, agent: object) -> dict[str
         "apply_patch": apply_patch,
         "update_task_direction": update_task_direction,
     }
-    raw_result = functions[operation.kind](agent=agent, **arguments)
+    raw_result = _execute_operation_tool(
+        operation.kind,
+        arguments,
+        agent=agent,
+        local_function=functions[operation.kind],
+    )
     result = _decode_tool_result(raw_result)
     return {
         "id": operation.operation_id,
@@ -309,6 +322,41 @@ def _execute_operation(operation: WorkspaceOperation, agent: object) -> dict[str
         "status": str(result.get("status") or "success"),
         "result": result,
     }
+
+
+def _execute_operation_tool(
+    operation_kind: str,
+    arguments: dict[str, Any],
+    *,
+    agent: object,
+    local_function: Callable[..., Any],
+) -> Any:
+    remote_tool_name = _REMOTE_OPERATION_TOOL_NAMES.get(operation_kind)
+    if remote_tool_name:
+        remote_handled, remote_result = dispatch_remote_workspace_tool(
+            agent,
+            remote_tool_name,
+            arguments,
+            timeout_seconds=_operation_timeout_seconds(operation_kind, arguments),
+            cancel_source=cancel_source_from_agent(agent),
+        )
+        if remote_handled:
+            return remote_result
+    return local_function(agent=agent, **arguments)
+
+
+def _operation_timeout_seconds(
+    operation_kind: str,
+    arguments: dict[str, Any],
+) -> float | None:
+    if operation_kind != "run_command":
+        return None
+    raw_timeout = arguments.get("timeout_seconds")
+    try:
+        timeout = float(raw_timeout)
+    except (TypeError, ValueError):
+        return None
+    return timeout if timeout > 0 else None
 
 
 def _decode_tool_result(value: object) -> dict[str, Any]:

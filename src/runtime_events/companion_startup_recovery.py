@@ -6,6 +6,7 @@ from typing import Any
 
 from src.file_transaction import atomic_write_text
 from src.web_backend.node_config_service import node_config_service
+from src.web_backend.graph_grid_layout import graph_layout_lock, resolve_available_node_ui
 from src.web_backend.node_memory_store import ensure_node_memory_files
 
 from .temporary_receiver_cleanup import runtime_receiver_meta
@@ -36,16 +37,19 @@ class CompanionStartupRecovery:
             node_created = True
         node_config = os.path.join(node_dir, "config.json")
         if not os.path.exists(node_config):
-            node_config_service.create_or_replace(
-                node_config,
-                {
-                    "node_id": "Companion",
-                    "graph_id": "Companion",
-                    "type_id": "agent_node",
-                    "name": "Companion",
-                    "state": "idle",
-                },
-            )
+            with graph_layout_lock(graph_dir):
+                ui = resolve_available_node_ui(graph_dir, exclude_node_ids={"Companion"})
+                node_config_service.create_or_replace(
+                    node_config,
+                    {
+                        "node_id": "Companion",
+                        "graph_id": "Companion",
+                        "type_id": "agent_node",
+                        "name": "Companion",
+                        "state": "idle",
+                        "ui": ui,
+                    },
+                )
             node_created = True
         ensure_node_memory_files(
             self.core.graph_runtime._node_memory_path("Companion", "Companion"),

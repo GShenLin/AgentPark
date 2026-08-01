@@ -1,0 +1,5 @@
+[Context Maintenance Retry]
+The checkpoint is still active. If additional tool work is necessary, call
+compact_tool_context now and reduce the eligible history. If the requested work is
+already complete and verified, return the final answer directly. Do not reopen
+completed exploration merely to satisfy this checkpoint.

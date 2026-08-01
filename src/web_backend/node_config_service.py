@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import os
 import time
 from dataclasses import dataclass
@@ -10,6 +9,7 @@ from typing import Any, Callable
 
 from src.file_transaction import KeyedTransactionQueue, atomic_write_text
 
+from .graph_grid_layout import normalize_node_grid_ui
 from .node_runtime_fields import RUNTIME_STATE_FIELDS, RUNTIME_STATE_FILENAME
 from .node_config_errors import (
     NodeConfigFormatError,
@@ -44,6 +44,7 @@ RESERVED_NODE_CONFIG_FIELDS = {
     "_stop_requested",
     "schema",
     "last_message",
+    "last_output_resources",
     "last_runtime_event",
     "runtime_events",
     "runtime_tool_calls",
@@ -352,23 +353,7 @@ class NodeConfigService:
                     )
 
     def _normalize_ui(self, ui: dict[str, Any]) -> dict[str, int]:
-        x = self._finite_number(ui.get("x"))
-        y = self._finite_number(ui.get("y"))
-        normalized = {"x": max(0, int(round(x))), "y": max(0, int(round(y)))}
-        width = ui.get("width")
-        height = ui.get("height")
-        if width is not None and str(width).strip():
-            normalized["width"] = max(230, int(round(self._finite_number(width))))
-        if height is not None and str(height).strip():
-            normalized["height"] = max(250, int(round(self._finite_number(height))))
-        return normalized
-
-    def _finite_number(self, value: object) -> float:
-        try:
-            number = float(value or 0)
-        except Exception:
-            return 0.0
-        return number if math.isfinite(number) else 0.0
+        return normalize_node_grid_ui(ui)
 
     def _changed_fields(self, before: dict[str, Any], after: dict[str, Any]) -> list[str]:
         keys = set(before) | set(after)

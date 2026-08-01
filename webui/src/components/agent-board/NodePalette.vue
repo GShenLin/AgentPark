@@ -6,6 +6,8 @@ import { useGlobalState } from '../../composables/useGlobalState'
 import { useAgentNodeCreateSchema } from '../../composables/useAgentNodeCreateSchema'
 import { useProviderDrivenTemplateSchema } from '../../composables/useProviderDrivenTemplateSchema'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
+import ActionButton from '../ActionButton.vue'
+import FormTextInput from '../FormTextInput.vue'
 import NodeConfigFields from './NodeConfigFields.vue'
 
 const injected = inject(AgentBoardKey, null)
@@ -162,7 +164,7 @@ watch(
           <h3>鍒涘缓鑺傜偣</h3>
           <label class="field">
             <span class="field-label">鑺傜偣鍚嶇О</span>
-            <input v-model="selectedNodeName" class="field-input" type="text" />
+            <FormTextInput v-model="selectedNodeName" />
           </label>
 
           <NodeConfigFields
@@ -175,8 +177,8 @@ watch(
           />
 
           <div class="modal-actions">
-            <button @click="showNodeDialog = false">鍙栨秷</button>
-            <button class="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">纭鍒涘缓</button>
+            <ActionButton @click="showNodeDialog = false">鍙栨秷</ActionButton>
+            <ActionButton variant="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">纭鍒涘缓</ActionButton>
           </div>
         </div>
       </div>
@@ -299,7 +301,7 @@ watch(
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--ui-dialog-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -307,14 +309,16 @@ watch(
 }
 
 .modal {
-  background-color: #1e293b;
+  border: 1px solid var(--ui-dialog-border);
+  background-color: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
   padding: 24px;
-  border-radius: 8px;
+  border-radius: var(--ui-dialog-radius);
   width: 520px;
   max-width: 92%;
   max-height: 86vh;
   overflow: auto;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 .modal h3 {
@@ -352,15 +356,6 @@ watch(
   line-height: 1.35;
 }
 
-.field-input {
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 6px;
-  padding: 8px 10px;
-  color: #e2e8f0;
-  font-size: 13px;
-}
-
 .field-textarea {
   resize: vertical;
   min-height: 72px;
@@ -372,8 +367,4 @@ watch(
   gap: 12px;
 }
 
-.modal-actions button.primary {
-  background: rgba(99, 102, 241, 0.4);
-  border: 1px solid rgba(99, 102, 241, 0.7);
-}
 </style>

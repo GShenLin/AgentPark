@@ -10,6 +10,8 @@ from src.providers.provider_message_policy import ProviderMessagePolicy
 from src.value_parsing import parse_optional_int_value
 from src.tool_context_compaction_trigger import ToolContextCompactionLimits
 from src.tool_context_compaction_trigger import ToolContextCompactionWindow
+from src.tool_context_compaction_prompts import RAW_CONTEXT_COMPACTION_GATE_PROMPT
+from src.tool_context_compaction_prompts import RAW_CONTEXT_COMPACTION_RETRY_PROMPT
 
 
 INTERNAL_TOOL_NAMES = {"edit_operational_memory", "compact_tool_context"}
@@ -118,13 +120,16 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         ]
         detail = str(reason or "").strip()
         suffix = f" Previous attempt: {detail}" if detail else ""
+        policy = self._runtime_context_compaction_policy()
+        retry_prompt = (
+            policy.retry_prompt
+            if policy is not None
+            else RAW_CONTEXT_COMPACTION_RETRY_PROMPT
+        )
         messages.append(
             self.RuntimeInstructionMessage(
                 f"{TOOL_CONTEXT_COMPACTION_RETRY_PREFIX}\n"
-                "The compaction checkpoint is still active. If more function-tool work is needed, call "
-                "compact_tool_context and reduce the eligible tool context first. If the task is already complete, "
-                "return the final answer directly; a substantive response closes this checkpoint."
-                f"{suffix}"
+                f"{retry_prompt}{suffix}"
             )
         )
 
@@ -257,31 +262,10 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
 
     def _build_tool_context_compaction_gate_prompt(self, candidates: list[dict[str, Any]]) -> str:
         _ = candidates
-        return (
-            "Tool calls have accumulated in the current task. This is a context maintenance checkpoint. "
-            "If more function-tool work is needed, call compact_tool_context before using another function tool. "
-            "If the task is already complete, return the final answer directly without calling it; a substantive "
-            "response closes the checkpoint and ends the current turn.\n"
-            "Review the tool-call history already present in the conversation and decide what should remain. "
-            "Use the latest user request as the primary task anchor. "
-            "Prefer action=replace when the raw tool-call window can be replaced by a concise but actionable summary. "
-            "Use action=patch when only specific messages should be deleted or rewritten. A compaction call only "
-            "completes after the eligible context is actually reduced or rewritten.\n"
-            "The runtime will only modify eligible message ids. Preserve: inspected file paths, line numbers, "
-            "state-changing actions, failed attempts that affect next steps, important outputs, and pending decisions. "
-            "Do not preserve raw logs, duplicate search results, or large file contents after extracting the useful facts.\n"
-            "The summary is a strict checkpoint object. Distinguish confirmed facts, changed state, completed "
-            "verification, failed attempts, and ordered remaining steps. Set immediate_next_step to exactly one "
-            "remaining_steps item. Record already-sufficient reads/searches/checks in avoid_repeating, and trust "
-            "those entries after compaction unless a later state change invalidates them.\n"
-            "Assistant tool-call messages and their matching tool-result messages are protocol-atomic: "
-            "keep or remove the whole exchange together.\n"
-            "For replace, provide summary and optional keep_message_ids for raw messages that must remain. "
-            "For patch, provide delete_message_ids and/or rewrites, plus optional summary.\n"
-            "The resulting summary is working memory for continuation, not a completion signal. "
-            "After compaction, resume the current task using the latest user request, pending work, "
-            "and verification state. Do not send a final response solely because compaction completed."
-        )
+        policy = self._runtime_context_compaction_policy()
+        if policy is not None:
+            return policy.gate_prompt
+        return RAW_CONTEXT_COMPACTION_GATE_PROMPT
 
     def _latest_tool_context_compaction_user_input(self) -> dict[str, Any] | None:
         messages = getattr(self, "messages", []) or []
@@ -328,7 +312,14 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         return count
 
     def _tool_context_compaction_limits(self) -> ToolContextCompactionLimits:
-        return ToolContextCompactionLimits.from_provider_config(self.config)
+        policy = self._runtime_context_compaction_policy()
+        if policy is None:
+            return ToolContextCompactionLimits.from_provider_config(self.config)
+        config = dict(self.config)
+        config.update(policy.provider_limit_overrides())
+        if policy.context_percent <= 0:
+            config.pop("toolContextCompactionContextPercent", None)
+        return ToolContextCompactionLimits.from_provider_config(config)
 
     def _tool_context_compaction_window_state(self) -> ToolContextCompactionWindow:
         window = getattr(self, "_tool_context_compaction_window", None)
@@ -353,6 +344,9 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         )
 
     def _tool_context_compaction_enabled(self) -> bool:
+        policy = self._runtime_context_compaction_policy()
+        if policy is not None:
+            return policy.enabled
         provider_config = self.config
         if "toolContextCompactionEnabled" not in provider_config:
             raise ValueError(
@@ -371,10 +365,19 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         )
 
     def _tool_context_compaction_max_candidate_chars(self) -> int:
+        policy = self._runtime_context_compaction_policy()
+        if policy is not None:
+            return policy.max_candidate_chars
         return self._tool_context_compaction_min_chars(
             "toolContextCompactionMaxCandidateChars",
             DEFAULT_MAX_CANDIDATE_CONTENT_CHARS,
         )
+
+    def _runtime_context_compaction_policy(self):
+        from src.runtime_policy.resolver import bound_runtime_policy_for_agent
+
+        resolved = bound_runtime_policy_for_agent(self)
+        return resolved.policy.context_compaction if resolved is not None else None
 
     def _tool_context_compaction_min_chars(self, key: str, default: int) -> int:
         field_name = f"provider.{key}"

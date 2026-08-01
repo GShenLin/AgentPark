@@ -378,7 +378,10 @@ def test_companion_graph_load_uses_normal_graph_and_node_layout(monkeypatch, tmp
     assert graph["output_routes"] == {}
     saved_graph = json.loads((companion_graph_dir / "config.json").read_text(encoding="utf-8"))
     saved_node = json.loads((companion_node_dir / "config.json").read_text(encoding="utf-8"))
-    assert saved_graph == graph_config
+    assert saved_graph == {
+        **graph_config,
+        "layout": {"grid": {"cell_width": 300, "cell_height": 320}},
+    }
     assert saved_node == node_config
 
 

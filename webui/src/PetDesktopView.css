@@ -19,6 +19,23 @@ html.pet-transparent-root .app-shell {
 }
 
 .pet-shell {
+  --ui-control-height: 34px;
+  --ui-control-height-compact: 30px;
+  --ui-control-radius: 6px;
+  --ui-button-border: #c9d2d8;
+  --ui-button-background: #ffffff;
+  --ui-button-text: #25313c;
+  --ui-button-hover-border: #9cabb5;
+  --ui-button-hover-background: #f2f6f7;
+  --ui-primary-border: #1e5f59;
+  --ui-primary-background: #1e5f59;
+  --ui-primary-text: #ffffff;
+  --ui-primary-hover-background: #174c48;
+  --ui-danger-border: rgba(158, 45, 45, 0.34);
+  --ui-danger-background: rgba(158, 45, 45, 0.08);
+  --ui-danger-text: #9e2d2d;
+  --ui-danger-hover-border: rgba(158, 45, 45, 0.56);
+  --ui-danger-hover-background: rgba(158, 45, 45, 0.14);
   width: 100vw;
   height: 100vh;
   display: grid;
@@ -285,20 +302,8 @@ html.pet-transparent-root .app-shell {
   color: #607080;
 }
 
-.pet-icon-button,
-.pet-actions button {
-  -webkit-app-region: no-drag;
-  height: 30px;
-  border: 1px solid #c9d2d8;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #25313c;
-  cursor: pointer;
-}
-
 .pet-icon-button {
-  width: 30px;
-  font-size: 16px;
+  -webkit-app-region: no-drag;
 }
 
 .pet-status-row {
@@ -503,24 +508,6 @@ html.pet-transparent-root .app-shell {
 
 .pet-attachment-remove {
   -webkit-app-region: no-drag;
-  display: inline-grid;
-  width: 18px;
-  height: 18px;
-  min-width: 18px;
-  place-items: center;
-  border: 1px solid #c9d5d2;
-  border-radius: 50%;
-  background: #ffffff;
-  color: #4d5c66;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 0;
-}
-
-.pet-attachment-remove:disabled {
-  cursor: default;
-  opacity: 0.55;
 }
 
 .pet-uploading {
@@ -535,19 +522,8 @@ html.pet-transparent-root .app-shell {
 }
 
 .pet-actions button {
+  -webkit-app-region: no-drag;
   min-width: 76px;
-  padding: 0 12px;
-}
-
-.pet-actions .primary {
-  border-color: #1e5f59;
-  background: #1e5f59;
-  color: #ffffff;
-}
-
-.pet-actions button:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 .pet-error {
@@ -608,10 +584,6 @@ html.pet-transparent-root .app-shell {
   color: #1e5f59;
   background: #edf6f3;
   cursor: default;
-}
-
-.pet-context-item.danger {
-  color: #9e2d2d;
 }
 
 .pet-context-meta,

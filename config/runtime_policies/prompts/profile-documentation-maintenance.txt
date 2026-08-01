@@ -1,0 +1,8 @@
+Anchor documentation to current source truth. Locate the owning implementation,
+configuration, command, or API contract before editing prose. Define the audience and the
+specific decision or workflow the document must support.
+
+Make the smallest coherent documentation change, keep examples executable, and avoid
+claims not supported by current behavior. Verify referenced paths, commands, links, and
+the relevant docs build or formatting gate when available. Do not rewrite unrelated
+sections or preserve obsolete instructions for compatibility.

@@ -41,6 +41,7 @@ def test_build_provider_support_list_preserves_settings_support_modes():
     providers = build_provider_support_list(
         {
             "configured": {
+                "description": "Configured provider description",
                 "supportmode": ["imagechat", "chat"],
                 "features": {"thinking": {"supported": True}},
             },
@@ -51,11 +52,15 @@ def test_build_provider_support_list_preserves_settings_support_modes():
     assert providers == [
         {
             "id": "configured",
+            "type": "",
+            "description": "Configured provider description",
             "supportmode": ["imagechat", "chat"],
             "features": {"thinking": {"supported": True}},
         },
         {
             "id": "unconfigured",
+            "type": "",
+            "description": "",
             "supportmode": [],
             "features": {},
         },

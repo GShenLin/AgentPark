@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getNodeTemplate, type AgentProfile, type NodeInfo, type ProviderInfo } from '../api'
+import ActionButton from '../components/ActionButton.vue'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
+import DialogCloseButton from '../components/DialogCloseButton.vue'
+import FormSelect from '../components/FormSelect.vue'
+import FormTextInput from '../components/FormTextInput.vue'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
 import { useAgentNodeCreateSchema } from '../composables/useAgentNodeCreateSchema'
 import { useProviderDrivenTemplateSchema } from '../composables/useProviderDrivenTemplateSchema'
@@ -146,22 +150,22 @@ watch(
           <div class="create-title">Create Node</div>
           <div class="create-subtitle">{{ selectedTypeId || 'Choose a node type' }}</div>
         </div>
-        <button class="sheet-icon-btn" type="button" aria-label="Close" @click="emit('close')">x</button>
+        <DialogCloseButton aria-label="Close" @click="emit('close')" />
       </header>
 
       <div class="create-body">
         <section v-if="agentProfiles.length" class="preset-panel">
           <div class="preset-title">Node preset</div>
           <div class="preset-row">
-            <select v-model="selectedProfileId" class="field-input" :disabled="creatingProfile || creating">
+            <FormSelect v-model="selectedProfileId" :disabled="creatingProfile || creating">
               <option value="">Choose preset</option>
               <option v-for="profile in agentProfiles" :key="profile.id" :value="profile.id">
                 {{ profile.name || profile.id }}
               </option>
-            </select>
-            <button class="primary-btn preset-btn" type="button" :disabled="!selectedProfileId || creatingProfile" @click="createFromProfile">
+            </FormSelect>
+            <ActionButton class="preset-btn" variant="primary" :disabled="!selectedProfileId || creatingProfile" @click="createFromProfile">
               {{ creatingProfile ? 'Creating...' : 'Create' }}
-            </button>
+            </ActionButton>
           </div>
         </section>
 
@@ -184,7 +188,7 @@ watch(
         <template v-else-if="selectedTypeId">
           <label class="field">
             <span class="field-label">Node name</span>
-            <input v-model="selectedNodeName" class="field-input" type="text" />
+            <FormTextInput v-model="selectedNodeName" />
           </label>
 
           <NodeConfigFields
@@ -201,10 +205,10 @@ watch(
       </div>
 
       <footer class="create-actions">
-        <button class="secondary-btn" type="button" @click="emit('close')">Cancel</button>
-        <button class="primary-btn" type="button" :disabled="!selectedTypeId || creating || providerSchemaLoading" @click="createNode">
+        <ActionButton @click="emit('close')">Cancel</ActionButton>
+        <ActionButton variant="primary" :disabled="!selectedTypeId || creating || providerSchemaLoading" @click="createNode">
           {{ creating ? 'Creating...' : 'Create' }}
-        </button>
+        </ActionButton>
       </footer>
     </section>
   </div>
@@ -217,7 +221,7 @@ watch(
   z-index: 50;
   display: flex;
   align-items: flex-end;
-  background: rgba(2, 6, 23, 0.72);
+  background: var(--ui-dialog-backdrop);
 }
 
 .create-sheet {
@@ -225,9 +229,12 @@ watch(
   max-height: min(88vh, 780px);
   display: flex;
   flex-direction: column;
-  border-top: 1px solid rgba(148, 163, 184, 0.24);
-  background: #08111f;
-  box-shadow: 0 -18px 40px rgba(2, 6, 23, 0.42);
+  border: 1px solid var(--ui-dialog-border);
+  border-width: 1px 0 0;
+  border-radius: var(--ui-dialog-radius) var(--ui-dialog-radius) 0 0;
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 .create-head,
@@ -241,7 +248,7 @@ watch(
 
 .create-head {
   justify-content: space-between;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid var(--ui-dialog-divider);
 }
 
 .create-title {
@@ -254,13 +261,6 @@ watch(
 .node-type-desc {
   color: rgba(148, 163, 184, 0.88);
   font-size: 12px;
-}
-
-.sheet-icon-btn {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-radius: 8px;
 }
 
 .create-body {
@@ -349,15 +349,6 @@ watch(
   font-size: 12px;
 }
 
-.field-input {
-  min-height: 38px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  color: rgba(248, 250, 252, 0.96);
-  background: rgba(15, 23, 42, 0.78);
-}
-
 .create-empty {
   padding: 10px;
   color: rgba(148, 163, 184, 0.95);
@@ -369,20 +360,4 @@ watch(
   border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.secondary-btn,
-.primary-btn {
-  min-width: 72px;
-  min-height: 38px;
-  border-radius: 8px;
-}
-
-.secondary-btn {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.72);
-}
-
-.primary-btn {
-  border-color: rgba(56, 189, 248, 0.48);
-  background: rgba(14, 165, 233, 0.3);
-}
 </style>

@@ -51,7 +51,14 @@ def _write_graph_node(tmp_path, graph_id, node_id, *, state="idle", type_id="age
     )
     node_dir = graph_dir / node_id
     node_dir.mkdir(parents=True, exist_ok=True)
-    payload = {"node_id": node_id, "graph_id": graph_id, "type_id": type_id, "name": node_id, "state": state}
+    payload = {
+        "node_id": node_id,
+        "graph_id": graph_id,
+        "type_id": type_id,
+        "name": node_id,
+        "state": state,
+        "ui": {"grid_x": 0, "grid_y": 0},
+    }
     if isinstance(extra, dict):
         payload.update(extra)
     node_config_service.create_or_replace(str(node_dir / "config.json"), payload)

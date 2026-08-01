@@ -360,6 +360,23 @@ class NodeConfigStore:
             return
         def mutate(payload: dict) -> None:
             payload["last_message"] = str(output or "")
+            payload["last_output_resources"] = []
+            bump_node_event_seq(payload)
+
+        runtime_state_memory_store.update(config_path, mutate)
+
+    def set_last_output(
+        self,
+        config_path: str,
+        output: str,
+        resources: list[dict],
+    ) -> None:
+        if not config_path:
+            return
+
+        def mutate(payload: dict) -> None:
+            payload["last_message"] = str(output or "")
+            payload["last_output_resources"] = deepcopy(resources)
             bump_node_event_seq(payload)
 
         runtime_state_memory_store.update(config_path, mutate)

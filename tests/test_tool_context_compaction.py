@@ -4,6 +4,9 @@ import json
 import pytest
 
 from src.base_agent import BaseAgent
+from src.providers.agent_runtime_context import AgentRuntimeContext
+from src.providers.agent_runtime_context import bind_agent_runtime_context
+from src.runtime_policy import resolve_runtime_policy
 from src.tool.tool_call_protocol import ToolCallExecution
 
 
@@ -167,6 +170,62 @@ def test_tool_context_compaction_provider_threshold_delays_gate(tmp_path):
     assert ran is False
     assert agent.sent_tools == []
     assert agent._tool_context_compaction_window.regular_tool_executions == 1
+
+
+def test_bound_runtime_policy_owns_compaction_threshold_and_prompt(tmp_path):
+    memory_path = tmp_path / "agent.md"
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyCompactionAgent(memory_path)
+    agent.config = _compaction_config(enabled=False, tool_calls=1)
+    resolved = resolve_runtime_policy(
+        {
+            "overrides": {
+                "context_compaction": {
+                    "enabled": True,
+                    "every_tool_calls": 2,
+                    "context_percent": 0,
+                    "current_input_tokens": 0,
+                    "gate_prompt": "Policy-owned compaction prompt.",
+                    "retry_prompt": "Policy-owned retry prompt.",
+                }
+            }
+        }
+    )
+    bind_agent_runtime_context(agent, AgentRuntimeContext(runtime_policy=resolved))
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        _tool_call_message("call-1", "read_file"),
+        {
+            "role": "tool",
+            "content": "alpha raw file content",
+            "tool_call_id": "call-1",
+            "name": "read_file",
+        },
+    ]
+
+    first = agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
+    )
+    agent.messages.extend(
+        [
+            _tool_call_message("call-2", "read_file"),
+            {
+                "role": "tool",
+                "content": "beta raw file content",
+                "tool_call_id": "call-2",
+                "name": "read_file",
+            },
+        ]
+    )
+    second = agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-2", "beta raw file content")]
+    )
+
+    assert first is False
+    assert second is True
+    assert agent._tool_context_compaction_gate_prompt["content"] == (
+        "Policy-owned compaction prompt."
+    )
 
 
 @pytest.mark.parametrize(

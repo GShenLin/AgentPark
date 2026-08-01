@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import type { GraphConfig } from '../../api'
 import type { LinkItem, NodeCard } from './context'
 import { buildBoardGraphConfig } from './boardModel'
+import { serializeBoardGridSettings, type BoardGridSettings } from './boardGrid'
 
 export function createBoardGraphPersistence(options: {
   graphSnapshot: Ref<GraphConfig | null>
@@ -11,6 +12,7 @@ export function createBoardGraphPersistence(options: {
   currentGraphWorkingPath: Ref<string>
   nodes: Ref<NodeCard[]>
   links: Ref<LinkItem[]>
+  gridSettings: Ref<BoardGridSettings>
   saveGraph: (graphId: string, config: GraphConfig, options?: { saveReason?: string; sourceGraphId?: string }) => Promise<unknown>
 }) {
   let saveRunning = false
@@ -18,13 +20,16 @@ export function createBoardGraphPersistence(options: {
   let savePendingReason = 'unknown'
 
   function buildSnapshot(): GraphConfig {
-    return buildBoardGraphConfig({
+    return {
+      ...buildBoardGraphConfig({
       graphId: options.currentGraphId.value || 'default',
       graphName: options.currentGraphName.value || 'default',
       workingPath: options.currentGraphWorkingPath.value,
       nodes: options.nodes.value,
       links: options.links.value,
-    })
+      }),
+      layout: serializeBoardGridSettings(options.gridSettings.value),
+    }
   }
 
   function syncSnapshot() {

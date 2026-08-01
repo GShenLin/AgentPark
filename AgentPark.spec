@@ -1,34 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
 from PyInstaller.utils.hooks import collect_submodules
 
 hiddenimports = []
-datas = []
-binaries = []
 hiddenimports += collect_submodules('src')
 hiddenimports += collect_submodules('fastapi')
 hiddenimports += collect_submodules('uvicorn')
-hiddenimports += collect_submodules('nodes')
-hiddenimports += collect_submodules('functions')
-claude_datas, claude_binaries, claude_hiddenimports = collect_all('claude_agent_sdk')
-datas += claude_datas
-binaries += claude_binaries
-hiddenimports += claude_hiddenimports
 
 
 a = Analysis(
     ['src\\fast_api.py'],
     pathex=[],
-    binaries=binaries,
-    datas=datas + [
-        ('webui\\dist', 'webui\\dist'),
-        ('config', 'config'),
-        ('functions', 'functions'),
-        ('nodes', 'nodes'),
-        ('skills', 'skills'),
-        ('plugins', 'plugins'),
-        ('docs', 'docs'),
-    ],
+    binaries=[],
+    datas=[('webui\\dist', 'webui\\dist')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

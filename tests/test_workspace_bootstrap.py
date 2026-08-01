@@ -63,5 +63,11 @@ def test_workspace_bootstrap_uses_true_startup_graph_and_returns_mount_snapshot(
     assert payload["graphs"] == [{"id": "test", "name": "Test"}]
     assert payload["graph_profiles"] == [{"id": "default"}]
     assert payload["theme"] == {"data": {"accent": "blue"}, "active_preset_id": "dark"}
+    assert payload["board_layout"] == {
+        "gridCellWidth": 300,
+        "gridCellHeight": 320,
+        "nodeWidth": 230,
+        "nodeHeight": 250,
+    }
     assert payload["mobile_pcs"] == [{"id": "phone"}]
     assert payload["user_interactions"] == [{"request_id": "ask-1"}]

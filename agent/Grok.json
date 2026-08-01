@@ -1,0 +1,30 @@
+{
+  "id": "Grok",
+  "description": "基于 Grok 的通用 Agent Profile，适合文本推理、协议分析与工程问题处理。",
+  "name": "Grok",
+  "node_type_id": "agent_node",
+  "source_graph_id": "default",
+  "source_node_id": "Note",
+  "node_name": "Note",
+  "fields": {
+    "plugins": [],
+    "skills": [],
+    "working_path": "C:\\Project\\Note\\Note",
+    "provider_id": "Grok_krill",
+    "system_prompt": "",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "mcp_servers": [],
+    "web_search": "enabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "instruction": "",
+    "reasoning_summary": ""
+  },
+  "event_rules": {},
+  "updated_at": "2026-07-19T19:06:59+08:00",
+  "created_at": "2026-07-19T19:06:59+08:00"
+}

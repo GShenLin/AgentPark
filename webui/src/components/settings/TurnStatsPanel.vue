@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { TurnTokenProviderStats, TurnTokenStat } from '../../settingsApi'
+import FormSelect from '../FormSelect.vue'
 
 const props = defineProps<{
   providerId: string
@@ -278,7 +279,7 @@ function shortTrace(value: string) {
         <div class="turn-stats-title">Model Turn Statistics</div>
         <p>{{ providerId || 'No provider selected' }} · every dot is one completed model response</p>
       </div>
-      <select
+      <FormSelect
         v-if="providerStats?.recent_turns.length"
         v-model="selectedTraceId"
         class="turn-selector"
@@ -287,7 +288,7 @@ function shortTrace(value: string) {
         <option v-for="turn in providerStats.recent_turns" :key="turn.trace_id" :value="turn.trace_id">
           {{ turn.completed_at }} · {{ turn.status }} · {{ shortTrace(turn.trace_id) }}
         </option>
-      </select>
+      </FormSelect>
     </div>
 
     <template v-if="selectedTurn">

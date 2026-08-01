@@ -166,15 +166,22 @@ class ResponsesRuntimeMethods:
         responses_mode: str,
         requested_responses_mode: str,
     ) -> None:
+        payload = {
+            "request_index": int(request_index),
+            "input_item_count": int(input_item_count),
+            "stream": bool(stream),
+            "responses_mode": str(responses_mode or ""),
+            "requested_responses_mode": str(requested_responses_mode or ""),
+        }
+        if int(request_index) == 1:
+            from src.runtime_policy import bound_runtime_policy_for_agent
+
+            resolved_policy = bound_runtime_policy_for_agent(self)
+            if resolved_policy is not None:
+                payload["runtime_policy_manifest"] = resolved_policy.manifest
         self._emit_responses_notice(
             stage="openai_responses_request_start",
-            payload={
-                "request_index": int(request_index),
-                "input_item_count": int(input_item_count),
-                "stream": bool(stream),
-                "responses_mode": str(responses_mode or ""),
-                "requested_responses_mode": str(requested_responses_mode or ""),
-            },
+            payload=payload,
         )
 
     def _emit_responses_tool_results_ready(
@@ -202,12 +209,38 @@ class ResponsesRuntimeMethods:
         headers = {"Content-Type": "application/json", **credentials.headers}
         return f"{credentials.base_url}/responses", headers
 
+    def _reload_responses_auth_headers(self, headers: dict[str, str]) -> bool:
+        if str(self.config.get("authMode") or "api_key").strip().lower() != "codex":
+            return False
+        from src.provider_auth import resolve_provider_request_credentials
+
+        current_identity = (
+            str(headers.get("Authorization") or ""),
+            str(headers.get("ChatGPT-Account-ID") or ""),
+        )
+        credentials = resolve_provider_request_credentials(
+            self.config,
+            force_refresh=False,
+        )
+        reloaded_identity = (
+            str(credentials.headers.get("Authorization") or ""),
+            str(credentials.headers.get("ChatGPT-Account-ID") or ""),
+        )
+        if reloaded_identity == current_identity:
+            return False
+        headers.clear()
+        headers.update({"Content-Type": "application/json", **credentials.headers})
+        return True
+
     def _refresh_responses_auth_headers(self, headers: dict[str, str]) -> bool:
         if str(self.config.get("authMode") or "api_key").strip().lower() != "codex":
             return False
         from src.provider_auth import resolve_provider_request_credentials
 
-        credentials = resolve_provider_request_credentials(self.config, force_refresh=True)
+        credentials = resolve_provider_request_credentials(
+            self.config,
+            force_refresh=True,
+        )
         headers.clear()
         headers.update({"Content-Type": "application/json", **credentials.headers})
         return True

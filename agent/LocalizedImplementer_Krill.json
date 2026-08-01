@@ -1,0 +1,50 @@
+{
+  "id": "LocalizedImplementer_Krill",
+  "name": "局部实现 · GPT Krill (B)",
+  "node_type_id": "agent_node",
+  "node_name": "局部实现 · GPT Krill (B)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "localized-implementation",
+    "description": "面向边界明确的小改动，尽快从所有者定位进入一次补丁和聚焦验证。",
+    "provider_rationale": "Krill GPT 在同一 UI 样本中覆盖桌面、移动和共享边界，但在时限内未完成验收，适合作为效率对照。",
+    "evidence_level": "inferred",
+    "recommended_for": [
+      "局部 UI 或 API 修改",
+      "单一所有者缺陷修复",
+      "小范围回归修复"
+    ],
+    "avoid_for": [
+      "跨模块状态迁移",
+      "开放式架构重构"
+    ],
+    "ab_test": {
+      "experiment_id": "localized-implementation-provider-v1",
+      "variant": "B",
+      "peer_profile_id": "LocalizedImplementer_Official"
+    }
+  },
+  "fields": {
+    "provider_id": "krill_gpt_Newest",
+    "instruction": "Identify the owner and focused test, patch promptly, run the narrow verification and required build once, then stop when the requested behavior is proven.",
+    "system_prompt": "You are a focused implementation engineer. Move from the owning production boundary to a small correct patch quickly, preserve strict contracts, and verify the requested behavior without speculative cleanup.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "localized-implementation"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

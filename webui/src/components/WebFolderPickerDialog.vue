@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { listFiles, type FileItem } from '../api'
+import ActionButton from './ActionButton.vue'
+import DialogCloseButton from './DialogCloseButton.vue'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -120,21 +122,21 @@ watch(loadError, (message) => {
             <div class="folder-picker-title">{{ title }}</div>
             <div class="folder-picker-current" :title="currentPath">{{ currentPath || '加载路径中...' }}</div>
           </div>
-          <button class="folder-picker-close" type="button" aria-label="关闭目录选择" @click="emit('close')">x</button>
+          <DialogCloseButton aria-label="关闭目录选择" @click="emit('close')" />
         </header>
 
         <div class="folder-picker-toolbar">
-          <button class="folder-picker-tool" type="button" :disabled="loading || !canGoUp" @click="goUp">
+          <ActionButton compact :disabled="loading || !canGoUp" @click="goUp">
             ↑ 上一级
-          </button>
-          <button class="folder-picker-tool" type="button" :disabled="loading" @click="refresh">刷新</button>
+          </ActionButton>
+          <ActionButton compact :disabled="loading" @click="refresh">刷新</ActionButton>
         </div>
 
         <div class="folder-picker-body">
           <div v-if="loading" class="folder-picker-status">正在读取文件夹...</div>
           <div v-else-if="loadError" class="folder-picker-status error">
             <span>{{ loadError }}</span>
-            <button class="folder-picker-retry" type="button" @click="refresh">重试</button>
+            <ActionButton compact @click="refresh">重试</ActionButton>
           </div>
           <div v-else-if="directories.length === 0" class="folder-picker-status">当前路径下没有子文件夹。</div>
           <template v-else>
@@ -154,15 +156,14 @@ watch(loadError, (message) => {
         </div>
 
         <footer class="folder-picker-actions">
-          <button class="folder-picker-btn" type="button" @click="emit('close')">取消</button>
-          <button
-            class="folder-picker-btn primary"
-            type="button"
+          <ActionButton @click="emit('close')">取消</ActionButton>
+          <ActionButton
+            variant="primary"
             :disabled="loading || !!loadError || !currentPath"
             @click="selectCurrentDirectory"
           >
             选择当前文件夹
-          </button>
+          </ActionButton>
         </footer>
       </section>
     </div>
@@ -178,7 +179,7 @@ watch(loadError, (message) => {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(2, 6, 23, 0.78);
+  background: var(--ui-dialog-backdrop);
 }
 
 .folder-picker-dialog {
@@ -188,11 +189,11 @@ watch(loadError, (message) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(56, 189, 248, 0.32);
-  border-radius: 14px;
-  background: #08111f;
-  color: rgba(226, 232, 240, 0.96);
-  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.48);
+  border: 1px solid var(--ui-dialog-border);
+  border-radius: var(--ui-dialog-radius);
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 /* Avoid Android Chrome dropping composited button layers while this list scrolls. */
@@ -245,35 +246,8 @@ watch(loadError, (message) => {
   white-space: nowrap;
 }
 
-.folder-picker-close {
-  flex: 0 0 34px;
-  width: 34px;
-  height: 34px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 9px;
-  background: rgba(15, 23, 42, 0.78);
-  color: rgba(226, 232, 240, 0.94);
-  cursor: pointer;
-}
-
 .folder-picker-toolbar {
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.folder-picker-tool,
-.folder-picker-btn,
-.folder-picker-retry {
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 9px;
-  background: rgba(15, 23, 42, 0.78);
-  color: rgba(226, 232, 240, 0.94);
-  cursor: pointer;
-}
-
-.folder-picker-tool {
-  min-height: 34px;
-  padding: 6px 11px;
-  font-size: 12px;
 }
 
 .folder-picker-body {
@@ -346,31 +320,10 @@ watch(loadError, (message) => {
   color: rgba(252, 165, 165, 0.96);
 }
 
-.folder-picker-retry {
-  padding: 6px 12px;
-}
-
 .folder-picker-actions {
   justify-content: flex-end;
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.folder-picker-btn {
-  min-height: 38px;
-  padding: 7px 14px;
-  font-size: 13px;
-}
-
-.folder-picker-btn.primary {
-  border-color: rgba(56, 189, 248, 0.7);
-  background: rgba(14, 116, 144, 0.44);
-}
-
-.folder-picker-tool:disabled,
-.folder-picker-btn:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
 }
 
 @media (max-width: 640px) {

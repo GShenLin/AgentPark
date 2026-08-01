@@ -299,8 +299,8 @@ class CurlHttpTransport:
         marker: str,
         yield_all_lines: bool = False,
     ) -> Iterable[CurlResponse | str]:
-        timeout_val = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, timeout_val))
+        idle_timeout = int(max(1, float(timeout_sec or 60)))
+        connect_timeout = max(1, min(15, idle_timeout))
         payload_path = ""
         proc = None
         response_lines: list[str] = []
@@ -315,7 +315,9 @@ class CurlHttpTransport:
                 url=url,
                 headers=headers,
                 payload_path=payload_path,
-                timeout_val=timeout_val,
+                # Active SSE streams may legitimately outlive one timeout
+                # interval. The read loop below enforces an inactivity timeout.
+                timeout_val=None,
                 connect_timeout=connect_timeout,
                 marker=marker,
                 no_buffer=True,
@@ -346,8 +348,8 @@ class CurlHttpTransport:
                 last_activity = time.monotonic()
                 while True:
                     raise_if_cancel_requested(cancel_source)
-                    if time.monotonic() - last_activity >= timeout_val:
-                        raise CurlTransportError(f"curl idle timeout after {timeout_val}s without stream data")
+                    if time.monotonic() - last_activity >= idle_timeout:
+                        raise CurlTransportError(f"curl idle timeout after {idle_timeout}s without stream data")
                     try:
                         raw_line = line_queue.get(timeout=0.05)
                     except queue.Empty:

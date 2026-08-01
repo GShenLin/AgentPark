@@ -12,6 +12,7 @@ from fastapi import Request
 from ..workspace_settings import read_startup_graph_settings, save_startup_graph_settings
 
 from .graph_config_file import graph_config_version, read_graph_config, write_graph_config
+from .graph_grid_layout import normalize_graph_layout, workspace_graph_layout
 from .graph_runtime_registry import GraphConfigReadError
 from .graph_output_routes import normalize_output_routes
 from . import runtime_paths
@@ -61,6 +62,11 @@ class GraphApiStorage(HostBoundService):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         graph["working_path"] = str(graph.get("working_path") or "").strip()
+        try:
+            normalize_graph_layout(graph.get("layout"))
+            graph["layout"] = workspace_graph_layout()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         if "private" in graph and not isinstance(graph.get("private"), bool):
             raise HTTPException(status_code=400, detail="graph private must be a boolean")
         graph.pop("nodes", None)

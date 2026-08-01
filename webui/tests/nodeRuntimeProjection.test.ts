@@ -4,6 +4,7 @@ import {
   mergeMobileNodeRuntimeEvent,
   mergeMobileNodeSnapshot,
   mergeNodeConfigSnapshot,
+  mergeNodeEditorConfigSnapshot,
   mergeNodeRuntimeEvent,
 } from '../src/nodeRuntimeProjection'
 
@@ -55,6 +56,52 @@ describe('node runtime projection', () => {
     expect(result.value.state).toBe('idle')
     expect(result.value.inflight).toBeNull()
     expect(result.value.node_event_seq).toBe(12)
+  })
+
+  it('preserves diagnostics omitted by an editor config snapshot', () => {
+    const current: NodeInstanceConfig = {
+      ...workingConfig,
+      runtime_events: [{ type: 'runtime_notice', stage: 'provider_request_summary' }],
+      runtime_tool_calls: [{ call_id: 'call-1', name: 'workspace_exec' }],
+      provider_request_summaries: [{ request_index: 1, approx_input_chars: 3000 }],
+      provider_request_totals: { request_count: 1, approx_input_chars: 3000 },
+    }
+    const result = mergeNodeEditorConfigSnapshot(current, {
+      ...workingConfig,
+      name: 'Renamed',
+      state: 'idle',
+      inflight: null,
+      node_event_seq: 11,
+    })
+
+    expect(result.status).toBe('applied')
+    expect(result.value.name).toBe('Renamed')
+    expect(result.value.state).toBe('idle')
+    expect(result.value.runtime_events).toEqual(current.runtime_events)
+    expect(result.value.runtime_tool_calls).toEqual(current.runtime_tool_calls)
+    expect(result.value.provider_request_summaries).toEqual(current.provider_request_summaries)
+    expect(result.value.provider_request_totals).toEqual(current.provider_request_totals)
+  })
+
+  it('projects the latest output resources with the runtime message', () => {
+    const result = mergeNodeRuntimeEvent(workingConfig, {
+      state: 'idle',
+      pending_count: 0,
+      inflight: null,
+      _stop_requested: false,
+      node_event_seq: 11,
+      last_message: 'C:/output/matted.png',
+      last_output_resources: [{
+        type: 'resource',
+        resource: { uri: 'C:/output/matted.png', kind: 'image' },
+      }],
+    })
+
+    expect(result.status).toBe('applied')
+    expect(result.value.last_output_resources).toEqual([{
+      type: 'resource',
+      resource: { uri: 'C:/output/matted.png', kind: 'image' },
+    }])
   })
 
   it('rejects runtime projections without a sequence contract', () => {

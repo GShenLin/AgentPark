@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { MobileNode } from '../api'
+import DangerButton from '../components/DangerButton.vue'
 
 defineProps<{
   node: MobileNode
@@ -83,7 +84,7 @@ function toggleOutput() {
     <div v-if="!node.readonly" class="node-actions">
       <button class="node-action" type="button" @click="triggerNode(node)">Trigger</button>
       <button class="node-action" type="button" @click="duplicateNode(node)">Duplicate</button>
-      <button class="node-action danger" type="button" @click="deleteNode(node)">Delete</button>
+      <DangerButton @click="deleteNode(node)">Delete</DangerButton>
     </div>
   </div>
 </template>
@@ -278,9 +279,4 @@ function toggleOutput() {
   font-weight: 700;
 }
 
-.node-action.danger {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(127, 29, 29, 0.3);
-  color: rgba(254, 226, 226, 0.96);
-}
 </style>

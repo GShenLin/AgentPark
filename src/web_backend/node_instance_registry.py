@@ -19,6 +19,12 @@ from .node_metadata_reader import NodeMetadataError
 from .node_memory_store import NodeMemoryPersistenceError
 from .node_memory_reset import NodeMemoryResetBlocked, NodeMemoryResetError, reset_node_memory
 from .node_event_sequence import bump_node_event_seq
+from .graph_grid_layout import (
+    GridLayoutDataError,
+    graph_layout_lock,
+    repair_missing_node_grid_positions,
+    resolve_available_node_ui,
+)
 from .runtime_state_memory_store import runtime_state_memory_store
 from .request_access import is_local_request
 from .service_host import HostBoundService
@@ -54,14 +60,23 @@ class NodeInstanceRegistry(HostBoundService):
         except NodeMemoryPersistenceError as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         try:
-            config_path = self.graph_runtime._write_node_config(
-                safe_id,
-                type_id,
-                name=name if isinstance(name, str) else None,
-                graph_id=graph_id,
-                ui=ui if isinstance(ui, dict) else None,
-            )
-        except NodeConfigWriteError as exc:
+            graph_dir = self.graph_runtime._graph_dir(graph_id)
+            with graph_layout_lock(graph_dir):
+                resolved_ui = resolve_available_node_ui(
+                    graph_dir,
+                    ui if isinstance(ui, dict) else None,
+                    exclude_node_ids={safe_id},
+                )
+                config_path = self.graph_runtime._write_node_config(
+                    safe_id,
+                    type_id,
+                    name=name if isinstance(name, str) else None,
+                    graph_id=graph_id,
+                    ui=resolved_ui,
+                )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except (GridLayoutDataError, NodeConfigWriteError, TimeoutError) as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         if not config_path:
             raise HTTPException(status_code=500, detail="failed to write node config")
@@ -84,7 +99,14 @@ class NodeInstanceRegistry(HostBoundService):
             if after != before:
                 _write_json_dict(config_path, cfg)
         self.graph_runtime._refresh_scheduled_node(graph_id, safe_id)
-        return {"ok": True, "node_id": safe_id, "type_id": type_id, "graph_id": graph_id, "config_path": config_path}
+        return {
+            "ok": True,
+            "node_id": safe_id,
+            "type_id": type_id,
+            "graph_id": graph_id,
+            "config_path": config_path,
+            "ui": resolved_ui,
+        }
 
     def rename_node_instance(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -211,26 +233,35 @@ class NodeInstanceRegistry(HostBoundService):
         type_id = str(source_cfg.get("type_id") or "").strip()
 
         try:
-            shutil.copytree(old_dir, new_dir)
-            rename_node_artifacts(new_dir, safe_node_id, safe_new_node_id)
+            with graph_layout_lock(self.graph_runtime._graph_dir(safe_target_graph_id)):
+                repair_missing_node_grid_positions(
+                    self.graph_runtime._graph_dir(safe_target_graph_id),
+                    exclude_node_ids={safe_new_node_id},
+                )
+                resolved_ui = resolve_available_node_ui(
+                    self.graph_runtime._graph_dir(safe_target_graph_id),
+                    ui_raw,
+                    exclude_node_ids={safe_new_node_id},
+                )
+                shutil.copytree(old_dir, new_dir)
+                rename_node_artifacts(new_dir, safe_node_id, safe_new_node_id)
 
-            config_path = self.graph_runtime._node_config_path(safe_new_node_id, safe_target_graph_id)
-            next_cfg = node_config_service.read_strict(config_path)
-            next_cfg["node_id"] = safe_new_node_id
-            next_cfg["graph_id"] = safe_target_graph_id
-            next_cfg["name"] = (
-                new_name_raw.strip()
-                if isinstance(new_name_raw, str) and new_name_raw.strip()
-                else str(source_cfg.get("name") or safe_new_node_id).strip() or safe_new_node_id
-            )
-            if isinstance(ui_raw, dict):
-                next_cfg["ui"] = ui_raw
-            next_cfg["state"] = "idle"
-            for key in RUNTIME_STATE_FIELDS:
-                next_cfg.pop(key, None)
-            next_cfg["state"] = "idle"
-            if not _write_json_dict(config_path, next_cfg):
-                raise HTTPException(status_code=500, detail="failed to update cloned node config")
+                config_path = self.graph_runtime._node_config_path(safe_new_node_id, safe_target_graph_id)
+                next_cfg = node_config_service.read_strict(config_path)
+                next_cfg["node_id"] = safe_new_node_id
+                next_cfg["graph_id"] = safe_target_graph_id
+                next_cfg["name"] = (
+                    new_name_raw.strip()
+                    if isinstance(new_name_raw, str) and new_name_raw.strip()
+                    else str(source_cfg.get("name") or safe_new_node_id).strip() or safe_new_node_id
+                )
+                next_cfg["ui"] = resolved_ui
+                next_cfg["state"] = "idle"
+                for key in RUNTIME_STATE_FIELDS:
+                    next_cfg.pop(key, None)
+                next_cfg["state"] = "idle"
+                if not _write_json_dict(config_path, next_cfg):
+                    raise HTTPException(status_code=500, detail="failed to update cloned node config")
             event_copy = self.core.runtime_events.copy_source_event_rules(
                 safe_source_graph_id,
                 safe_node_id,
@@ -269,6 +300,7 @@ class NodeInstanceRegistry(HostBoundService):
             "graph_id": safe_target_graph_id,
             "type_id": type_id,
             "config_path": config_path,
+            "ui": resolved_ui,
             "event_rules": event_copy,
         }
 
@@ -311,6 +343,9 @@ class NodeInstanceRegistry(HostBoundService):
             changed = False
             if next_cfg.get("last_message") != "":
                 next_cfg["last_message"] = ""
+                changed = True
+            if next_cfg.get("last_output_resources"):
+                next_cfg["last_output_resources"] = []
                 changed = True
             for key in ("last_runtime_event", "runtime_events", "runtime_tool_calls", "last_run_at"):
                 if key in next_cfg:
@@ -399,18 +434,28 @@ class NodeInstanceRegistry(HostBoundService):
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="payload must be object")
         try:
-            result = node_config_service.apply_webui_payload(
-                config_path,
-                payload,
-                init_clock=lambda type_id, cfg: self.graph_runtime._try_init_node_config(
-                    type_id, cfg, safe_graph_id, safe_node_id
-                ),
-                sync_ports=lambda type_id, cfg: self.graph_runtime._sync_node_config_ports(
-                    type_id, cfg, safe_graph_id, safe_node_id
-                ),
-            )
+            normalized_payload = dict(payload)
+            with graph_layout_lock(self.graph_runtime._graph_dir(safe_graph_id)):
+                if "ui" in normalized_payload:
+                    normalized_payload["ui"] = resolve_available_node_ui(
+                        self.graph_runtime._graph_dir(safe_graph_id),
+                        normalized_payload.get("ui"),
+                        exclude_node_ids={safe_node_id},
+                    )
+                result = node_config_service.apply_webui_payload(
+                    config_path,
+                    normalized_payload,
+                    init_clock=lambda type_id, cfg: self.graph_runtime._try_init_node_config(
+                        type_id, cfg, safe_graph_id, safe_node_id
+                    ),
+                    sync_ports=lambda type_id, cfg: self.graph_runtime._sync_node_config_ports(
+                        type_id, cfg, safe_graph_id, safe_node_id
+                    ),
+                )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        except (GridLayoutDataError, TimeoutError) as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
         except NodeMetadataError as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         except NodeConfigReadError as exc:

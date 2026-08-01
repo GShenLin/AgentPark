@@ -11,6 +11,10 @@ from src.provider_auth.kimi_oauth import refresh_authorization as refresh_kimi_a
 from src.provider_auth.xai_oauth import refresh_authorization as refresh_xai_authorization
 from src.provider_auth.anthropic_oauth import refresh_authorization as refresh_anthropic_authorization
 from src.responses_provider_config import validate_responses_provider_config
+from src.alpha_matting_contract import (
+    ALPHA_MATTING_PROVIDER_TYPE,
+    validate_alpha_matting_provider_config,
+)
 from .workspace_settings import get_workspace_root
 
 
@@ -184,9 +188,17 @@ class ConfigLoader:
             self._validate_grok_reasoning_effort_fields(provider)
 
         auth_mode = str(provider.get("authMode") or "api_key").strip().lower()
-        if auth_mode not in {"api_key", "codex", "oauth"}:
+        if auth_mode not in {"api_key", "codex", "oauth", "none"}:
             raise ValueError(
-                f"Provider '{provider_name}' has invalid authMode; expected 'api_key', 'oauth', or 'codex'."
+                f"Provider '{provider_name}' has invalid authMode; expected 'api_key', 'oauth', 'codex', or 'none'."
+            )
+        if auth_mode == "none" and provider_type != ALPHA_MATTING_PROVIDER_TYPE:
+            raise ValueError(
+                f"Provider '{provider_name}' can use authMode 'none' only with type '{ALPHA_MATTING_PROVIDER_TYPE}'."
+            )
+        if provider_type == ALPHA_MATTING_PROVIDER_TYPE and auth_mode != "none":
+            raise ValueError(
+                f"Provider '{provider_name}' with type '{ALPHA_MATTING_PROVIDER_TYPE}' must use authMode 'none'."
             )
         if auth_mode == "codex" and provider_type != "openai":
             raise ValueError(f"Provider '{provider_name}' can use authMode 'codex' only with type 'openai'.")
@@ -194,6 +206,12 @@ class ConfigLoader:
             raise ValueError(
                 f"Provider '{provider_name}' does not have an OAuth protocol implementation; use an API-key account."
             )
+        if "command" in provider:
+            if not isinstance(provider.get("command"), str) or not provider["command"].strip():
+                raise ValueError(
+                    f"Provider '{provider_name}' has invalid command; expected a non-empty executable name or path."
+                )
+            provider["command"] = provider["command"].strip()
 
         provider["supportmode"] = self._validate_support_modes(
             provider_name, provider.get("supportmode")
@@ -238,6 +256,10 @@ class ConfigLoader:
             raise ValueError(
                 f"Provider '{provider_name}' has invalid responsesApi; expected a boolean."
             )
+        if "responsesWebSocket" in provider and not isinstance(provider.get("responsesWebSocket"), bool):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid responsesWebSocket; expected a boolean."
+            )
         if "fastMode" in provider and not isinstance(provider.get("fastMode"), bool):
             raise ValueError(
                 f"Provider '{provider_name}' has invalid fastMode; expected a boolean."
@@ -247,10 +269,6 @@ class ConfigLoader:
         ):
             raise ValueError(
                 f"Provider '{provider_name}' can enable fastMode only with type 'openai' and responsesApi=true."
-            )
-        if provider_type == "deepseek" and provider.get("responsesApi") is True:
-            raise ValueError(
-                f"Provider '{provider_name}' has type 'deepseek' but responsesApi=true; DeepSeek uses chat completions."
             )
         if provider_type == "kimi" and provider.get("responsesApi") is True:
             raise ValueError(
@@ -265,7 +283,22 @@ class ConfigLoader:
         validate_responses_provider_config(provider_name, provider, provider_type)
 
         provider.pop("apiKeyEnv", None)
-        if auth_mode in {"codex", "oauth"}:
+        if auth_mode == "none":
+            forbidden_auth_fields = [
+                key
+                for key in ("apiKey", "authProvider", "authAccountId")
+                if str(provider.get(key) or "").strip()
+            ]
+            if forbidden_auth_fields:
+                raise ValueError(
+                    f"Provider '{provider_name}' with authMode 'none' must not contain: "
+                    f"{', '.join(forbidden_auth_fields)}."
+                )
+            provider["authMode"] = "none"
+            provider.pop("apiKey", None)
+            provider.pop("authProvider", None)
+            provider.pop("authAccountId", None)
+        elif auth_mode in {"codex", "oauth"}:
             if str(provider.get("apiKey") or "").strip():
                 raise ValueError(f"Provider '{provider_name}' with authMode '{auth_mode}' must not contain apiKey.")
             provider["authMode"] = auth_mode
@@ -298,13 +331,19 @@ class ConfigLoader:
                 account_id=str(provider.get("authAccountId") or "").strip() or None
             )
             provider["apiKey"] = str(oauth_credential["accessToken"])
+        if provider_type == ALPHA_MATTING_PROVIDER_TYPE:
+            validate_alpha_matting_provider_config(provider_name, provider)
         provider["features"] = build_provider_feature_matrix(provider)
 
         auth_provider_id = str(provider.get("authProvider") or provider_type).strip().lower()
-        stored_api_key = get_account(
-            auth_provider_id,
-            str(provider.get("authAccountId") or "").strip() or None,
-        ) if auth_provider_id else None
+        stored_api_key = (
+            get_account(
+                auth_provider_id,
+                str(provider.get("authAccountId") or "").strip() or None,
+            )
+            if auth_mode == "api_key" and auth_provider_id
+            else None
+        )
         if require_api_key and auth_mode == "api_key" and not provider["apiKey"] and not (
             stored_api_key and stored_api_key.kind == "api_key"
         ):
@@ -370,6 +409,11 @@ class ConfigLoader:
     def get_config(self):
         return self._load_config()
 
+    def get_workspace_config(self):
+        """Return config/config.json without loading or resolving any Provider credentials."""
+        provider_config_path = self._resolve_provider_config_path()
+        return copy.deepcopy(self._load_workspace_config(provider_config_path))
+
     def get_provider_config(self, provider_name):
         provider_id = str(provider_name or "").strip()
         if not provider_id:
@@ -408,6 +452,8 @@ class ConfigLoader:
                 "authMode": str(provider.get("authMode") or ""),
                 "authProvider": str(provider.get("authProvider") or ""),
                 "responsesApi": provider.get("responsesApi") is True,
+                "private": provider.get("private") is True,
+                "features": copy.deepcopy(provider.get("features") or {}),
             }
         return catalog
 

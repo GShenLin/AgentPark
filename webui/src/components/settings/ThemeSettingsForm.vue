@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { uploadThemeAsset } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const props = defineProps<{
   data: Record<string, unknown>
@@ -335,25 +338,25 @@ function clamp(value: number, min: number, max: number) {
           <h2>Presets</h2>
           <div class="preset-active">Active: {{ props.activePresetId || 'default' }}</div>
         </div>
-        <button type="button" class="preset-btn" @click="emit('refresh-presets')">Refresh</button>
+        <ActionButton compact @click="emit('refresh-presets')">Refresh</ActionButton>
       </div>
       <div class="preset-grid">
         <label>
           <span>Load Preset</span>
           <div class="preset-row">
-            <select v-model="selectedPresetId">
+            <FormSelect v-model="selectedPresetId">
               <option v-for="preset in props.presets || []" :key="preset.id" :value="preset.id">
                 {{ preset.id }}
               </option>
-            </select>
-            <button type="button" class="preset-btn" :disabled="!selectedPresetId" @click="requestLoadPreset">Load</button>
+            </FormSelect>
+            <ActionButton compact :disabled="!selectedPresetId" @click="requestLoadPreset">Load</ActionButton>
           </div>
         </label>
         <label>
           <span>Save Preset</span>
           <div class="preset-row">
-            <input v-model="savePresetId" placeholder="preset_id" />
-            <button type="button" class="preset-btn" :disabled="!savePresetId" @click="requestSavePreset">Save</button>
+            <FormTextInput v-model="savePresetId" placeholder="preset_id" />
+            <ActionButton compact :disabled="!savePresetId" @click="requestSavePreset">Save</ActionButton>
           </div>
         </label>
       </div>
@@ -397,10 +400,10 @@ function clamp(value: number, min: number, max: number) {
                         :value="colorPickerHex(group.id, key)"
                         @input="setColorFromPicker(group.id, key, inputValue($event))"
                       />
-                      <input
+                      <FormTextInput
                         class="color-text"
-                        :value="fieldText(group.id, key)"
-                        @input="setPanelField(group.id, key, inputValue($event))"
+                        :model-value="fieldText(group.id, key)"
+                        @update:model-value="setPanelField(group.id, key, $event)"
                       />
                     </div>
                     <div class="palette-row" aria-label="Color palette">
@@ -432,32 +435,31 @@ function clamp(value: number, min: number, max: number) {
                     </div>
                   </template>
                   <template v-else-if="selectOptionsFor(key).length">
-                    <select :value="fieldText(group.id, key)" @change="setPanelField(group.id, key, inputValue($event))">
+                    <FormSelect :model-value="fieldText(group.id, key)" @change="setPanelField(group.id, key, $event)">
                       <option v-for="option in selectOptionsFor(key)" :key="option" :value="option">{{ option || 'Unset' }}</option>
-                    </select>
+                    </FormSelect>
                   </template>
                   <template v-else-if="key === 'image'">
                     <div class="asset-row">
-                      <input
-                        :value="fieldText(group.id, key)"
+                      <FormTextInput
+                        :model-value="fieldText(group.id, key)"
                         placeholder="example.png"
-                        @input="setPanelField(group.id, key, inputValue($event))"
+                        @update:model-value="setPanelField(group.id, key, $event)"
                       />
-                      <button
-                        type="button"
-                        class="asset-btn"
+                      <ActionButton
+                        compact
                         :disabled="assetUploadingKey !== ''"
                         @click="openImagePicker(group.id, key)"
                       >
                         {{ assetUploadingKey === `${group.id}.${key}` ? 'Uploading' : 'Browse' }}
-                      </button>
+                      </ActionButton>
                     </div>
                   </template>
                   <template v-else>
-                    <input
-                      :value="fieldText(group.id, key)"
+                    <FormTextInput
+                      :model-value="fieldText(group.id, key)"
                       :placeholder="key === 'image' ? 'example.png' : ''"
-                      @input="setPanelField(group.id, key, inputValue($event))"
+                      @update:model-value="setPanelField(group.id, key, $event)"
                     />
                   </template>
                 </label>
@@ -527,15 +529,6 @@ function clamp(value: number, min: number, max: number) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-}
-
-.preset-btn {
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(248, 250, 252, 0.96);
-  padding: 7px 10px;
-  font-size: 12px;
 }
 
 .theme-layout {
@@ -611,35 +604,10 @@ label {
   font-size: 12px;
 }
 
-input,
-select {
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(248, 250, 252, 0.96);
-  padding: 8px 9px;
-  outline: none;
-}
-
 .asset-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-}
-
-.asset-btn {
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  background: rgba(14, 116, 144, 0.28);
-  color: rgba(224, 242, 254, 0.96);
-  padding: 8px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.asset-btn:disabled {
-  cursor: default;
-  opacity: 0.62;
 }
 
 .asset-error {

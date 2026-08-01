@@ -1,8 +1,9 @@
 import type { Ref } from 'vue'
 import { getNodeInstanceConfig, listNodeInstanceConfigs, type NodeInstanceConfig, type NodeInstanceState } from '../../api'
-import { clampBoardPosition, type BoardPosition } from './boardDragState'
+import type { BoardPosition } from './boardDragState'
 import type { NodeCard, NodeRunState } from './context'
 import {
+  mergeNodeEditorConfigSnapshot,
   mergeNodeConfigSnapshot,
   mergeNodeRuntimeEvent,
 } from '../../nodeRuntimeProjection'
@@ -12,8 +13,8 @@ import {
   createNodeCardFromConfig,
   nodeConfigRunDelta,
   nodeStateFromConfig,
-  sanitizeBoardPoint,
 } from './boardModel'
+import { sanitizeNodeGridUi } from './boardGrid'
 import { applyBoardRuntimeEvent } from './boardRuntimeEventProjection'
 
 export function createBoardNodeConfigRefresh(options: {
@@ -104,31 +105,21 @@ export function createBoardNodeConfigRefresh(options: {
       const nodeId = String(cfg.node_id || '').trim()
       if (!nodeId) continue
       const uiCfg = (cfg as any)?.ui
-      const serverPosition = clampBoardPosition({
-        x: Number(uiCfg?.x ?? 0),
-        y: Number(uiCfg?.y ?? 0),
-      })
-      const serverUi = sanitizeBoardPoint({
-        x: serverPosition.x,
-        y: serverPosition.y,
-        width: uiCfg?.width,
-        height: uiCfg?.height,
-      })
+      const serverUi = sanitizeNodeGridUi(uiCfg)
       let ui = serverUi
       const draggingLocally = options.activeDragItemIds.has(nodeId)
       const pendingUi = options.pendingUiPositions.get(nodeId)
       const existingNode = options.nodes.value.find((n) => n.id === nodeId)
       if (draggingLocally) {
         const localPosition = options.getItemPosition(nodeId)
-        const localUi = localPosition ? clampBoardPosition(localPosition) : null
-        if (localUi) {
-          ui = sanitizeBoardPoint({ ...serverUi, ...existingNode?.ui, ...localUi })
+        if (localPosition) {
+          ui = sanitizeNodeGridUi({ ...serverUi, ...existingNode?.ui, ...localPosition })
         }
       } else if (pendingUi) {
-        if (pendingUi.x === serverPosition.x && pendingUi.y === serverPosition.y) {
+        if (pendingUi.grid_x === serverUi.grid_x && pendingUi.grid_y === serverUi.grid_y) {
           options.clearPendingUiPosition(nodeId, 'refresh_confirmed')
         } else {
-          ui = sanitizeBoardPoint({ ...serverUi, ...existingNode?.ui, ...pendingUi })
+          ui = sanitizeNodeGridUi({ ...serverUi, ...existingNode?.ui, ...pendingUi })
         }
       }
 
@@ -221,7 +212,7 @@ export function createBoardNodeConfigRefresh(options: {
       const previousVersion = Number((previous as any)?._config_version || 0)
       const nextVersion = Number((responseConfig as any)?._config_version || response.version || 0)
       if (previousVersion > 0 && nextVersion > 0 && nextVersion < previousVersion) return
-      const merged = mergeNodeConfigSnapshot(previous, responseConfig)
+      const merged = mergeNodeEditorConfigSnapshot(previous, responseConfig)
       if (merged.status === 'invalid') {
         throw new Error(`Invalid runtime projection for node ${id}: ${merged.error}`)
       }
@@ -231,9 +222,9 @@ export function createBoardNodeConfigRefresh(options: {
       const node = options.nodes.value.find((item) => item.id === id)
       if (node) {
         const uiCfg = (cfg as any)?.ui
-        const ui = sanitizeBoardPoint({
-          x: Number(uiCfg?.x ?? node.ui.x ?? 0),
-          y: Number(uiCfg?.y ?? node.ui.y ?? 0),
+        const ui = sanitizeNodeGridUi({
+          grid_x: uiCfg?.grid_x ?? node.ui.grid_x,
+          grid_y: uiCfg?.grid_y ?? node.ui.grid_y,
           width: uiCfg?.width ?? node.ui.width,
           height: uiCfg?.height ?? node.ui.height,
         })

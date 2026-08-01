@@ -18,6 +18,7 @@ import {
 import { useGlobalState } from './useGlobalState'
 import { consumeAudioStreamEvents } from './streamingAudioPlayback'
 import { subscribeAppEvents } from './useAppEventStream'
+import { classifyLiveStreamFrame } from '../eventStreamProtocol'
 import { SELECTION_REQUEST_SETTLE_MS } from '../selectionRequestPolicy'
 
 const isSaving = ref(false)
@@ -346,11 +347,10 @@ export function useMemory() {
   }
 
   function consumeLivePayload(payload: Record<string, any>) {
-    const version = Number(payload.version || 0)
-    const baseVersion = Number(payload.base_version ?? version - 1)
-    const streamType = String(payload.stream_type || 'snapshot').trim().toLowerCase()
-    if (version <= liveStreamVersion) return
-    if (streamType === 'delta' && baseVersion !== liveStreamVersion) {
+    const decision = classifyLiveStreamFrame(payload, liveStreamVersion)
+    const { version, streamType } = decision.frame
+    if (decision.status === 'stale') return
+    if (decision.status === 'gap') {
       void loadAgentLiveMessage()
       return
     }

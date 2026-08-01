@@ -11,6 +11,8 @@ from src.remote_worker.discovery import DiscoveryServer
 from src.remote_worker.identity import IdentityStore, WorkerConfiguration
 from src.remote_worker.operations import StandaloneOperationRegistry
 from src.remote_worker.protocol import ProtocolError, RemoteTask, normalize_server_origin
+from src.remote_workspace.capabilities import REMOTE_FILE_SYSTEM_TOOL_NAMES
+from src.remote_workspace.capabilities import STANDALONE_REMOTE_CAPABILITIES
 
 
 def _configuration(tmp_path: Path) -> WorkerConfiguration:
@@ -119,6 +121,13 @@ def test_standalone_operations_reuse_workspace_tool_contracts(tmp_path):
     assert "ue_remote_control" not in operations.capabilities
     assert "cancer_control" not in operations.capabilities
     assert "select_folder" in operations.capabilities
+
+
+def test_standalone_capabilities_share_the_remote_workspace_contract():
+    operations = StandaloneOperationRegistry()
+
+    assert set(operations.capabilities) == set(STANDALONE_REMOTE_CAPABILITIES)
+    assert REMOTE_FILE_SYSTEM_TOOL_NAMES <= set(operations.capabilities)
 
 
 def test_standalone_operation_receives_remote_task_cancellation(tmp_path):

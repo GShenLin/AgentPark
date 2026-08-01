@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "policy_id": "coding-default",
+  "version": "1.1.0",
+  "description": "General-purpose coding policy with bounded exploration and non-blocking implementation guidance.",
+  "task_direction": {
+    "enabled": true,
+    "required_tools": [
+      "get_task_direction",
+      "replace_task_direction",
+      "update_task_direction"
+    ],
+    "analysis_tools": [
+      "run_analysis_verification",
+      "finalize_analysis_report"
+    ],
+    "core_prompt_file": "runtime_policies/prompts/coding-core-direction.txt",
+    "code_prompt_file": "runtime_policies/prompts/coding-task-direction.txt"
+  },
+  "completion_review": {
+    "enabled": false,
+    "passes": 1,
+    "require_tool_executions": true,
+    "require_done_criteria": false,
+    "require_resolved_risks": false,
+    "prompt_file": "runtime_policies/prompts/coding-completion-review.txt"
+  },
+  "implementation_checkpoint": {
+    "enabled": true,
+    "evidence_operation_limit": 12,
+    "workspace_tool": "workspace_exec",
+    "direct_evidence_tools": [
+      "execute_console_command",
+      "read_file",
+      "rg_list_files",
+      "rg_search_text"
+    ],
+    "workspace_evidence_kinds": [
+      "list_files",
+      "read_file",
+      "run_command",
+      "search_text"
+    ],
+    "patch_tools": [
+      "apply_patch"
+    ],
+    "workspace_patch_kinds": [
+      "apply_patch"
+    ],
+    "prompt_file": "runtime_policies/prompts/coding-implementation-checkpoint.txt"
+  },
+  "context_compaction": {
+    "enabled": true,
+    "every_tool_calls": 30,
+    "input_tokens": 0,
+    "current_input_tokens": 90000,
+    "output_tokens": 0,
+    "context_percent": 0,
+    "max_candidate_chars": 50000,
+    "gate_prompt_file": "runtime_policies/prompts/coding-context-compaction.txt",
+    "retry_prompt_file": "runtime_policies/prompts/coding-context-compaction-retry.txt"
+  }
+}

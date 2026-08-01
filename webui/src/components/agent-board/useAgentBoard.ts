@@ -2,10 +2,12 @@
 import {
   cloneNodeInstance,
   controlNodeInstance,
+  createNodeFromAgentProfile,
   createNodeInstance,
   deleteNodeInstance,
   emitGraph,
   getPasteAgentConfig,
+  listAgentProfiles,
   listNodes,
   loadGraph,
   openNodeInstanceNodeFolder,
@@ -17,25 +19,32 @@ import {
   startGraphRunner,
   stopNodeRun,
   updateNodeInstanceConfig,
-  waitForRemoteWorker,
   type GraphConfig,
+  type AgentProfile,
   type MessageEnvelope,
   type NodeInstanceConfig,
   type NodeInstanceState,
   type NodeInfo,
+  type NodeConfigChangeResponse,
   type PasteAgentConfig,
 } from '../../api'
+import { ensureBoundRemoteWorkerOnline } from '../../remoteWorkerConnection'
 import type { Ref } from 'vue'
-import { resolveDroppedPaths } from '../../composables/droppedPaths'
+import { resolveDroppedPaths, uploadPastedImageFiles, type DroppedPathItem } from '../../composables/droppedPaths'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { recordDeletionUndo } from '../../composables/useDeletionUndo'
 import {
   buildBoardPastePlan,
-  hasBoardClipboardSnapshot,
   makeBoardCopySnapshot,
   type BoardClipboardSnapshot,
   type BoardPastePlan,
 } from './boardClipboard'
+import {
+  classifyBoardPaste,
+  createBoardClipboardMarker,
+  writeBoardClipboardMarker,
+  type ActiveBoardClipboard,
+} from './boardClipboardProtocol'
 import {
   clearPendingBoardPosition,
   rememberPendingBoardPositions,
@@ -43,10 +52,10 @@ import {
   type BoardPosition,
 } from './boardDragState'
 import {
-  assignMissingNodePositions,
   BOARD_CANVAS_PADDING_PX,
   canvasPointFromClient,
   computeBoardCanvasSize,
+  expandBoardFocusCapacity,
   expandBoardPanCapacity,
   nodeCardStyle,
 } from './boardLayout'
@@ -81,8 +90,8 @@ import type {
   SelectAndFocusNodeOptions,
 } from './context'
 import { createWindowPointerDrag, type PointerDragEnd } from './pointerDrag'
+import { buildPasteAgentMessage } from './pasteAgentClipboard'
 import {
-  clampX,
   NODE_CARD_DEFAULT_HEIGHT,
   NODE_CARD_DEFAULT_WIDTH,
   nodeCardHeight,
@@ -98,11 +107,26 @@ import {
   normalizePortCount,
   normalizeSwitch,
   previewMessage,
-  sanitizeBoardPoint,
   type BoardNodePlacement,
 } from './boardModel'
+import {
+  boardGridSettingsFromDefaults,
+  boardPointToGridPosition,
+  findAvailableGridGroup,
+  findAvailableGridOrigin,
+  normalizeBoardLayoutDefaults,
+  occupiedGridCellKeys,
+  sanitizeNodeGridUi,
+  type BoardLayoutDefaults,
+  type NodeGridPosition,
+  type NodeGridUi,
+} from './boardGrid'
 
-export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: NodeInfo[] } = {}): AgentBoardContext {
+export function useAgentBoard(options: {
+  ready?: Ref<boolean>
+  initialNodes?: NodeInfo[]
+  boardLayoutDefaults?: unknown
+} = {}): AgentBoardContext {
   const {
     selectedNodeId,
     lastError,
@@ -123,6 +147,8 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
   const boardRef = ref<HTMLElement | null>(null)
   const canvasRef = ref<HTMLElement | null>(null)
   const canvasScale = ref(1)
+  const boardLayoutDefaults = ref<BoardLayoutDefaults>(normalizeBoardLayoutDefaults(options.boardLayoutDefaults))
+  const gridSettings = ref(boardGridSettingsFromDefaults(boardLayoutDefaults.value))
   const selectionRect = ref<{ x: number; y: number; width: number; height: number } | null>(null)
   const suppressClickUntil = ref(0)
 
@@ -130,12 +156,13 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
   let selectionSession: BoardSelectionSession | null = null
   let boardViewportGestureVersion = 0
 
-  let dragBatchStart: Record<string, { x: number; y: number }> | null = null
+  let dragBatchStart: Record<string, NodeGridPosition> | null = null
   const activeDragItemIds = new Set<string>()
   const pendingUiPositions = new Map<string, BoardPosition>()
   let pasteCount = 0
-  let clipboardSnapshot: BoardClipboardSnapshot | null = null
+  let activeBoardClipboard: ActiveBoardClipboard | null = null
   let pasteAgentConfigCache: PasteAgentConfig | null = null
+  let lastBoardPointerClient: { x: number; y: number } | null = null
 
   function selectNode(id: string) {
     selectedNodeId.value = id
@@ -200,9 +227,33 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     const cardRect = card.getBoundingClientRect()
     const targetLeft = board.scrollLeft + cardRect.left + cardRect.width / 2 - viewport.centerX
     const targetTop = board.scrollTop + cardRect.top + cardRect.height / 2 - viewport.centerY
+    const capacity = expandBoardFocusCapacity({
+      targetLeft,
+      targetTop,
+      maxScrollLeft: Math.max(0, board.scrollWidth - board.clientWidth),
+      maxScrollTop: Math.max(0, board.scrollHeight - board.clientHeight),
+      canvasWidth: canvasWidth.value,
+      canvasHeight: canvasHeight.value,
+      canvasPaddingLeft: canvasPaddingLeft.value,
+      canvasPaddingTop: canvasPaddingTop.value,
+      scale: canvasScale.value,
+    })
+    if (capacity.expanded) {
+      canvasWidth.value = capacity.canvasWidth
+      canvasHeight.value = capacity.canvasHeight
+      canvasPaddingLeft.value = capacity.canvasPaddingLeft
+      canvasPaddingTop.value = capacity.canvasPaddingTop
+      await nextTick()
+      if (gestureVersion !== boardViewportGestureVersion) return false
+    }
+
+    const focusedCardRect = card.getBoundingClientRect()
+    const focusedViewport = measureBoardViewport(board)
+    const focusedLeft = board.scrollLeft + focusedCardRect.left + focusedCardRect.width / 2 - focusedViewport.centerX
+    const focusedTop = board.scrollTop + focusedCardRect.top + focusedCardRect.height / 2 - focusedViewport.centerY
     board.scrollTo({
-      left: Math.max(0, targetLeft),
-      top: Math.max(0, targetTop),
+      left: Math.max(0, focusedLeft),
+      top: Math.max(0, focusedTop),
       behavior: 'auto',
     })
     return true
@@ -316,16 +367,15 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     })
   }
 
-  function hasClipboardSnapshot() {
-    return hasBoardClipboardSnapshot(clipboardSnapshot)
-  }
-
-  function buildPastePlanFromSnapshot(snapshot: BoardClipboardSnapshot) {
+  function buildPastePlanFromSnapshot(snapshot: BoardClipboardSnapshot, placement: BoardNodePlacement) {
     pasteCount += 1
-    const offset = 36 * pasteCount
+    const offset = pasteCount
     return buildBoardPastePlan({
       snapshot,
       offset,
+      anchor: placement.kind === 'fixed' ? boardPointToGridPosition(placement.point, gridSettings.value) : undefined,
+      occupied: occupiedGridCellKeys(nodes.value, gridSettings.value),
+      grid: gridSettings.value,
       makeUniqueId,
       makeLinkId: () => `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     })
@@ -338,7 +388,8 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       const targetId = plan.idMap.get(sourceNode.id)
       const targetNode = targetId ? targetNodesById.get(targetId) : null
       if (!targetNode) throw new Error(`Missing pasted node for ${sourceNode.id}`)
-      await cloneNodeInstance(sourceNode.id, sourceGraphId, targetNode.id, targetNode.name, targetNode.ui, targetGraphId)
+      const cloned = await cloneNodeInstance(sourceNode.id, sourceGraphId, targetNode.id, targetNode.name, targetNode.ui, targetGraphId)
+      targetNode.ui = sanitizeNodeGridUi(cloned.ui)
     }
   }
 
@@ -346,17 +397,24 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     nodes.value.push(...plan.nodes)
     links.value.push(...plan.links)
 
-    selectedItemIds.value = plan.nodes.map((node) => node.id)
-    if (selectedItemIds.value.length === 1) {
-      const selectedId = selectedItemIds.value[0]
-      if (selectedId && nodes.value.some((node) => node.id === selectedId)) {
-        selectNode(selectedId)
-      }
-    }
     updateCanvasSize()
     syncGraphSnapshot()
+    await selectAndFocusPastedNodes(plan.nodes.map((node) => node.id))
     await persistGraphConfig(persistReason)
     refreshNodeConfigsAndMemory().catch(() => null)
+  }
+
+  async function selectAndFocusPastedNodes(nodeIds: string[]) {
+    const pastedNodeIds = nodeIds
+      .map((id) => String(id || '').trim())
+      .filter((id, index, values) => id && values.indexOf(id) === index && nodes.value.some((node) => node.id === id))
+    if (!pastedNodeIds.length) return false
+
+    selectedItemIds.value = pastedNodeIds
+    if (pastedNodeIds.length === 1) {
+      selectNode(pastedNodeIds[0]!)
+    }
+    return focusNodeInViewport(pastedNodeIds[0]!)
   }
 
   async function ensurePasteAgentConfigLoaded(forceReload = false) {
@@ -372,26 +430,34 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     }
   }
 
-  async function pasteClipboardTextAsAgent(rawText: string) {
-    const text = String(rawText || '').trim()
-    if (!text) return false
+  async function pasteClipboardContentAsAgent(
+    rawText: string,
+    images: DroppedPathItem[],
+    placement: BoardNodePlacement,
+  ) {
+    const message = buildPasteAgentMessage(rawText, images)
+    if (!messageToText(message).trim()) return false
     const pasteCfg = await ensurePasteAgentConfigLoaded(true)
-    const providerId = String(pasteCfg.provider_id || '').trim()
-    if (!providerId) {
-      throw new Error('PasteAgent config provider_id is empty. Check /api/paste-agent/config and config/pastagent.json for the running backend.')
+    const profileId = String(pasteCfg.profile_id || '').trim()
+    if (!profileId) {
+      throw new Error('PasteAgent config profile_id is empty. Select a Profile in Settings → Default settings.')
     }
-    const nodeName = String(pasteCfg.name || pasteCfg.agent_id || 'PasteAgent').trim() || 'PasteAgent'
-    const nodeId = await createNodeFromPalette('agent_node', nodeName, {
-      provider_id: providerId,
-      system_prompt: pasteCfg.system_prompt,
-      mode: pasteCfg.mode,
-      web_search: normalizeSwitch(pasteCfg.web_search, 'enabled'),
-      thinking: normalizeSwitch(pasteCfg.thinking, 'enabled'),
-      reasoning_effort: pasteCfg.reasoning_effort ?? 'high',
-      tools: Array.isArray(pasteCfg.tools) ? pasteCfg.tools : [],
-    })
+    const profiles = await listAgentProfiles()
+    const profile = profiles.find((item) => item.id === profileId)
+    if (!profile) {
+      throw new Error(`PasteAgent Profile "${profileId}" was not found. Select an existing Profile in Settings → Default settings.`)
+    }
+    const nodeName = String(profile.node_name || profile.name || profile.id).trim() || 'PasteAgent'
+    const nodeId = await createNodeOnBoard(
+      profile.node_type_id,
+      nodeName,
+      { ...(profile.fields || {}) },
+      placement,
+      profile,
+    )
     if (!nodeId) return false
-    await sendNodeMessage(nodeId, text)
+    await selectAndFocusPastedNodes([nodeId])
+    await sendNodeMessage(nodeId, message)
     return true
   }
 
@@ -416,17 +482,20 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
   }
 
   function resolveNodePlacement(placement: BoardNodePlacement) {
-    if (placement.kind === 'fixed') {
-      return sanitizeBoardPoint(placement.ui)
-    }
-
-    const selectedPositions = selectedItemIds.value
-      .map((id) => getItemPosition(id))
-      .filter((p): p is { x: number; y: number } => !!p)
-    const anchor = selectedPositions[0]
-    return anchor
-      ? { x: clampX(anchor.x + CARD_WIDTH + BOARD_GAP), y: Math.max(0, anchor.y) }
-      : { x: BOARD_PADDING, y: BOARD_PADDING }
+    const preferred = placement.kind === 'fixed'
+      ? boardPointToGridPosition(placement.point, gridSettings.value)
+      : selectedItemIds.value
+          .map((id) => getItemPosition(id))
+          .find((position): position is NodeGridPosition => !!position)
+    const desired = placement.kind === 'selection-anchor' && preferred
+      ? { grid_x: preferred.grid_x + 1, grid_y: preferred.grid_y }
+      : preferred
+    return findAvailableGridOrigin(
+      occupiedGridCellKeys(nodes.value, gridSettings.value),
+      { width: boardLayoutDefaults.value.nodeWidth, height: boardLayoutDefaults.value.nodeHeight },
+      gridSettings.value,
+      desired,
+    )
   }
 
   async function createNodeOnBoard(
@@ -434,22 +503,35 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     nodeName: string,
     fields: Record<string, unknown> | undefined,
     placement: BoardNodePlacement,
+    profile?: AgentProfile,
   ) {
     const safeTypeId = String(typeId || '').trim()
     if (!safeTypeId) return null
     const requestedId = String(nodeName || safeTypeId).trim() || safeTypeId
     const requestedNodeId = makeUniqueId(requestedId)
     const graphId = currentGraphId.value || 'default'
-    const ui = resolveNodePlacement(placement)
+    const requestedUi = sanitizeNodeGridUi({
+      ...resolveNodePlacement(placement),
+      width: boardLayoutDefaults.value.nodeWidth,
+      height: boardLayoutDefaults.value.nodeHeight,
+    })
 
-    const created = await createNodeInstance(requestedNodeId, safeTypeId, requestedNodeId, graphId, ui)
+    const created = profile
+      ? await createNodeFromAgentProfile(profile.id, {
+          graph_id: graphId,
+          node_id: requestedNodeId,
+          name: requestedNodeId,
+          ui: requestedUi,
+        })
+      : await createNodeInstance(requestedNodeId, safeTypeId, requestedNodeId, graphId, requestedUi)
+    const ui = sanitizeNodeGridUi(created.ui)
     const nodeId = String(created?.node_id || requestedNodeId).trim() || requestedNodeId
     if (nodeId !== requestedNodeId && nodes.value.some((node) => node.id === nodeId)) {
       const message = `Node id collision after creation: ${nodeId}`
       lastError.value = message
       throw new Error(message)
     }
-    if (fields && Object.keys(fields).length) {
+    if (!profile && fields && Object.keys(fields).length) {
       await updateNodeInstanceConfig(nodeId, { fields }, graphId)
     }
 
@@ -497,10 +579,10 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
   async function createNodeAtPosition(
     typeId: string,
     nodeName: string,
-    ui: { x: number; y: number; width?: number; height?: number },
+    point: { x: number; y: number },
     fields?: Record<string, unknown>,
   ) {
-    return createNodeOnBoard(typeId, nodeName, fields, { kind: 'fixed', ui })
+    return createNodeOnBoard(typeId, nodeName, fields, { kind: 'fixed', point })
   }
 
   function makeUniqueId(base: string, excludeId = '') {
@@ -556,7 +638,6 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
   const CARD_WIDTH = NODE_CARD_DEFAULT_WIDTH
   const CARD_HEIGHT = NODE_CARD_DEFAULT_HEIGHT
   const BOARD_PADDING = BOARD_CANVAS_PADDING_PX
-  const BOARD_GAP = 70
 
   const availableNodes = ref<NodeInfo[]>([])
   const nodes = ref<NodeCard[]>([])
@@ -602,6 +683,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     currentGraphWorkingPath,
     nodes,
     links,
+    gridSettings,
     saveGraph,
   })
 
@@ -619,19 +701,13 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       emptyHeight: 900,
       minWidth: 1000,
       minHeight: 700,
+      grid: gridSettings.value,
     })
     canvasWidth.value = options.preserveCurrentExtent ? Math.max(canvasWidth.value, size.width) : size.width
     canvasHeight.value = options.preserveCurrentExtent ? Math.max(canvasHeight.value, size.height) : size.height
   }
 
   function ensurePositions() {
-    assignMissingNodePositions({
-      nodes: nodes.value,
-      cardWidth: CARD_WIDTH,
-      cardHeight: CARD_HEIGHT,
-      padding: BOARD_PADDING,
-      gap: BOARD_GAP,
-    })
     updateCanvasSize()
   }
 
@@ -657,6 +733,8 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
 
   function applyGraphConfig(config: GraphConfig) {
     const graphId = currentGraphId.value || config.id || 'default'
+    graphSnapshot.value = { ...config }
+    gridSettings.value = boardGridSettingsFromDefaults(boardLayoutDefaults.value)
     currentGraphWorkingPath.value = String((config as any)?.working_path || '').trim()
     activeDragItemIds.clear()
     pendingUiPositions.clear()
@@ -734,6 +812,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     return nodeCardStyle({
       node: nodes.value.find((n) => n.id === id),
       dragging: isDragging(id),
+      grid: gridSettings.value,
     })
   }
 
@@ -780,13 +859,13 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     for (const itemId of movingIds) {
       const pos = getItemPosition(itemId)
       if (!pos) continue
-      dragBatchStart[itemId] = { x: pos.x, y: pos.y }
+      dragBatchStart[itemId] = { grid_x: pos.grid_x, grid_y: pos.grid_y }
     }
 
     const node = nodes.value.find((n) => n.id === id)
     if (!node) return
-    const startX = node.ui.x
-    const startY = node.ui.y
+    const startX = node.ui.grid_x
+    const startY = node.ui.grid_y
     nodeMoveDrag.start({
       itemId: id,
       pointerId: event.pointerId,
@@ -814,8 +893,8 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       if (!startPos) continue
       const node = nodes.value.find((n) => n.id === itemId)
       if (!node) continue
-      node.ui.x = clampX(startPos.x + dx)
-      node.ui.y = Math.max(0, startPos.y + dy)
+      node.ui.grid_x = Math.max(0, startPos.grid_x + Math.round(dx / gridSettings.value.cellWidth))
+      node.ui.grid_y = Math.max(0, startPos.grid_y + Math.round(dy / gridSettings.value.cellHeight))
     }
     updateCanvasSize({ preserveCurrentExtent: true })
     const payload = getLastItemPayload(session.itemId)
@@ -1048,8 +1127,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       const remoteEnabled = Boolean(config?.remote_enabled ?? node?.remoteEnabled)
       if (remoteEnabled) {
         const configuredWorkerId = String(config?.remote_worker_id ?? node?.remoteWorkerId ?? '').trim()
-        if (!configuredWorkerId) throw new Error('Remote is enabled, but this node has no bound remote worker.')
-        await waitForRemoteWorker(configuredWorkerId)
+        await ensureBoundRemoteWorkerOnline(configuredWorkerId)
       }
       if (node) node.last_message = text
       requestSelectedNodeMemoryRefresh(id)
@@ -1169,8 +1247,35 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       if (!startPos) continue
       const node = nodes.value.find((n) => n.id === itemId)
       if (!node) continue
-      node.ui.x = startPos.x
-      node.ui.y = startPos.y
+      node.ui.grid_x = startPos.grid_x
+      node.ui.grid_y = startPos.grid_y
+    }
+  }
+
+  function applyBoardLayoutDefaults(value: unknown) {
+    boardLayoutDefaults.value = normalizeBoardLayoutDefaults(value)
+    gridSettings.value = boardGridSettingsFromDefaults(boardLayoutDefaults.value)
+    updateCanvasSize({ preserveCurrentExtent: true })
+    syncGraphSnapshot()
+    void persistGraphConfig('board_layout_defaults').catch((e: any) => {
+      lastError.value = String(e?.message || e)
+    })
+  }
+
+  function settleDraggedGridPositions(itemIds: string[]) {
+    const desired = new Map<string, NodeGridUi>()
+    for (const itemId of itemIds) {
+      const node = nodes.value.find((item) => item.id === itemId)
+      if (node) desired.set(itemId, { ...node.ui })
+    }
+    const settled = findAvailableGridGroup(
+      desired,
+      occupiedGridCellKeys(nodes.value, gridSettings.value, itemIds),
+      gridSettings.value,
+    )
+    for (const [itemId, ui] of settled) {
+      const node = nodes.value.find((item) => item.id === itemId)
+      if (node) node.ui = ui
     }
   }
 
@@ -1219,6 +1324,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       return
     }
 
+    settleDraggedGridPositions(movingIds)
     updateCanvasSize({ preserveCurrentExtent: true })
     syncGraphSnapshot()
     rememberPendingUiPositions(movingIds, 'end_drag')
@@ -1232,13 +1338,17 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
 
   async function persistDraggedItemPositions(itemIds?: Iterable<string>) {
     const graphId = currentGraphId.value || 'default'
-    const tasks: Array<{ itemId: string; ui: { x: number; y: number; width?: number; height?: number }; request: Promise<{ ok: boolean }> }> = []
+    const tasks: Array<{
+      itemId: string
+      ui: NodeGridUi
+      request: Promise<NodeConfigChangeResponse>
+    }> = []
     const include = itemIds ? new Set(itemIds) : null
 
     for (const node of nodes.value) {
       if (!node?.ui) continue
       if (include && !include.has(node.id)) continue
-      const ui = sanitizeBoardPoint(node.ui)
+      const ui = sanitizeNodeGridUi(node.ui)
       tasks.push({
         itemId: node.id,
         ui,
@@ -1257,10 +1367,14 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       const task = tasks[index]
       if (!task) continue
       if (result.status === 'fulfilled') {
+        const persistedUi = sanitizeNodeGridUi(result.value.after.ui)
+        const node = nodes.value.find((item) => item.id === task.itemId)
+        if (node) node.ui = persistedUi
+        clearPendingUiPosition(task.itemId, 'persist_confirmed')
         traceBoardDrag('persist_drag_sent', {
           itemId: task.itemId,
-          x: task.ui.x,
-          y: task.ui.y,
+          gridX: persistedUi.grid_x,
+          gridY: persistedUi.grid_y,
         })
         continue
       }
@@ -1275,7 +1389,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
   async function resizeNodeCard(id: string, size: { width: number; height: number }, options?: { persist?: boolean }) {
     const node = nodes.value.find((item) => item.id === id)
     if (!node) return
-    const normalized = sanitizeBoardPoint({
+    const normalized = sanitizeNodeGridUi({
       ...node.ui,
       width: size.width,
       height: size.height,
@@ -1456,20 +1570,40 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     }
   }
 
-  function getCanvasPoint(event: PointerEvent | DragEvent) {
+  function getCanvasPointFromClient(clientX: number, clientY: number) {
     return canvasPointFromClient({
       canvas: canvasRef.value,
-      clientX: event.clientX,
-      clientY: event.clientY,
+      clientX,
+      clientY,
       scale: canvasScale.value,
       contentOffsetLeft: BOARD_CANVAS_PADDING_PX + canvasPaddingLeft.value,
       contentOffsetTop: BOARD_CANVAS_PADDING_PX + canvasPaddingTop.value,
     })
   }
 
+  function getCanvasPoint(event: PointerEvent | DragEvent) {
+    return getCanvasPointFromClient(event.clientX, event.clientY)
+  }
+
+  function onBoardPointerMove(event: PointerEvent) {
+    lastBoardPointerClient = { x: event.clientX, y: event.clientY }
+  }
+
+  function onBoardPointerLeave() {
+    lastBoardPointerClient = null
+  }
+
+  function pasteAgentPlacement(): BoardNodePlacement {
+    if (!lastBoardPointerClient) return { kind: 'selection-anchor' }
+    return {
+      kind: 'fixed',
+      point: getCanvasPointFromClient(lastBoardPointerClient.x, lastBoardPointerClient.y),
+    }
+  }
+
   function getItemPosition(id: string) {
     const node = nodes.value.find((n) => n.id === id)
-    if (node?.ui) return { x: node.ui.x, y: node.ui.y }
+    if (node?.ui) return { grid_x: node.ui.grid_x, grid_y: node.ui.grid_y }
     return null
   }
 
@@ -1483,6 +1617,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       rect,
       cardWidth: CARD_WIDTH,
       cardHeight: CARD_HEIGHT,
+      grid: gridSettings.value,
     })
   }
 
@@ -1529,55 +1664,79 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     })
   }
 
-  async function pasteSnapshot() {
-    if (!hasClipboardSnapshot() || !clipboardSnapshot) return
+  async function pasteSnapshot(snapshot: BoardClipboardSnapshot, placement: BoardNodePlacement) {
     const targetGraphId = currentGraphId.value || 'default'
-    const plan = buildPastePlanFromSnapshot(clipboardSnapshot)
-    await clonePastePlanNodes(clipboardSnapshot, plan, targetGraphId)
+    const plan = buildPastePlanFromSnapshot(snapshot, placement)
+    await clonePastePlanNodes(snapshot, plan, targetGraphId)
     await applyPastePlanToBoard(plan, 'paste_snapshot')
   }
 
-  function onWindowKeyDown(event: KeyboardEvent) {
-    const target = event.target as HTMLElement | null
-    if (target?.closest('input, textarea, [contenteditable="true"], select')) return
-    if (!(event.ctrlKey || event.metaKey)) return
-    const key = event.key.toLowerCase()
-    if (key === 'c') {
-      const selection = window.getSelection()
-      const hasSelectedText = !!selection && !selection.isCollapsed && String(selection.toString() || '').trim().length > 0
-      if (hasSelectedText) return
-      const snapshot = makeCopySnapshot()
-      if (!snapshot) {
-        clipboardSnapshot = null
-        pasteCount = 0
-        return
-      }
-      clipboardSnapshot = snapshot
+  function isEditableEventTarget(target: EventTarget | null) {
+    const element = target instanceof Element ? target : null
+    return !!element?.closest('input, textarea, [contenteditable="true"], select')
+  }
+
+  function onWindowCopy(event: ClipboardEvent) {
+    if (isEditableEventTarget(event.target)) return
+    const selection = window.getSelection()
+    const hasSelectedText = !!selection && !selection.isCollapsed && String(selection.toString() || '').trim().length > 0
+    if (hasSelectedText) return
+
+    const snapshot = makeCopySnapshot()
+    if (!snapshot) return
+
+    try {
+      const marker = createBoardClipboardMarker(snapshot, crypto.randomUUID())
+      writeBoardClipboardMarker(event.clipboardData, marker)
+      activeBoardClipboard = { marker, snapshot }
+      pasteCount = 0
+      lastError.value = null
       event.preventDefault()
-      return
+    } catch (error) {
+      lastError.value = error instanceof Error ? error.message : String(error)
     }
   }
 
   function onWindowPaste(event: ClipboardEvent) {
-    const target = event.target as HTMLElement | null
-    if (target?.closest('input, textarea, [contenteditable="true"], select')) return
+    if (isEditableEventTarget(event.target)) return
 
-    const text = String(event.clipboardData?.getData('text/plain') || '')
-    if (hasClipboardSnapshot()) {
+    let source
+    try {
+      source = classifyBoardPaste(event.clipboardData, activeBoardClipboard)
+    } catch (error) {
+      event.preventDefault()
+      lastError.value = error instanceof Error ? error.message : String(error)
+      return
+    }
+
+    if (source.kind === 'board-nodes') {
       event.preventDefault()
       lastError.value = null
-      pasteSnapshot().catch((e: any) => {
+      pasteSnapshot(source.snapshot, pasteAgentPlacement()).catch((e: any) => {
         lastError.value = String(e?.message || e)
       })
       return
     }
 
-    if (!text.trim()) return
-    event.preventDefault()
-    lastError.value = null
-    pasteClipboardTextAsAgent(text).catch((e: any) => {
-      lastError.value = String(e?.message || e)
-    })
+    if (source.kind === 'images') {
+      event.preventDefault()
+      lastError.value = null
+      const placement = pasteAgentPlacement()
+      uploadPastedImageFiles(source.files, `paste-agent-${Date.now()}`)
+        .then((images) => pasteClipboardContentAsAgent(source.text, images, placement))
+        .catch((e: any) => {
+          lastError.value = String(e?.message || e)
+        })
+      return
+    }
+
+    if (source.kind === 'text') {
+      event.preventDefault()
+      lastError.value = null
+      pasteClipboardContentAsAgent(source.text, [], pasteAgentPlacement()).catch((e: any) => {
+        lastError.value = String(e?.message || e)
+      })
+    }
   }
 
   function onBoardWheel(event: WheelEvent) {
@@ -1621,6 +1780,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
       cardWidth: nodeCardWidth(node),
       cardHeight: nodeCardHeight(node),
       portRadius: PORT_RADIUS,
+      grid: gridSettings.value,
     })
   }
 
@@ -1805,7 +1965,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     boardInitialized = true
     ensurePositions()
     window.addEventListener('resize', onWindowResize)
-    window.addEventListener('keydown', onWindowKeyDown)
+    window.addEventListener('copy', onWindowCopy)
     window.addEventListener('paste', onWindowPaste)
     if (options.initialNodes) {
       availableNodes.value = options.initialNodes
@@ -1844,7 +2004,7 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     activeDragItemIds.clear()
     pendingUiPositions.clear()
     window.removeEventListener('resize', onWindowResize)
-    window.removeEventListener('keydown', onWindowKeyDown)
+    window.removeEventListener('copy', onWindowCopy)
     window.removeEventListener('paste', onWindowPaste)
     window.removeEventListener('mousemove', onPanMouseMove)
     window.removeEventListener('mouseup', onPanEnd)
@@ -1916,6 +2076,8 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     boardRef,
     canvasRef,
     canvasScale,
+    gridSettings,
+    applyBoardLayoutDefaults,
     canvasWidth,
     canvasHeight,
     canvasPaddingLeft,
@@ -1964,6 +2126,8 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     onItemClick,
     onItemPointerDown,
 
+    onBoardPointerMove,
+    onBoardPointerLeave,
     onBoardMouseDownCapture,
     onBoardWheel,
     onBoardDragOver,
@@ -1994,4 +2158,3 @@ export function useAgentBoard(options: { ready?: Ref<boolean>; initialNodes?: No
     stopNodeWork,
   }
 }
-

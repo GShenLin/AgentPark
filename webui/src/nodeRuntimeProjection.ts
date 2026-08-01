@@ -11,6 +11,7 @@ const NODE_RUNTIME_FIELDS = [
   '_delete_requested',
   'node_event_seq',
   'last_message',
+  'last_output_resources',
   'last_run_at',
   'last_runtime_event',
   'runtime_events',
@@ -115,6 +116,25 @@ export function mergeNodeConfigSnapshot(
 
   const next = { ...base } as RuntimeRecord
   for (const field of NODE_RUNTIME_FIELDS) delete next[field]
+  for (const field of NODE_RUNTIME_FIELDS) {
+    if (hasOwn(projection, field)) next[field] = projection[field]
+  }
+  return { status: 'applied', value: next as NodeInstanceConfig }
+}
+
+export function mergeNodeEditorConfigSnapshot(
+  current: NodeInstanceConfig | undefined,
+  incoming: NodeInstanceConfig,
+): RuntimeProjectionMerge<NodeInstanceConfig> {
+  const projection = incoming as RuntimeRecord
+  const base = mergePersistentConfig(current, incoming)
+  const error = projectionError(projection)
+  if (error) return { status: 'invalid', value: current ? base : incoming, error }
+  if (current && Number(projection.node_event_seq) < currentSequence(current as RuntimeRecord)) {
+    return { status: 'stale', value: base }
+  }
+
+  const next = { ...base } as RuntimeRecord
   for (const field of NODE_RUNTIME_FIELDS) {
     if (hasOwn(projection, field)) next[field] = projection[field]
   }

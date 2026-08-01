@@ -53,6 +53,7 @@ from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_
 from src.providers.provider_request_usage import ProviderRequestTracker
 from src.runtime_events.context_injection import runtime_event_context_from_context
 from src.runtime_cancellation import raise_if_cancel_requested
+from src.runtime_policy import resolve_runtime_policy
 from src.switch_utils import parse_switch_mode
 from src.tool.tool_stats_store import ToolCallStatsRecorder
 from src.tool.access_filter import filter_configured_tool_modules
@@ -63,6 +64,13 @@ from src.task_direction_store import archive_legacy_task_artifacts
 from src.workspace_settings import get_workspace_root
 from src.web_backend.node_goal_runtime import node_goal_context
 from src.web_backend.state_store import _consume_node_mid_turn_user_inputs
+
+
+def _resolved_agent_node_settings():
+    loader = ConfigLoader()
+    workspace_config = getattr(loader, "get_workspace_config", None)
+    config = workspace_config() if callable(workspace_config) else loader.get_config()
+    return resolve_agent_node_settings(config)
 
 
 class Node(BaseNode):
@@ -136,6 +144,10 @@ class Node(BaseNode):
             messages_path=self._resolve_messages_path(ctx),
         )
         provider_request_tracker = ProviderRequestTracker()
+        resolved_runtime_policy = resolve_runtime_policy(
+            run_request.runtime_policy,
+            workspace_root=get_workspace_root(),
+        )
 
         def consume_mid_turn_user_inputs() -> list[dict]:
             messages: list[dict] = []
@@ -177,6 +189,7 @@ class Node(BaseNode):
                 responses_instruction=effective_instruction(agent, run_request.instruction)
                 if uses_responses_api_context(agent)
                 else "",
+                runtime_policy=resolved_runtime_policy,
                 skill_resource_roots=capability_plan.skill_resource_roots,
                 persist_assistant_progress=persist_progress,
                 persist_provider_turn_metadata=persist_turn_metadata,
@@ -221,7 +234,11 @@ class Node(BaseNode):
             resolved_instruction = effective_instruction(agent, run_request.instruction)
             if resolved_instruction:
                 agent.Message(instruction_role, resolved_instruction, persist=False)
-        inject_task_direction_context(agent, role=instruction_role)
+        inject_task_direction_context(
+            agent,
+            role=instruction_role,
+            runtime_policy=resolved_runtime_policy,
+        )
         operational_memory_summary = build_operational_memory_summary(
             os.path.join(os.path.dirname(memory_path), "operational_memory.json") if memory_path else ""
         )
@@ -248,9 +265,7 @@ class Node(BaseNode):
         for fragment in runtime_event_context:
             agent.Message(fragment["role"], fragment["content"], persist=False)
 
-        history_message_limit = resolve_agent_node_settings(
-            ConfigLoader().get_config()
-        ).history_message_limit
+        history_message_limit = _resolved_agent_node_settings().history_message_limit
         for history_message in load_agent_history_messages(
             memory_path=memory_path,
             messages_path=self._resolve_messages_path(ctx),
@@ -303,7 +318,7 @@ class Node(BaseNode):
                 "thinking_stream_handler": stream_runtime.on_thinking_delta,
             },
         )
-        min_delay_ms = resolve_agent_node_settings(ConfigLoader().get_config()).min_send_delay_ms
+        min_delay_ms = _resolved_agent_node_settings().min_send_delay_ms
         if min_delay_ms > 0:
             elapsed = time.monotonic() - start_time
             remain = min_delay_ms / 1000 - elapsed

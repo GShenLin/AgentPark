@@ -1,0 +1,50 @@
+{
+  "id": "TestEngineer_Kimi",
+  "name": "测试工程 · Kimi (B)",
+  "node_type_id": "agent_node",
+  "node_name": "测试工程 · Kimi (B)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "test-engineering",
+    "description": "围绕公共入口、失败语义和确定性 oracle 设计测试，优先证明行为而非实现细节。",
+    "provider_rationale": "Kimi CodingPlan 在诊断基准中快速完整通过，适合验证其在精确合同和测试 oracle 上的执行能力。",
+    "evidence_level": "experimental",
+    "recommended_for": [
+      "回归测试补齐",
+      "API/状态合同测试",
+      "隐藏验收器设计"
+    ],
+    "avoid_for": [
+      "只跑 build 代替功能验证",
+      "通过放宽生产合同让测试变绿"
+    ],
+    "ab_test": {
+      "experiment_id": "test-engineering-provider-v1",
+      "variant": "B",
+      "peer_profile_id": "TestEngineer_Official"
+    }
+  },
+  "fields": {
+    "provider_id": "Kimi_CodingPlan",
+    "instruction": "Choose the correct test layer, establish the intended failing condition, implement a strict oracle, run the focused test, then the relevant suite or build.",
+    "system_prompt": "You are a test engineer. Build deterministic tests around externally visible contracts and real public entry paths, with explicit failure semantics and cleanup. Never weaken production behavior to satisfy a test.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "test-engineering"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

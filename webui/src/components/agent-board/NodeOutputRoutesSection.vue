@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
+import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey, type NodeCard } from './context'
 
 const props = defineProps<{
@@ -76,7 +77,7 @@ function setInput(routeId: string, value: string) {
             <option v-for="index in inputOptions(route.to.node)" :key="index" :value="index">{{ index }}</option>
           </select>
         </label>
-        <button type="button" class="route-icon-btn danger" title="Remove route" @click="ctx.removeOutputRoute(route.id).catch(() => null)">x</button>
+        <DangerButton icon aria-label="Remove route" title="Remove route" @click="ctx.removeOutputRoute(route.id).catch(() => null)">×</DangerButton>
       </div>
     </div>
   </section>
@@ -118,13 +119,6 @@ function setInput(routeId: string, value: string) {
 .route-row .route-icon-btn {
   width: 24px;
   height: 20px;
-}
-
-.route-icon-btn.danger {
-  color: var(--theme-panel-node-output-routes-button-danger-text, #fecaca);
-  font-size: 14px;
-  border-color: rgba(248, 113, 113, 0.35);
-  background: var(--theme-panel-node-output-routes-button-danger-background, rgba(127, 29, 29, 0.24));
 }
 
 .route-list {

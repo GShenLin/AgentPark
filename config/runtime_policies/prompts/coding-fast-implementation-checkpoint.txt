@@ -1,0 +1,5 @@
+[Implementation Checkpoint]
+The evidence budget is exhausted. Stop broad discovery. If the production owner and
+requested behavior are known, apply the smallest complete patch now and run focused
+verification. Otherwise gather exactly one missing blocking fact, then patch. Do not
+reopen inspected paths or add unrelated improvements.

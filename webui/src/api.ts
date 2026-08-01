@@ -38,6 +38,7 @@ import type {
   RemoteEndpoint,
   RemoteStatus,
   RemoteWorker,
+  RuntimePolicyPreview,
   RunInfo,
   UserInteractionRequest,
   WorkspaceBootstrap,
@@ -106,6 +107,7 @@ export type {
   RemoteEndpoint,
   RemoteStatus,
   RemoteWorker,
+  RuntimePolicyPreview,
   ResourceKind,
   RuntimeEvent,
   RuntimeNoticeEvent,
@@ -153,6 +155,19 @@ export function apiEndpointLabel(baseUrl: string, path: string) {
 
 function errorDetail(error: unknown) {
   return String((error as { message?: unknown })?.message || error || 'unknown error')
+}
+
+export class ApiHttpError extends Error {
+  readonly status: number
+  readonly detail: string
+
+  constructor(status: number, detail = '') {
+    const normalizedDetail = String(detail || '').trim()
+    super(normalizedDetail ? `HTTP ${status}: ${normalizedDetail}` : `HTTP ${status}`)
+    this.name = 'ApiHttpError'
+    this.status = status
+    this.detail = normalizedDetail
+  }
 }
 
 function networkContext() {
@@ -219,7 +234,7 @@ export async function requestApiJson(baseUrl: string, path: string, init?: Reque
         // Keep the raw response body when it is not JSON.
       }
     }
-    throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`)
+    throw new ApiHttpError(res.status, detail)
   }
   return res.json()
 }
@@ -416,8 +431,8 @@ export async function createNodeInstance(
   typeId: string,
   name: string,
   graphId: string,
-  ui?: { x: number; y: number; width?: number; height?: number },
-): Promise<{ ok: boolean; node_id: string; type_id: string; graph_id: string; config_path: string }> {
+  ui?: { grid_x: number; grid_y: number; width?: number; height?: number },
+): Promise<{ ok: boolean; node_id: string; type_id: string; graph_id: string; config_path: string; ui: { grid_x: number; grid_y: number; width?: number; height?: number } }> {
   return apiFetch('/api/nodes/instances', {
     method: 'POST',
     body: JSON.stringify({
@@ -457,9 +472,9 @@ export async function cloneNodeInstance(
   sourceGraphId: string,
   newNodeId: string,
   newName?: string,
-  ui?: { x: number; y: number; width?: number; height?: number },
+  ui?: { grid_x: number; grid_y: number; width?: number; height?: number },
   targetGraphId?: string,
-): Promise<{ ok: boolean; source_node_id: string; node_id: string; graph_id: string; type_id: string; config_path: string }> {
+): Promise<{ ok: boolean; source_node_id: string; node_id: string; graph_id: string; type_id: string; config_path: string; ui: { grid_x: number; grid_y: number; width?: number; height?: number } }> {
   return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/clone?graph_id=${encodeURIComponent(sourceGraphId)}`, {
     method: 'POST',
     body: JSON.stringify({
@@ -537,7 +552,7 @@ export async function updateNodeInstanceConfig(
     fields?: Record<string, unknown>
     clear_fields?: string[]
     schema?: Record<string, any>
-    ui?: { x?: number; y?: number }
+    ui?: { grid_x: number; grid_y: number; width?: number; height?: number }
   },
   graphId: string,
 ): Promise<NodeConfigChangeResponse> {
@@ -784,6 +799,15 @@ export async function updateAgentProfile(
   })
 }
 
+export async function previewAgentRuntimePolicy(
+  runtimePolicy: unknown,
+): Promise<RuntimePolicyPreview> {
+  return apiFetch('/api/profiles/agents/runtime-policy/preview', {
+    method: 'POST',
+    body: JSON.stringify({ runtime_policy: runtimePolicy }),
+  })
+}
+
 export async function saveAgentProfileFromNode(payload: {
   graph_id: string
   node_id: string
@@ -802,9 +826,9 @@ export async function createNodeFromAgentProfile(
     graph_id: string
     node_id: string
     name?: string
-    ui?: { x: number; y: number; width?: number; height?: number }
+    ui?: { grid_x: number; grid_y: number; width?: number; height?: number }
   },
-): Promise<{ ok: boolean; node_id: string; type_id: string; graph_id: string; config_path: string }> {
+): Promise<{ ok: boolean; node_id: string; type_id: string; graph_id: string; config_path: string; ui: { grid_x: number; grid_y: number; width?: number; height?: number } }> {
   return apiFetch(`/api/profiles/agents/${encodeURIComponent(profileId)}/create`, {
     method: 'POST',
     body: JSON.stringify(payload),

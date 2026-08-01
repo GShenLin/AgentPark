@@ -33,6 +33,13 @@ const canvasStyle = computed(() => ({
   paddingRight: `${BOARD_CANVAS_PADDING_PX}px`,
   paddingBottom: `${BOARD_CANVAS_PADDING_PX}px`,
 }))
+const contentStyle = computed(() => ({
+  width: `${ctx.canvasWidth.value}px`,
+  height: `${ctx.canvasHeight.value}px`,
+  transform: `scale(${ctx.canvasScale.value})`,
+  '--board-grid-cell-width': `${ctx.gridSettings.value.cellWidth}px`,
+  '--board-grid-cell-height': `${ctx.gridSettings.value.cellHeight}px`,
+}))
 const nodesWithOutputRoutes = computed(() => {
   const sourceIds = new Set(ctx.links.value.map((link) => link.from.node))
   return ctx.nodes.value.filter((node) => sourceIds.has(node.id))
@@ -74,6 +81,8 @@ watchEffect(() => {
     ref="boardEl"
     class="agent-board"
     :class="{ panning: ctx.panSession.value }"
+    @pointermove="ctx.onBoardPointerMove"
+    @pointerleave="ctx.onBoardPointerLeave"
     @mousedown.capture="ctx.onBoardMouseDownCapture"
     @wheel.capture="ctx.onBoardWheel"
     @dragover="ctx.onBoardDragOver"
@@ -85,7 +94,7 @@ watchEffect(() => {
       class="agent-canvas"
       :style="canvasStyle"
     >
-      <div class="canvas-content" :style="{ width: `${ctx.canvasWidth.value}px`, height: `${ctx.canvasHeight.value}px`, transform: `scale(${ctx.canvasScale.value})` }">
+      <div class="canvas-content" :style="contentStyle">
         <div
           v-if="ctx.selectionRect.value"
           class="selection-rect"
@@ -141,6 +150,10 @@ watchEffect(() => {
 .canvas-content {
   position: relative;
   transform-origin: left top;
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.1) 1px, transparent 1px);
+  background-size: var(--board-grid-cell-width) var(--board-grid-cell-height);
 }
 
 .selection-rect {

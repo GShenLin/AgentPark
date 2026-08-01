@@ -1,5 +1,5 @@
 import type { LinkItem, NodeCard } from './context'
-import { clampX, sanitizeBoardPoint } from './boardModel'
+import { findAvailableGridGroup, sanitizeNodeGridUi, type BoardGridSettings, type NodeGridPosition, type NodeGridUi } from './boardGrid'
 
 export type BoardClipboardSnapshot = {
   graphId: string
@@ -11,10 +11,6 @@ export type BoardPastePlan = {
   nodes: NodeCard[]
   links: LinkItem[]
   idMap: Map<string, string>
-}
-
-export function hasBoardClipboardSnapshot(value: BoardClipboardSnapshot | null) {
-  return !!value && value.nodes.length > 0
 }
 
 export function makeBoardCopySnapshot(options: {
@@ -44,15 +40,31 @@ export function makeBoardCopySnapshot(options: {
 export function buildBoardPastePlan(options: {
   snapshot: BoardClipboardSnapshot
   offset: number
+  anchor?: NodeGridPosition
+  occupied: Set<string>
+  grid: BoardGridSettings
   makeUniqueId: (base: string) => string
   makeLinkId: () => string
 }): BoardPastePlan {
   const idMap = new Map<string, string>()
+  const sourceOrigin = options.snapshot.nodes.reduce(
+    (origin, node) => ({
+      grid_x: Math.min(origin.grid_x, sanitizeNodeGridUi(node.ui).grid_x),
+      grid_y: Math.min(origin.grid_y, sanitizeNodeGridUi(node.ui).grid_y),
+    }),
+    { grid_x: Number.POSITIVE_INFINITY, grid_y: Number.POSITIVE_INFINITY },
+  )
+  const anchor = options.anchor || null
+  const translateX = anchor ? anchor.grid_x - sourceOrigin.grid_x : options.offset
+  const translateY = anchor ? anchor.grid_y - sourceOrigin.grid_y : options.offset
   const newNodes = options.snapshot.nodes.map((node) => {
     const nodeId = options.makeUniqueId(`${String(node.name || node.id || 'node').trim() || 'node'}1`)
     idMap.set(node.id, nodeId)
-    return createPastedNodeCard(node, nodeId, options.offset)
+    return createPastedNodeCard(node, nodeId, translateX, translateY)
   })
+  const desired = new Map<string, NodeGridUi>(newNodes.map((node) => [node.id, node.ui]))
+  const available = findAvailableGridGroup(desired, options.occupied, options.grid)
+  for (const node of newNodes) node.ui = available.get(node.id) || node.ui
   const newLinks: LinkItem[] = []
   for (const link of options.snapshot.links) {
     const fromId = idMap.get(link.from.node)
@@ -74,7 +86,7 @@ function copyNodeForClipboard(node: NodeCard): NodeCard {
     name: node.name,
     inputNum: node.inputNum,
     outputNum: node.outputNum,
-    ui: sanitizeBoardPoint(node.ui),
+    ui: sanitizeNodeGridUi(node.ui),
     last_message: node.last_message,
     lastRuntimeEvent: null,
     runtimeEvents: [],
@@ -94,17 +106,17 @@ function copyNodeForClipboard(node: NodeCard): NodeCard {
   }
 }
 
-function createPastedNodeCard(node: NodeCard, nodeId: string, offset: number): NodeCard {
+function createPastedNodeCard(node: NodeCard, nodeId: string, translateX: number, translateY: number): NodeCard {
   return {
     id: nodeId,
     typeId: node.typeId,
     name: node.name,
     inputNum: node.inputNum,
     outputNum: node.outputNum,
-    ui: sanitizeBoardPoint({
+    ui: sanitizeNodeGridUi({
       ...node.ui,
-      x: clampX(node.ui.x + offset),
-      y: Math.max(0, node.ui.y + offset),
+      grid_x: Math.max(0, node.ui.grid_x + translateX),
+      grid_y: Math.max(0, node.ui.grid_y + translateY),
     }),
     last_message: null,
     lastRuntimeEvent: null,

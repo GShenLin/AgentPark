@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import ActionButton from './ActionButton.vue'
+import FormTextInput from './FormTextInput.vue'
 
 const props = defineProps<{
   busy?: boolean
@@ -26,12 +28,12 @@ function submit() {
       <p>这是你第一次从当前设备访问 AgentPark，请填写用户名。填写后会自动记录当前访问 IP。</p>
       <label>
         <span>用户名</span>
-        <input v-model="username" maxlength="80" autocomplete="name" autofocus>
+        <FormTextInput v-model="username" maxlength="80" autocomplete="name" autofocus />
       </label>
       <div v-if="error" class="access-error">{{ error }}</div>
-      <button type="submit" :disabled="busy || !username.trim()">
+      <ActionButton variant="primary" type="submit" :disabled="busy || !username.trim()">
         {{ busy ? '登记中…' : '进入 AgentPark' }}
-      </button>
+      </ActionButton>
     </form>
   </div>
 </template>
@@ -44,38 +46,21 @@ function submit() {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #08111f;
+  background: var(--ui-dialog-backdrop);
 }
 .access-dialog {
   width: min(440px, 100%);
   display: grid;
   gap: 18px;
   padding: 28px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 14px;
-  background: #111c2e;
-  color: #e5edf8;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+  border: 1px solid var(--ui-dialog-border);
+  border-radius: var(--ui-dialog-radius);
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
+  box-shadow: var(--ui-dialog-shadow);
 }
 h1, p { margin: 0; }
 p { color: #aebbd0; line-height: 1.55; }
 label { display: grid; gap: 8px; }
-input {
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid #34445f;
-  border-radius: 8px;
-  background: #0b1525;
-  color: inherit;
-}
-button {
-  min-height: 42px;
-  border: 0;
-  border-radius: 8px;
-  background: #2563eb;
-  color: white;
-  cursor: pointer;
-}
-button:disabled { opacity: 0.55; cursor: default; }
 .access-error { color: #fca5a5; }
 </style>

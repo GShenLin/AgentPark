@@ -1,5 +1,6 @@
 import type { NodeCard } from './context'
 import { nodeCardHeight, nodeCardWidth } from './boardModel'
+import { gridPositionToBoardPoint, type BoardGridSettings } from './boardGrid'
 
 export type BoardSelectionSession = {
   startX: number
@@ -34,6 +35,7 @@ export function computeNodeIdsInSelectionRect(options: {
   rect: BoardSelectionRect
   cardWidth: number
   cardHeight: number
+  grid: BoardGridSettings
 }) {
   const selected = new Set<string>()
   const minX = options.rect.x
@@ -41,10 +43,11 @@ export function computeNodeIdsInSelectionRect(options: {
   const maxX = options.rect.x + options.rect.width
   const maxY = options.rect.y + options.rect.height
   for (const node of options.nodes) {
-    const left = node.ui.x
-    const top = node.ui.y
-    const right = node.ui.x + nodeCardWidth(node)
-    const bottom = node.ui.y + nodeCardHeight(node)
+    const point = gridPositionToBoardPoint(node.ui, options.grid)
+    const left = point.x
+    const top = point.y
+    const right = point.x + nodeCardWidth(node)
+    const bottom = point.y + nodeCardHeight(node)
     const overlap = !(right < minX || left > maxX || bottom < minY || top > maxY)
     if (overlap) selected.add(node.id)
   }

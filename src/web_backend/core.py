@@ -22,6 +22,7 @@ from .public_gateway_api import PublicGatewayApiDomain
 from .provider_auth_api import ProviderAuthApiDomain
 from .remote_api import RemoteApiDomain
 from .remote_workspace_api import RemoteWorkspaceApiDomain
+from .runtime_policy_settings_api import RuntimePolicySettingsApiDomain
 from .settings_api import SettingsApiDomain
 from .doubao_speech_management import DoubaoSpeechManagementDomain
 from .user_interaction_api import UserInteractionApiDomain
@@ -78,6 +79,7 @@ class BackendCore:
         self.pet_avatars = PetAvatarDomain(self)
         self.remote_api = RemoteApiDomain(self)
         self.remote_workspace_api = RemoteWorkspaceApiDomain()
+        self.runtime_policy_settings_api = RuntimePolicySettingsApiDomain(self)
         self.settings_api = SettingsApiDomain(self)
         self.doubao_speech_management = DoubaoSpeechManagementDomain(self)
         self.user_interaction_api = UserInteractionApiDomain(self)

@@ -12,6 +12,7 @@ import { useDeletionUndo } from './composables/useDeletionUndo'
 import { useWorkAlerts } from './composables/useWorkAlerts'
 import FileExplorer from './components/FileExplorer.vue'
 import AgentBoard from './components/AgentBoard.vue'
+import AppErrorToast from './components/AppErrorToast.vue'
 import MemoryPanel from './components/MemoryPanel.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import DesktopTopbar from './components/DesktopTopbar.vue'
@@ -38,7 +39,11 @@ const { navigationRequest, completeWorkAlertNavigation } = useWorkAlerts()
 
 const workspaceMounted = ref(false)
 const workspaceReady = ref(false)
-const agentBoard = useAgentBoard({ ready: workspaceReady, initialNodes: props.bootstrap.nodes })
+const agentBoard = useAgentBoard({
+  ready: workspaceReady,
+  initialNodes: props.bootstrap.nodes,
+  boardLayoutDefaults: props.bootstrap.board_layout,
+})
 provide(AgentBoardKey, agentBoard)
 const { undoLastDeletion } = useDeletionUndo()
 
@@ -334,7 +339,12 @@ watch(
       @error="lastError = $event || null"
     />
 
-    <SettingsPage v-if="activeView === 'settings'" @back="activeView = 'board'" @providers-updated="refreshProviders" />
+    <SettingsPage
+      v-if="activeView === 'settings'"
+      @back="activeView = 'board'"
+      @providers-updated="refreshProviders"
+      @defaults-updated="agentBoard.applyBoardLayoutDefaults"
+    />
 
     <div v-else class="content" :style="{ '--right-panel-width': `${rightWidth}px` }">
       <aside v-if="canAccessLocalFiles" class="left-sidebar" :class="{ collapsed: leftCollapsed }" :style="{ width: `${leftWidth}px` }">
@@ -347,7 +357,11 @@ watch(
         <main class="agent-stage">
           <NodeConfigDock v-if="isDeveloper" />
           <AgentBoard v-if="workspaceReady" />
-          <div v-if="lastError" class="error">{{ lastError }}</div>
+          <AppErrorToast
+            :message="lastError"
+            placement="desktop"
+            @dismiss="lastError = null"
+          />
         </main>
       </div>
 

@@ -2,6 +2,7 @@ import json
 import os
 from src.file_transaction import append_text, run_with_interprocess_lock
 from .node_config_store import NodeConfigStore, NodeDeletingError
+from .node_output_resources import project_output_resources
 from .node_output_hold_store import node_output_hold_store
 
 
@@ -88,6 +89,18 @@ def _consume_node_mid_turn_user_inputs(config_path: str, limit: int = 16) -> lis
 
 def _set_node_config_last_message(config_path: str, output: str) -> None:
     _NODE_CONFIG_STORE.set_last_message(config_path, output)
+
+
+def _set_node_config_last_output(
+    config_path: str,
+    output: str,
+    message: object,
+) -> None:
+    _NODE_CONFIG_STORE.set_last_output(
+        config_path,
+        output,
+        project_output_resources(message),
+    )
 
 
 def _set_node_config_runtime_event(config_path: str, event: dict | None, *, reset_history: bool = False) -> None:

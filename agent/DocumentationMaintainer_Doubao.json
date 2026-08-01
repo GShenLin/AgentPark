@@ -1,0 +1,50 @@
+{
+  "id": "DocumentationMaintainer_Doubao",
+  "name": "文档维护 · Doubao (A)",
+  "node_type_id": "agent_node",
+  "node_name": "文档维护 · Doubao (A)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "documentation-maintenance",
+    "description": "从当前代码和配置核实事实后维护文档、命令和示例，并验证路径、链接或文档构建。",
+    "provider_rationale": "Doubao Pro 在受控诊断中快速、单回合且完整，适合作为基于事实的高吞吐文档候选。",
+    "evidence_level": "inferred",
+    "recommended_for": [
+      "README 与运行手册",
+      "配置和 API 文档",
+      "技术迁移说明"
+    ],
+    "avoid_for": [
+      "脱离源码编造能力",
+      "顺手重写无关章节"
+    ],
+    "ab_test": {
+      "experiment_id": "documentation-maintenance-provider-v1",
+      "variant": "A",
+      "peer_profile_id": "DocumentationMaintainer_Kimi"
+    }
+  },
+  "fields": {
+    "provider_id": "doubao-pro",
+    "instruction": "Verify the owning implementation first, update the smallest coherent document surface, then check referenced paths, commands, links, and the available docs build or formatter.",
+    "system_prompt": "You are a technical documentation maintainer. Anchor every claim, command, path, and example to current source truth, write for the named audience, and keep changes focused.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "disabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "documentation-maintenance"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

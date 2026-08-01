@@ -1,4 +1,5 @@
 import { appEventsStreamUrl } from '../api'
+import { resolveStreamSnapshotTransition } from '../eventStreamProtocol'
 import { notifyUserInteractionGraphEvent } from './useUserInteractions'
 import { notifyWorkAlertGraphEvent } from './useWorkAlerts'
 
@@ -16,9 +17,9 @@ function dispatchAppEvent(payload: Record<string, unknown>) {
   notifyWorkAlertGraphEvent(payload)
 }
 
-function dispatchStreamGap(payload: Record<string, unknown>) {
+function dispatchStreamGap(payload: Record<string, unknown>, force = false) {
   const now = Date.now()
-  if (now - lastStreamGapDispatchAt < STREAM_GAP_RESYNC_MIN_INTERVAL_MS) return
+  if (!force && now - lastStreamGapDispatchAt < STREAM_GAP_RESYNC_MIN_INTERVAL_MS) return
   lastStreamGapDispatchAt = now
   dispatchAppEvent(payload)
 }
@@ -27,16 +28,10 @@ function processAppEvent(payload: Record<string, unknown>) {
   const eventName = String(payload.event || '').trim()
   const globalVersion = Number(payload.global_version || 0)
   if (eventName === 'stream_snapshot') {
-    if (receivedStreamSnapshot && globalVersion > lastGlobalVersion) {
-      dispatchStreamGap({
-        event: 'stream_gap',
-        from_global_version: lastGlobalVersion + 1,
-        to_global_version: globalVersion,
-        global_version: globalVersion,
-      })
-    }
+    const transition = resolveStreamSnapshotTransition(receivedStreamSnapshot, lastGlobalVersion, globalVersion)
+    if (transition.gap) dispatchStreamGap(transition.gap, transition.forceGap)
     receivedStreamSnapshot = true
-    lastGlobalVersion = Math.max(lastGlobalVersion, globalVersion)
+    lastGlobalVersion = transition.nextGlobalVersion
     dispatchAppEvent(payload)
     return
   }

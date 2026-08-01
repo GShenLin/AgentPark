@@ -6,6 +6,11 @@ import {
   restartServer,
 } from '../api'
 import type { RemoteEndpoint } from '../apiTypes'
+import ActionButton from './ActionButton.vue'
+import DangerButton from './DangerButton.vue'
+import FormCheckbox from './FormCheckbox.vue'
+import FormSelect from './FormSelect.vue'
+import FormTextInput from './FormTextInput.vue'
 
 const props = defineProps<{
   activeView: 'board' | 'settings'
@@ -114,21 +119,22 @@ async function restartWorkspace() {
     <div class="brand">AgentPark Board</div>
     <div class="remote-switcher">
       <span class="remote-label">Remote</span>
-      <select v-model="selectedRemoteId" class="remote-select" @change="selectRemote">
+      <FormSelect v-model="selectedRemoteId" class="remote-select" compact @change="selectRemote">
         <option v-for="remote in remoteEndpoints" :key="remote.id" :value="remote.id">
           {{ remote.name }} 路 {{ remote.host }}:{{ remote.port }}{{ remote.private ? ' Private' : '' }}
         </option>
-      </select>
+      </FormSelect>
       <span class="remote-address">{{ selectedRemoteAddress }}</span>
-      <button class="topbar-btn" type="button" @click="showRemoteForm = !showRemoteForm">Add</button>
-      <button class="topbar-btn danger" type="button" :disabled="selectedRemoteId === 'default'" @click="removeSelectedRemote">Delete</button>
+      <ActionButton compact @click="showRemoteForm = !showRemoteForm">Add</ActionButton>
+      <DangerButton compact :disabled="selectedRemoteId === 'default'" @click="removeSelectedRemote">Delete</DangerButton>
     </div>
     <form v-if="showRemoteForm" class="remote-form" @submit.prevent="submitRemote" @click.stop>
-      <input v-model="remoteFormName" class="remote-input" placeholder="Name" />
-      <input v-model="remoteFormHost" class="remote-input" placeholder="IP / Host" />
-      <input
+      <FormTextInput v-model="remoteFormName" class="remote-input" compact placeholder="Name" />
+      <FormTextInput v-model="remoteFormHost" class="remote-input" compact placeholder="IP / Host" />
+      <FormTextInput
         v-model="remoteFormPort"
         class="remote-input port"
+        compact
         type="number"
         inputmode="numeric"
         min="1"
@@ -137,30 +143,30 @@ async function restartWorkspace() {
         placeholder="Port"
       />
       <label class="remote-private">
-        <input v-model="remoteFormPrivate" type="checkbox" />
+        <FormCheckbox v-model="remoteFormPrivate" />
         <span>Private</span>
       </label>
-      <button class="topbar-btn primary" type="submit">Save</button>
+      <ActionButton variant="primary" compact type="submit">Save</ActionButton>
     </form>
     <div class="topbar-actions">
-      <button v-if="props.activeView === 'board' && props.canAccessLocalFiles" class="topbar-btn" type="button" @click="emit('toggleLeft')">
+      <ActionButton v-if="props.activeView === 'board' && props.canAccessLocalFiles" compact @click="emit('toggleLeft')">
         {{ props.leftCollapsed ? 'Show Files' : 'Hide Files' }}
-      </button>
-      <button v-if="props.activeView === 'board'" class="topbar-btn" type="button" @click="emit('toggleRight')">
+      </ActionButton>
+      <ActionButton v-if="props.activeView === 'board'" compact @click="emit('toggleRight')">
         {{ props.rightCollapsed ? 'Show Memory' : 'Hide Memory' }}
-      </button>
-      <button class="topbar-btn restart" type="button" :disabled="isRestarting" @click="restartWorkspace">
+      </ActionButton>
+      <ActionButton class="restart" compact :disabled="isRestarting" @click="restartWorkspace">
         {{ isRestarting ? 'Restarting...' : 'Restart' }}
-      </button>
-      <button
+      </ActionButton>
+      <ActionButton
         v-if="props.canOpenSettings"
-        class="topbar-btn settings"
-        type="button"
+        class="settings"
+        compact
         :class="{ active: props.activeView === 'settings' }"
         @click="emit('update:activeView', 'settings')"
       >
         Settings
-      </button>
+      </ActionButton>
     </div>
   </header>
 </template>
@@ -170,6 +176,19 @@ async function restartWorkspace() {
   position: relative;
   z-index: 2000;
   overflow: visible;
+  --form-control-border: var(--theme-panel-topbar-input-border, var(--border-light));
+  --form-control-background: var(--theme-panel-topbar-input-background, var(--bg-primary));
+  --form-control-text: var(--theme-panel-topbar-input-text, var(--text-primary));
+  --form-control-focus: var(--theme-panel-topbar-button-active-text, var(--accent-blue));
+  --ui-control-radius: 6px;
+  --ui-button-background: var(--theme-panel-topbar-button-background, transparent);
+  --ui-button-border: var(--theme-panel-topbar-button-border, transparent);
+  --ui-button-text: var(--theme-panel-topbar-button-text, var(--text-secondary));
+  --ui-button-hover-border: transparent;
+  --ui-button-hover-background: var(--theme-panel-topbar-button-hover-background, var(--bg-hover));
+  --ui-primary-border: var(--theme-panel-topbar-button-active-text, var(--accent-blue));
+  --ui-primary-background: var(--theme-panel-topbar-button-active-background, var(--accent-blue-soft));
+  --ui-primary-text: var(--theme-panel-topbar-button-active-text, var(--text-accent));
 }
 
 /* 远程连接切换器 */
@@ -224,36 +243,10 @@ async function restartWorkspace() {
   white-space: nowrap;
 }
 
-.remote-private input {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--theme-panel-topbar-button-active-text, var(--accent-blue));
-}
-
 .remote-select,
 .remote-input {
   min-width: 120px;
   max-width: 220px;
-  height: 30px;
-  border-radius: 6px;
-  border: 1px solid var(--theme-panel-topbar-input-border, var(--border-light));
-  background: var(--theme-panel-topbar-input-background, var(--bg-primary));
-  color: var(--theme-panel-topbar-input-text, var(--text-primary));
-  font-size: 12px;
-  padding: 0 10px;
-  transition: all var(--transition-fast);
-}
-
-.remote-select:hover,
-.remote-input:hover {
-  border-color: var(--theme-panel-topbar-border-color, var(--border-medium));
-}
-
-.remote-select:focus,
-.remote-input:focus {
-  outline: 2px solid var(--theme-panel-topbar-button-active-text, var(--accent-blue));
-  outline-offset: -2px;
-  background: var(--theme-panel-topbar-input-background, var(--bg-secondary));
 }
 
 .remote-input.port {
@@ -268,87 +261,28 @@ async function restartWorkspace() {
   margin-left: auto;
 }
 
-/* 顶部按钮基础样式 */
-.topbar-btn {
-  background: var(--theme-panel-topbar-button-background, transparent);
-  border: 1px solid var(--theme-panel-topbar-button-border, transparent);
-  color: var(--theme-panel-topbar-button-text, var(--text-secondary));
-  font-size: 12px;
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: 6px;
-  transition: all var(--transition-fast);
-}
-
-.topbar-btn:hover {
-  background: var(--theme-panel-topbar-button-hover-background, var(--bg-hover));
-  color: var(--theme-panel-topbar-button-hover-text, var(--text-primary));
-  border-color: transparent;
-  transform: none;
-  box-shadow: none;
-}
-
-/* 主按钮样式 */
-.topbar-btn.primary {
-  border-color: var(--theme-panel-topbar-button-active-text, var(--accent-blue));
-  background: var(--theme-panel-topbar-button-active-background, var(--accent-blue-soft));
-  color: var(--theme-panel-topbar-button-active-text, var(--text-accent));
-}
-
-.topbar-btn.primary:hover {
-  background: rgba(59, 130, 246, 0.2);
-}
-
-/* 危险按钮样式 */
-.topbar-btn.danger {
-  color: #fca5a5;
-}
-
-.topbar-btn.danger:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #fca5a5;
-}
-
 /* 重启按钮样式 */
-.topbar-btn.restart {
+.restart {
   color: #fcd34d;
 }
 
-.topbar-btn.restart:hover {
+.restart:hover {
   background: rgba(245, 158, 11, 0.15);
   color: #fcd34d;
 }
 
 /* 设置按钮样式 */
-.topbar-btn.settings {
+.settings {
   color: var(--theme-panel-topbar-button-text, var(--text-secondary));
 }
 
-.topbar-btn.settings:hover {
+.settings:hover {
   color: var(--theme-panel-topbar-button-hover-text, var(--text-primary));
 }
 
-.topbar-btn.settings.active {
+.settings.active {
   background: var(--theme-panel-topbar-button-active-background, var(--accent-blue-soft));
   border-color: transparent;
   color: var(--theme-panel-topbar-button-active-text, var(--text-accent));
-}
-
-/* 禁用状态 */
-.topbar-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.topbar-btn:disabled:hover {
-  background: transparent;
-}
-
-/* 响应式适配 */
-@media (max-width: 1280px) {
-  .topbar-btn {
-    padding: 6px 10px;
-    font-size: 11px;
-  }
 }
 </style>

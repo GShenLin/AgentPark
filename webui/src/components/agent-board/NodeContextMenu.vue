@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { launchNodeDesktopPet, saveAgentProfileFromNode } from '../../api'
+import ActionButton from '../ActionButton.vue'
 import { AgentBoardKey } from './context'
 
 const injected = inject(AgentBoardKey, null)
@@ -152,19 +153,19 @@ defineExpose({
         @pointerdown.stop
         @contextmenu.prevent
       >
-        <button class="node-menu-item" :disabled="actionBusy" @click="showPet">
+        <ActionButton variant="menu" :disabled="actionBusy" @click="showPet">
           {{ launchingPet ? 'ShowingPet...' : 'ShowPet' }}
-        </button>
-        <button class="node-menu-item" :disabled="actionBusy" @click="openFolder('node')">
+        </ActionButton>
+        <ActionButton variant="menu" :disabled="actionBusy" @click="openFolder('node')">
           {{ openingFolder === 'node' ? 'OpeningNodeFolder...' : 'OpenNodeFolder' }}
-        </button>
-        <button class="node-menu-item" :disabled="actionBusy" @click="openFolder('work')">
+        </ActionButton>
+        <ActionButton variant="menu" :disabled="actionBusy" @click="openFolder('work')">
           {{ openingFolder === 'work' ? 'OpeningWorkFolder...' : 'OpenWorkFolder' }}
-        </button>
-        <button class="node-menu-item" :disabled="actionBusy" @click="saveToProfile">SaveToProfile</button>
-        <button class="node-menu-item" :disabled="actionBusy" @click="togglePrivacy">
+        </ActionButton>
+        <ActionButton variant="menu" :disabled="actionBusy" @click="saveToProfile">SaveToProfile</ActionButton>
+        <ActionButton variant="menu" :disabled="actionBusy" @click="togglePrivacy">
           {{ changingPrivacy ? 'ChangingVisibility...' : (targetIsPrivate ? 'SetPublic' : 'SetPrivate') }}
-        </button>
+        </ActionButton>
       </section>
     </div>
   </Teleport>
@@ -190,27 +191,8 @@ defineExpose({
   background-repeat: var(--theme-panel-node-context-menu-background-repeat, no-repeat);
   background-blend-mode: var(--theme-panel-node-context-menu-background-blend-mode, normal);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
-}
-
-.node-menu-item {
-  width: 100%;
-  text-align: left;
-  border: 0;
-  border-radius: 6px;
-  background: var(--theme-panel-node-context-menu-button-background, transparent);
-  color: var(--theme-panel-node-context-menu-button-text, rgba(226, 232, 240, 0.96));
-  font-size: 12px;
-  padding: 8px 10px;
-  cursor: pointer;
-}
-
-.node-menu-item:disabled {
-  cursor: progress;
-  opacity: 0.58;
-}
-
-.node-menu-item:hover {
-  background: var(--theme-panel-node-context-menu-button-hover-background, rgba(14, 116, 144, 0.28));
+  --ui-button-text: var(--theme-panel-node-context-menu-button-text, rgba(226, 232, 240, 0.96));
+  --ui-button-hover-background: var(--theme-panel-node-context-menu-button-hover-background, rgba(14, 116, 144, 0.28));
 }
 </style>
 

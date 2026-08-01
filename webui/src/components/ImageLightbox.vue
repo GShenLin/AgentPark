@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
+import DialogCloseButton from './DialogCloseButton.vue'
 
 defineProps<{
   open: boolean
@@ -22,7 +23,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 <template>
   <Teleport to="body">
     <div v-if="open && src" class="image-lightbox" role="dialog" aria-modal="true" @click.self="emit('close')">
-      <button class="image-lightbox-close" type="button" aria-label="关闭图片预览" @click="emit('close')">×</button>
+      <div class="image-lightbox-close">
+        <DialogCloseButton aria-label="关闭图片预览" @click="emit('close')" />
+      </div>
       <img class="image-lightbox-content" :src="src" :alt="alt || '图片预览'" />
     </div>
   </Teleport>
@@ -54,14 +57,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   position: absolute;
   top: 10px;
   right: 14px;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  font-size: 28px;
-  line-height: 32px;
-  cursor: pointer;
 }
 </style>

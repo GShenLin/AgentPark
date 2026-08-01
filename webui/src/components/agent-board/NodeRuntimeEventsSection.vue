@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormCheckbox from '../FormCheckbox.vue'
+import FormSelect from '../FormSelect.vue'
 import {
   applyRuntimeEventConfig,
   deleteRuntimeEventConfigEntry,
@@ -399,8 +403,8 @@ onMounted(refreshEvents)
         <div class="section-subtitle">事件与多个处理方式统一保存到 config/events.json</div>
       </div>
       <div class="section-actions">
-        <button class="mini-btn" type="button" :disabled="loading || applying" @click="refreshEvents">{{ loading ? '加载中...' : '刷新' }}</button>
-        <button class="mini-btn primary" type="button" :disabled="loading || applying" title="添加事件" @click="addEventNode">+</button>
+        <ActionButton compact :disabled="loading || applying" @click="refreshEvents">{{ loading ? '加载中...' : '刷新' }}</ActionButton>
+        <ActionButton variant="primary" icon compact :disabled="loading || applying" title="添加事件" aria-label="添加事件" @click="addEventNode">+</ActionButton>
       </div>
     </div>
 
@@ -409,66 +413,66 @@ onMounted(refreshEvents)
     <div v-else-if="eventNodes.length" class="event-node-list">
       <div v-for="(eventNode, eventIndex) in eventNodes" :key="eventNode.event" class="event-node">
         <div class="event-column">
-          <select :value="eventNode.event" :disabled="applying" aria-label="事件" @change="updateEvent(eventIndex, ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="eventNode.event" compact :disabled="applying" aria-label="事件" @change="updateEvent(eventIndex, $event)">
             <option v-for="event in availableEventsFor(eventIndex)" :key="event" :value="event">{{ event }}</option>
-          </select>
-          <button class="icon-btn danger" type="button" :disabled="applying" title="删除事件" @click="deleteEventNode(eventIndex)">×</button>
+          </FormSelect>
+          <DangerButton icon :disabled="applying" aria-label="删除事件" title="删除事件" @click="deleteEventNode(eventIndex)">×</DangerButton>
         </div>
 
         <div class="handler-column">
           <div class="handler-head">
             <span>处理方式</span>
-            <button class="icon-btn add" type="button" :disabled="applying" title="添加处理方式" @click="addHandler(eventIndex)">+</button>
+            <ActionButton variant="primary" icon compact :disabled="applying" title="添加处理方式" aria-label="添加处理方式" @click="addHandler(eventIndex)">+</ActionButton>
           </div>
           <div v-if="eventNode.handlers.length" class="handler-list">
             <div v-for="(handler, handlerIndex) in eventNode.handlers" :key="handlerIndex" class="handler-row">
-              <select :value="handler.action" :disabled="applying" aria-label="处理方式" @change="updateAction(eventIndex, handlerIndex, ($event.target as HTMLSelectElement).value)">
+              <FormSelect :model-value="handler.action" compact :disabled="applying" aria-label="处理方式" @change="updateAction(eventIndex, handlerIndex, $event)">
                 <option v-for="action in actionsForEvent(eventNode.event)" :key="action" :value="action">{{ actionLabel(action) }}</option>
-              </select>
+              </FormSelect>
               <div v-if="handler.action === 'node.dispatch'" class="profile-list">
                 <div v-for="(selectedProfileId, profileIndex) in handler.params?.profile_ids || []" :key="`${selectedProfileId}/${profileIndex}`" class="profile-row">
-                  <select :value="selectedProfileId" :disabled="applying" aria-label="处理 Agent" @change="updateProfile(eventIndex, handlerIndex, profileIndex, ($event.target as HTMLSelectElement).value)">
+                  <FormSelect :model-value="selectedProfileId" compact :disabled="applying" aria-label="处理 Agent" @change="updateProfile(eventIndex, handlerIndex, profileIndex, $event)">
                     <option v-for="profileId in profileOptions" :key="profileId" :value="profileId" :disabled="profileId !== selectedProfileId && (handler.params?.profile_ids || []).includes(profileId)">{{ profileId }}</option>
-                  </select>
-                  <button class="icon-btn danger" type="button" :disabled="applying" title="删除 Agent Profile" @click="deleteProfile(eventIndex, handlerIndex, profileIndex)">×</button>
+                  </FormSelect>
+                  <DangerButton icon :disabled="applying" aria-label="删除 Agent Profile" title="删除 Agent Profile" @click="deleteProfile(eventIndex, handlerIndex, profileIndex)">×</DangerButton>
                 </div>
-                <button class="mini-btn" type="button" :disabled="applying" @click="addProfile(eventIndex, handlerIndex)">+ Agent Profile</button>
+                <ActionButton compact :disabled="applying" @click="addProfile(eventIndex, handlerIndex)">+ Agent Profile</ActionButton>
               </div>
               <div v-else-if="handler.action === 'context.append_file'" class="append-file-field">
-                <button
-                  class="mini-btn append-file-btn"
-                  type="button"
+                <ActionButton
+                  class="append-file-btn"
+                  compact
                   :disabled="applying || selectingFile === `${eventIndex}/${handlerIndex}`"
                   :title="appendFilePaths(handler.params?.paths).join('\n') || '选择一个或多个上下文文件'"
                   @click="chooseAppendFile(eventIndex, handlerIndex)"
-                >{{ selectingFile === `${eventIndex}/${handlerIndex}` ? '选择中...' : appendFileLabel(handler.params?.paths) }}</button>
-                <select
-                  :value="String(handler.params?.role || 'developer')"
+                >{{ selectingFile === `${eventIndex}/${handlerIndex}` ? '选择中...' : appendFileLabel(handler.params?.paths) }}</ActionButton>
+                <FormSelect
+                  :model-value="String(handler.params?.role || 'developer')"
+                  compact
                   :disabled="applying"
                   aria-label="上下文角色"
-                  @change="updateHandler(eventIndex, handlerIndex, { params: { ...(handler.params || {}), role: ($event.target as HTMLSelectElement).value } })"
+                  @change="updateHandler(eventIndex, handlerIndex, { params: { ...(handler.params || {}), role: $event } })"
                 >
                   <option v-for="role in contextRoleOptions" :key="role" :value="role">{{ CONTEXT_ROLE_LABELS[role] || role }}</option>
-                </select>
+                </FormSelect>
               </div>
-              <select v-else :value="handler.target" :disabled="applying" aria-label="处理目标" @change="updateHandler(eventIndex, handlerIndex, { target: ($event.target as HTMLSelectElement).value })">
+              <FormSelect v-else :model-value="handler.target" compact :disabled="applying" aria-label="处理目标" @change="updateHandler(eventIndex, handlerIndex, { target: $event })">
                 <option v-for="target in targetOptions(handler.action)" :key="target" :value="target">{{ target }}</option>
-              </select>
+              </FormSelect>
               <label
                 class="handler-enabled"
                 :class="{ disabled: handler.action === 'context.append_file' && !appendFilePaths(handler.params?.paths).length }"
                 :title="handler.action === 'context.append_file' && !appendFilePaths(handler.params?.paths).length ? '请先选择上下文文件' : '控制该处理方式是否执行'"
               >
-                <input
-                  type="checkbox"
-                  :checked="handler.enabled !== false"
+                <FormCheckbox
+                  :model-value="handler.enabled !== false"
                   :disabled="applying || (handler.action === 'context.append_file' && !appendFilePaths(handler.params?.paths).length)"
                   :aria-label="`${actionLabel(handler.action)} 是否启用`"
-                  @change="updateHandler(eventIndex, handlerIndex, { enabled: ($event.target as HTMLInputElement).checked })"
+                  @update:model-value="updateHandler(eventIndex, handlerIndex, { enabled: $event })"
                 />
                 <span>启用</span>
               </label>
-              <button class="icon-btn danger" type="button" :disabled="applying" title="删除处理方式" @click="deleteHandler(eventIndex, handlerIndex)">×</button>
+              <DangerButton icon :disabled="applying" aria-label="删除处理方式" title="删除处理方式" @click="deleteHandler(eventIndex, handlerIndex)">×</DangerButton>
             </div>
           </div>
           <div v-else class="empty-handler">暂无处理方式，点击右上角 + 添加。</div>
@@ -477,7 +481,7 @@ onMounted(refreshEvents)
     </div>
     <div v-else class="empty-state">
       <span>当前节点没有事件配置。</span>
-      <button class="mini-btn primary" type="button" :disabled="applying" @click="addEventNode">+ 添加事件</button>
+      <ActionButton variant="primary" compact :disabled="applying" @click="addEventNode">+ 添加事件</ActionButton>
     </div>
 
     <NodeAppendFilePickerSheet
@@ -501,26 +505,19 @@ onMounted(refreshEvents)
 .event-node-list, .handler-list { display: flex; flex-direction: column; gap: 8px; }
 .event-node { display: grid; grid-template-columns: minmax(130px, 0.7fr) minmax(0, 2fr); gap: 10px; border: 1px solid rgba(148, 163, 184, 0.16); border-radius: 8px; padding: 8px; }
 .event-column { align-items: flex-start; }
-.event-column select { flex: 1; }
+.event-column .form-select { flex: 1; }
 .handler-column { min-width: 0; border-left: 1px solid rgba(148, 163, 184, 0.14); padding-left: 10px; }
 .handler-head { margin-bottom: 8px; color: rgba(203, 213, 225, 0.9); font-size: 11px; }
 .handler-row { display: grid; grid-template-columns: minmax(118px, 0.9fr) minmax(132px, 1.1fr) auto auto; gap: 8px; align-items: center; }
 .profile-list, .profile-row { display: flex; gap: 6px; align-items: center; }
 .profile-list { flex-direction: column; align-items: stretch; }
-.profile-row select { flex: 1; }
+.profile-row .form-select { flex: 1; }
 .append-file-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(105px, 0.45fr); gap: 6px; }
 .append-file-btn { min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; }
 .handler-enabled { display: inline-flex; align-items: center; gap: 5px; color: #cbd5e1; cursor: pointer; font-size: 11px; white-space: nowrap; }
-.handler-enabled input { margin: 0; accent-color: #14b8a6; }
 .handler-enabled.disabled { cursor: default; opacity: 0.55; }
 .empty-handler { border: 1px dashed rgba(148, 163, 184, 0.2); border-radius: 7px; padding: 9px; }
-select { min-width: 0; width: 100%; border: 1px solid rgba(148, 163, 184, 0.26); border-radius: 7px; background: rgba(15, 23, 42, 0.92); color: #f8fafc; padding: 7px 8px; font-size: 12px; }
-.mini-btn, .icon-btn { border: 1px solid rgba(148, 163, 184, 0.26); border-radius: 8px; background: rgba(15, 23, 42, 0.92); color: #f8fafc; cursor: pointer; padding: 6px 9px; font-size: 12px; white-space: nowrap; }
-.mini-btn.primary, .icon-btn.add { border-color: rgba(45, 212, 191, 0.35); background: rgba(13, 148, 136, 0.2); }
-.icon-btn { width: 30px; height: 30px; padding: 0; font-size: 18px; }
-.danger { border-color: rgba(248, 113, 113, 0.35); color: #fecaca; }
-.mini-btn:disabled, .icon-btn:disabled, select:disabled { cursor: default; opacity: 0.55; }
 .empty-state { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px dashed rgba(148, 163, 184, 0.22); border-radius: 8px; color: rgba(148, 163, 184, 0.9); font-size: 12px; padding: 10px; }
 .event-status { border: 1px solid rgba(45, 212, 191, 0.24); border-radius: 8px; background: rgba(15, 118, 110, 0.14); color: #ccfbf1; font-size: 12px; padding: 8px 10px; }
-@media (max-width: 760px) { .event-node, .handler-row { grid-template-columns: 1fr; } .handler-column { border-left: 0; border-top: 1px solid rgba(148, 163, 184, 0.14); padding: 10px 0 0; } .handler-row > .icon-btn { width: 100%; } }
+@media (max-width: 760px) { .event-node, .handler-row { grid-template-columns: 1fr; } .handler-column { border-left: 0; border-top: 1px solid rgba(148, 163, 184, 0.14); padding: 10px 0 0; } }
 </style>

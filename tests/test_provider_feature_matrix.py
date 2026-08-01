@@ -52,11 +52,20 @@ def test_provider_feature_matrix_covers_all_supported_provider_transports():
     )
 
     assert build_provider_feature_matrix({"type": "deepseek"}) == _matrix(
-        responses_api=_feature(False, []),
+        responses_api=_feature(False, ["enabled", "disabled"], requires="responsesApi=true"),
         web_search=_feature(False, []),
         tools=_feature(True, ["enabled", "disabled"]),
         thinking=_feature(True, ["enabled", "disabled"], transport="chat_completions"),
         reasoning_effort=_feature(True, ["high", "max"], transport="chat_completions"),
+        reasoning_summary=_feature(False, []),
+    )
+
+    assert build_provider_feature_matrix({"type": "deepseek", "responsesApi": True}) == _matrix(
+        responses_api=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
+        web_search=_feature(False, []),
+        tools=_feature(True, ["enabled", "disabled"]),
+        thinking=_feature(True, ["enabled", "disabled"], transport="responses"),
+        reasoning_effort=_feature(True, ["high", "max"], transport="responses"),
         reasoning_summary=_feature(False, []),
     )
 
@@ -114,7 +123,6 @@ def test_provider_feature_matrix_covers_all_supported_provider_transports():
         reasoning_summary=_feature(False, []),
     )
 
-
 def test_provider_feature_matrix_returns_closed_shape_for_unknown_or_missing_provider_type():
     expected = _matrix(
         responses_api=_feature(False, []),
@@ -160,14 +168,14 @@ def test_provider_feature_matrix_ignores_current_configuration_values():
             {"type": provider_type}
         )
 
-    for provider_type in ("openai", "grok", "doubao"):
+    for provider_type in ("openai", "grok", "deepseek", "doubao"):
         assert build_provider_feature_matrix(
             {"type": provider_type, "responsesApi": True, **noisy_config}
         ) == build_provider_feature_matrix({"type": provider_type, "responsesApi": True})
 
 
 def test_provider_feature_matrix_only_strict_responses_api_true_enables_responses_transport():
-    for provider_type in ("openai", "doubao"):
+    for provider_type in ("openai", "deepseek", "doubao"):
         chat_transport = build_provider_feature_matrix({"type": provider_type})
         responses_transport = build_provider_feature_matrix({"type": provider_type, "responsesApi": True})
 
@@ -181,12 +189,17 @@ def test_provider_feature_matrix_only_strict_responses_api_true_enables_response
             requires="responsesApi=true",
             transport="responses",
         )
-        assert responses_transport["web_search"] == _feature(
-            True,
-            ["enabled", "disabled"],
-            requires="responsesApi=true",
-            transport="responses",
+        expected_web_search = (
+            _feature(False, [])
+            if provider_type == "deepseek"
+            else _feature(
+                True,
+                ["enabled", "disabled"],
+                requires="responsesApi=true",
+                transport="responses",
+            )
         )
+        assert responses_transport["web_search"] == expected_web_search
 
     assert build_provider_feature_matrix({"type": "zhipu", "responsesApi": True}) == build_provider_feature_matrix(
         {"type": "zhipu"}

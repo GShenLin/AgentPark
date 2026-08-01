@@ -1,25 +1,33 @@
 import type { GraphConfig, GraphOutputRoutes, MessageEnvelope, NodeInstanceConfig, NodeInstanceState, PasteAgentConfig, ProviderRequestTotals } from '../../api'
 import type { LinkEndpoint, LinkItem, NodeCard } from './context'
+import {
+  DEFAULT_NODE_HEIGHT,
+  DEFAULT_NODE_WIDTH,
+  MAX_NODE_HEIGHT,
+  MAX_NODE_WIDTH,
+  MIN_NODE_HEIGHT,
+  MIN_NODE_WIDTH,
+  gridPositionToBoardPoint,
+  sanitizeNodeGridUi,
+  type BoardGridSettings,
+  type NodeGridUi,
+} from './boardGrid'
 import { normalizeRuntimeEvent, normalizeRuntimeEvents, normalizeRuntimeToolCalls } from './toolRuntimeEvents'
 
 export type SwitchState = 'enabled' | 'disabled'
-export const NODE_CARD_DEFAULT_WIDTH = 230
-export const NODE_CARD_DEFAULT_HEIGHT = 250
-export const NODE_CARD_MIN_WIDTH = 230
-export const NODE_CARD_MIN_HEIGHT = 250
-export const NODE_CARD_MAX_WIDTH = 720
-export const NODE_CARD_MAX_HEIGHT = 760
+export const NODE_CARD_DEFAULT_WIDTH = DEFAULT_NODE_WIDTH
+export const NODE_CARD_DEFAULT_HEIGHT = DEFAULT_NODE_HEIGHT
+export const NODE_CARD_MIN_WIDTH = MIN_NODE_WIDTH
+export const NODE_CARD_MIN_HEIGHT = MIN_NODE_HEIGHT
+export const NODE_CARD_MAX_WIDTH = MAX_NODE_WIDTH
+export const NODE_CARD_MAX_HEIGHT = MAX_NODE_HEIGHT
 
 export type BoardNodePlacement =
   | { kind: 'selection-anchor' }
   | {
       kind: 'fixed'
-      ui: { x: number; y: number; width?: number; height?: number }
+      point: { x: number; y: number }
     }
-
-export function clampX(value: number) {
-  return Math.max(0, value)
-}
 
 function boundedNumber(value: unknown, fallback: number, min: number, max: number) {
   const parsed = Number(value)
@@ -33,17 +41,6 @@ export function nodeCardWidth(node: NodeCard | undefined) {
 
 export function nodeCardHeight(node: NodeCard | undefined) {
   return boundedNumber(node?.ui?.height, NODE_CARD_DEFAULT_HEIGHT, NODE_CARD_MIN_HEIGHT, NODE_CARD_MAX_HEIGHT)
-}
-
-export function sanitizeBoardPoint(ui: { x: number; y: number; width?: number; height?: number }) {
-  const width = ui?.width == null ? undefined : Math.round(boundedNumber(ui.width, NODE_CARD_DEFAULT_WIDTH, NODE_CARD_MIN_WIDTH, NODE_CARD_MAX_WIDTH))
-  const height = ui?.height == null ? undefined : Math.round(boundedNumber(ui.height, NODE_CARD_DEFAULT_HEIGHT, NODE_CARD_MIN_HEIGHT, NODE_CARD_MAX_HEIGHT))
-  return {
-    x: clampX(Number(ui?.x ?? 0)),
-    y: Math.max(0, Number(ui?.y ?? 0)),
-    ...(width == null ? {} : { width }),
-    ...(height == null ? {} : { height }),
-  }
 }
 
 export function normalizePortCount(value: unknown, fallback = 1) {
@@ -71,26 +68,8 @@ export type ReasoningEffort = string
 
 export function normalizePasteAgentConfig(raw: PasteAgentConfig | null | undefined): PasteAgentConfig {
   const cfg = raw || ({} as PasteAgentConfig)
-  const toolsRaw = Array.isArray(cfg.tools) ? cfg.tools : []
-  const safeTools: string[] = []
-  const seen = new Set<string>()
-  for (const item of toolsRaw) {
-    const value = String(item || '').trim()
-    if (!value) continue
-    if (seen.has(value)) continue
-    seen.add(value)
-    safeTools.push(value)
-  }
   return {
-    agent_id: String(cfg.agent_id || 'pastagent').trim() || 'pastagent',
-    name: String(cfg.name || 'PasteAgent').trim() || 'PasteAgent',
-    provider_id: String(cfg.provider_id || '').trim(),
-    mode: String(cfg.mode || 'chat').trim() || 'chat',
-    web_search: normalizeSwitch(cfg.web_search, 'enabled'),
-    thinking: normalizeSwitch(cfg.thinking, 'enabled'),
-    reasoning_effort: (cfg as any).reasoning_effort ?? 'high',
-    system_prompt: String(cfg.system_prompt || ''),
-    tools: safeTools,
+    profile_id: String(cfg.profile_id || 'PasteAgent').trim() || 'PasteAgent',
   }
 }
 
@@ -137,7 +116,18 @@ export function normalizeProviderRequestTotals(value: unknown): ProviderRequestT
   }
 }
 
-export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: number; y: number; width?: number; height?: number }): NodeCard {
+export function normalizeOutputResources(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((part) => (
+    !!part
+    && typeof part === 'object'
+    && !Array.isArray(part)
+    && String((part as any).type || '') === 'resource'
+    && !!String((part as any)?.resource?.uri || '').trim()
+  )) as Record<string, unknown>[]
+}
+
+export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: NodeGridUi): NodeCard {
   const nodeId = String(cfg.node_id || '').trim()
   const typeId = String((cfg as any)?.type_id || '').trim()
   return {
@@ -148,6 +138,7 @@ export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: numbe
     outputNum: normalizePortCount((cfg as any)?.output_num, 1),
     ui,
     last_message: String((cfg as any)?.last_message ?? '') || null,
+    lastOutputResources: normalizeOutputResources((cfg as any)?.last_output_resources),
     lastRuntimeEvent: normalizeRuntimeEvent((cfg as any)?.last_runtime_event),
     runtimeEvents: normalizeRuntimeEvents((cfg as any)?.runtime_events),
     runtimeToolCalls: normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls),
@@ -169,7 +160,7 @@ export function createNodeCardFromConfig(cfg: NodeInstanceConfig, ui: { x: numbe
   }
 }
 
-export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, ui?: { x: number; y: number; width?: number; height?: number }) {
+export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, ui?: NodeGridUi) {
   const nodeId = String(cfg.node_id || node.id || '').trim()
   const typeId = String((cfg as any)?.type_id || '').trim()
   node.typeId = typeId || node.typeId || 'echo_node'
@@ -177,9 +168,9 @@ export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, u
   node.inputNum = normalizePortCount((cfg as any)?.input_num, node.inputNum || 1)
   node.outputNum = normalizePortCount((cfg as any)?.output_num, node.outputNum || 1)
   if (ui) {
-    const normalizedUi = sanitizeBoardPoint(ui)
-    node.ui.x = normalizedUi.x
-    node.ui.y = normalizedUi.y
+    const normalizedUi = sanitizeNodeGridUi(ui)
+    node.ui.grid_x = normalizedUi.grid_x
+    node.ui.grid_y = normalizedUi.grid_y
     if (normalizedUi.width != null) node.ui.width = normalizedUi.width
     if (normalizedUi.height != null) node.ui.height = normalizedUi.height
   }
@@ -201,10 +192,12 @@ export function applyNodeConfigToCard(node: NodeCard, cfg: NodeInstanceConfig, u
   node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
   node.providerRequestSummaries = normalizeProviderRequestSummaries((cfg as any)?.provider_request_summaries)
   node.providerRequestTotals = normalizeProviderRequestTotals((cfg as any)?.provider_request_totals)
+  node.lastOutputResources = normalizeOutputResources((cfg as any)?.last_output_resources)
 }
 
 export function applyNodeConfigOutputToCard(node: NodeCard, cfg: NodeInstanceConfig, out: string) {
   node.last_message = out
+  node.lastOutputResources = normalizeOutputResources((cfg as any)?.last_output_resources)
   node.lastRuntimeEvent = normalizeRuntimeEvent((cfg as any)?.last_runtime_event)
   node.runtimeEvents = normalizeRuntimeEvents((cfg as any)?.runtime_events)
   node.runtimeToolCalls = normalizeRuntimeToolCalls((cfg as any)?.runtime_tool_calls)
@@ -362,7 +355,7 @@ export function buildBoardGraphConfig(options: {
       name: node.name,
       input_num: normalizePortCount(node.inputNum, 1),
       output_num: normalizePortCount(node.outputNum, 1),
-      ui: sanitizeBoardPoint(node.ui),
+      ui: sanitizeNodeGridUi(node.ui),
       providerId: node.providerId,
       mode: node.mode,
       web_search: node.webSearch,
@@ -452,6 +445,7 @@ export function getNodePortPosition(options: {
   cardWidth: number
   cardHeight: number
   portRadius: number
+  grid: BoardGridSettings
 }) {
   const node = options.node
   if (!node) return null
@@ -463,10 +457,8 @@ export function getNodePortPosition(options: {
   const safeIndex = Math.min(Math.max(0, index), portCount - 1)
   const ratio = (safeIndex + 0.5) / portCount
   const offsetX = options.side === 'input' ? -options.portRadius : options.cardWidth + options.portRadius
-  return {
-    x: node.ui.x + offsetX,
-    y: node.ui.y + options.cardHeight * ratio,
-  }
+  const point = gridPositionToBoardPoint(node.ui, options.grid)
+  return { x: point.x + offsetX, y: point.y + options.cardHeight * ratio }
 }
 
 export function buildLinkPath(start: { x: number; y: number }, end: { x: number; y: number }) {

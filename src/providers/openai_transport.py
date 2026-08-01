@@ -240,6 +240,7 @@ class OpenAITransport(
                                 event.status_code,
                                 event.message,
                                 provider_code=event.code,
+                                response_event_type=event.event_type,
                             )
                         raise OpenAITransportError(event.message)
                     if isinstance(event, ResponsesResponseIncomplete):

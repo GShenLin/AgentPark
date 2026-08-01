@@ -16,11 +16,15 @@ import {
 } from './api'
 import PetContextMenu from './components/pet-avatar/PetContextMenu.vue'
 import PetAvatarRenderer from './components/pet-avatar/PetAvatarRenderer.vue'
+import ActionButton from './components/ActionButton.vue'
+import DangerButton from './components/DangerButton.vue'
+import DialogCloseButton from './components/DialogCloseButton.vue'
 import { handleMarkdownCodeCopyClick } from './components/markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './components/memoryMarkdown'
 import { usePetAvatarWindow } from './composables/usePetAvatarWindow'
 import { normalizePetPanelSize, usePetPanelResize } from './composables/usePetPanelResize'
 import { subscribeAppEvents } from './composables/useAppEventStream'
+import { classifyLiveStreamFrame } from './eventStreamProtocol'
 import {
   mergeMobileNodeRuntimeEvent,
   mergeMobileNodeSnapshot,
@@ -387,11 +391,11 @@ function syncStreams() {
       const payload = workspaceEvent.live as Record<string, unknown> | undefined
       if (!payload) return
       try {
-        const streamType = String(payload.stream_type || 'snapshot').trim().toLowerCase()
-        const version = Number(payload.version || 0)
         const previousVersion = Number(current.live?.version || 0)
-        if (version <= previousVersion) return
-        if (streamType === 'delta' && version !== previousVersion + 1) {
+        const decision = classifyLiveStreamFrame(payload, previousVersion)
+        const { streamType } = decision.frame
+        if (decision.status === 'stale') return
+        if (decision.status === 'gap') {
           void refreshView()
           return
         }
@@ -847,7 +851,7 @@ onBeforeUnmount(() => {
           <div class="pet-title">{{ node?.name || view?.node_id || 'Node' }}</div>
           <div class="pet-meta">{{ view?.graph_id || 'graph' }} / {{ view?.node_id || 'node' }}</div>
         </div>
-        <button class="pet-icon-button" type="button" title="Close" @click="hideView">x</button>
+        <DialogCloseButton class="pet-icon-button" aria-label="Close" @click="hideView" />
       </header>
       <div class="pet-status-row">
         <span class="pet-status" :class="statusClass"></span>
@@ -888,15 +892,15 @@ onBeforeUnmount(() => {
               <img :src="attachmentPreviewHref(file)" :alt="file.name" loading="lazy" />
             </a>
             <span class="pet-attachment-name" :title="file.path">{{ file.name || file.path }}</span>
-            <button type="button" class="pet-attachment-remove" :disabled="sending" @click="removeAttachedFile(index)">x</button>
+            <DangerButton class="pet-attachment-remove" icon compact :disabled="sending" aria-label="Remove attachment" @click="removeAttachedFile(index)">×</DangerButton>
           </div>
           <span v-if="uploadingFiles" class="pet-uploading">Uploading...</span>
         </div>
         <div class="pet-actions">
-          <button type="button" @click="refreshView">Refresh</button>
-          <button class="primary" type="submit" :disabled="!canSendMessage">
+          <ActionButton compact @click="refreshView">Refresh</ActionButton>
+          <ActionButton variant="primary" compact type="submit" :disabled="!canSendMessage">
             {{ sending ? 'Sending' : uploadingFiles ? 'Uploading' : 'Send' }}
-          </button>
+          </ActionButton>
         </div>
       </form>
       <div v-if="error" class="pet-error">{{ error }}</div>

@@ -128,7 +128,7 @@ def test_provider_limit_probe_automatically_tests_openai_chat_and_responses_chan
     assert not any("thinking" in payload for payload in responses_payloads)
 
 
-def test_provider_limit_probe_tests_deepseek_chat_completions_only(monkeypatch, tmp_path):
+def test_provider_limit_probe_tests_deepseek_chat_and_responses_contracts(monkeypatch, tmp_path):
     from src import workspace_settings
     from src.provider_limit_probe import run_provider_limit_tests
 
@@ -165,9 +165,16 @@ def test_provider_limit_probe_tests_deepseek_chat_completions_only(monkeypatch, 
     provider = result["providers"]["deepseek-demo"]
 
     assert provider["test_channel"] == "chat_completions"
-    assert set(provider["channels"]) == {"chat_completions"}
-    assert {url for url, _payload in observed} == {"https://api.deepseek.test/chat/completions"}
-    assert any(payload.get("thinking") == {"type": "disabled"} for _url, payload in observed)
+    assert set(provider["channels"]) == {"chat_completions", "responses"}
+    assert {url for url, _payload in observed} == {
+        "https://api.deepseek.test/chat/completions",
+        "https://api.deepseek.test/responses",
+    }
+    assert any(
+        url.endswith("/chat/completions") and payload.get("thinking") == {"type": "disabled"}
+        for url, payload in observed
+    )
+    assert any(url.endswith("/responses") and "input" in payload for url, payload in observed)
 
 
 def test_provider_limit_probe_tests_grok_chat_and_responses_contracts(monkeypatch, tmp_path):

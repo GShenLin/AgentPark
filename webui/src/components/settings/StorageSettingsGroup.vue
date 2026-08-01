@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 
 import { clearLogs } from '../../settingsApi'
+import DangerButton from '../DangerButton.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const props = defineProps<{
   memoriesPath: string
@@ -47,17 +49,17 @@ async function handleClearLogs() {
   <section class="settings-group storage-group">
     <div class="storage-heading">
       <h2>Storage</h2>
-      <button type="button" class="clear-logs" :disabled="clearing" @click="handleClearLogs">
+      <DangerButton :disabled="clearing" @click="handleClearLogs">
         {{ clearing ? 'Clearing...' : 'Clear Logs' }}
-      </button>
+      </DangerButton>
     </div>
     <div class="form-grid">
       <label>
         <span>Memories Directory</span>
-        <input
-          :value="memoriesPath"
+        <FormTextInput
+          :model-value="memoriesPath"
           placeholder="C:\\AgentPark\\memories"
-          @input="emit('update:memoriesPath', ($event.target as HTMLInputElement).value)"
+          @update:model-value="emit('update:memoriesPath', $event)"
         />
         <small>Saved locally in .cache/memoryLocalConfig.json.</small>
         <small>Only absolute paths take effect. Invalid values fall back to the project's memories directory after restart.</small>
@@ -117,31 +119,6 @@ label small {
 
 label small.pending-path {
   color: rgba(250, 204, 21, 0.92);
-}
-
-input {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 8px 9px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.5);
-  font: inherit;
-}
-
-.clear-logs {
-  flex: 0 0 auto;
-  border: 1px solid rgba(248, 113, 113, 0.42);
-  border-radius: 8px;
-  padding: 7px 12px;
-  color: rgba(254, 202, 202, 0.98);
-  background: rgba(127, 29, 29, 0.2);
-  cursor: pointer;
-}
-
-.clear-logs:hover:not(:disabled) {
-  border-color: rgba(248, 113, 113, 0.72);
-  background: rgba(153, 27, 27, 0.3);
 }
 
 .clear-logs:disabled {

@@ -7,6 +7,11 @@ import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
 import { useMemoryTurnEntries } from '../components/memoryFeedTools'
 import CliSessionPicker from '../components/CliSessionPicker.vue'
+import AppErrorToast from '../components/AppErrorToast.vue'
+import ActionButton from '../components/ActionButton.vue'
+import DangerButton from '../components/DangerButton.vue'
+import FormSelect from '../components/FormSelect.vue'
+import FormTextInput from '../components/FormTextInput.vue'
 import MobileLiveMessage from './MobileLiveMessage.vue'
 import MobileMemoryMessageCard from './MobileMemoryMessageCard.vue'
 import MobileNodeCreateDialog from './MobileNodeCreateDialog.vue'
@@ -644,7 +649,7 @@ onMounted(async () => {
       <div class="header-title">{{ headerTitle }}</div>
       <div class="header-actions">
         <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" aria-label="Open settings" @click="openSettings">Settings</button>
-        <button v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn danger" type="button" aria-label="Clear memory" @click="clearMemory">ClearMemory</button>
+        <DangerButton v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" aria-label="Clear memory" @click="clearMemory">ClearMemory</DangerButton>
         <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" aria-label="打开节点配置" @click="openConfig">配置</button>
         <button v-if="!settingsOpen" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" aria-label="Restart" @click="restartWorkspace">
           {{ isRestarting ? 'Restarting...' : 'Restart' }}
@@ -660,7 +665,11 @@ onMounted(async () => {
         @providers-updated="workspace.refreshEditorCatalog"
       />
       <template v-else>
-        <div v-if="workspace.error.value" class="mobile-error">{{ workspace.error.value }}</div>
+        <AppErrorToast
+          :message="workspace.error.value"
+          placement="mobile"
+          @dismiss="workspace.error.value = ''"
+        />
         <div v-if="workspace.loading.value" class="loading-line" role="status" aria-live="polite">Loading...</div>
 
         <section v-if="workspace.view.value === 'pcs'" class="mobile-list">
@@ -685,37 +694,36 @@ onMounted(async () => {
               </span>
               <span class="row-arrow">&gt;</span>
             </button>
-            <button v-if="canDeleteGraph(graph)" class="mobile-delete-btn" type="button" @click="deleteMobileGraph(graph)">Delete</button>
+            <DangerButton v-if="canDeleteGraph(graph)" @click="deleteMobileGraph(graph)">Delete</DangerButton>
           </div>
         </div>
         <form class="graph-save-panel" @submit.prevent="saveMobileGraph">
           <label class="graph-name-field">
             <span>GraphName</span>
-            <input v-model="graphNameInput" type="text" placeholder="NewGraph" />
+            <FormTextInput v-model="graphNameInput" placeholder="NewGraph" />
           </label>
-          <button class="primary-action-btn" type="submit" :disabled="graphSaving">
+          <ActionButton variant="primary" type="submit" :disabled="graphSaving">
             {{ graphSaving ? 'Saving...' : 'SaveGraph' }}
-          </button>
+          </ActionButton>
           <div v-if="graphStatus" class="graph-status">{{ graphStatus }}</div>
         </form>
         <section v-if="workspace.graphProfiles.value.length" class="graph-preset-panel">
           <label class="graph-name-field">
             <span>GraphPreset</span>
-            <select v-model="selectedGraphProfileId" class="graph-profile-select">
+            <FormSelect v-model="selectedGraphProfileId">
               <option value="">Profile</option>
               <option v-for="profile in workspace.graphProfiles.value" :key="profile.id" :value="profile.id">
                 {{ profile.name || profile.id }}
               </option>
-            </select>
+            </FormSelect>
           </label>
-          <button
-            class="primary-action-btn"
-            type="button"
+          <ActionButton
+            variant="primary"
             :disabled="!selectedGraphProfileId || graphProfileCreating"
             @click="createMobileGraphFromProfile"
           >
             {{ graphProfileCreating ? 'Creating...' : 'CreateFromProfile' }}
-          </button>
+          </ActionButton>
         </section>
       </section>
 
@@ -729,7 +737,7 @@ onMounted(async () => {
           @trigger="triggerMobileNode"
           @duplicate="duplicateMobileNode"
         />
-        <button v-if="canEditGraph(workspace.selectedGraph.value)" class="add-node-btn" type="button" @click="openCreateNode">Add Node</button>
+        <ActionButton v-if="canEditGraph(workspace.selectedGraph.value)" variant="primary" block class="add-node-btn" @click="openCreateNode">Add Node</ActionButton>
       </section>
 
       <section v-else class="chat-view">
@@ -784,10 +792,10 @@ onMounted(async () => {
 
         <form class="composer" @submit.prevent="sendDraft">
           <div class="composer-tools">
-            <button class="attach-btn" type="button" :disabled="uploadingFiles || composerLocked" @click="openFilePicker">
+            <ActionButton class="attach-btn" compact :disabled="uploadingFiles || composerLocked" @click="openFilePicker">
               {{ uploadingFiles ? '上传中...' : '添加图片或附件' }}
-            </button>
-            <button v-if="attachments.length > 0" class="clear-attachments-btn" type="button" :disabled="composerLocked" @click="clearAttachments">清空</button>
+            </ActionButton>
+            <DangerButton v-if="attachments.length > 0" class="clear-attachments-btn" compact :disabled="composerLocked" @click="clearAttachments">清空</DangerButton>
             <button
               v-if="audioInputEnabled"
               class="audio-record-btn"
@@ -809,27 +817,27 @@ onMounted(async () => {
             >
               Goal
             </button>
-            <button
+            <DangerButton
               v-if="selectedNodeRunning"
               class="stop-node-btn"
-              type="button"
+              compact
               :disabled="selectedNodeStopRequested"
               :title="selectedNodeStopRequested ? 'Stop requested' : 'Stop current node work'"
               @click="stopSelectedNode"
             >
               {{ selectedNodeStopRequested ? 'Stopping' : 'Stop' }}
-            </button>
+            </DangerButton>
             <input ref="fileInputRef" class="hidden-file-input" type="file" multiple @change="onFileSelected" />
           </div>
           <div v-if="attachments.length > 0" class="mobile-attachments">
             <span v-for="(file, index) in attachments" :key="file.path" class="mobile-attachment-chip">
               <span class="attachment-label">{{ file.name || file.path }}</span>
-              <button type="button" :disabled="composerLocked" aria-label="移除附件" @click="removeAttachment(index)">x</button>
+              <DangerButton icon compact :disabled="composerLocked" aria-label="移除附件" @click="removeAttachment(index)">×</DangerButton>
             </span>
           </div>
           <div class="composer-row">
             <textarea v-model="draft" rows="2" placeholder="输入消息" :disabled="composerLocked"></textarea>
-            <button type="submit" :disabled="!canSendDraft">{{ composerLocked ? '发送中...' : '发送' }}</button>
+            <ActionButton variant="primary" type="submit" :disabled="!canSendDraft">{{ composerLocked ? '发送中...' : '发送' }}</ActionButton>
           </div>
         </form>
         </section>
@@ -1034,17 +1042,6 @@ onMounted(async () => {
   min-width: 0;
 }
 
-.mobile-delete-btn {
-  flex: 0 0 68px;
-  min-height: 54px;
-  padding: 0 8px;
-  border-radius: 8px;
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(127, 29, 29, 0.3);
-  color: rgba(254, 226, 226, 0.96);
-  font-size: 12px;
-}
-
 .graph-save-panel {
   flex: 0 0 auto;
   display: grid;
@@ -1076,50 +1073,16 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-.graph-name-field input {
-  min-height: 38px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  color: rgba(248, 250, 252, 0.96);
-  background: rgba(15, 23, 42, 0.78);
-}
-
-.graph-profile-select {
-  min-height: 38px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  color: rgba(248, 250, 252, 0.96);
-  background: rgba(15, 23, 42, 0.78);
-}
-
-.primary-action-btn,
 .add-node-btn {
-  min-height: 38px;
-  border-radius: 8px;
-  border-color: rgba(56, 189, 248, 0.48);
-  background: rgba(14, 165, 233, 0.3);
-  color: rgba(224, 242, 254, 0.96);
-}
-
-.primary-action-btn {
-  align-self: end;
-  min-width: 96px;
-  padding: 0 12px;
+  flex: 0 0 auto;
+  min-height: 46px;
+  font-weight: 700;
 }
 
 .graph-status {
   grid-column: 1 / -1;
   color: rgba(148, 163, 184, 0.95);
   font-size: 12px;
-}
-
-.add-node-btn {
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 46px;
-  font-weight: 700;
 }
 
 .instance-head {
@@ -1411,11 +1374,8 @@ onMounted(async () => {
 
 .attach-btn,
 .goal-toggle-btn,
-.stop-node-btn,
-.clear-attachments-btn {
+.stop-node-btn {
   min-height: 34px;
-  border-radius: 8px;
-  padding: 0 10px;
   font-size: 13px;
 }
 
@@ -1444,15 +1404,10 @@ onMounted(async () => {
 
 .stop-node-btn {
   order: 3;
-  border-color: rgba(248, 113, 113, 0.42);
-  background: rgba(127, 29, 29, 0.34);
-  color: rgba(254, 226, 226, 0.98);
 }
 
 .clear-attachments-btn {
   order: 4;
-  border-color: rgba(248, 113, 113, 0.28);
-  background: rgba(127, 29, 29, 0.28);
 }
 
 .mobile-attachments {
@@ -1481,13 +1436,6 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.mobile-attachment-chip button {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 6px;
-}
-
 .composer textarea {
   width: 100%;
   resize: none;
@@ -1508,20 +1456,12 @@ onMounted(async () => {
   flex: 0 0 auto;
 }
 
-.mobile-error,
 .loading-line,
 .empty-chat {
   flex: 0 0 auto;
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 13px;
-}
-
-.mobile-error {
-  margin-bottom: 10px;
-  border: 1px solid rgba(248, 113, 113, 0.45);
-  background: rgba(127, 29, 29, 0.32);
-  color: rgba(254, 226, 226, 0.96);
 }
 
 .loading-line,

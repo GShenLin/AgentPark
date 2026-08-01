@@ -9,6 +9,10 @@ from .anthropic_oauth import refresh_authorization as refresh_anthropic
 from .store import get_account
 
 
+CODEX_ORIGINATOR = "codex_cli_rs"
+CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (Windows; x86_64) AgentPark"
+
+
 @dataclass(frozen=True)
 class ProviderRequestCredentials:
     base_url: str
@@ -44,6 +48,8 @@ def resolve_provider_request_credentials(config: dict, *, force_refresh: bool = 
             headers={
                 "Authorization": f"Bearer {credentials.access_token}",
                 "ChatGPT-Account-ID": credentials.account_id,
+                "originator": CODEX_ORIGINATOR,
+                "User-Agent": CODEX_USER_AGENT,
             },
         )
     if auth_mode == "oauth" and provider_id == "kimi":

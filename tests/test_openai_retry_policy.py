@@ -46,8 +46,18 @@ def test_retry_policy_separates_overload_budget_and_exponential_delay():
         }
     )
 
-    assert policy.retry_limit(provider_code="service_unavailable") == 2
-    assert policy.retry_limit(provider_code="server_is_overloaded") == 8
+    assert policy.retry_limit(
+        scope="request",
+        provider_code="service_unavailable",
+    ) == 2
+    assert policy.retry_limit(
+        scope="stream",
+        provider_code="service_unavailable",
+    ) == 2
+    assert policy.retry_limit(
+        scope="stream",
+        provider_code="server_is_overloaded",
+    ) == 8
     assert [
         policy.delay_seconds(attempt=attempt, error_text="", jitter=1.0)
         for attempt in range(1, 5)
@@ -81,7 +91,7 @@ def test_retry_state_keeps_general_and_overload_attempts_independent():
     policy = OpenAIRetryPolicy.from_config(
         {"maxRetries": 1, "overloadMaxRetries": 2}
     )
-    state = OpenAIRetryState(policy)
+    state = OpenAIRetryState(policy, scope="stream")
 
     general = state.next_retry(provider_code="service_unavailable")
     overload_one = state.next_retry(provider_code="server_is_overloaded")
@@ -107,6 +117,8 @@ def test_retry_state_keeps_general_and_overload_attempts_independent():
         ("temporarily_unavailable", True),
         ("server_is_overloaded", True),
         ("slow_down", True),
+        ("previous_response_not_found", True),
+        ("websocket_connection_limit_reached", True),
         ("invalid_request_error", False),
         ("server_error in prose", False),
         ("", False),

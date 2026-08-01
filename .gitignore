@@ -63,3 +63,4 @@ benchmarks/
 tmp/
 config/events.json
 .auth/
+.agents/

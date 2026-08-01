@@ -4,19 +4,7 @@ import ntpath
 import posixpath
 from dataclasses import dataclass
 
-
-REMOTE_WORKSPACE_TOOL_NAMES = frozenset(
-    {
-        "cancer_control",
-        "execute_console_command",
-        "ue_remote_control",
-        "read_file",
-        "write_file",
-        "rg_search_text",
-        "rg_list_files",
-        "apply_patch",
-    }
-)
+from .capabilities import REMOTE_WORKSPACE_TOOL_NAMES
 
 
 @dataclass(frozen=True)

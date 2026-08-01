@@ -153,7 +153,7 @@ def test_management_voice_clone_uses_api_key_and_validates_audio(monkeypatch):
 def test_agent_schema_merges_provider_speaker_suggestions(monkeypatch):
     from nodes.agent_node_schema import build_agent_config_schema
 
-    monkeypatch.setattr("nodes.agent_node_schema.ConfigLoader.get_all_providers", lambda *_args: {
+    monkeypatch.setattr("nodes.agent_node_schema.ConfigLoader.get_provider_catalog", lambda *_args: {
             "doubao": {
                 "supportmode": ["audio_generation"],
         },

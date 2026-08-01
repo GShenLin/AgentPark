@@ -12,6 +12,7 @@ from .shared import (
     HTTPException,
     _read_json_dict,
     _set_node_config_last_message,
+    _set_node_config_last_output,
     _touch_node_config_last_run_at,
     _transition_node_config_to_idle,
     _update_node_config_state,
@@ -122,7 +123,11 @@ class NodeAsyncRuns(HostBoundService):
                         output_full = envelope_text(run.get("output_message")).strip() or str(run.get("output") or "").strip()
                         if not output_full:
                             output_full = envelope_text(run.get("input")).strip() or envelope_preview(run.get("input"))
-                        _set_node_config_last_message(cfg_path, output_full)
+                        _set_node_config_last_output(
+                            cfg_path,
+                            output_full,
+                            run.get("output_message"),
+                        )
                         _touch_node_config_last_run_at(cfg_path)
                 try:
                     run["process"].join(timeout=0.1)

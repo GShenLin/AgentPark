@@ -21,20 +21,6 @@
   gap: 8px;
 }
 
-.anim-create input,
-.anim-row input,
-.anim-row select {
-  min-height: 32px;
-  width: 100%;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 6px 9px;
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  font: inherit;
-  font-size: 12px;
-}
-
 .anim-avatar-list {
   min-height: 0;
   overflow: auto;
@@ -122,11 +108,6 @@
   align-items: center;
   gap: 7px;
   padding-bottom: 7px;
-}
-
-.anim-check input {
-  width: auto;
-  min-height: auto;
 }
 
 .anim-workspace {
@@ -278,6 +259,14 @@
 .file-btn {
   display: inline-flex;
   align-items: center;
+  min-height: 32px;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-button-border, var(--border-subtle));
+  border-radius: var(--ui-control-radius, 8px);
+  padding: 0 10px;
+  color: var(--ui-button-text, var(--text-primary));
+  background: var(--ui-button-background, var(--bg-secondary));
+  font-size: 12px;
 }
 
 .anim-test-panel {

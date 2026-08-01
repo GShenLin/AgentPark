@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { PetAvatarSummary } from '../../api'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
 
 defineProps<{
   left: number
@@ -19,9 +21,9 @@ const emit = defineEmits<{
 
 <template>
   <section class="pet-context-menu" :style="{ left: `${left}px`, top: `${top}px` }" @pointerdown.stop @contextmenu.prevent.stop>
-    <button class="pet-context-item" type="button" @click="emit('openMainPage')">OpenMainPage</button>
-    <button class="pet-context-item danger" type="button" @click="emit('close')">Close</button>
-    <button class="pet-context-item danger" type="button" @click="emit('closeAll')">CloseAll</button>
+    <ActionButton class="pet-context-item" variant="menu" @click="emit('openMainPage')">OpenMainPage</ActionButton>
+    <DangerButton class="pet-context-item" variant="menu" @click="emit('close')">Close</DangerButton>
+    <DangerButton class="pet-context-item" variant="menu" @click="emit('closeAll')">CloseAll</DangerButton>
     <div class="pet-context-section">ChangeAvatar</div>
     <div v-if="loading" class="pet-context-empty">Loading</div>
     <button

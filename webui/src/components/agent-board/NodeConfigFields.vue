@@ -28,14 +28,21 @@ import {
 } from '../../composables/nodeSchemaFields'
 import FieldMultiSelect from './FieldMultiSelect.vue'
 import FieldCombobox from './FieldCombobox.vue'
+import FieldColorPicker from './FieldColorPicker.vue'
 import FieldFileListPicker from './FieldFileListPicker.vue'
 import FieldImageDimensions from './FieldImageDimensions.vue'
 import {
   createNodeConfigFieldSections,
   type NodeConfigFieldSection,
 } from './nodeConfigFieldGroups'
+import ActionButton from '../ActionButton.vue'
 import ExpandableTextarea from '../ExpandableTextarea.vue'
+import FormCheckbox from '../FormCheckbox.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
+import ProviderSelect from '../ProviderSelect.vue'
 import WorkingPathField from './WorkingPathField.vue'
+import RuntimePolicySelect from './RuntimePolicySelect.vue'
 
 type NodeFields = Record<string, any>
 
@@ -73,7 +80,12 @@ const promptLibraryMode = ref<'' | 'save' | 'load'>('')
 const promptLibraryField = ref('')
 const promptLibraryFiles = ref<string[]>([])
 const promptSaveFilename = ref('system_prompt.txt')
-const schemaKeys = computed(() => Object.keys(props.schema || {}).filter((key) => shouldShowField(key)))
+const hasRuntimePolicyField = computed(() => (
+  props.typeId === 'agent_node' && Boolean(props.schema?.runtime_policy)
+))
+const schemaKeys = computed(() => Object.keys(props.schema || {}).filter((key) => (
+  shouldShowField(key) && !(hasRuntimePolicyField.value && key === 'runtime_policy')
+)))
 const providerOptions = computed(() => dedupeStrings(
   props.providers
     .filter((provider) => {
@@ -314,11 +326,11 @@ function getFieldType(key: string) {
 }
 
 function getFieldContainerTag(key: string) {
-  return getFieldType(key) === 'image_dimensions' ? 'div' : 'label'
+  return ['color', 'image_dimensions'].includes(getFieldType(key)) ? 'div' : 'label'
 }
 
-function getInputType(key: string) {
-  return getSchemaInputType(props.schema, key)
+function getInputType(key: string): 'text' | 'number' {
+  return getSchemaInputType(props.schema, key) === 'number' ? 'number' : 'text'
 }
 
 function isCheckedValue(value: unknown) {
@@ -495,32 +507,31 @@ watch(
           <span class="field-head" :class="{ 'field-head-search': isDropdownMultiSelectField(key) }">
             <span class="field-label">{{ getFieldLabel(key) }}</span>
             <span v-if="isPromptLibraryField(key)" class="field-prompt-actions">
-              <button
-                class="field-prompt-btn field-prompt-save"
-                type="button"
+              <ActionButton
+                compact
                 :disabled="!!promptActionBusy"
                 @click.prevent.stop="openPromptLibraryForField('save', key)"
               >
                 Save
-              </button>
-              <button
-                class="field-prompt-btn field-prompt-load"
-                type="button"
+              </ActionButton>
+              <ActionButton
+                compact
                 :disabled="!!promptActionBusy"
                 @click.prevent.stop="openPromptLibraryForField('load', key)"
               >
                 {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
-              </button>
+              </ActionButton>
             </span>
-            <input
+            <FormTextInput
               v-if="isDropdownMultiSelectField(key)"
               class="field-search-input"
               type="search"
+              compact
               :placeholder="getMultiSelectSearchPlaceholder(key)"
-              :value="getMultiSelectSearchQuery(key)"
+              :model-value="getMultiSelectSearchQuery(key)"
               @click.stop
               @keydown.stop
-              @input="setMultiSelectSearchQuery(key, ($event.target as HTMLInputElement).value)"
+              @update:model-value="setMultiSelectSearchQuery(key, $event)"
             />
           </span>
 
@@ -533,51 +544,48 @@ watch(
         @update-value="setField(key, $event)"
       />
 
-      <select
+      <ProviderSelect
         v-else-if="isProviderField(key)"
         class="field-input"
-        :value="String(fields.provider_id ?? '')"
+        :model-value="String(fields.provider_id ?? '')"
+        :providers="providers"
+        :option-ids="providerOptions"
         :disabled="providerOptions.length === 0"
-        @change="setProvider(($event.target as HTMLSelectElement).value)"
-      >
-        <option value="" disabled>Select provider</option>
-        <option v-for="providerId in providerOptions" :key="providerId" :value="providerId">
-          {{ providerId }}
-        </option>
-      </select>
+        @change="setProvider($event)"
+      />
 
-      <select
+      <FormSelect
         v-else-if="isWebSearchField(key)"
         class="field-input"
-        :value="normalizeSwitch(fields.web_search, 'disabled')"
-        @change="setField('web_search', normalizeSwitch(($event.target as HTMLSelectElement).value, 'disabled'))"
+        :model-value="normalizeSwitch(fields.web_search, 'disabled')"
+        @change="setField('web_search', normalizeSwitch($event, 'disabled'))"
       >
         <option v-for="option in switchOptions" :key="`web-${option.value}`" :value="option.value">
           {{ option.label }}
         </option>
-      </select>
+      </FormSelect>
 
-      <select
+      <FormSelect
         v-else-if="isThinkingField(key)"
         class="field-input"
-        :value="normalizeSwitch(fields.thinking, 'disabled')"
-        @change="setField('thinking', normalizeSwitch(($event.target as HTMLSelectElement).value, 'disabled'))"
+        :model-value="normalizeSwitch(fields.thinking, 'disabled')"
+        @change="setField('thinking', normalizeSwitch($event, 'disabled'))"
       >
         <option v-for="option in switchOptions" :key="`thinking-${option.value}`" :value="option.value">
           {{ option.label }}
         </option>
-      </select>
+      </FormSelect>
 
-      <select
+      <FormSelect
         v-else-if="isReasoningEffortField(key)"
         class="field-input"
-        :value="getReasoningEffortValue()"
-        @change="setField('reasoning_effort', ($event.target as HTMLSelectElement).value)"
+        :model-value="getReasoningEffortValue()"
+        @change="setField('reasoning_effort', $event)"
       >
         <option v-for="option in getReasoningEffortOptions()" :key="`reasoning-${option.value}`" :value="option.value">
           {{ option.label }}
         </option>
-      </select>
+      </FormSelect>
 
       <FieldMultiSelect
         v-else-if="isDropdownMultiSelectField(key)"
@@ -600,16 +608,16 @@ watch(
         @update-aspect-ratio="setField('image_aspect_ratio', $event)"
       />
 
-      <select
+      <FormSelect
         v-else-if="isSelectField(key)"
         class="field-input"
-        :value="String(fields[key] ?? '')"
-        @change="setField(key, ($event.target as HTMLSelectElement).value)"
+        :model-value="String(fields[key] ?? '')"
+        @change="setField(key, $event)"
       >
         <option v-for="option in getFieldOptions(key)" :key="`option-${key}-${option.value}`" :value="option.value">
           {{ option.label }}
         </option>
-      </select>
+      </FormSelect>
 
       <WorkingPathField
         v-else-if="isWorkingPathField(key)"
@@ -621,6 +629,14 @@ watch(
         @update-remote="setField('remote_enabled', $event)"
         @update-worker="setField('remote_worker_id', $event)"
         @error="emit('field-error', $event)"
+      />
+
+      <FieldColorPicker
+        v-else-if="getFieldType(key) === 'color'"
+        :value="String(fields[key] ?? '')"
+        :default-color="String(schema[key]?.default_color || '#FFFFFF')"
+        :auto-label="String(schema[key]?.auto_label || 'Auto')"
+        @update-value="setField(key, $event)"
       />
 
       <FieldFileListPicker
@@ -644,21 +660,20 @@ watch(
         @drop="enableAssetDrop ? emit('field-drop', key, $event) : undefined"
       />
 
-      <input
+      <FormCheckbox
         v-else-if="getFieldType(key) === 'boolean'"
         class="field-checkbox"
-        type="checkbox"
-        :checked="isCheckedValue(fields[key])"
-        @change="setField(key, ($event.target as HTMLInputElement).checked)"
+        :model-value="isCheckedValue(fields[key])"
+        @update:model-value="setField(key, $event)"
       />
 
-      <input
+      <FormTextInput
         v-else
         class="field-input"
         :type="getInputType(key)"
         v-bind="getInputAttrs(key)"
-        :value="String(fields[key] ?? '')"
-        @input="setField(key, ($event.target as HTMLInputElement).value)"
+        :model-value="String(fields[key] ?? '')"
+        @update:model-value="setField(key, $event)"
         @dragover="enableAssetDrop ? emit('field-dragover', key, $event) : undefined"
         @dragleave="enableAssetDrop ? emit('field-dragleave', key, $event) : undefined"
         @drop="enableAssetDrop ? emit('field-drop', key, $event) : undefined"
@@ -666,48 +681,49 @@ watch(
 
       <div v-if="isPromptLibraryOpen(key)" class="field-prompt-library" @click.stop @keydown.stop>
         <template v-if="promptLibraryMode === 'save'">
-          <select
+          <FormSelect
             v-if="promptLibraryFiles.length"
             class="field-input field-prompt-name field-prompt-select"
-            :value="promptLibrarySelectValue()"
-            @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+            :model-value="promptLibrarySelectValue()"
+            @change="selectPromptLibraryFile"
           >
             <option value="" disabled>Select saved prompt</option>
             <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
-          </select>
-          <input
+          </FormSelect>
+          <FormTextInput
             v-model="promptSaveFilename"
             class="field-input field-prompt-name field-prompt-custom-name"
-            type="text"
             :placeholder="defaultPromptFilename(key)"
           />
-          <button
-            class="field-prompt-btn field-prompt-confirm field-prompt-save"
-            type="button"
+          <ActionButton
+            class="field-prompt-confirm"
+            variant="primary"
+            compact
             :disabled="!!promptActionBusy"
             @click.prevent.stop="saveSystemPrompt(key)"
           >
             {{ promptActionBusy === 'save' ? 'Saving...' : 'Save' }}
-          </button>
+          </ActionButton>
         </template>
         <template v-else>
-          <select
+          <FormSelect
             v-if="promptLibraryFiles.length"
             class="field-input field-prompt-name"
-            :value="promptLibrarySelectValue()"
-            @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+            :model-value="promptLibrarySelectValue()"
+            @change="selectPromptLibraryFile"
           >
             <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
-          </select>
+          </FormSelect>
           <span v-else class="field-prompt-empty">No saved prompts found.</span>
-          <button
-            class="field-prompt-btn field-prompt-confirm field-prompt-load"
-            type="button"
+          <ActionButton
+            class="field-prompt-confirm"
+            variant="primary"
+            compact
             :disabled="!!promptActionBusy || !promptLibraryFiles.length"
             @click.prevent.stop="loadSystemPrompt(key)"
           >
             {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
-          </button>
+          </ActionButton>
         </template>
       </div>
 
@@ -717,6 +733,13 @@ watch(
         </component>
       </div>
     </component>
+
+    <RuntimePolicySelect
+      v-if="hasRuntimePolicyField"
+      :value="fields.runtime_policy"
+      @update-value="setField('runtime_policy', $event)"
+      @error="emit('field-error', $event)"
+    />
   </div>
 </template>
 
@@ -729,6 +752,10 @@ watch(
 
 .node-config-fields {
   gap: 12px;
+  --form-control-border: var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
+  --form-control-background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
+  --form-control-text: var(--theme-panel-node-side-editor-input-text, #f8fafc);
+  --form-control-focus: var(--theme-panel-node-side-editor-input-focus-border, rgba(56, 189, 248, 0.7));
 }
 
 .config-field-ungrouped,
@@ -819,22 +846,6 @@ watch(
   flex: 0 1 150px;
   min-width: 96px;
   max-width: 56%;
-  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
-  border-radius: 8px;
-  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
-  color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
-  padding: 6px 8px;
-  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
-  line-height: 1.2;
-  outline: none;
-}
-
-.field-search-input:focus {
-  border-color: rgba(56, 189, 248, 0.7);
-}
-
-.field-search-input::placeholder {
-  color: rgba(148, 163, 184, 0.74);
 }
 
 .field-prompt-actions {
@@ -842,45 +853,6 @@ watch(
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-}
-
-.field-prompt-btn {
-  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.28));
-  border-radius: 8px;
-  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.92));
-  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
-  cursor: pointer;
-  font-size: 11px;
-  line-height: 1.2;
-  min-width: 42px;
-  padding: 5px 8px;
-}
-
-.field-prompt-save {
-  border-color: rgba(34, 197, 94, 0.46);
-  background: rgba(22, 101, 52, 0.36);
-  color: #bbf7d0;
-}
-
-.field-prompt-load {
-  border-color: rgba(59, 130, 246, 0.48);
-  background: rgba(30, 64, 175, 0.34);
-  color: #bfdbfe;
-}
-
-.field-prompt-save:hover:not(:disabled) {
-  border-color: rgba(74, 222, 128, 0.68);
-  background: rgba(22, 163, 74, 0.42);
-}
-
-.field-prompt-load:hover:not(:disabled) {
-  border-color: rgba(96, 165, 250, 0.72);
-  background: rgba(37, 99, 235, 0.42);
-}
-
-.field-prompt-btn:disabled {
-  cursor: default;
-  opacity: 0.58;
 }
 
 .field-prompt-library {
@@ -894,8 +866,6 @@ watch(
 .field-prompt-name {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 8px 10px;
-  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
 }
 
 .field-prompt-select,
@@ -918,26 +888,6 @@ watch(
   font-size: 12px;
   line-height: 1.2;
   padding: 9px 10px;
-}
-
-.field-input {
-  width: 100%;
-  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
-  border-radius: 10px;
-  background: var(--theme-panel-node-side-editor-input-background, rgba(15, 23, 42, 0.88));
-  color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
-  padding: 10px 12px;
-  font-size: var(--theme-panel-node-side-editor-input-font-size, 13px);
-  outline: none;
-}
-
-.field-input:focus {
-  border-color: var(--theme-panel-node-side-editor-input-focus-border, rgba(56, 189, 248, 0.7));
-}
-
-.field-checkbox {
-  width: 16px;
-  height: 16px;
 }
 
 .field-hint,

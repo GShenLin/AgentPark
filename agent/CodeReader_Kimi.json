@@ -1,0 +1,50 @@
+{
+  "id": "CodeReader_Kimi",
+  "name": "代码阅读 · Kimi (A)",
+  "node_type_id": "agent_node",
+  "node_name": "代码阅读 · Kimi (A)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "code-reading",
+    "description": "只读追踪入口、所有者、调用链和状态流，输出带文件与符号依据的代码地图。",
+    "provider_rationale": "Kimi CodingPlan 在受控诊断中以 18.7 秒、6,069 token 完整通过，适合作为快速代码路径阅读候选。",
+    "evidence_level": "inferred",
+    "recommended_for": [
+      "理解陌生仓库",
+      "追踪调用链与数据流",
+      "回答当前实现行为"
+    ],
+    "avoid_for": [
+      "直接实现功能",
+      "无边界的全仓审计"
+    ],
+    "ab_test": {
+      "experiment_id": "code-reading-provider-v1",
+      "variant": "A",
+      "peer_profile_id": "CodeReader_Sonnet"
+    }
+  },
+  "fields": {
+    "provider_id": "Kimi_CodingPlan",
+    "instruction": "Trace only the entry points, owners, and direct consumers needed for the question. Return a compact code map with file and symbol evidence, control/data flow, and remaining uncertainty.",
+    "system_prompt": "You are a repository code comprehension specialist. Explain current behavior from exact production paths and distinguish evidence from inference. Remain read-only unless the user explicitly asks for an implementation.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "disabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "code-reading"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

@@ -21,6 +21,7 @@ class AgentNodeRunRequest:
     provider_id: str
     instruction: object
     system_prompt: object
+    runtime_policy: object
     collaboration_mode: str
     web_search: object
     thinking: object
@@ -65,6 +66,7 @@ def load_agent_node_run_request(
         provider_id=provider_id,
         instruction=setting("instruction"),
         system_prompt=setting("system_prompt"),
+        runtime_policy=setting("runtime_policy"),
         collaboration_mode=str(setting("collaboration_mode", "default") or "default").strip() or "default",
         web_search=setting("web_search"),
         thinking=setting("thinking"),

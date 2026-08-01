@@ -3,6 +3,7 @@ import { computed, inject, onBeforeUnmount, ref, watchEffect } from 'vue'
 import { AgentBoardKey, type NodeCard } from './context'
 import NodeOutputRoutesSection from './NodeOutputRoutesSection.vue'
 import { NODE_CARD_DEFAULT_WIDTH, nodeCardHeight, nodeCardWidth } from './boardModel'
+import { gridPositionToBoardPoint } from './boardGrid'
 
 const props = defineProps<{
   node: NodeCard
@@ -38,12 +39,13 @@ const effectivePanelWidth = computed(() => Math.max(panelSize.value.width, nodeW
 
 const panelPosition = computed(() => {
   const node = panelNode.value
+  const point = gridPositionToBoardPoint(node.ui, ctx.gridSettings.value)
   const width = effectivePanelWidth.value
-  const desiredLeft = node.ui.x + nodeWidth.value / 2 - width / 2
+  const desiredLeft = point.x + nodeWidth.value / 2 - width / 2
   const maxLeft = Math.max(0, ctx.canvasWidth.value - width - CANVAS_PADDING / 2)
   return {
     left: Math.max(0, Math.min(maxLeft, desiredLeft)),
-    top: node.ui.y + nodeHeight.value + PANEL_GAP,
+    top: point.y + nodeHeight.value + PANEL_GAP,
   }
 })
 
@@ -55,7 +57,8 @@ const panelStyle = computed(() => ({
 
 watchEffect(() => {
   const node = panelNode.value
-  const right = Math.max(node.ui.x + nodeWidth.value, panelPosition.value.left + effectivePanelWidth.value)
+  const point = gridPositionToBoardPoint(node.ui, ctx.gridSettings.value)
+  const right = Math.max(point.x + nodeWidth.value, panelPosition.value.left + effectivePanelWidth.value)
   const bottom = panelPosition.value.top + measuredPanelHeight.value
   ctx.canvasWidth.value = Math.max(ctx.canvasWidth.value, Math.ceil(right + CANVAS_PADDING))
   ctx.canvasHeight.value = Math.max(ctx.canvasHeight.value, Math.ceil(bottom + CANVAS_PADDING))

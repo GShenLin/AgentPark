@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { CliSessionSummary } from '../api'
+import ActionButton from './ActionButton.vue'
 
 const props = defineProps<{
   sessions: CliSessionSummary[]
@@ -80,9 +81,9 @@ watch(
     <div v-if="open" class="cli-session-menu">
       <div class="cli-session-menu-head">
         <span>Resume Session</span>
-        <button type="button" :disabled="loading" @click.stop="emit('refresh')">
+        <ActionButton compact :disabled="loading" @click.stop="emit('refresh')">
           {{ loading ? 'Loading…' : 'Refresh' }}
-        </button>
+        </ActionButton>
       </div>
 
       <button

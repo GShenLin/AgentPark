@@ -2,6 +2,11 @@
 import { computed, ref } from 'vue'
 import { getPrompt, listPrompts, savePrompt, type ProviderInfo } from '../../api'
 import { providerReasoningEffortOptions } from '../../composables/useAgentNodeCreateSchema'
+import ActionButton from '../ActionButton.vue'
+import ExpandableTextarea from '../ExpandableTextarea.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
+import ProviderSelect from '../ProviderSelect.vue'
 import CompanionCapabilitySelect, { type CompanionCapabilityOption } from './CompanionCapabilitySelect.vue'
 
 const props = defineProps<{
@@ -176,107 +181,117 @@ async function loadSystemPrompt() {
       <div class="form-grid">
         <label>
           <span>Provider</span>
-          <select :value="stringValue('provider_id')" @change="setField('provider_id', ($event.target as HTMLSelectElement).value)">
-            <option value="">Unset</option>
-            <option v-for="providerId in providerOptions" :key="providerId" :value="providerId">{{ providerId }}</option>
-          </select>
+          <ProviderSelect
+            :model-value="stringValue('provider_id')"
+            :providers="providers"
+            :option-ids="providerOptions"
+            placeholder="Unset"
+            @change="setField('provider_id', $event)"
+          />
         </label>
         <label>
           <span>Mode</span>
-          <select :value="stringValue('mode') || 'chat'" @change="setField('mode', ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="stringValue('mode') || 'chat'" @change="setField('mode', $event)">
             <option v-for="mode in modeOptions" :key="mode" :value="mode">{{ mode }}</option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           <span>Web Search</span>
-          <select :value="stringValue('web_search') || 'disabled'" @change="setField('web_search', ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="stringValue('web_search') || 'disabled'" @change="setField('web_search', $event)">
             <option v-for="option in switchOptions" :key="option" :value="option">{{ option }}</option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           <span>Thinking</span>
-          <select :value="stringValue('thinking') || 'disabled'" @change="setField('thinking', ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="stringValue('thinking') || 'disabled'" @change="setField('thinking', $event)">
             <option v-for="option in switchOptions" :key="option" :value="option">{{ option }}</option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           <span>Reasoning Effort</span>
-          <select :value="stringValue('reasoning_effort')" @change="setField('reasoning_effort', ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="stringValue('reasoning_effort')" @change="setField('reasoning_effort', $event)">
             <option v-for="option in reasoningEffortOptions" :key="option.value || 'unset'" :value="option.value">{{ option.label }}</option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           <span>Working Path</span>
-          <input :value="stringValue('working_path')" @input="setField('working_path', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="stringValue('working_path')" @update:model-value="setField('working_path', $event)" />
         </label>
       </div>
       <label class="wide-field">
         <span class="field-head">
           <span>System Prompt</span>
           <span class="field-prompt-actions">
-            <button
-              class="field-prompt-btn field-prompt-save"
-              type="button"
+            <ActionButton
+              compact
               :disabled="!!promptActionBusy"
               @click.prevent.stop="openPromptLibrary('save')"
             >
               Save
-            </button>
-            <button
-              class="field-prompt-btn field-prompt-load"
-              type="button"
+            </ActionButton>
+            <ActionButton
+              compact
               :disabled="!!promptActionBusy"
               @click.prevent.stop="openPromptLibrary('load')"
             >
               {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
-            </button>
+            </ActionButton>
           </span>
         </span>
-        <textarea :value="stringValue('system_prompt')" rows="5" @input="setField('system_prompt', ($event.target as HTMLTextAreaElement).value)"></textarea>
+        <ExpandableTextarea
+          :model-value="stringValue('system_prompt')"
+          title="System Prompt"
+          aria-label="System Prompt"
+          :rows="5"
+          min-height="98px"
+          @update:model-value="setField('system_prompt', $event)"
+        />
         <div v-if="promptLibraryMode" class="field-prompt-library" @click.stop @keydown.stop>
           <template v-if="promptLibraryMode === 'save'">
-            <select
+            <FormSelect
               v-if="promptLibraryFiles.length"
               class="field-prompt-name field-prompt-select"
-              :value="promptLibrarySelectValue()"
-              @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+              :model-value="promptLibrarySelectValue()"
+              @change="selectPromptLibraryFile($event)"
             >
               <option value="" disabled>Select saved prompt</option>
               <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
-            </select>
-            <input
+            </FormSelect>
+            <FormTextInput
               v-model="promptSaveFilename"
               class="field-prompt-name field-prompt-custom-name"
               type="text"
               placeholder="system_prompt.txt"
             />
-            <button
-              class="field-prompt-btn field-prompt-confirm field-prompt-save"
-              type="button"
+            <ActionButton
+              class="field-prompt-confirm"
+              variant="primary"
+              compact
               :disabled="!!promptActionBusy"
               @click.prevent.stop="saveSystemPrompt"
             >
               {{ promptActionBusy === 'save' ? 'Saving...' : 'Save' }}
-            </button>
+            </ActionButton>
           </template>
           <template v-else>
-            <select
+            <FormSelect
               v-if="promptLibraryFiles.length"
               class="field-prompt-name"
-              :value="promptLibrarySelectValue()"
-              @change="selectPromptLibraryFile(($event.target as HTMLSelectElement).value)"
+              :model-value="promptLibrarySelectValue()"
+              @change="selectPromptLibraryFile($event)"
             >
               <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
-            </select>
+            </FormSelect>
             <span v-else class="field-prompt-empty">No saved prompts found.</span>
-            <button
-              class="field-prompt-btn field-prompt-confirm field-prompt-load"
-              type="button"
+            <ActionButton
+              class="field-prompt-confirm"
+              variant="primary"
+              compact
               :disabled="!!promptActionBusy || !promptLibraryFiles.length"
               @click.prevent.stop="loadSystemPrompt"
             >
               {{ promptActionBusy === 'load' ? 'Loading...' : 'Load' }}
-            </button>
+            </ActionButton>
           </template>
         </div>
         <span v-if="promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
@@ -380,45 +395,6 @@ label {
   flex: 0 0 auto;
 }
 
-.field-prompt-btn {
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #f8fafc;
-  cursor: pointer;
-  font-size: 11px;
-  line-height: 1.2;
-  min-width: 42px;
-  padding: 5px 8px;
-}
-
-.field-prompt-save {
-  border-color: rgba(34, 197, 94, 0.46);
-  background: rgba(22, 101, 52, 0.36);
-  color: #bbf7d0;
-}
-
-.field-prompt-load {
-  border-color: rgba(59, 130, 246, 0.48);
-  background: rgba(30, 64, 175, 0.34);
-  color: #bfdbfe;
-}
-
-.field-prompt-save:hover:not(:disabled) {
-  border-color: rgba(74, 222, 128, 0.68);
-  background: rgba(22, 163, 74, 0.42);
-}
-
-.field-prompt-load:hover:not(:disabled) {
-  border-color: rgba(96, 165, 250, 0.72);
-  background: rgba(37, 99, 235, 0.42);
-}
-
-.field-prompt-btn:disabled {
-  cursor: default;
-  opacity: 0.58;
-}
-
 .field-prompt-library {
   display: flex;
   align-items: center;
@@ -458,23 +434,6 @@ label {
   font-size: 11px;
   color: #99f6e4;
   line-height: 1.35;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 8px 9px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.5);
-  font: inherit;
-}
-
-textarea {
-  resize: vertical;
-  min-height: 98px;
 }
 
 @media (max-width: 1120px) {

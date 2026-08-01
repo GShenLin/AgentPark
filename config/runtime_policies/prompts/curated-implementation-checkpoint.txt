@@ -1,0 +1,4 @@
+The evidence budget for this implementation phase has been reached. State the owning
+boundary and patch it now. If one fact still blocks a safe edit, name that exact fact,
+perform only the narrow query that can resolve it, then patch. Do not restart broad
+exploration or repeat evidence already collected.

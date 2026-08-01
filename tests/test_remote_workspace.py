@@ -7,6 +7,7 @@ import pytest
 import src.remote_workspace.client as remote_client
 from src.runtime_cancellation import CancellationSignal
 from src.remote_workspace.broker import PROTOCOL_VERSION, RemoteWorkspaceBroker
+from src.remote_workspace.capabilities import STANDALONE_REMOTE_CAPABILITIES
 from src.remote_workspace.routing import REMOTE_WORKSPACE_TOOL_NAMES, remote_workspace_target
 
 
@@ -19,7 +20,7 @@ def _register(broker: RemoteWorkspaceBroker, *, source_ip: str = "10.0.0.8", wor
             "display_name": "Alice-PC",
             "host_kind": "standalone",
             "workspace_path": r"D:\Projects\Game",
-            "capabilities": sorted(REMOTE_WORKSPACE_TOOL_NAMES | {"select_folder"}),
+            "capabilities": sorted(STANDALONE_REMOTE_CAPABILITIES),
         },
         source_ip,
     )
@@ -84,6 +85,7 @@ def test_remote_target_only_routes_workspace_tools():
     assert remote_workspace_target(agent, "read_file") is not None
     assert remote_workspace_target(agent, "cancer_control") is not None
     assert remote_workspace_target(agent, "ue_remote_control") is not None
+    assert remote_workspace_target(agent, "workspace_exec") is None
     assert remote_workspace_target(agent, "web_search") is None
 
 

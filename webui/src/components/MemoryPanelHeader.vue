@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import DangerButton from './DangerButton.vue'
+import FormCheckbox from './FormCheckbox.vue'
+
 defineProps<{
   memoryTitle: string
   memoryMeta: string | null
@@ -19,9 +22,6 @@ const emit = defineEmits<{
   (event: 'clearMemory'): void
 }>()
 
-function readChecked(event: Event) {
-  return Boolean((event.target as HTMLInputElement | null)?.checked)
-}
 </script>
 
 <template>
@@ -32,26 +32,25 @@ function readChecked(event: Event) {
     </div>
 
     <div class="mode-tabs">
-      <button v-if="memoryMode === 'agent'" class="mode-tab clear-memory" :disabled="!canClearMemory" @click="emit('clearMemory')">ClearMemory</button>
+      <DangerButton v-if="memoryMode === 'agent'" compact :disabled="!canClearMemory" @click="emit('clearMemory')">ClearMemory</DangerButton>
       <button v-if="memoryMode !== 'graph'" class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('toggleFileMode')">File</button>
     </div>
 
     <div v-if="memoryMode !== 'graph'" class="view-controls">
       <label class="toggle-item">
-        <input type="checkbox" :checked="isMarkdownPreview" @change="emit('update:isMarkdownPreview', readChecked($event))" />
+        <FormCheckbox :model-value="isMarkdownPreview" @update:model-value="emit('update:isMarkdownPreview', $event)" />
         <span>Markdown</span>
       </label>
       <label class="toggle-item" :class="{ disabled: isMarkdownPreview }">
-        <input
-          type="checkbox"
-          :checked="showLineNumbers"
+        <FormCheckbox
+          :model-value="showLineNumbers"
           :disabled="isMarkdownPreview"
-          @change="emit('update:showLineNumbers', readChecked($event))"
+          @update:model-value="emit('update:showLineNumbers', $event)"
         />
         <span>Line#</span>
       </label>
       <label class="toggle-item">
-        <input type="checkbox" :checked="isWordWrap" @change="emit('update:isWordWrap', readChecked($event))" />
+        <FormCheckbox :model-value="isWordWrap" @update:model-value="emit('update:isWordWrap', $event)" />
         <span>Wrap</span>
       </label>
     </div>
@@ -118,11 +117,6 @@ function readChecked(event: Event) {
 .mode-tab.active {
   border-color: var(--theme-panel-memory-panel-button-active-border, rgba(56, 189, 248, 0.65));
   background: var(--theme-panel-memory-panel-button-active-background, rgba(14, 116, 144, 0.28));
-}
-
-.mode-tab.clear-memory {
-  border-color: rgba(248, 113, 113, 0.38);
-  color: rgba(254, 226, 226, 0.96);
 }
 
 .mode-tab:disabled {

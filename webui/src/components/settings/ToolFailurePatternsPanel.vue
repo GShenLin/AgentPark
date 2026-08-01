@@ -14,6 +14,7 @@ import {
   shortText,
   statusLabel,
 } from './toolStatsFormatting'
+import ActionButton from '../ActionButton.vue'
 
 const props = defineProps<{
   analysis: ToolFailureAnalysis
@@ -100,7 +101,7 @@ function closeHistory() {
             <strong>{{ selectedToolName }}</strong>
             <span v-if="history">{{ history.failure_count }} failures in {{ history.analyzed_call_count }} analyzed calls</span>
           </div>
-          <button type="button" @click="closeHistory">Close</button>
+          <ActionButton compact @click="closeHistory">Close</ActionButton>
         </div>
 
         <div v-if="loading" class="tool-stats-empty">Loading failure details...</div>

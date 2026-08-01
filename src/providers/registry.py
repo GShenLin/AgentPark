@@ -29,6 +29,11 @@ PROVIDER_REGISTRATIONS: dict[str, ProviderRegistration] = {
     for registration in (
         ProviderRegistration("gemini", "src.providers.gemini_agent", "GeminiAgent"),
         ProviderRegistration("agnes", "src.providers.agnes_agent", "AgnesAgent"),
+        ProviderRegistration(
+            "alpha_matting",
+            "src.providers.alpha_matting_provider",
+            "AlphaMattingProvider",
+        ),
         ProviderRegistration("doubao", "src.providers.doubao_agent", "DouBaoAgent"),
         ProviderRegistration("claude", "src.providers.claude_agent", "ClaudeAgent"),
         ProviderRegistration("deepseek", "src.providers.deepseek_agent", "DeepSeekAgent"),

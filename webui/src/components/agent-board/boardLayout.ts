@@ -1,5 +1,6 @@
 import type { NodeCard } from './context'
 import { nodeCardHeight, nodeCardWidth } from './boardModel'
+import { gridPositionToBoardPoint, type BoardGridSettings } from './boardGrid'
 
 export type BoardSize = {
   width: number
@@ -20,6 +21,40 @@ export type BoardPanCapacity = {
   expanded: boolean
 }
 
+export type BoardFocusCapacity = {
+  canvasWidth: number
+  canvasHeight: number
+  canvasPaddingLeft: number
+  canvasPaddingTop: number
+  expanded: boolean
+}
+
+export function expandBoardFocusCapacity(options: {
+  targetLeft: number
+  targetTop: number
+  maxScrollLeft: number
+  maxScrollTop: number
+  canvasWidth: number
+  canvasHeight: number
+  canvasPaddingLeft: number
+  canvasPaddingTop: number
+  scale: number
+}): BoardFocusCapacity {
+  const scale = Math.max(options.scale || 1, 0.01)
+  const growLeftBy = Math.ceil(Math.max(0, -options.targetLeft))
+  const growTopBy = Math.ceil(Math.max(0, -options.targetTop))
+  const growRightBy = Math.ceil(Math.max(0, options.targetLeft - options.maxScrollLeft))
+  const growBottomBy = Math.ceil(Math.max(0, options.targetTop - options.maxScrollTop))
+
+  return {
+    canvasWidth: options.canvasWidth + Math.ceil(growRightBy / scale),
+    canvasHeight: options.canvasHeight + Math.ceil(growBottomBy / scale),
+    canvasPaddingLeft: options.canvasPaddingLeft + growLeftBy,
+    canvasPaddingTop: options.canvasPaddingTop + growTopBy,
+    expanded: growLeftBy > 0 || growTopBy > 0 || growRightBy > 0 || growBottomBy > 0,
+  }
+}
+
 export function computeBoardCanvasSize(options: {
   nodes: NodeCard[]
   cardWidth: number
@@ -29,47 +64,28 @@ export function computeBoardCanvasSize(options: {
   emptyHeight: number
   minWidth: number
   minHeight: number
+  grid: BoardGridSettings
 }): BoardSize {
   if (!options.nodes.length) {
     return { width: options.emptyWidth, height: options.emptyHeight }
   }
-  const maxX = Math.max(...options.nodes.map((node) => node.ui.x + nodeCardWidth(node))) + options.padding * 2
-  const maxY = Math.max(...options.nodes.map((node) => node.ui.y + nodeCardHeight(node))) + options.padding * 2
+  const maxX = Math.max(...options.nodes.map((node) => gridPositionToBoardPoint(node.ui, options.grid).x + nodeCardWidth(node))) + options.padding
+  const maxY = Math.max(...options.nodes.map((node) => gridPositionToBoardPoint(node.ui, options.grid).y + nodeCardHeight(node))) + options.padding
   return {
     width: Math.max(options.minWidth, Math.ceil(maxX)),
     height: Math.max(options.minHeight, Math.ceil(maxY)),
   }
 }
 
-export function assignMissingNodePositions(options: {
-  nodes: NodeCard[]
-  cardWidth: number
-  cardHeight: number
-  padding: number
-  gap: number
-}) {
-  let idx = 0
-  for (const node of options.nodes) {
-    if (node.ui) continue
-    const col = idx % 4
-    const row = Math.floor(idx / 4)
-    node.ui = {
-      x: options.padding + col * (options.cardWidth + options.gap),
-      y: options.padding + row * (options.cardHeight + options.gap),
-    }
-    idx += 1
-  }
-}
-
 export function nodeCardStyle(options: {
   node: NodeCard | undefined
   dragging: boolean
+  grid: BoardGridSettings
 }): Record<string, string | number> {
-  const x = options.node?.ui?.x ?? 0
-  const y = options.node?.ui?.y ?? 0
+  const point = options.node ? gridPositionToBoardPoint(options.node.ui, options.grid) : { x: 0, y: 0 }
   return {
-    left: `${x}px`,
-    top: `${y}px`,
+    left: `${point.x}px`,
+    top: `${point.y}px`,
     width: `${nodeCardWidth(options.node)}px`,
     height: `${nodeCardHeight(options.node)}px`,
     zIndex: options.dragging ? 10 : 1,

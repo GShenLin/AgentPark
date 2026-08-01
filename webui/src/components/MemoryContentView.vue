@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { selectFolder, type GraphInfo, type GraphProfile, type LatestTurnProgressSummary, type LiveActivityBlock, type MessageEnvelope, type NodeInstanceConfig } from '../api'
+import ActionButton from './ActionButton.vue'
+import DangerButton from './DangerButton.vue'
+import FormSelect from './FormSelect.vue'
+import FormTextInput from './FormTextInput.vue'
 import LiveActivityBlocks from './LiveActivityBlocks.vue'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
@@ -83,7 +87,7 @@ const emit = defineEmits<{
 
 const memoryPanelRef = ref<HTMLElement | null>(null)
 const gutterRef = ref<HTMLElement | null>(null)
-const interactiveInputRef = ref<HTMLInputElement | null>(null)
+const interactiveInputRef = ref<InstanceType<typeof FormTextInput> | null>(null)
 
 const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/) : []))
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
@@ -125,12 +129,12 @@ function updateMemoryText(event: Event) {
   emit('update:memoryText', String((event.target as HTMLTextAreaElement | null)?.value || ''))
 }
 
-function updateGraphName(event: Event) {
-  emit('update:graphNameInput', String((event.target as HTMLInputElement | null)?.value || ''))
+function updateGraphName(value: string) {
+  emit('update:graphNameInput', value)
 }
 
-function updateGraphWorkingPath(event: Event) {
-  emit('update:graphWorkingPathInput', String((event.target as HTMLInputElement | null)?.value || ''))
+function updateGraphWorkingPath(value: string) {
+  emit('update:graphWorkingPathInput', value)
 }
 
 async function chooseGraphWorkingPath() {
@@ -147,12 +151,12 @@ async function chooseGraphWorkingPath() {
   }
 }
 
-function updateSelectedGraphProfile(event: Event) {
-  emit('update:selectedGraphProfileId', String((event.target as HTMLSelectElement | null)?.value || ''))
+function updateSelectedGraphProfile(value: string) {
+  emit('update:selectedGraphProfileId', value)
 }
 
-function updateInteractiveInput(event: Event) {
-  emit('update:interactiveInputText', String((event.target as HTMLInputElement | null)?.value || ''))
+function updateInteractiveInput(value: string) {
+  emit('update:interactiveInputText', value)
 }
 
 function syncScroll(event: Event) {
@@ -198,51 +202,52 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   <div class="editor-wrapper">
     <div v-if="mode === 'graph'" class="graph-panel">
       <div class="graph-actions">
-        <input
+        <FormTextInput
           class="graph-input"
           placeholder="Graph name"
-          :value="graphNameInput"
-          @input="updateGraphName"
+          :model-value="graphNameInput"
+          @update:model-value="updateGraphName"
         />
-        <button class="graph-btn primary" @click="emit('saveGraphConfig')">Save</button>
-        <button class="graph-btn" @click="emit('saveGraphProfile')">SaveProfile</button>
-        <button class="graph-btn" @click="emit('refreshGraphs')">Refresh</button>
+        <ActionButton variant="primary" compact @click="emit('saveGraphConfig')">Save</ActionButton>
+        <ActionButton compact @click="emit('saveGraphProfile')">SaveProfile</ActionButton>
+        <ActionButton compact @click="emit('refreshGraphs')">Refresh</ActionButton>
       </div>
       <div class="graph-path-row">
-        <input
+        <FormTextInput
           class="graph-input graph-path-input"
           placeholder="Graph working path"
-          :value="graphWorkingPathInput"
-          @input="updateGraphWorkingPath"
+          :model-value="graphWorkingPathInput"
+          @update:model-value="updateGraphWorkingPath"
           @blur="emit('saveGraphConfig')"
         />
-        <button class="graph-btn" type="button" @click="chooseGraphWorkingPath">ChangeFolder</button>
+        <ActionButton compact @click="chooseGraphWorkingPath">ChangeFolder</ActionButton>
       </div>
       <div class="graph-actions">
-        <select
+        <FormSelect
           class="graph-input profile-input"
-          :value="selectedGraphProfileId"
+          :model-value="selectedGraphProfileId"
           @change="updateSelectedGraphProfile"
         >
           <option value="">Profile</option>
           <option v-for="profile in graphProfiles" :key="profile.id" :value="profile.id">
             {{ profile.name || profile.id }}
           </option>
-        </select>
-        <button
-          class="graph-btn primary"
+        </FormSelect>
+        <ActionButton
+          variant="primary"
+          compact
           :disabled="!selectedGraphProfileId"
           @click="emit('createGraphFromProfile')"
         >
           CreateFromProfile
-        </button>
-        <button
-          class="graph-btn danger"
+        </ActionButton>
+        <DangerButton
+          compact
           :disabled="!selectedGraphProfileId"
           @click="emit('deleteGraphProfile')"
         >
           DeleteProfile
-        </button>
+        </DangerButton>
       </div>
 
       <div class="graph-list">
@@ -266,22 +271,22 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
                 <div class="graph-meta">{{ graph.updated_at || graph.id }}</div>
               </div>
               <div class="graph-item-actions">
-                <button
+                <ActionButton
                   v-if="graph.visibility_editable"
-                  class="graph-btn"
+                  compact
                   @click="emit('toggleGraphVisibility', graph)"
                 >
                   {{ graph.private ? 'Public' : 'Private' }}
-                </button>
-                <button class="graph-btn" @click="emit('loadGraphConfig', graph)">Load</button>
-                <button
-                  class="graph-btn danger"
+                </ActionButton>
+                <ActionButton compact @click="emit('loadGraphConfig', graph)">Load</ActionButton>
+                <DangerButton
+                  compact
                   :disabled="graphMemoryClearingId === graph.id"
                   @click="emit('clearGraphMemory', graph)"
                 >
                   {{ graphMemoryClearingId === graph.id ? 'Clearing...' : 'ClearMemory' }}
-                </button>
-                <button v-if="canDeleteGraph(graph)" class="graph-btn danger" @click="emit('deleteGraphConfig', graph)">Delete</button>
+                </DangerButton>
+                <DangerButton v-if="canDeleteGraph(graph)" compact @click="emit('deleteGraphConfig', graph)">Delete</DangerButton>
               </div>
             </div>
             <div v-if="expandedGraphId === graph.id" class="graph-node-list">
@@ -402,39 +407,40 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       <span class="interactive-hint">Enter to send, input is sent with newline appended</span>
     </div>
     <div class="interactive-input-row">
-      <input
+      <FormTextInput
         ref="interactiveInputRef"
         class="interactive-input"
-        :value="interactiveInputText"
+        compact
+        :model-value="interactiveInputText"
         :disabled="interactiveInputDisabled"
         placeholder="Type response here (e.g. YES, NO, password)..."
         spellcheck="false"
-        @input="updateInteractiveInput"
+        @update:model-value="updateInteractiveInput"
         @keydown="onInteractiveKeydown"
       />
-      <button
-        class="interactive-btn"
+      <ActionButton
+        compact
         :disabled="interactiveInputDisabled"
         @click="emit('interactiveSubmit')"
       >
         {{ interactiveSending ? '...' : 'Send' }}
-      </button>
-      <button
-        class="interactive-btn"
+      </ActionButton>
+      <ActionButton
+        compact
         title="Send Ctrl+C (interrupt)"
         :disabled="interactiveInputDisabled"
         @click="emit('interactiveCtrlC')"
       >
         Ctrl+C
-      </button>
-      <button
-        class="interactive-btn"
+      </ActionButton>
+      <ActionButton
+        compact
         title="Send EOF / Ctrl+D (close stdin)"
         :disabled="interactiveInputDisabled"
         @click="emit('interactiveEof')"
       >
         EOF
-      </button>
+      </ActionButton>
     </div>
   </div>
 </template>
@@ -488,6 +494,15 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   gap: 10px;
   padding: 10px;
   overflow: auto;
+  --form-control-border: var(--theme-panel-graph-panel-input-border, rgba(148, 163, 184, 0.3));
+  --form-control-background: var(--theme-panel-graph-panel-input-background, rgba(15, 23, 42, 0.7));
+  --form-control-text: var(--theme-panel-graph-panel-input-text, rgba(226, 232, 240, 0.96));
+  --form-control-focus: var(--theme-panel-graph-panel-input-focus-border, rgba(56, 189, 248, 0.7));
+  --ui-button-border: var(--theme-panel-graph-panel-button-border, rgba(148, 163, 184, 0.3));
+  --ui-button-background: var(--theme-panel-graph-panel-button-background, rgba(15, 23, 42, 0.7));
+  --ui-button-text: var(--theme-panel-graph-panel-button-text, rgba(226, 232, 240, 0.94));
+  --ui-primary-border: var(--theme-panel-graph-panel-button-primary-border, rgba(56, 189, 248, 0.7));
+  --ui-primary-background: var(--theme-panel-graph-panel-button-primary-background, rgba(14, 116, 144, 0.34));
   background-color: var(--theme-panel-graph-panel-background-color, transparent);
   background-image: var(--theme-panel-graph-panel-background-image, none);
   background-size: var(--theme-panel-graph-panel-background-size, cover);
@@ -515,47 +530,11 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 
 .graph-input {
   flex: 1;
-  border: 1px solid var(--theme-panel-graph-panel-input-border, rgba(148, 163, 184, 0.3));
-  background: var(--theme-panel-graph-panel-input-background, rgba(15, 23, 42, 0.7));
-  color: var(--theme-panel-graph-panel-input-text, rgba(226, 232, 240, 0.96));
-  border-radius: 8px;
   font-size: 12px;
-  padding: 7px 9px;
-  outline: none;
-}
-
-.graph-input:focus {
-  border-color: var(--theme-panel-graph-panel-input-focus-border, rgba(56, 189, 248, 0.7));
-}
-
-.graph-btn {
-  border: 1px solid var(--theme-panel-graph-panel-button-border, rgba(148, 163, 184, 0.3));
-  background: var(--theme-panel-graph-panel-button-background, rgba(15, 23, 42, 0.7));
-  color: var(--theme-panel-graph-panel-button-text, rgba(226, 232, 240, 0.94));
-  border-radius: 8px;
-  font-size: 11px;
-  padding: 4px 9px;
-  cursor: pointer;
-}
-
-.graph-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .profile-input {
   min-width: 0;
-}
-
-.graph-btn.primary {
-  border-color: var(--theme-panel-graph-panel-button-primary-border, rgba(56, 189, 248, 0.7));
-  background: var(--theme-panel-graph-panel-button-primary-background, rgba(14, 116, 144, 0.34));
-}
-
-.graph-btn.danger {
-  border-color: var(--theme-panel-graph-panel-button-danger-border, rgba(248, 113, 113, 0.7));
-  background: var(--theme-panel-graph-panel-button-danger-background, rgba(127, 29, 29, 0.35));
-  color: var(--theme-panel-graph-panel-button-danger-text, rgba(254, 226, 226, 0.96));
 }
 
 .graph-item-actions {
@@ -889,6 +868,9 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   border-top: 1px solid rgba(34, 211, 238, 0.22);
   background: rgba(8, 47, 73, 0.32);
   padding: 8px 10px;
+  --form-control-border: rgba(34, 211, 238, 0.32);
+  --form-control-background: rgba(15, 23, 42, 0.82);
+  --form-control-focus: rgba(34, 211, 238, 0.65);
 }
 
 .interactive-bar-head {
@@ -921,45 +903,8 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
 .interactive-input {
   flex: 1;
   min-width: 0;
-  border: 1px solid rgba(34, 211, 238, 0.32);
-  background: rgba(15, 23, 42, 0.82);
-  color: rgba(226, 232, 240, 0.96);
-  border-radius: 8px;
   font-size: var(--theme-panel-memory-panel-font-ui, 12px);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  padding: 7px 9px;
-  outline: none;
-}
-
-.interactive-input:focus {
-  border-color: rgba(34, 211, 238, 0.65);
-}
-
-.interactive-input:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.interactive-btn {
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(15, 23, 42, 0.82);
-  color: rgba(226, 232, 240, 0.94);
-  border-radius: 8px;
-  font-size: var(--theme-panel-memory-panel-font-small, 11px);
-  padding: 6px 10px;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.interactive-btn:hover:not(:disabled) {
-  border-color: rgba(34, 211, 238, 0.5);
-  background: rgba(14, 116, 144, 0.28);
-}
-
-.interactive-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .wrap-container {

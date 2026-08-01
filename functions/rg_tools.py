@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 
+from src.providers.agent_environment_context import resolve_agent_relative_path
 from src.providers.agent_environment_context import resolve_agent_working_directory
 from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 
@@ -18,6 +19,7 @@ RG_STOP_WAIT_SEC = 0.5
 RG_SEARCH_OUTPUT_CHAR_LIMIT = 50000
 RG_LIST_FILES_OUTPUT_CHAR_LIMIT = 50000
 RG_JSON_BUDGET_OVERHEAD = 1200
+TOOL_SUBMISSION_RESERVE_CHARS = 512
 
 DEFAULT_SKIP_DIRS = {
     ".git",
@@ -144,7 +146,10 @@ def rg_search_text(
         include_globs = normalize_globs(include_globs)
         exclude_globs = normalize_globs(exclude_globs)
         limit = resolve_limit(max_results, default_value=200, hard_max=5000)
-        char_limit = RG_SEARCH_OUTPUT_CHAR_LIMIT
+        char_limit = resolve_tool_result_char_limit(
+            agent,
+            RG_SEARCH_OUTPUT_CHAR_LIMIT,
+        )
         case_sensitive = bool(case_sensitive)
         fixed_strings = bool(fixed_strings)
         stripped_query = query.strip()
@@ -204,7 +209,10 @@ def rg_list_files(
         )
         if block_payload is not None:
             return json.dumps(block_payload, ensure_ascii=False)
-        char_limit = RG_LIST_FILES_OUTPUT_CHAR_LIMIT
+        char_limit = resolve_tool_result_char_limit(
+            agent,
+            RG_LIST_FILES_OUTPUT_CHAR_LIMIT,
+        )
 
         rg_path = shutil.which("rg")
         cancel_source = cancel_source_from_agent(agent)
@@ -234,7 +242,10 @@ def rg_list_files(
 
 
 def resolve_root(project_root, *, agent=None):
-    root = resolve_root_label(project_root, agent)
+    if isinstance(project_root, str) and project_root.strip():
+        root = resolve_agent_relative_path(project_root.strip(), agent)
+    else:
+        root = resolve_agent_working_directory(agent)
     root = os.path.abspath(root)
     if not os.path.isdir(root):
         return None
@@ -253,6 +264,19 @@ def resolve_limit(raw_value, default_value, hard_max):
     except Exception:
         value = default_value
     return max(1, min(value, hard_max))
+
+
+def resolve_tool_result_char_limit(agent, default_limit):
+    config = getattr(agent, "config", None)
+    if not isinstance(config, dict) or "toolResultSubmissionMaxChars" not in config:
+        return default_limit
+    submission_limit = config["toolResultSubmissionMaxChars"]
+    if isinstance(submission_limit, bool) or not isinstance(submission_limit, int):
+        raise ValueError("toolResultSubmissionMaxChars must be a positive integer")
+    if submission_limit <= 0:
+        raise ValueError("toolResultSubmissionMaxChars must be a positive integer")
+    reserve = min(TOOL_SUBMISSION_RESERVE_CHARS, submission_limit // 10)
+    return min(default_limit, max(1, submission_limit - reserve))
 
 
 def normalize_globs(raw_globs):

@@ -109,6 +109,7 @@ onBeforeUnmount(() => {
   >
     <textarea
       ref="inputTextarea"
+      v-bind="$attrs"
       class="expandable-textarea__input"
       :value="modelValue"
       :rows="rows"
@@ -254,7 +255,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgb(2 6 23 / 72%);
+  background: var(--ui-dialog-backdrop);
   backdrop-filter: blur(3px);
 }
 
@@ -265,10 +266,10 @@ onBeforeUnmount(() => {
   min-height: 360px;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.28));
-  border-radius: 14px;
-  background: var(--theme-panel-node-side-editor-background, #111827);
-  box-shadow: 0 24px 80px rgb(0 0 0 / 50%);
+  border: 1px solid var(--ui-dialog-border);
+  border-radius: var(--ui-dialog-radius);
+  background: var(--ui-dialog-background);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 .expandable-textarea__header {
@@ -278,7 +279,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 16px;
   padding: 10px 14px 10px 18px;
-  border-bottom: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
+  border-bottom: 1px solid var(--ui-dialog-divider);
   color: var(--theme-panel-node-side-editor-input-text, #f8fafc);
 }
 

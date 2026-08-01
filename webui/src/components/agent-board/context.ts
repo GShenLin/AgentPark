@@ -11,6 +11,7 @@ import type {
   ProviderRequestSummary,
   ProviderRequestTotals,
 } from '../../api'
+import type { BoardGridSettings, NodeGridUi } from './boardGrid'
 
 export type LinkEndpoint = {
   node: string
@@ -38,8 +39,9 @@ export type NodeCard = {
   name: string
   inputNum: number
   outputNum: number
-  ui: { x: number; y: number; width?: number; height?: number }
+  ui: NodeGridUi
   last_message: string | null
+  lastOutputResources?: Record<string, unknown>[]
   lastRuntimeEvent?: RuntimeEvent | null
   runtimeEvents?: RuntimeEvent[]
   runtimeToolCalls?: RuntimeToolCall[]
@@ -108,6 +110,8 @@ export type AgentBoardContext = {
   boardRef: Ref<HTMLElement | null>
   canvasRef: Ref<HTMLElement | null>
   canvasScale: Ref<number>
+  gridSettings: Ref<BoardGridSettings>
+  applyBoardLayoutDefaults: (value: unknown) => void
   canvasWidth: Ref<number>
   canvasHeight: Ref<number>
   canvasPaddingLeft: Ref<number>
@@ -140,7 +144,7 @@ export type AgentBoardContext = {
   createNodeAtPosition: (
     typeId: string,
     nodeName: string,
-    ui: { x: number; y: number; width?: number; height?: number },
+    point: { x: number; y: number },
     fields?: Record<string, unknown>,
   ) => Promise<string | null>
   previewMessage: (value: string | null) => string
@@ -165,6 +169,8 @@ export type AgentBoardContext = {
   onItemClick: (id: string, event: MouseEvent) => void
   onItemPointerDown: (id: string, event: PointerEvent) => void
 
+  onBoardPointerMove: (event: PointerEvent) => void
+  onBoardPointerLeave: () => void
   onBoardMouseDownCapture: (event: MouseEvent) => void
   onBoardWheel: (event: WheelEvent) => void
   onBoardDragOver: (event: DragEvent) => void

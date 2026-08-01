@@ -51,7 +51,7 @@ class AccessApiDomain:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         is_developer = user.get("developer") is True
         return {
-            "client_id": user["clientId"],
+            "client_id": client_id,
             "username": user["username"],
             "role": "developer" if is_developer else "nondeveloper",
             "is_developer": is_developer,

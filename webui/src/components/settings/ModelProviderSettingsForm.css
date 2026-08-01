@@ -18,23 +18,13 @@
   gap: 7px;
   padding-right: 10px;
   border-right: 1px solid rgba(148, 163, 184, 0.16);
+  --ui-selection-stacked-height: 48px;
+  --ui-selection-border: var(--ui-button-border);
+  --ui-selection-background: var(--ui-button-background);
+  --ui-selection-active-border: rgba(56, 189, 248, 0.66);
+  --ui-selection-active-background: rgba(14, 165, 233, 0.18);
 }
 
-.provider-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  text-align: left;
-}
-
-.provider-item.active {
-  border-color: rgba(56, 189, 248, 0.66);
-  background: rgba(14, 165, 233, 0.18);
-}
-
-.provider-item small,
 .provider-id-field > span,
 .provider-id-field > small {
   color: rgba(148, 163, 184, 0.9);
@@ -143,6 +133,10 @@
   gap: 12px;
 }
 
+.form-field-wide {
+  grid-column: 1 / -1;
+}
+
 .switch-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -174,28 +168,6 @@ label {
 
 .dropdown-field {
   position: relative;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 8px 9px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.5);
-  font: inherit;
-}
-
-textarea {
-  min-height: 76px;
-  resize: vertical;
-}
-
-button.danger {
-  border-color: rgba(248, 113, 113, 0.35);
-  color: rgba(254, 202, 202, 0.95);
 }
 
 @media (max-width: 1120px) {

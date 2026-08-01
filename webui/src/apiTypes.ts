@@ -32,6 +32,12 @@ export type WorkspaceBootstrap = {
   graphs: GraphInfo[]
   graph_profiles: GraphProfile[]
   theme: { data: Record<string, unknown>; active_preset_id: string }
+  board_layout: {
+    gridCellWidth: number
+    gridCellHeight: number
+    nodeWidth: number
+    nodeHeight: number
+  }
   mobile_pcs: MobilePc[]
   user_interactions: UserInteractionRequest[]
 }
@@ -58,6 +64,8 @@ export type RunInfo = {
 
 export type ProviderInfo = {
   id: string
+  type?: string
+  description?: string
   supportmode: string[]
   features?: Record<string, {
     supported?: boolean
@@ -95,15 +103,7 @@ export type NodeTemplateContext = {
 }
 
 export type PasteAgentConfig = {
-  agent_id: string
-  name?: string
-  provider_id: string
-  mode?: string
-  web_search?: 'enabled' | 'disabled'
-  thinking?: 'enabled' | 'disabled'
-  reasoning_effort?: string
-  system_prompt?: string
-  tools?: string[]
+  profile_id: string
 }
 
 export type GraphLinkEndpoint = {
@@ -134,8 +134,10 @@ export type GraphNode = {
   typeId: string
   name: string
   ui: {
-    x: number
-    y: number
+    grid_x: number
+    grid_y: number
+    width?: number
+    height?: number
   }
   input_num?: number
   output_num?: number
@@ -158,6 +160,12 @@ export type GraphConfig = {
   id: string
   name: string
   working_path?: string
+  layout?: {
+    grid?: {
+      cell_width?: number
+      cell_height?: number
+    }
+  }
   nodes: GraphNode[]
   output_routes: GraphOutputRoutes
   source_graph_id?: string
@@ -180,14 +188,31 @@ export type GraphInfo = {
 export type AgentProfile = {
   id: string
   name: string
+  description?: string
   node_type_id: string
   source_graph_id?: string
   source_node_id?: string
   node_name?: string
   fields: Record<string, unknown>
   event_rules?: Record<string, Array<Record<string, unknown>>>
+  profile_metadata?: AgentProfileMetadata
   created_at?: string
   updated_at?: string
+}
+
+export type AgentProfileMetadata = {
+  schema_version: 1
+  task_family: string
+  description: string
+  provider_rationale: string
+  evidence_level: 'measured' | 'inferred' | 'experimental'
+  recommended_for: string[]
+  avoid_for: string[]
+  ab_test: {
+    experiment_id: string
+    variant: 'A' | 'B'
+    peer_profile_id: string
+  }
 }
 
 export type AgentProfileListResponse = {
@@ -211,6 +236,7 @@ export type AgentProfileLoadResponse = {
 export type AgentProfileEditorPayload = {
   node_profiler: {
     name: string
+    description?: string
     node_type_id: string
     source_graph_id?: string
     source_node_id?: string
@@ -222,6 +248,34 @@ export type AgentProfileEditorPayload = {
   system_prompt: string
 }
 
+export type RuntimePolicyPreview = {
+  ok: boolean
+  policy: Record<string, unknown>
+  manifest: {
+    schema_version: number
+    policy_id: string
+    policy_version: string
+    selection_source: string
+    catalog_source: string
+    effective_sha256: string
+    prompts: Array<{
+      layer: string
+      source: string
+      chars: number
+      sha256: string
+    }>
+  }
+  catalog: {
+    schema_version: number
+    default_policy_id: string
+    policies: Array<{
+      policy_id: string
+      version: string
+      description: string
+    }>
+  }
+}
+
 export type GraphProfileNodeConfig = {
   node_id: string
   graph_id: string
@@ -230,8 +284,8 @@ export type GraphProfileNodeConfig = {
   fields: Record<string, unknown>
   event_rules?: Record<string, Array<Record<string, unknown>>>
   ui?: {
-    x?: number
-    y?: number
+    grid_x: number
+    grid_y: number
     width?: number
     height?: number
   }
@@ -418,8 +472,10 @@ export type NodeInstanceConfig = {
   provider_request_summaries?: ProviderRequestSummary[]
   provider_request_totals?: ProviderRequestTotals | null
   ui?: {
-    x?: number
-    y?: number
+    grid_x: number
+    grid_y: number
+    width?: number
+    height?: number
   }
   state?: NodeInstanceState
   pending_count?: number

@@ -74,19 +74,25 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             reasoning_summary={"supported": False, "values": []},
         )
     if provider_type == "deepseek":
+        responses_api = config.get("responsesApi") is True
         return _payload(
-            responses_api={"supported": False, "values": []},
+            responses_api={
+                "supported": responses_api,
+                "values": ["enabled", "disabled"],
+                "requires": "responsesApi=true",
+                "transport": "responses" if responses_api else "",
+            },
             web_search={"supported": False, "values": []},
             tools={"supported": True, "values": ["enabled", "disabled"]},
             thinking={
                 "supported": True,
                 "values": ["enabled", "disabled"],
-                "transport": "chat_completions",
+                "transport": "responses" if responses_api else "chat_completions",
             },
             reasoning_effort={
                 "supported": True,
                 "values": ["high", "max"],
-                "transport": "chat_completions",
+                "transport": "responses" if responses_api else "chat_completions",
             },
             reasoning_summary={"supported": False, "values": []},
         )

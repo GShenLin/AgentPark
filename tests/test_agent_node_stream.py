@@ -17,6 +17,7 @@ def _declare_synthetic_chat_providers(monkeypatch):
             "provider-stream",
             "doubao-chat",
             "doubao-2.0-pro",
+            "doubao-seed-evolving",
             "openai",
             "claude",
         }:
@@ -1046,6 +1047,55 @@ def test_agent_node_injects_default_instructions_for_openai_responses(monkeypatc
     assert str(result.get("display") or "") == "ok"
     assert created_agents[0]._agentpark_responses_instruction == "Default instructions"
     assert not [item for item in created_agents[0].messages if item.get("role") == "system"]
+
+
+def test_agent_node_binds_default_and_profile_runtime_policy(monkeypatch):
+    import nodes.agent_node as agent_node_module
+
+    created_agents = []
+
+    class DummyAgent:
+        def __init__(self):
+            self.messages = []
+            self.config = {"type": "openai", "responsesApi": True}
+            created_agents.append(self)
+
+        def addTool(self, _name):
+            return None
+
+        def Message(self, role, content, persist=True, **kwargs):
+            self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
+
+        def Send(self, **_kwargs):
+            return "ok"
+
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    runtime_policy = {
+        "policy_id": "coding-default",
+        "overrides": {
+            "completion_review": {
+                "passes": 2,
+                "prompt": "Profile-specific completion review.",
+            }
+        },
+    }
+
+    result = agent_node_module.Node().on_input(
+        "hello",
+        {
+            "graph_id": "g_runtime_policy_unit",
+            "node_instance_id": "n_runtime_policy_unit",
+            "provider_id": "openai",
+            "runtime_policy": runtime_policy,
+        },
+    )
+
+    assert str(result.get("display") or "") == "ok"
+    resolved = created_agents[0]._agentpark_resolved_runtime_policy
+    assert resolved.policy.policy_id == "coding-default"
+    assert resolved.policy.completion_review.passes == 2
+    assert resolved.policy.completion_review.prompt == "Profile-specific completion review."
+    assert resolved.manifest["selection_source"] == "agent_profile.runtime_policy"
 
 
 def test_agent_node_injects_default_instructions_for_doubao_responses(monkeypatch):

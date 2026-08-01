@@ -7,7 +7,7 @@ import pytest
 
 from src.tool.task_direction_tools import get_task_direction
 from src.tool.task_direction_tools import replace_task_direction
-from src.task_direction_context import CODE_TASK_PROTOCOL_CONTEXT
+from src.runtime_policy import resolve_runtime_policy
 from src.task_direction_context import inject_task_direction_context
 from src.task_direction_completion import TaskDirectionCompletion
 from src.task_direction_models import TaskDirectionContractError
@@ -15,6 +15,9 @@ from src.task_direction_models import TaskDirectionState
 from src.task_direction_store import TaskDirectionRevisionConflict
 from src.task_direction_store import TaskDirectionStore
 from src.task_direction_store import archive_legacy_task_artifacts
+
+
+CORE_TASK_DIRECTION_CONTEXT = resolve_runtime_policy(None).policy.task_direction.core_prompt
 
 
 def _state(**overrides):
@@ -204,9 +207,11 @@ def test_task_direction_context_injects_protocol_and_saved_state(tmp_path):
 
     assert agent.messages[0] == {
         "role": "developer",
-        "content": CODE_TASK_PROTOCOL_CONTEXT,
+        "content": CORE_TASK_DIRECTION_CONTEXT,
         "persist": False,
     }
+    assert "user-visible entry path" in CORE_TASK_DIRECTION_CONTEXT
+    assert "Record completion only with evidence" in CORE_TASK_DIRECTION_CONTEXT
     assert "<agentpark_task_direction" in agent.messages[1]["content"]
     assert '"revision": 1' in agent.messages[1]["content"]
     assert '"task_id": "task-1"' in agent.messages[1]["content"]
@@ -220,7 +225,7 @@ def test_task_direction_is_isolated_by_task_id_for_same_node_memory(tmp_path):
     inject_task_direction_context(second_agent, role="developer")
 
     assert len(second_agent.messages) == 1
-    assert second_agent.messages[0]["content"] == CODE_TASK_PROTOCOL_CONTEXT
+    assert second_agent.messages[0]["content"] == CORE_TASK_DIRECTION_CONTEXT
     assert TaskDirectionStore.for_agent(second_agent).read() is None
     assert TaskDirectionStore.for_agent(first_agent).path != TaskDirectionStore.for_agent(second_agent).path
 

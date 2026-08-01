@@ -11,7 +11,13 @@ def build_agent_config_schema(base_schema: dict, context: dict | None) -> dict:
     schema = dict(base_schema)
     ctx = context if isinstance(context, dict) else {}
     provider_id = str(ctx.get("provider_id") or "").strip()
-    provider_config = dict(ConfigLoader().get_all_providers().get(provider_id, {}) or {}) if provider_id else {}
+    if provider_id:
+        loader = ConfigLoader()
+        catalog = getattr(loader, "get_provider_catalog", None)
+        providers = catalog() if callable(catalog) else loader.get_all_providers()
+        provider_config = dict(providers.get(provider_id, {}) or {})
+    else:
+        provider_config = {}
     provider_features = dict(provider_config.get("features") or {})
     configured_modes = provider_config.get("supportmode")
     provider_modes = (

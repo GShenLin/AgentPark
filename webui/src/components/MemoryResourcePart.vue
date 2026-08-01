@@ -2,9 +2,12 @@
 import { ref } from 'vue'
 import ImageLightbox from './ImageLightbox.vue'
 
-defineProps<{
+withDefaults(defineProps<{
   part: Record<string, unknown>
-}>()
+  compact?: boolean
+}>(), {
+  compact: false,
+})
 
 const previewImage = ref({ src: '', alt: '' })
 
@@ -120,8 +123,8 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
 </script>
 
 <template>
-  <div class="feed-resource">
-    <div class="feed-resource-head">
+  <div class="feed-resource" :class="{ 'feed-resource-compact': compact }">
+    <div v-if="!compact" class="feed-resource-head">
       <span class="feed-resource-kind">{{ resourceLabel(part) }}</span>
       <span v-if="resourceDisplayName(part)" class="feed-resource-name">{{ resourceDisplayName(part) }}</span>
     </div>
@@ -131,7 +134,7 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
       :src="resourcePreviewHref(part)"
       :alt="resourceDisplayName(part) || resourceLabel(part)"
       loading="lazy"
-      @click="previewImage = { src: resourcePreviewHref(part), alt: resourceDisplayName(part) || resourceLabel(part) }"
+      @click.stop="previewImage = { src: resourcePreviewHref(part), alt: resourceDisplayName(part) || resourceLabel(part) }"
     />
     <video
       v-else-if="resourceCanPreviewVideo(part) && resourcePreviewHref(part)"
@@ -147,7 +150,7 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
       preload="metadata"
       :src="resourcePreviewHref(part)"
     ></audio>
-    <div class="feed-resource-actions">
+    <div v-if="!compact" class="feed-resource-actions">
       <a
         v-if="resourcePreviewHref(part)"
         class="feed-resource-link"
@@ -163,7 +166,7 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
         rel="noreferrer"
       >Download</a>
     </div>
-    <div class="feed-resource-uri">{{ resourcePayload(part).uri }}</div>
+    <div v-if="!compact" class="feed-resource-uri">{{ resourcePayload(part).uri }}</div>
     <ImageLightbox
       :open="!!previewImage.src"
       :src="previewImage.src"
@@ -214,6 +217,28 @@ function resourceCanPreviewAudio(part: Record<string, unknown>) {
   border: 1px solid rgba(148, 163, 184, 0.25);
   background: rgba(0, 0, 0, 0.2);
   cursor: zoom-in;
+}
+
+.feed-resource-compact {
+  min-height: 0;
+  height: 100%;
+  padding: 4px;
+  background-color: rgba(15, 23, 42, 0.72);
+  background-image:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%);
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  background-size: 12px 12px;
+}
+
+.feed-resource-compact .feed-resource-image {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border: 0;
 }
 
 .feed-resource-video {

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { NodeEditorAttachment } from '../../composables/useGlobalState'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
 import ExpandableTextarea from '../ExpandableTextarea.vue'
 
 defineProps<{
@@ -106,9 +108,10 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
           <img class="attachment-thumb" :src="attachmentPreviewHref(file)" :alt="file.name" loading="lazy" />
         </a>
         <span v-if="!isImageAttachment(file)" class="attachment-name" :title="file.path">{{ file.name }}</span>
-        <button
+        <DangerButton
           class="attachment-remove"
-          type="button"
+          icon
+          compact
           :aria-label="`Remove ${file.name}`"
           title="Remove attachment"
           @click="emit('remove-attachment', index)"
@@ -116,7 +119,7 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
           <svg viewBox="0 0 12 12" aria-hidden="true">
             <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
           </svg>
-        </button>
+        </DangerButton>
       </div>
     </div>
 
@@ -158,9 +161,9 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
         >
           {{ audioRecording ? 'Stop audio' : 'Record audio' }}
         </button>
-        <button class="primary-btn" :disabled="!canSend" @click="emit('send')">
+        <ActionButton variant="primary" :disabled="!canSend" @click="emit('send')">
           Send
-        </button>
+        </ActionButton>
       </div>
     </div>
   </section>
@@ -250,10 +253,8 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 }
 
 
-.attachment-remove,
 .goal-btn,
-.record-btn,
-.primary-btn {
+.record-btn {
   border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
   background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.9));
@@ -265,27 +266,15 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
 }
 
 .attachment-remove {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: rgba(2, 6, 23, 0.86);
-  color: rgba(248, 250, 252, 0.96);
+  position: relative;
+  z-index: 2;
 }
 
 .attachment-item-image .attachment-remove {
   position: absolute;
   top: 5px;
   right: 5px;
-  border-color: rgba(226, 232, 240, 0.28);
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.42);
-}
-
-.attachment-remove:hover {
-  border-color: rgba(248, 250, 252, 0.56);
-  background: rgba(15, 23, 42, 0.98);
 }
 
 .attachment-remove svg {
@@ -331,12 +320,6 @@ function attachmentPreviewHref(file: NodeEditorAttachment) {
   border-color: rgba(248, 113, 113, 0.72);
   background: rgba(153, 27, 27, 0.42);
   color: #fee2e2;
-}
-
-.primary-btn {
-  background: rgba(59, 130, 246, 0.22);
-  border-color: rgba(96, 165, 250, 0.42);
-  pointer-events: auto;
 }
 
 @media (max-width: 760px) {

@@ -27,6 +27,7 @@ import { useMemory } from '../composables/useMemory'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { useCliSessions } from '../composables/useCliSessions'
 import { recordDeletionUndo } from '../composables/useDeletionUndo'
+import { resolveTurnDeletionHistoryMode } from '../turnDeletionRefresh'
 import MemoryContentView from './MemoryContentView.vue'
 import MemoryPanelHeader from './MemoryPanelHeader.vue'
 import MemorySaveDialog from './MemorySaveDialog.vue'
@@ -228,6 +229,11 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] |
     if (!nodeId || !userMessageId) return
     const ok = window.confirm('Delete this entire turn?')
     if (!ok) return
+    const refreshHistoryMode = resolveTurnDeletionHistoryMode(
+      memoryMessages.value,
+      userMessageId,
+      memoryHistoryComplete.value,
+    )
     try {
       const result = await deleteNodeInstanceMemoryTurn(nodeId, userMessageId, currentGraphId.value || 'default')
       recordDeletionUndo(result.undo_token ? {
@@ -239,7 +245,7 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] |
       memoryMessages.value = memoryMessages.value.filter(
         (item) => !deletedIds.has(String((item as any)?.id || '').trim()),
       )
-      await loadAgentMemory()
+      await loadAgentMemory({ historyMode: refreshHistoryMode })
     } catch (e: any) {
       lastError.value = String(e?.message || e)
     }

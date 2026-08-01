@@ -3,12 +3,11 @@ import json
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from src.providers.openai_retry_policy import OpenAITransportTimeouts
 from src.providers.openai_transport_errors import OpenAIHttpError, OpenAITransportError
 from src.providers.provider_pressure import acquire_provider_pressure
-
-
-class ResponsesWebSocketUnavailable(RuntimeError):
-    pass
+from src.providers.responses_websocket_handshake import ResponsesWebSocketUnavailable
+from src.providers.responses_websocket_handshake import open_responses_websocket
 
 
 RESPONSES_WEBSOCKET_BETA_HEADER_VALUE = "responses_websockets=2026-02-06"
@@ -103,6 +102,7 @@ class ResponsesWebSocketTransportMixin:
     def _responses_stream_data_lines(self, *, url, headers, payload_json, timeout_sec):
         if self._responses_websocket_available() and self._responses_payload_requests_stream(payload_json):
             try:
+                self._responses_last_transport = "websocket"
                 yield from self._stream_responses_websocket_data_lines(
                     url=url,
                     headers=headers,
@@ -121,6 +121,7 @@ class ResponsesWebSocketTransportMixin:
                     ),
                     stage="openai_responses_websocket_fallback",
                 )
+        self._responses_last_transport = "http"
         yield from self._curl_post_sse_data_lines(
             url=url,
             headers=headers,
@@ -129,6 +130,10 @@ class ResponsesWebSocketTransportMixin:
         )
 
     def _responses_websocket_available(self) -> bool:
+        if not isinstance(getattr(self, "config", None), dict):
+            return False
+        if self.config.get("responsesWebSocket") is not True:
+            return False
         return not bool(getattr(self, "_responses_websocket_unavailable", False))
 
     @staticmethod
@@ -164,7 +169,10 @@ class ResponsesWebSocketTransportMixin:
                 connection.send(json.dumps(ws_payload, ensure_ascii=False))
             except Exception as exc:
                 self._close_responses_websocket()
-                raise ResponsesWebSocketUnavailable(f"failed to send websocket request: {exc}") from exc
+                raise OpenAITransportError(
+                    f"failed to send websocket request: {exc}",
+                    retry_scope="request",
+                ) from exc
 
             self._emit_provider_runtime_notice(
                 message=json.dumps(
@@ -186,8 +194,9 @@ class ResponsesWebSocketTransportMixin:
                 except Exception as exc:
                     self._close_responses_websocket()
                     if not received_response_message and _is_websocket_keepalive_timeout(exc):
-                        raise ResponsesWebSocketUnavailable(
-                            f"websocket keepalive failed before first response event: {exc}"
+                        raise OpenAITransportError(
+                            f"websocket keepalive failed before first response event: {exc}",
+                            retry_scope="request",
                         ) from exc
                     raise OpenAITransportError(f"websocket receive failed: {exc}") from exc
                 if not text:
@@ -201,6 +210,7 @@ class ResponsesWebSocketTransportMixin:
                     error = websocket_error_message(parsed)
                     if error is not None:
                         status_code, provider_code, message = error
+                        self._close_responses_websocket()
                         raise OpenAIHttpError(
                             status_code,
                             message,
@@ -227,20 +237,18 @@ class ResponsesWebSocketTransportMixin:
         if connection is not None:
             return connection
         try:
-            from websockets.sync.client import connect
-
-            connection = connect(
-                responses_websocket_url(url),
-                additional_headers=self._responses_websocket_headers(headers),
-                open_timeout=min(10, max(1, float(timeout_sec or 60))),
-                ping_interval=20,
-                ping_timeout=20,
-                close_timeout=5,
-                max_size=None,
-            )
-        except Exception as exc:
+            websocket_url = responses_websocket_url(url)
+        except ValueError as exc:
             self._responses_websocket_unavailable = True
             raise ResponsesWebSocketUnavailable(str(exc)) from exc
+        timeouts = OpenAITransportTimeouts.from_config(
+            getattr(self, "config", {}) or {}
+        )
+        connection = open_responses_websocket(
+            url=websocket_url,
+            headers=self._responses_websocket_headers(headers),
+            open_timeout_seconds=timeouts.websocket_connect_seconds,
+        )
         self._responses_ws_connection = connection
         return connection
 
@@ -249,6 +257,31 @@ class ResponsesWebSocketTransportMixin:
         next_headers = dict(headers or {})
         next_headers["OpenAI-Beta"] = RESPONSES_WEBSOCKET_BETA_HEADER_VALUE
         return next_headers
+
+    def _reset_responses_websocket_for_retry(self) -> None:
+        if getattr(self, "_responses_last_transport", "") == "websocket":
+            self._close_responses_websocket()
+
+    def _fallback_responses_websocket_to_http(self, *, reason: str) -> bool:
+        if (
+            not self._responses_websocket_available()
+            or getattr(self, "_responses_last_transport", "") != "websocket"
+        ):
+            return False
+        self._close_responses_websocket()
+        self._responses_websocket_unavailable = True
+        self._emit_provider_runtime_notice(
+            message=json.dumps(
+                {
+                    "fallback": "responses_http_sse",
+                    "reason": str(reason or ""),
+                    "scope": "session",
+                },
+                ensure_ascii=False,
+            ),
+            stage="openai_responses_websocket_fallback",
+        )
+        return True
 
     def _close_responses_websocket(self) -> None:
         connection = getattr(self, "_responses_ws_connection", None)

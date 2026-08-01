@@ -14,6 +14,9 @@ export function applyResponsesApiDefaults(provider: Record<string, unknown>) {
   if (provider.toolContextCompactionOutputTokens === undefined || provider.toolContextCompactionOutputTokens === null || provider.toolContextCompactionOutputTokens === '') {
     provider.toolContextCompactionOutputTokens = 0
   }
+  if (typeof provider.responsesWebSocket !== 'boolean') {
+    provider.responsesWebSocket = false
+  }
   if (String(provider.type || '').trim().toLowerCase() === 'openai' && typeof provider.responsesReplayReasoningItems !== 'boolean') {
     provider.responsesReplayReasoningItems = false
   }

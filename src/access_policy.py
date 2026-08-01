@@ -85,9 +85,28 @@ def register_remote_user(
         policy = load_access_policy(workspace_root)
         users = list(policy["users"])
         now = _utc_now()
-        match_index = next(
-            (index for index, item in enumerate(users) if item["clientId"] == safe_client_id),
+        client_match_index = next(
+            (
+                index
+                for index, item in enumerate(users)
+                if safe_client_id in item["clientIds"]
+            ),
             None,
+        )
+        username_match_index = next(
+            (
+                index
+                for index, item in enumerate(users)
+                if _username_key(item["username"]) == _username_key(safe_username)
+            ),
+            None,
+        )
+        # Preserve an existing device binding, otherwise recognize the same
+        # normalized username as one user across multiple devices.
+        match_index = (
+            client_match_index
+            if client_match_index is not None
+            else username_match_index
         )
         if match_index is None:
             if len(users) >= _MAX_USERS:
@@ -95,7 +114,7 @@ def register_remote_user(
                     f"users cannot contain more than {_MAX_USERS} entries"
                 )
             match = {
-                "clientId": safe_client_id,
+                "clientIds": [safe_client_id],
                 "username": safe_username,
                 "developer": False,
                 "ips": [],
@@ -107,6 +126,8 @@ def register_remote_user(
             match = dict(users[match_index])
             users[match_index] = match
             match["lastSeenAt"] = now
+            if safe_client_id not in match["clientIds"]:
+                match["clientIds"] = [*match["clientIds"], safe_client_id][-100:]
         if safe_ip and safe_ip not in match["ips"]:
             match["ips"] = [*match["ips"], safe_ip][-100:]
         policy["users"] = users
@@ -138,25 +159,41 @@ def validate_access_policy(payload: object) -> dict[str, Any]:
     if len(raw_users) > _MAX_USERS:
         raise AccessPolicyError(f"users cannot contain more than {_MAX_USERS} entries")
     users: list[dict[str, Any]] = []
-    seen_client_ids: set[str] = set()
+    user_indexes: dict[str, int] = {}
     for index, raw_user in enumerate(raw_users):
         if not isinstance(raw_user, dict):
             raise AccessPolicyError(f"users[{index}] must be an object")
-        client_id = _client_id(raw_user.get("clientId"))
-        if client_id in seen_client_ids:
-            raise AccessPolicyError(f"duplicate users clientId: {client_id}")
-        seen_client_ids.add(client_id)
+        username = _username(raw_user.get("username"))
+        username_key = _username_key(username)
+        client_ids = _user_client_ids(raw_user, index)
         ips = _string_list(raw_user.get("ips", []), f"users[{index}].ips", maximum=100)
-        users.append(
-            {
-                "clientId": client_id,
-                "username": _username(raw_user.get("username")),
-                "developer": bool(raw_user.get("developer") is True),
-                "ips": ips,
-                "firstSeenAt": str(raw_user.get("firstSeenAt") or "").strip(),
-                "lastSeenAt": str(raw_user.get("lastSeenAt") or "").strip(),
-            }
+        normalized_user = {
+            "clientIds": client_ids,
+            "username": username,
+            "developer": bool(raw_user.get("developer") is True),
+            "ips": ips,
+            "firstSeenAt": str(raw_user.get("firstSeenAt") or "").strip(),
+            "lastSeenAt": str(raw_user.get("lastSeenAt") or "").strip(),
+        }
+        existing_index = user_indexes.get(username_key)
+        if existing_index is None:
+            user_indexes[username_key] = len(users)
+            users.append(normalized_user)
+            continue
+        users[existing_index] = _merge_same_username_users(
+            users[existing_index],
+            normalized_user,
         )
+
+    client_owners: dict[str, str] = {}
+    for user in users:
+        for client_id in user["clientIds"]:
+            owner = client_owners.get(client_id)
+            if owner is not None and owner != _username_key(user["username"]):
+                raise AccessPolicyError(
+                    f"clientId {client_id} belongs to multiple usernames"
+                )
+            client_owners[client_id] = _username_key(user["username"])
 
     filtered = _string_list(
         payload.get("nonDeveloperFilteredTools", list(DEFAULT_NONDEVELOPER_FILTERED_TOOLS)),
@@ -181,6 +218,78 @@ def _username(value: object) -> str:
     if not text or len(text) > 80 or any(ord(char) < 32 for char in text):
         raise AccessPolicyError("username must contain 1 to 80 visible characters")
     return text
+
+
+def _username_key(value: object) -> str:
+    return _username(value).casefold()
+
+
+def _user_client_ids(raw_user: dict[str, Any], index: int) -> list[str]:
+    if "clientIds" not in raw_user:
+        return [_client_id(raw_user.get("clientId"))]
+    raw_client_ids = raw_user.get("clientIds")
+    if not isinstance(raw_client_ids, list):
+        raise AccessPolicyError(f"users[{index}].clientIds must be an array")
+    if len(raw_client_ids) > 100:
+        raise AccessPolicyError(
+            f"users[{index}].clientIds cannot contain more than 100 entries"
+        )
+    output: list[str] = []
+    seen: set[str] = set()
+    for client_index, value in enumerate(raw_client_ids):
+        try:
+            client_id = _client_id(value)
+        except AccessPolicyError as exc:
+            raise AccessPolicyError(
+                f"users[{index}].clientIds[{client_index}] is invalid"
+            ) from exc
+        if client_id in seen:
+            continue
+        seen.add(client_id)
+        output.append(client_id)
+    return output
+
+
+def _merge_same_username_users(
+    current: dict[str, Any],
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "clientIds": _merge_unique(current["clientIds"], incoming["clientIds"]),
+        "username": current["username"],
+        "developer": current["developer"] is True or incoming["developer"] is True,
+        "ips": _merge_unique(current["ips"], incoming["ips"]),
+        "firstSeenAt": _earliest_nonempty(
+            current["firstSeenAt"],
+            incoming["firstSeenAt"],
+        ),
+        "lastSeenAt": _latest_nonempty(
+            current["lastSeenAt"],
+            incoming["lastSeenAt"],
+        ),
+    }
+
+
+def _merge_unique(left: list[str], right: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in [*left, *right]:
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(value)
+    return output[-100:]
+
+
+def _earliest_nonempty(left: str, right: str) -> str:
+    values = [value for value in (left, right) if value]
+    return min(values) if values else ""
+
+
+def _latest_nonempty(left: str, right: str) -> str:
+    values = [value for value in (left, right) if value]
+    return max(values) if values else ""
 
 
 def _string_list(value: object, label: str, *, maximum: int) -> list[str]:

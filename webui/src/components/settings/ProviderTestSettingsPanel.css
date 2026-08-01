@@ -48,16 +48,6 @@
   padding-inline: 8px;
 }
 
-.start-btn {
-  border-color: rgba(56, 189, 248, 0.45);
-  color: rgba(186, 230, 253, 0.98);
-}
-
-.model-btn {
-  border-color: rgba(52, 211, 153, 0.4);
-  color: rgba(187, 247, 208, 0.98);
-}
-
 .provider-item {
   min-width: 0;
   min-height: 68px;
@@ -378,11 +368,6 @@
   color: rgba(254, 226, 226, 0.95);
   background: rgba(127, 29, 29, 0.32);
   font-size: 12px;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
 }
 
 @media (max-width: 1120px) {

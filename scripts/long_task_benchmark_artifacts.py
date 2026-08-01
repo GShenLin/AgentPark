@@ -49,6 +49,10 @@ def require_empty_result_dir(path: Path) -> None:
 
 def resolve_agent_profile(raw: str, *, project_root: Path) -> Path:
     candidate = Path(raw).expanduser()
+    if candidate.is_dir():
+        node_config = candidate / "config.json"
+        if node_config.is_file():
+            return node_config.resolve()
     if candidate.is_file():
         return candidate.resolve()
     profile_id = str(raw or "").strip()

@@ -58,13 +58,10 @@ export async function resolveDroppedPaths(event: DragEvent, traceId: string): Pr
   return uploadResultToDroppedItems(uploaded)
 }
 
-export async function resolvePastedImagePaths(event: ClipboardEvent, traceId: string): Promise<DroppedPathItem[]> {
-  const clipboardItems = Array.from(event.clipboardData?.items || [])
-  const imageFiles = clipboardItems
-    .filter((item) => item.kind === 'file' && item.type.toLowerCase().startsWith('image/'))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => file instanceof File)
-
+export async function uploadPastedImageFiles(
+  imageFiles: File[],
+  traceId: string,
+): Promise<DroppedPathItem[]> {
   if (!imageFiles.length) return []
 
   const files = imageFiles.map((file, index) => {

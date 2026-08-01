@@ -1,0 +1,28 @@
+RAW_CONTEXT_COMPACTION_GATE_PROMPT = (
+    "Tool calls have accumulated in the current task. This is a context maintenance checkpoint. "
+    "If more function-tool work is needed, call compact_tool_context before using another function tool. "
+    "If the task is already complete, return the final answer directly without calling it; a substantive "
+    "response closes the checkpoint and ends the current turn.\n"
+    "Review the tool-call history already present in the conversation and decide what should remain. "
+    "Use the latest user request as the primary task anchor. Prefer action=replace when the raw tool-call "
+    "window can be replaced by a concise but actionable summary. Use action=patch when only specific "
+    "messages should be deleted or rewritten.\n"
+    "Preserve inspected paths, changed state, failed attempts that affect next steps, important outputs, "
+    "pending decisions, and protocol-atomic tool exchanges. Remove raw logs, duplicate search results, "
+    "and large file contents after extracting decision-relevant facts.\n"
+    "The summary is working memory for continuation, not a completion signal. Distinguish confirmed facts, "
+    "changed state, verification, failed attempts, and ordered remaining steps. Set immediate_next_step to "
+    "exactly one remaining step and record already-sufficient evidence in avoid_repeating."
+)
+
+RAW_CONTEXT_COMPACTION_RETRY_PROMPT = (
+    "The compaction checkpoint is still active. If more function-tool work is needed, call "
+    "compact_tool_context and reduce the eligible tool context first. If the task is already complete, "
+    "return the final answer directly; a substantive response closes this checkpoint."
+)
+
+
+__all__ = [
+    "RAW_CONTEXT_COMPACTION_GATE_PROMPT",
+    "RAW_CONTEXT_COMPACTION_RETRY_PROMPT",
+]

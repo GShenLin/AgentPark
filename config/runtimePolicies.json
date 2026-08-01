@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "default_policy_id": "coding-default",
+  "policies": {
+    "coding-default": "runtime_policies/coding-default.json",
+    "coding-fast": "runtime_policies/coding-fast.json",
+    "coding-diagnostic": "runtime_policies/coding-diagnostic.json",
+    "code-reading": "runtime_policies/code-reading.json",
+    "architecture-design": "runtime_policies/architecture-design.json",
+    "incident-diagnosis": "runtime_policies/incident-diagnosis.json",
+    "localized-implementation": "runtime_policies/localized-implementation.json",
+    "cross-module-implementation": "runtime_policies/cross-module-implementation.json",
+    "code-review": "runtime_policies/code-review.json",
+    "test-engineering": "runtime_policies/test-engineering.json",
+    "refactoring-planning": "runtime_policies/refactoring-planning.json",
+    "documentation-maintenance": "runtime_policies/documentation-maintenance.json",
+    "protocol-integration": "runtime_policies/protocol-integration.json"
+  }
+}

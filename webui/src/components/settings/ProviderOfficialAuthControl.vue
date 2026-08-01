@@ -6,6 +6,9 @@ import {
   addProviderApiKeyAccount,
   deleteProviderAccount,
 } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const props = defineProps<{
   enabled: boolean
@@ -93,7 +96,7 @@ async function addApiKey() {
 </script>
 
 <template>
-  <button
+  <ActionButton
     v-if="showToggle !== false"
     type="button"
     class="official-auth-button"
@@ -103,7 +106,7 @@ async function addApiKey() {
     @click="emit('toggle', !enabled)"
   >
     {{ enabled ? `${label || '官方授权'} ✓` : (label || '官方授权') }}
-  </button>
+  </ActionButton>
 
   <div v-if="enabled && showStatus !== false" class="oauth-status-field">
     <span>{{ providerAuthId || status?.provider || 'Provider' }} Accounts</span>
@@ -112,22 +115,22 @@ async function addApiKey() {
       <strong v-else>尚无账号</strong>
       <small v-if="status?.planType">{{ status.planType }}</small>
       <small v-if="error || status?.error || accountError">{{ error || status?.error || accountError }}</small>
-      <button
+      <ActionButton
         v-if="oauthEnabled && oauthSupported"
         type="button"
         :disabled="busy || accountBusy"
         @click="emit('login')"
       >
         {{ status?.authorized ? '添加 OAuth 账号' : `登录 ${providerAuthId}` }}
-      </button>
+      </ActionButton>
       <small v-if="status?.accounts?.length">{{ status.accounts.length }} 个账号</small>
     </div>
 
     <div v-if="!oauthEnabled" class="api-key-account-form">
-      <input v-model="alias" placeholder="账号名称，例如：工作账号" autocomplete="off" />
-      <input v-model="identity" placeholder="唯一标识，例如：work（留空则使用名称）" autocomplete="off" />
-      <input v-model="apiKey" type="password" placeholder="API Key" autocomplete="new-password" />
-      <button type="button" :disabled="accountBusy" @click="addApiKey">添加 API Key 账号</button>
+      <FormTextInput v-model="alias" placeholder="账号名称，例如：工作账号" autocomplete="off" />
+      <FormTextInput v-model="identity" placeholder="唯一标识，例如：work（留空则使用名称）" autocomplete="off" />
+      <FormTextInput v-model="apiKey" type="password" placeholder="API Key" autocomplete="new-password" />
+      <ActionButton compact :disabled="accountBusy" @click="addApiKey">添加 API Key 账号</ActionButton>
     </div>
 
     <div v-if="status?.accounts?.length" class="oauth-account-list">
@@ -137,15 +140,15 @@ async function addApiKey() {
           {{ account.kind }}
           {{ selectedAccountId === account.id ? ' · 当前 Provider' : account.active ? ' · 全局活动' : '' }}
         </small>
-        <button
+        <ActionButton
           v-if="selectedAccountId !== account.id"
           type="button"
           :disabled="busy || accountBusy"
           @click="select(account.id)"
         >
           选择
-        </button>
-        <button type="button" class="danger" :disabled="busy || accountBusy" @click="remove(account.id)">移除</button>
+        </ActionButton>
+        <DangerButton :disabled="busy || accountBusy" @click="remove(account.id)">移除</DangerButton>
       </div>
     </div>
   </div>
@@ -195,13 +198,8 @@ async function addApiKey() {
   gap: 6px;
 }
 
-.api-key-account-form input {
+.api-key-account-form .form-text-input {
   min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 7px;
-  padding: 7px 8px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.5);
 }
 
 .oauth-account-list {
@@ -212,10 +210,6 @@ async function addApiKey() {
 .oauth-account-row > span {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.oauth-account-row .danger {
-  color: rgba(254, 202, 202, 0.96);
 }
 
 @media (max-width: 900px) {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getProviderPressure, type ProviderPressureDocument, type ProviderPressureEntry } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
 
 const pressure = ref<ProviderPressureDocument | null>(null)
 const loading = ref(false)
@@ -72,7 +73,7 @@ onUnmounted(() => {
         <h2>Provider Pressure</h2>
         <span>{{ providers.length }} providers</span>
       </div>
-      <button type="button" :disabled="loading" @click="refreshPressure">{{ loading ? 'Refreshing...' : 'Refresh' }}</button>
+      <ActionButton :disabled="loading" @click="refreshPressure">{{ loading ? 'Refreshing...' : 'Refresh' }}</ActionButton>
     </div>
 
     <div class="pressure-table-wrap">
@@ -161,20 +162,6 @@ onUnmounted(() => {
 .pressure-title span {
   color: var(--text-muted, #6b7280);
   font-size: 12px;
-}
-
-.pressure-toolbar button {
-  border: 1px solid var(--border, #d1d5db);
-  background: var(--surface, #fff);
-  color: var(--text, #111827);
-  border-radius: 6px;
-  padding: 7px 12px;
-  cursor: pointer;
-}
-
-.pressure-toolbar button:disabled {
-  cursor: default;
-  opacity: 0.65;
 }
 
 .pressure-table-wrap {

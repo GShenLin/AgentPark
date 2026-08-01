@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import { type MessageEnvelope, type ResourceKind } from '../../api'
-import { resolveDroppedPaths, resolvePastedImagePaths } from '../../composables/droppedPaths'
+import { resolveDroppedPaths, uploadPastedImageFiles } from '../../composables/droppedPaths'
 import { useAudioRecorder } from '../../composables/useAudioRecorder'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { uploadFiles } from '../../uploadApi'
+import { clipboardImageFiles, hasBoardClipboardMarker } from './boardClipboardProtocol'
+import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey } from './context'
 import NodeEditorInputSection from './NodeEditorInputSection.vue'
 
@@ -123,15 +125,28 @@ async function handleInputDrop(event: DragEvent) {
 }
 
 async function handleInputPaste(event: ClipboardEvent) {
-  const hasImage = Array.from(event.clipboardData?.items || []).some(
-    (item) => item.kind === 'file' && item.type.toLowerCase().startsWith('image/'),
-  )
-  if (!hasImage) return
+  if (hasBoardClipboardMarker(event.clipboardData)) {
+    event.preventDefault()
+    lastError.value = 'Paste copied AgentPark nodes on the board canvas, not in the node input.'
+    return
+  }
+
+  let files: File[]
+  try {
+    files = clipboardImageFiles(event.clipboardData)
+  } catch (error) {
+    event.preventDefault()
+    lastError.value = error instanceof Error ? error.message : String(error)
+    return
+  }
+  if (!files.length) return
 
   event.preventDefault()
+  insertPastedText(event, String(event.clipboardData?.getData('text/plain') || ''))
   isUploadingFiles.value = true
+  lastError.value = null
   try {
-    const pasted = await resolvePastedImagePaths(event, 'node-input-dock-paste')
+    const pasted = await uploadPastedImageFiles(files, 'node-input-dock-paste')
     for (const item of pasted) {
       appendAttachment(item.path, item.name)
     }
@@ -140,6 +155,21 @@ async function handleInputPaste(event: ClipboardEvent) {
   } finally {
     isUploadingFiles.value = false
   }
+}
+
+function insertPastedText(event: ClipboardEvent, text: string) {
+  if (!text) return
+  const textarea = event.target instanceof HTMLTextAreaElement ? event.target : null
+  const current = String(nodeEditorInputText.value || '')
+  const start = textarea?.selectionStart ?? current.length
+  const end = textarea?.selectionEnd ?? start
+  nodeEditorInputText.value = `${current.slice(0, start)}${text}${current.slice(end)}`
+
+  if (!textarea) return
+  const cursor = start + text.length
+  requestAnimationFrame(() => {
+    textarea.setSelectionRange(cursor, cursor)
+  })
 }
 
 function guessResourceKind(path: string): ResourceKind | 'file' {
@@ -315,9 +345,9 @@ watch(
       @toggle-audio-recording="toggleAudioRecording"
       @send="sendMessage"
     />
-    <button v-if="isNodeRunning" type="button" class="stop-btn" @click="ctx.stopNodeWork(selectedNode.id).catch(() => null)">
+    <DangerButton v-if="isNodeRunning" compact class="stop-btn" @click="ctx.stopNodeWork(selectedNode.id).catch(() => null)">
       {{ isStopRequested ? 'Stopping' : 'Stop' }}
-    </button>
+    </DangerButton>
   </section>
 </template>
 
@@ -352,11 +382,5 @@ watch(
 
 .stop-btn {
   flex: 0 0 auto;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.2);
-  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
-  padding: 6px 10px;
-  cursor: pointer;
 }
 </style>

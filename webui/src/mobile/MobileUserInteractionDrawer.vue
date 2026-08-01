@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import ActionButton from '../components/ActionButton.vue'
 import UserInteractionForm from '../components/UserInteractionForm.vue'
 import { useUserInteractions } from '../composables/useUserInteractions'
 
@@ -34,9 +35,9 @@ watch(() => activeRequest.value?.id, () => { error.value = '' })
         <div class="mobile-interaction-count">{{ interactions.activeIndex.value + 1 }} / {{ interactions.requests.value.length }}</div>
       </header>
       <div v-if="interactions.requests.value.length > 1" class="mobile-interaction-navigation">
-        <button type="button" @click="interactions.showPrevious">上一项</button>
+        <ActionButton compact @click="interactions.showPrevious">上一项</ActionButton>
         <span>共 {{ interactions.requests.value.length }} 个待确认请求</span>
-        <button type="button" @click="interactions.showNext">下一项</button>
+        <ActionButton compact @click="interactions.showNext">下一项</ActionButton>
       </div>
       <div class="mobile-interaction-content">
         <UserInteractionForm :request="activeRequest" :submitting="submitting" :error="error" @submit="submitActive" @error="error = $event" />
@@ -52,7 +53,7 @@ watch(() => activeRequest.value?.id, () => { error.value = '' })
   z-index: 120;
   display: flex;
   align-items: flex-end;
-  background: rgba(2, 6, 23, 0.58);
+  background: var(--ui-dialog-backdrop);
   backdrop-filter: blur(3px);
 }
 
@@ -62,11 +63,12 @@ watch(() => activeRequest.value?.id, () => { error.value = '' })
   display: flex;
   flex-direction: column;
   padding: 8px 16px max(16px, env(safe-area-inset-bottom));
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid var(--ui-dialog-border);
   border-bottom: 0;
-  border-radius: 20px 20px 0 0;
-  background: rgba(15, 23, 42, 0.99);
-  box-shadow: 0 -20px 50px rgba(2, 6, 23, 0.55);
+  border-radius: var(--ui-dialog-radius) var(--ui-dialog-radius) 0 0;
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
+  box-shadow: var(--ui-dialog-shadow);
   animation: mobileInteractionIn 0.22s ease-out;
 }
 
@@ -107,11 +109,6 @@ watch(() => activeRequest.value?.id, () => { error.value = '' })
 .mobile-interaction-navigation span {
   color: #94a3b8;
   text-align: center;
-  font-size: 12px;
-}
-
-.mobile-interaction-navigation button {
-  padding: 7px 11px;
   font-size: 12px;
 }
 

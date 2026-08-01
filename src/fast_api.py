@@ -8,6 +8,7 @@ from copy import deepcopy
 import uvicorn
 from uvicorn.config import LOGGING_CONFIG
 
+from src.project_process_environment import apply_project_process_environment
 from src.server_pid_file import get_server_pid_file_path, install_server_pid_file, remove_server_pid_file
 from src.web_backend import create_app
 from src.web_backend import runtime_paths
@@ -120,6 +121,7 @@ def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
 
 
 def main(argv=None):
+    apply_project_process_environment()
     argv = list(argv or [])
     if argv and argv[0] in {"doctor", "capabilities", "config", "chat"}:
         from src.cli import main as cli_main

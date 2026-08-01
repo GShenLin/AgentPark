@@ -1,0 +1,10 @@
+Design and implement tests around externally visible contracts and real public entry
+paths. Identify the behavior, failure semantics, mutable ownership, and regression risk
+before choosing the test layer. A test must fail for the intended reason before the fix
+and remain deterministic without timing guesses or environment-dependent masking.
+
+Prefer focused contract or integration coverage over duplicating implementation details.
+Use strict fixtures, explicit oracles, and cleanup that preserves independent runs.
+Execute the narrow test first, then the relevant suite or build. Do not weaken production
+contracts merely to make a test pass, and do not treat compilation alone as behavior
+coverage.

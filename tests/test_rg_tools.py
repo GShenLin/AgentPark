@@ -236,6 +236,49 @@ def test_rg_list_files_defaults_to_agent_working_path(monkeypatch, tmp_path):
     assert [item["relative_path"] for item in payload["files"]] == ["target.py"]
 
 
+def test_rg_relative_project_root_resolves_from_agent_working_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: None)
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "target.py").write_text("print('ok')\n", encoding="utf-8")
+
+    raw = rg_tools.rg_list_files(
+        project_root=".",
+        include_globs=["*.py"],
+        agent=SimpleNamespace(_agentpark_working_path=str(work)),
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert payload["project_root"] == str(work)
+    assert [item["relative_path"] for item in payload["files"]] == ["target.py"]
+
+
+def test_rg_results_respect_agent_tool_submission_budget(monkeypatch, tmp_path):
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: None)
+    for index in range(30):
+        (tmp_path / f"long_target_{index}.txt").write_text(
+            "needle " + ("x" * 200),
+            encoding="utf-8",
+        )
+    agent = SimpleNamespace(config={"toolResultSubmissionMaxChars": 4000})
+
+    raw = rg_tools.rg_search_text(
+        query="needle",
+        project_root=str(tmp_path),
+        include_globs=["*.txt"],
+        max_results=100,
+        agent=agent,
+    )
+    payload = json.loads(raw)
+
+    assert payload["status"] == "success"
+    assert payload["truncated"] is True
+    assert payload["output_char_limit"] == 3600
+    assert len(raw) <= 3600
+
+
 def test_system_tools_exports_rg_tools():
     assert "rg_search_text" in system_tools.__all__
     assert "rg_search_text_declaration" in system_tools.__all__

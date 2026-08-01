@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useWorkAlerts } from '../composables/useWorkAlerts'
+import ActionButton from './ActionButton.vue'
+import DialogCloseButton from './DialogCloseButton.vue'
 
 const {
   alerts,
@@ -38,7 +40,7 @@ async function enableAlerts() {
 <template>
   <Transition name="work-alert">
     <aside v-if="latestAlert" class="work-alert-toast" :class="{ navigable: isNavigable }" role="status" aria-live="polite">
-      <button class="work-alert-close" type="button" aria-label="关闭提醒" @click.stop="dismissWorkAlert(latestAlert.id)">×</button>
+      <DialogCloseButton class="work-alert-close" aria-label="关闭提醒" @click.stop="dismissWorkAlert(latestAlert.id)" />
       <div
         class="work-alert-content"
         :class="{ navigable: isNavigable }"
@@ -54,9 +56,9 @@ async function enableAlerts() {
       </div>
       <div class="work-alert-actions">
         <span v-if="pendingCount" class="work-alert-count">另有 {{ pendingCount }} 条提醒</span>
-        <button v-if="!audioReady || (!isMobile && notificationPermission === 'default')" type="button" @click.stop="enableAlerts">
+        <ActionButton v-if="!audioReady || (!isMobile && notificationPermission === 'default')" compact @click.stop="enableAlerts">
           启用提醒
-        </button>
+        </ActionButton>
       </div>
     </aside>
   </Transition>
@@ -96,13 +98,6 @@ async function enableAlerts() {
   position: absolute;
   top: 7px;
   right: 8px;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 22px;
 }
 
 .work-alert-kicker {
@@ -136,10 +131,8 @@ async function enableAlerts() {
   margin-top: 10px;
 }
 
-.work-alert-actions button {
+.work-alert-actions .action-button:only-child {
   margin-left: auto;
-  padding: 5px 10px;
-  font-size: 12px;
 }
 
 .work-alert-count {

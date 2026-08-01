@@ -47,8 +47,10 @@ import {
   type ProviderInfo,
 } from '../api'
 import { subscribeAppEvents } from '../composables/useAppEventStream'
+import { classifyLiveStreamFrame, reconcileLiveStreamVersion } from '../eventStreamProtocol'
 import { useGlobalState } from '../composables/useGlobalState'
 import { resolveMobileGraphTarget } from './mobileGraphTarget'
+import { resolveTurnDeletionHistoryMode } from '../turnDeletionRefresh'
 import { useCliSessions } from '../composables/useCliSessions'
 import { formatLiveActivity } from '../liveActivity'
 import {
@@ -541,6 +543,10 @@ export function useMobileWorkspace() {
     const nextConversation = await getMobileNodeConversation(selection.pcId, selection.graphId, selection.nodeId, requestedMode)
     if (!isCurrentChatSelection(selection)) return
     conversation.value = normalizeConversationAfterRefresh(nextConversation)
+    const streamKey = `${selection.pcId}:${selection.graphId}:${selection.nodeId}`
+    if (chatLiveStreamKey === streamKey) {
+      chatLiveVersion = reconcileLiveStreamVersion(chatLiveVersion, nextConversation.live_version)
+    }
   }
 
   function applySentMessageSnapshot(
@@ -815,7 +821,7 @@ export function useMobileWorkspace() {
     return `${cleaned}_${Date.now()}`
   }
 
-  function graphNodeForMobileNode(node: MobileNode, nodeId: string, ui: { x: number; y: number }) {
+  function graphNodeForMobileNode(node: MobileNode, nodeId: string, ui: { grid_x: number; grid_y: number; width?: number; height?: number }) {
     const graphNode = (graphConfig.value?.nodes || []).find((item) => item.id === node.id)
     return {
       id: nodeId,
@@ -843,8 +849,8 @@ export function useMobileWorkspace() {
   function nextMobileNodeUi() {
     const index = nodes.value.length
     return {
-      x: 80 + (index % 3) * 260,
-      y: 80 + Math.floor(index / 3) * 180,
+      grid_x: index % 4,
+      grid_y: Math.floor(index / 4),
     }
   }
 
@@ -873,6 +879,7 @@ export function useMobileWorkspace() {
         ? await createNodeFromAgentProfile(profileId, { graph_id: graphId, node_id: nodeId, name: nodeId, ui })
         : await createNodeInstance(nodeId, safeTypeId, nodeId, graphId, ui)
       const createdNodeId = String(created?.node_id || nodeId).trim() || nodeId
+      const createdUi = created.ui
       if (!profileId && fields && Object.keys(fields).length) {
         await updateNodeInstanceConfig(createdNodeId, { fields }, graphId)
       }
@@ -887,7 +894,7 @@ export function useMobileWorkspace() {
             name: createdNodeId,
             input_num: Number(typeInfo?.input_num || 1),
             output_num: Number(typeInfo?.output_num || 1),
-            ui,
+            ui: createdUi,
             providerId: String((fields as any)?.provider_id ?? '').trim(),
             mode: String((fields as any)?.mode ?? '').trim(),
             web_search: (fields as any)?.web_search as any,
@@ -1006,7 +1013,7 @@ export function useMobileWorkspace() {
         ...graph,
         nodes: [
           ...(graph.nodes || []).filter((item) => item.id !== clonedNodeId),
-          graphNodeForMobileNode(node, clonedNodeId, ui),
+          graphNodeForMobileNode(node, clonedNodeId, cloned.ui),
         ],
       }))
       logMobileGraphEvent('node_cloned', {
@@ -1338,6 +1345,11 @@ export function useMobileWorkspace() {
     const nodeId = String(selectedNode.value?.id || '').trim()
     const safeUserMessageId = String(userMessageId || '').trim()
     if (!pcId || !graphId || !nodeId || !safeUserMessageId) throw new Error('PC, Graph, Node, and Turn selection are required')
+    const refreshHistoryMode = resolveTurnDeletionHistoryMode(
+      conversation.value?.messages || [],
+      safeUserMessageId,
+      conversation.value?.history_complete === true,
+    )
     error.value = ''
     try {
       const result = await deleteMobileNodeTurn(pcId, graphId, nodeId, safeUserMessageId)
@@ -1348,7 +1360,10 @@ export function useMobileWorkspace() {
           messages: conversation.value.messages.filter((item) => !deletedIds.has(String((item as any)?.id || ''))),
         }
       }
-      await refreshConversation()
+      await refreshConversationForSelection(
+        requireChatSelection(),
+        refreshHistoryMode,
+      )
       return result
     } catch (e) {
       setError(e)
@@ -1595,10 +1610,10 @@ export function useMobileWorkspace() {
   }
 
   function consumeChatLivePayload(payload: Record<string, any>) {
-    const version = Number(payload.version || 0)
-    const streamType = String(payload.stream_type || 'snapshot').trim().toLowerCase()
-    if (version <= chatLiveVersion) return
-    if (streamType === 'delta' && version !== chatLiveVersion + 1) {
+    const decision = classifyLiveStreamFrame(payload, chatLiveVersion)
+    const { version, streamType } = decision.frame
+    if (decision.status === 'stale') return
+    if (decision.status === 'gap') {
       void refreshConversation()
       return
     }
@@ -1679,6 +1694,7 @@ export function useMobileWorkspace() {
       if (String(selectedPc.value?.id || '').trim() !== pcId) return
       if (String(selectedGraph.value?.id || '').trim() !== graphId) return
       if (String(payload.event || '').trim() === 'stream_gap') {
+        chatLiveVersion = 0
         scheduleGraphRefresh({ includeConversation: view.value === 'chat', includeGraphConfig: true })
         return
       }

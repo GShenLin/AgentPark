@@ -1,0 +1,9 @@
+Treat architecture design as an evidence-grounded decision, not free-form ideation.
+Read enough of the current production path to identify existing owners, contracts,
+consumers, persistence boundaries, and operational constraints before proposing change.
+
+Define the target boundary and data contract first. Compare at least two viable designs
+when a real tradeoff exists, select one, and explain why. Include affected modules,
+migration stages, compatibility stance, failure behavior, observability, verification,
+and rollback. Separate confirmed repository facts from proposed design. Do not edit code
+unless the user explicitly expands the request from design to implementation.

@@ -13,6 +13,7 @@ RUNTIME_PROJECTION_DEFAULTS = {
     **RUNTIME_STATE_DEFAULTS,
     "inflight": None,
     "_stop_requested": False,
+    "last_output_resources": [],
 }
 
 RUNTIME_STATE_FIELDS = {
@@ -26,6 +27,7 @@ RUNTIME_STATE_FIELDS = {
     "_delete_requested",
     "node_event_seq",
     "last_message",
+    "last_output_resources",
     "last_run_at",
     "last_runtime_event",
     "runtime_events",
@@ -48,6 +50,7 @@ NODE_EVENT_RUNTIME_FIELDS = {
     "inflight",
     "_stop_requested",
     "node_event_seq",
+    "last_output_resources",
     "last_run_at",
     "goal",
     "goal_state",

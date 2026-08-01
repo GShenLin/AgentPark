@@ -24,6 +24,14 @@ class _BudgetAgent:
         self.config = {"toolResultSubmissionMaxChars": limit}
 
 
+class _RemoteAgent:
+    config = {
+        "remote_enabled": True,
+        "remote_worker_id": "worker-1",
+        "working_path": r"E:\Game",
+    }
+
+
 def test_system_tools_exposes_workspace_exec_instead_of_parallel_wrapper():
     tools = BaseTool(_DummyAgent())
     tools.addTool("system_tools")
@@ -117,6 +125,147 @@ def test_workspace_exec_runs_operations_in_a_stage_concurrently(monkeypatch):
     assert time.monotonic() - started < 0.27
     assert result["status"] == "success"
     assert [item["id"] for item in result["stages"][0]["operations"]] == ["a", "b"]
+
+
+def test_workspace_exec_routes_each_workspace_operation_through_remote_dispatch(monkeypatch):
+    import src.workspace_execution as execution
+
+    dispatched = []
+
+    def dispatch(agent, tool_name, args, *, timeout_seconds, cancel_source):
+        dispatched.append(
+            {
+                "agent": agent,
+                "tool_name": tool_name,
+                "args": args,
+                "timeout_seconds": timeout_seconds,
+                "cancel_source": cancel_source,
+            }
+        )
+        return True, json.dumps(
+            {"status": "success", "remote_tool_name": tool_name},
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(execution, "dispatch_remote_workspace_tool", dispatch)
+    result = json.loads(
+        workspace_exec(
+            [
+                {
+                    "id": "inspect",
+                    "operations": [
+                        {
+                            "id": "read",
+                            "kind": "read_file",
+                            "arguments": {"file_path": "Source/App.cpp"},
+                        },
+                        {
+                            "id": "search",
+                            "kind": "search_text",
+                            "arguments": {"query": "needle"},
+                        },
+                        {
+                            "id": "list",
+                            "kind": "list_files",
+                            "arguments": {},
+                        },
+                        {
+                            "id": "command",
+                            "kind": "run_command",
+                            "arguments": {
+                                "command": "Get-Location",
+                                "timeout_seconds": 17,
+                            },
+                        },
+                    ],
+                },
+                {
+                    "id": "patch",
+                    "operations": [
+                        {
+                            "id": "apply",
+                            "kind": "apply_patch",
+                            "arguments": {
+                                "patch": (
+                                    "*** Begin Patch\n"
+                                    "*** Update File: Source/App.cpp\n"
+                                    "@@\n"
+                                    "-old\n"
+                                    "+new\n"
+                                    "*** End Patch\n"
+                                ),
+                                "required_changes": [
+                                    {
+                                        "id": "replace",
+                                        "kind": "replacement",
+                                        "old_text": "old",
+                                        "new_text": "new",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                },
+            ],
+            agent=_RemoteAgent(),
+        )
+    )
+
+    assert result["status"] == "success"
+    by_name = {item["tool_name"]: item for item in dispatched}
+    assert set(by_name) == {
+        "apply_patch",
+        "execute_console_command",
+        "read_file",
+        "rg_list_files",
+        "rg_search_text",
+    }
+    assert all(item["agent"].config["working_path"] == r"E:\Game" for item in dispatched)
+    assert by_name["execute_console_command"]["timeout_seconds"] == 17
+    assert by_name["read_file"]["args"] == {"file_path": "Source/App.cpp"}
+
+
+def test_workspace_exec_keeps_task_direction_operations_on_server(monkeypatch):
+    import src.workspace_execution as execution
+
+    dispatched = []
+    monkeypatch.setattr(
+        execution,
+        "dispatch_remote_workspace_tool",
+        lambda *args, **kwargs: dispatched.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        execution,
+        "update_task_direction",
+        lambda **_kwargs: json.dumps({"status": "success", "revision": 2}),
+    )
+
+    result = json.loads(
+        workspace_exec(
+            [
+                {
+                    "id": "direction",
+                    "operations": [
+                        {
+                            "id": "update",
+                            "kind": "update_task_direction",
+                            "arguments": {
+                                "expected_revision": 1,
+                                "evidence": [],
+                                "hypotheses": [],
+                                "risks": [],
+                                "criteria": [],
+                            },
+                        }
+                    ],
+                }
+            ],
+            agent=_RemoteAgent(),
+        )
+    )
+
+    assert result["status"] == "success"
+    assert dispatched == []
 
 
 def test_workspace_exec_propagates_tool_call_cancellation_context_to_workers(monkeypatch):

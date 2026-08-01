@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import FormCheckbox from '../FormCheckbox.vue'
 
 const props = defineProps<{
   selectedValues: string[]
@@ -13,6 +14,7 @@ const modeLabels: Record<string, string> = {
   chat: 'chat',
   imagechat: 'imagechat',
   image_generation: 'image_generation',
+  image_matting: 'image_matting',
   vision_understand: 'vision_understand',
   GUIAgent: 'GUIAgent',
   video_generation: 'video_generation',
@@ -27,6 +29,7 @@ const options = computed(() => {
     'chat',
     'imagechat',
     'image_generation',
+    'image_matting',
     'vision_understand',
     'GUIAgent',
     'video_generation',
@@ -60,10 +63,9 @@ function toggle(value: string) {
     <summary>{{ summary }}</summary>
     <div class="multi-dropdown-menu">
       <label v-for="mode in options" :key="mode" class="multi-option">
-        <input
-          type="checkbox"
-          :checked="selectedValues.includes(mode)"
-          @change="toggle(mode)"
+        <FormCheckbox
+          :model-value="selectedValues.includes(mode)"
+          @update:model-value="toggle(mode)"
         />
         <span>{{ labelForMode(mode) }}</span>
       </label>

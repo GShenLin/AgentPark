@@ -6,6 +6,9 @@ import NodeAgentMeta from './NodeAgentMeta.vue'
 import NodeRuntimeDiagnostics from './NodeRuntimeDiagnostics.vue'
 import { createWindowPointerDrag } from './pointerDrag'
 import ToolActivityBadge from './ToolActivityBadge.vue'
+import DangerButton from '../DangerButton.vue'
+import FormTextInput from '../FormTextInput.vue'
+import MemoryResourcePart from '../MemoryResourcePart.vue'
 import {
   NODE_CARD_DEFAULT_HEIGHT,
   NODE_CARD_DEFAULT_WIDTH,
@@ -38,11 +41,19 @@ const isStopRequested = computed(() => !!ctx.nodeConfigs.value[endpointId.value]
 const isPaused = computed(() => ctx.isNodeStopped(endpointId.value))
 const clockStartLabel = computed(() => (ctx.isNodeStopped(endpointId.value) ? 'Resume' : 'Start'))
 const previewText = computed(() => ctx.previewMessage(props.node.last_message))
-const hasPreview = computed(() => !!String(previewText.value || '').trim())
+const previewImageResource = computed(() => (
+  (props.node.lastOutputResources || []).find((part) => (
+    String((part as any)?.resource?.kind || '').trim().toLowerCase() === 'image'
+  )) || null
+))
+const hasPreview = computed(() => (
+  !!previewImageResource.value
+  || !!String(previewText.value || '').trim()
+))
 
 const isEditingName = ref(false)
 const editingName = ref('')
-const nameInputRef = ref<HTMLInputElement | null>(null)
+const nameInputRef = ref<InstanceType<typeof FormTextInput> | null>(null)
 type ResizeHandle = Extract<EdgeResizeHandle, 'right' | 'bottom' | 'bottom-right'>
 type ResizeSession = {
   handle: ResizeHandle
@@ -158,12 +169,12 @@ onBeforeUnmount(stopNodeResize)
   >
     <div class="node-card-inner" :key="donePulse" :class="{ done: isDone }">
       <div class="node-header">
-        <input
+        <FormTextInput
           v-if="isEditingName"
           ref="nameInputRef"
           v-model="editingName"
           class="node-title-input"
-          type="text"
+          compact
           @pointerdown.stop
           @click.stop
           @keydown.enter.prevent="commitEditName()"
@@ -196,13 +207,15 @@ onBeforeUnmount(stopNodeResize)
           <button v-if="!isClockNode && isNodeRunning" type="button" class="node-stop" @pointerdown.stop @click.stop="ctx.stopNodeWork(endpointId).catch(() => null)">
             {{ isStopRequested ? 'Stopping' : 'Stop' }}
           </button>
-          <button
-            class="node-delete"
+          <DangerButton
+            icon
+            compact
+            aria-label="Delete node"
             @pointerdown.stop
             @click.stop="ctx.deleteNodeCard(props.node.id).catch(() => null)"
           >
-            x
-          </button>
+            ×
+          </DangerButton>
         </div>
       </div>
       <NodeAgentMeta v-if="isAgentNode" :mode="props.node.mode" :provider-id="props.node.providerId" />
@@ -221,7 +234,14 @@ onBeforeUnmount(stopNodeResize)
           :provider-totals="props.node.providerRequestTotals"
           :runtime-tool-calls="props.node.runtimeToolCalls"
         />
-        <div class="node-message" :class="{ empty: !hasPreview }">
+        <MemoryResourcePart
+          v-if="previewImageResource"
+          class="node-output-resource"
+          :part="previewImageResource"
+          compact
+          @pointerdown.stop
+        />
+        <div v-else class="node-message" :class="{ empty: !hasPreview }">
           {{ previewText || ' ' }}
         </div>
       </div>
@@ -388,14 +408,8 @@ onBeforeUnmount(stopNodeResize)
 
 .node-title-input {
   width: 96px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(99, 102, 241, 0.6);
-  color: #fff;
-  border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
-  padding: 3px 6px;
-  outline: none;
 }
 
 .node-actions {
@@ -418,20 +432,6 @@ onBeforeUnmount(stopNodeResize)
   border-radius: 999px;
 }
 
-
-.node-delete {
-  background: none;
-  border: none;
-  color: rgba(148, 163, 184, 0.6);
-  cursor: pointer;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.node-delete:hover {
-  color: #ef4444;
-}
 
 .node-stop {
   background: rgba(239, 68, 68, 0.2);
@@ -478,6 +478,12 @@ onBeforeUnmount(stopNodeResize)
 
 .node-message.empty {
   color: var(--theme-panel-node-card-text-muted, rgba(148, 163, 184, 0.45));
+}
+
+.node-output-resource {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .node-add-output {

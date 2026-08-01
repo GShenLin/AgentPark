@@ -175,6 +175,37 @@ def test_settings_api_marks_changed_memories_path_as_restart_required(monkeypatc
     assert "storage" not in json.loads((config_dir / "config.json").read_text(encoding="utf-8"))
 
 
+def test_settings_api_marks_changed_project_proxy_as_restart_required(monkeypatch, tmp_path):
+    from src import workspace_settings
+    from src.web_backend import runtime_paths
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text("{}", encoding="utf-8")
+    active_root = tmp_path / "memories"
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(active_root))
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:10080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:10080")
+    monkeypatch.setenv("NO_PROXY", "localhost")
+
+    result = SettingsApiDomain(SimpleNamespace()).update_settings_section(
+        "defaults",
+        {
+            "content": json.dumps(
+                {
+                    "network": {
+                        "httpProxy": "http://127.0.0.1:17891",
+                        "noProxy": "localhost,127.0.0.1,::1",
+                    }
+                }
+            )
+        },
+    )
+
+    assert result["restart_required"] is True
+
+
 def test_settings_api_merges_memory_local_config_into_defaults(monkeypatch, tmp_path):
     from src import workspace_settings
     from src.web_backend import runtime_paths
@@ -238,6 +269,37 @@ def test_settings_api_rejects_invalid_undo_max_steps(monkeypatch, tmp_path):
 
     assert exc.value.status_code == 400
     assert "undo.maxSteps" in str(exc.value.detail)
+
+
+def test_settings_api_validates_board_layout_defaults(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+    domain = SettingsApiDomain(SimpleNamespace())
+
+    result = domain.update_settings_section(
+        "defaults",
+        {
+            "content": json.dumps(
+                {
+                    "boardLayout": {
+                        "gridCellWidth": 400,
+                        "gridCellHeight": 500,
+                        "nodeWidth": 320,
+                        "nodeHeight": 360,
+                    }
+                }
+            )
+        },
+    )
+
+    assert result["data"]["boardLayout"]["nodeWidth"] == 320
+    with pytest.raises(HTTPException) as exc:
+        domain.update_settings_section(
+            "defaults",
+            {"content": json.dumps({"boardLayout": {"nodeWidth": 100}})},
+        )
+    assert "boardLayout.nodeWidth" in str(exc.value.detail)
 
 
 def test_settings_api_rejects_non_boolean_companion_node_review_switch(monkeypatch, tmp_path):

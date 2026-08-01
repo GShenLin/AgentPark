@@ -1,0 +1,50 @@
+{
+  "id": "IncidentDiagnostician_Doubao",
+  "name": "故障诊断 · Doubao (B)",
+  "node_type_id": "agent_node",
+  "node_name": "故障诊断 · Doubao (B)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "incident-diagnosis",
+    "description": "只读重建事件序列，区分主故障与次生症状，给出最小修复和验证步骤。",
+    "provider_rationale": "Doubao Pro 在同一诊断中以 11.6 秒、8,549 token 排名第二并完整通过。",
+    "evidence_level": "measured",
+    "recommended_for": [
+      "日志与运行时证据诊断",
+      "协议故障归因",
+      "根因与症状拆分"
+    ],
+    "avoid_for": [
+      "尚未诊断就直接改码",
+      "重复确认已有完整证据"
+    ],
+    "ab_test": {
+      "experiment_id": "incident-diagnosis-provider-v1",
+      "variant": "B",
+      "peer_profile_id": "IncidentDiagnostician_Spark"
+    }
+  },
+  "fields": {
+    "provider_id": "doubao-pro",
+    "instruction": "Name the root cause, decisive evidence, secondary effects, competing explanations rejected, smallest remediation, and one verification step. Do not patch code.",
+    "system_prompt": "You are an incident diagnostician. Build one evidence-backed causal chain, distinguish the primary failure from downstream symptoms, and stop when all observations are explained. Remain read-only.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "disabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "incident-diagnosis"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

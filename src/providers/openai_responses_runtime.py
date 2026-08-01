@@ -9,6 +9,11 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
 
     def _responses_payload_extra(self, **provider_options):
         payload = {}
+        prompt_cache_key = str(
+            getattr(self, "_responses_prompt_cache_key", "") or ""
+        ).strip()
+        if prompt_cache_key:
+            payload["prompt_cache_key"] = prompt_cache_key
         if str(self.config.get("authMode") or "api_key").strip().lower() == "codex":
             payload["store"] = False
         if self.config.get("fastMode") is True:
@@ -16,7 +21,11 @@ class OpenAIResponsesRuntime(ResponsesRuntime):
 
         thinking_mode = str(provider_options.get("thinking_mode") or "").strip().lower()
         reasoning_effort = str(provider_options.get("reasoning_effort") or "").strip()
-        if thinking_mode == "disabled":
+        # Responses models use reasoning.effort as the authoritative reasoning
+        # control. The generic `thinking` switch is retained for providers whose
+        # APIs expose a separate thinking toggle, but it must not silently erase
+        # an explicit Responses reasoning effort.
+        if not reasoning_effort and thinking_mode == "disabled":
             reasoning_effort = "none"
         if reasoning_effort:
             reasoning = {"effort": reasoning_effort}

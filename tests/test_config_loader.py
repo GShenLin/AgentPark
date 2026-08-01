@@ -541,6 +541,36 @@ def test_provider_catalog_does_not_resolve_machine_local_api_key_names(monkeypat
             "authMode": "api_key",
             "authProvider": "",
             "responsesApi": False,
+            "private": False,
+            "features": {
+                "schema_version": 1,
+                "responses_api": {
+                    "supported": False,
+                    "values": ["enabled", "disabled"],
+                    "requires": "responsesApi=true",
+                    "transport": "responses",
+                },
+                "web_search": {
+                    "supported": False,
+                    "values": ["enabled", "disabled"],
+                    "requires": "responsesApi=true",
+                },
+                "tools": {"supported": True, "values": ["enabled", "disabled"]},
+                "thinking": {
+                    "supported": True,
+                    "values": ["enabled", "disabled", "auto"],
+                    "transport": "chat_completions",
+                },
+                "reasoning_effort": {
+                    "supported": True,
+                    "values": ["minimal", "low", "medium", "high", "xhigh", "max"],
+                },
+                "reasoning_summary": {
+                    "supported": False,
+                    "values": [],
+                    "requires": "responsesApi=true",
+                },
+            },
         }
     }
     with pytest.raises(ValueError, match="missing API key name 'key-owned-by-another-machine'"):
@@ -996,6 +1026,31 @@ def test_responses_api_config_requires_boolean(monkeypatch, tmp_path):
         raise AssertionError("string responsesApi should fail")
 
 
+def test_responses_websocket_config_requires_boolean(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openai": {
+                        "type": "openai",
+                        "apiKey": "openai-key",
+                        "responsesWebSocket": "false",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="responsesWebSocket.*expected a boolean"):
+        ConfigLoader().get_all_providers()
+
+
 def test_stream_enabled_defaults_to_true_when_absent(monkeypatch, tmp_path):
     config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
@@ -1247,7 +1302,7 @@ def test_responses_api_provider_validates_field_types(monkeypatch, tmp_path):
         ConfigLoader().get_all_providers()
 
 
-def test_deepseek_provider_rejects_responses_api(monkeypatch, tmp_path):
+def test_deepseek_provider_accepts_responses_api(monkeypatch, tmp_path):
     config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
@@ -1257,8 +1312,9 @@ def test_deepseek_provider_rejects_responses_api(monkeypatch, tmp_path):
                         "type": "deepseek",
                         "apiKey": "deepseek-key",
                         "baseUrl": "https://api.deepseek.test",
-                        "model": "deepseek-test",
+                        "model": "deepseek-v4-flash",
                         "responsesApi": True,
+                        **_responses_contract(),
                     }
                 }
             },
@@ -1270,8 +1326,10 @@ def test_deepseek_provider_rejects_responses_api(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
-    with pytest.raises(ValueError, match="DeepSeek uses chat completions"):
-        ConfigLoader().get_all_providers()
+    provider = ConfigLoader().get_all_providers()["deepseek"]
+
+    assert provider["type"] == "deepseek"
+    assert provider["responsesApi"] is True
 
 
 def test_kimi_provider_rejects_responses_api(monkeypatch, tmp_path):
@@ -1318,9 +1376,141 @@ def test_agent_domain_lists_provider_features(monkeypatch):
     assert providers == [
         {
             "id": "zhipu",
+            "type": "",
+            "description": "",
             "supportmode": ["chat"],
             "features": {
                 "thinking": {"supported": True, "values": ["enabled", "disabled"]},
             },
         }
     ]
+
+
+def test_gemini_oauth_is_not_a_model_provider_auth_mode(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "official": {
+                        "type": "gemini",
+                        "authMode": "oauth",
+                        "model": "gemini-3.1-pro-preview",
+                        "supportmode": ["chat"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="does not have an OAuth protocol implementation"):
+        ConfigLoader().get_all_providers()
+
+
+def test_external_auth_mode_is_not_a_model_provider_auth_mode(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "invalid": {
+                        "type": "openai",
+                        "authMode": "external",
+                        "model": "gpt-test",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="invalid authMode"):
+        ConfigLoader().get_all_providers()
+
+
+def _alpha_matting_config(**overrides):
+    payload = {
+        "type": "alpha_matting",
+        "authMode": "none",
+        "model": "ZhengPeng7/BiRefNet_HR-matting",
+        "modelRevision": "test-revision",
+        "baseUrl": "http://127.0.0.1:8510",
+        "supportmode": ["image_matting"],
+        "timeoutMs": 120000,
+        "localRuntime": {
+            "managed": True,
+            "startupCommand": ["powershell.exe", "-File", "C:\\Project\\PyTorch\\start.ps1"],
+            "workingDirectory": "C:\\Project\\PyTorch",
+            "healthUrl": "http://127.0.0.1:8510/health",
+            "startupTimeoutMs": 120000,
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_alpha_matting_provider_accepts_strict_loopback_no_auth_config(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({"providers": {"matting": _alpha_matting_config()}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    provider = ConfigLoader().get_provider_config("matting")
+
+    assert provider["authMode"] == "none"
+    assert "apiKey" not in provider
+    assert provider["supportmode"] == ["image_matting"]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({"baseUrl": "http://192.168.1.10:8510"}, "loopback host"),
+        ({"authMode": "api_key", "apiKey": "secret"}, "must use authMode 'none'"),
+        ({"supportmode": ["chat"]}, "must declare exactly supportmode"),
+        ({"localRuntime": {"managed": True}}, "startupCommand"),
+    ],
+)
+def test_alpha_matting_provider_rejects_invalid_contract(monkeypatch, tmp_path, overrides, error):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps({"providers": {"matting": _alpha_matting_config(**overrides)}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match=error):
+        ConfigLoader().get_all_providers()
+
+
+def test_no_auth_mode_is_rejected_for_general_providers(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "invalid": {
+                        "type": "openai",
+                        "authMode": "none",
+                        "model": "gpt-test",
+                        "supportmode": ["chat"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match="only with type 'alpha_matting'"):
+        ConfigLoader().get_all_providers()

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { UserInteractionRequest } from '../api'
 import { useUserInteractions } from '../composables/useUserInteractions'
+import ActionButton from './ActionButton.vue'
 import UserInteractionForm from './UserInteractionForm.vue'
 
 type InteractionNodeAnchor = {
@@ -144,9 +145,9 @@ onBeforeUnmount(() => {
         <button type="button" class="interaction-drag-handle" title="拖动交互框" @pointerdown.stop="startDrag">拖动</button>
       </header>
       <div v-if="interactions.requests.value.length > 1" class="interaction-navigation">
-        <button type="button" @click="interactions.showPrevious">上一项</button>
+        <ActionButton compact @click="interactions.showPrevious">上一项</ActionButton>
         <span class="interaction-count">{{ interactions.activeIndex.value + 1 }} / {{ interactions.requests.value.length }}</span>
-        <button type="button" @click="interactions.showNext">下一项</button>
+        <ActionButton compact @click="interactions.showNext">下一项</ActionButton>
       </div>
       <UserInteractionForm :request="activeRequest" :submitting="submitting" :error="error" @submit="submitActive" @error="error = $event" />
     </section>

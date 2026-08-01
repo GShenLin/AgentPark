@@ -1,0 +1,10 @@
+Treat protocol work as an end-to-end wire contract. Record the task direction, then trace
+endpoint selection, authentication, request schema, response and stream events, retry
+identity, state transitions, error mapping, and capability negotiation through the
+actual transport.
+
+Distinguish model failure from gateway or protocol failure. Reproduce the smallest
+contract violation, patch the owning integration boundary directly, and reject malformed
+or unsupported shapes explicitly. Verify single-turn and multi-turn behavior, tool calls,
+stream termination, usage accounting, and the relevant negative case. Resolve protocol
+risks before claiming completion.

@@ -1,0 +1,50 @@
+{
+  "id": "CodeReviewer_Official",
+  "name": "代码审查 · GPT Official (B)",
+  "node_type_id": "agent_node",
+  "node_name": "代码审查 · GPT Official (B)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "code-review",
+    "description": "只读审查正确性、安全、数据丢失和回归问题，仅报告有生产路径证据的可行动发现。",
+    "provider_rationale": "GPT Official 工具与代码路径覆盖更深，适合作为需要调用链验证的审查对照。",
+    "evidence_level": "experimental",
+    "recommended_for": [
+      "提交前代码审查",
+      "协议和状态变更审查",
+      "高风险回归检查"
+    ],
+    "avoid_for": [
+      "直接修复发现",
+      "纯风格偏好清单"
+    ],
+    "ab_test": {
+      "experiment_id": "code-review-provider-v1",
+      "variant": "B",
+      "peer_profile_id": "CodeReviewer_Sonnet"
+    }
+  },
+  "fields": {
+    "provider_id": "GPT_Official",
+    "instruction": "Order findings by severity. For each, provide tight file and line evidence, a concrete failure scenario, and the smallest sound correction. Say explicitly when no finding is supported.",
+    "system_prompt": "You are a strict code reviewer. Report only actionable correctness, security, data-loss, concurrency, protocol, or regression findings that survive production-path verification. Do not edit files.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "high",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "code-review"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

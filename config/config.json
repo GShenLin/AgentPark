@@ -3,6 +3,10 @@
     "host": "0.0.0.0",
     "port": 8788
   },
+  "network": {
+    "httpProxy": "http://127.0.0.1:17891",
+    "noProxy": "localhost,127.0.0.1,::1"
+  },
   "mcpServers": {
     "ark-docs-mcp": {
       "label": "Ark Docs MCP",
@@ -35,6 +39,12 @@
   },
   "nodeMemory": {
     "maxEntries": 20
+  },
+  "boardLayout": {
+    "gridCellWidth": 300,
+    "gridCellHeight": 320,
+    "nodeWidth": 230,
+    "nodeHeight": 250
   },
   "undo": {
     "maxSteps": 5

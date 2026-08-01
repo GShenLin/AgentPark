@@ -202,6 +202,7 @@ class RuntimeStateMemoryStore:
         self._validate_optional_dict(normalized, "provider_request_totals")
         self._validate_optional_list(normalized, "completed_requests")
         self._validate_optional_dict(normalized, "last_completed_request")
+        self._validate_output_resources(normalized)
         self._validate_optional_dict(normalized, "goal_state")
         self._validate_optional_non_negative_int(normalized, "node_event_seq")
         return normalized
@@ -250,6 +251,25 @@ class RuntimeStateMemoryStore:
     def _validate_optional_non_negative_int(self, payload: dict[str, Any], key: str) -> None:
         if key in payload:
             payload[key] = self._require_non_negative_int(payload.get(key), key)
+
+    def _validate_output_resources(self, payload: dict[str, Any]) -> None:
+        if "last_output_resources" not in payload:
+            return
+        resources = payload.get("last_output_resources")
+        if not isinstance(resources, list):
+            raise RuntimeStateContractError(
+                "runtime state field last_output_resources must be a list"
+            )
+        for index, part in enumerate(resources):
+            if not isinstance(part, dict) or part.get("type") != "resource":
+                raise RuntimeStateContractError(
+                    f"runtime state field last_output_resources[{index}] must be a resource part"
+                )
+            resource = part.get("resource")
+            if not isinstance(resource, dict) or not str(resource.get("uri") or "").strip():
+                raise RuntimeStateContractError(
+                    f"runtime state field last_output_resources[{index}].resource.uri is required"
+                )
 
     def _require_non_negative_int(self, value: Any, field_name: str) -> int:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:

@@ -1,0 +1,7 @@
+[Implementation Checkpoint]
+The configured evidence budget was reached without an implementation patch. Use the
+evidence and task-direction ledger already collected. If the root cause and blocking
+risks are resolved, apply the smallest complete patch now and run focused verification
+through the user-visible entry path. If one blocking fact is genuinely missing, name
+that fact and gather only the minimum evidence needed for it. If a patch already
+exists, proceed directly to verification.

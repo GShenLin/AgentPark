@@ -76,7 +76,7 @@ export function providerModes(provider: Pick<ProviderInfo, 'supportmode'>) {
   return normalizeModeList(provider?.supportmode)
 }
 
-export function agentProviderModes(provider: Pick<ProviderInfo, 'supportmode'>): string[] {
+export function agentProviderModes(provider: Pick<ProviderInfo, 'supportmode' | 'type'>): string[] {
   const supported = new Set<string>(AGENT_SUPPORT_MODE_ORDER)
   return providerModes(provider).filter((mode) => supported.has(mode))
 }

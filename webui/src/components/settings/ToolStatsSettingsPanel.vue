@@ -8,6 +8,9 @@ import {
   type ToolStatsDocument,
   type ToolStatsProviderSummary,
 } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormSelect from '../FormSelect.vue'
 import ToolFailurePatternsPanel from './ToolFailurePatternsPanel.vue'
 import TurnStatsPanel from './TurnStatsPanel.vue'
 import {
@@ -166,20 +169,19 @@ onMounted(loadStats)
 <template>
   <div class="tool-stats">
     <aside class="tool-stats-side">
-      <button type="button" class="tool-stats-action" :disabled="loading || clearing || deletingOptionalMemory" @click="loadStats">
+      <ActionButton class="tool-stats-action" block :disabled="loading || clearing || deletingOptionalMemory" @click="loadStats">
         {{ loading ? 'Loading...' : 'Reload' }}
-      </button>
-      <button type="button" class="tool-stats-action danger" :disabled="loading || clearing || deletingOptionalMemory" @click="clearStats">
+      </ActionButton>
+      <DangerButton class="tool-stats-action" :disabled="loading || clearing || deletingOptionalMemory" @click="clearStats">
         {{ clearing ? 'Clearing...' : 'Clear' }}
-      </button>
-      <button
-        type="button"
-        class="tool-stats-action danger"
+      </DangerButton>
+      <DangerButton
+        class="tool-stats-action"
         :disabled="loading || clearing || deletingOptionalMemory"
         @click="deleteOptionalMemoryFiles"
       >
         {{ deletingOptionalMemory ? 'Deleting...' : 'DeleteOptionalMemory' }}
-      </button>
+      </DangerButton>
 
       <button
         v-for="provider in providerOptions"
@@ -211,19 +213,19 @@ onMounted(loadStats)
         <div class="tool-stats-scope-controls">
           <label>
             Graph
-            <select v-model="scopeGraphId" @change="changeScope">
+            <FormSelect v-model="scopeGraphId" @change="changeScope">
               <option value="">All graphs</option>
               <option v-for="graphId in stats?.scope.available_graph_ids || []" :key="graphId" :value="graphId">{{ graphId }}</option>
-            </select>
+            </FormSelect>
           </label>
           <label>
             Window
-            <select v-model.number="scopeHours" @change="changeScope">
+            <FormSelect :model-value="scopeHours" @change="scopeHours = Number($event); changeScope()">
               <option :value="0">All time</option>
               <option :value="24">24 hours</option>
               <option :value="168">7 days</option>
               <option :value="720">30 days</option>
-            </select>
+            </FormSelect>
           </label>
         </div>
       </div>

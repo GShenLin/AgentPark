@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { exitServer } from '../../api'
+import DangerButton from '../DangerButton.vue'
 
 const exiting = ref(false)
 const status = ref('')
@@ -27,9 +28,9 @@ async function requestExit() {
   <div class="system-exit-panel">
     <section class="exit-section">
       <h2>Exit</h2>
-      <button class="exit-button" type="button" :disabled="exiting" @click="requestExit">
+      <DangerButton :disabled="exiting" @click="requestExit">
         {{ exiting ? 'Exiting...' : 'Exit backend' }}
-      </button>
+      </DangerButton>
       <div v-if="status" class="exit-status">{{ status }}</div>
       <div v-if="error" class="exit-error">{{ error }}</div>
     </section>
@@ -57,26 +58,6 @@ async function requestExit() {
   color: var(--text-primary);
   font-size: 15px;
   font-weight: 600;
-}
-
-.exit-button {
-  min-height: 34px;
-  border: 1px solid rgba(239, 68, 68, 0.45);
-  border-radius: 6px;
-  padding: 8px 14px;
-  color: #fecaca;
-  background: rgba(127, 29, 29, 0.35);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.exit-button:hover:not(:disabled) {
-  background: rgba(185, 28, 28, 0.42);
-}
-
-.exit-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
 }
 
 .exit-status,

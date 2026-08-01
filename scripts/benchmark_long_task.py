@@ -33,12 +33,24 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _agent_config(profile_path: Path, workspace: Path, node_id: str) -> dict[str, Any]:
+def _agent_config(
+    profile_path: Path,
+    workspace: Path,
+    node_id: str,
+    *,
+    provider_id: str,
+    runtime_policy: object = None,
+) -> dict[str, Any]:
     profile = _read_json(profile_path)
     fields = profile.get("fields")
-    if not isinstance(fields, dict):
-        raise ValueError(f"Agent profile has no fields object: {profile_path}")
-    config = dict(fields)
+    if isinstance(fields, dict):
+        config = dict(fields)
+    elif str(profile.get("type_id") or "").strip() == "agent_node":
+        config = dict(profile)
+    else:
+        raise ValueError(
+            f"Agent benchmark input must be an Agent Profile or agent_node config: {profile_path}"
+        )
     config.update(
         {
             "node_id": node_id,
@@ -46,8 +58,11 @@ def _agent_config(profile_path: Path, workspace: Path, node_id: str) -> dict[str
             "name": node_id,
             "graph_id": "benchmark",
             "working_path": str(workspace),
+            "provider_id": provider_id,
         }
     )
+    if runtime_policy is not None:
+        config["runtime_policy"] = runtime_policy
     return config
 
 
@@ -83,6 +98,7 @@ def summarize_events(events: list[dict[str, Any]], *, duration_ms: int, output: 
     failed_tools = 0
     thinking_chars = 0
     gateway_requests: list[dict[str, Any]] = []
+    runtime_policy_manifest: dict[str, Any] | None = None
     for record in events:
         event = record.get("event")
         if not isinstance(event, dict):
@@ -103,6 +119,10 @@ def summarize_events(events: list[dict[str, Any]], *, duration_ms: int, output: 
         if stage == "provider_gateway_request":
             gateway_requests.append(payload)
             continue
+        if stage == "openai_responses_request_start":
+            candidate = payload.get("runtime_policy_manifest")
+            if runtime_policy_manifest is None and isinstance(candidate, dict):
+                runtime_policy_manifest = candidate
         try:
             request_index = int(payload.get("request_index"))
         except (TypeError, ValueError):
@@ -157,19 +177,22 @@ def summarize_events(events: list[dict[str, Any]], *, duration_ms: int, output: 
         "usage": usage_totals,
         "requests": requests,
         "provider_gateway_requests": gateway_requests,
+        "runtime_policy_manifest": runtime_policy_manifest,
     }
 
 
 def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     workspace = Path(args.workspace).resolve()
     prompt_path = Path(args.prompt_file).resolve()
+    context_path_value = str(getattr(args, "conversation_context_file", "") or "").strip()
+    context_path = Path(context_path_value).resolve() if context_path_value else None
     result_dir = Path(args.result_dir).resolve()
     if not workspace.is_dir():
         raise ValueError(f"Workspace does not exist: {workspace}")
     require_empty_result_dir(result_dir)
     journal = EventJournal(result_dir / "events.jsonl")
     workspace_before = git_workspace_snapshot(workspace)
-    prompt = prompt_path.read_text(encoding="utf-8").strip()
+    prompt = _compose_benchmark_prompt(prompt_path, context_path=context_path)
     if not prompt:
         raise ValueError(f"Prompt is empty: {prompt_path}")
 
@@ -181,7 +204,19 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     messages_path = node_dir / "messages.jsonl"
     if args.node_type == "agent":
         profile_path = resolve_agent_profile(args.profile, project_root=PROJECT_ROOT)
-        config = _agent_config(profile_path, workspace, node_id)
+        runtime_policy_path_value = str(getattr(args, "runtime_policy_file", "") or "").strip()
+        runtime_policy = (
+            _read_json(Path(runtime_policy_path_value).resolve())
+            if runtime_policy_path_value
+            else None
+        )
+        config = _agent_config(
+            profile_path,
+            workspace,
+            node_id,
+            provider_id=args.provider_id,
+            runtime_policy=runtime_policy,
+        )
         node = AgentNode()
     else:
         config = _codex_config(args.provider_id, workspace, node_id)
@@ -269,6 +304,11 @@ def _benchmark_payload(
         "provider_id": config.get("provider_id"),
         "workspace": str(workspace),
         "prompt_file": str(prompt_path),
+        "conversation_context_file": (
+            str(Path(args.conversation_context_file).resolve())
+            if str(getattr(args, "conversation_context_file", "") or "").strip()
+            else ""
+        ),
         "profile": str(profile_path) if profile_path is not None else "",
         "event_journal": "events.jsonl",
         "workspace_before": workspace_before,
@@ -287,10 +327,45 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--node-type", choices=("agent", "codex"), required=True)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--prompt-file", required=True)
+    parser.add_argument(
+        "--conversation-context-file",
+        default="",
+        help="Optional UTF-8 transcript supplied identically to both runners.",
+    )
     parser.add_argument("--result-dir", required=True)
     parser.add_argument("--provider-id", default="GPT_Official")
     parser.add_argument("--profile", default=str(PROJECT_ROOT / "agent" / "GPT1.json"))
+    parser.add_argument(
+        "--runtime-policy-file",
+        default="",
+        help="Optional JSON RuntimePolicy selection/override for the Agent runner.",
+    )
     return parser
+
+
+def _compose_benchmark_prompt(
+    prompt_path: Path,
+    *,
+    context_path: Path | None,
+) -> str:
+    prompt = prompt_path.read_text(encoding="utf-8").strip()
+    if not prompt:
+        raise ValueError(f"Prompt is empty: {prompt_path}")
+    if context_path is None:
+        return prompt
+    if not context_path.is_file():
+        raise ValueError(f"Conversation context does not exist: {context_path}")
+    context = context_path.read_text(encoding="utf-8").strip()
+    if not context:
+        raise ValueError(f"Conversation context is empty: {context_path}")
+    return (
+        "<benchmark_conversation_context>\n"
+        f"{context}\n"
+        "</benchmark_conversation_context>\n\n"
+        "<benchmark_current_user_request>\n"
+        f"{prompt}\n"
+        "</benchmark_current_user_request>"
+    )
 
 
 def main() -> int:

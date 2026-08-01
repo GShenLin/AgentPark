@@ -7,6 +7,10 @@ import {
   isSchemaSelectField,
   normalizeSchemaFieldValue,
 } from '../composables/nodeSchemaFields'
+import ExpandableTextarea from './ExpandableTextarea.vue'
+import FormCheckbox from './FormCheckbox.vue'
+import FormSelect from './FormSelect.vue'
+import FormTextInput from './FormTextInput.vue'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -241,12 +245,11 @@ watch(
                 @keydown.enter.prevent="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
                 @keydown.space.prevent="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
               >
-                <input
-                  type="checkbox"
-                  :checked="getMultiSelectValue(key).includes(option.value)"
+                <FormCheckbox
+                  :model-value="getMultiSelectValue(key).includes(option.value)"
                   tabindex="-1"
-                  @click.stop="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
-                  @change.stop
+                  @click.stop
+                  @update:model-value="toggleMultiSelectOption(key, option.value); editingKey = null; commitField(key)"
                 />
                 <span>{{ option.label }}</span>
               </div>
@@ -254,40 +257,38 @@ watch(
             </div>
           </details>
 
-          <select
+          <FormSelect
             v-else-if="isSelectField(key)"
             class="field-input"
-            :value="getDraftValue(key)"
+            :model-value="getDraftValue(key)"
             @focus="onFieldFocus(key)"
-            @change="setField(key, ($event.target as HTMLSelectElement).value); editingKey = null; commitField(key)"
+            @change="setField(key, $event); editingKey = null; commitField(key)"
           >
             <option v-for="option in getFieldOptions(key)" :key="`inspect-${key}-${option.value}`" :value="option.value">
               {{ option.label }}
             </option>
-          </select>
-          <textarea
+          </FormSelect>
+          <ExpandableTextarea
             v-else-if="getFieldType(key) === 'text'"
             class="field-input field-textarea"
-            rows="3"
-            :value="getDraftValue(key)"
+            :model-value="getDraftValue(key)"
             @focus="onFieldFocus(key)"
-            @input="setField(key, ($event.target as HTMLTextAreaElement).value)"
+            @update:model-value="setField(key, $event)"
             @blur="editingKey = null; commitField(key)"
           />
-          <input
+          <FormCheckbox
             v-else-if="getFieldType(key) === 'boolean'"
             class="field-checkbox"
-            type="checkbox"
-            :checked="isCheckedValue(draftFields[key])"
-            @change="setField(key, ($event.target as HTMLInputElement).checked); editingKey = null; commitField(key)"
+            :model-value="isCheckedValue(draftFields[key])"
+            @update:model-value="setField(key, $event); editingKey = null; commitField(key)"
           />
-          <input
+          <FormTextInput
             v-else
             class="field-input"
             :type="getInputType(key)"
-            :value="getDraftValue(key)"
+            :model-value="getDraftValue(key)"
             @focus="onFieldFocus(key)"
-            @input="setField(key, ($event.target as HTMLInputElement).value)"
+            @update:model-value="setField(key, $event)"
             @keydown.enter.prevent="commitField(key).finally(() => ($event.target as HTMLInputElement).blur())"
             @blur="editingKey = null; commitField(key)"
           />

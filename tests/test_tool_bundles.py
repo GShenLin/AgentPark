@@ -50,15 +50,30 @@ def test_system_tools_excludes_curl():
         "read_file",
         "rg_search_text",
         "rg_list_files",
+        "get_task_direction",
+        "replace_task_direction",
+        "update_task_direction",
         "workspace_exec",
+    }
+    assert "run_analysis_verification" not in tool.function_map
+    assert "finalize_analysis_report" not in tool.function_map
+    assert "write_file" not in tool.function_map
+    assert "execute_curl_command" not in tool.function_map
+
+
+def test_analysis_tools_are_an_explicit_capability():
+    tool = BaseTool(DummyAgent())
+    tool.addTool("analysis_tools")
+
+    assert _function_names(tool) == {
         "get_task_direction",
         "replace_task_direction",
         "update_task_direction",
         "run_analysis_verification",
         "finalize_analysis_report",
     }
-    assert "write_file" not in tool.function_map
-    assert "execute_curl_command" not in tool.function_map
+    assert "apply_patch" not in tool.function_map
+    assert "execute_console_command" not in tool.function_map
 
 
 def test_mandatory_system_tool_modules_are_not_user_configurable():

@@ -13,23 +13,11 @@ from functions.console_tools import execute_console_command
 from functions.file_read_tools import read_file
 from functions.file_write_tools import write_file
 from functions.rg_tools import rg_list_files, rg_search_text
+from src.remote_workspace.capabilities import STANDALONE_REMOTE_CAPABILITIES
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import raise_if_cancel_requested
 
 from .protocol import ProtocolError, RemoteTask
-
-
-STANDALONE_CAPABILITIES = frozenset(
-    {
-        "apply_patch",
-        "execute_console_command",
-        "read_file",
-        "rg_list_files",
-        "rg_search_text",
-        "select_folder",
-        "write_file",
-    }
-)
 
 
 @dataclass
@@ -58,7 +46,7 @@ class StandaloneOperationRegistry:
 
     @property
     def capabilities(self) -> tuple[str, ...]:
-        return tuple(sorted(STANDALONE_CAPABILITIES))
+        return tuple(sorted(STANDALONE_REMOTE_CAPABILITIES))
 
     def execute(
         self,

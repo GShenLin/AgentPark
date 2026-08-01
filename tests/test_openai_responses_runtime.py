@@ -74,8 +74,8 @@ def test_openai_send_uses_responses_endpoint_when_responses_api_enabled():
         "content": [{"type": "input_text", "text": "hello"}],
     }
     assert "messages" not in payload
-    assert payload["reasoning"] == {"effort": "none"}
-    assert "include" not in payload
+    assert payload["reasoning"] == {"effort": "high", "summary": "auto"}
+    assert payload["include"] == ["reasoning.encrypted_content"]
 
 
 def test_openai_responses_enabled_thinking_preserves_selected_effort():
@@ -92,6 +92,36 @@ def test_openai_responses_enabled_thinking_preserves_selected_effort():
 
     assert payload["reasoning"] == {"effort": "high"}
     assert payload["include"] == ["reasoning.encrypted_content"]
+
+
+def test_openai_responses_disabled_thinking_does_not_erase_selected_effort():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"model": "gpt-test"}
+
+    payload = agent._responses_payload_extra(
+        thinking_mode="disabled",
+        reasoning_effort="high",
+        reasoning_summary="disabled",
+    )
+
+    assert payload["reasoning"] == {"effort": "high"}
+    assert payload["include"] == ["reasoning.encrypted_content"]
+
+
+def test_openai_responses_reuses_agent_scoped_prompt_cache_key():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {"model": "gpt-test"}
+    agent._responses_prompt_cache_key = "agent-session-1"
+
+    first = agent._responses_payload_extra(reasoning_effort="")
+    second = agent._responses_payload_extra(reasoning_effort="high")
+
+    assert first["prompt_cache_key"] == "agent-session-1"
+    assert second["prompt_cache_key"] == "agent-session-1"
 
 
 def test_responses_web_search_requests_structured_sources():
@@ -717,6 +747,106 @@ def test_stream_does_not_return_stale_tool_call_intro():
     assert payloads[1]["input"][-1]["type"] == "function_call_output"
     assert payloads[1]["input"][-1]["call_id"] == "call-1"
     assert "README.md" in payloads[1]["input"][-1]["output"]
+
+
+def test_responses_completion_review_intercepts_first_draft_after_tool_work():
+    from src.providers.openai_agent import OpenAIAgent
+    from src.runtime_policy import resolve_runtime_policy
+
+    resolved_runtime_policy = resolve_runtime_policy(
+        {
+            "policy_id": "coding-default",
+            "overrides": {"completion_review": {"enabled": True}},
+        }
+    )
+    completion_review_instruction = resolved_runtime_policy.policy.completion_review.prompt
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 0,
+    }
+    agent._agentpark_resolved_runtime_policy = resolved_runtime_policy
+    agent.provider_name = "openai"
+    agent.messages = [{"role": "user", "content": "fix startup"}]
+    agent.tools = BaseTool(agent)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    progress_messages = []
+    agent._agentpark_persist_assistant_progress = lambda message: progress_messages.append(
+        dict(message)
+    )
+    agent._get_messages_with_memory = lambda: list(agent.messages)
+    payloads = []
+
+    def fake_stream(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        if len(payloads) == 1:
+            return {
+                "id": "resp-1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-1",
+                        "name": "rg_list_files",
+                        "arguments": "{}",
+                    }
+                ],
+            }
+        text = "draft answer" if len(payloads) == 2 else "reviewed final answer"
+        return {
+            "id": f"resp-{len(payloads)}",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": text}],
+                }
+            ],
+        }
+
+    agent._stream_responses_with_retry = fake_stream
+    agent._execute_tool_call_envelopes_parallel = lambda _calls: [
+        ToolCallExecution(
+            func_name="rg_list_files",
+            call_id="call-1",
+            cleaned_result='{"status":"success","files":["README.md"]}',
+            image_data=None,
+        )
+    ]
+
+    out = agent._send_via_responses(
+        messages=list(agent.messages),
+        active_tools=[],
+        run_tools=True,
+        reasoning_effort="medium",
+    )
+
+    assert out == "reviewed final answer"
+    assert len(payloads) == 3
+    review_texts = [
+        part.get("text", "")
+        for item in payloads[2]["input"]
+        if item.get("type") == "message"
+        for part in item.get("content", [])
+    ]
+    assert "draft answer" in review_texts
+    assert completion_review_instruction in review_texts
+    assert [message.get("content") for message in progress_messages] == ["draft answer"]
+    assert progress_messages[0]["role"] == "assistant_progress"
+    assert progress_messages[0]["context_policy"] == "exclude"
+    assert all(message.get("content") != "draft answer" for message in agent.messages)
+    assert all(
+        message.get("content") != completion_review_instruction
+        for message in agent.messages
+    )
 
 
 def test_openai_responses_empty_output_feeds_back_error_before_returning_final_message():

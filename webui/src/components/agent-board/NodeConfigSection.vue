@@ -3,6 +3,7 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import {
   controlChannelReceiver,
   getNodeTemplate,
+  loadAgentProfileIntoNode,
   startChannelLogin,
   waitChannelLogin,
   type ChannelReceiverStatus,
@@ -13,10 +14,13 @@ import { ASSET_FIELD_KEYS, mergeDroppedPaths, resolveDroppedPaths } from '../../
 import { getSchemaFieldType, normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
 import { resolveAgentProviderSchemaContext } from '../../composables/useAgentNodeCreateSchema'
 import { waitForSelectionRequestWindow } from '../../selectionRequestPolicy'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey, type NodeCard } from './context'
 import { withPersistedCapabilityState } from './capabilitySchemaState'
 import { formatNodeConfigChangeSummary, normalizeApplyError } from './nodeApplySummary'
 import NodeConfigFields from './NodeConfigFields.vue'
+import NodeProfileLoadControl from './NodeProfileLoadControl.vue'
 import NodeRuntimeEventsFieldGroup from './NodeRuntimeEventsFieldGroup.vue'
 
 const injectedCtx = inject(AgentBoardKey, null)
@@ -40,6 +44,8 @@ const loading = ref(false)
 const draftFields = ref<Record<string, any>>({})
 const dirtyKeys = ref<Record<string, true>>({})
 const applying = ref(false)
+const profileLoading = ref(false)
+const runtimeEventsRevision = ref(0)
 const templateSchema = ref<Record<string, any>>({})
 const fieldSchemaCache = ref<Record<string, any>>({})
 const templateFields = ref<Record<string, any>>({})
@@ -86,8 +92,10 @@ function setField(key: string, value: any) {
   }
 }
 
-function resetDraftFromConfig() {
-  const cfg = props.config as Record<string, any> | null
+function resetDraftFromConfig(configOverride?: Record<string, any> | null) {
+  const cfg = configOverride === undefined
+    ? props.config as Record<string, any> | null
+    : configOverride
   const next: Record<string, any> = {}
   for (const key of fieldKeys.value) {
     next[key] = cfg?.[key] ?? templateFields.value[key]
@@ -235,6 +243,34 @@ async function applyChanges(): Promise<boolean> {
   }
 }
 
+async function loadProfile(profileId: string) {
+  const safeProfileId = String(profileId || '').trim()
+  const nodeId = String(props.node?.id || '').trim()
+  if (!safeProfileId || !nodeId || profileLoading.value) return
+  if (dirtyCount.value > 0 && !window.confirm('加载 Profile 将替换当前尚未保存的修改，是否继续？')) return
+
+  profileLoading.value = true
+  showError('')
+  applySummary.value = ''
+  try {
+    const result = await loadAgentProfileIntoNode(safeProfileId, {
+      graph_id: currentGraphId(),
+      node_id: nodeId,
+    })
+    await ctx.refreshNodeConfig(nodeId)
+    await loadTemplate(String(props.node?.typeId || '').trim(), result.config.after, false)
+    resetDraftFromConfig(result.config.after)
+    runtimeEventsRevision.value += 1
+    const eventWarnings = (result.event_rules.warnings || []).map((item) => String(item || '').trim()).filter(Boolean)
+    const warningText = eventWarnings.length ? ` ${eventWarnings.slice(0, 2).join(' ')}` : ''
+    applySummary.value = `Loaded Profile ${safeProfileId}. ${formatNodeConfigChangeSummary(result.config)}${warningText}`
+  } catch (error) {
+    showError(normalizeApplyError(error))
+  } finally {
+    profileLoading.value = false
+  }
+}
+
 function currentGraphId() {
   return String(ctx.currentGraphId.value || 'default').trim() || 'default'
 }
@@ -371,7 +407,7 @@ watch(
 watch(
   () => props.config,
   () => {
-    if (applying.value) return
+    if (applying.value || profileLoading.value) return
     if (dirtyCount.value > 0) return
     resetDraftFromConfig()
   },
@@ -390,10 +426,18 @@ watch(
 <template>
   <section class="editor-section config-section">
     <div class="section-head config-head">
-      <div class="section-title">Config</div>
-      <button class="apply-btn" :disabled="dirtyCount === 0 || applying" @click="applyChanges">
+      <div class="config-title-actions">
+        <div class="section-title">Config</div>
+        <NodeProfileLoadControl
+          :node-type-id="node.typeId"
+          :busy="profileLoading || applying"
+          @load="loadProfile"
+          @error="showError"
+        />
+      </div>
+      <ActionButton variant="primary" compact :disabled="dirtyCount === 0 || applying || profileLoading" @click="applyChanges">
         {{ applying ? 'Applying...' : `Apply${dirtyCount > 0 ? ` (${dirtyCount})` : ''}` }}
-      </button>
+      </ActionButton>
     </div>
 
     <div v-if="applySummary" class="apply-summary">{{ applySummary }}</div>
@@ -402,7 +446,7 @@ watch(
     <div v-else-if="fieldKeys.length === 0" class="empty-hint">This node has no editable fields.</div>
 
     <NodeConfigFields
-      v-else
+      v-if="!loading && fieldKeys.length > 0"
       class="field-list"
       :type-id="node.typeId"
       :schema="schema"
@@ -427,27 +471,27 @@ watch(
         <span class="channel-status" :class="{ running: channelRunning }">
           {{ channelRunning ? 'Running' : 'Stopped' }}
         </span>
-        <button class="mini-btn" type="button" :disabled="!!channelBusy" @click="refreshChannelStatus">
+        <ActionButton compact :disabled="!!channelBusy" @click="refreshChannelStatus">
           {{ channelBusy === 'status' ? 'Checking...' : 'Status' }}
-        </button>
+        </ActionButton>
       </div>
       <div class="channel-hint">{{ channelStatusText }}</div>
       <div class="channel-actions">
-        <button class="mini-btn primary" type="button" :disabled="!!channelBusy" @click="openLoginQr">
+        <ActionButton variant="primary" compact :disabled="!!channelBusy" @click="openLoginQr">
           {{ channelBusy === 'login-start' ? 'Opening...' : 'Login QR' }}
-        </button>
-        <button v-if="!channelRunning" class="mini-btn" type="button" :disabled="!!channelBusy" @click="startReceiver">
+        </ActionButton>
+        <ActionButton v-if="!channelRunning" compact :disabled="!!channelBusy" @click="startReceiver">
           {{ channelBusy === 'start' ? 'Starting...' : 'Start' }}
-        </button>
-        <button v-else class="mini-btn danger" type="button" :disabled="!!channelBusy" @click="stopReceiver">
+        </ActionButton>
+        <DangerButton v-else compact :disabled="!!channelBusy" @click="stopReceiver">
           {{ channelBusy === 'stop' ? 'Stopping...' : 'Stop' }}
-        </button>
+        </DangerButton>
       </div>
 
       <div v-if="qrModalOpen" class="channel-login">
         <div class="login-copy">
           <div class="login-title">Weixin Login</div>
-          <button class="mini-btn" type="button" @click="qrModalOpen = false">Hide</button>
+          <ActionButton compact @click="qrModalOpen = false">Hide</ActionButton>
         </div>
         <div class="qr-frame">
           <img v-if="canShowQrImage" class="qr-image" :src="qrCodeUrl" alt="Weixin login QR code" />
@@ -455,15 +499,16 @@ watch(
         </div>
         <div v-if="loginMessage" class="qr-message">{{ loginMessage }}</div>
         <div class="qr-actions">
-          <a class="mini-btn" :href="qrCodeUrl" target="_blank" rel="noreferrer">Open</a>
-          <button class="mini-btn primary" type="button" :disabled="channelBusy === 'login-wait'" @click="waitLogin">
+          <a class="qr-open-link" :href="qrCodeUrl" target="_blank" rel="noreferrer">Open</a>
+          <ActionButton variant="primary" compact :disabled="channelBusy === 'login-wait'" @click="waitLogin">
             {{ channelBusy === 'login-wait' ? 'Waiting...' : 'I scanned it' }}
-          </button>
+          </ActionButton>
         </div>
       </div>
     </div>
 
     <NodeRuntimeEventsFieldGroup
+      :key="`${node.id}:${runtimeEventsRevision}`"
       :node="node"
       :graph-id="currentGraphId()"
       @error="showError"
@@ -504,6 +549,13 @@ watch(
   background: linear-gradient(180deg, #020617 0%, rgba(2, 6, 23, 0.92) 78%, rgba(2, 6, 23, 0) 100%);
 }
 
+.config-title-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .section-title {
   font-size: 13px;
   font-weight: 700;
@@ -531,18 +583,6 @@ watch(
 .field-list {
   flex: 0 0 auto;
   gap: 12px;
-}
-
-.apply-btn {
-  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.22));
-  border-radius: 10px;
-  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.9));
-  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
-  cursor: pointer;
-  position: relative;
-  z-index: 2;
-  padding: 6px 10px;
-  font-size: 12px;
 }
 
 .channel-controls {
@@ -596,32 +636,19 @@ watch(
   padding-right: 2px;
 }
 
-.mini-btn,
-.qr-actions .mini-btn {
-  border: 1px solid var(--theme-panel-node-side-editor-button-border, rgba(148, 163, 184, 0.26));
-  border-radius: 8px;
-  background: var(--theme-panel-node-side-editor-button-background, rgba(15, 23, 42, 0.92));
-  color: var(--theme-panel-node-side-editor-button-text, #f8fafc);
-  cursor: pointer;
-  padding: 6px 9px;
+.qr-open-link {
+  min-height: var(--ui-control-height-compact, 28px);
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-button-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-button-background);
+  color: var(--ui-button-text);
+  padding: 0 10px;
   font-size: 12px;
   text-decoration: none;
   white-space: nowrap;
-}
-
-.mini-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.mini-btn.primary {
-  background: rgba(37, 99, 235, 0.3);
-  border-color: rgba(96, 165, 250, 0.45);
-}
-
-.mini-btn.danger {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(248, 113, 113, 0.38);
 }
 
 .channel-login {

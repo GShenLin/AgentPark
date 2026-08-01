@@ -115,3 +115,25 @@ def test_board_view_limits_last_message_to_card_preview_contract():
 
     assert board["node_id"] == "Agent"
     assert board["last_message"] == "x" * 512
+
+
+def test_board_view_includes_last_output_resources_for_card_rendering():
+    resource_part = {
+        "type": "resource",
+        "resource": {
+            "id": "image-1",
+            "uri": "C:/output/matted.png",
+            "kind": "image",
+            "source": "image_matting",
+        },
+    }
+
+    board = build_node_board_view(
+        {
+            "node_id": "Image Matting",
+            "last_message": "C:/output/matted.png",
+            "last_output_resources": [resource_part],
+        }
+    )
+
+    assert board["last_output_resources"] == [resource_part]

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { getProviderLimits, type ProviderLimitDocument } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import ExpandableTextarea from '../ExpandableTextarea.vue'
+import FormCheckbox from '../FormCheckbox.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
+import SelectionButton from '../SelectionButton.vue'
 import ProviderAuthFields from './ProviderAuthFields.vue'
 import DoubaoSpeechManagementPanel from './DoubaoSpeechManagementPanel.vue'
 import { applyResponsesApiDefaults } from './providerConfigDefaults'
@@ -70,6 +77,7 @@ const oauthProviderType = computed(() => {
   if (providerType === 'grok') return 'xai'
   return ['openai', 'kimi'].includes(providerType) ? providerType : ''
 })
+const officialAuthEnabled = computed(() => ['codex', 'oauth'].includes(stringValue('authMode')))
 const providerAuthId = computed(() => (
   stringValue('authProvider').trim().toLowerCase()
   || oauthProviderType.value
@@ -174,7 +182,9 @@ function setOfficialAuthEnabled(enabled: boolean) {
   if (!selectedProviderId.value || !selectedProvider.value || !oauthProviderType.value) return
   const provider = { ...selectedProvider.value }
   if (enabled) {
-    provider.authMode = oauthProviderType.value === 'openai' ? 'codex' : 'oauth'
+    provider.authMode = oauthProviderType.value === 'openai'
+      ? 'codex'
+      : 'oauth'
     provider.authProvider = oauthProviderType.value
     delete provider.apiKey
     if (oauthProviderType.value === 'openai') {
@@ -195,6 +205,10 @@ function setOfficialAuthEnabled(enabled: boolean) {
   }
   emitProvider(selectedProviderId.value, provider)
   if (enabled) void beginOfficialLogin(oauthProviderType.value)
+}
+
+function triggerOfficialAuth() {
+  setOfficialAuthEnabled(!officialAuthEnabled.value)
 }
 
 function setNumberField(key: string, raw: string) {
@@ -346,20 +360,19 @@ onMounted(() => {
 <template>
   <div class="provider-settings">
     <aside class="provider-list">
-      <button
+      <SelectionButton
         v-for="providerId in providerIds"
         :key="providerId"
-        type="button"
-        class="provider-item"
-        :class="{ active: selectedProviderId === providerId }"
+        stacked
+        :active="selectedProviderId === providerId"
         @click="selectedProviderId = providerId"
       >
-        <span>{{ providerId }}</span>
-        <small>{{ providers[providerId]?.model || providers[providerId]?.type || '' }}</small>
-      </button>
+        {{ providerId }}
+        <template #detail>{{ providers[providerId]?.model || providers[providerId]?.type || '' }}</template>
+      </SelectionButton>
       <div class="provider-add">
-        <input v-model="newProviderId" placeholder="New provider id" @keydown.enter.prevent="addProvider" />
-        <button type="button" @click="addProvider">Add</button>
+        <FormTextInput v-model="newProviderId" placeholder="New provider id" @keydown.enter.prevent="addProvider" />
+        <ActionButton compact @click="addProvider">Add</ActionButton>
       </div>
     </aside>
 
@@ -367,30 +380,29 @@ onMounted(() => {
       <div class="form-head">
         <label class="provider-id-field">
           <span>Provider ID</span>
-          <input
-            :value="editableProviderId"
+          <FormTextInput
+            :model-value="editableProviderId"
             :class="{ invalid: providerIdError }"
             autocomplete="off"
             spellcheck="false"
-            @input="setProviderId(($event.target as HTMLInputElement).value)"
+            @update:model-value="setProviderId($event)"
             @blur="normalizeProviderId"
           />
           <small v-if="providerIdError" class="field-error">{{ providerIdError }}</small>
           <small v-else>Provider fields</small>
         </label>
         <div class="form-head-actions">
-          <button
-            type="button"
+          <ActionButton
             class="oauth-button"
-            :class="{ active: oauthProviderType && ['codex', 'oauth'].includes(stringValue('authMode')) }"
+            :class="{ active: oauthProviderType && officialAuthEnabled }"
             :disabled="codexAuthBusy || !oauthProviderType"
-            :title="oauthProviderType ? `切换当前 Provider 的 ${oauthProviderType} OAuth 授权` : '该 Provider 暂无 OAuth 协议实现，可使用 API Key 多账号'"
-            @click="setOfficialAuthEnabled(!['codex', 'oauth'].includes(stringValue('authMode')))"
+            :title="oauthProviderType ? `切换当前 Provider 的 ${oauthProviderType} 官方授权` : '该 Provider 暂无官方授权协议实现，可使用 API Key 多账号'"
+            @click="triggerOfficialAuth"
           >
-            {{ ['codex', 'oauth'].includes(stringValue('authMode')) ? 'OAuth ✓' : 'OAuth' }}
-          </button>
-          <button type="button" @click="duplicateProvider">Duplicate</button>
-          <button type="button" class="danger" @click="deleteProvider">Delete</button>
+            {{ officialAuthEnabled ? 'OAuth ✓' : 'OAuth' }}
+          </ActionButton>
+          <ActionButton compact @click="duplicateProvider">Duplicate</ActionButton>
+          <DangerButton @click="deleteProvider">Delete</DangerButton>
         </div>
       </div>
 
@@ -423,38 +435,48 @@ onMounted(() => {
         />
         <label>
           <span>Model</span>
-          <select
-            :value="stringValue('model')"
+          <FormSelect
+            :model-value="stringValue('model')"
             :disabled="modelOptions.length === 0"
-            @change="setField('model', ($event.target as HTMLSelectElement).value)"
+            @change="setField('model', $event)"
           >
             <option value="">{{ modelOptions.length ? 'Unset' : 'No discovered models' }}</option>
             <option v-for="modelId in modelOptions" :key="modelId" :value="modelId">{{ modelId }}</option>
-          </select>
+          </FormSelect>
+        </label>
+        <label class="form-field-wide">
+          <span>Description</span>
+          <ExpandableTextarea
+            :model-value="stringValue('description')"
+            title="Provider Description"
+            aria-label="Provider Description"
+            :rows="3"
+            @update:model-value="setField('description', $event)"
+          />
         </label>
         <label>
           <span>Timeout Ms</span>
-          <input :value="numberValue('timeoutMs')" type="number" min="1" @input="setNumberField('timeoutMs', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('timeoutMs')" type="number" min="1" @update:model-value="setNumberField('timeoutMs', $event)" />
         </label>
         <label>
           <span>Concurrency Limit</span>
-          <input :value="numberValue('concurrencyLimit')" type="number" min="1" placeholder="Unlimited" @input="setNumberField('concurrencyLimit', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('concurrencyLimit')" type="number" min="1" placeholder="Unlimited" @update:model-value="setNumberField('concurrencyLimit', $event)" />
         </label>
         <label>
           <span>RPM Limit</span>
-          <input :value="numberValue('rpmLimit')" type="number" min="1" placeholder="Unlimited" @input="setNumberField('rpmLimit', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('rpmLimit')" type="number" min="1" placeholder="Unlimited" @update:model-value="setNumberField('rpmLimit', $event)" />
         </label>
         <label>
           <span>TPM Limit (Input + Output)</span>
-          <input :value="numberValue('tpmLimit')" type="number" min="1" placeholder="Unlimited" @input="setNumberField('tpmLimit', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('tpmLimit')" type="number" min="1" placeholder="Unlimited" @update:model-value="setNumberField('tpmLimit', $event)" />
         </label>
         <label>
           <span>Max Tokens</span>
-          <input :value="numberValue('maxTokens')" type="number" min="1" @input="setNumberField('maxTokens', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('maxTokens')" type="number" min="1" @update:model-value="setNumberField('maxTokens', $event)" />
         </label>
         <label>
           <span>Reasoning Effort</span>
-          <select :value="stringValue('reasoningEffort')" @change="setField('reasoningEffort', ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="stringValue('reasoningEffort')" @change="setField('reasoningEffort', $event)">
             <option value="">Unset</option>
             <option value="minimal">minimal</option>
             <option value="low">low</option>
@@ -463,26 +485,26 @@ onMounted(() => {
             <option value="xhigh">xhigh</option>
             <option value="max">max</option>
             <option value="auto">auto</option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           <span>Reasoning Summary</span>
-          <select :value="stringValue('reasoningSummary')" @change="setField('reasoningSummary', ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="stringValue('reasoningSummary')" @change="setField('reasoningSummary', $event)">
             <option value="">Unset</option>
             <option value="auto">auto</option>
             <option value="concise">concise</option>
             <option value="detailed">detailed</option>
             <option value="disabled">disabled</option>
-          </select>
+          </FormSelect>
         </label>
         <label>
           <span>Thinking</span>
-          <select :value="stringValue('thinking')" @change="setField('thinking', ($event.target as HTMLSelectElement).value)">
+          <FormSelect :model-value="stringValue('thinking')" @change="setField('thinking', $event)">
             <option value="">Unset</option>
             <option value="enabled">enabled</option>
             <option value="disabled">disabled</option>
             <option value="auto">auto</option>
-          </select>
+          </FormSelect>
         </label>
       </div>
 
@@ -492,12 +514,13 @@ onMounted(() => {
       />
 
       <div class="switch-grid">
-        <label class="switch-field" title="Hide this provider from node configuration options for non-local clients."><span>Private</span><input type="checkbox" :checked="booleanValue('private')" @change="setField('private', ($event.target as HTMLInputElement).checked)" /></label>
-        <label class="switch-field"><span>Responses API</span><input type="checkbox" :checked="booleanValue('responsesApi')" @change="setField('responsesApi', ($event.target as HTMLInputElement).checked)" /></label>
-        <label v-if="isOpenAIProvider && booleanValue('responsesApi')" class="switch-field" title="Request the provider's priority service tier for faster Responses processing."><span>Fast mode</span><input type="checkbox" :checked="booleanValue('fastMode')" @change="setField('fastMode', ($event.target as HTMLInputElement).checked)" /></label>
-        <label class="switch-field"><span>Replay reasoning items</span><input type="checkbox" :checked="booleanValue('responsesReplayReasoningItems')" @change="setField('responsesReplayReasoningItems', ($event.target as HTMLInputElement).checked)" /></label>
-        <label class="switch-field"><span>Tool context compaction</span><input type="checkbox" :checked="booleanValue('toolContextCompactionEnabled')" @change="setField('toolContextCompactionEnabled', ($event.target as HTMLInputElement).checked)" /></label>
-        <label class="switch-field"><span>Item-level streaming</span><input type="checkbox" :checked="booleanValue('responsesItemLevelStreaming')" @change="setField('responsesItemLevelStreaming', ($event.target as HTMLInputElement).checked)" /></label>
+        <label class="switch-field" title="Hide this provider from node configuration options for non-local clients."><span>Private</span><FormCheckbox :model-value="booleanValue('private')" @update:model-value="setField('private', $event)" /></label>
+        <label class="switch-field"><span>Responses API</span><FormCheckbox :model-value="booleanValue('responsesApi')" @update:model-value="setField('responsesApi', $event)" /></label>
+        <label v-if="booleanValue('responsesApi')" class="switch-field" title="Use the optional Responses WebSocket transport. Leave disabled for providers that only support HTTP Responses."><span>Responses WebSocket</span><FormCheckbox :model-value="booleanValue('responsesWebSocket')" @update:model-value="setField('responsesWebSocket', $event)" /></label>
+        <label v-if="isOpenAIProvider && booleanValue('responsesApi')" class="switch-field" title="Request the provider's priority service tier for faster Responses processing."><span>Fast mode</span><FormCheckbox :model-value="booleanValue('fastMode')" @update:model-value="setField('fastMode', $event)" /></label>
+        <label class="switch-field"><span>Replay reasoning items</span><FormCheckbox :model-value="booleanValue('responsesReplayReasoningItems')" @update:model-value="setField('responsesReplayReasoningItems', $event)" /></label>
+        <label class="switch-field"><span>Tool context compaction</span><FormCheckbox :model-value="booleanValue('toolContextCompactionEnabled')" @update:model-value="setField('toolContextCompactionEnabled', $event)" /></label>
+        <label class="switch-field"><span>Item-level streaming</span><FormCheckbox :model-value="booleanValue('responsesItemLevelStreaming')" @update:model-value="setField('responsesItemLevelStreaming', $event)" /></label>
       </div>
 
       <div class="form-grid">
@@ -510,31 +533,37 @@ onMounted(() => {
         </label>
         <label>
           <span>Web Search Sources</span>
-          <textarea :value="textList(selectedProvider.webSearchSources)" @input="setField('webSearchSources', parseTextList(($event.target as HTMLTextAreaElement).value))"></textarea>
+          <ExpandableTextarea
+            :model-value="textList(selectedProvider.webSearchSources)"
+            title="Web Search Sources"
+            aria-label="Web Search Sources"
+            :rows="3"
+            @update:model-value="setField('webSearchSources', parseTextList($event))"
+          />
         </label>
         <label>
           <span>Web Search Max Keyword</span>
-          <input :value="numberValue('webSearchMaxKeyword')" type="number" min="1" @input="setNumberField('webSearchMaxKeyword', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('webSearchMaxKeyword')" type="number" min="1" @update:model-value="setNumberField('webSearchMaxKeyword', $event)" />
         </label>
         <label>
           <span>Web Search Limit</span>
-          <input :value="numberValue('webSearchLimit')" type="number" min="1" @input="setNumberField('webSearchLimit', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('webSearchLimit')" type="number" min="1" @update:model-value="setNumberField('webSearchLimit', $event)" />
         </label>
         <label>
           <span>Compaction Every Tool Calls</span>
-          <input :value="numberValue('toolContextCompactionEveryToolCalls')" type="number" min="0" @input="setNumberField('toolContextCompactionEveryToolCalls', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('toolContextCompactionEveryToolCalls')" type="number" min="0" @update:model-value="setNumberField('toolContextCompactionEveryToolCalls', $event)" />
         </label>
         <label>
           <span>Compaction Input Tokens</span>
-          <input :value="numberValue('toolContextCompactionInputTokens')" type="number" min="0" @input="setNumberField('toolContextCompactionInputTokens', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('toolContextCompactionInputTokens')" type="number" min="0" @update:model-value="setNumberField('toolContextCompactionInputTokens', $event)" />
         </label>
         <label>
           <span>Compaction Output Tokens</span>
-          <input :value="numberValue('toolContextCompactionOutputTokens')" type="number" min="0" @input="setNumberField('toolContextCompactionOutputTokens', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('toolContextCompactionOutputTokens')" type="number" min="0" @update:model-value="setNumberField('toolContextCompactionOutputTokens', $event)" />
         </label>
         <label>
           <span>Tool Result Max Chars</span>
-          <input :value="numberValue('toolResultSubmissionMaxChars')" type="number" min="1" @input="setNumberField('toolResultSubmissionMaxChars', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="numberValue('toolResultSubmissionMaxChars')" type="number" min="1" @update:model-value="setNumberField('toolResultSubmissionMaxChars', $event)" />
         </label>
       </div>
     </section>

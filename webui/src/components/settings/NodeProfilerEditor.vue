@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import FormTextInput from '../FormTextInput.vue'
 import {
   getNodeTemplate,
   listAgentProfiles,
@@ -9,8 +10,14 @@ import {
   type ProviderInfo,
 } from '../../api'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
+import { agentProfileDescription } from '../../composables/agentProfilePresentation'
+import { useRuntimePolicyPreview } from '../../composables/useRuntimePolicyPreview'
 import { resolveAgentProviderSchemaContext } from '../../composables/useAgentNodeCreateSchema'
 import NodeConfigFields from '../agent-board/NodeConfigFields.vue'
+import NodeProfilerMetadataPanel from './NodeProfilerMetadataPanel.vue'
+import NodeProfilerProfileList from './NodeProfilerProfileList.vue'
+import NodeProfilerToolbar from './NodeProfilerToolbar.vue'
+import RuntimePolicyPreviewPanel from './RuntimePolicyPreviewPanel.vue'
 
 const props = defineProps<{
   providers: ProviderInfo[]
@@ -26,6 +33,7 @@ const emit = defineEmits<{
 const profiles = ref<AgentProfile[]>([])
 const selectedProfileId = ref('')
 const profileName = ref('')
+const profileDescription = ref('')
 const nodeTypeId = ref('')
 const sourceGraphId = ref('')
 const sourceNodeId = ref('')
@@ -44,13 +52,14 @@ const localError = ref('')
 let templateRequestId = 0
 let loadedSchemaContextKey = ''
 
-const selectedProfile = computed(() => {
-  return profiles.value.find((profile) => profile.id === selectedProfileId.value) || null
-})
+const selectedProfile = computed(
+  () => profiles.value.find((profile) => profile.id === selectedProfileId.value) || null,
+)
 
 const schemaFieldCount = computed(() => Object.keys(templateSchema.value).length)
 const serializedDraft = computed(() => JSON.stringify({
   profileName: profileName.value,
+  profileDescription: profileDescription.value,
   nodeTypeId: nodeTypeId.value,
   sourceGraphId: sourceGraphId.value,
   sourceNodeId: sourceNodeId.value,
@@ -67,6 +76,20 @@ function showError(error: unknown) {
   localError.value = message
   emit('error', message)
 }
+
+const {
+  preview: runtimePolicyPreview,
+  resolving: previewingRuntimePolicy,
+  clear: clearRuntimePolicyPreview,
+  resolve: previewRuntimePolicy,
+} = useRuntimePolicyPreview({
+  fieldSchema: fieldSchemaCache,
+  fields: draftFields,
+  onStart: () => {
+    localError.value = ''
+  },
+  onError: showError,
+})
 
 function profileFieldDraft(profile: AgentProfile, templateFields: Record<string, any>) {
   return {
@@ -111,6 +134,7 @@ async function loadProfileDraft(profile: AgentProfile | null) {
 
   if (!profile) {
     profileName.value = ''
+    profileDescription.value = ''
     nodeTypeId.value = ''
     sourceGraphId.value = ''
     sourceNodeId.value = ''
@@ -122,11 +146,13 @@ async function loadProfileDraft(profile: AgentProfile | null) {
     persistedFieldKeys.value = []
     editedFieldKeys.value = {}
     eventRulesContent.value = '{}\n'
+    clearRuntimePolicyPreview()
     baseline.value = serializedDraft.value
     return
   }
 
   profileName.value = String(profile.name || profile.id)
+  profileDescription.value = agentProfileDescription(profile)
   nodeTypeId.value = String(profile.node_type_id || '')
   sourceGraphId.value = String(profile.source_graph_id || '')
   sourceNodeId.value = String(profile.source_node_id || '')
@@ -136,6 +162,7 @@ async function loadProfileDraft(profile: AgentProfile | null) {
   eventRulesContent.value = `${JSON.stringify(profile.event_rules || {}, null, 2)}\n`
   templateSchema.value = {}
   draftFields.value = { ...(profile.fields || {}) }
+  clearRuntimePolicyPreview()
 
   templateLoading.value = true
   try {
@@ -205,6 +232,7 @@ function setNodeField(key: string, value: any) {
     [key]: true,
   }
   localError.value = ''
+  if (key === 'runtime_policy') clearRuntimePolicyPreview()
 }
 
 function parseEventRules() {
@@ -225,8 +253,7 @@ function formatEventRules() {
 }
 
 function optionalText(value: string) {
-  const text = String(value || '').trim()
-  return text || undefined
+  return String(value || '').trim() || undefined
 }
 
 function parsePayload(): AgentProfileEditorPayload {
@@ -258,6 +285,7 @@ function parsePayload(): AgentProfileEditorPayload {
   return {
     node_profiler: {
       name,
+      ...(optionalText(profileDescription.value) ? { description: optionalText(profileDescription.value) } : {}),
       node_type_id: typeId,
       ...(optionalText(sourceGraphId.value) ? { source_graph_id: optionalText(sourceGraphId.value) } : {}),
       ...(optionalText(sourceNodeId.value) ? { source_node_id: optionalText(sourceNodeId.value) } : {}),
@@ -303,42 +331,23 @@ onMounted(() => loadProfiles())
 
 <template>
   <div class="profiler-editor">
-    <aside class="profiler-browser" aria-label="Node profilers">
-      <div class="profiler-browser-head">
-        <strong>Profiles</strong>
-        <span>{{ profiles.length }}</span>
-      </div>
-      <button
-        v-for="profile in profiles"
-        :key="profile.id"
-        type="button"
-        class="profiler-option"
-        :class="{ active: profile.id === selectedProfileId }"
-        :disabled="loading || templateLoading || saving"
-        @click="selectProfile(profile.id)"
-      >
-        <span>{{ profile.name || profile.id }}</span>
-        <small>{{ profile.id }}</small>
-      </button>
-      <div v-if="!loading && profiles.length === 0" class="profiler-empty">
-        No Agent Profiles found in agent/*.json.
-      </div>
-    </aside>
+    <NodeProfilerProfileList
+      :profiles="profiles"
+      :selected-profile-id="selectedProfileId"
+      :loading="loading"
+      :disabled="templateLoading || saving"
+      @select="selectProfile"
+    />
 
     <section class="profiler-workspace">
-      <div class="profiler-toolbar">
-        <div class="profiler-heading">
-          <strong>{{ selectedProfile?.name || 'NodeProfilerEditor' }}</strong>
-          <span v-if="selectedProfile">{{ selectedProfile.id }} · {{ selectedProfile.node_type_id }}</span>
-          <em v-if="dirty">Unsaved</em>
-        </div>
-        <div class="profiler-actions">
-          <button type="button" :disabled="loading || templateLoading || saving" @click="reloadProfiles">Reload</button>
-          <button class="primary" type="button" :disabled="!dirty || loading || templateLoading || saving" @click="saveProfile">
-            {{ saving ? 'Saving...' : 'Save Profile' }}
-          </button>
-        </div>
-      </div>
+      <NodeProfilerToolbar
+        :profile="selectedProfile"
+        :dirty="dirty"
+        :loading="loading || templateLoading"
+        :saving="saving"
+        @reload="reloadProfiles"
+        @save="saveProfile"
+      />
 
       <div v-if="selectedProfile" class="profiler-panels">
         <section class="profiler-panel node-profiler-panel">
@@ -353,7 +362,7 @@ onMounted(() => loadProfiles())
           <div class="profiler-config-body">
             <label class="profiler-name-field">
               <span>Profile name</span>
-              <input v-model="profileName" type="text" :disabled="saving" />
+              <FormTextInput v-model="profileName" :disabled="saving" />
             </label>
 
             <div v-if="templateLoading" class="profiler-placeholder compact">Loading node configuration...</div>
@@ -361,7 +370,7 @@ onMounted(() => loadProfiles())
               No editable schema is available for {{ nodeTypeId }}.
             </div>
             <NodeConfigFields
-              v-else
+              v-if="!templateLoading && schemaFieldCount > 0"
               :type-id="nodeTypeId"
               :schema="templateSchema"
               :fields="draftFields"
@@ -373,44 +382,23 @@ onMounted(() => loadProfiles())
               @field-error="showError"
             />
 
-            <details class="profiler-advanced">
-              <summary>
-                <span>Profile metadata and event rules</span>
-                <span aria-hidden="true">›</span>
-              </summary>
-              <div class="profiler-advanced-content">
-                <div class="profiler-metadata-grid">
-                  <label>
-                    <span>Node type</span>
-                    <input :value="nodeTypeId" type="text" readonly />
-                  </label>
-                  <label>
-                    <span>Node name</span>
-                    <input v-model="nodeName" type="text" placeholder="Optional" />
-                  </label>
-                  <label>
-                    <span>Source graph</span>
-                    <input v-model="sourceGraphId" type="text" placeholder="Optional" />
-                  </label>
-                  <label>
-                    <span>Source node</span>
-                    <input v-model="sourceNodeId" type="text" placeholder="Optional" />
-                  </label>
-                </div>
-                <div class="profiler-event-head">
-                  <div>
-                    <strong>Event rules</strong>
-                    <span>Advanced profile data; preserved independently from node fields.</span>
-                  </div>
-                  <button type="button" :disabled="saving" @click="formatEventRules">Format</button>
-                </div>
-                <textarea
-                  v-model="eventRulesContent"
-                  spellcheck="false"
-                  aria-label="Profile event rules JSON"
-                ></textarea>
-              </div>
-            </details>
+            <RuntimePolicyPreviewPanel
+              :preview="runtimePolicyPreview"
+              :saving="saving"
+              :resolving="previewingRuntimePolicy"
+              @resolve="previewRuntimePolicy"
+            />
+
+            <NodeProfilerMetadataPanel
+              v-model:node-name="nodeName"
+              v-model:description="profileDescription"
+              v-model:source-graph-id="sourceGraphId"
+              v-model:source-node-id="sourceNodeId"
+              v-model:event-rules-content="eventRulesContent"
+              :node-type-id="nodeTypeId"
+              :saving="saving"
+              @format="formatEventRules"
+            />
           </div>
         </section>
       </div>

@@ -4,84 +4,42 @@ import os
 from src.file_transaction import atomic_write_text
 
 from . import runtime_paths
+from .profile_storage import (
+    AGENT_PROFILE_DIR,
+    get_profile,
+    profile_category_dir,
+    validate_profile_id,
+)
 from .service_host import HostBoundService
-from .shared import ConfigLoader, HTTPException
+from .shared import HTTPException
 
 
 class PasteAgentSettings(HostBoundService):
+    DEFAULT_PROFILE_ID = "PasteAgent"
+
     def _paste_agent_config_path(self) -> str:
         return os.path.join(runtime_paths._get_runtime_root(), "config", "pastagent.json")
 
-    def _default_provider_id(self) -> str:
-        try:
-            providers = ConfigLoader().get_all_providers()
-        except Exception:
-            providers = {}
-
-        if isinstance(providers, dict) and providers:
-            if "gemini" in providers:
-                return "gemini"
-            first_key = next(iter(providers.keys()), "")
-            return str(first_key or "").strip()
-        return "gemini"
-
     def _default_paste_agent_config(self) -> dict:
-        provider_id = self._default_provider_id()
-
-        return {
-            "agent_id": "pastagent",
-            "name": "PasteAgent",
-            "provider_id": provider_id,
-            "mode": "chat",
-            "web_search": "enabled",
-            "thinking": "enabled",
-            "reasoning_effort": "high",
-            "system_prompt": "You are an assistant created from pasted text. Keep responses concise and actionable.",
-            "tools": [],
-        }
+        return {"profile_id": self.DEFAULT_PROFILE_ID}
 
     def _build_paste_agent_config(self, raw: dict | None) -> dict:
         default = self._default_paste_agent_config()
         payload = raw if isinstance(raw, dict) else {}
-        provider_id = str(payload.get("provider_id") or default.get("provider_id") or "").strip()
-        if not provider_id:
-            provider_id = self._default_provider_id()
+        profile_id = payload.get("profile_id", default["profile_id"])
+        return {"profile_id": validate_profile_id(profile_id)}
 
-        tools = payload.get("tools")
-        safe_tools: list[str] = []
-        if isinstance(tools, list):
-            seen = set()
-            for item in tools:
-                if not isinstance(item, str):
-                    continue
-                value = item.strip()
-                if not value:
-                    continue
-                if value in seen:
-                    continue
-                seen.add(value)
-                safe_tools.append(value)
-        web_search = payload.get("web_search")
-        if web_search is None:
-            web_search = default.get("web_search")
-        thinking = payload.get("thinking")
-        if thinking is None:
-            thinking = default.get("thinking")
-        reasoning_effort = payload.get("reasoning_effort")
-        if reasoning_effort is None:
-            reasoning_effort = default.get("reasoning_effort")
-
-        return {
-            "agent_id": "pastagent",
-            "name": str(payload.get("name") or default.get("name") or "PasteAgent"),
-            "provider_id": provider_id,
-            "mode": str(payload.get("mode") or default.get("mode") or "chat"),
-            "web_search": web_search,
-            "thinking": thinking,
-            "reasoning_effort": reasoning_effort,
-            "system_prompt": str(payload.get("system_prompt") or default.get("system_prompt") or ""),
-            "tools": safe_tools,
-        }
+    @staticmethod
+    def _validate_agent_profile(profile_id: str) -> None:
+        profile = get_profile(profile_category_dir(AGENT_PROFILE_DIR), profile_id)
+        if profile is None:
+            raise HTTPException(status_code=400, detail=f"agent profile not found: {profile_id}")
+        node_type_id = str(profile.get("node_type_id") or "").strip()
+        if node_type_id != "agent_node":
+            raise HTTPException(
+                status_code=400,
+                detail=f"agent profile {profile_id} must use node_type_id agent_node",
+            )
 
     def _write_paste_agent_config(self, config_payload: dict) -> str:
         config_path = self._paste_agent_config_path()
@@ -128,31 +86,21 @@ class PasteAgentSettings(HostBoundService):
     def update_paste_agent_config(self, payload: dict):
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="payload must be object")
+        unknown_fields = sorted(set(payload) - {"profile_id"})
+        if unknown_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown pastagent config fields: {', '.join(unknown_fields)}",
+            )
 
         current = self._read_paste_agent_config(ensure_exists=True)
         merged = dict(current)
-
-        if "name" in payload:
-            merged["name"] = payload.get("name")
-        if "provider_id" in payload:
-            merged["provider_id"] = payload.get("provider_id")
-        if "mode" in payload:
-            merged["mode"] = payload.get("mode")
-        if "web_search" in payload:
-            merged["web_search"] = payload.get("web_search")
-        if "thinking" in payload:
-            merged["thinking"] = payload.get("thinking")
-        if "reasoning_effort" in payload:
-            merged["reasoning_effort"] = payload.get("reasoning_effort")
-        if "system_prompt" in payload:
-            merged["system_prompt"] = payload.get("system_prompt")
-        if "tools" in payload:
-            tools = payload.get("tools")
-            if tools is not None and not isinstance(tools, list):
-                raise HTTPException(status_code=400, detail="tools must be array")
-            merged["tools"] = tools
-
-        mapped = self._build_paste_agent_config(merged)
+        merged["profile_id"] = payload.get("profile_id", current["profile_id"])
+        try:
+            mapped = self._build_paste_agent_config(merged)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        self._validate_agent_profile(mapped["profile_id"])
         try:
             self._write_paste_agent_config(mapped)
         except Exception as e:

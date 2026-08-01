@@ -16,7 +16,7 @@ class OpenAICurlTransport(CurlHttpTransport):
                 marker="__OPENAI_HTTP_CODE__:",
             )
         except CurlTransportError as exc:
-            raise OpenAITransportError(str(exc)) from exc
+            raise OpenAITransportError(str(exc), retry_scope="request") from exc
 
         if response.status_code < 200 or response.status_code >= 300:
             self._write_responses_http_debug(
@@ -25,13 +25,18 @@ class OpenAICurlTransport(CurlHttpTransport):
                 status_code=response.status_code,
                 response_body=response.body,
             )
-            raise OpenAIHttpError(response.status_code, response.body)
+            raise OpenAIHttpError(
+                response.status_code,
+                response.body,
+                retry_scope="request",
+            )
         try:
             return json.loads(response.body)
         except Exception as exc:
             raise RuntimeError(f"Invalid JSON response: {exc}; body={response.body[:500]}") from exc
 
     def _curl_post_sse_data_lines(self, *, url, headers, payload_json, timeout_sec):
+        stream_started = False
         try:
             for item in self._curl_post_sse_raw_lines(
                 url=url,
@@ -48,8 +53,16 @@ class OpenAICurlTransport(CurlHttpTransport):
                             status_code=item.status_code,
                             response_body=item.body,
                         )
-                        raise OpenAIHttpError(item.status_code, item.body)
+                        raise OpenAIHttpError(
+                            item.status_code,
+                            item.body,
+                            retry_scope="request" if not stream_started else "stream",
+                        )
                     continue
+                stream_started = True
                 yield item
         except CurlTransportError as exc:
-            raise OpenAITransportError(str(exc)) from exc
+            raise OpenAITransportError(
+                str(exc),
+                retry_scope="request" if not stream_started else "stream",
+            ) from exc

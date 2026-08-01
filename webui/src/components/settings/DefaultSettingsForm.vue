@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormSelect from '../FormSelect.vue'
+import FormTextInput from '../FormTextInput.vue'
+import PasteAgentProfileSettingsGroup from './PasteAgentProfileSettingsGroup.vue'
 import StorageSettingsGroup from './StorageSettingsGroup.vue'
 
 const props = defineProps<{
@@ -136,16 +141,89 @@ function deleteMcpServer() {
       @update:memories-path="setNestedField('storage', 'memoriesPath', $event)"
     />
 
+    <PasteAgentProfileSettingsGroup />
+
+    <section class="settings-group">
+      <h2>Board Layout</h2>
+      <div class="form-grid">
+        <label>
+          <span>Grid Cell Width</span>
+          <FormTextInput
+            :model-value="fieldText('boardLayout', 'gridCellWidth') || '300'"
+            type="number"
+            min="230"
+            max="2000"
+            @update:model-value="setNestedNumber('boardLayout', 'gridCellWidth', $event)"
+          />
+        </label>
+        <label>
+          <span>Grid Cell Height</span>
+          <FormTextInput
+            :model-value="fieldText('boardLayout', 'gridCellHeight') || '320'"
+            type="number"
+            min="250"
+            max="2000"
+            @update:model-value="setNestedNumber('boardLayout', 'gridCellHeight', $event)"
+          />
+        </label>
+        <label>
+          <span>Default Node Width</span>
+          <FormTextInput
+            :model-value="fieldText('boardLayout', 'nodeWidth') || '230'"
+            type="number"
+            min="230"
+            max="720"
+            @update:model-value="setNestedNumber('boardLayout', 'nodeWidth', $event)"
+          />
+          <small>Applied to newly created nodes. Nodes with saved custom sizes keep their own width.</small>
+        </label>
+        <label>
+          <span>Default Node Height</span>
+          <FormTextInput
+            :model-value="fieldText('boardLayout', 'nodeHeight') || '250'"
+            type="number"
+            min="250"
+            max="760"
+            @update:model-value="setNestedNumber('boardLayout', 'nodeHeight', $event)"
+          />
+          <small>Applied to newly created nodes. Nodes with saved custom sizes keep their own height.</small>
+        </label>
+      </div>
+    </section>
+
     <section class="settings-group">
       <h2>Server</h2>
       <div class="form-grid">
         <label>
           <span>Host</span>
-          <input :value="fieldText('server', 'host')" @input="setNestedField('server', 'host', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="fieldText('server', 'host')" @update:model-value="setNestedField('server', 'host', $event)" />
         </label>
         <label>
           <span>Port</span>
-          <input :value="fieldText('server', 'port')" type="number" min="1" max="65535" @input="setNestedNumber('server', 'port', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="fieldText('server', 'port')" type="number" min="1" max="65535" @update:model-value="setNestedNumber('server', 'port', $event)" />
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-group">
+      <h2>Network</h2>
+      <div class="form-grid">
+        <label>
+          <span>HTTP Proxy</span>
+          <FormTextInput
+            :model-value="fieldText('network', 'httpProxy')"
+            placeholder="http://127.0.0.1:17891"
+            @update:model-value="setNestedField('network', 'httpProxy', $event)"
+          />
+          <small>Applied to AgentPark at startup and inherited by processes it launches.</small>
+        </label>
+        <label>
+          <span>No Proxy</span>
+          <FormTextInput
+            :model-value="fieldText('network', 'noProxy')"
+            placeholder="localhost,127.0.0.1,::1"
+            @update:model-value="setNestedField('network', 'noProxy', $event)"
+          />
         </label>
       </div>
     </section>
@@ -155,11 +233,11 @@ function deleteMcpServer() {
       <div class="form-grid">
         <label>
           <span>Min Send Delay Ms</span>
-          <input :value="fieldText('agentNode', 'minSendDelayMs')" type="number" min="0" @input="setNestedNumber('agentNode', 'minSendDelayMs', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="fieldText('agentNode', 'minSendDelayMs')" type="number" min="0" @update:model-value="setNestedNumber('agentNode', 'minSendDelayMs', $event)" />
         </label>
         <label>
           <span>History Message Limit</span>
-          <input :value="fieldText('agentNode', 'historyMessageLimit')" type="number" min="0" @input="setNestedNumber('agentNode', 'historyMessageLimit', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="fieldText('agentNode', 'historyMessageLimit')" type="number" min="0" @update:model-value="setNestedNumber('agentNode', 'historyMessageLimit', $event)" />
         </label>
       </div>
     </section>
@@ -169,11 +247,11 @@ function deleteMcpServer() {
       <div class="form-grid">
         <label>
           <span>Console Timeout Sec</span>
-          <input :value="fieldText('consoleCommand', 'timeoutSec')" type="number" min="1" @input="setNestedNumber('consoleCommand', 'timeoutSec', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="fieldText('consoleCommand', 'timeoutSec')" type="number" min="1" @update:model-value="setNestedNumber('consoleCommand', 'timeoutSec', $event)" />
         </label>
         <label>
           <span>Node Memory Max Entries</span>
-          <input :value="fieldText('nodeMemory', 'maxEntries')" type="number" min="1" @input="setNestedNumber('nodeMemory', 'maxEntries', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="fieldText('nodeMemory', 'maxEntries')" type="number" min="1" @update:model-value="setNestedNumber('nodeMemory', 'maxEntries', $event)" />
         </label>
       </div>
     </section>
@@ -183,7 +261,7 @@ function deleteMcpServer() {
       <div class="form-grid">
         <label>
           <span>Max Undo Steps</span>
-          <input :value="fieldText('undo', 'maxSteps') || '5'" type="number" min="0" max="100" @input="setNestedNumber('undo', 'maxSteps', ($event.target as HTMLInputElement).value)" />
+          <FormTextInput :model-value="fieldText('undo', 'maxSteps') || '5'" type="number" min="0" max="100" @update:model-value="setNestedNumber('undo', 'maxSteps', $event)" />
         </label>
       </div>
     </section>
@@ -192,8 +270,8 @@ function deleteMcpServer() {
       <div class="group-head">
         <h2>MCP Servers</h2>
         <div class="mcp-add">
-          <input v-model="newMcpName" placeholder="New server name" @keydown.enter.prevent="addMcpServer" />
-          <button type="button" @click="addMcpServer">Add</button>
+          <FormTextInput v-model="newMcpName" placeholder="New server name" @keydown.enter.prevent="addMcpServer" />
+          <ActionButton compact @click="addMcpServer">Add</ActionButton>
         </div>
       </div>
 
@@ -215,28 +293,28 @@ function deleteMcpServer() {
         <div v-if="selectedMcp" class="mcp-fields">
           <div class="form-head">
             <h3>{{ selectedMcpName }}</h3>
-            <button type="button" class="danger" @click="deleteMcpServer">Delete</button>
+            <DangerButton @click="deleteMcpServer">Delete</DangerButton>
           </div>
           <div class="form-grid">
             <label>
               <span>Label</span>
-              <input :value="mcpFieldText('label')" @input="setMcpField('label', ($event.target as HTMLInputElement).value)" />
+              <FormTextInput :model-value="mcpFieldText('label')" @update:model-value="setMcpField('label', $event)" />
             </label>
             <label>
               <span>Transport</span>
-              <select :value="mcpFieldText('transport')" @change="setMcpField('transport', ($event.target as HTMLSelectElement).value)">
+              <FormSelect :model-value="mcpFieldText('transport')" @change="setMcpField('transport', $event)">
                 <option value="">Unset</option>
                 <option value="streamable-http">streamable-http</option>
                 <option value="stdio">stdio</option>
-              </select>
+              </FormSelect>
             </label>
             <label>
               <span>URL</span>
-              <input :value="mcpFieldText('url')" @input="setMcpField('url', ($event.target as HTMLInputElement).value)" />
+              <FormTextInput :model-value="mcpFieldText('url')" @update:model-value="setMcpField('url', $event)" />
             </label>
             <label>
               <span>Read Timeout Seconds</span>
-              <input :value="mcpFieldText('readTimeoutSeconds')" type="number" min="1" @input="setMcpNumber('readTimeoutSeconds', ($event.target as HTMLInputElement).value)" />
+              <FormTextInput :model-value="mcpFieldText('readTimeoutSeconds')" type="number" min="1" @update:model-value="setMcpNumber('readTimeoutSeconds', $event)" />
             </label>
           </div>
         </div>
@@ -300,17 +378,6 @@ label small.pending-path {
   color: rgba(250, 204, 21, 0.92);
 }
 
-input,
-select {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 8px 9px;
-  color: rgba(226, 232, 240, 0.96);
-  background: rgba(2, 6, 23, 0.5);
-  font: inherit;
-}
-
 .mcp-add {
   display: flex;
   gap: 6px;
@@ -351,11 +418,6 @@ select {
   text-overflow: ellipsis;
   color: rgba(148, 163, 184, 0.9);
   font-size: 11px;
-}
-
-button.danger {
-  border-color: rgba(248, 113, 113, 0.35);
-  color: rgba(254, 202, 202, 0.95);
 }
 
 @media (max-width: 1120px) {

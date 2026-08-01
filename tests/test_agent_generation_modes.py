@@ -125,7 +125,7 @@ def test_seedream_5_pro_agent_schema_only_exposes_supported_documented_fields(mo
     from nodes.agent_node_schema import build_agent_config_schema
 
     monkeypatch.setattr(
-        "nodes.agent_node_schema.ConfigLoader.get_all_providers",
+        "nodes.agent_node_schema.ConfigLoader.get_provider_catalog",
         lambda _self: {
             "doubao-seedream-5": {
                 "type": "doubao",
@@ -230,11 +230,11 @@ def test_additional_seedream_providers_clone_pro_settings_except_model_and_timeo
     expected = {
         "doubao-seedream-5-lite": {
             "model": "doubao-seedream-5-0-260128",
-            "timeoutMs": 60000,
+            "timeoutMs": 120000,
         },
         "doubao-seedream-4-0-250828": {
             "model": "doubao-seedream-4-0-250828",
-            "timeoutMs": 60000,
+            "timeoutMs": 120000,
         },
     }
 

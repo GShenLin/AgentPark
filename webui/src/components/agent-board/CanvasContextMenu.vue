@@ -5,6 +5,8 @@ import { useAgentNodeCreateSchema } from '../../composables/useAgentNodeCreateSc
 import { useProviderDrivenTemplateSchema } from '../../composables/useProviderDrivenTemplateSchema'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
+import ActionButton from '../ActionButton.vue'
+import FormTextInput from '../FormTextInput.vue'
 import { AgentBoardKey } from './context'
 import AgentProfileDropdown from './AgentProfileDropdown.vue'
 import NodeConfigFields from './NodeConfigFields.vue'
@@ -17,7 +19,7 @@ const ctx = injected
 const { providers, availableTools } = useGlobalState()
 
 const menuEl = ref<HTMLElement | null>(null)
-const searchInputRef = ref<HTMLInputElement | null>(null)
+const searchInputRef = ref<InstanceType<typeof FormTextInput> | null>(null)
 
 const showMenu = ref(false)
 const menuQuery = ref('')
@@ -278,11 +280,11 @@ defineExpose({
           <div class="context-menu-sub">Right-click position: {{ Math.round(createPoint.x) }}, {{ Math.round(createPoint.y) }}</div>
         </header>
 
-        <input
+        <FormTextInput
           ref="searchInputRef"
           v-model="menuQuery"
           class="context-menu-search"
-          type="text"
+          compact
           placeholder="Search node name or type"
           @pointerdown.stop
         />
@@ -311,7 +313,7 @@ defineExpose({
 
         <label class="field">
           <span class="field-label">Node Name</span>
-          <input v-model="selectedNodeName" class="field-input" type="text" />
+          <FormTextInput v-model="selectedNodeName" />
         </label>
 
         <NodeConfigFields
@@ -325,10 +327,10 @@ defineExpose({
         />
 
         <div class="modal-actions">
-          <button @click="closeDialog">Cancel</button>
-          <button class="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">
+          <ActionButton @click="closeDialog">Cancel</ActionButton>
+          <ActionButton variant="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">
             {{ creatingNode ? 'Creating...' : 'Create Node' }}
-          </button>
+          </ActionButton>
         </div>
       </div>
     </div>
@@ -386,21 +388,8 @@ defineExpose({
   color: rgba(148, 163, 184, 0.82);
 }
 
-.context-menu-search,
-.field-input {
+.context-menu-search {
   width: 100%;
-  border: 1px solid var(--theme-panel-canvas-context-menu-button-border, rgba(148, 163, 184, 0.3));
-  border-radius: 8px;
-  background: var(--theme-panel-canvas-context-menu-button-background, rgba(15, 23, 42, 0.72));
-  color: var(--theme-panel-canvas-context-menu-button-text, rgba(226, 232, 240, 0.96));
-  padding: 8px 10px;
-  font-size: 12px;
-  outline: none;
-}
-
-.context-menu-search:focus,
-.field-input:focus {
-  border-color: rgba(56, 189, 248, 0.7);
 }
 
 .context-menu-list {
@@ -457,7 +446,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--ui-dialog-backdrop);
   z-index: 1200;
 }
 
@@ -465,10 +454,12 @@ defineExpose({
   width: min(520px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
   overflow: auto;
-  background: #1e293b;
+  border: 1px solid var(--ui-dialog-border);
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
   padding: 24px;
-  border-radius: 12px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  border-radius: var(--ui-dialog-radius);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 .modal h3 {
@@ -512,8 +503,4 @@ defineExpose({
   gap: 12px;
 }
 
-.modal-actions button.primary {
-  background: rgba(99, 102, 241, 0.4);
-  border: 1px solid rgba(99, 102, 241, 0.72);
-}
 </style>

@@ -39,6 +39,7 @@ class PublicGatewayStore:
             "models": list(config["models"]),
             "keys": self.list_keys(),
             "providers": self.list_providers(),
+            "sourceErrors": self.list_source_errors(),
         }
 
     def load_config(self) -> dict[str, Any]:
@@ -72,6 +73,7 @@ class PublicGatewayStore:
 
     def upsert_model(self, payload: dict[str, Any]) -> dict[str, Any]:
         model = self._validate_model(payload)
+        self._validate_model_source(model)
 
         def mutate() -> dict[str, Any]:
             config = self.load_config()
@@ -111,7 +113,8 @@ class PublicGatewayStore:
             raise RuntimeError(f"Gateway model {safe_id!r} is disabled.")
         if protocol not in model["protocols"]:
             raise ValueError(f"Gateway model {safe_id!r} does not enable protocol {protocol!r}.")
-        provider_config = ConfigLoader().get_provider_config(model["providerId"])
+        self._validate_model_source(model)
+        provider_config = self._resolve_source_config(model["providerId"])
         if model["accountId"]:
             provider_config = {**provider_config, "authAccountId": model["accountId"]}
         return model, provider_config
@@ -141,9 +144,13 @@ class PublicGatewayStore:
                     "protocol": protocol,
                     "authProvider": auth_provider,
                     "accounts": accounts,
+                    "kind": "provider",
                 }
             )
         return sorted(output, key=lambda item: item["id"].lower())
+
+    def list_source_errors(self) -> list[dict[str, str]]:
+        return []
 
     def list_keys(self) -> list[dict[str, Any]]:
         payload = self._load_keys()
@@ -246,8 +253,6 @@ class PublicGatewayStore:
         provider_id = str(payload.get("providerId") or "").strip()
         if not provider_id:
             raise ValueError("Gateway model providerId is required.")
-        provider = ConfigLoader().get_provider_config(provider_id)
-        provider_protocol(provider)
         protocols = payload.get("protocols")
         if not isinstance(protocols, list) or not protocols:
             raise ValueError("Gateway model protocols must be a non-empty array.")
@@ -259,18 +264,8 @@ class PublicGatewayStore:
             if protocol not in normalized_protocols:
                 normalized_protocols.append(protocol)
         account_id = str(payload.get("accountId") or "").strip()
-        if account_id:
-            if not _ACCOUNT_ID.fullmatch(account_id):
-                raise ValueError("Gateway model accountId must be a 12-character account id.")
-            auth_provider = str(
-                provider.get("authProvider")
-                or provider.get("type")
-                or ("openai" if provider.get("authMode") == "codex" else "")
-            ).strip().lower()
-            if not auth_provider or get_account(auth_provider, account_id) is None:
-                raise ValueError(
-                    f"Gateway model account {account_id!r} does not exist for {auth_provider or 'provider'}."
-                )
+        if account_id and not _ACCOUNT_ID.fullmatch(account_id):
+            raise ValueError("Gateway model accountId must be a 12-character account id.")
         enabled = payload.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ValueError("Gateway model enabled must be a boolean.")
@@ -281,6 +276,26 @@ class PublicGatewayStore:
             "protocols": normalized_protocols,
             "enabled": enabled,
         }
+
+    def _validate_model_source(self, model: dict[str, Any]) -> None:
+        provider = self._resolve_source_config(model["providerId"])
+        provider_protocol(provider)
+        account_id = model["accountId"]
+        if not account_id:
+            return
+        auth_provider = str(
+            provider.get("authProvider")
+            or provider.get("type")
+            or ("openai" if provider.get("authMode") == "codex" else "")
+        ).strip().lower()
+        if not auth_provider or get_account(auth_provider, account_id) is None:
+            raise ValueError(
+                f"Gateway model account {account_id!r} does not exist for {auth_provider or 'provider'}."
+            )
+
+    def _resolve_source_config(self, source_id: str) -> dict[str, Any]:
+        safe_source_id = str(source_id or "").strip()
+        return ConfigLoader().get_provider_config(safe_source_id)
 
     def _load_keys(self) -> dict[str, Any]:
         payload = self._read_json(self.keys_path, missing={"version": CONFIG_VERSION, "keys": []})

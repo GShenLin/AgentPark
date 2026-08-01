@@ -42,7 +42,7 @@ def test_remote_user_registration_records_username_ip_and_defaults_to_nondevelop
     policy = load_access_policy()
     assert policy["users"] == [
         {
-            "clientId": "browser-1",
+            "clientIds": ["browser-1"],
             "username": "Alice",
             "developer": False,
             "ips": ["10.0.0.8"],
@@ -66,6 +66,70 @@ def test_backend_username_edit_and_developer_permission_are_authoritative(monkey
     assert status["username"] == "Alice"
     assert status["role"] == "developer"
     assert api.get_settings(request)["data"]["users"][0]["developer"] is True
+
+
+def test_same_username_across_devices_is_one_user(monkeypatch, tmp_path):
+    monkeypatch.setattr("src.access_policy.get_workspace_root", lambda: str(tmp_path))
+    api = AccessApiDomain()
+
+    first = api.get_status(
+        _request("10.0.0.8", client_id="browser-1", username="Alice")
+    )
+    policy = load_access_policy()
+    policy["users"][0]["developer"] = True
+    save_access_policy(policy)
+
+    second = api.get_status(
+        _request("10.0.0.9", client_id="browser-2", username="alice")
+    )
+
+    assert first["username"] == "Alice"
+    assert second["client_id"] == "browser-2"
+    assert second["username"] == "Alice"
+    assert second["is_developer"] is True
+    policy = load_access_policy()
+    assert len(policy["users"]) == 1
+    assert policy["users"][0]["clientIds"] == ["browser-1", "browser-2"]
+    assert policy["users"][0]["ips"] == ["10.0.0.8", "10.0.0.9"]
+
+
+def test_legacy_same_username_records_are_merged(monkeypatch, tmp_path):
+    monkeypatch.setattr("src.access_policy.get_workspace_root", lambda: str(tmp_path))
+
+    policy = save_access_policy(
+        {
+            "users": [
+                {
+                    "clientId": "browser-1",
+                    "username": "Alice",
+                    "developer": False,
+                    "ips": ["10.0.0.8"],
+                    "firstSeenAt": "2026-01-02T00:00:00+00:00",
+                    "lastSeenAt": "2026-01-02T00:00:00+00:00",
+                },
+                {
+                    "clientId": "browser-2",
+                    "username": "alice",
+                    "developer": True,
+                    "ips": ["10.0.0.9"],
+                    "firstSeenAt": "2026-01-01T00:00:00+00:00",
+                    "lastSeenAt": "2026-01-03T00:00:00+00:00",
+                },
+            ],
+            "nonDeveloperFilteredTools": [],
+        }
+    )
+
+    assert policy["users"] == [
+        {
+            "clientIds": ["browser-1", "browser-2"],
+            "username": "Alice",
+            "developer": True,
+            "ips": ["10.0.0.8", "10.0.0.9"],
+            "firstSeenAt": "2026-01-01T00:00:00+00:00",
+            "lastSeenAt": "2026-01-03T00:00:00+00:00",
+        }
+    ]
 
 
 def test_nondeveloper_cannot_update_access_settings(monkeypatch, tmp_path):

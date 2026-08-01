@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agentProviderModes,
   providerReasoningEffortOptions,
   reasoningEffortOptions,
 } from '../src/composables/useAgentNodeCreateSchema'
@@ -25,5 +26,9 @@ describe('reasoning effort options', () => {
       { value: 'low', label: 'low' },
       { value: 'high', label: 'high' },
     ])
+  })
+
+  it('filters generic Agent providers by declared Agent modes', () => {
+    expect(agentProviderModes({ type: 'openai', supportmode: ['chat', 'audio', 'imagechat'] })).toEqual(['chat', 'imagechat'])
   })
 })

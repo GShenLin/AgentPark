@@ -12,6 +12,7 @@ BOARD_RUNTIME_FIELDS = {
     "_stop_requested",
     "node_event_seq",
     "last_message",
+    "last_output_resources",
     "last_run_at",
     "last_runtime_event",
     "runtime_events",

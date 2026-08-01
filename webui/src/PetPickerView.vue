@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { launchNodeDesktopPet, listNodeDesktopViews, type NodeDesktopView } from './api'
+import ActionButton from './components/ActionButton.vue'
 
 const params = new URLSearchParams(window.location.search)
 const workingPath = ref(String(params.get('working_path') || '').trim())
@@ -92,9 +93,9 @@ onMounted(() => {
           <h1>Ask Here</h1>
           <p :title="targetPath">{{ targetPath || 'No target path provided' }}</p>
         </div>
-        <button class="picker-button" type="button" :disabled="loading" @click="refreshViews">
+        <ActionButton compact :disabled="loading" @click="refreshViews">
           {{ loading ? 'Refreshing' : 'Refresh' }}
-        </button>
+        </ActionButton>
       </header>
 
       <div v-if="error" class="picker-error">{{ error }}</div>
@@ -164,20 +165,12 @@ onMounted(() => {
   font-size: 13px;
 }
 
-.picker-button,
 .pet-row {
   border: 1px solid rgba(148, 163, 184, 0.28);
   background: rgba(15, 23, 42, 0.78);
   color: rgba(226, 232, 240, 0.96);
 }
 
-.picker-button {
-  border-radius: 7px;
-  padding: 7px 12px;
-  cursor: pointer;
-}
-
-.picker-button:disabled,
 .pet-row:disabled {
   cursor: progress;
   opacity: 0.6;

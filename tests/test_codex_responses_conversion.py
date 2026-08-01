@@ -217,6 +217,7 @@ def test_tool_search_chat_conversion_rejects_server_execution():
         ({"type": "openai", "responsesApi": True}, "responses"),
         ({"type": "grok", "responsesApi": True}, "responses"),
         ({"type": "doubao", "responsesApi": True}, "responses"),
+        ({"type": "deepseek", "responsesApi": True}, "responses"),
         ({"type": "openai", "responsesApi": False}, "openai_chat"),
         ({"type": "deepseek"}, "openai_chat"),
         ({"type": "kimi"}, "openai_chat"),

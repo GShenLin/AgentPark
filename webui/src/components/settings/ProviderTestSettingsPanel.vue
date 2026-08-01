@@ -10,6 +10,7 @@ import {
   type ProviderLimitEntry,
   type ProviderLimitTestJob,
 } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
 
 const limits = ref<ProviderLimitDocument | null>(null)
 const selectedProviderId = ref('')
@@ -215,13 +216,13 @@ onUnmounted(clearPoll)
   <div class="provider-test">
     <aside class="provider-list">
       <div class="test-actions">
-        <button type="button" class="start-btn" :disabled="jobRunning || loading" @click="startTesting">
+        <ActionButton variant="primary" compact :disabled="jobRunning || loading" @click="startTesting">
           {{ testing ? 'Testing...' : 'Test all' }}
-        </button>
-        <button type="button" class="model-btn" :disabled="jobRunning || loading" @click="startModelDiscovery">
+        </ActionButton>
+        <ActionButton compact :disabled="jobRunning || loading" @click="startModelDiscovery">
           {{ modelRefreshing ? 'Getting...' : 'Models' }}
-        </button>
-        <button type="button" :disabled="loading" @click="loadLimits">Reload</button>
+        </ActionButton>
+        <ActionButton compact :disabled="loading" @click="loadLimits">Reload</ActionButton>
       </div>
 
       <div class="provider-items">

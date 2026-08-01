@@ -20,6 +20,8 @@ import {
   type SettingsSectionInfo,
   type ThemePresetInfo,
 } from '../settingsApi'
+import ActionButton from './ActionButton.vue'
+import SelectionButton from './SelectionButton.vue'
 import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
 import AccessSettingsPanel from './settings/AccessSettingsPanel.vue'
 import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySelect.vue'
@@ -28,6 +30,7 @@ import GatewaySettingsPanel from './settings/GatewaySettingsPanel.vue'
 import ModelProviderSettingsForm from './settings/ModelProviderSettingsForm.vue'
 import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
+import RuntimePolicySettingsPanel from './settings/RuntimePolicySettingsPanel.vue'
 import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
 import StaticSettingsPanel from './settings/StaticSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
@@ -72,6 +75,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   back: []
   providersUpdated: []
+  defaultsUpdated: [value: Record<string, unknown>]
 }>()
 
 const sections = ref<SettingsSectionInfo[]>(DEFAULT_SETTINGS_SECTIONS.slice())
@@ -89,6 +93,7 @@ const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[
 const themePresets = ref<ThemePresetInfo[]>([])
 const activeThemePresetId = ref('default')
 const nodeProfilerDirty = ref(false)
+const runtimePolicyDirty = ref(false)
 
 const displaySections = computed<SettingsSectionInfo[]>(() => {
   const base = sections.value.slice()
@@ -148,6 +153,14 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
       filename: '*.json',
     })
   }
+  if (!base.some((item) => item.id === 'runtime-policy')) {
+    base.push({
+      id: 'runtime-policy',
+      label: 'RuntimePolicy',
+      path: 'config/runtimePolicies.json · config/runtime_policies/*.json',
+      filename: 'runtimePolicies.json',
+    })
+  }
   if (!base.some((item) => item.id === 'exit')) {
     base.push({
       id: 'exit',
@@ -175,6 +188,7 @@ const activeLabel = computed(() => {
   if (activeSection.value === 'tool-stats') return 'Static'
   if (activeSection.value === 'anim-editor') return 'AnimEditor'
   if (activeSection.value === 'node-profiler-editor') return 'NodeProfilerEditor'
+  if (activeSection.value === 'runtime-policy') return 'RuntimePolicy'
   if (activeSection.value === 'exit') return 'Exit'
   return currentSection.value?.label || activeSection.value
 })
@@ -186,8 +200,9 @@ const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
 const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
 const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profiler-editor')
+const isRuntimePolicy = computed(() => activeSection.value === 'runtime-policy')
 const isExitSection = computed(() => activeSection.value === 'exit')
-const isVirtualSection = computed(() => isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isExitSection.value)
+const isVirtualSection = computed(() => isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isRuntimePolicy.value || isExitSection.value)
 const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 const validationWarnings = computed(() => Array.isArray(loadedDocument.value?.warnings)
   ? loadedDocument.value.warnings.map((item) => String(item || '').trim()).filter(Boolean)
@@ -214,6 +229,7 @@ function labelFor(section: SettingsSectionInfo) {
   if (section.id === 'tool-stats') return 'Static'
   if (section.id === 'anim-editor') return 'AnimEditor'
   if (section.id === 'node-profiler-editor') return 'NodeProfilerEditor'
+  if (section.id === 'runtime-policy') return 'RuntimePolicy'
   if (section.id === 'exit') return 'Exit'
   return section.label
 }
@@ -268,7 +284,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
+  if (sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'runtime-policy' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -299,12 +315,19 @@ async function selectSection(sectionId: string) {
   if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm('Discard unsaved NodeProfiler changes?')) {
     return
   }
+  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm('Discard unsaved RuntimePolicy changes?')) {
+    return
+  }
   nodeProfilerDirty.value = false
+  runtimePolicyDirty.value = false
   await loadSection(sectionId)
 }
 
 function handleBack() {
   if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm('Discard unsaved NodeProfiler changes?')) {
+    return
+  }
+  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm('Discard unsaved RuntimePolicy changes?')) {
     return
   }
   emit('back')
@@ -353,6 +376,7 @@ async function saveSection() {
       emit('providersUpdated')
       await loadCatalogForForms()
     } else if (activeSection.value === 'defaults') {
+      emit('defaultsUpdated', document.data)
       await loadCompanionCapabilityOptions()
     } else if (activeSection.value === 'theme') {
       await applyWorkspaceTheme()
@@ -429,25 +453,24 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>Settings</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isRuntimePolicy ? 'config/runtimePolicies.json · config/runtime_policies/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
-        <button type="button" class="settings-btn" @click="handleBack">{{ props.backLabel }}</button>
+        <ActionButton compact @click="handleBack">{{ props.backLabel }}</ActionButton>
       </div>
     </header>
 
     <div class="settings-body">
       <nav class="settings-tabs" aria-label="Settings sections">
-        <button
+        <SelectionButton
           v-for="section in displaySections"
           :key="section.id"
-          type="button"
           class="settings-tab"
-          :class="{ active: activeSection === section.id }"
+          :active="activeSection === section.id"
           @click="selectSection(section.id)"
         >
           {{ labelFor(section) }}
-        </button>
+        </SelectionButton>
       </nav>
 
       <main class="settings-editor">
@@ -458,14 +481,14 @@ onMounted(async () => {
             <span v-else-if="status" class="editor-state saved">{{ status }}</span>
           </div>
           <div class="editor-actions">
-            <button v-if="!isVirtualSection" type="button" class="settings-btn" :disabled="loading || saving" @click="loadSection()">Reload</button>
-            <button v-if="!isVirtualSection" type="button" class="settings-btn" :disabled="loading || saving" @click="advancedMode = !advancedMode">
+            <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="loadSection()">Reload</ActionButton>
+            <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="advancedMode = !advancedMode">
               {{ advancedMode ? 'Form' : 'Advanced JSON' }}
-            </button>
-            <button v-if="!isVirtualSection && advancedMode" type="button" class="settings-btn" :disabled="loading || saving" @click="formatJson">Format</button>
-            <button v-if="!isVirtualSection" type="button" class="settings-btn primary" :disabled="loading || saving || (activeSection !== 'events' && !dirty)" @click="saveSection">
+            </ActionButton>
+            <ActionButton v-if="!isVirtualSection && advancedMode" compact :disabled="loading || saving" @click="formatJson">Format</ActionButton>
+            <ActionButton v-if="!isVirtualSection" variant="primary" compact :disabled="loading || saving || (activeSection !== 'events' && !dirty)" @click="saveSection">
               {{ saving ? (activeSection === 'events' ? 'Applying...' : 'Saving...') : (activeSection === 'events' ? 'Apply' : 'Save') }}
-            </button>
+            </ActionButton>
           </div>
         </div>
 
@@ -487,6 +510,12 @@ onMounted(async () => {
           @error="error = $event"
           @status="status = $event"
           @dirty="nodeProfilerDirty = $event"
+        />
+        <RuntimePolicySettingsPanel
+          v-else-if="isRuntimePolicy"
+          @error="error = $event"
+          @status="status = $event"
+          @dirty="runtimePolicyDirty = $event"
         />
         <SystemExitPanel v-else-if="isExitSection" />
 

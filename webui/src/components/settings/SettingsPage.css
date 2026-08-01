@@ -1,4 +1,14 @@
 .settings-page {
+  --ui-control-border: var(--theme-panel-settings-panel-input-border, var(--border-medium));
+  --ui-control-background: var(--theme-panel-settings-panel-input-background, rgba(15, 23, 42, 0.66));
+  --ui-control-text: var(--theme-panel-settings-panel-input-text, var(--text-primary));
+  --ui-control-focus: var(--theme-panel-settings-panel-input-focus-border, var(--accent-blue));
+  --ui-button-border: var(--theme-panel-settings-panel-button-border, var(--border-light));
+  --ui-button-background: var(--theme-panel-settings-panel-button-background, var(--bg-secondary));
+  --ui-button-text: var(--theme-panel-settings-panel-button-text, var(--text-primary));
+  --ui-primary-border: var(--theme-panel-settings-panel-button-primary-border, var(--accent-blue));
+  --ui-primary-background: var(--theme-panel-settings-panel-button-primary-background, var(--accent-blue-soft));
+  --ui-primary-text: var(--theme-panel-settings-panel-button-primary-text, #93c5fd);
   flex: 1;
   min-height: 0;
   display: flex;
@@ -75,35 +85,17 @@
   padding: 16px 12px;
   background: var(--theme-panel-settings-panel-tabs-background, var(--bg-primary));
   border-right: 1px solid var(--theme-panel-settings-panel-tabs-border, var(--border-subtle));
+  --ui-selection-height: 36px;
+  --ui-selection-text: var(--theme-panel-settings-panel-tabs-text, var(--text-secondary));
+  --ui-selection-hover-background: var(--theme-panel-settings-panel-tabs-hover-background, var(--bg-hover));
+  --ui-selection-hover-text: var(--theme-panel-settings-panel-tabs-hover-text, var(--text-primary));
+  --ui-selection-active-border: transparent;
+  --ui-selection-active-background: var(--theme-panel-settings-panel-tabs-active-background, var(--accent-blue-soft));
+  --ui-selection-active-text: var(--theme-panel-settings-panel-tabs-active-text, var(--text-accent));
 }
 
 .settings-tab {
-  width: 100%;
-  min-height: 36px;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--theme-panel-settings-panel-tabs-text, var(--text-secondary));
-  border-radius: 8px;
-  transition: all var(--transition-normal);
-}
-
-.settings-tab:hover {
-  background: var(--theme-panel-settings-panel-tabs-hover-background, var(--bg-hover));
-  color: var(--theme-panel-settings-panel-tabs-hover-text, var(--text-primary));
-  border-color: transparent;
-  transform: none;
-  box-shadow: none;
-}
-
-.settings-tab.active {
-  border-color: transparent;
-  background: var(--theme-panel-settings-panel-tabs-active-background, var(--accent-blue-soft));
-  color: var(--theme-panel-settings-panel-tabs-active-text, var(--text-accent));
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.2);
+  flex: 0 0 auto;
 }
 
 /* 编辑器区域 */
@@ -172,35 +164,6 @@
 .json-editor:focus {
   outline: none;
   background: var(--theme-panel-settings-panel-input-focus-background, var(--bg-secondary));
-}
-
-/* 按钮样式 */
-.settings-btn {
-  min-height: 32px;
-  padding: 7px 14px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-  border-color: var(--theme-panel-settings-panel-button-border, var(--border-light));
-  background: var(--theme-panel-settings-panel-button-background, var(--bg-secondary));
-  color: var(--theme-panel-settings-panel-button-text, var(--text-primary));
-}
-
-.settings-btn.primary {
-  border-color: var(--theme-panel-settings-panel-button-primary-border, var(--accent-blue));
-  background: var(--theme-panel-settings-panel-button-primary-background, var(--accent-blue-soft));
-  color: var(--theme-panel-settings-panel-button-primary-text, #93c5fd);
-}
-
-.settings-btn.primary:hover {
-  background: rgba(59, 130, 246, 0.2);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
-}
-
-.settings-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  transform: none;
 }
 
 /* 错误提示 */

@@ -66,6 +66,25 @@ def test_benchmark_summary_counts_model_turns_tools_and_usage():
     assert summary["usage"]["total_tokens"] == 15
     assert summary["output_chars"] == 4
     assert summary["provider_gateway_requests"][0]["provider_model"] == "actual"
+
+
+def test_benchmark_prompt_preserves_optional_conversation_context(tmp_path):
+    prompt = tmp_path / "prompt.md"
+    context = tmp_path / "context.md"
+    prompt.write_text("Current request.", encoding="utf-8")
+    context.write_text("User: Prior constraint.", encoding="utf-8")
+
+    composed = benchmark_long_task._compose_benchmark_prompt(
+        prompt,
+        context_path=context,
+    )
+
+    assert "<benchmark_conversation_context>" in composed
+    assert "User: Prior constraint." in composed
+    assert "<benchmark_current_user_request>" in composed
+    assert composed.endswith("Current request.\n</benchmark_current_user_request>")
+
+
 def test_failed_benchmark_persists_events_summary_and_error(monkeypatch, tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -145,3 +164,41 @@ def test_agent_profile_accepts_explicit_path_or_project_profile_id(tmp_path):
 
     assert resolve_agent_profile(str(profile), project_root=project_root) == profile.resolve()
     assert resolve_agent_profile("GPT1", project_root=project_root) == profile.resolve()
+
+    node_dir = tmp_path / "memories" / "default" / "Agent"
+    node_dir.mkdir(parents=True)
+    node_config = node_dir / "config.json"
+    node_config.write_text('{"type_id":"agent_node"}', encoding="utf-8")
+    assert resolve_agent_profile(str(node_dir), project_root=project_root) == node_config.resolve()
+
+
+def test_agent_config_accepts_profile_or_live_agent_node_config(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        '{"fields":{"provider_id":"profile-provider","thinking":"enabled"}}',
+        encoding="utf-8",
+    )
+    live_config_path = tmp_path / "config.json"
+    live_config_path.write_text(
+        '{"type_id":"agent_node","provider_id":"live-provider","thinking":"enabled"}',
+        encoding="utf-8",
+    )
+
+    profile_config = benchmark_long_task._agent_config(
+        profile_path,
+        workspace,
+        "ProfileBench",
+        provider_id="benchmark-provider",
+    )
+    live_config = benchmark_long_task._agent_config(
+        live_config_path,
+        workspace,
+        "LiveBench",
+        provider_id="benchmark-provider",
+    )
+
+    assert profile_config["provider_id"] == "benchmark-provider"
+    assert live_config["provider_id"] == "benchmark-provider"
+    assert live_config["working_path"] == str(workspace)

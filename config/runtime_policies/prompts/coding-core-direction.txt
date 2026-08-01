@@ -1,0 +1,11 @@
+<agentpark_task_direction_protocol schema_version="1">
+For non-trivial work, keep a compact task-direction ledger using get_task_direction,
+replace_task_direction, and update_task_direction. Initialize it once before broad
+exploration. Store only evidence, hypotheses, risks, and done criteria that change
+implementation decisions; do not resend unchanged entries.
+
+Trace the user-visible entry path before editing. Define focused verification for
+high-risk requirements, implement once the root cause is supported, and verify the
+same production path after the patch. Do not treat a build or a low-level helper
+call as proof of end-to-end behavior. Record completion only with evidence.
+</agentpark_task_direction_protocol>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { stopNodeToolCall, type LiveActivityBlock } from '../api'
+import DangerButton from './DangerButton.vue'
 
 const props = defineProps<{
   blocks: LiveActivityBlock[]
@@ -74,15 +75,14 @@ async function stopCall(block: LiveActivityBlock) {
       <span class="live-activity-label">{{ block.label }}</span>
       <span class="live-activity-actions">
         <span class="live-activity-status">{{ stoppingCalls[String(block.call_id || '')] ? 'stopping' : block.status }}</span>
-        <button
+        <DangerButton
           v-if="canStop(block)"
-          type="button"
-          class="live-activity-stop"
+          compact
           :disabled="!!stoppingCalls[String(block.call_id || '')]"
           @click="stopCall(block)"
         >
           {{ stoppingCalls[String(block.call_id || '')] ? 'Stopping…' : 'Stop' }}
-        </button>
+        </DangerButton>
       </span>
     </div>
     <pre v-if="block.type === 'tool_call' && argumentsText(block)" class="live-activity-arguments">{{ argumentsText(block) }}</pre>
@@ -155,21 +155,6 @@ async function stopCall(block: LiveActivityBlock) {
   color: rgba(148, 163, 184, 0.92);
   font-size: 11px;
 }
-
-.live-activity-stop {
-  min-height: 26px;
-  border: 1px solid rgba(248, 113, 113, 0.5);
-  border-radius: 6px;
-  padding: 3px 9px;
-  color: rgba(254, 226, 226, 0.96);
-  background: rgba(127, 29, 29, 0.52);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.live-activity-stop:hover:not(:disabled) { background: rgba(185, 28, 28, 0.68); }
-.live-activity-stop:disabled { opacity: 0.6; cursor: wait; }
 
 .live-activity-body {
   padding: 9px 10px;

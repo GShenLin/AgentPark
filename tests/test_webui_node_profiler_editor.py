@@ -23,8 +23,96 @@ def test_node_profiler_editor_is_shared_by_desktop_and_mobile_settings():
     assert "<SettingsPage" in mobile_workspace
 
 
+def test_settings_exposes_runtime_policy_catalog_and_profile_selection():
+    settings_page = _read("webui/src/components/SettingsPage.vue")
+    settings_panel = _read(
+        "webui/src/components/settings/RuntimePolicySettingsPanel.vue"
+    )
+    settings_form = _read(
+        "webui/src/components/settings/RuntimePolicyConfigForm.vue"
+    )
+    policy_select = _read(
+        "webui/src/components/agent-board/RuntimePolicySelect.vue"
+    )
+    editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
+    desktop_node_config = _read(
+        "webui/src/components/agent-board/NodeConfigSection.vue"
+    )
+    mobile_node_config = _read("webui/src/mobile/MobileNodeConfigDialog.vue")
+    node_config_fields = _read(
+        "webui/src/components/agent-board/NodeConfigFields.vue"
+    )
+    settings_api = _read("webui/src/settingsApi.ts")
+    routes = _read("src/web_backend/route_registry.py")
+
+    assert "label: 'RuntimePolicy'" in settings_page
+    assert "<RuntimePolicySettingsPanel" in settings_page
+    assert '@dirty="runtimePolicyDirty = $event"' in settings_page
+    assert "updateDefaultRuntimePolicy" in settings_panel
+    assert "updateRuntimePolicy" in settings_panel
+    assert "Workspace default" in settings_panel
+    assert "Save Policy" in settings_panel
+    assert "<RuntimePolicyConfigForm" in settings_panel
+    assert "runtime-policy-json" not in settings_panel
+    assert "<textarea" not in settings_panel
+    assert "FormCheckbox" in settings_form
+    assert "FormTextInput" in settings_form
+    assert "ExpandableTextarea" in settings_form
+    assert 'type="number"' in settings_form
+    assert "RuntimePolicyStringListField" in settings_form
+    assert "Metadata" in settings_form
+    assert "Task direction" in settings_form
+    assert "Completion review" in settings_form
+    assert "Implementation checkpoint" in settings_form
+    assert "Context compaction" in settings_form
+    assert "<RuntimePolicySelect" in node_config_fields
+    assert "<FormCheckbox" in node_config_fields
+    assert "<FormTextInput" in node_config_fields
+    assert "key === 'runtime_policy'" in node_config_fields
+    assert node_config_fields.index("v-for=\"section in fieldSections\"") < node_config_fields.index("<RuntimePolicySelect")
+    assert "<NodeConfigFields" in editor
+    assert "<NodeConfigFields" in desktop_node_config
+    assert "<NodeConfigFields" in mobile_node_config
+    assert "Workspace default" in policy_select
+    assert "getRuntimePolicySettings" in settings_api
+    assert "updateDefaultRuntimePolicy" in settings_api
+    assert "updateRuntimePolicy" in settings_api
+    assert '"/api/runtime-policies/default"' in routes
+    assert '"/api/runtime-policies/{policy_id}"' in routes
+
+
+def test_shared_action_controls_are_used_across_settings_and_dialogs():
+    danger_button = _read("webui/src/components/DangerButton.vue")
+    image_lightbox = _read("webui/src/components/ImageLightbox.vue")
+    settings_delete_surfaces = [
+        _read("webui/src/components/settings/AccessSettingsPanel.vue"),
+        _read("webui/src/components/settings/DefaultSettingsForm.vue"),
+        _read("webui/src/components/settings/GatewaySettingsPanel.vue"),
+        _read("webui/src/components/settings/ModelProviderSettingsForm.vue"),
+        _read("webui/src/components/settings/RuntimeEventsSettingsForm.vue"),
+    ]
+    dialog_surfaces = [
+        image_lightbox,
+        _read("webui/src/components/MemorySaveDialog.vue"),
+        _read("webui/src/components/WebFolderPickerDialog.vue"),
+        _read("webui/src/mobile/MobileNodeCreateDialog.vue"),
+        _read("webui/src/mobile/MobileNodeConfigDialog.vue"),
+    ]
+
+    assert "variant?: 'default' | 'menu'" in danger_button
+    assert all("<DangerButton" in surface for surface in settings_delete_surfaces)
+    assert all("<DialogCloseButton" in surface for surface in dialog_surfaces)
+    assert '<button class="image-lightbox-close"' not in image_lightbox
+
+
 def test_node_profiler_editor_reuses_node_configuration_fields():
     editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
+    runtime_policy_preview = _read(
+        "webui/src/components/settings/RuntimePolicyPreviewPanel.vue"
+    )
+    runtime_policy_composable = _read(
+        "webui/src/composables/useRuntimePolicyPreview.ts"
+    )
     api = _read("webui/src/api.ts")
     api_types = _read("webui/src/apiTypes.ts")
 
@@ -47,6 +135,50 @@ def test_node_profiler_editor_reuses_node_configuration_fields():
     assert "node_profiler:" in api_types
     assert "instruction: string" in api_types
     assert "system_prompt: string" in api_types
+    assert "previewAgentRuntimePolicy" in runtime_policy_composable
+    assert "RuntimePolicyPreviewPanel" in editor
+    assert "useRuntimePolicyPreview" in editor
+    assert "NodeProfilerMetadataPanel" in editor
+    assert "NodeProfilerProfileList" in editor
+    assert "NodeProfilerToolbar" in editor
+    assert "Effective RuntimePolicy" in runtime_policy_preview
+    assert "Empty Profile value resolves to the catalog default." in runtime_policy_preview
+    assert "runtime_policy_manifest" not in editor
+    assert "export type RuntimePolicyPreview" in api_types
+    assert "/api/profiles/agents/runtime-policy/preview" in api
+
+
+def test_desktop_node_config_loads_profile_into_current_node():
+    desktop_config = _read(
+        "webui/src/components/agent-board/NodeConfigSection.vue"
+    )
+    load_control = _read(
+        "webui/src/components/agent-board/NodeProfileLoadControl.vue"
+    )
+
+    assert "<NodeProfileLoadControl" in desktop_config
+    assert '<div class="section-title">Config</div>' in desktop_config
+    assert desktop_config.index('<div class="section-title">Config</div>') < desktop_config.index("<NodeProfileLoadControl")
+    assert "loadAgentProfileIntoNode" in desktop_config
+    assert "graph_id: currentGraphId()" in desktop_config
+    assert "node_id: nodeId" in desktop_config
+    assert "加载 Profile 将替换当前尚未保存的修改" in desktop_config
+    assert "resetDraftFromConfig(result.config.after)" in desktop_config
+    assert "runtimeEventsRevision.value += 1" in desktop_config
+    assert "listAgentProfiles" in load_control
+    assert "profile.node_type_id" in load_control
+    assert "LoadProfile" in load_control
+    assert '<Teleport to="body">' in load_control
+    assert "agentProfileDescription(activeProfile)" in load_control
+    assert ".profile-description-popover p" in load_control
+    assert "font-size: 18px" in load_control
+    assert ':show-description="false"' in load_control
+
+    editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
+    metadata_panel = _read("webui/src/components/settings/NodeProfilerMetadataPanel.vue")
+    assert 'v-model:description="profileDescription"' in editor
+    assert "agentProfileDescription(profile)" in editor
+    assert 'v-model="description"' in metadata_panel
 
 
 def test_node_profiler_editor_does_not_persist_unedited_template_defaults():
@@ -71,7 +203,10 @@ def test_agent_node_config_is_partitioned_by_support_mode_without_changing_other
     assert "isModeField" not in fields
     assert "activeSupportModes.value" in fields
     assert "setField('mode'" not in fields
-    assert '@change="setProvider(($event.target as HTMLSelectElement).value)"' in fields
+    assert '<ProviderSelect' in fields
+    assert ':providers="providers"' in fields
+    assert ':option-ids="providerOptions"' in fields
+    assert '@change="setProvider($event)"' in fields
 
     desktop_config = _read("webui/src/components/agent-board/NodeConfigSection.vue")
     mobile_config = _read("webui/src/mobile/MobileNodeConfigDialog.vue")
@@ -176,6 +311,16 @@ def test_provider_settings_supports_frontend_multi_account_selection():
     assert "export async function addProviderApiKeyAccount" in api
 
 
+def test_provider_settings_exposes_strict_local_alpha_matting_contract():
+    auth_fields = _read("webui/src/components/settings/ProviderAuthFields.vue")
+    support_modes = _read("webui/src/components/settings/SupportModeMultiSelect.vue")
+
+    assert '<option value="alpha_matting">alpha_matting</option>' in auth_fields
+    assert "!['codex', 'oauth', 'none'].includes(authMode)" in auth_fields
+    assert 'v-if="authMode !== \'none\'"' in auth_fields
+    assert "image_matting: 'image_matting'" in support_modes
+
+
 def test_agent_combobox_uses_explicit_reopenable_dropdown():
     fields = _read("webui/src/components/agent-board/NodeConfigFields.vue")
     combobox = _read("webui/src/components/agent-board/FieldCombobox.vue")
@@ -194,6 +339,29 @@ def test_node_config_fields_apply_schema_declared_visibility_dependencies():
     assert "const visibleWhen = field.visible_when" in fields
     assert "Object.prototype.hasOwnProperty.call(visibleWhen, 'equals')" in fields
     assert "props.fields[dependency] === visibleWhen.equals" in fields
+
+
+def test_node_config_fields_support_nullable_color_picker_fields():
+    fields = _read("webui/src/components/agent-board/NodeConfigFields.vue")
+    color_picker = _read("webui/src/components/agent-board/FieldColorPicker.vue")
+
+    assert "<FieldColorPicker" in fields
+    assert "getFieldType(key) === 'color'" in fields
+    assert 'type="color"' in color_picker
+    assert "emit('update-value', color)" in color_picker
+    assert "emit('update-value', '')" in color_picker
+
+
+def test_node_cards_reuse_resource_preview_and_lightbox_for_image_outputs():
+    card = _read("webui/src/components/agent-board/NodeCardItem.vue")
+    resource = _read("webui/src/components/MemoryResourcePart.vue")
+    projection = _read("webui/src/nodeRuntimeProjection.ts")
+
+    assert "<MemoryResourcePart" in card
+    assert ":part=\"previewImageResource\"" in card
+    assert "compact" in card
+    assert "<ImageLightbox" in resource
+    assert "'last_output_resources'" in projection
 
 
 def test_speaker_management_indexes_outside_model_provider_form():

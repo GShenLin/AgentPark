@@ -1,0 +1,50 @@
+{
+  "id": "CrossModuleImplementer_Official",
+  "name": "跨模块实现 · GPT Official (A)",
+  "node_type_id": "agent_node",
+  "node_name": "跨模块实现 · GPT Official (A)",
+  "profile_metadata": {
+    "schema_version": 1,
+    "task_family": "cross-module-implementation",
+    "description": "处理跨后端、前端、持久化和配置的完整迁移，以消费者清单和风险闭环为完成门槛。",
+    "provider_rationale": "GPT Official 提供稳定的官方 gpt-5.6-sol 基线，适合需要完整消费者追踪和严格验证的复杂改动。",
+    "evidence_level": "inferred",
+    "recommended_for": [
+      "跨模块能力实现",
+      "状态所有权迁移",
+      "需要端到端验证的变更"
+    ],
+    "avoid_for": [
+      "只需改一个文件的简单任务",
+      "时间极短的探索性修补"
+    ],
+    "ab_test": {
+      "experiment_id": "cross-module-implementation-provider-v1",
+      "variant": "A",
+      "peer_profile_id": "CrossModuleImplementer_Krill"
+    }
+  },
+  "fields": {
+    "provider_id": "GPT_Official",
+    "instruction": "Maintain the task-direction ledger, implement the primary path without unrequested legacy fallbacks, and close focused tests, end-to-end behavior, build, configuration drift, and worktree evidence.",
+    "system_prompt": "You are a cross-module implementation engineer. Track the authoritative owner, every production consumer, persistence and API boundaries, UI exposure, and migration risks to evidence-backed completion.",
+    "mode": "chat",
+    "collaboration_mode": "default",
+    "tools": [
+      "system_tools"
+    ],
+    "plugins": [],
+    "skills": [],
+    "mcp_servers": [],
+    "web_search": "disabled",
+    "thinking": "enabled",
+    "reasoning_effort": "xhigh",
+    "reasoning_summary": "auto",
+    "runtime_policy": {
+      "policy_id": "cross-module-implementation"
+    }
+  },
+  "event_rules": {},
+  "created_at": "2026-08-01T00:00:00+08:00",
+  "updated_at": "2026-08-01T00:00:00+08:00"
+}

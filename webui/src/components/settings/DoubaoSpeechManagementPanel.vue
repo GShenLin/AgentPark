@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { runDoubaoSpeechManagement } from '../../doubaoSpeechManagementApi'
+import ActionButton from '../ActionButton.vue'
+import ExpandableTextarea from '../ExpandableTextarea.vue'
+import FormSelect from '../FormSelect.vue'
 
 const props = defineProps<{ providerId: string }>()
 
@@ -100,14 +103,14 @@ async function execute() {
         <strong>Doubao Speech Management</strong>
         <small>Provider-side voice and vocabulary operations</small>
       </div>
-      <button type="button" :disabled="busy" @click="resetPayload">Reset payload</button>
+      <ActionButton compact :disabled="busy" @click="resetPayload">Reset payload</ActionButton>
     </div>
     <div class="management-grid">
       <label>
         <span>Operation</span>
-        <select v-model="operation" :disabled="busy">
+        <FormSelect v-model="operation" :disabled="busy">
           <option v-for="([value, label]) in operations" :key="value" :value="value">{{ label }}</option>
-        </select>
+        </FormSelect>
       </label>
       <label v-if="operation === 'clone_voice'">
         <span>Training audio</span>
@@ -117,10 +120,17 @@ async function execute() {
     </div>
     <label>
       <span>{{ selectedLabel }} payload</span>
-      <textarea v-model="payloadText" spellcheck="false" :disabled="busy"></textarea>
+      <ExpandableTextarea
+        v-model="payloadText"
+        title="Speech management payload"
+        aria-label="Speech management payload"
+        min-height="150px"
+        spellcheck="false"
+        :disabled="busy"
+      />
     </label>
     <div class="management-actions">
-      <button type="button" :disabled="busy || !providerId" @click="execute">{{ busy ? 'Running…' : 'Run operation' }}</button>
+      <ActionButton variant="primary" :disabled="busy || !providerId" @click="execute">{{ busy ? 'Running…' : 'Run operation' }}</ActionButton>
       <small>Uses this Provider's X-Api-Key or signed Speech Access Key credentials, as required by the selected operation.</small>
     </div>
     <p v-if="error" class="management-error">{{ error }}</p>
@@ -129,7 +139,14 @@ async function execute() {
     </p>
     <label v-if="resultText">
       <span>Result</span>
-      <textarea :value="resultText" readonly spellcheck="false"></textarea>
+      <ExpandableTextarea
+        :model-value="resultText"
+        title="Speech management result"
+        aria-label="Speech management result"
+        min-height="150px"
+        spellcheck="false"
+        readonly
+      />
     </label>
   </section>
 </template>
@@ -141,8 +158,7 @@ async function execute() {
 .management-head small, .management-actions small, label small { color: rgba(148, 163, 184, .92); }
 .management-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; }
 label { display: flex; flex-direction: column; gap: 5px; color: rgba(226, 232, 240, .94); font-size: 12px; }
-input, select, textarea { width: 100%; border: 1px solid rgba(148, 163, 184, .24); border-radius: 8px; padding: 8px 9px; color: rgba(226, 232, 240, .96); background: rgba(2, 6, 23, .5); font: inherit; }
-textarea { min-height: 150px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+input[type='file'] { width: 100%; min-height: var(--ui-control-height, 36px); box-sizing: border-box; border: 1px solid var(--ui-control-border, rgba(148, 163, 184, .24)); border-radius: var(--ui-control-radius, 8px); padding: 7px var(--ui-control-padding-x, 10px); color: var(--ui-control-text, rgba(226, 232, 240, .96)); background: var(--ui-control-background, rgba(2, 6, 23, .5)); font: inherit; }
 .management-error { margin: 0; color: rgba(254, 202, 202, .96); font-size: 12px; overflow-wrap: anywhere; }
 .management-success { margin: 0; color: rgba(134, 239, 172, .96); font-size: 12px; }
 @media (max-width: 900px) { .management-grid { grid-template-columns: 1fr; } .management-head, .management-actions { align-items: flex-start; flex-direction: column; } }

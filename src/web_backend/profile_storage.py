@@ -9,6 +9,8 @@ from typing import Any
 from src.file_transaction import atomic_write_text
 from src.workspace_settings import get_workspace_root
 
+from .profile_metadata import validate_profile_metadata
+
 
 PROFILE_SCHEMA_VERSION = 1
 AGENT_PROFILE_DIR = "agent"
@@ -41,6 +43,12 @@ def validate_profile_id(value: object) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_-]+", text):
         raise ProfileValidationError("profile_id must contain only letters, numbers, underscores, or hyphens")
     return text
+
+
+def validate_profile_description(value: object, *, field: str = "description") -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ProfileValidationError(f"{field} must be a non-empty string")
+    return value.strip()
 
 
 def validate_explicit_graph_id(graph_runtime: object, value: object) -> str:
@@ -96,6 +104,16 @@ def read_profile_file(path: str) -> dict[str, Any]:
     expected_id = os.path.splitext(os.path.basename(path))[0]
     if profile_id != expected_id:
         raise ProfileStorageError(f"profile file id must match filename: {path}")
+    if "description" in payload:
+        try:
+            validate_profile_description(payload["description"])
+        except ValueError as exc:
+            raise ProfileStorageError(f"invalid profile description in {path}: {exc}") from exc
+    if "profile_metadata" in payload:
+        try:
+            validate_profile_metadata(payload["profile_metadata"])
+        except ValueError as exc:
+            raise ProfileStorageError(f"invalid profile metadata in {path}: {exc}") from exc
     return dict(payload)
 
 
@@ -119,6 +137,16 @@ def write_profile_file(path: str, profile: dict[str, Any]) -> None:
     expected_id = os.path.splitext(os.path.basename(path))[0]
     if profile_id != expected_id:
         raise ProfileStorageError("profile payload id must match profile filename")
+    if "description" in profile:
+        try:
+            validate_profile_description(profile["description"])
+        except ValueError as exc:
+            raise ProfileStorageError(f"invalid profile description: {exc}") from exc
+    if "profile_metadata" in profile:
+        try:
+            validate_profile_metadata(profile["profile_metadata"])
+        except ValueError as exc:
+            raise ProfileStorageError(f"invalid profile metadata: {exc}") from exc
     os.makedirs(os.path.dirname(path), exist_ok=True)
     text = json.dumps(profile, ensure_ascii=False, indent=2) + "\n"
     try:

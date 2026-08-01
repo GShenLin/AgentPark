@@ -6,6 +6,9 @@ import {
   type PetAvatarSequenceState,
   type PetAvatarTransformKeyframe,
 } from '../../api'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const props = defineProps<{
   state: PetAvatarSequenceState
@@ -216,6 +219,22 @@ function normalizeSelectedFrame() {
   }
 }
 
+function updateTransformField(field: keyof PetAvatarTransformKeyframe, value: string) {
+  const key = selectedTransformKey.value
+  if (!key) return
+  key[field] = Number(value)
+}
+
+function updateColorFrame(value: string) {
+  const key = selectedColorKey.value
+  if (key) key.frame = Number(value)
+}
+
+function updateColorOpacity(value: string) {
+  const key = selectedColorKey.value
+  if (key) key.opacity = Number(value)
+}
+
 onBeforeUnmount(stopDrag)
 </script>
 
@@ -237,7 +256,7 @@ onBeforeUnmount(stopDrag)
       <div class="anim-key-track-label">
         <span>Transform</span>
         <span class="anim-key-frame-readout">{{ roundedPlayhead }}</span>
-        <button type="button" class="settings-btn" :disabled="totalFrames <= 0 || frameExists('transform', roundedPlayhead)" @click="addTransformKey">Add</button>
+        <ActionButton compact :disabled="totalFrames <= 0 || frameExists('transform', roundedPlayhead)" @click="addTransformKey">Add</ActionButton>
       </div>
       <div class="anim-key-rail-wrap">
         <div class="anim-key-rail" :style="{ width: `${trackWidth}px` }" @pointerdown="startPlayheadDrag">
@@ -261,7 +280,7 @@ onBeforeUnmount(stopDrag)
       <div class="anim-key-track-label">
         <span>Color</span>
         <span class="anim-key-frame-readout">{{ roundedPlayhead }}</span>
-        <button type="button" class="settings-btn" :disabled="totalFrames <= 0 || frameExists('color', roundedPlayhead)" @click="addColorKey">Add</button>
+        <ActionButton compact :disabled="totalFrames <= 0 || frameExists('color', roundedPlayhead)" @click="addColorKey">Add</ActionButton>
       </div>
       <div class="anim-key-rail-wrap">
         <div class="anim-key-rail" :style="{ width: `${trackWidth}px` }" @pointerdown="startPlayheadDrag">
@@ -282,20 +301,20 @@ onBeforeUnmount(stopDrag)
     </div>
 
     <div v-if="selectedTransformKey" class="anim-key-controls">
-      <label><span>Frame</span><input v-model.number="selectedTransformKey.frame" type="number" min="0" :max="totalFrames" @change="normalizeSelectedFrame" /></label>
-      <label><span>X</span><input v-model.number="selectedTransformKey.x" type="number" step="1" /></label>
-      <label><span>Y</span><input v-model.number="selectedTransformKey.y" type="number" step="1" /></label>
-      <label><span>Rotate</span><input v-model.number="selectedTransformKey.rotation" type="number" step="1" /></label>
-      <label><span>ScaleX</span><input v-model.number="selectedTransformKey.scaleX" type="number" min="0.01" step="0.05" /></label>
-      <label><span>ScaleY</span><input v-model.number="selectedTransformKey.scaleY" type="number" min="0.01" step="0.05" /></label>
-      <button type="button" class="settings-btn danger" @click="deleteSelectedKey">Delete</button>
+      <label><span>Frame</span><FormTextInput :model-value="selectedTransformKey.frame" compact type="number" min="0" :max="totalFrames" @update:model-value="updateTransformField('frame', $event)" @change="normalizeSelectedFrame" /></label>
+      <label><span>X</span><FormTextInput :model-value="selectedTransformKey.x" compact type="number" step="1" @update:model-value="updateTransformField('x', $event)" /></label>
+      <label><span>Y</span><FormTextInput :model-value="selectedTransformKey.y" compact type="number" step="1" @update:model-value="updateTransformField('y', $event)" /></label>
+      <label><span>Rotate</span><FormTextInput :model-value="selectedTransformKey.rotation" compact type="number" step="1" @update:model-value="updateTransformField('rotation', $event)" /></label>
+      <label><span>ScaleX</span><FormTextInput :model-value="selectedTransformKey.scaleX" compact type="number" min="0.01" step="0.05" @update:model-value="updateTransformField('scaleX', $event)" /></label>
+      <label><span>ScaleY</span><FormTextInput :model-value="selectedTransformKey.scaleY" compact type="number" min="0.01" step="0.05" @update:model-value="updateTransformField('scaleY', $event)" /></label>
+      <DangerButton @click="deleteSelectedKey">Delete</DangerButton>
     </div>
 
     <div v-if="selectedColorKey" class="anim-key-controls">
-      <label><span>Frame</span><input v-model.number="selectedColorKey.frame" type="number" min="0" :max="totalFrames" @change="normalizeSelectedFrame" /></label>
+      <label><span>Frame</span><FormTextInput :model-value="selectedColorKey.frame" compact type="number" min="0" :max="totalFrames" @update:model-value="updateColorFrame" @change="normalizeSelectedFrame" /></label>
       <label><span>Color</span><input v-model="selectedColorKey.color" type="color" /></label>
-      <label><span>Opacity</span><input v-model.number="selectedColorKey.opacity" type="number" min="0" max="1" step="0.05" /></label>
-      <button type="button" class="settings-btn danger" @click="deleteSelectedKey">Delete</button>
+      <label><span>Opacity</span><FormTextInput :model-value="selectedColorKey.opacity" compact type="number" min="0" max="1" step="0.05" @update:model-value="updateColorOpacity" /></label>
+      <DangerButton @click="deleteSelectedKey">Delete</DangerButton>
     </div>
   </div>
 </template>

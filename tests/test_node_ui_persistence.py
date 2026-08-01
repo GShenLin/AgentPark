@@ -39,7 +39,7 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state(monkeypat
         client = TestClient(app)
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
 
@@ -58,7 +58,7 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state(monkeypat
                 "runtime_events": [{"event": "running"}],
                 "runtime_tool_calls": [{"tool": "x"}],
                 "last_message": "latest copied preview",
-                "ui": {"x": 9, "y": 10},
+                "ui": {"grid_x": 9, "grid_y": 10},
             }
         )
         _write_json_dict(config_path, payload)
@@ -69,7 +69,7 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state(monkeypat
 
         cloned = client.post(
             f"/api/nodes/instances/{node_id}/clone?graph_id={graph_id}",
-            json={"new_node_id": clone_id, "new_name": "Clone 1", "ui": {"x": 44, "y": 55}},
+            json={"new_node_id": clone_id, "new_name": "Clone 1", "ui": {"grid_x": 44, "grid_y": 55}},
         )
         assert cloned.status_code == 200, cloned.text
         assert cloned.json().get("source_node_id") == node_id
@@ -86,7 +86,7 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state(monkeypat
         assert clone_cfg.get("node_id") == clone_id
         assert clone_cfg.get("graph_id") == graph_id
         assert clone_cfg.get("name") == "Clone 1"
-        assert clone_cfg.get("ui") == {"x": 44, "y": 55}
+        assert clone_cfg.get("ui") == {"grid_x": 44, "grid_y": 55, "width": 230, "height": 250}
         assert clone_cfg.get("custom_field") == "kept"
         for key in (
             "state",
@@ -105,6 +105,72 @@ def test_clone_node_instance_copies_artifacts_and_resets_runtime_state(monkeypat
         assert clone_runtime["pending_count"] == 0
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_clone_node_instance_repairs_nodes_without_ui_before_allocating(monkeypatch, tmp_path):
+    _patch_runtime_root(monkeypatch, tmp_path)
+    _patch_event_config(monkeypatch, tmp_path)
+
+    from fastapi.testclient import TestClient
+    from src.web_backend.facade import WebBackendFacade
+
+    graph_id = "clone_missing_ui_graph"
+    facade = WebBackendFacade()
+    client = TestClient(facade.build())
+    for node_id in ("legacy", "source"):
+        created = client.post(
+            "/api/nodes/instances",
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id},
+        )
+        assert created.status_code == 200, created.text
+
+    legacy_path = tmp_path / "memories" / graph_id / "legacy" / "config.json"
+    legacy_config = json.loads(legacy_path.read_text(encoding="utf-8"))
+    legacy_config.pop("ui", None)
+    legacy_path.write_text(json.dumps(legacy_config), encoding="utf-8")
+
+    cloned = client.post(
+        f"/api/nodes/instances/source/clone?graph_id={graph_id}",
+        json={"new_node_id": "source1", "ui": {"grid_x": 2, "grid_y": 0}},
+    )
+
+    assert cloned.status_code == 200, cloned.text
+    repaired = json.loads(legacy_path.read_text(encoding="utf-8"))
+    assert repaired["ui"] == {"grid_x": 0, "grid_y": 0, "width": 230, "height": 250}
+    assert cloned.json()["ui"] == {"grid_x": 2, "grid_y": 0, "width": 230, "height": 250}
+
+
+def test_clone_node_instance_migrates_legacy_absolute_ui_before_allocating(monkeypatch, tmp_path):
+    _patch_runtime_root(monkeypatch, tmp_path)
+    _patch_event_config(monkeypatch, tmp_path)
+
+    from fastapi.testclient import TestClient
+    from src.web_backend.facade import WebBackendFacade
+
+    graph_id = "clone_legacy_absolute_ui_graph"
+    facade = WebBackendFacade()
+    client = TestClient(facade.build())
+    for node_id in ("legacy", "source"):
+        created = client.post(
+            "/api/nodes/instances",
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id},
+        )
+        assert created.status_code == 200, created.text
+
+    legacy_path = tmp_path / "memories" / graph_id / "legacy" / "config.json"
+    legacy_config = json.loads(legacy_path.read_text(encoding="utf-8"))
+    legacy_config["ui"] = {"x": 282, "y": 559}
+    legacy_path.write_text(json.dumps(legacy_config), encoding="utf-8")
+
+    cloned = client.post(
+        f"/api/nodes/instances/source/clone?graph_id={graph_id}",
+        json={"new_node_id": "source1", "ui": {"grid_x": 3, "grid_y": 0}},
+    )
+
+    assert cloned.status_code == 200, cloned.text
+    repaired = json.loads(legacy_path.read_text(encoding="utf-8"))
+    assert repaired["ui"] == {"grid_x": 1, "grid_y": 2, "width": 230, "height": 250}
+    assert cloned.json()["ui"] == {"grid_x": 3, "grid_y": 0, "width": 230, "height": 250}
 
 
 def test_clone_node_instance_rebinds_and_activates_source_event_rules(tmp_path, monkeypatch):
@@ -177,7 +243,7 @@ def test_clone_node_instance_can_target_another_graph(monkeypatch, tmp_path):
         client = TestClient(app)
         created_source = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "append_node", "graph_id": source_graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": source_graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created_source.status_code == 200
         created_target = client.post(
@@ -196,7 +262,7 @@ def test_clone_node_instance_can_target_another_graph(monkeypatch, tmp_path):
                 "new_node_id": clone_id,
                 "new_name": "Cross Graph Clone",
                 "target_graph_id": target_graph_id,
-                "ui": {"x": 44, "y": 55},
+                "ui": {"grid_x": 44, "grid_y": 55},
             },
         )
         assert cloned.status_code == 200, cloned.text
@@ -217,7 +283,7 @@ def test_clone_node_instance_can_target_another_graph(monkeypatch, tmp_path):
         assert clone_cfg.get("node_id") == clone_id
         assert clone_cfg.get("graph_id") == target_graph_id
         assert clone_cfg.get("name") == "Cross Graph Clone"
-        assert clone_cfg.get("ui") == {"x": 44, "y": 55}
+        assert clone_cfg.get("ui") == {"grid_x": 44, "grid_y": 55, "width": 230, "height": 250}
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), source_graph_id), ignore_errors=True)
         shutil.rmtree(os.path.join(_get_graphs_dir(), target_graph_id), ignore_errors=True)
@@ -294,13 +360,13 @@ def test_update_node_instance_config_persists_ui():
         client = TestClient(app, client=("127.0.0.1", 12345))
         r = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert r.status_code == 200
 
         r = client.post(
             f"/api/nodes/instances/{node_id}/config?graph_id={graph_id}",
-            json={"ui": {"x": 321, "y": 654}},
+            json={"ui": {"grid_x": 3, "grid_y": 6}},
         )
         assert r.status_code == 200
 
@@ -308,8 +374,54 @@ def test_update_node_instance_config_persists_ui():
         payload = json.loads(open(config_path, "r", encoding="utf-8").read())
         ui = payload.get("ui") if isinstance(payload, dict) else None
         assert isinstance(ui, dict)
-        assert ui.get("x") == 321
-        assert ui.get("y") == 654
+        assert ui.get("grid_x") == 3
+        assert ui.get("grid_y") == 6
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_node_creation_allocates_non_overlapping_rectangles_and_rejects_absolute_coordinates():
+    import src.web_backend as backend
+    from src.web_backend.graph_grid_layout import grid_rectangle_cells, node_grid_span
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    graph_id = f"ut_grid_allocate_{uuid.uuid4().hex[:8]}"
+    app = backend.create_app()
+    from fastapi.testclient import TestClient
+
+    try:
+        client = TestClient(app)
+        responses = []
+        for node_id in ("n1", "n2"):
+            response = client.post(
+                "/api/nodes/instances",
+                json={
+                    "node_id": node_id,
+                    "type_id": "append_node",
+                    "graph_id": graph_id,
+                    "ui": {"grid_x": 0, "grid_y": 0, "width": 601, "height": 321},
+                },
+            )
+            assert response.status_code == 200, response.text
+            responses.append(response.json()["ui"])
+
+        first_span = node_grid_span(responses[0], 300, 320)
+        second_span = node_grid_span(responses[1], 300, 320)
+        first_cells = grid_rectangle_cells(responses[0]["grid_x"], responses[0]["grid_y"], *first_span)
+        second_cells = grid_rectangle_cells(responses[1]["grid_x"], responses[1]["grid_y"], *second_span)
+        assert not (first_cells & second_cells)
+
+        rejected = client.post(
+            "/api/nodes/instances",
+            json={
+                "node_id": "legacy",
+                "type_id": "append_node",
+                "graph_id": graph_id,
+                "ui": {"x": 100, "y": 200},
+            },
+        )
+        assert rejected.status_code == 400
+        assert "ui.grid_x and ui.grid_y are required" in rejected.json()["detail"]
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
@@ -327,7 +439,7 @@ def test_list_node_instance_configs_supports_incremental_refresh():
         client = TestClient(app, client=("127.0.0.1", 12345))
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
 
@@ -478,7 +590,7 @@ def test_list_node_instance_configs_fills_missing_working_path():
         client = TestClient(app)
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
 
@@ -513,7 +625,7 @@ def test_update_node_instance_config_recomputes_dynamic_input_ports():
         client = TestClient(app, client=("127.0.0.1", 12345))
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "multi_input_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "multi_input_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
 
@@ -607,7 +719,7 @@ def test_create_loop_node_instance_persists_two_output_ports():
         client = TestClient(app)
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "loop_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "loop_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
 
@@ -633,7 +745,7 @@ def test_get_node_instance_memory_returns_empty_payload_before_any_history_exist
         client = TestClient(app)
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "append_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
 
@@ -663,7 +775,7 @@ def test_latest_turn_memory_returns_progress_counts_without_loading_progress_det
         client = TestClient(app)
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "agent_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "agent_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
         node_dir = os.path.join(_get_graphs_dir(), graph_id, node_id)
@@ -718,7 +830,7 @@ def test_clear_node_instance_memory_resets_visible_runtime_summary():
         client = TestClient(app)
         created = client.post(
             "/api/nodes/instances",
-            json={"node_id": node_id, "type_id": "agent_node", "graph_id": graph_id, "ui": {"x": 1, "y": 2}},
+            json={"node_id": node_id, "type_id": "agent_node", "graph_id": graph_id, "ui": {"grid_x": 1, "grid_y": 2}},
         )
         assert created.status_code == 200
 

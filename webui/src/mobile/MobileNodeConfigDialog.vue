@@ -10,7 +10,12 @@ import {
 } from '../api'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
 import { resolveAgentProviderSchemaContext } from '../composables/useAgentNodeCreateSchema'
+import ActionButton from '../components/ActionButton.vue'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
+import DangerButton from '../components/DangerButton.vue'
+import DialogCloseButton from '../components/DialogCloseButton.vue'
+import FormSelect from '../components/FormSelect.vue'
+import FormTextInput from '../components/FormTextInput.vue'
 import MobileNodeProfilePickerSheet from './MobileNodeProfilePickerSheet.vue'
 import NodeRuntimeEventsFieldGroup from '../components/agent-board/NodeRuntimeEventsFieldGroup.vue'
 import type { MobileOutputRouteRow } from './useMobileWorkspace'
@@ -369,34 +374,32 @@ onBeforeUnmount(() => {
       <header class="config-sheet-head">
         <div class="config-title-wrap">
           <div class="config-title-row">
-            <input
+            <FormTextInput
               class="config-title-input"
-              type="text"
-              :value="nodeNameDraft"
+              :model-value="nodeNameDraft"
               aria-label="节点名称"
               :disabled="saving || profileSaving"
-              @input="setNodeName(($event.target as HTMLInputElement).value)"
+              @update:model-value="setNodeName"
             />
-            <button
-              class="load-profile-btn"
-              type="button"
+            <ActionButton
+              compact
               :disabled="saving || profileSaving || !node"
               @click="openProfilePicker"
             >
               LoadProfile
-            </button>
-            <button
-              class="save-profile-btn"
-              type="button"
+            </ActionButton>
+            <ActionButton
+              variant="primary"
+              compact
               :disabled="saving || profileSaving || !node"
               @click="saveNodeProfile"
             >
               {{ profileSaving ? 'Saving...' : (profileSaved ? 'Saved' : 'SaveProfile') }}
-            </button>
+            </ActionButton>
           </div>
           <div class="config-subtitle">{{ node?.type_id || '' }}</div>
         </div>
-        <button class="sheet-icon-btn" type="button" aria-label="关闭配置" :disabled="profileSaving" @click="emit('close')">x</button>
+        <DialogCloseButton aria-label="关闭配置" :disabled="profileSaving" @click="emit('close')" />
       </header>
 
       <div class="config-body">
@@ -404,7 +407,7 @@ onBeforeUnmount(() => {
           <div v-if="loading" class="config-empty">Loading node config...</div>
           <div v-else-if="fieldKeys.length === 0" class="config-empty">This node has no editable fields.</div>
           <NodeConfigFields
-            v-else
+            v-if="!loading && fieldKeys.length > 0"
             :type-id="node?.type_id || ''"
             :schema="schema"
             :fields="draftFields"
@@ -430,9 +433,9 @@ onBeforeUnmount(() => {
               <div class="route-title">输出</div>
               <div class="route-subtitle">配置此节点的输出目标</div>
             </div>
-            <button class="secondary-btn route-add-btn" type="button" :disabled="!canAddRoute" @click="addRoute">
+            <ActionButton class="route-add-btn" compact :disabled="!canAddRoute" @click="addRoute">
               {{ routing ? '保存中...' : '添加' }}
-            </button>
+            </ActionButton>
           </div>
 
           <div v-if="targetNodes.length === 0" class="route-empty">Create another node before adding an output route.</div>
@@ -441,30 +444,31 @@ onBeforeUnmount(() => {
             <div v-for="route in outputRoutes" :key="route.id" class="route-row">
               <label>
                 <span>输出口</span>
-                <select :value="route.outputIndex" :disabled="routing" @change="setRouteOutput(route.id, ($event.target as HTMLSelectElement).value)">
+                <FormSelect :model-value="route.outputIndex" compact :disabled="routing" @change="setRouteOutput(route.id, $event)">
                   <option v-for="index in portOptions(node?.output_num || 1)" :key="index" :value="index">{{ index }}</option>
-                </select>
+                </FormSelect>
               </label>
               <label>
                 <span>目标节点</span>
-                <select
-                  :value="route.targetNodeId"
+                <FormSelect
+                  :model-value="route.targetNodeId"
+                  compact
                   :title="targetName(route.targetNodeId)"
                   :disabled="routing"
-                  @change="setRouteTarget(route.id, ($event.target as HTMLSelectElement).value)"
+                  @change="setRouteTarget(route.id, $event)"
                 >
                   <option v-for="target in targetNodes" :key="target.id" :value="target.id">
                     {{ target.name || target.id }}
                   </option>
-                </select>
+                </FormSelect>
               </label>
               <label>
                 <span>输入口</span>
-                <select :value="route.inputIndex" :disabled="routing" @change="setRouteInput(route.id, ($event.target as HTMLSelectElement).value)">
+                <FormSelect :model-value="route.inputIndex" compact :disabled="routing" @change="setRouteInput(route.id, $event)">
                   <option v-for="index in inputOptions(route.targetNodeId)" :key="index" :value="index">{{ index }}</option>
-                </select>
+                </FormSelect>
               </label>
-              <button class="route-remove-btn" type="button" :disabled="routing" aria-label="删除输出路由" @click="removeRoute(route.id)">x</button>
+              <DangerButton icon :disabled="routing" aria-label="删除输出路由" @click="removeRoute(route.id)">×</DangerButton>
             </div>
           </div>
         </section>
@@ -472,10 +476,10 @@ onBeforeUnmount(() => {
       </div>
 
       <footer class="config-actions">
-        <button class="secondary-btn" type="button" @click="emit('close')">关闭</button>
-        <button class="primary-btn" type="button" :disabled="!canSave" @click="applyChanges">
+        <ActionButton @click="emit('close')">关闭</ActionButton>
+        <ActionButton variant="primary" :disabled="!canSave" @click="applyChanges">
           {{ saving ? '保存中...' : `保存${dirtyCount > 0 ? ` (${dirtyCount})` : ''}` }}
-        </button>
+        </ActionButton>
       </footer>
     </section>
     <MobileNodeProfilePickerSheet
@@ -494,7 +498,7 @@ onBeforeUnmount(() => {
   z-index: 50;
   display: flex;
   align-items: flex-end;
-  background: rgba(2, 6, 23, 0.72);
+  background: var(--ui-dialog-backdrop);
 }
 
 .config-sheet {
@@ -502,9 +506,12 @@ onBeforeUnmount(() => {
   max-height: min(86vh, 760px);
   display: flex;
   flex-direction: column;
-  border-top: 1px solid rgba(148, 163, 184, 0.24);
-  background: #08111f;
-  box-shadow: 0 -18px 40px rgba(2, 6, 23, 0.42);
+  border: 1px solid var(--ui-dialog-border);
+  border-width: 1px 0 0;
+  border-radius: var(--ui-dialog-radius) var(--ui-dialog-radius) 0 0;
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 .config-sheet-head,
@@ -518,7 +525,7 @@ onBeforeUnmount(() => {
 
 .config-sheet-head {
   justify-content: space-between;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid var(--ui-dialog-divider);
 }
 
 .config-title-wrap {
@@ -537,12 +544,6 @@ onBeforeUnmount(() => {
   flex: 1;
   width: auto;
   min-width: 0;
-  height: 34px;
-  padding: 0 9px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(248, 250, 252, 0.96);
   font-size: 15px;
   font-weight: 700;
   overflow: hidden;
@@ -550,49 +551,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.load-profile-btn,
-.save-profile-btn {
-  flex: 0 0 auto;
-  min-height: 34px;
-  padding: 0 7px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.load-profile-btn {
-  border-color: rgba(56, 189, 248, 0.48);
-  background: rgba(14, 116, 144, 0.28);
-  color: rgba(224, 242, 254, 0.96);
-}
-
-.save-profile-btn {
-  border-color: rgba(34, 197, 94, 0.48);
-  background: rgba(22, 101, 52, 0.3);
-  color: rgba(220, 252, 231, 0.96);
-}
-
-.load-profile-btn:disabled,
-.save-profile-btn:disabled {
-  opacity: 0.58;
-}
-
-.config-title-input:focus {
-  border-color: rgba(56, 189, 248, 0.72);
-  outline: none;
-}
-
 .config-subtitle {
   margin-top: 2px;
   color: rgba(148, 163, 184, 0.88);
   font-size: 12px;
-}
-
-.sheet-icon-btn {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-radius: 8px;
 }
 
 .config-body {
@@ -678,45 +640,9 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
-.route-row select {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.88);
-  color: rgba(248, 250, 252, 0.96);
-}
-
-.route-remove-btn {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(127, 29, 29, 0.24);
-  color: #fecaca;
-}
-
 .config-actions {
   justify-content: flex-end;
   border-top: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.secondary-btn,
-.primary-btn {
-  min-width: 72px;
-  min-height: 38px;
-  border-radius: 8px;
-}
-
-.secondary-btn {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.72);
-}
-
-.primary-btn {
-  border-color: rgba(56, 189, 248, 0.48);
-  background: rgba(14, 165, 233, 0.3);
 }
 
 @media (max-width: 420px) {

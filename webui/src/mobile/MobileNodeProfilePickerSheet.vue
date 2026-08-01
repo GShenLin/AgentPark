@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { AgentProfile } from '../api'
+import AgentProfileChoiceSummary from '../components/agent-board/AgentProfileChoiceSummary.vue'
+import DialogCloseButton from '../components/DialogCloseButton.vue'
 
 defineProps<{
   open: boolean
@@ -20,7 +22,7 @@ const emit = defineEmits<{
           <div class="profile-picker-title">LoadProfile</div>
           <div class="profile-picker-subtitle">选择 Profile 后更新当前节点配置与事件，节点名称保持不变</div>
         </div>
-        <button class="profile-picker-close" type="button" aria-label="关闭预设选择" @click="emit('close')">x</button>
+        <DialogCloseButton aria-label="关闭预设选择" @click="emit('close')" />
       </header>
 
       <div class="profile-picker-body">
@@ -32,8 +34,7 @@ const emit = defineEmits<{
           type="button"
           @click="emit('select', profile)"
         >
-          <span class="profile-picker-name">{{ profile.name || profile.id }}</span>
-          <span class="profile-picker-id">{{ profile.id }}</span>
+          <AgentProfileChoiceSummary :profile="profile" />
         </button>
       </div>
     </section>
@@ -47,7 +48,7 @@ const emit = defineEmits<{
   z-index: 70;
   display: flex;
   align-items: flex-end;
-  background: rgba(2, 6, 23, 0.76);
+  background: var(--ui-dialog-backdrop);
 }
 
 .profile-picker-sheet {
@@ -55,9 +56,12 @@ const emit = defineEmits<{
   max-height: min(72vh, 620px);
   display: flex;
   flex-direction: column;
-  border-top: 1px solid rgba(56, 189, 248, 0.3);
-  background: #08111f;
-  box-shadow: 0 -18px 44px rgba(2, 6, 23, 0.5);
+  border: 1px solid var(--ui-dialog-border);
+  border-width: 1px 0 0;
+  border-radius: var(--ui-dialog-radius) var(--ui-dialog-radius) 0 0;
+  background: var(--ui-dialog-background);
+  color: var(--ui-dialog-text);
+  box-shadow: var(--ui-dialog-shadow);
 }
 
 .profile-picker-head {
@@ -67,7 +71,7 @@ const emit = defineEmits<{
   justify-content: space-between;
   gap: 12px;
   padding: 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid var(--ui-dialog-divider);
 }
 
 .profile-picker-title {
@@ -82,17 +86,6 @@ const emit = defineEmits<{
   font-size: 12px;
 }
 
-.profile-picker-close {
-  flex: 0 0 34px;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.78);
-  color: rgba(226, 232, 240, 0.94);
-}
-
 .profile-picker-body {
   min-height: 0;
   overflow: auto;
@@ -104,7 +97,7 @@ const emit = defineEmits<{
 
 .profile-picker-option {
   width: 100%;
-  min-height: 52px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -120,25 +113,6 @@ const emit = defineEmits<{
 .profile-picker-option:active {
   border-color: rgba(56, 189, 248, 0.72);
   background: rgba(14, 116, 144, 0.24);
-}
-
-.profile-picker-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.profile-picker-id {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: rgba(148, 163, 184, 0.88);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .profile-picker-empty {

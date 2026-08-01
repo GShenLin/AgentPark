@@ -17,6 +17,7 @@ from .shared import (
     _read_json_dict,
     _cancel_node_work,
     _set_node_config_last_message,
+    _set_node_config_last_output,
     _touch_node_config_last_run_at,
     _update_node_config_state,
     _write_json_dict,
@@ -196,7 +197,11 @@ class NodeInstanceRuntime(HostBoundService):
             if isinstance(node_config_path, str) and node_config_path:
                 output_full = envelope_text(output_message).strip()
                 final_message = output_full or message_full or envelope_preview(output_message) or message_preview
-                _set_node_config_last_message(node_config_path, final_message)
+                _set_node_config_last_output(
+                    node_config_path,
+                    final_message,
+                    output_message,
+                )
                 _touch_node_config_last_run_at(node_config_path)
             return {"output": output, "message": output_message}
         except HTTPException:

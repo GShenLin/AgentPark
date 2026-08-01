@@ -5,9 +5,19 @@ import os
 import shutil
 from typing import Any
 
+from src.board_layout_settings import read_board_layout_settings
+
 from . import runtime_paths
 from .agent_profile_api import AgentProfileApi
 from .graph_config_file import write_graph_config
+from .graph_grid_layout import (
+    find_available_grid_origin,
+    grid_rectangle_cells,
+    node_grid_span,
+    normalize_graph_layout,
+    normalize_node_grid_ui,
+    workspace_graph_layout,
+)
 from .graph_runtime_registry import GraphConfigReadError
 from .node_config_errors import NodeConfigReadError, NodeConfigWriteError
 from .node_config_service import node_config_service
@@ -100,7 +110,7 @@ class ProfileApi(AgentProfileApi, HostBoundService):
                 "id": item["node_id"],
                 "typeId": item["type_id"],
                 "name": item.get("name") or item["node_id"],
-                "ui": copy.deepcopy(item.get("ui") or {"x": 0, "y": 0}),
+                "ui": copy.deepcopy(item.get("ui") or {"grid_x": 0, "grid_y": 0}),
                 "input_num": item.get("input_num"),
                 "output_num": item.get("output_num"),
             }
@@ -160,13 +170,43 @@ class ProfileApi(AgentProfileApi, HostBoundService):
             graph_config.pop("nodes", None)
             graph_config["id"] = target_graph_id
             graph_config["name"] = target_graph_id
+            normalize_graph_layout(graph_config.get("layout"))
+            graph_config["layout"] = workspace_graph_layout()
             write_graph_config(os.path.join(graph_dir, "config.json"), graph_config)
 
+            grid = graph_config["layout"]["grid"]
+            cell_width = int(grid["cell_width"])
+            cell_height = int(grid["cell_height"])
+            board_layout = read_board_layout_settings()
+            occupied_grid_cells: set[tuple[int, int]] = set()
             for item in raw_node_configs:
                 node_cfg = node_config_from_profile(item, target_graph_id=target_graph_id)
                 node_id = sanitize_existing_node_id(self.graph_runtime, node_cfg.get("node_id"))
                 node_cfg["node_id"] = node_id
                 node_cfg["graph_id"] = target_graph_id
+                ui = normalize_node_grid_ui(node_cfg.get("ui"))
+                span_x, span_y = node_grid_span(
+                    ui,
+                    cell_width,
+                    cell_height,
+                    default_width=int(board_layout["nodeWidth"]),
+                    default_height=int(board_layout["nodeHeight"]),
+                )
+                grid_x, grid_y = find_available_grid_origin(
+                    occupied_grid_cells,
+                    span_x=span_x,
+                    span_y=span_y,
+                    preferred=(ui["grid_x"], ui["grid_y"]),
+                    distance_scale=(cell_width, cell_height),
+                )
+                node_cfg["ui"] = {
+                    "width": int(board_layout["nodeWidth"]),
+                    "height": int(board_layout["nodeHeight"]),
+                    **ui,
+                    "grid_x": grid_x,
+                    "grid_y": grid_y,
+                }
+                occupied_grid_cells.update(grid_rectangle_cells(grid_x, grid_y, span_x, span_y))
                 node_dir = os.path.join(graph_dir, node_id)
                 os.makedirs(node_dir, exist_ok=False)
                 node_config_service.create_or_replace(os.path.join(node_dir, "config.json"), node_cfg)

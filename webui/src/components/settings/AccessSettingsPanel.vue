@@ -7,6 +7,10 @@ import {
   type AccessPolicyData,
   type AccessPolicyUser,
 } from '../../settingsApi'
+import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
+import FormCheckbox from '../FormCheckbox.vue'
+import FormTextInput from '../FormTextInput.vue'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -33,7 +37,11 @@ async function load() {
     const [document, tools] = await Promise.all([getAccessSettings(), listTools()])
     path.value = document.path
     policy.value = {
-      users: document.data.users.map((item) => ({ ...item, ips: [...item.ips] })),
+      users: document.data.users.map((item) => ({
+        ...item,
+        clientIds: [...item.clientIds],
+        ips: [...item.ips],
+      })),
       nonDeveloperFilteredTools: [...document.data.nonDeveloperFilteredTools],
     }
     availableTools.value = tools
@@ -52,7 +60,11 @@ async function save() {
     const document = await updateAccessSettings(policy.value)
     path.value = document.path
     policy.value = {
-      users: document.data.users.map((item) => ({ ...item, ips: [...item.ips] })),
+      users: document.data.users.map((item) => ({
+        ...item,
+        clientIds: [...item.clientIds],
+        ips: [...item.ips],
+      })),
       nonDeveloperFilteredTools: [...document.data.nonDeveloperFilteredTools],
     }
     status.value = 'Saved'
@@ -63,8 +75,8 @@ async function save() {
   }
 }
 
-function removeUser(clientId: string) {
-  policy.value.users = policy.value.users.filter((item) => item.clientId !== clientId)
+function removeUser(username: string) {
+  policy.value.users = policy.value.users.filter((item) => item.username !== username)
 }
 
 function addCustomTool() {
@@ -76,8 +88,15 @@ function addCustomTool() {
   customTool.value = ''
 }
 
+function toggleFilteredTool(tool: string, enabled: boolean) {
+  const selected = policy.value.nonDeveloperFilteredTools
+  policy.value.nonDeveloperFilteredTools = enabled
+    ? Array.from(new Set([...selected, tool]))
+    : selected.filter((item) => item !== tool)
+}
+
 function userKey(user: AccessPolicyUser) {
-  return user.clientId
+  return user.username.toLocaleLowerCase()
 }
 
 onMounted(load)
@@ -88,14 +107,14 @@ onMounted(load)
     <header class="panel-head">
       <div>
         <h2>Authorization</h2>
-        <p>远程设备首次访问时登记用户名和 IP。Developer 保留节点配置的完整工具；其他用户在发送消息后过滤下方工具。</p>
+        <p>远程用户首次访问时登记用户名和 IP；相同用户名的多台设备归属同一用户。Developer 保留节点配置的完整工具；其他用户在发送消息后过滤下方工具。</p>
         <code v-if="path">{{ path }}</code>
       </div>
       <div class="head-actions">
-        <button type="button" :disabled="loading || saving" @click="load">Reload</button>
-        <button type="button" class="primary" :disabled="loading || saving" @click="save">
+        <ActionButton compact :disabled="loading || saving" @click="load">Reload</ActionButton>
+        <ActionButton variant="primary" compact :disabled="loading || saving" @click="save">
           {{ saving ? 'Saving…' : 'Save' }}
-        </button>
+        </ActionButton>
       </div>
     </header>
 
@@ -104,23 +123,23 @@ onMounted(load)
     <section v-else class="group">
       <div class="group-title">
         <h3>Users</h3>
-        <span>{{ policy.users.length }} registered device(s)</span>
+        <span>{{ policy.users.length }} registered user(s)</span>
       </div>
       <div v-if="!policy.users.length" class="hint">还没有远程访问记录。本机始终视为 Developer。</div>
       <article v-for="user in policy.users" :key="userKey(user)" class="user-row">
         <div class="user-main">
           <label>
             <span>Username</span>
-            <input v-model="user.username" maxlength="80">
+            <FormTextInput v-model="user.username" maxlength="80" />
           </label>
           <label class="developer-toggle">
-            <input v-model="user.developer" type="checkbox">
+            <FormCheckbox v-model="user.developer" />
             <span>Developer</span>
           </label>
-          <button type="button" class="danger" @click="removeUser(user.clientId)">Delete</button>
+          <DangerButton @click="removeUser(user.username)">Delete</DangerButton>
         </div>
         <div class="user-meta">
-          <span>Client: {{ user.clientId }}</span>
+          <span>Clients: {{ user.clientIds.join(', ') || 'unknown' }}</span>
           <span>IP: {{ user.ips.join(', ') || 'unknown' }}</span>
           <span>Last access: {{ user.lastSeenAt || 'unknown' }}</span>
         </div>
@@ -134,13 +153,16 @@ onMounted(load)
       </div>
       <div class="tool-grid">
         <label v-for="tool in toolOptions" :key="tool" class="tool-option">
-          <input v-model="policy.nonDeveloperFilteredTools" type="checkbox" :value="tool">
+          <FormCheckbox
+            :model-value="policy.nonDeveloperFilteredTools.includes(tool)"
+            @update:model-value="toggleFilteredTool(tool, $event)"
+          />
           <span>{{ tool }}</span>
         </label>
       </div>
       <div class="custom-tool">
-        <input v-model="customTool" placeholder="Additional tool module or function name" @keyup.enter="addCustomTool">
-        <button type="button" @click="addCustomTool">Add</button>
+        <FormTextInput v-model="customTool" placeholder="Additional tool module or function name" @keyup.enter="addCustomTool" />
+        <ActionButton compact @click="addCustomTool">Add</ActionButton>
       </div>
     </section>
 
@@ -168,19 +190,7 @@ code { display: block; margin-top: 8px; color: #7dd3fc; }
 .user-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
 .tool-option { display: flex; gap: 7px; align-items: center; }
-input:not([type='checkbox']) {
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid #334155;
-  border-radius: 7px;
-  background: #0f172a;
-  color: inherit;
-}
 .custom-tool input { flex: 1; }
-button { min-height: 34px; padding: 0 12px; border: 1px solid #475569; border-radius: 7px; background: #1e293b; color: inherit; cursor: pointer; }
-button.primary { border-color: #2563eb; background: #2563eb; }
-button.danger { border-color: #7f1d1d; color: #fecaca; }
-button:disabled { opacity: 0.55; cursor: default; }
 .status { color: #86efac; }
 .error { color: #fca5a5; }
 @media (max-width: 760px) {

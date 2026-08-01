@@ -290,6 +290,54 @@ def test_delete_turn_includes_unloaded_records_and_can_be_undone(monkeypatch, tm
         assert message_id in restored_text
 
 
+def test_delete_latest_turn_exposes_previous_turn_to_latest_turn_reader(monkeypatch, tmp_path):
+    from src.web_backend.node_memory_store import append_node_memory_entry
+
+    client = _client(monkeypatch, tmp_path)
+    graph_id = f"delete_latest_turn_{uuid.uuid4().hex[:8]}"
+    node_id = "speaker"
+    created = client.post(
+        "/api/nodes/instances",
+        json={"node_id": node_id, "type_id": "missing_node", "graph_id": graph_id},
+    )
+    assert created.status_code == 200
+    node_dir = tmp_path / "memories" / graph_id / node_id
+    records = [
+        ("user", "previous-user"),
+        ("assistant", "previous-assistant"),
+        ("user", "latest-user"),
+        ("assistant", "latest-assistant"),
+    ]
+    for index, (role, message_id) in enumerate(records):
+        append_node_memory_entry(
+            str(node_dir / "memory.md"),
+            str(node_dir / "messages.jsonl"),
+            role,
+            {
+                "id": message_id,
+                "role": role,
+                "content": message_id,
+                "created_at": f"2026-07-29T00:00:{index:02d}+00:00",
+            },
+        )
+
+    deleted = client.post(
+        f"/api/nodes/instances/{node_id}/memory/turns/delete?graph_id={graph_id}",
+        json={"user_message_id": "latest-user"},
+    )
+    assert deleted.status_code == 200
+
+    refreshed = client.get(
+        f"/api/nodes/instances/{node_id}/memory"
+        f"?graph_id={graph_id}&history_mode=latest_turn"
+    )
+    assert refreshed.status_code == 200
+    assert [message["id"] for message in refreshed.json()["messages"]] == [
+        "previous-user",
+        "previous-assistant",
+    ]
+
+
 def test_undo_retention_uses_configured_max_steps(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     config_path = tmp_path / "config" / "config.json"

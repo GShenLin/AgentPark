@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { AgentProfile } from '../../api'
+import DangerButton from '../DangerButton.vue'
+import AgentProfileChoiceSummary from './AgentProfileChoiceSummary.vue'
 
 const props = defineProps<{
   profiles: AgentProfile[]
@@ -89,17 +91,18 @@ onBeforeUnmount(() => {
           :disabled="deletingProfileId === profile.id"
           @click="chooseProfile(profile.id)"
         >
-          <span class="profile-option-name">{{ profile.name || profile.id }}</span>
+          <AgentProfileChoiceSummary :profile="profile" />
         </button>
-        <button
-          class="profile-delete"
-          type="button"
+        <DangerButton
+          icon
+          compact
           :disabled="Boolean(deletingProfileId)"
           :title="`Delete ${profile.name || profile.id}`"
+          :aria-label="`Delete ${profile.name || profile.id}`"
           @click="deleteProfile(profile.id)"
         >
           {{ deletingProfileId === profile.id ? '...' : 'X' }}
-        </button>
+        </DangerButton>
       </div>
     </div>
   </div>
@@ -155,7 +158,7 @@ onBeforeUnmount(() => {
   z-index: 3;
   top: calc(100% + 6px);
   right: 0;
-  width: 220px;
+  width: min(360px, calc(100vw - 32px));
   max-height: 240px;
   overflow: auto;
   display: flex;
@@ -203,37 +206,4 @@ onBeforeUnmount(() => {
   cursor: wait;
 }
 
-.profile-option-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
-.profile-delete {
-  flex: 0 0 22px;
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  border-radius: 6px;
-  background: rgba(127, 29, 29, 0.28);
-  color: rgba(254, 202, 202, 0.96);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.profile-delete:hover:not(:disabled) {
-  border-color: rgba(248, 113, 113, 0.75);
-  background: rgba(153, 27, 27, 0.48);
-}
-
-.profile-delete:disabled {
-  opacity: 0.62;
-  cursor: wait;
-}
 </style>

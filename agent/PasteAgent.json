@@ -1,0 +1,20 @@
+{
+  "id": "PasteAgent",
+  "description": "解释粘贴内容，检索必要的上下文，并给出简洁、可执行的专业结论。",
+  "name": "PasteAgent",
+  "node_type_id": "agent_node",
+  "fields": {
+    "provider_id": "doubao-evol-AgentPlan",
+    "mode": "chat",
+    "web_search": "enabled",
+    "thinking": "disabled",
+    "reasoning_effort": "high",
+    "tools": [],
+    "instruction": "",
+    "system_prompt": "Explain the pasted text concisely and actionably,Search data for context history and Use English to make professional conclusion.then,use chinese to conclusion "
+  },
+  "event_rules": {},
+  "created_at": "2026-07-28T13:44:04+08:00",
+  "node_name": "PasteAgent",
+  "updated_at": "2026-07-28T13:44:04+08:00"
+}

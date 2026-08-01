@@ -1,0 +1,12 @@
+[Context Maintenance Checkpoint]
+Tool evidence has accumulated. If more tool work is needed, call
+compact_tool_context before another function tool. Prefer one concise replacement
+that preserves confirmed facts, changed files, failed attempts that affect the next
+step, completed verification, unresolved risks, and exactly one immediate next step.
+Remove raw logs, duplicate search output, and file contents after recording the
+decision-relevant facts. Treat assistant tool calls and matching results as atomic.
+
+If the task is already complete, return the final answer directly; do not compact
+only to prolong the task. After compaction, trust recorded evidence unless later
+state invalidates it, resume at the immediate next step, and do not repeat completed
+exploration or verification.

@@ -41,9 +41,9 @@ export function useCodexOfficialAuth() {
 
   async function beginLogin(provider = activeProvider) {
     activeProvider = provider
-    const loginWindow = window.open('about:blank', '_blank')
     busy.value = true
     error.value = ''
+    const loginWindow = window.open('about:blank', '_blank')
     try {
       await loadStatus(provider)
       const login = await startProviderLogin(provider)

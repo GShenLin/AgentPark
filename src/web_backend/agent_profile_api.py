@@ -5,6 +5,9 @@ import os
 import shutil
 from typing import Any
 
+from src.runtime_policy import RuntimePolicyCatalog, resolve_runtime_policy
+from src.runtime_policy.contracts import RuntimePolicyValidationError
+
 from .node_config_service import node_config_service
 from .profile_node_config import PROFILE_EXCLUDED_NODE_FIELDS, node_fields_from_config
 from .profile_storage import (
@@ -29,6 +32,27 @@ class AgentProfileApi:
     def list_agent_profiles(self):
         try:
             return read_profile_document(self._agent_profile_dir())
+        except Exception as exc:
+            raise self._profile_error(exc)
+
+    def preview_agent_runtime_policy(self, payload: dict):
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="payload must be object")
+        unknown = sorted(set(payload) - {"runtime_policy"})
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown runtime policy preview fields: {', '.join(unknown)}",
+            )
+        try:
+            resolved = resolve_runtime_policy(payload.get("runtime_policy"))
+            return {
+                "ok": True,
+                **resolved.to_payload(),
+                "catalog": RuntimePolicyCatalog.load().to_payload(),
+            }
+        except RuntimePolicyValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             raise self._profile_error(exc)
 
@@ -66,6 +90,7 @@ class AgentProfileApi:
             raise ProfileValidationError("node_profiler must be an object")
         allowed_profile_keys = {
             "name",
+            "description",
             "node_type_id",
             "source_graph_id",
             "source_node_id",
@@ -80,6 +105,7 @@ class AgentProfileApi:
             )
 
         name = str(node_profiler.get("name") or "").strip()
+        description = node_profiler.get("description")
         node_type_id = str(node_profiler.get("node_type_id") or "").strip()
         fields = node_profiler.get("fields")
         event_rules = node_profiler.get("event_rules", {})
@@ -87,6 +113,8 @@ class AgentProfileApi:
         system_prompt = payload.get("system_prompt")
         if not name:
             raise ProfileValidationError("node_profiler.name is required")
+        if description is not None and not isinstance(description, str):
+            raise ProfileValidationError("node_profiler.description must be a string")
         if not node_type_id:
             raise ProfileValidationError("node_profiler.node_type_id is required")
         if not isinstance(fields, dict):
@@ -103,6 +131,11 @@ class AgentProfileApi:
             raise ProfileValidationError("system_prompt must be a string")
 
         next_fields = copy.deepcopy(fields)
+        if "runtime_policy" in next_fields:
+            try:
+                resolve_runtime_policy(next_fields.get("runtime_policy"))
+            except RuntimePolicyValidationError as exc:
+                raise ProfileValidationError(str(exc)) from exc
         next_fields["instruction"] = instruction
         next_fields["system_prompt"] = system_prompt
         next_profile: dict[str, Any] = {
@@ -113,6 +146,10 @@ class AgentProfileApi:
             "event_rules": copy.deepcopy(event_rules),
             "created_at": existing.get("created_at"),
         }
+        if isinstance(description, str) and description.strip():
+            next_profile["description"] = description.strip()
+        if "profile_metadata" in existing:
+            next_profile["profile_metadata"] = copy.deepcopy(existing["profile_metadata"])
         for key in ("source_graph_id", "source_node_id", "node_name"):
             value = node_profiler.get(key)
             if value is None:
@@ -162,6 +199,11 @@ class AgentProfileApi:
                 "fields": node_fields_from_config(cfg),
                 "event_rules": self.runtime_events.export_source_event_rules(graph_id, node_id),
             }
+            existing = get_profile(self._agent_profile_dir(), profile_id)
+            if existing is not None:
+                for key in ("description", "profile_metadata"):
+                    if key in existing:
+                        profile[key] = copy.deepcopy(existing[key])
             saved = upsert_profile(self._agent_profile_dir(), profile)
             return {"ok": True, "profile": saved}
         except Exception as exc:
