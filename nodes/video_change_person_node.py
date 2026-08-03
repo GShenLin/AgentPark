@@ -22,6 +22,7 @@ _SUPPORTED_PROVIDER_MODES = {
 
 
 class Node(BaseNode):
+    support_modes = tuple(sorted(_SUPPORTED_PROVIDER_MODES))
     name = "Video Change Person"
     description = "Replace the character in a reference video with a supplied portrait image using Wan Animate Mix."
     input_capabilities = [

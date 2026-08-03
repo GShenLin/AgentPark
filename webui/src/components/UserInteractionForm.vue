@@ -4,6 +4,7 @@ import type { UserInteractionField, UserInteractionRequest } from '../api'
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import ActionButton from './ActionButton.vue'
 import ExpandableTextarea from './ExpandableTextarea.vue'
+import { t } from '../i18n'
 import FormCheckbox from './FormCheckbox.vue'
 import FormSelect from './FormSelect.vue'
 import FormTextInput from './FormTextInput.vue'
@@ -140,7 +141,7 @@ watch(() => props.request.id, resetForm, { immediate: true })
       <FormTextInput v-if="field.type === 'text'" :model-value="stringValue(field)" :placeholder="field.placeholder || ''" :required="field.required" @update:model-value="setTextValue(field, $event)" />
       <ExpandableTextarea v-else-if="field.type === 'textarea'" :model-value="String(stringValue(field))" :placeholder="field.placeholder || ''" :aria-label="field.label" :required="field.required" @update:model-value="setTextValue(field, $event)" />
       <FormSelect v-else-if="field.type === 'select'" :model-value="stringValue(field)" :required="field.required" @change="setTextValue(field, $event)">
-        <option value="" disabled>请选择</option>
+        <option value="" disabled>{{ t('common.choose') }}</option>
         <option v-for="option in field.options || []" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label || option.value }}</option>
       </FormSelect>
       <div v-else-if="field.type === 'multiselect'" class="interaction-options">

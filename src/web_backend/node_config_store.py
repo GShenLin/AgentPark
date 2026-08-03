@@ -117,21 +117,53 @@ class NodeConfigStore:
 
         runtime_state_memory_store.update(config_path, mutate)
 
-    def append_pending(self, config_path: str, item: dict) -> None:
+    def append_pending(self, config_path: str, item: dict) -> bool:
         if not config_path:
-            return
+            return False
+        appended = False
+
         def mutate(payload: dict) -> None:
+            nonlocal appended
             if bool(payload.get("_delete_requested")):
                 raise NodeDeletingError("node is being deleted")
             pending = payload.get("pending")
             if pending is None:
                 pending = []
+            idempotency_key = str(item.get("idempotency_key") or "").strip() if isinstance(item, dict) else ""
+            if idempotency_key:
+                if any(
+                    str(existing.get("idempotency_key") or "").strip() == idempotency_key
+                    for existing in pending
+                    if isinstance(existing, dict)
+                ):
+                    return
+                inflight = payload.get("inflight")
+                if (
+                    isinstance(inflight, dict)
+                    and str(inflight.get("idempotency_key") or "").strip() == idempotency_key
+                ):
+                    return
+                completed = payload.get("completed_requests")
+                if isinstance(completed, list) and any(
+                    str(existing.get("request_id") or "").strip() == idempotency_key
+                    for existing in completed
+                    if isinstance(existing, dict)
+                ):
+                    return
+                last_completed = payload.get("last_completed_request")
+                if (
+                    isinstance(last_completed, dict)
+                    and str(last_completed.get("request_id") or "").strip() == idempotency_key
+                ):
+                    return
             pending.append(item if isinstance(item, dict) else {})
             payload["pending"] = pending
             payload["pending_count"] = len(pending)
             bump_node_event_seq(payload)
+            appended = True
 
         runtime_state_memory_store.update(config_path, mutate)
+        return appended
 
     def pop_pending(self, config_path: str) -> dict | None:
         if not config_path:

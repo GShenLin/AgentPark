@@ -31,6 +31,7 @@ import {
 } from './nodeRuntimeProjection'
 import { uploadFiles, type UploadedFileItem } from './uploadApi'
 import './PetDesktopView.css'
+import { t } from './i18n'
 
 const params = new URLSearchParams(window.location.search)
 const viewId = String(params.get('view_id') || '').trim()
@@ -851,7 +852,7 @@ onBeforeUnmount(() => {
           <div class="pet-title">{{ node?.name || view?.node_id || 'Node' }}</div>
           <div class="pet-meta">{{ view?.graph_id || 'graph' }} / {{ view?.node_id || 'node' }}</div>
         </div>
-        <DialogCloseButton class="pet-icon-button" aria-label="Close" @click="hideView" />
+        <DialogCloseButton class="pet-icon-button" :aria-label="t('pet.close')" @click="hideView" />
       </header>
       <div class="pet-status-row">
         <span class="pet-status" :class="statusClass"></span>
@@ -869,7 +870,7 @@ onBeforeUnmount(() => {
           ref="messageInput"
           v-model="message"
           :disabled="sending"
-          placeholder="Message this node"
+          :placeholder="t('pet.messagePlaceholder')"
           rows="4"
           @keydown="onKeydown"
           @paste="onPasteMessage"
@@ -892,12 +893,12 @@ onBeforeUnmount(() => {
               <img :src="attachmentPreviewHref(file)" :alt="file.name" loading="lazy" />
             </a>
             <span class="pet-attachment-name" :title="file.path">{{ file.name || file.path }}</span>
-            <DangerButton class="pet-attachment-remove" icon compact :disabled="sending" aria-label="Remove attachment" @click="removeAttachedFile(index)">×</DangerButton>
+            <DangerButton class="pet-attachment-remove" icon compact :disabled="sending" :aria-label="t('pet.removeAttachment')" @click="removeAttachedFile(index)">×</DangerButton>
           </div>
-          <span v-if="uploadingFiles" class="pet-uploading">Uploading...</span>
+          <span v-if="uploadingFiles" class="pet-uploading">{{ t('pet.uploading') }}</span>
         </div>
         <div class="pet-actions">
-          <ActionButton compact @click="refreshView">Refresh</ActionButton>
+          <ActionButton compact @click="refreshView">{{ t('common.refresh') }}</ActionButton>
           <ActionButton variant="primary" compact type="submit" :disabled="!canSendMessage">
             {{ sending ? 'Sending' : uploadingFiles ? 'Uploading' : 'Send' }}
           </ActionButton>

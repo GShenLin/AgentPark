@@ -170,6 +170,13 @@ export class ApiHttpError extends Error {
   }
 }
 
+export class ApiNetworkError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ApiNetworkError'
+  }
+}
+
 function networkContext() {
   try {
     const connection = (navigator as Navigator & {
@@ -198,9 +205,32 @@ function networkContext() {
 
 export function createApiNetworkError(baseUrl: string, path: string, init: RequestInit | undefined, error: unknown) {
   const method = String(init?.method || 'GET').toUpperCase()
-  return new Error(
+  return new ApiNetworkError(
     `Network request failed for ${method} ${apiEndpointLabel(baseUrl, path)}: ${errorDetail(error)} (${networkContext()})`,
   )
+}
+
+function createRequestTraceId() {
+  return typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `request-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function waitForNetworkRetry(delayMs: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, delayMs))
+}
+
+async function retryApiNetworkRequest<T>(request: () => Promise<T>) {
+  const retryDelaysMs = [400, 1_000]
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await request()
+    } catch (error) {
+      const retryDelay = retryDelaysMs[attempt]
+      if (!(error instanceof ApiNetworkError) || retryDelay == null) throw error
+      await waitForNetworkRetry(retryDelay)
+    }
+  }
 }
 
 export async function requestApiJson(baseUrl: string, path: string, init?: RequestInit) {
@@ -1288,15 +1318,20 @@ export async function sendMobileNodeMessage(
 ): Promise<{
   ok: boolean
   queued: boolean
+  duplicate?: boolean
   trace_id?: string
   pending_count?: number
   node: MobileNode
   conversation: MobileNodeConversation
 }> {
-  return apiFetch(`/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages?history_mode=${historyMode}`, {
-    method: 'POST',
-    body: JSON.stringify({ message }),
-  })
+  const traceId = createRequestTraceId()
+  return retryApiNetworkRequest(() => apiFetch(
+    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages?history_mode=${historyMode}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ message, trace_id: traceId }),
+    },
+  ))
 }
 
 export async function listNodeDesktopViews(): Promise<NodeDesktopView[]> {

@@ -16,6 +16,7 @@ _SUPPORTED_PROVIDER_MODES = {"model_generation", "3d_model_generation", "rodin_g
 
 
 class Node(BaseNode):
+    support_modes = tuple(sorted(_SUPPORTED_PROVIDER_MODES))
     name = "3D Model Generation"
     description = "Generate downloadable 3D model assets with Hyper3D Rodin."
     input_capabilities = ["text", "resource:image", "resource:file", "resource:url", "structured", "meta"]

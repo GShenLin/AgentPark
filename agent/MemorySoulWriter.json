@@ -1,5 +1,6 @@
 {
   "id": "MemorySoulWriter",
+  "description": "维护源节点的 Soul.md，整理节点从经历中形成的感悟、自我认识、长期态度与稳定性格。",
   "name": "Memory Soul Writer",
   "node_type_id": "agent_node",
   "node_name": "MemorySoulWriter",

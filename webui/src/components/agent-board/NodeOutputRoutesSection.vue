@@ -2,6 +2,7 @@
 import { computed, inject } from 'vue'
 import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey, type NodeCard } from './context'
+import { t } from '../../i18n'
 
 const props = defineProps<{
   node: NodeCard
@@ -47,19 +48,19 @@ function setInput(routeId: string, value: string) {
 <template>
   <section class="route-section">
     <div class="route-head">
-      <div class="route-title">Output Routes</div>
+      <div class="route-title">{{ t('board.outputRoutes') }}</div>
     </div>
 
     <div v-if="routes.length" class="route-list">
       <div v-for="route in routes" :key="route.id" class="route-row">
         <label>
-          <span>Output</span>
+          <span>{{ t('board.output') }}</span>
           <select :value="route.from.index" @change="setOutput(route.id, ($event.target as HTMLSelectElement).value)">
             <option v-for="index in outputOptions(node.outputNum)" :key="index" :value="index">{{ index }}</option>
           </select>
         </label>
         <label>
-          <span>Target</span>
+          <span>{{ t('board.target') }}</span>
           <select
             class="target-select"
             :value="route.to.node"
@@ -72,12 +73,12 @@ function setInput(routeId: string, value: string) {
           </select>
         </label>
         <label>
-          <span>Input</span>
+          <span>{{ t('board.input') }}</span>
           <select :value="route.to.index" @change="setInput(route.id, ($event.target as HTMLSelectElement).value)">
             <option v-for="index in inputOptions(route.to.node)" :key="index" :value="index">{{ index }}</option>
           </select>
         </label>
-        <DangerButton icon aria-label="Remove route" title="Remove route" @click="ctx.removeOutputRoute(route.id).catch(() => null)">×</DangerButton>
+        <DangerButton icon :aria-label="t('board.removeRoute')" :title="t('board.removeRoute')" @click="ctx.removeOutputRoute(route.id).catch(() => null)">×</DangerButton>
       </div>
     </div>
   </section>

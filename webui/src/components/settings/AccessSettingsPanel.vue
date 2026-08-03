@@ -11,6 +11,7 @@ import ActionButton from '../ActionButton.vue'
 import DangerButton from '../DangerButton.vue'
 import FormCheckbox from '../FormCheckbox.vue'
 import FormTextInput from '../FormTextInput.vue'
+import { t } from '../../i18n'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -106,50 +107,50 @@ onMounted(load)
   <section class="access-settings">
     <header class="panel-head">
       <div>
-        <h2>Authorization</h2>
-        <p>远程用户首次访问时登记用户名和 IP；相同用户名的多台设备归属同一用户。Developer 保留节点配置的完整工具；其他用户在发送消息后过滤下方工具。</p>
+        <h2>{{ t('settings.authorization') }}</h2>
+        <p>{{ t('access.description') }}</p>
         <code v-if="path">{{ path }}</code>
       </div>
       <div class="head-actions">
-        <ActionButton compact :disabled="loading || saving" @click="load">Reload</ActionButton>
+        <ActionButton compact :disabled="loading || saving" @click="load">{{ t('settings.reload') }}</ActionButton>
         <ActionButton variant="primary" compact :disabled="loading || saving" @click="save">
-          {{ saving ? 'Saving…' : 'Save' }}
+          {{ saving ? t('common.saving') : t('common.save') }}
         </ActionButton>
       </div>
     </header>
 
-    <div v-if="loading" class="hint">Loading authorization settings…</div>
+    <div v-if="loading" class="hint">{{ t('access.loading') }}</div>
 
     <section v-else class="group">
       <div class="group-title">
-        <h3>Users</h3>
-        <span>{{ policy.users.length }} registered user(s)</span>
+        <h3>{{ t('access.users') }}</h3>
+        <span>{{ t('access.registeredUsers', { count: policy.users.length }) }}</span>
       </div>
-      <div v-if="!policy.users.length" class="hint">还没有远程访问记录。本机始终视为 Developer。</div>
+      <div v-if="!policy.users.length" class="hint">{{ t('access.empty') }}</div>
       <article v-for="user in policy.users" :key="userKey(user)" class="user-row">
         <div class="user-main">
           <label>
-            <span>Username</span>
+            <span>{{ t('access.username') }}</span>
             <FormTextInput v-model="user.username" maxlength="80" />
           </label>
           <label class="developer-toggle">
             <FormCheckbox v-model="user.developer" />
-            <span>Developer</span>
+            <span>{{ t('access.developer') }}</span>
           </label>
-          <DangerButton @click="removeUser(user.username)">Delete</DangerButton>
+          <DangerButton @click="removeUser(user.username)">{{ t('common.delete') }}</DangerButton>
         </div>
         <div class="user-meta">
-          <span>Clients: {{ user.clientIds.join(', ') || 'unknown' }}</span>
-          <span>IP: {{ user.ips.join(', ') || 'unknown' }}</span>
-          <span>Last access: {{ user.lastSeenAt || 'unknown' }}</span>
+          <span>{{ t('access.clients', { value: user.clientIds.join(', ') || t('common.unknown') }) }}</span>
+          <span>{{ t('access.ip', { value: user.ips.join(', ') || t('common.unknown') }) }}</span>
+          <span>{{ t('access.lastAccess', { value: user.lastSeenAt || t('common.unknown') }) }}</span>
         </div>
       </article>
     </section>
 
     <section v-if="!loading" class="group">
       <div class="group-title">
-        <h3>Non-Developer filtered tools</h3>
-        <span>{{ policy.nonDeveloperFilteredTools.length }} selected</span>
+        <h3>{{ t('access.filteredTools') }}</h3>
+        <span>{{ t('access.selectedTools', { count: policy.nonDeveloperFilteredTools.length }) }}</span>
       </div>
       <div class="tool-grid">
         <label v-for="tool in toolOptions" :key="tool" class="tool-option">
@@ -161,8 +162,8 @@ onMounted(load)
         </label>
       </div>
       <div class="custom-tool">
-        <FormTextInput v-model="customTool" placeholder="Additional tool module or function name" @keyup.enter="addCustomTool" />
-        <ActionButton compact @click="addCustomTool">Add</ActionButton>
+        <FormTextInput v-model="customTool" :placeholder="t('access.additionalTool')" @keyup.enter="addCustomTool" />
+        <ActionButton compact @click="addCustomTool">{{ t('common.add') }}</ActionButton>
       </div>
     </section>
 

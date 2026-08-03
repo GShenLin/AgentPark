@@ -36,6 +36,7 @@ import StaticSettingsPanel from './settings/StaticSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
 import ThemeSettingsForm from './settings/ThemeSettingsForm.vue'
 import { applyWorkspaceTheme } from '../theme'
+import { t } from '../i18n'
 
 const AnimEditor = defineAsyncComponent(() => import('./settings/AnimEditor.vue'))
 const NodeProfilerEditor = defineAsyncComponent(() => import('./settings/NodeProfilerEditor.vue'))
@@ -94,6 +95,28 @@ const themePresets = ref<ThemePresetInfo[]>([])
 const activeThemePresetId = ref('default')
 const nodeProfilerDirty = ref(false)
 const runtimePolicyDirty = ref(false)
+const backButtonLabel = computed(() => {
+  if (props.backLabel === 'Board') return t('common.board')
+  if (props.backLabel === 'Back') return t('common.back')
+  return props.backLabel
+})
+
+const SECTION_MESSAGE_KEYS: Record<string, string> = {
+  authorization: 'settings.authorization',
+  'model-provider': 'settings.modelProvider',
+  gateway: 'settings.gateway',
+  defaults: 'settings.defaults',
+  companion: 'settings.companion',
+  events: 'settings.runtimeEvents',
+  'provider-test': 'settings.providerTest',
+  pressure: 'settings.pressure',
+  'tool-stats': 'settings.statistics',
+  'anim-editor': 'settings.animationEditor',
+  'node-profiler-editor': 'settings.nodeProfiler',
+  'runtime-policy': 'settings.runtimePolicy',
+  exit: 'settings.exit',
+  theme: 'settings.theme',
+}
 
 const displaySections = computed<SettingsSectionInfo[]>(() => {
   const base = sections.value.slice()
@@ -177,19 +200,8 @@ const currentSection = computed(() => {
 })
 
 const activeLabel = computed(() => {
-  if (activeSection.value === 'authorization') return 'Authorization'
-  if (activeSection.value === 'model-provider') return 'modelProvider'
-  if (activeSection.value === 'gateway') return 'Gateway'
-  if (activeSection.value === 'defaults') return 'Default settings'
-  if (activeSection.value === 'companion') return 'Companion'
-  if (activeSection.value === 'events') return 'Runtime Events'
-  if (activeSection.value === 'provider-test') return 'Test'
-  if (activeSection.value === 'pressure') return 'Pressure'
-  if (activeSection.value === 'tool-stats') return 'Static'
-  if (activeSection.value === 'anim-editor') return 'AnimEditor'
-  if (activeSection.value === 'node-profiler-editor') return 'NodeProfilerEditor'
-  if (activeSection.value === 'runtime-policy') return 'RuntimePolicy'
-  if (activeSection.value === 'exit') return 'Exit'
+  const messageKey = SECTION_MESSAGE_KEYS[activeSection.value]
+  if (messageKey) return t(messageKey)
   return currentSection.value?.label || activeSection.value
 })
 
@@ -218,19 +230,8 @@ const formData = computed<Record<string, unknown> | null>(() => {
 })
 
 function labelFor(section: SettingsSectionInfo) {
-  if (section.id === 'authorization') return 'Authorization'
-  if (section.id === 'model-provider') return 'modelProvider'
-  if (section.id === 'gateway') return 'Gateway'
-  if (section.id === 'defaults') return 'Default settings'
-  if (section.id === 'companion') return 'Companion'
-  if (section.id === 'events') return 'Runtime Events'
-  if (section.id === 'provider-test') return 'Test'
-  if (section.id === 'pressure') return 'Pressure'
-  if (section.id === 'tool-stats') return 'Static'
-  if (section.id === 'anim-editor') return 'AnimEditor'
-  if (section.id === 'node-profiler-editor') return 'NodeProfilerEditor'
-  if (section.id === 'runtime-policy') return 'RuntimePolicy'
-  if (section.id === 'exit') return 'Exit'
+  const messageKey = SECTION_MESSAGE_KEYS[section.id]
+  if (messageKey) return t(messageKey)
   return section.label
 }
 
@@ -312,10 +313,10 @@ async function loadSection(sectionId = activeSection.value) {
 
 async function selectSection(sectionId: string) {
   if (sectionId === activeSection.value) return
-  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm('Discard unsaved NodeProfiler changes?')) {
+  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm(t('settings.discardNodeProfiler'))) {
     return
   }
-  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm('Discard unsaved RuntimePolicy changes?')) {
+  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm(t('settings.discardRuntimePolicy'))) {
     return
   }
   nodeProfilerDirty.value = false
@@ -324,10 +325,10 @@ async function selectSection(sectionId: string) {
 }
 
 function handleBack() {
-  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm('Discard unsaved NodeProfiler changes?')) {
+  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm(t('settings.discardNodeProfiler'))) {
     return
   }
-  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm('Discard unsaved RuntimePolicy changes?')) {
+  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm(t('settings.discardRuntimePolicy'))) {
     return
   }
   emit('back')
@@ -364,14 +365,14 @@ async function saveSection() {
         content: editorContent.value,
         data: parsed,
       }
-      status.value = 'Applied'
+      status.value = t('settings.applied')
       return
     }
     const document = await updateSettingsSection(activeSection.value, editorContent.value)
     loadedDocument.value = document
     editorContent.value = document.content
     syncThemePresetState(document)
-    status.value = document.restart_required ? 'Saved · Restart required' : 'Saved'
+    status.value = document.restart_required ? t('settings.restartRequired') : t('common.saved')
     if (activeSection.value === 'model-provider') {
       emit('providersUpdated')
       await loadCatalogForForms()
@@ -406,7 +407,7 @@ async function handleLoadThemePreset(presetId: string) {
     editorContent.value = document.content
     syncThemePresetState(document)
     await applyWorkspaceTheme()
-    status.value = `Loaded ${safeId}`
+    status.value = t('settings.loadedPreset', { preset: safeId })
   } catch (e: any) {
     error.value = String(e?.message || e)
   } finally {
@@ -417,7 +418,7 @@ async function handleLoadThemePreset(presetId: string) {
 async function handleSaveThemePreset(presetId: string) {
   const safeId = String(presetId || '').trim()
   if (!safeId) {
-    error.value = 'Theme preset id is required.'
+    error.value = t('settings.themePresetRequired')
     return
   }
   saving.value = true
@@ -429,7 +430,7 @@ async function handleSaveThemePreset(presetId: string) {
     editorContent.value = document.content
     syncThemePresetState(document)
     await applyWorkspaceTheme()
-    status.value = `Saved ${safeId}`
+    status.value = t('settings.savedPreset', { preset: safeId })
   } catch (e: any) {
     error.value = String(e?.message || e)
   } finally {
@@ -452,16 +453,16 @@ onMounted(async () => {
   <section class="settings-page">
     <header class="settings-head">
       <div class="settings-title-wrap">
-        <h1>Settings</h1>
+        <h1>{{ t('common.settings') }}</h1>
         <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isRuntimePolicy ? 'config/runtimePolicies.json · config/runtime_policies/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
-        <ActionButton compact @click="handleBack">{{ props.backLabel }}</ActionButton>
+        <ActionButton compact @click="handleBack">{{ backButtonLabel }}</ActionButton>
       </div>
     </header>
 
     <div class="settings-body">
-      <nav class="settings-tabs" aria-label="Settings sections">
+      <nav class="settings-tabs" :aria-label="t('settings.sectionsAria')">
         <SelectionButton
           v-for="section in displaySections"
           :key="section.id"
@@ -477,23 +478,23 @@ onMounted(async () => {
         <div class="editor-toolbar">
           <div class="editor-title">
             <span>{{ activeLabel }}</span>
-            <span v-if="dirty" class="editor-state">Unsaved</span>
+            <span v-if="dirty" class="editor-state">{{ t('settings.unsaved') }}</span>
             <span v-else-if="status" class="editor-state saved">{{ status }}</span>
           </div>
           <div class="editor-actions">
-            <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="loadSection()">Reload</ActionButton>
+            <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="loadSection()">{{ t('settings.reload') }}</ActionButton>
             <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="advancedMode = !advancedMode">
-              {{ advancedMode ? 'Form' : 'Advanced JSON' }}
+              {{ advancedMode ? t('settings.form') : t('settings.advancedJson') }}
             </ActionButton>
-            <ActionButton v-if="!isVirtualSection && advancedMode" compact :disabled="loading || saving" @click="formatJson">Format</ActionButton>
+            <ActionButton v-if="!isVirtualSection && advancedMode" compact :disabled="loading || saving" @click="formatJson">{{ t('settings.format') }}</ActionButton>
             <ActionButton v-if="!isVirtualSection" variant="primary" compact :disabled="loading || saving || (activeSection !== 'events' && !dirty)" @click="saveSection">
-              {{ saving ? (activeSection === 'events' ? 'Applying...' : 'Saving...') : (activeSection === 'events' ? 'Apply' : 'Save') }}
+              {{ saving ? (activeSection === 'events' ? t('settings.applying') : t('common.saving')) : (activeSection === 'events' ? t('settings.apply') : t('common.save')) }}
             </ActionButton>
           </div>
         </div>
 
         <div v-if="validationWarnings.length" class="settings-warning" role="status">
-          <strong>Configuration warning</strong>
+          <strong>{{ t('settings.configurationWarning') }}</strong>
           <span v-for="warning in validationWarnings" :key="warning">{{ warning }}</span>
         </div>
 
@@ -563,7 +564,7 @@ onMounted(async () => {
             @save-preset="handleSaveThemePreset"
             @refresh-presets="refreshThemePresets"
           />
-          <div v-else class="settings-error">Invalid JSON. Switch to Advanced JSON to fix it.</div>
+          <div v-else class="settings-error">{{ t('settings.invalidJsonHelp') }}</div>
         </template>
 
         <div v-if="error" class="settings-error">{{ error }}</div>

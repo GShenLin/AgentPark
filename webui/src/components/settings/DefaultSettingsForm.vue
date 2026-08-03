@@ -7,6 +7,7 @@ import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 import PasteAgentProfileSettingsGroup from './PasteAgentProfileSettingsGroup.vue'
 import StorageSettingsGroup from './StorageSettingsGroup.vue'
+import { t } from '../../i18n'
 
 const props = defineProps<{
   data: Record<string, unknown>
@@ -144,10 +145,10 @@ function deleteMcpServer() {
     <PasteAgentProfileSettingsGroup />
 
     <section class="settings-group">
-      <h2>Board Layout</h2>
+      <h2>{{ t('defaults.boardLayout') }}</h2>
       <div class="form-grid">
         <label>
-          <span>Grid Cell Width</span>
+          <span>{{ t('defaults.gridCellWidth') }}</span>
           <FormTextInput
             :model-value="fieldText('boardLayout', 'gridCellWidth') || '300'"
             type="number"
@@ -157,7 +158,7 @@ function deleteMcpServer() {
           />
         </label>
         <label>
-          <span>Grid Cell Height</span>
+          <span>{{ t('defaults.gridCellHeight') }}</span>
           <FormTextInput
             :model-value="fieldText('boardLayout', 'gridCellHeight') || '320'"
             type="number"
@@ -167,7 +168,7 @@ function deleteMcpServer() {
           />
         </label>
         <label>
-          <span>Default Node Width</span>
+          <span>{{ t('defaults.nodeWidth') }}</span>
           <FormTextInput
             :model-value="fieldText('boardLayout', 'nodeWidth') || '230'"
             type="number"
@@ -175,10 +176,10 @@ function deleteMcpServer() {
             max="720"
             @update:model-value="setNestedNumber('boardLayout', 'nodeWidth', $event)"
           />
-          <small>Applied to newly created nodes. Nodes with saved custom sizes keep their own width.</small>
+          <small>{{ t('defaults.nodeWidthHelp') }}</small>
         </label>
         <label>
-          <span>Default Node Height</span>
+          <span>{{ t('defaults.nodeHeight') }}</span>
           <FormTextInput
             :model-value="fieldText('boardLayout', 'nodeHeight') || '250'"
             type="number"
@@ -186,39 +187,39 @@ function deleteMcpServer() {
             max="760"
             @update:model-value="setNestedNumber('boardLayout', 'nodeHeight', $event)"
           />
-          <small>Applied to newly created nodes. Nodes with saved custom sizes keep their own height.</small>
+          <small>{{ t('defaults.nodeHeightHelp') }}</small>
         </label>
       </div>
     </section>
 
     <section class="settings-group">
-      <h2>Server</h2>
+      <h2>{{ t('defaults.server') }}</h2>
       <div class="form-grid">
         <label>
-          <span>Host</span>
+          <span>{{ t('defaults.host') }}</span>
           <FormTextInput :model-value="fieldText('server', 'host')" @update:model-value="setNestedField('server', 'host', $event)" />
         </label>
         <label>
-          <span>Port</span>
+          <span>{{ t('defaults.port') }}</span>
           <FormTextInput :model-value="fieldText('server', 'port')" type="number" min="1" max="65535" @update:model-value="setNestedNumber('server', 'port', $event)" />
         </label>
       </div>
     </section>
 
     <section class="settings-group">
-      <h2>Network</h2>
+      <h2>{{ t('defaults.network') }}</h2>
       <div class="form-grid">
         <label>
-          <span>HTTP Proxy</span>
+          <span>{{ t('defaults.httpProxy') }}</span>
           <FormTextInput
             :model-value="fieldText('network', 'httpProxy')"
             placeholder="http://127.0.0.1:17891"
             @update:model-value="setNestedField('network', 'httpProxy', $event)"
           />
-          <small>Applied to AgentPark at startup and inherited by processes it launches.</small>
+          <small>{{ t('defaults.proxyHelp') }}</small>
         </label>
         <label>
-          <span>No Proxy</span>
+          <span>{{ t('defaults.noProxy') }}</span>
           <FormTextInput
             :model-value="fieldText('network', 'noProxy')"
             placeholder="localhost,127.0.0.1,::1"
@@ -229,38 +230,38 @@ function deleteMcpServer() {
     </section>
 
     <section class="settings-group">
-      <h2>Agent Node</h2>
+      <h2>{{ t('defaults.agentNode') }}</h2>
       <div class="form-grid">
         <label>
-          <span>Min Send Delay Ms</span>
+          <span>{{ t('defaults.minSendDelay') }}</span>
           <FormTextInput :model-value="fieldText('agentNode', 'minSendDelayMs')" type="number" min="0" @update:model-value="setNestedNumber('agentNode', 'minSendDelayMs', $event)" />
         </label>
         <label>
-          <span>History Message Limit</span>
+          <span>{{ t('defaults.historyLimit') }}</span>
           <FormTextInput :model-value="fieldText('agentNode', 'historyMessageLimit')" type="number" min="0" @update:model-value="setNestedNumber('agentNode', 'historyMessageLimit', $event)" />
         </label>
       </div>
     </section>
 
     <section class="settings-group">
-      <h2>Runtime Defaults</h2>
+      <h2>{{ t('defaults.runtime') }}</h2>
       <div class="form-grid">
         <label>
-          <span>Console Timeout Sec</span>
+          <span>{{ t('defaults.consoleTimeout') }}</span>
           <FormTextInput :model-value="fieldText('consoleCommand', 'timeoutSec')" type="number" min="1" @update:model-value="setNestedNumber('consoleCommand', 'timeoutSec', $event)" />
         </label>
         <label>
-          <span>Node Memory Max Entries</span>
+          <span>{{ t('defaults.memoryEntries') }}</span>
           <FormTextInput :model-value="fieldText('nodeMemory', 'maxEntries')" type="number" min="1" @update:model-value="setNestedNumber('nodeMemory', 'maxEntries', $event)" />
         </label>
       </div>
     </section>
 
     <section class="settings-group">
-      <h2>Undo</h2>
+      <h2>{{ t('defaults.undo') }}</h2>
       <div class="form-grid">
         <label>
-          <span>Max Undo Steps</span>
+          <span>{{ t('defaults.undoSteps') }}</span>
           <FormTextInput :model-value="fieldText('undo', 'maxSteps') || '5'" type="number" min="0" max="100" @update:model-value="setNestedNumber('undo', 'maxSteps', $event)" />
         </label>
       </div>
@@ -268,10 +269,10 @@ function deleteMcpServer() {
 
     <section class="settings-group mcp-group">
       <div class="group-head">
-        <h2>MCP Servers</h2>
+        <h2>{{ t('defaults.mcpServers') }}</h2>
         <div class="mcp-add">
-          <FormTextInput v-model="newMcpName" placeholder="New server name" @keydown.enter.prevent="addMcpServer" />
-          <ActionButton compact @click="addMcpServer">Add</ActionButton>
+          <FormTextInput v-model="newMcpName" :placeholder="t('defaults.newServer')" @keydown.enter.prevent="addMcpServer" />
+          <ActionButton compact @click="addMcpServer">{{ t('common.add') }}</ActionButton>
         </div>
       </div>
 
@@ -293,27 +294,27 @@ function deleteMcpServer() {
         <div v-if="selectedMcp" class="mcp-fields">
           <div class="form-head">
             <h3>{{ selectedMcpName }}</h3>
-            <DangerButton @click="deleteMcpServer">Delete</DangerButton>
+            <DangerButton @click="deleteMcpServer">{{ t('common.delete') }}</DangerButton>
           </div>
           <div class="form-grid">
             <label>
-              <span>Label</span>
+              <span>{{ t('defaults.label') }}</span>
               <FormTextInput :model-value="mcpFieldText('label')" @update:model-value="setMcpField('label', $event)" />
             </label>
             <label>
-              <span>Transport</span>
+              <span>{{ t('defaults.transport') }}</span>
               <FormSelect :model-value="mcpFieldText('transport')" @change="setMcpField('transport', $event)">
-                <option value="">Unset</option>
+                <option value="">{{ t('defaults.unset') }}</option>
                 <option value="streamable-http">streamable-http</option>
                 <option value="stdio">stdio</option>
               </FormSelect>
             </label>
             <label>
-              <span>URL</span>
+              <span>{{ t('defaults.url') }}</span>
               <FormTextInput :model-value="mcpFieldText('url')" @update:model-value="setMcpField('url', $event)" />
             </label>
             <label>
-              <span>Read Timeout Seconds</span>
+              <span>{{ t('defaults.readTimeout') }}</span>
               <FormTextInput :model-value="mcpFieldText('readTimeoutSeconds')" type="number" min="1" @update:model-value="setMcpNumber('readTimeoutSeconds', $event)" />
             </label>
           </div>

@@ -24,6 +24,8 @@ import { useAudioRecorder } from '../composables/useAudioRecorder'
 import { useWorkAlerts } from '../composables/useWorkAlerts'
 import { useMobileWorkspace } from './useMobileWorkspace'
 import { buildMessageSignature } from './mobileMessageRender'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import { t } from '../i18n'
 
 const props = defineProps<{ access: AccessStatus }>()
 const workspace = useMobileWorkspace()
@@ -61,11 +63,11 @@ const workspaceMounted = ref(false)
 const SCROLL_STICK_THRESHOLD = 48
 
 const headerTitle = computed(() => {
-  if (settingsOpen.value) return 'Settings'
-  if (workspace.view.value === 'pcs') return '选择 PC'
-  if (workspace.view.value === 'graphs') return workspace.selectedPc.value?.name || '选择 Graph'
-  if (workspace.view.value === 'nodes') return workspace.selectedGraph.value?.display_name || '选择节点'
-  return workspace.selectedNode.value?.name || workspace.selectedNode.value?.id || '节点消息'
+  if (settingsOpen.value) return t('common.settings')
+  if (workspace.view.value === 'pcs') return t('mobile.selectPc')
+  if (workspace.view.value === 'graphs') return workspace.selectedPc.value?.name || t('mobile.selectGraph')
+  if (workspace.view.value === 'nodes') return workspace.selectedGraph.value?.display_name || t('mobile.selectNode')
+  return workspace.selectedNode.value?.name || workspace.selectedNode.value?.id || t('mobile.nodeMessages')
 })
 
 const messages = computed(() => workspace.conversation.value?.messages || [])
@@ -143,10 +145,12 @@ const goalTitle = computed(() => {
   const status = String(selectedGoalState.value?.status || '').trim()
   const reason = String(selectedGoalState.value?.reason || '').trim()
   if (selectedGoalText.value) {
-    return reason ? `Goal ${status || 'set'}: ${reason}` : `Goal ${status || 'set'}`
+    return reason
+      ? t('goal.statusReason', { status: status || 'set', reason })
+      : t('goal.status', { status: status || 'set' })
   }
-  if (!isAgentNode.value) return 'Goal mode is available on Agent nodes'
-  return goalActive.value ? 'Disable goal mode' : 'Enable goal mode'
+  if (!isAgentNode.value) return t('goal.availableAgentOnly')
+  return goalActive.value ? t('goal.disable') : t('goal.enable')
 })
 const selectedNodeRunning = computed(() => {
   const node = workspace.selectedNode.value
@@ -392,7 +396,7 @@ function closeSettings() {
 async function saveMobileGraph() {
   const name = graphNameInput.value.trim()
   if (!name) {
-    graphStatus.value = 'GraphName is required.'
+    graphStatus.value = t('mobile.graphNameRequired')
     return
   }
   graphSaving.value = true
@@ -400,7 +404,7 @@ async function saveMobileGraph() {
   try {
     const result = await workspace.saveGraphByName(name)
     graphNameInput.value = result.name || result.id
-    graphStatus.value = `Graph saved: ${result.name || result.id}`
+    graphStatus.value = t('mobile.graphSaved', { name: result.name || result.id })
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   } finally {
@@ -411,21 +415,22 @@ async function saveMobileGraph() {
 async function createMobileGraphFromProfile() {
   const profileId = String(selectedGraphProfileId.value || '').trim()
   if (!profileId) {
-    graphStatus.value = 'Select a graph preset first.'
+    graphStatus.value = t('mobile.selectGraphPreset')
     return
   }
   const profile = workspace.graphProfiles.value.find((item) => item.id === profileId)
   const defaultGraphId = String(profile?.graph?.id || profile?.id || '').trim()
-  const targetGraphId = String(window.prompt('GraphID', defaultGraphId) || '').trim()
+  const targetGraphId = String(window.prompt(t('mobile.graphId'), defaultGraphId) || '').trim()
   if (!targetGraphId) return
   graphProfileCreating.value = true
   graphStatus.value = ''
   try {
     const result = await workspace.createGraphFromPreset(profileId, targetGraphId)
     graphNameInput.value = result.graph.name || result.graph.id
+    const name = result.graph.name || result.graph.id
     graphStatus.value = result.selected
-      ? `Graph created: ${result.graph.name || result.graph.id}`
-      : `Graph created: ${result.graph.name || result.graph.id}. Pull to refresh if it is not listed.`
+      ? t('mobile.graphCreated', { name })
+      : t('mobile.graphCreatedRefresh', { name })
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   } finally {
@@ -437,12 +442,12 @@ async function deleteMobileGraph(graph: { id: string; name?: string; display_nam
   const graphId = String(graph.id || '').trim()
   if (!graphId) return
   const name = String(graph.display_name || graph.name || graphId)
-  const ok = window.confirm(`Delete graph "${name}"? This will remove the whole graph folder and cannot be undone.`)
+  const ok = window.confirm(t('mobile.deleteGraphConfirm', { name }))
   if (!ok) return
   graphStatus.value = ''
   try {
     await workspace.deleteGraphById(graphId)
-    graphStatus.value = `Graph deleted: ${name}`
+    graphStatus.value = t('mobile.graphDeleted', { name })
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -479,7 +484,7 @@ async function createMobileNodeFromProfile(profileId: string) {
 async function deleteMobileNode(node: MobileNode) {
   const nodeId = String(node.id || '').trim()
   if (!nodeId) return
-  const ok = window.confirm(`Delete node "${nodeId}"?`)
+  const ok = window.confirm(t('mobile.deleteNodeConfirm', { name: nodeId }))
   if (!ok) return
   try {
     await workspace.deleteNode(node)
@@ -514,7 +519,7 @@ async function clearMemory() {
   if (workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   const nodeId = String(workspace.selectedNode.value.id || '').trim()
   const targetLabel = workspace.cliMemoryClearTargetLabel(nodeId)
-  const ok = window.confirm(`Clear ${targetLabel}?`)
+  const ok = window.confirm(t('mobile.clearTargetConfirm', { target: targetLabel }))
   if (!ok) return
   await workspace.clearSelectedNodeMemory()
   await nextTick()
@@ -526,14 +531,14 @@ async function deleteMobileMessages(target: MessageEnvelope | MessageEnvelope[] 
     const userMessage = (target as { kind: 'turn'; userMessage: MessageEnvelope }).userMessage
     const userMessageId = String((userMessage as any)?.id || '').trim()
     if (!userMessageId) return
-    const ok = window.confirm('Delete this entire turn?')
+    const ok = window.confirm(t('mobile.deleteTurnConfirm'))
     if (!ok) return
     try {
       const result = await workspace.deleteSelectedNodeTurn(userMessageId)
       recordDeletionUndo(result.undo_token ? {
         token: result.undo_token,
         kind: 'delete_dialogue',
-        label: 'conversation turn',
+        label: t('mobile.conversationTurn'),
       } : null)
     } catch (e: any) {
       workspace.error.value = String(e?.message || e)
@@ -545,8 +550,10 @@ async function deleteMobileMessages(target: MessageEnvelope | MessageEnvelope[] 
     messagesToDelete.map((message) => String((message as any)?.id || '').trim()).filter(Boolean),
   ))
   if (messageIds.length === 0) return
-  const label = messageIds.length === 1 ? 'this conversation entry' : `these ${messageIds.length} conversation entries`
-  const ok = window.confirm(`Delete ${label}?`)
+  const label = messageIds.length === 1
+    ? t('mobile.conversationEntry')
+    : t('mobile.conversationEntries', { count: messageIds.length })
+  const ok = window.confirm(t('mobile.deleteEntryConfirm', { label }))
   if (!ok) return
   try {
     const result = await workspace.deleteSelectedNodeMessages(messageIds)
@@ -641,18 +648,19 @@ onMounted(async () => {
 <template>
   <div class="mobile-shell">
     <header class="mobile-header">
-      <button v-if="settingsOpen" class="icon-btn" type="button" aria-label="Back" @click="closeSettings">&lt;</button>
-      <button v-else-if="workspace.view.value === 'graphs'" class="icon-btn" type="button" aria-label="返回 PC" @click="workspace.backToPcs">&lt;</button>
-      <button v-else-if="workspace.view.value === 'nodes'" class="icon-btn" type="button" aria-label="返回 Graph" @click="workspace.backToGraphs">&lt;</button>
-      <button v-else-if="workspace.view.value === 'chat'" class="icon-btn" type="button" aria-label="返回节点" @click="workspace.backToNodes">&lt;</button>
+      <button v-if="settingsOpen" class="icon-btn" type="button" :aria-label="t('common.back')" @click="closeSettings">&lt;</button>
+      <button v-else-if="workspace.view.value === 'graphs'" class="icon-btn" type="button" :aria-label="t('mobile.backToPc')" @click="workspace.backToPcs">&lt;</button>
+      <button v-else-if="workspace.view.value === 'nodes'" class="icon-btn" type="button" :aria-label="t('mobile.backToGraph')" @click="workspace.backToGraphs">&lt;</button>
+      <button v-else-if="workspace.view.value === 'chat'" class="icon-btn" type="button" :aria-label="t('mobile.backToNodes')" @click="workspace.backToNodes">&lt;</button>
       <div v-else class="header-spacer"></div>
       <div class="header-title">{{ headerTitle }}</div>
       <div class="header-actions">
-        <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" aria-label="Open settings" @click="openSettings">Settings</button>
-        <DangerButton v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" aria-label="Clear memory" @click="clearMemory">ClearMemory</DangerButton>
-        <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" aria-label="打开节点配置" @click="openConfig">配置</button>
-        <button v-if="!settingsOpen" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" aria-label="Restart" @click="restartWorkspace">
-          {{ isRestarting ? 'Restarting...' : 'Restart' }}
+        <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" :aria-label="t('mobile.openSettings')" @click="openSettings">{{ t('common.settings') }}</button>
+        <LanguageSwitcher compact />
+        <DangerButton v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" :aria-label="t('mobile.clearMemory')" @click="clearMemory">{{ t('mobile.clearMemory') }}</DangerButton>
+        <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" :aria-label="t('mobile.openNodeConfig')" @click="openConfig">{{ t('common.config') }}</button>
+        <button v-if="!settingsOpen" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" :aria-label="t('common.restart')" @click="restartWorkspace">
+          {{ isRestarting ? t('common.restarting') : t('common.restart') }}
         </button>
       </div>
     </header>
@@ -660,7 +668,7 @@ onMounted(async () => {
     <main class="mobile-main">
       <SettingsPage
         v-if="settingsOpen"
-        back-label="Back"
+        :back-label="t('common.back')"
         @back="closeSettings"
         @providers-updated="workspace.refreshEditorCatalog"
       />
@@ -670,12 +678,12 @@ onMounted(async () => {
           placement="mobile"
           @dismiss="workspace.error.value = ''"
         />
-        <div v-if="workspace.loading.value" class="loading-line" role="status" aria-live="polite">Loading...</div>
+        <div v-if="workspace.loading.value" class="loading-line" role="status" aria-live="polite">{{ t('common.loading') }}</div>
 
         <section v-if="workspace.view.value === 'pcs'" class="mobile-list">
         <button v-for="pc in workspace.pcs.value" :key="pc.id" class="list-row pc-row" type="button" @click="workspace.selectPc(pc)">
           <span class="row-main">{{ pc.name }}</span>
-          <span class="row-sub">{{ pc.instance_count }} instance</span>
+          <span class="row-sub">{{ t('mobile.instanceCount', { count: pc.instance_count }) }}</span>
           <span class="row-arrow">&gt;</span>
         </button>
       </section>
@@ -690,28 +698,28 @@ onMounted(async () => {
             <button class="list-row graph-row" type="button" @click="workspace.selectGraph(graph)">
               <span>
                 <span class="row-main">{{ graph.display_name }}</span>
-                <span class="row-sub">{{ graph.updated_at || 'not saved yet' }}</span>
+                <span class="row-sub">{{ graph.updated_at || t('mobile.notSavedYet') }}</span>
               </span>
               <span class="row-arrow">&gt;</span>
             </button>
-            <DangerButton v-if="canDeleteGraph(graph)" @click="deleteMobileGraph(graph)">Delete</DangerButton>
+            <DangerButton v-if="canDeleteGraph(graph)" @click="deleteMobileGraph(graph)">{{ t('common.delete') }}</DangerButton>
           </div>
         </div>
         <form class="graph-save-panel" @submit.prevent="saveMobileGraph">
           <label class="graph-name-field">
-            <span>GraphName</span>
-            <FormTextInput v-model="graphNameInput" placeholder="NewGraph" />
+            <span>{{ t('mobile.graphName') }}</span>
+            <FormTextInput v-model="graphNameInput" :placeholder="t('mobile.newGraph')" />
           </label>
           <ActionButton variant="primary" type="submit" :disabled="graphSaving">
-            {{ graphSaving ? 'Saving...' : 'SaveGraph' }}
+            {{ graphSaving ? t('common.saving') : t('mobile.saveGraph') }}
           </ActionButton>
           <div v-if="graphStatus" class="graph-status">{{ graphStatus }}</div>
         </form>
         <section v-if="workspace.graphProfiles.value.length" class="graph-preset-panel">
           <label class="graph-name-field">
-            <span>GraphPreset</span>
+            <span>{{ t('mobile.graphPreset') }}</span>
             <FormSelect v-model="selectedGraphProfileId">
-              <option value="">Profile</option>
+              <option value="">{{ t('mobile.profile') }}</option>
               <option v-for="profile in workspace.graphProfiles.value" :key="profile.id" :value="profile.id">
                 {{ profile.name || profile.id }}
               </option>
@@ -722,7 +730,7 @@ onMounted(async () => {
             :disabled="!selectedGraphProfileId || graphProfileCreating"
             @click="createMobileGraphFromProfile"
           >
-            {{ graphProfileCreating ? 'Creating...' : 'CreateFromProfile' }}
+            {{ graphProfileCreating ? t('common.creating') : t('mobile.createFromProfile') }}
           </ActionButton>
         </section>
       </section>
@@ -737,7 +745,7 @@ onMounted(async () => {
           @trigger="triggerMobileNode"
           @duplicate="duplicateMobileNode"
         />
-        <ActionButton v-if="canEditGraph(workspace.selectedGraph.value)" variant="primary" block class="add-node-btn" @click="openCreateNode">Add Node</ActionButton>
+        <ActionButton v-if="canEditGraph(workspace.selectedGraph.value)" variant="primary" block class="add-node-btn" @click="openCreateNode">{{ t('mobile.addNode') }}</ActionButton>
       </section>
 
       <section v-else class="chat-view">
@@ -752,7 +760,7 @@ onMounted(async () => {
           @refresh="workspace.refreshCliSessions"
         />
         <div ref="feedRef" class="chat-feed">
-          <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage && activityBlocks.length === 0" class="empty-chat">暂无消息</div>
+          <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage && activityBlocks.length === 0" class="empty-chat">{{ t('mobile.emptyChat') }}</div>
           <template v-for="(entry, index) in feedEntries" :key="entry.key">
             <MobileMemoryMessageCard
               v-if="entry.type === 'message'"
@@ -793,9 +801,9 @@ onMounted(async () => {
         <form class="composer" @submit.prevent="sendDraft">
           <div class="composer-tools">
             <ActionButton class="attach-btn" compact :disabled="uploadingFiles || composerLocked" @click="openFilePicker">
-              {{ uploadingFiles ? '上传中...' : '添加图片或附件' }}
+              {{ uploadingFiles ? t('mobile.uploading') : t('mobile.addAttachment') }}
             </ActionButton>
-            <DangerButton v-if="attachments.length > 0" class="clear-attachments-btn" compact :disabled="composerLocked" @click="clearAttachments">清空</DangerButton>
+            <DangerButton v-if="attachments.length > 0" class="clear-attachments-btn" compact :disabled="composerLocked" @click="clearAttachments">{{ t('mobile.clearAttachments') }}</DangerButton>
             <button
               v-if="audioInputEnabled"
               class="audio-record-btn"
@@ -804,7 +812,7 @@ onMounted(async () => {
               :disabled="!audioRecorder.supported.value || uploadingFiles || composerLocked"
               @click="toggleAudioRecording"
             >
-              {{ audioRecorder.recording.value ? '停止录音' : '录音' }}
+              {{ audioRecorder.recording.value ? t('mobile.stopRecording') : t('mobile.startRecording') }}
             </button>
             <button
               v-if="!workspace.selectedNode.value?.readonly"
@@ -822,22 +830,22 @@ onMounted(async () => {
               class="stop-node-btn"
               compact
               :disabled="selectedNodeStopRequested"
-              :title="selectedNodeStopRequested ? 'Stop requested' : 'Stop current node work'"
+              :title="selectedNodeStopRequested ? t('mobile.stopRequested') : t('mobile.stopCurrentWork')"
               @click="stopSelectedNode"
             >
-              {{ selectedNodeStopRequested ? 'Stopping' : 'Stop' }}
+              {{ selectedNodeStopRequested ? t('common.stopping') : t('common.stop') }}
             </DangerButton>
             <input ref="fileInputRef" class="hidden-file-input" type="file" multiple @change="onFileSelected" />
           </div>
           <div v-if="attachments.length > 0" class="mobile-attachments">
             <span v-for="(file, index) in attachments" :key="file.path" class="mobile-attachment-chip">
               <span class="attachment-label">{{ file.name || file.path }}</span>
-              <DangerButton icon compact :disabled="composerLocked" aria-label="移除附件" @click="removeAttachment(index)">×</DangerButton>
+              <DangerButton icon compact :disabled="composerLocked" :aria-label="t('mobile.removeAttachment')" @click="removeAttachment(index)">×</DangerButton>
             </span>
           </div>
           <div class="composer-row">
-            <textarea v-model="draft" rows="2" placeholder="输入消息" :disabled="composerLocked"></textarea>
-            <ActionButton variant="primary" type="submit" :disabled="!canSendDraft">{{ composerLocked ? '发送中...' : '发送' }}</ActionButton>
+            <textarea v-model="draft" rows="2" :placeholder="t('mobile.messagePlaceholder')" :disabled="composerLocked"></textarea>
+            <ActionButton variant="primary" type="submit" :disabled="!canSendDraft">{{ composerLocked ? t('mobile.sending') : t('mobile.send') }}</ActionButton>
           </div>
         </form>
         </section>

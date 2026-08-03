@@ -22,6 +22,7 @@ import { formatNodeConfigChangeSummary, normalizeApplyError } from './nodeApplyS
 import NodeConfigFields from './NodeConfigFields.vue'
 import NodeProfileLoadControl from './NodeProfileLoadControl.vue'
 import NodeRuntimeEventsFieldGroup from './NodeRuntimeEventsFieldGroup.vue'
+import { t } from '../../i18n'
 
 const injectedCtx = inject(AgentBoardKey, null)
 if (!injectedCtx) {
@@ -427,7 +428,7 @@ watch(
   <section class="editor-section config-section">
     <div class="section-head config-head">
       <div class="config-title-actions">
-        <div class="section-title">Config</div>
+        <div class="section-title">{{ t('common.config') }}</div>
         <NodeProfileLoadControl
           :node-type-id="node.typeId"
           :busy="profileLoading || applying"
@@ -442,8 +443,8 @@ watch(
 
     <div v-if="applySummary" class="apply-summary">{{ applySummary }}</div>
 
-    <div v-if="loading" class="empty-hint">Loading node config...</div>
-    <div v-else-if="fieldKeys.length === 0" class="empty-hint">This node has no editable fields.</div>
+    <div v-if="loading" class="empty-hint">{{ t('board.loadingConfig') }}</div>
+    <div v-else-if="fieldKeys.length === 0" class="empty-hint">{{ t('board.noEditableFields') }}</div>
 
     <NodeConfigFields
       v-if="!loading && fieldKeys.length > 0"
@@ -467,7 +468,7 @@ watch(
 
     <div v-if="isChannelReceiver" class="channel-controls">
       <div class="channel-state">
-        <span class="channel-state-label">Status</span>
+        <span class="channel-state-label">{{ t('board.status') }}</span>
         <span class="channel-status" :class="{ running: channelRunning }">
           {{ channelRunning ? 'Running' : 'Stopped' }}
         </span>
@@ -491,7 +492,7 @@ watch(
       <div v-if="qrModalOpen" class="channel-login">
         <div class="login-copy">
           <div class="login-title">Weixin Login</div>
-          <ActionButton compact @click="qrModalOpen = false">Hide</ActionButton>
+          <ActionButton compact @click="qrModalOpen = false">{{ t('board.hide') }}</ActionButton>
         </div>
         <div class="qr-frame">
           <img v-if="canShowQrImage" class="qr-image" :src="qrCodeUrl" alt="Weixin login QR code" />
@@ -499,7 +500,7 @@ watch(
         </div>
         <div v-if="loginMessage" class="qr-message">{{ loginMessage }}</div>
         <div class="qr-actions">
-          <a class="qr-open-link" :href="qrCodeUrl" target="_blank" rel="noreferrer">Open</a>
+          <a class="qr-open-link" :href="qrCodeUrl" target="_blank" rel="noreferrer">{{ t('board.open') }}</a>
           <ActionButton variant="primary" compact :disabled="channelBusy === 'login-wait'" @click="waitLogin">
             {{ channelBusy === 'login-wait' ? 'Waiting...' : 'I scanned it' }}
           </ActionButton>

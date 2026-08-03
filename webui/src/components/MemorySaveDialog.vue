@@ -2,6 +2,7 @@
 import ActionButton from './ActionButton.vue'
 import DialogCloseButton from './DialogCloseButton.vue'
 import FormTextInput from './FormTextInput.vue'
+import { t } from '../i18n'
 
 defineProps<{
   open: boolean
@@ -24,8 +25,8 @@ const emit = defineEmits<{
     <div v-if="open" class="save-dialog-backdrop" @mousedown.self="emit('cancel')">
       <form class="save-dialog" @submit.prevent="emit('confirm')">
         <div class="save-dialog-head">
-          <div class="save-dialog-title">保存 Markdown</div>
-          <DialogCloseButton aria-label="取消" @click="emit('cancel')" />
+          <div class="save-dialog-title">{{ t('memory.saveMarkdown') }}</div>
+          <DialogCloseButton :aria-label="t('common.cancel')" @click="emit('cancel')" />
         </div>
         <div v-if="targetDir" class="save-dialog-target" :title="targetDir">{{ targetDir }}</div>
         <FormTextInput
@@ -33,13 +34,13 @@ const emit = defineEmits<{
           :model-value="filename"
           :disabled="saving"
           autofocus
-          placeholder="文件名"
+          :placeholder="t('memory.filename')"
           @update:model-value="emit('update:filename', $event)"
         />
         <div v-if="error" class="save-dialog-error">{{ error }}</div>
         <div class="save-dialog-actions">
-          <ActionButton compact :disabled="saving" @click="emit('cancel')">取消</ActionButton>
-          <ActionButton variant="primary" compact type="submit" :disabled="saving">确认</ActionButton>
+          <ActionButton compact :disabled="saving" @click="emit('cancel')">{{ t('common.cancel') }}</ActionButton>
+          <ActionButton variant="primary" compact type="submit" :disabled="saving">{{ t('memory.confirm') }}</ActionButton>
         </div>
       </form>
     </div>

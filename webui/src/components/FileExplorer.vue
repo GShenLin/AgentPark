@@ -6,6 +6,7 @@ import DangerButton from './DangerButton.vue'
 import FileNode from './FileNode.vue'
 import FormTextInput from './FormTextInput.vue'
 import type { FileTreeItem } from './fileTree'
+import { t } from '../i18n'
 
 const props = withDefaults(defineProps<{
   rootPath?: string
@@ -181,7 +182,7 @@ function onFileSelected(file: FileItem) {
 async function createFileAtFolder(folderPath: string) {
   const currentFolder = String(folderPath || '').trim()
   if (!currentFolder) return
-  const fileName = window.prompt('New file name', 'new_file.txt')
+  const fileName = window.prompt(t('files.newFilePrompt'), 'new_file.txt')
   const cleanName = String(fileName || '').trim()
   if (!cleanName) return
 
@@ -214,7 +215,7 @@ async function renameTarget() {
   const oldPath = String(target.path || '')
   const parent = dirName(oldPath)
   const defaultName = baseName(oldPath)
-  const inputName = window.prompt('Rename to', defaultName)
+  const inputName = window.prompt(t('files.renamePrompt'), defaultName)
   const nextName = String(inputName || '').trim()
   if (!nextName || nextName === defaultName) return
 
@@ -232,8 +233,8 @@ async function deleteTarget() {
   closeMenu()
   if (!target) return
 
-  const label = target.type === 'dir' ? 'folder' : 'file'
-  const ok = window.confirm(`Delete ${label}: ${target.name}?`)
+  const label = target.type === 'dir' ? t('files.folder') : t('files.file')
+  const ok = window.confirm(t('files.deleteConfirm', { kind: label, name: target.name }))
   if (!ok) return
 
   try {
@@ -278,36 +279,36 @@ watch(
   <div class="file-explorer">
     <div v-if="showHeader" class="header-group">
       <div class="toolbar">
-        <ActionButton compact @click="goUp">Up</ActionButton>
-        <ActionButton compact @click="refresh">Refresh</ActionButton>
-        <ActionButton compact :disabled="!searchQuery" @click="clearSearch">Clear Search</ActionButton>
+        <ActionButton compact @click="goUp">{{ t('files.up') }}</ActionButton>
+        <ActionButton compact @click="refresh">{{ t('common.refresh') }}</ActionButton>
+        <ActionButton compact :disabled="!searchQuery" @click="clearSearch">{{ t('files.clearSearch') }}</ActionButton>
       </div>
 
       <label class="input-row">
-        <span class="input-label">Path</span>
+        <span class="input-label">{{ t('files.path') }}</span>
         <FormTextInput
           v-model="rootPath"
           class="path-input"
-          placeholder="Enter path and press Enter"
+          :placeholder="t('files.pathPlaceholder')"
           @keyup.enter="refresh"
         />
       </label>
 
       <label class="input-row">
-        <span class="input-label">Filter</span>
+        <span class="input-label">{{ t('files.filter') }}</span>
         <FormTextInput
           v-model="searchQuery"
           class="search-input"
-          placeholder="Filter file name"
+          :placeholder="t('files.filterPlaceholder')"
           @keyup.enter="refresh"
         />
       </label>
 
-      <div class="path-hint" :title="currentPathLabel">Current: {{ currentPathLabel }}</div>
+      <div class="path-hint" :title="currentPathLabel">{{ t('files.currentPath', { path: currentPathLabel }) }}</div>
     </div>
 
     <div class="file-list" @contextmenu.prevent="onBlankContextMenu">
-      <div v-if="isLoading" class="loading-state">Loading files...</div>
+      <div v-if="isLoading" class="loading-state">{{ t('files.loading') }}</div>
       <div v-else-if="error" class="error-state">{{ error }}</div>
       <template v-else>
         <FileNode
@@ -322,7 +323,7 @@ watch(
           @folder-dblclick="onFolderDblClick"
           @item-contextmenu="onItemContextMenu"
         />
-        <div v-if="sortedFiles.length === 0" class="empty-state">No files found</div>
+        <div v-if="sortedFiles.length === 0" class="empty-state">{{ t('files.empty') }}</div>
       </template>
 
       <div
@@ -332,15 +333,15 @@ watch(
         @pointerdown.stop
       >
         <template v-if="!menuTarget">
-          <ActionButton variant="menu" @click="createFileInCurrentFolder">Create File</ActionButton>
+          <ActionButton variant="menu" @click="createFileInCurrentFolder">{{ t('files.createFile') }}</ActionButton>
         </template>
         <template v-else>
           <div class="menu-title">{{ menuTarget.name }}</div>
           <ActionButton v-if="isMenuTargetDir" variant="menu" @click="createFileInTargetFolder">
             Create File Here
           </ActionButton>
-          <ActionButton variant="menu" @click="renameTarget">Rename</ActionButton>
-          <DangerButton variant="menu" @click="deleteTarget">Delete</DangerButton>
+          <ActionButton variant="menu" @click="renameTarget">{{ t('files.rename') }}</ActionButton>
+          <DangerButton variant="menu" @click="deleteTarget">{{ t('common.delete') }}</DangerButton>
         </template>
       </div>
     </div>

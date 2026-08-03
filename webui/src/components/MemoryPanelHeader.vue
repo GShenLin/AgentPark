@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DangerButton from './DangerButton.vue'
 import FormCheckbox from './FormCheckbox.vue'
+import { t } from '../i18n'
 
 defineProps<{
   memoryTitle: string
@@ -27,19 +28,19 @@ const emit = defineEmits<{
 <template>
   <div class="panel-head">
     <div class="panel-left">
-      <div class="panel-title">{{ memoryTitle || 'Memory' }}</div>
+      <div class="panel-title">{{ memoryTitle || t('common.memory') }}</div>
       <div v-if="memoryMeta" class="panel-meta" :title="memoryMeta">{{ memoryMeta }}</div>
     </div>
 
     <div class="mode-tabs">
-      <DangerButton v-if="memoryMode === 'agent'" compact :disabled="!canClearMemory" @click="emit('clearMemory')">ClearMemory</DangerButton>
-      <button v-if="memoryMode !== 'graph'" class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('toggleFileMode')">File</button>
+      <DangerButton v-if="memoryMode === 'agent'" compact :disabled="!canClearMemory" @click="emit('clearMemory')">{{ t('memory.clear') }}</DangerButton>
+      <button v-if="memoryMode !== 'graph'" class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('toggleFileMode')">{{ t('memory.fileMode') }}</button>
     </div>
 
     <div v-if="memoryMode !== 'graph'" class="view-controls">
       <label class="toggle-item">
         <FormCheckbox :model-value="isMarkdownPreview" @update:model-value="emit('update:isMarkdownPreview', $event)" />
-        <span>Markdown</span>
+        <span>{{ t('memory.markdown') }}</span>
       </label>
       <label class="toggle-item" :class="{ disabled: isMarkdownPreview }">
         <FormCheckbox
@@ -47,15 +48,15 @@ const emit = defineEmits<{
           :disabled="isMarkdownPreview"
           @update:model-value="emit('update:showLineNumbers', $event)"
         />
-        <span>Line#</span>
+        <span>{{ t('memory.lineNumbers') }}</span>
       </label>
       <label class="toggle-item">
         <FormCheckbox :model-value="isWordWrap" @update:model-value="emit('update:isWordWrap', $event)" />
-        <span>Wrap</span>
+        <span>{{ t('memory.wrap') }}</span>
       </label>
     </div>
 
-    <div v-if="isSaving && memoryMode === 'file'" class="panel-status">Saving...</div>
+    <div v-if="isSaving && memoryMode === 'file'" class="panel-status">{{ t('common.saving') }}</div>
     <div v-if="graphStatus && memoryMode === 'graph'" class="panel-status">{{ graphStatus }}</div>
   </div>
 </template>

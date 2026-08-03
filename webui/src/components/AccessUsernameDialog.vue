@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import ActionButton from './ActionButton.vue'
 import FormTextInput from './FormTextInput.vue'
+import { t } from '../i18n'
 
 const props = defineProps<{
   busy?: boolean
@@ -24,15 +25,15 @@ function submit() {
 <template>
   <div class="access-overlay">
     <form class="access-dialog" @submit.prevent="submit">
-      <h1>登记访问用户</h1>
-      <p>这是你第一次从当前设备访问 AgentPark，请填写用户名。填写后会自动记录当前访问 IP。</p>
+      <h1>{{ t('accessDialog.title') }}</h1>
+      <p>{{ t('accessDialog.description') }}</p>
       <label>
-        <span>用户名</span>
+        <span>{{ t('access.username') }}</span>
         <FormTextInput v-model="username" maxlength="80" autocomplete="name" autofocus />
       </label>
       <div v-if="error" class="access-error">{{ error }}</div>
       <ActionButton variant="primary" type="submit" :disabled="busy || !username.trim()">
-        {{ busy ? '登记中…' : '进入 AgentPark' }}
+        {{ busy ? t('accessDialog.registering') : t('accessDialog.enter') }}
       </ActionButton>
     </form>
   </div>

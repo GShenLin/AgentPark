@@ -11,6 +11,8 @@ import DangerButton from './DangerButton.vue'
 import FormCheckbox from './FormCheckbox.vue'
 import FormSelect from './FormSelect.vue'
 import FormTextInput from './FormTextInput.vue'
+import LanguageSwitcher from './LanguageSwitcher.vue'
+import { t } from '../i18n'
 
 const props = defineProps<{
   activeView: 'board' | 'settings'
@@ -63,16 +65,16 @@ async function submitRemote() {
   const host = remoteFormHost.value.trim()
   const portText = remoteFormPort.value.trim()
   if (!name || !host || !portText) {
-    emit('error', 'Remote name, IP/host, and port are required.')
+    emit('error', t('topbar.remoteNameRequired'))
     return
   }
   if (!/^\d+$/.test(portText)) {
-    emit('error', 'Port must be an integer between 1 and 65535.')
+    emit('error', t('topbar.remotePortInvalid'))
     return
   }
   const port = Number(portText)
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
-    emit('error', 'Port must be an integer between 1 and 65535.')
+    emit('error', t('topbar.remotePortInvalid'))
     return
   }
   try {
@@ -116,21 +118,21 @@ async function restartWorkspace() {
 
 <template>
   <header class="topbar">
-    <div class="brand">AgentPark Board</div>
+    <div class="brand">{{ t('topbar.title') }}</div>
     <div class="remote-switcher">
-      <span class="remote-label">Remote</span>
+      <span class="remote-label">{{ t('topbar.remote') }}</span>
       <FormSelect v-model="selectedRemoteId" class="remote-select" compact @change="selectRemote">
         <option v-for="remote in remoteEndpoints" :key="remote.id" :value="remote.id">
-          {{ remote.name }} 路 {{ remote.host }}:{{ remote.port }}{{ remote.private ? ' Private' : '' }}
+          {{ remote.name }} · {{ remote.host }}:{{ remote.port }}{{ remote.private ? ` · ${t('topbar.remotePrivate')}` : '' }}
         </option>
       </FormSelect>
       <span class="remote-address">{{ selectedRemoteAddress }}</span>
-      <ActionButton compact @click="showRemoteForm = !showRemoteForm">Add</ActionButton>
-      <DangerButton compact :disabled="selectedRemoteId === 'default'" @click="removeSelectedRemote">Delete</DangerButton>
+      <ActionButton compact @click="showRemoteForm = !showRemoteForm">{{ t('common.add') }}</ActionButton>
+      <DangerButton compact :disabled="selectedRemoteId === 'default'" @click="removeSelectedRemote">{{ t('common.delete') }}</DangerButton>
     </div>
     <form v-if="showRemoteForm" class="remote-form" @submit.prevent="submitRemote" @click.stop>
-      <FormTextInput v-model="remoteFormName" class="remote-input" compact placeholder="Name" />
-      <FormTextInput v-model="remoteFormHost" class="remote-input" compact placeholder="IP / Host" />
+      <FormTextInput v-model="remoteFormName" class="remote-input" compact :placeholder="t('common.name')" />
+      <FormTextInput v-model="remoteFormHost" class="remote-input" compact :placeholder="t('topbar.ipHost')" />
       <FormTextInput
         v-model="remoteFormPort"
         class="remote-input port"
@@ -140,23 +142,23 @@ async function restartWorkspace() {
         min="1"
         max="65535"
         step="1"
-        placeholder="Port"
+        :placeholder="t('topbar.port')"
       />
       <label class="remote-private">
         <FormCheckbox v-model="remoteFormPrivate" />
-        <span>Private</span>
+        <span>{{ t('topbar.remotePrivate') }}</span>
       </label>
-      <ActionButton variant="primary" compact type="submit">Save</ActionButton>
+      <ActionButton variant="primary" compact type="submit">{{ t('common.save') }}</ActionButton>
     </form>
     <div class="topbar-actions">
       <ActionButton v-if="props.activeView === 'board' && props.canAccessLocalFiles" compact @click="emit('toggleLeft')">
-        {{ props.leftCollapsed ? 'Show Files' : 'Hide Files' }}
+        {{ props.leftCollapsed ? t('topbar.showFiles') : t('topbar.hideFiles') }}
       </ActionButton>
       <ActionButton v-if="props.activeView === 'board'" compact @click="emit('toggleRight')">
-        {{ props.rightCollapsed ? 'Show Memory' : 'Hide Memory' }}
+        {{ props.rightCollapsed ? t('topbar.showMemory') : t('topbar.hideMemory') }}
       </ActionButton>
       <ActionButton class="restart" compact :disabled="isRestarting" @click="restartWorkspace">
-        {{ isRestarting ? 'Restarting...' : 'Restart' }}
+        {{ isRestarting ? t('common.restarting') : t('common.restart') }}
       </ActionButton>
       <ActionButton
         v-if="props.canOpenSettings"
@@ -165,8 +167,9 @@ async function restartWorkspace() {
         :class="{ active: props.activeView === 'settings' }"
         @click="emit('update:activeView', 'settings')"
       >
-        Settings
+        {{ t('common.settings') }}
       </ActionButton>
+      <LanguageSwitcher compact />
     </div>
   </header>
 </template>

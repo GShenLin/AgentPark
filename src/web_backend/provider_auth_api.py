@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 
+from src import workspace_settings
 from src.provider_auth.codex_oauth import CodexOAuthError, authorization_status, login_manager
 from src.provider_auth.service import (
     ProviderAuthorizationError,
@@ -10,11 +11,40 @@ from src.provider_auth.service import (
     start_login,
     submit_login_code,
 )
+from src.provider_api_key_store import (
+    ApiKeyAliasValidationError,
+    add_api_key_alias,
+    api_key_store_path,
+    list_api_key_names,
+)
 
 from .domain_base import DomainBase
 
 
 class ProviderAuthApiDomain(DomainBase):
+    def get_api_key_aliases(self) -> dict:
+        path = api_key_store_path(workspace_settings.get_workspace_root())
+        try:
+            return {"names": list_api_key_names(path)}
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=500, detail=f"failed to read API key aliases: {exc}") from exc
+
+    def add_api_key_alias(self, payload: dict) -> dict:
+        path = api_key_store_path(workspace_settings.get_workspace_root())
+        try:
+            names = add_api_key_alias(
+                path,
+                name=payload.get("name"),
+                api_key=payload.get("apiKey"),
+            )
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ApiKeyAliasValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=500, detail=f"failed to save API key alias: {exc}") from exc
+        return {"names": names, "selected": str(payload.get("name") or "")}
+
     def get_codex_status(self) -> dict:
         return authorization_status()
 

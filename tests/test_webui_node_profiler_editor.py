@@ -311,6 +311,26 @@ def test_provider_settings_supports_frontend_multi_account_selection():
     assert "export async function addProviderApiKeyAccount" in api
 
 
+def test_provider_api_key_name_uses_alias_dropdown_and_explicit_add_form():
+    auth_fields = _read("webui/src/components/settings/ProviderAuthFields.vue")
+    alias_field = _read("webui/src/components/settings/ApiKeyAliasField.vue")
+    api = _read("webui/src/settingsApi.ts")
+    routes = _read("src/web_backend/route_registry.py")
+
+    assert "<ApiKeyAliasField" in auth_fields
+    assert "getApiKeyAliases" in alias_field
+    assert "addApiKeyAlias" in alias_field
+    assert '<FormSelect' in alias_field
+    assert '>Add</ActionButton>' in alias_field
+    assert 'placeholder="Name"' in alias_field
+    assert 'placeholder="API Key"' in alias_field
+    assert 'type="password"' in alias_field
+    assert "emit('update:modelValue', result.selected || safeName)" in alias_field
+    assert "export async function getApiKeyAliases" in api
+    assert "export async function addApiKeyAlias" in api
+    assert '"/api/provider-auth/api-key-aliases"' in routes
+
+
 def test_provider_settings_exposes_strict_local_alpha_matting_contract():
     auth_fields = _read("webui/src/components/settings/ProviderAuthFields.vue")
     support_modes = _read("webui/src/components/settings/SupportModeMultiSelect.vue")

@@ -4,6 +4,7 @@ import type { UserInteractionRequest } from '../api'
 import { useUserInteractions } from '../composables/useUserInteractions'
 import ActionButton from './ActionButton.vue'
 import UserInteractionForm from './UserInteractionForm.vue'
+import { t } from '../i18n'
 
 type InteractionNodeAnchor = {
   id: string
@@ -139,15 +140,15 @@ onBeforeUnmount(() => {
     <section class="interaction-dialog" :class="{ dragging: dragSession }" :style="dialogStyle" role="dialog" aria-modal="false" @pointerdown.stop @click.stop @mousedown.stop @wheel.stop>
       <header class="interaction-header">
         <div>
-          <div class="interaction-kicker">Agent 请求输入<span v-if="anchorNode"> · 贴近节点</span></div>
+          <div class="interaction-kicker">{{ t('interaction.inputRequested') }}<span v-if="anchorNode"> · {{ t('interaction.nearNode') }}</span></div>
           <h2>{{ activeRequest.schema.title }}</h2>
         </div>
-        <button type="button" class="interaction-drag-handle" title="拖动交互框" @pointerdown.stop="startDrag">拖动</button>
+        <button type="button" class="interaction-drag-handle" :title="t('interaction.dragTitle')" @pointerdown.stop="startDrag">{{ t('interaction.drag') }}</button>
       </header>
       <div v-if="interactions.requests.value.length > 1" class="interaction-navigation">
-        <ActionButton compact @click="interactions.showPrevious">上一项</ActionButton>
+        <ActionButton compact @click="interactions.showPrevious">{{ t('interaction.previous') }}</ActionButton>
         <span class="interaction-count">{{ interactions.activeIndex.value + 1 }} / {{ interactions.requests.value.length }}</span>
-        <ActionButton compact @click="interactions.showNext">下一项</ActionButton>
+        <ActionButton compact @click="interactions.showNext">{{ t('interaction.next') }}</ActionButton>
       </div>
       <UserInteractionForm :request="activeRequest" :submitting="submitting" :error="error" @submit="submitActive" @error="error = $event" />
     </section>

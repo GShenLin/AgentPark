@@ -16,6 +16,7 @@ _SUPPORTED_PROVIDER_MODES = {"model_texture_generation", "texture_generation", "
 
 
 class Node(BaseNode):
+    support_modes = tuple(sorted(_SUPPORTED_PROVIDER_MODES))
     name = "3D Model Texture Generation"
     description = "Generate textures for an existing 3D model with a reference image."
     input_capabilities = ["text", "resource:image", "resource:file", "resource:url", "structured", "meta"]

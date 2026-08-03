@@ -1,5 +1,6 @@
 {
   "id": "MemoryNoteWriter",
+  "description": "维护源节点的 Note.md，合并长期有效的事实、决定、项目背景、经验与未完成事项。",
   "name": "Memory Note Writer",
   "node_type_id": "agent_node",
   "node_name": "MemoryNoteWriter",

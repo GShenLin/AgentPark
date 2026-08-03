@@ -136,6 +136,7 @@ def test_package_node_is_discovered_and_executed(monkeypatch, tmp_path):
         "class Node:\n"
         "    name = 'Runtime Package Node'\n"
         "    description = 'package discovery fixture'\n"
+        "    support_modes = ('chat', 'imagechat', 'CHAT', '')\n"
         "    def getInputNum(self, context=None):\n"
         "        return 1\n"
         "    def getOutputNum(self, context=None):\n"
@@ -158,6 +159,7 @@ def test_package_node_is_discovered_and_executed(monkeypatch, tmp_path):
 
     assert [item["id"] for item in metas] == ["runtime_package_node"]
     assert metas[0]["name"] == "Runtime Package Node"
+    assert metas[0]["support_modes"] == ["chat", "imagechat"]
     assert result["text"] == "package-ok"
 
 

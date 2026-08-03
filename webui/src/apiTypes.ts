@@ -83,6 +83,7 @@ export type NodeInfo = {
   output_num?: number
   accepts?: string[]
   produces?: string[]
+  support_modes?: string[]
 }
 
 export type NodeTemplate = {

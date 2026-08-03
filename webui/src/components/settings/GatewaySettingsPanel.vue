@@ -17,6 +17,7 @@ import DangerButton from '../DangerButton.vue'
 import FormCheckbox from '../FormCheckbox.vue'
 import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
+import { t } from '../../i18n'
 
 const settings = ref<GatewaySettings | null>(null)
 const loading = ref(false)
@@ -231,19 +232,19 @@ onMounted(load)
     <section class="gateway-card">
       <div class="card-head">
         <div>
-          <h2>Public Gateway</h2>
-          <p>AgentPark exposes OpenAI Responses, Chat Completions, and Anthropic Messages on the same server.</p>
+          <h2>{{ t('gateway.public') }}</h2>
+          <p>{{ t('gateway.description') }}</p>
         </div>
-        <ActionButton compact :disabled="loading || saving" @click="load">Reload</ActionButton>
+        <ActionButton compact :disabled="loading || saving" @click="load">{{ t('settings.reload') }}</ActionButton>
       </div>
       <div class="endpoint-row">
         <code>{{ endpointBase }}</code>
         <span>Models: /models · Responses: /responses · Chat: /chat/completions · Messages: /messages</span>
       </div>
       <div v-if="settings" class="option-row">
-        <label><FormCheckbox v-model="settings.enabled" /> Enable Public Gateway</label>
-        <label><FormCheckbox v-model="settings.requireApiKey" /> Require Endpoint Key</label>
-        <ActionButton variant="primary" compact :disabled="saving" @click="saveOptions">Save options</ActionButton>
+        <label><FormCheckbox v-model="settings.enabled" /> {{ t('gateway.enable') }}</label>
+        <label><FormCheckbox v-model="settings.requireApiKey" /> {{ t('gateway.requireKey') }}</label>
+        <ActionButton variant="primary" compact :disabled="saving" @click="saveOptions">{{ t('gateway.saveOptions') }}</ActionButton>
       </div>
       <div v-for="sourceError in settings?.sourceErrors || []" :key="sourceError.id" class="notice error">
         {{ sourceError.id }} unavailable: {{ sourceError.error }}
@@ -253,8 +254,8 @@ onMounted(load)
     <section class="gateway-card">
       <div class="card-head">
         <div>
-          <h2>Public models</h2>
-          <p>A public model id maps to one AgentPark modelProvider entry.</p>
+          <h2>{{ t('gateway.publicModels') }}</h2>
+          <p>{{ t('gateway.modelHelp') }}</p>
         </div>
       </div>
       <div class="model-form">
@@ -273,14 +274,14 @@ onMounted(load)
         <label>
           Fixed account
           <FormSelect v-model="accountId">
-            <option value="">Provider default / configured account</option>
+            <option value="">{{ t('gateway.providerDefault') }}</option>
             <option v-for="account in selectedProvider?.accounts || []" :key="account.id" :value="account.id">
               {{ account.alias || account.identity || account.id }} · {{ account.id }}
             </option>
           </FormSelect>
         </label>
         <div class="protocol-field">
-          <span>Protocols</span>
+          <span>{{ t('gateway.protocols') }}</span>
           <label v-for="option in protocolOptions" :key="option.id">
             <FormCheckbox
               :model-value="protocols.includes(option.id)"
@@ -289,10 +290,10 @@ onMounted(load)
             {{ option.label }}
           </label>
         </div>
-        <label class="enabled-field"><FormCheckbox v-model="modelEnabled" /> Enabled</label>
+        <label class="enabled-field"><FormCheckbox v-model="modelEnabled" /> {{ t('gateway.enabled') }}</label>
         <div class="form-actions">
-          <ActionButton variant="primary" compact :disabled="saving" @click="saveModel">Save model</ActionButton>
-          <ActionButton compact :disabled="saving" @click="resetModelForm">Clear</ActionButton>
+          <ActionButton variant="primary" compact :disabled="saving" @click="saveModel">{{ t('gateway.saveModel') }}</ActionButton>
+          <ActionButton compact :disabled="saving" @click="resetModelForm">{{ t('common.clear') }}</ActionButton>
         </div>
       </div>
       <div class="item-list">
@@ -303,30 +304,30 @@ onMounted(load)
             <small>{{ model.protocols.join(', ') }} · {{ model.enabled ? 'Enabled' : 'Disabled' }}</small>
           </div>
           <div class="row-actions">
-            <ActionButton compact @click="editModel(model)">Edit</ActionButton>
-            <DangerButton @click="removeModel(model.id)">Delete</DangerButton>
+            <ActionButton compact @click="editModel(model)">{{ t('common.edit') }}</ActionButton>
+            <DangerButton @click="removeModel(model.id)">{{ t('common.delete') }}</DangerButton>
           </div>
         </article>
-        <p v-if="settings && !settings.models.length" class="empty">No public model mappings yet.</p>
+        <p v-if="settings && !settings.models.length" class="empty">{{ t('gateway.emptyModels') }}</p>
       </div>
     </section>
 
     <section class="gateway-card">
       <div class="card-head">
         <div>
-          <h2>Endpoint Keys</h2>
-          <p>Keys authorize only /v1 endpoints. Settings and other LAN APIs remain unchanged.</p>
+          <h2>{{ t('gateway.keys') }}</h2>
+          <p>{{ t('gateway.keysHelp') }}</p>
         </div>
       </div>
       <div class="key-form">
-        <label>Key name <FormTextInput v-model="keyName" placeholder="Laptop / App name" /></label>
-        <label>Custom value (optional) <FormTextInput v-model="customKey" autocomplete="off" placeholder="Leave blank to generate" /></label>
-        <ActionButton variant="primary" compact :disabled="saving" @click="addKey">Add Key</ActionButton>
+        <label>{{ t('gateway.keyName') }} <FormTextInput v-model="keyName" :placeholder="t('gateway.keyNamePlaceholder')" /></label>
+        <label>{{ t('gateway.customValue') }} <FormTextInput v-model="customKey" autocomplete="off" :placeholder="t('gateway.generatePlaceholder')" /></label>
+        <ActionButton variant="primary" compact :disabled="saving" @click="addKey">{{ t('gateway.addKey') }}</ActionButton>
       </div>
       <div v-if="createdKey" class="created-key">
-        <strong>Copy this key now. It is shown only once.</strong>
+        <strong>{{ t('gateway.copyNow') }}</strong>
         <code>{{ createdKey }}</code>
-        <ActionButton compact @click="copyCreatedKey">Copy</ActionButton>
+        <ActionButton compact @click="copyCreatedKey">{{ t('gateway.copy') }}</ActionButton>
       </div>
       <div class="item-list">
         <article v-for="key in settings?.keys || []" :key="key.id" class="item-row">
@@ -335,17 +336,17 @@ onMounted(load)
             <span>{{ key.prefix }}</span>
             <small>{{ new Date(key.createdAt).toLocaleString() }}</small>
           </div>
-          <DangerButton @click="removeKey(key.id, key.name)">Delete</DangerButton>
+          <DangerButton @click="removeKey(key.id, key.name)">{{ t('common.delete') }}</DangerButton>
         </article>
-        <p v-if="settings && !settings.keys.length" class="empty">No Endpoint Keys yet.</p>
+        <p v-if="settings && !settings.keys.length" class="empty">{{ t('gateway.emptyKeys') }}</p>
       </div>
     </section>
 
     <section class="gateway-card">
       <div class="card-head">
         <div>
-          <h2>Public Endpoint Test</h2>
-          <p>Runs through the same model mapping and shared protocol engine as /v1.</p>
+          <h2>{{ t('gateway.testTitle') }}</h2>
+          <p>{{ t('gateway.testHelp') }}</p>
         </div>
       </div>
       <div class="test-form">
@@ -357,8 +358,8 @@ onMounted(load)
             {{ protocolOptions.find((item) => item.id === protocol)?.label || protocol }}
           </option>
         </FormSelect>
-        <FormTextInput v-model="testPrompt" placeholder="Test prompt" />
-        <ActionButton variant="primary" compact :disabled="saving || !testModel" @click="runTest">Test</ActionButton>
+        <FormTextInput v-model="testPrompt" :placeholder="t('gateway.testPrompt')" />
+        <ActionButton variant="primary" compact :disabled="saving || !testModel" @click="runTest">{{ t('common.test') }}</ActionButton>
       </div>
       <pre v-if="testResult" class="test-result">{{ testResult }}</pre>
     </section>

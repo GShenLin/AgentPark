@@ -14,6 +14,7 @@ import MobileUserInteractionDrawer from './mobile/MobileUserInteractionDrawer.vu
 import PetDesktopView from './PetDesktopView.vue'
 import PetPickerView from './PetPickerView.vue'
 import { applyThemeConfig, applyWorkspaceTheme } from './theme'
+import { t } from './i18n'
 
 const MOBILE_QUERY = '(max-width: 760px)'
 const isPetView = ref(
@@ -134,7 +135,7 @@ onBeforeUnmount(() => {
     <MobileWorkspace v-else-if="accessReady && isMobile && accessStatus" :access="accessStatus" />
     <DesktopWorkspace v-else-if="workspaceBootstrap" :bootstrap="workspaceBootstrap" />
     <div v-else class="workspace-bootstrap-status">
-      {{ bootstrapError || 'Loading workspace…' }}
+      {{ bootstrapError || t('app.loadingWorkspace') }}
     </div>
     <MobileUserInteractionDrawer v-if="isMobile" />
     <UserInteractionDialog v-else global />

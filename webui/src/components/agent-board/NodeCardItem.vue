@@ -19,6 +19,7 @@ import {
   nodeCardHeight,
   nodeCardWidth,
 } from './boardModel'
+import { t } from '../../i18n'
 
 const injectedCtx = inject(AgentBoardKey)
 if (!injectedCtx) {
@@ -39,7 +40,7 @@ const isClockRunning = computed(() => ctx.isClockRunning(props.node.id))
 const isNodeRunning = computed(() => ctx.isNodeRunning(endpointId.value))
 const isStopRequested = computed(() => !!ctx.nodeConfigs.value[endpointId.value]?._stop_requested)
 const isPaused = computed(() => ctx.isNodeStopped(endpointId.value))
-const clockStartLabel = computed(() => (ctx.isNodeStopped(endpointId.value) ? 'Resume' : 'Start'))
+const clockStartLabel = computed(() => (ctx.isNodeStopped(endpointId.value) ? t('board.resume') : t('board.start')))
 const previewText = computed(() => ctx.previewMessage(props.node.last_message))
 const previewImageResource = computed(() => (
   (props.node.lastOutputResources || []).find((part) => (
@@ -190,7 +191,7 @@ onBeforeUnmount(stopNodeResize)
         >
           {{ props.node.name }}
         </div>
-        <div v-if="isClockRunning" class="node-status-badge">Working</div>
+        <div v-if="isClockRunning" class="node-status-badge">{{ t('board.working') }}</div>
         <div class="node-actions">
           <button type="button" class="node-trigger" @pointerdown.stop @click.stop="ctx.triggerNode(endpointId).catch(() => null)">
             Trigger
@@ -202,15 +203,15 @@ onBeforeUnmount(stopNodeResize)
             Pause
           </button>
           <button v-if="!isClockNode" type="button" class="node-pause" @pointerdown.stop @click.stop="ctx.toggleNodeStop(endpointId).catch(() => null)">
-            {{ isPaused ? 'Resume' : 'Pause' }}
+            {{ isPaused ? t('board.resume') : t('board.pause') }}
           </button>
           <button v-if="!isClockNode && isNodeRunning" type="button" class="node-stop" @pointerdown.stop @click.stop="ctx.stopNodeWork(endpointId).catch(() => null)">
-            {{ isStopRequested ? 'Stopping' : 'Stop' }}
+            {{ isStopRequested ? t('common.stopping') : t('common.stop') }}
           </button>
           <DangerButton
             icon
             compact
-            aria-label="Delete node"
+            :aria-label="t('board.deleteNode')"
             @pointerdown.stop
             @click.stop="ctx.deleteNodeCard(props.node.id).catch(() => null)"
           >
@@ -220,7 +221,7 @@ onBeforeUnmount(stopNodeResize)
       </div>
       <NodeAgentMeta v-if="isAgentNode" :mode="props.node.mode" :provider-id="props.node.providerId" />
       <div class="node-body">
-        <div class="node-label">{{ isAgentNode ? 'Last reply' : 'Last message' }}</div>
+        <div class="node-label">{{ isAgentNode ? t('board.lastReply') : t('board.lastMessage') }}</div>
         <ToolActivityBadge
           v-if="isAgentNode"
           :event="props.node.lastRuntimeEvent"
@@ -248,7 +249,7 @@ onBeforeUnmount(stopNodeResize)
       <button
         type="button"
         class="node-add-output"
-        title="Add output route"
+        :title="t('board.addOutputRoute')"
         @pointerdown.stop
         @click.stop="ctx.addOutputRoute(props.node.id).catch(() => null)"
       >

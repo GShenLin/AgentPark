@@ -19,6 +19,7 @@ import DesktopTopbar from './components/DesktopTopbar.vue'
 import { AgentBoardKey } from './components/agent-board/context'
 import NodeConfigDock from './components/agent-board/NodeConfigDock.vue'
 import { useAgentBoard } from './components/agent-board/useAgentBoard'
+import { t } from './i18n'
 
 const props = defineProps<{ bootstrap: WorkspaceBootstrap }>()
 
@@ -349,7 +350,7 @@ watch(
     <div v-else class="content" :style="{ '--right-panel-width': `${rightWidth}px` }">
       <aside v-if="canAccessLocalFiles" class="left-sidebar" :class="{ collapsed: leftCollapsed }" :style="{ width: `${leftWidth}px` }">
         <FileExplorer v-if="!leftCollapsed" :root-path="fileExplorerRootPath" @file-selected="onFileSelected" />
-        <div v-else class="collapsed-mark">Files</div>
+        <div v-else class="collapsed-mark">{{ t('common.files') }}</div>
       </aside>
       <div v-if="canAccessLocalFiles" class="sidebar-resizer" @mousedown="startLeftResize"></div>
 
@@ -372,7 +373,7 @@ watch(
           :initial-graphs="props.bootstrap.graphs"
           :initial-graph-profiles="props.bootstrap.graph_profiles"
         />
-        <div v-else class="collapsed-mark">Memory</div>
+        <div v-else class="collapsed-mark">{{ t('common.memory') }}</div>
       </aside>
     </div>
   </div>

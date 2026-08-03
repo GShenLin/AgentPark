@@ -2,6 +2,7 @@
 import type { CodexAuthStatus } from '../../settingsApi'
 import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
+import ApiKeyAliasField from './ApiKeyAliasField.vue'
 import ProviderOfficialAuthControl from './ProviderOfficialAuthControl.vue'
 
 defineProps<{
@@ -53,11 +54,11 @@ const emit = defineEmits<{
     <FormTextInput :model-value="baseUrl" @update:model-value="emit('field', 'baseUrl', $event)" />
     <small v-if="authMode === 'none'">No credentials; the endpoint must use an HTTP loopback address.</small>
   </label>
-  <label v-if="!['codex', 'oauth', 'none'].includes(authMode)">
-    <span>API Key Name</span>
-    <FormTextInput :model-value="apiKey" @update:model-value="emit('field', 'apiKey', $event)" />
-    <small>References a key name defined in .auth/api-keys/aliases.json.</small>
-  </label>
+  <ApiKeyAliasField
+    v-if="!['codex', 'oauth', 'none'].includes(authMode)"
+    :model-value="apiKey"
+    @update:model-value="emit('field', 'apiKey', $event)"
+  />
   <label v-if="!['codex', 'oauth'].includes(authMode) && showDoubaoSpeechAuth">
     <span>X-Api-Key Name</span>
     <FormTextInput :model-value="xApiKey" @update:model-value="emit('field', 'xApiKey', $event)" />

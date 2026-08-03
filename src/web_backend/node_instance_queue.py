@@ -57,13 +57,17 @@ class NodeInstanceQueue(HostBoundService):
             item["from"] = self.graph_runtime._sanitize_node_id((payload or {}).get("from"))
         if isinstance((payload or {}).get("source"), str) and str((payload or {}).get("source")).strip():
             item["source"] = str((payload or {}).get("source")).strip()
+        if isinstance((payload or {}).get("idempotency_key"), str) and str((payload or {}).get("idempotency_key")).strip():
+            item["idempotency_key"] = str((payload or {}).get("idempotency_key")).strip()
         try:
-            _append_node_pending(config_path, item)
+            appended = _append_node_pending(config_path, item)
         except NodeDeletingError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         cfg = _read_json_dict(config_path)
         pending = cfg.get("pending")
         pending_count = len(pending) if isinstance(pending, list) else 0
+        if not appended:
+            return {"ok": True, "duplicate": True, "pending_count": pending_count}
         self.graph_runtime._log_graph_event(
             safe_graph_id,
             "pending_enqueue_api",
@@ -80,7 +84,7 @@ class NodeInstanceQueue(HostBoundService):
         )
         self.graph_runtime._ensure_graph_runner(safe_graph_id)
         self.graph_runtime._wake_graph_runner(safe_graph_id)
-        return {"ok": True, "pending_count": pending_count}
+        return {"ok": True, "duplicate": False, "pending_count": pending_count}
 
     def pop_node_instance_pending(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)

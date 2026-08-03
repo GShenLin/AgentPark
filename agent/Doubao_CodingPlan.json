@@ -1,5 +1,6 @@
 {
   "id": "Doubao_CodingPlan",
+  "description": "面向编码计划任务的 Doubao Agent Profile，用于代码分析、实现与工程协作。",
   "name": "Doubao_CodingPlan",
   "node_type_id": "agent_node",
   "source_graph_id": "default",

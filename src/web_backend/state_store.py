@@ -55,8 +55,8 @@ def _resume_node_config_with_held_outputs(config_path: str) -> list[dict]:
     return node_output_hold_store.resume(config_path)
 
 
-def _append_node_pending(config_path: str, item: dict) -> None:
-    _NODE_CONFIG_STORE.append_pending(config_path, item)
+def _append_node_pending(config_path: str, item: dict) -> bool:
+    return _NODE_CONFIG_STORE.append_pending(config_path, item)
 
 
 def _pop_node_pending(config_path: str) -> dict | None:

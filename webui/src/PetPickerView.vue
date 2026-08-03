@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { launchNodeDesktopPet, listNodeDesktopViews, type NodeDesktopView } from './api'
 import ActionButton from './components/ActionButton.vue'
+import { t } from './i18n'
 
 const params = new URLSearchParams(window.location.search)
 const workingPath = ref(String(params.get('working_path') || '').trim())
@@ -90,8 +91,8 @@ onMounted(() => {
     <section class="picker-panel">
       <header class="picker-header">
         <div>
-          <h1>Ask Here</h1>
-          <p :title="targetPath">{{ targetPath || 'No target path provided' }}</p>
+          <h1>{{ t('pet.askHere') }}</h1>
+          <p :title="targetPath">{{ targetPath || t('pet.noTargetPath') }}</p>
         </div>
         <ActionButton compact :disabled="loading" @click="refreshViews">
           {{ loading ? 'Refreshing' : 'Refresh' }}
@@ -99,8 +100,8 @@ onMounted(() => {
       </header>
 
       <div v-if="error" class="picker-error">{{ error }}</div>
-      <div v-if="completed" class="picker-empty">Opened.</div>
-      <div v-if="loading" class="picker-empty">Loading Pets...</div>
+      <div v-if="completed" class="picker-empty">{{ t('pet.opened') }}</div>
+      <div v-if="loading" class="picker-empty">{{ t('pet.loading') }}</div>
       <div v-else-if="runningViews.length === 0" class="picker-empty">
         No running Pet found. Open a Pet from AgentPark first, then use Ask Here again.
       </div>

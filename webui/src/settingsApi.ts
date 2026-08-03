@@ -441,6 +441,11 @@ export type CodexLoginStart = {
   manualCode?: boolean
 }
 
+export type ApiKeyAliasCatalog = {
+  names: string[]
+  selected?: string
+}
+
 export type ClearLogsResponse = DeleteOptionalMemoryResponse
 
 export type GatewayProtocol = 'responses' | 'chat_completions' | 'messages'
@@ -720,6 +725,20 @@ export async function getProviderLimits(): Promise<ProviderLimitDocument> {
 
 export async function getCodexAuthStatus(): Promise<CodexAuthStatus> {
   return requestJson('/api/provider-auth/codex/status') as Promise<CodexAuthStatus>
+}
+
+export async function getApiKeyAliases(): Promise<ApiKeyAliasCatalog> {
+  return requestJson('/api/provider-auth/api-key-aliases') as Promise<ApiKeyAliasCatalog>
+}
+
+export async function addApiKeyAlias(payload: {
+  name: string
+  apiKey: string
+}): Promise<ApiKeyAliasCatalog> {
+  return requestJson('/api/provider-auth/api-key-aliases', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }) as Promise<ApiKeyAliasCatalog>
 }
 
 export async function startCodexLogin(): Promise<CodexLoginStart> {

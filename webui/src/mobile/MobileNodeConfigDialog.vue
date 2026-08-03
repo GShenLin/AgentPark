@@ -16,6 +16,7 @@ import DangerButton from '../components/DangerButton.vue'
 import DialogCloseButton from '../components/DialogCloseButton.vue'
 import FormSelect from '../components/FormSelect.vue'
 import FormTextInput from '../components/FormTextInput.vue'
+import { t } from '../i18n'
 import MobileNodeProfilePickerSheet from './MobileNodeProfilePickerSheet.vue'
 import NodeRuntimeEventsFieldGroup from '../components/agent-board/NodeRuntimeEventsFieldGroup.vue'
 import type { MobileOutputRouteRow } from './useMobileWorkspace'
@@ -370,14 +371,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="open" class="config-backdrop" @click.self="emit('close')">
-    <section class="config-sheet" role="dialog" aria-modal="true" aria-label="节点配置">
+    <section class="config-sheet" role="dialog" aria-modal="true" :aria-label="t('mobile.openNodeConfig')">
       <header class="config-sheet-head">
         <div class="config-title-wrap">
           <div class="config-title-row">
             <FormTextInput
               class="config-title-input"
               :model-value="nodeNameDraft"
-              aria-label="节点名称"
+              :aria-label="t('board.nodeName')"
               :disabled="saving || profileSaving"
               @update:model-value="setNodeName"
             />
@@ -399,13 +400,13 @@ onBeforeUnmount(() => {
           </div>
           <div class="config-subtitle">{{ node?.type_id || '' }}</div>
         </div>
-        <DialogCloseButton aria-label="关闭配置" :disabled="profileSaving" @click="emit('close')" />
+        <DialogCloseButton :aria-label="t('common.close')" :disabled="profileSaving" @click="emit('close')" />
       </header>
 
       <div class="config-body">
         <section class="config-fields-section">
-          <div v-if="loading" class="config-empty">Loading node config...</div>
-          <div v-else-if="fieldKeys.length === 0" class="config-empty">This node has no editable fields.</div>
+          <div v-if="loading" class="config-empty">{{ t('board.loadingConfig') }}</div>
+          <div v-else-if="fieldKeys.length === 0" class="config-empty">{{ t('board.noEditableFields') }}</div>
           <NodeConfigFields
             v-if="!loading && fieldKeys.length > 0"
             :type-id="node?.type_id || ''"
@@ -430,26 +431,26 @@ onBeforeUnmount(() => {
         <section class="output-routes-section">
           <div class="route-head">
             <div>
-              <div class="route-title">输出</div>
-              <div class="route-subtitle">配置此节点的输出目标</div>
+              <div class="route-title">{{ t('board.outputs') }}</div>
+              <div class="route-subtitle">{{ t('board.outputHelp') }}</div>
             </div>
             <ActionButton class="route-add-btn" compact :disabled="!canAddRoute" @click="addRoute">
               {{ routing ? '保存中...' : '添加' }}
             </ActionButton>
           </div>
 
-          <div v-if="targetNodes.length === 0" class="route-empty">Create another node before adding an output route.</div>
-          <div v-else-if="outputRoutes.length === 0" class="route-empty">No output routes configured.</div>
+          <div v-if="targetNodes.length === 0" class="route-empty">{{ t('board.noRouteTargets') }}</div>
+          <div v-else-if="outputRoutes.length === 0" class="route-empty">{{ t('board.noRoutes') }}</div>
           <div v-else class="route-list">
             <div v-for="route in outputRoutes" :key="route.id" class="route-row">
               <label>
-                <span>输出口</span>
+                <span>{{ t('board.output') }}</span>
                 <FormSelect :model-value="route.outputIndex" compact :disabled="routing" @change="setRouteOutput(route.id, $event)">
                   <option v-for="index in portOptions(node?.output_num || 1)" :key="index" :value="index">{{ index }}</option>
                 </FormSelect>
               </label>
               <label>
-                <span>目标节点</span>
+                <span>{{ t('board.targetNode') }}</span>
                 <FormSelect
                   :model-value="route.targetNodeId"
                   compact
@@ -463,12 +464,12 @@ onBeforeUnmount(() => {
                 </FormSelect>
               </label>
               <label>
-                <span>输入口</span>
+                <span>{{ t('board.input') }}</span>
                 <FormSelect :model-value="route.inputIndex" compact :disabled="routing" @change="setRouteInput(route.id, $event)">
                   <option v-for="index in inputOptions(route.targetNodeId)" :key="index" :value="index">{{ index }}</option>
                 </FormSelect>
               </label>
-              <DangerButton icon :disabled="routing" aria-label="删除输出路由" @click="removeRoute(route.id)">×</DangerButton>
+              <DangerButton icon :disabled="routing" :aria-label="t('board.removeRoute')" @click="removeRoute(route.id)">×</DangerButton>
             </div>
           </div>
         </section>
@@ -476,7 +477,7 @@ onBeforeUnmount(() => {
       </div>
 
       <footer class="config-actions">
-        <ActionButton @click="emit('close')">关闭</ActionButton>
+        <ActionButton @click="emit('close')">{{ t('common.close') }}</ActionButton>
         <ActionButton variant="primary" :disabled="!canSave" @click="applyChanges">
           {{ saving ? '保存中...' : `保存${dirtyCount > 0 ? ` (${dirtyCount})` : ''}` }}
         </ActionButton>

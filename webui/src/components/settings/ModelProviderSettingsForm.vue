@@ -13,6 +13,7 @@ import DoubaoSpeechManagementPanel from './DoubaoSpeechManagementPanel.vue'
 import { applyResponsesApiDefaults } from './providerConfigDefaults'
 import SupportModeMultiSelect from './SupportModeMultiSelect.vue'
 import { useCodexOfficialAuth } from './useCodexOfficialAuth'
+import { t } from '../../i18n'
 
 const props = defineProps<{
   data: Record<string, unknown>
@@ -371,15 +372,15 @@ onMounted(() => {
         <template #detail>{{ providers[providerId]?.model || providers[providerId]?.type || '' }}</template>
       </SelectionButton>
       <div class="provider-add">
-        <FormTextInput v-model="newProviderId" placeholder="New provider id" @keydown.enter.prevent="addProvider" />
-        <ActionButton compact @click="addProvider">Add</ActionButton>
+        <FormTextInput v-model="newProviderId" :placeholder="t('provider.newId')" @keydown.enter.prevent="addProvider" />
+        <ActionButton compact @click="addProvider">{{ t('common.add') }}</ActionButton>
       </div>
     </aside>
 
     <section v-if="selectedProvider" class="provider-form">
       <div class="form-head">
         <label class="provider-id-field">
-          <span>Provider ID</span>
+          <span>{{ t('provider.id') }}</span>
           <FormTextInput
             :model-value="editableProviderId"
             :class="{ invalid: providerIdError }"
@@ -389,7 +390,7 @@ onMounted(() => {
             @blur="normalizeProviderId"
           />
           <small v-if="providerIdError" class="field-error">{{ providerIdError }}</small>
-          <small v-else>Provider fields</small>
+          <small v-else>{{ t('provider.fields') }}</small>
         </label>
         <div class="form-head-actions">
           <ActionButton
@@ -401,8 +402,8 @@ onMounted(() => {
           >
             {{ officialAuthEnabled ? 'OAuth ✓' : 'OAuth' }}
           </ActionButton>
-          <ActionButton compact @click="duplicateProvider">Duplicate</ActionButton>
-          <DangerButton @click="deleteProvider">Delete</DangerButton>
+          <ActionButton compact @click="duplicateProvider">{{ t('provider.duplicate') }}</ActionButton>
+          <DangerButton @click="deleteProvider">{{ t('common.delete') }}</DangerButton>
         </div>
       </div>
 
@@ -434,7 +435,7 @@ onMounted(() => {
           @account="setField('authAccountId', $event)"
         />
         <label>
-          <span>Model</span>
+          <span>{{ t('provider.model') }}</span>
           <FormSelect
             :model-value="stringValue('model')"
             :disabled="modelOptions.length === 0"
@@ -445,39 +446,39 @@ onMounted(() => {
           </FormSelect>
         </label>
         <label class="form-field-wide">
-          <span>Description</span>
+          <span>{{ t('provider.description') }}</span>
           <ExpandableTextarea
             :model-value="stringValue('description')"
-            title="Provider Description"
-            aria-label="Provider Description"
+            :title="t('provider.description')"
+            :aria-label="t('provider.description')"
             :rows="3"
             @update:model-value="setField('description', $event)"
           />
         </label>
         <label>
-          <span>Timeout Ms</span>
+          <span>{{ t('provider.timeout') }}</span>
           <FormTextInput :model-value="numberValue('timeoutMs')" type="number" min="1" @update:model-value="setNumberField('timeoutMs', $event)" />
         </label>
         <label>
-          <span>Concurrency Limit</span>
-          <FormTextInput :model-value="numberValue('concurrencyLimit')" type="number" min="1" placeholder="Unlimited" @update:model-value="setNumberField('concurrencyLimit', $event)" />
+          <span>{{ t('provider.concurrency') }}</span>
+          <FormTextInput :model-value="numberValue('concurrencyLimit')" type="number" min="1" :placeholder="t('provider.unlimited')" @update:model-value="setNumberField('concurrencyLimit', $event)" />
         </label>
         <label>
-          <span>RPM Limit</span>
-          <FormTextInput :model-value="numberValue('rpmLimit')" type="number" min="1" placeholder="Unlimited" @update:model-value="setNumberField('rpmLimit', $event)" />
+          <span>{{ t('provider.rpm') }}</span>
+          <FormTextInput :model-value="numberValue('rpmLimit')" type="number" min="1" :placeholder="t('provider.unlimited')" @update:model-value="setNumberField('rpmLimit', $event)" />
         </label>
         <label>
-          <span>TPM Limit (Input + Output)</span>
-          <FormTextInput :model-value="numberValue('tpmLimit')" type="number" min="1" placeholder="Unlimited" @update:model-value="setNumberField('tpmLimit', $event)" />
+          <span>{{ t('provider.tpm') }}</span>
+          <FormTextInput :model-value="numberValue('tpmLimit')" type="number" min="1" :placeholder="t('provider.unlimited')" @update:model-value="setNumberField('tpmLimit', $event)" />
         </label>
         <label>
-          <span>Max Tokens</span>
+          <span>{{ t('provider.maxTokens') }}</span>
           <FormTextInput :model-value="numberValue('maxTokens')" type="number" min="1" @update:model-value="setNumberField('maxTokens', $event)" />
         </label>
         <label>
-          <span>Reasoning Effort</span>
+          <span>{{ t('provider.reasoningEffort') }}</span>
           <FormSelect :model-value="stringValue('reasoningEffort')" @change="setField('reasoningEffort', $event)">
-            <option value="">Unset</option>
+            <option value="">{{ t('defaults.unset') }}</option>
             <option value="minimal">minimal</option>
             <option value="low">low</option>
             <option value="medium">medium</option>
@@ -488,9 +489,9 @@ onMounted(() => {
           </FormSelect>
         </label>
         <label>
-          <span>Reasoning Summary</span>
+          <span>{{ t('provider.reasoningSummary') }}</span>
           <FormSelect :model-value="stringValue('reasoningSummary')" @change="setField('reasoningSummary', $event)">
-            <option value="">Unset</option>
+            <option value="">{{ t('defaults.unset') }}</option>
             <option value="auto">auto</option>
             <option value="concise">concise</option>
             <option value="detailed">detailed</option>
@@ -498,9 +499,9 @@ onMounted(() => {
           </FormSelect>
         </label>
         <label>
-          <span>Thinking</span>
+          <span>{{ t('provider.thinking') }}</span>
           <FormSelect :model-value="stringValue('thinking')" @change="setField('thinking', $event)">
-            <option value="">Unset</option>
+            <option value="">{{ t('defaults.unset') }}</option>
             <option value="enabled">enabled</option>
             <option value="disabled">disabled</option>
             <option value="auto">auto</option>
@@ -514,55 +515,55 @@ onMounted(() => {
       />
 
       <div class="switch-grid">
-        <label class="switch-field" title="Hide this provider from node configuration options for non-local clients."><span>Private</span><FormCheckbox :model-value="booleanValue('private')" @update:model-value="setField('private', $event)" /></label>
-        <label class="switch-field"><span>Responses API</span><FormCheckbox :model-value="booleanValue('responsesApi')" @update:model-value="setField('responsesApi', $event)" /></label>
-        <label v-if="booleanValue('responsesApi')" class="switch-field" title="Use the optional Responses WebSocket transport. Leave disabled for providers that only support HTTP Responses."><span>Responses WebSocket</span><FormCheckbox :model-value="booleanValue('responsesWebSocket')" @update:model-value="setField('responsesWebSocket', $event)" /></label>
-        <label v-if="isOpenAIProvider && booleanValue('responsesApi')" class="switch-field" title="Request the provider's priority service tier for faster Responses processing."><span>Fast mode</span><FormCheckbox :model-value="booleanValue('fastMode')" @update:model-value="setField('fastMode', $event)" /></label>
-        <label class="switch-field"><span>Replay reasoning items</span><FormCheckbox :model-value="booleanValue('responsesReplayReasoningItems')" @update:model-value="setField('responsesReplayReasoningItems', $event)" /></label>
-        <label class="switch-field"><span>Tool context compaction</span><FormCheckbox :model-value="booleanValue('toolContextCompactionEnabled')" @update:model-value="setField('toolContextCompactionEnabled', $event)" /></label>
-        <label class="switch-field"><span>Item-level streaming</span><FormCheckbox :model-value="booleanValue('responsesItemLevelStreaming')" @update:model-value="setField('responsesItemLevelStreaming', $event)" /></label>
+        <label class="switch-field" :title="t('provider.privateHelp')"><span>{{ t('provider.private') }}</span><FormCheckbox :model-value="booleanValue('private')" @update:model-value="setField('private', $event)" /></label>
+        <label class="switch-field"><span>{{ t('provider.responsesApi') }}</span><FormCheckbox :model-value="booleanValue('responsesApi')" @update:model-value="setField('responsesApi', $event)" /></label>
+        <label v-if="booleanValue('responsesApi')" class="switch-field"><span>{{ t('provider.responsesWebSocket') }}</span><FormCheckbox :model-value="booleanValue('responsesWebSocket')" @update:model-value="setField('responsesWebSocket', $event)" /></label>
+        <label v-if="isOpenAIProvider && booleanValue('responsesApi')" class="switch-field"><span>{{ t('provider.fastMode') }}</span><FormCheckbox :model-value="booleanValue('fastMode')" @update:model-value="setField('fastMode', $event)" /></label>
+        <label class="switch-field"><span>{{ t('provider.replayReasoning') }}</span><FormCheckbox :model-value="booleanValue('responsesReplayReasoningItems')" @update:model-value="setField('responsesReplayReasoningItems', $event)" /></label>
+        <label class="switch-field"><span>{{ t('provider.toolCompaction') }}</span><FormCheckbox :model-value="booleanValue('toolContextCompactionEnabled')" @update:model-value="setField('toolContextCompactionEnabled', $event)" /></label>
+        <label class="switch-field"><span>{{ t('provider.itemStreaming') }}</span><FormCheckbox :model-value="booleanValue('responsesItemLevelStreaming')" @update:model-value="setField('responsesItemLevelStreaming', $event)" /></label>
       </div>
 
       <div class="form-grid">
         <label class="dropdown-field">
-          <span>Support Modes</span>
+          <span>{{ t('provider.supportModes') }}</span>
           <SupportModeMultiSelect
             :selected-values="listValue('supportmode')"
             @update:selected-values="setField('supportmode', $event)"
           />
         </label>
         <label>
-          <span>Web Search Sources</span>
+          <span>{{ t('provider.webSearchSources') }}</span>
           <ExpandableTextarea
             :model-value="textList(selectedProvider.webSearchSources)"
-            title="Web Search Sources"
-            aria-label="Web Search Sources"
+            :title="t('provider.webSearchSources')"
+            :aria-label="t('provider.webSearchSources')"
             :rows="3"
             @update:model-value="setField('webSearchSources', parseTextList($event))"
           />
         </label>
         <label>
-          <span>Web Search Max Keyword</span>
+          <span>{{ t('provider.webSearchKeyword') }}</span>
           <FormTextInput :model-value="numberValue('webSearchMaxKeyword')" type="number" min="1" @update:model-value="setNumberField('webSearchMaxKeyword', $event)" />
         </label>
         <label>
-          <span>Web Search Limit</span>
+          <span>{{ t('provider.webSearchLimit') }}</span>
           <FormTextInput :model-value="numberValue('webSearchLimit')" type="number" min="1" @update:model-value="setNumberField('webSearchLimit', $event)" />
         </label>
         <label>
-          <span>Compaction Every Tool Calls</span>
+          <span>{{ t('provider.compactionCalls') }}</span>
           <FormTextInput :model-value="numberValue('toolContextCompactionEveryToolCalls')" type="number" min="0" @update:model-value="setNumberField('toolContextCompactionEveryToolCalls', $event)" />
         </label>
         <label>
-          <span>Compaction Input Tokens</span>
+          <span>{{ t('provider.compactionInput') }}</span>
           <FormTextInput :model-value="numberValue('toolContextCompactionInputTokens')" type="number" min="0" @update:model-value="setNumberField('toolContextCompactionInputTokens', $event)" />
         </label>
         <label>
-          <span>Compaction Output Tokens</span>
+          <span>{{ t('provider.compactionOutput') }}</span>
           <FormTextInput :model-value="numberValue('toolContextCompactionOutputTokens')" type="number" min="0" @update:model-value="setNumberField('toolContextCompactionOutputTokens', $event)" />
         </label>
         <label>
-          <span>Tool Result Max Chars</span>
+          <span>{{ t('provider.toolResultChars') }}</span>
           <FormTextInput :model-value="numberValue('toolResultSubmissionMaxChars')" type="number" min="1" @update:model-value="setNumberField('toolResultSubmissionMaxChars', $event)" />
         </label>
       </div>

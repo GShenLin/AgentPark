@@ -10,6 +10,8 @@ import FormTextInput from '../FormTextInput.vue'
 import { AgentBoardKey } from './context'
 import AgentProfileDropdown from './AgentProfileDropdown.vue'
 import NodeConfigFields from './NodeConfigFields.vue'
+import { groupNodesBySupportMode, preferredProviderForSupportMode } from './nodeSupportModeGroups'
+import { t } from '../../i18n'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -74,6 +76,8 @@ const filteredNodes = computed(() => {
   })
 })
 
+const groupedNodes = computed(() => groupNodesBySupportMode(filteredNodes.value))
+
 const schemaKeys = computed(() => Object.keys(selectedNodeSchema.value || {}))
 
 function closeMenu() {
@@ -119,13 +123,17 @@ async function refreshAgentProfiles() {
   }
 }
 
-async function openNodeTemplate(node: NodeInfo) {
+async function openNodeTemplate(node: NodeInfo, supportMode: string) {
   nodeDialogLoading.value = true
   ctx.lastError.value = null
   try {
-    const tpl = await getNodeTemplate(node.id)
+    const providerId = preferredProviderForSupportMode(providers.value, supportMode)
+    const tpl = await getNodeTemplate(node.id, { providerId })
     const schema = (tpl.schema || {}) as Record<string, any>
     const fields = { ...(tpl.fields || {}) }
+    if (providerId && Object.prototype.hasOwnProperty.call(schema, 'provider_id')) {
+      fields.provider_id = providerId
+    }
     const hasConfigFields = Object.keys(schema).length > 0
     if (!hasConfigFields) {
       await ctx.createNodeAtPosition(node.id, String(tpl.name || node.name || node.id), createPoint.value, fields)
@@ -268,7 +276,7 @@ defineExpose({
       >
         <header class="context-menu-head">
           <div class="context-menu-title-row">
-            <div class="context-menu-title">Create Node</div>
+            <div class="context-menu-title">{{ t('board.createNode') }}</div>
             <AgentProfileDropdown
               :profiles="agentProfiles"
               :loading="profileLoading"
@@ -285,34 +293,38 @@ defineExpose({
           v-model="menuQuery"
           class="context-menu-search"
           compact
-          placeholder="Search node name or type"
+          :placeholder="t('board.searchNodes')"
           @pointerdown.stop
         />
 
-        <div class="context-menu-list">
-          <button
-            v-for="node in filteredNodes"
-            :key="node.id"
-            class="context-menu-item"
-            :disabled="nodeDialogLoading"
-            @click="openNodeTemplate(node)"
-          >
-            <div class="context-menu-item-name">{{ node.name || node.id }}</div>
-            <div class="context-menu-item-id">{{ node.id }}</div>
-            <div v-if="node.description" class="context-menu-item-desc">{{ node.description }}</div>
-          </button>
-
-          <div v-if="filteredNodes.length === 0" class="context-menu-empty">No matching nodes.</div>
+        <div v-if="groupedNodes.length" class="context-menu-list">
+          <section v-for="group in groupedNodes" :key="group.id" class="context-menu-group">
+            <div class="context-menu-group-title">{{ group.label }}</div>
+            <div class="context-menu-group-items">
+              <button
+                v-for="node in group.nodes"
+                :key="`${group.id}:${node.id}`"
+                class="context-menu-item"
+                :disabled="nodeDialogLoading"
+                @click="openNodeTemplate(node, group.id)"
+              >
+                <div class="context-menu-item-name">{{ node.name || node.id }}</div>
+                <div class="context-menu-item-id">{{ node.id }}</div>
+                <div v-if="node.description" class="context-menu-item-desc">{{ node.description }}</div>
+              </button>
+            </div>
+          </section>
         </div>
+        <div v-else class="context-menu-empty">{{ t('board.noMatchingNodes') }}</div>
       </section>
     </div>
 
     <div v-if="showNodeDialog" class="modal-overlay" @click.self="closeDialog">
       <div class="modal">
-        <h3>Create Node</h3>
+        <h3>{{ t('board.createNode') }}</h3>
 
         <label class="field">
-          <span class="field-label">Node Name</span>
+          <span class="field-label">{{ t('board.nodeName') }}</span>
           <FormTextInput v-model="selectedNodeName" />
         </label>
 
@@ -327,9 +339,9 @@ defineExpose({
         />
 
         <div class="modal-actions">
-          <ActionButton @click="closeDialog">Cancel</ActionButton>
+          <ActionButton @click="closeDialog">{{ t('common.cancel') }}</ActionButton>
           <ActionButton variant="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">
-            {{ creatingNode ? 'Creating...' : 'Create Node' }}
+            {{ creatingNode ? t('common.creating') : t('board.createNode') }}
           </ActionButton>
         </div>
       </div>
@@ -346,7 +358,7 @@ defineExpose({
 
 .context-menu {
   position: fixed;
-  width: min(360px, calc(100vw - 24px));
+  width: min(720px, calc(100vw - 24px));
   max-height: min(520px, calc(100vh - 24px));
   display: flex;
   flex-direction: column;
@@ -395,10 +407,36 @@ defineExpose({
 .context-menu-list {
   min-height: 0;
   overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px;
+  padding-right: 2px;
+}
+
+.context-menu-group {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-right: 2px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.context-menu-group-title {
+  color: rgba(125, 211, 252, 0.96);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.context-menu-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .context-menu-item {
@@ -438,6 +476,12 @@ defineExpose({
 .context-menu-item-desc {
   margin-top: 2px;
   word-break: break-all;
+}
+
+@media (max-width: 560px) {
+  .context-menu-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .modal-overlay {

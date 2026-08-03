@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { CliSessionSummary } from '../api'
 import ActionButton from './ActionButton.vue'
+import { t } from '../i18n'
 
 const props = defineProps<{
   sessions: CliSessionSummary[]
@@ -80,7 +81,7 @@ watch(
 
     <div v-if="open" class="cli-session-menu">
       <div class="cli-session-menu-head">
-        <span>Resume Session</span>
+        <span>{{ t('memory.resumeSession') }}</span>
         <ActionButton compact :disabled="loading" @click.stop="emit('refresh')">
           {{ loading ? 'Loading…' : 'Refresh' }}
         </ActionButton>
@@ -93,7 +94,7 @@ watch(
         :disabled="loading || isNewSession"
         @click="choose('')"
       >
-        <span class="cli-session-item-title">＋ New Session</span>
+        <span class="cli-session-item-title">＋ {{ t('memory.newSession') }}</span>
         <span class="cli-session-item-preview">Start a new {{ sessionLabel }} Session with empty Memory.</span>
       </button>
 
@@ -108,7 +109,7 @@ watch(
       >
         <span class="cli-session-item-line">
           <strong>{{ session.title || 'Session' }}</strong>
-          <span v-if="session.id === activeSessionId && !isNewSession" class="cli-session-badge">Current</span>
+          <span v-if="session.id === activeSessionId && !isNewSession" class="cli-session-badge">{{ t('memory.current') }}</span>
         </span>
         <span class="cli-session-item-preview">{{ session.preview || 'No user message summary.' }}</span>
         <span class="cli-session-item-meta">
@@ -118,7 +119,7 @@ watch(
         </span>
       </button>
 
-      <p v-if="!sessions.length" class="cli-session-empty">No previous Sessions yet.</p>
+      <p v-if="!sessions.length" class="cli-session-empty">{{ t('memory.noSessions') }}</p>
     </div>
   </section>
 </template>

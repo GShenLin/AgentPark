@@ -34,6 +34,7 @@ _CLAUDE_PROVIDER_MODES = {"chat", "imagechat"}
 class Node(BaseNode):
     name = "Claude"
     description = "启动真实 Claude Code，并通过 ProviderID 转接 Anthropic、OpenAI、Responses 或 Gemini Provider"
+    support_modes = tuple(sorted(_CLAUDE_PROVIDER_MODES))
     input_capabilities = CLAUDE_INPUT_CAPABILITIES
     output_capabilities = CLAUDE_OUTPUT_CAPABILITIES
     config_defaults = CLAUDE_CONFIG_DEFAULTS

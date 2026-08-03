@@ -1,5 +1,6 @@
 {
   "id": "Companion",
+  "description": "审阅节点的持久化运行记录与失败通知，提炼可复用的行为纠正并维护节点 operational memory。",
   "name": "Companion",
   "node_type_id": "agent_node",
   "fields": {

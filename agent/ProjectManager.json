@@ -1,5 +1,6 @@
 {
   "id": "ProjectManager",
+  "description": "面向项目管理与任务协调的 Agent Profile，用于拆解目标、跟踪进展和组织交付。",
   "name": "ProjectManager",
   "node_type_id": "agent_node",
   "source_graph_id": "default",

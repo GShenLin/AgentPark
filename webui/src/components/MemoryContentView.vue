@@ -9,6 +9,7 @@ import LiveActivityBlocks from './LiveActivityBlocks.vue'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
+import { t } from '../i18n'
 
 type MemoryMode = 'agent' | 'file' | 'graph'
 type InteractiveInputOptions = {
@@ -204,23 +205,23 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       <div class="graph-actions">
         <FormTextInput
           class="graph-input"
-          placeholder="Graph name"
+          :placeholder="t('memory.graphName')"
           :model-value="graphNameInput"
           @update:model-value="updateGraphName"
         />
-        <ActionButton variant="primary" compact @click="emit('saveGraphConfig')">Save</ActionButton>
-        <ActionButton compact @click="emit('saveGraphProfile')">SaveProfile</ActionButton>
-        <ActionButton compact @click="emit('refreshGraphs')">Refresh</ActionButton>
+        <ActionButton variant="primary" compact @click="emit('saveGraphConfig')">{{ t('common.save') }}</ActionButton>
+        <ActionButton compact @click="emit('saveGraphProfile')">{{ t('memory.saveProfile') }}</ActionButton>
+        <ActionButton compact @click="emit('refreshGraphs')">{{ t('common.refresh') }}</ActionButton>
       </div>
       <div class="graph-path-row">
         <FormTextInput
           class="graph-input graph-path-input"
-          placeholder="Graph working path"
+          :placeholder="t('memory.graphWorkingPath')"
           :model-value="graphWorkingPathInput"
           @update:model-value="updateGraphWorkingPath"
           @blur="emit('saveGraphConfig')"
         />
-        <ActionButton compact @click="chooseGraphWorkingPath">ChangeFolder</ActionButton>
+        <ActionButton compact @click="chooseGraphWorkingPath">{{ t('memory.changeFolder') }}</ActionButton>
       </div>
       <div class="graph-actions">
         <FormSelect
@@ -228,7 +229,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
           :model-value="selectedGraphProfileId"
           @change="updateSelectedGraphProfile"
         >
-          <option value="">Profile</option>
+          <option value="">{{ t('memory.profile') }}</option>
           <option v-for="profile in graphProfiles" :key="profile.id" :value="profile.id">
             {{ profile.name || profile.id }}
           </option>
@@ -251,8 +252,8 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       </div>
 
       <div class="graph-list">
-        <div v-if="graphLoading" class="graph-empty">Loading graphs...</div>
-        <div v-else-if="graphs.length === 0" class="graph-empty">No saved graph found.</div>
+        <div v-if="graphLoading" class="graph-empty">{{ t('memory.loadingGraphs') }}</div>
+        <div v-else-if="graphs.length === 0" class="graph-empty">{{ t('memory.noGraphs') }}</div>
         <div v-else class="graph-items">
           <div v-for="graph in graphs" :key="graph.id" class="graph-item-shell">
             <div class="graph-item">
@@ -278,7 +279,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
                 >
                   {{ graph.private ? 'Public' : 'Private' }}
                 </ActionButton>
-                <ActionButton compact @click="emit('loadGraphConfig', graph)">Load</ActionButton>
+                <ActionButton compact @click="emit('loadGraphConfig', graph)">{{ t('memory.load') }}</ActionButton>
                 <DangerButton
                   compact
                   :disabled="graphMemoryClearingId === graph.id"
@@ -286,12 +287,12 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
                 >
                   {{ graphMemoryClearingId === graph.id ? 'Clearing...' : 'ClearMemory' }}
                 </DangerButton>
-                <DangerButton v-if="canDeleteGraph(graph)" compact @click="emit('deleteGraphConfig', graph)">Delete</DangerButton>
+                <DangerButton v-if="canDeleteGraph(graph)" compact @click="emit('deleteGraphConfig', graph)">{{ t('common.delete') }}</DangerButton>
               </div>
             </div>
             <div v-if="expandedGraphId === graph.id" class="graph-node-list">
-              <div v-if="graphNodesLoadingId === graph.id" class="graph-node-empty">Loading nodes...</div>
-              <div v-else-if="graphNodes(graph.id).length === 0" class="graph-node-empty">No node found.</div>
+              <div v-if="graphNodesLoadingId === graph.id" class="graph-node-empty">{{ t('memory.loadingNodes') }}</div>
+              <div v-else-if="graphNodes(graph.id).length === 0" class="graph-node-empty">{{ t('memory.noNodes') }}</div>
               <template v-else>
                 <button
                   v-for="node in graphNodes(graph.id)"
@@ -333,11 +334,11 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       />
       <div v-if="hasLiveActivity" class="live-message">
         <div class="live-head">
-          <span class="live-role">Live</span>
-          <span class="live-status">streaming</span>
+          <span class="live-role">{{ t('memory.live') }}</span>
+          <span class="live-status">{{ t('memory.streaming') }}</span>
         </div>
         <section v-if="activityMessage" class="live-section activity">
-          <div class="live-section-label">Activity</div>
+          <div class="live-section-label">{{ t('memory.activity') }}</div>
           <div
             v-if="markdownPreview"
             class="live-body live-markdown"
@@ -348,11 +349,11 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         </section>
         <LiveActivityBlocks :blocks="activityBlocks" :node-id="nodeId" :graph-id="graphId" />
         <section v-if="thinkingMessage" class="live-section thinking">
-          <div class="live-section-label">Thinking</div>
+          <div class="live-section-label">{{ t('memory.thinking') }}</div>
           <div class="live-body live-stream-text">{{ thinkingMessage }}</div>
         </section>
         <section v-if="liveMessage" class="live-section">
-          <div v-if="thinkingMessage || activityMessage" class="live-section-label">Answer</div>
+          <div v-if="thinkingMessage || activityMessage" class="live-section-label">{{ t('memory.answer') }}</div>
         <div class="live-body live-stream-text">{{ liveMessage }}</div>
         </section>
       </div>
@@ -397,14 +398,14 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         <div v-if="showLineNumbers" class="wrap-num">{{ index + 1 }}</div>
         <div class="wrap-content">{{ line || ' ' }}</div>
       </div>
-      <div v-if="lines.length === 0" class="wrap-empty">(empty)</div>
+      <div v-if="lines.length === 0" class="wrap-empty">{{ t('memory.empty') }}</div>
     </div>
   </div>
 
   <div v-if="showInteractiveBar" class="interactive-bar">
     <div class="interactive-bar-head">
-      <span class="interactive-label">Interactive Input</span>
-      <span class="interactive-hint">Enter to send, input is sent with newline appended</span>
+      <span class="interactive-label">{{ t('memory.interactiveInput') }}</span>
+      <span class="interactive-hint">{{ t('memory.interactiveHint') }}</span>
     </div>
     <div class="interactive-input-row">
       <FormTextInput
@@ -413,7 +414,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         compact
         :model-value="interactiveInputText"
         :disabled="interactiveInputDisabled"
-        placeholder="Type response here (e.g. YES, NO, password)..."
+        :placeholder="t('memory.responsePlaceholder')"
         spellcheck="false"
         @update:model-value="updateInteractiveInput"
         @keydown="onInteractiveKeydown"
@@ -427,7 +428,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       </ActionButton>
       <ActionButton
         compact
-        title="Send Ctrl+C (interrupt)"
+        :title="t('memory.interrupt')"
         :disabled="interactiveInputDisabled"
         @click="emit('interactiveCtrlC')"
       >
@@ -435,7 +436,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       </ActionButton>
       <ActionButton
         compact
-        title="Send EOF / Ctrl+D (close stdin)"
+        :title="t('memory.eof')"
         :disabled="interactiveInputDisabled"
         @click="emit('interactiveEof')"
       >

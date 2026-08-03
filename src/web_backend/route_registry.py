@@ -119,6 +119,8 @@ class ApiRouteRegistry:
         ("post", "/api/files/rename", lambda core: core.system_api.rename_file),
         ("post", "/api/files/delete", lambda core: core.system_api.delete_file),
         ("get", "/api/providers", lambda core: core.system_api.list_providers),
+        ("get", "/api/provider-auth/api-key-aliases", lambda core: core.provider_auth_api.get_api_key_aliases),
+        ("post", "/api/provider-auth/api-key-aliases", lambda core: core.provider_auth_api.add_api_key_alias),
         ("get", "/api/provider-auth/codex/status", lambda core: core.provider_auth_api.get_codex_status),
         ("post", "/api/provider-auth/codex/login", lambda core: core.provider_auth_api.start_codex_login),
         ("get", "/api/provider-auth/{provider_id}/status", lambda core: core.provider_auth_api.get_provider_status),

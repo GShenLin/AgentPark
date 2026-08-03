@@ -91,7 +91,7 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
 
         sent = client.post(
             "/api/mobile/pcs/local/graphs/default/nodes/agent1/messages",
-            json={"message": "hello from phone"},
+            json={"message": "hello from phone", "trace_id": "phone-request-1"},
         )
         assert sent.status_code == 200
         sent_payload = sent.json()
@@ -101,6 +101,15 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
         assert sent_payload["node"]["pending_count"] == 1
         assert sent_payload["conversation"]["messages"][-1]["role"] == "user"
         assert sent_payload["conversation"]["messages"][-1]["parts"][0]["text"] == "hello from phone"
+
+        retried = client.post(
+            "/api/mobile/pcs/local/graphs/default/nodes/agent1/messages",
+            json={"message": "hello from phone", "trace_id": "phone-request-1"},
+        )
+        assert retried.status_code == 200
+        assert retried.json()["duplicate"] is True
+        assert retried.json()["node"]["pending_count"] == 1
+        assert len([item for item in retried.json()["conversation"]["messages"] if item["role"] == "user"]) == 1
 
         cfgs = client.get("/api/nodes/instances/configs?graph_id=default").json()["nodes"]
         cfg = next(item for item in cfgs if item["node_id"] == "agent1")

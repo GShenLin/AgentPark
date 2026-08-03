@@ -43,6 +43,7 @@ import FormTextInput from '../FormTextInput.vue'
 import ProviderSelect from '../ProviderSelect.vue'
 import WorkingPathField from './WorkingPathField.vue'
 import RuntimePolicySelect from './RuntimePolicySelect.vue'
+import { t } from '../../i18n'
 
 type NodeFields = Record<string, any>
 
@@ -687,7 +688,7 @@ watch(
             :model-value="promptLibrarySelectValue()"
             @change="selectPromptLibraryFile"
           >
-            <option value="" disabled>Select saved prompt</option>
+            <option value="" disabled>{{ t('board.selectPrompt') }}</option>
             <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
           </FormSelect>
           <FormTextInput
@@ -714,7 +715,7 @@ watch(
           >
             <option v-for="filename in promptLibraryFiles" :key="filename" :value="filename">{{ filename }}</option>
           </FormSelect>
-          <span v-else class="field-prompt-empty">No saved prompts found.</span>
+          <span v-else class="field-prompt-empty">{{ t('board.noPrompts') }}</span>
           <ActionButton
             class="field-prompt-confirm"
             variant="primary"
@@ -729,7 +730,7 @@ watch(
 
           <span v-if="getFieldHint(key)" class="field-hint">{{ getFieldHint(key) }}</span>
           <span v-if="isPromptLibraryField(key) && promptLibraryField === key && promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
-          <span v-if="enableAssetDrop && isAssetFieldKey(key)" class="field-drop-hint">Drop files here to upload and fill this asset field.</span>
+          <span v-if="enableAssetDrop && isAssetFieldKey(key)" class="field-drop-hint">{{ t('board.dropAssets') }}</span>
         </component>
       </div>
     </component>

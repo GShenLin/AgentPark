@@ -12,6 +12,7 @@ import {
   type FeedProgressGroupEntry,
   type FeedTurnEntry,
 } from './memoryFeedTools'
+import { t } from '../i18n'
 
 const props = withDefaults(defineProps<{
   entry: FeedTurnEntry
@@ -94,7 +95,7 @@ function requestDeferredMetadata() {
       <button class="turn-toggle" type="button" :aria-expanded="expanded" @click="toggleTurn">
         <span class="turn-head-main">
           <span class="turn-caret">{{ expanded ? 'v' : '>' }}</span>
-          <span class="turn-label">Turn</span>
+          <span class="turn-label">{{ t('memory.turn') }}</span>
           <span class="turn-summary">{{ userSummary() }}</span>
         </span>
         <span class="turn-time">{{ turnTime() }}</span>
@@ -103,7 +104,7 @@ function requestDeferredMetadata() {
         class="turn-actions"
         :show-save="false"
         :show-copy="false"
-        delete-title="删除整个 Turn"
+        :delete-title="t('memory.deleteTurn')"
         @delete="emit('delete', { kind: 'turn', userMessage: entry.userMessage })"
       />
     </div>
@@ -111,7 +112,7 @@ function requestDeferredMetadata() {
     <div v-if="expanded" class="turn-content">
       <article class="turn-message role-user">
         <div class="turn-message-head">
-          <span>User</span>
+          <span>{{ t('memory.user') }}</span>
           <span>{{ String((entry.userMessage as any)?.created_at || '') }}</span>
         </div>
         <MemoryMessageParts
@@ -159,7 +160,7 @@ function requestDeferredMetadata() {
         />
       </article>
 
-      <div v-else class="turn-pending">Waiting for final response…</div>
+      <div v-else class="turn-pending">{{ t('memory.waitingFinal') }}</div>
 
       <article
         v-for="(message, index) in regularFinalMessages()"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ActionButton from './ActionButton.vue'
 import DangerButton from './DangerButton.vue'
+import { t } from '../i18n'
 
 withDefaults(defineProps<{
   disabled?: boolean
@@ -29,8 +30,8 @@ const emit = defineEmits<{
       v-if="showSave"
       icon
       compact
-      title="保存为 Markdown"
-      aria-label="保存为 Markdown"
+      :title="t('memory.saveMarkdown')"
+      :aria-label="t('memory.saveMarkdown')"
       :disabled="disabled"
       @click.stop="emit('save')"
     >
@@ -45,8 +46,8 @@ const emit = defineEmits<{
       v-if="showCopy"
       icon
       compact
-      title="Copy text"
-      aria-label="Copy text"
+      :title="t('memory.copyText')"
+      :aria-label="t('memory.copyText')"
       :disabled="disabled"
       @click.stop="emit('copy')"
     >

@@ -1,5 +1,6 @@
 {
   "id": "hy3",
+  "description": "基于 HY3 模型的通用 Agent Profile，用于文本、代码与工具驱动任务。",
   "name": "hy3",
   "node_type_id": "agent_node",
   "source_graph_id": "default",

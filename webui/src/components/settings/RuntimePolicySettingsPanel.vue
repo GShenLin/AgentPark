@@ -10,6 +10,7 @@ import {
 import ActionButton from '../ActionButton.vue'
 import FormSelect from '../FormSelect.vue'
 import RuntimePolicyConfigForm from './RuntimePolicyConfigForm.vue'
+import { t } from '../../i18n'
 
 const emit = defineEmits<{
   dirty: [value: boolean]
@@ -135,15 +136,15 @@ onMounted(reload)
   <div class="runtime-policy-settings">
     <section class="runtime-policy-default">
       <div>
-        <h2>Workspace default</h2>
-        <p>Agent Profiles without an explicit selection resolve to this Policy.</p>
+        <h2>{{ t('runtimePolicy.workspaceDefault') }}</h2>
+        <p>{{ t('runtimePolicy.defaultHelp') }}</p>
       </div>
       <div class="runtime-policy-default-actions">
         <FormSelect
           v-model="defaultPolicyId"
           class="runtime-policy-default-select"
           :disabled="loading || savingDefault || !document"
-          aria-label="Default RuntimePolicy"
+          :aria-label="t('runtimePolicy.defaultAria')"
         >
           <option
             v-for="policy in document?.policies || []"
@@ -168,7 +169,7 @@ onMounted(reload)
     </section>
 
     <div v-if="document" class="runtime-policy-workspace">
-      <nav class="runtime-policy-list" aria-label="RuntimePolicy catalog">
+      <nav class="runtime-policy-list" :aria-label="t('runtimePolicy.catalogAria')">
         <button
           v-for="policy in document.policies"
           :key="policy.policy_id"
@@ -179,7 +180,7 @@ onMounted(reload)
           <strong>{{ policy.policy_id }}</strong>
           <span>v{{ String(policy.config.version || '') }}</span>
           <small>{{ String(policy.config.description || '') }}</small>
-          <em v-if="policy.policy_id === document.default_policy_id">Default</em>
+          <em v-if="policy.policy_id === document.default_policy_id">{{ t('runtimePolicy.default') }}</em>
         </button>
       </nav>
 
@@ -209,7 +210,7 @@ onMounted(reload)
       </section>
     </div>
 
-    <div v-else-if="!loading" class="runtime-policy-empty">RuntimePolicy catalog is unavailable.</div>
+    <div v-else-if="!loading" class="runtime-policy-empty">{{ t('runtimePolicy.unavailable') }}</div>
   </div>
 </template>
 

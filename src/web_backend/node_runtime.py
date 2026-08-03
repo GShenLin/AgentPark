@@ -60,6 +60,22 @@ def _read_node_capabilities(node: object, context: dict | None = None) -> tuple[
     return accepts, produces
 
 
+def _read_node_support_modes(node: object) -> list[str]:
+    raw_modes = getattr(node, "support_modes", ())
+    if not isinstance(raw_modes, (list, tuple, set, frozenset)):
+        return []
+    modes: list[str] = []
+    seen: set[str] = set()
+    for item in raw_modes:
+        mode = str(item or "").strip()
+        key = mode.lower()
+        if not mode or key in seen:
+            continue
+        seen.add(key)
+        modes.append(mode)
+    return modes
+
+
 def _run_node_logic(nodes_dir: str, node_id: str, message: object, context: dict | None = None) -> str:
     routed = _run_node_logic_with_routes(nodes_dir, node_id, message, context)
     return str((routed or {}).get("text") or "")
@@ -165,6 +181,7 @@ def _list_node_metas(nodes_dir: str) -> list[dict]:
         output_num = 1
         accepts = ["text"]
         produces = ["text"]
+        support_modes: list[str] = []
         has_node_class = False
         if os.path.exists(source.file_path):
             try:
@@ -210,6 +227,7 @@ def _list_node_metas(nodes_dir: str) -> list[dict]:
                                 except Exception:
                                     output_num = 1
                         accepts, produces = _read_node_capabilities(node, None)
+                        support_modes = _read_node_support_modes(node)
             except Exception:
                 pass
         if not has_node_class:
@@ -223,6 +241,7 @@ def _list_node_metas(nodes_dir: str) -> list[dict]:
                 "output_num": output_num,
                 "accepts": accepts,
                 "produces": produces,
+                "support_modes": support_modes,
             }
         )
     nodes.sort(key=lambda item: item["name"].lower())

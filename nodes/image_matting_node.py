@@ -22,6 +22,7 @@ _SUPPORTED_METHODS = {_METHOD_MAGIC_WAND, _METHOD_AI_MATTING}
 
 
 class Node(BaseNode):
+    support_modes = tuple(sorted(_SUPPORTED_PROVIDER_MODES))
     name = "Image Matting"
     description = "Remove a connected background or use AI matting, then return a validated transparent PNG."
     input_capabilities = ["resource:image", "meta"]

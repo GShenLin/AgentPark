@@ -20,6 +20,7 @@ except Exception:
 class BaseNode:
     name = ""
     description = ""
+    support_modes: tuple[str, ...] = ()
     input_capabilities = ["text"]
     output_capabilities = ["text"]
     common_config_defaults: dict[str, Any] = {

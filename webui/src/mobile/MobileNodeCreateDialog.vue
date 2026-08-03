@@ -9,6 +9,7 @@ import FormTextInput from '../components/FormTextInput.vue'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
 import { useAgentNodeCreateSchema } from '../composables/useAgentNodeCreateSchema'
 import { useProviderDrivenTemplateSchema } from '../composables/useProviderDrivenTemplateSchema'
+import { t } from '../i18n'
 
 const props = defineProps<{
   open: boolean
@@ -144,21 +145,21 @@ watch(
 
 <template>
   <div v-if="open" class="create-backdrop" @click.self="emit('close')">
-    <section class="create-sheet" role="dialog" aria-modal="true" aria-label="Create node">
+    <section class="create-sheet" role="dialog" aria-modal="true" :aria-label="t('board.createNode')">
       <header class="create-head">
         <div>
-          <div class="create-title">Create Node</div>
+          <div class="create-title">{{ t('board.createNode') }}</div>
           <div class="create-subtitle">{{ selectedTypeId || 'Choose a node type' }}</div>
         </div>
-        <DialogCloseButton aria-label="Close" @click="emit('close')" />
+        <DialogCloseButton :aria-label="t('common.close')" @click="emit('close')" />
       </header>
 
       <div class="create-body">
         <section v-if="agentProfiles.length" class="preset-panel">
-          <div class="preset-title">Node preset</div>
+          <div class="preset-title">{{ t('board.nodePreset') }}</div>
           <div class="preset-row">
             <FormSelect v-model="selectedProfileId" :disabled="creatingProfile || creating">
-              <option value="">Choose preset</option>
+              <option value="">{{ t('board.choosePreset') }}</option>
               <option v-for="profile in agentProfiles" :key="profile.id" :value="profile.id">
                 {{ profile.name || profile.id }}
               </option>
@@ -184,10 +185,10 @@ watch(
           </button>
         </div>
 
-        <div v-if="loading" class="create-empty">Loading node settings...</div>
+        <div v-if="loading" class="create-empty">{{ t('board.loadingSettings') }}</div>
         <template v-else-if="selectedTypeId">
           <label class="field">
-            <span class="field-label">Node name</span>
+            <span class="field-label">{{ t('board.nodeName') }}</span>
             <FormTextInput v-model="selectedNodeName" />
           </label>
 
@@ -205,7 +206,7 @@ watch(
       </div>
 
       <footer class="create-actions">
-        <ActionButton @click="emit('close')">Cancel</ActionButton>
+        <ActionButton @click="emit('close')">{{ t('common.cancel') }}</ActionButton>
         <ActionButton variant="primary" :disabled="!selectedTypeId || creating || providerSchemaLoading" @click="createNode">
           {{ creating ? 'Creating...' : 'Create' }}
         </ActionButton>

@@ -1,5 +1,6 @@
 {
   "id": "GPT1",
+  "description": "OpenAI 官方 GPT 的备用通用 Agent Profile，用于文本、代码与工具驱动任务。",
   "name": "GPT1",
   "node_type_id": "agent_node",
   "source_graph_id": "default",
@@ -7,7 +8,9 @@
   "node_name": "GPT1",
   "fields": {
     "plugins": [],
-    "skills": [],
+    "skills": [
+      "ark-doc-cli"
+    ],
     "working_path": "",
     "provider_id": "GPT_Official",
     "instruction": "",
@@ -17,7 +20,9 @@
     "tools": [
       "system_tools"
     ],
-    "mcp_servers": [],
+    "mcp_servers": [
+      "ark-docs-mcp"
+    ],
     "web_search": "enabled",
     "thinking": "enabled",
     "reasoning_effort": "high",

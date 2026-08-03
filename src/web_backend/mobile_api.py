@@ -278,6 +278,7 @@ class MobileApiDomain(DomainBase):
             {
                 "payload": message,
                 "trace_id": trace_id,
+                "idempotency_key": trace_id,
                 "depth": 0,
                 "visited": [],
                 "from": safe_node_id,
@@ -286,28 +287,31 @@ class MobileApiDomain(DomainBase):
             },
             graph_id=safe_graph_id,
         )
-        config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
-        _set_node_config_last_message(config_path, text_full or text_preview)
-        try:
-            self.graph_runtime._append_node_memory_entry(safe_graph_id, safe_node_id, "user", message)
-        except Exception as exc:
-            self.graph_runtime._log_graph_event(
+        duplicate = bool(result.get("duplicate"))
+        if not duplicate:
+            config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
+            _set_node_config_last_message(config_path, text_full or text_preview)
+            try:
+                self.graph_runtime._append_node_memory_entry(safe_graph_id, safe_node_id, "user", message)
+            except Exception as exc:
+                self.graph_runtime._log_graph_event(
+                    safe_graph_id,
+                    "mobile_emit_memory_persistence_error",
+                    trace_id=trace_id,
+                    from_id=safe_node_id,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            self.core.node_live_outputs.publish_event(
                 safe_graph_id,
-                "mobile_emit_memory_persistence_error",
+                safe_node_id,
+                "node_input",
+                {"type": "node_input", "text": text_full or text_preview},
                 trace_id=trace_id,
-                from_id=safe_node_id,
-                error=f"{type(exc).__name__}: {exc}",
             )
-        self.core.node_live_outputs.publish_event(
-            safe_graph_id,
-            safe_node_id,
-            "node_input",
-            {"type": "node_input", "text": text_full or text_preview},
-            trace_id=trace_id,
-        )
         return {
             "ok": True,
             "queued": True,
+            "duplicate": duplicate,
             "trace_id": trace_id,
             "pending_count": result.get("pending_count"),
             "node": self._mobile_node_snapshot(safe_graph_id, safe_node_id, request),

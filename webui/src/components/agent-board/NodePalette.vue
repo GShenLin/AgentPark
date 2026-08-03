@@ -9,6 +9,7 @@ import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
 import ActionButton from '../ActionButton.vue'
 import FormTextInput from '../FormTextInput.vue'
 import NodeConfigFields from './NodeConfigFields.vue'
+import { t } from '../../i18n'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -120,7 +121,7 @@ watch(
 <template>
   <div class="node-palette">
     <div class="node-palette-head">
-      <div class="node-palette-title">鑺傜偣鍒涘缓</div>
+      <div class="node-palette-title">{{ t('board.availableNodes') }}</div>
       <button class="graph-entry" @click="ctx.openGraphPanel">
         Graph: {{ ctx.currentGraphName.value || ctx.currentGraphId.value || 'default' }}
       </button>
@@ -155,15 +156,15 @@ watch(
           </div>
         </div>
       </button>
-      <div v-if="ctx.availableNodes.value.length === 0" class="node-palette-empty">娌℃湁鍙敤鑺傜偣</div>
+      <div v-if="ctx.availableNodes.value.length === 0" class="node-palette-empty">{{ t('board.noAvailableNodes') }}</div>
     </div>
 
     <Teleport to="body">
       <div v-if="showNodeDialog" class="modal-overlay" @click.self="showNodeDialog = false">
         <div class="modal">
-          <h3>鍒涘缓鑺傜偣</h3>
+          <h3>{{ t('board.createNode') }}</h3>
           <label class="field">
-            <span class="field-label">鑺傜偣鍚嶇О</span>
+            <span class="field-label">{{ t('board.nodeName') }}</span>
             <FormTextInput v-model="selectedNodeName" />
           </label>
 
@@ -177,8 +178,8 @@ watch(
           />
 
           <div class="modal-actions">
-            <ActionButton @click="showNodeDialog = false">鍙栨秷</ActionButton>
-            <ActionButton variant="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">纭鍒涘缓</ActionButton>
+            <ActionButton @click="showNodeDialog = false">{{ t('common.cancel') }}</ActionButton>
+            <ActionButton variant="primary" :disabled="creatingNode || providerSchemaLoading" @click="confirmCreateNode">{{ t('board.confirmCreate') }}</ActionButton>
           </div>
         </div>
       </div>

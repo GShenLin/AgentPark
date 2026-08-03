@@ -3,6 +3,7 @@ import { computed, inject, onBeforeUnmount, ref } from 'vue'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { AgentBoardKey } from './context'
 import NodeConfigSection from './NodeConfigSection.vue'
+import { t } from '../../i18n'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -116,7 +117,7 @@ function showEditorError(message: string) {
       :available-tools="availableTools"
       @error="showEditorError"
     />
-    <div class="config-dock-resize-handle" title="拖动调整 Config 面板宽度" @pointerdown="startResize"></div>
+    <div class="config-dock-resize-handle" :title="t('board.resizeConfig')" @pointerdown="startResize"></div>
   </aside>
 </template>
 

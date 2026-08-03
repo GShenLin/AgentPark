@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import type { MobileNode } from '../api'
 import DangerButton from '../components/DangerButton.vue'
+import { t } from '../i18n'
 
 defineProps<{
   node: MobileNode
@@ -73,7 +74,7 @@ function toggleOutput() {
         :aria-expanded="outputExpanded"
         @click="toggleOutput"
       >
-        <span>输出</span>
+        <span>{{ t('board.outputs') }}</span>
         <span class="output-toggle-state">
           {{ outputExpanded ? '收起' : '展开' }}
           <span class="output-chevron" :class="{ expanded: outputExpanded }">⌄</span>
@@ -82,9 +83,9 @@ function toggleOutput() {
       <div v-if="outputExpanded" class="row-last">{{ node.last_message }}</div>
     </div>
     <div v-if="!node.readonly" class="node-actions">
-      <button class="node-action" type="button" @click="triggerNode(node)">Trigger</button>
-      <button class="node-action" type="button" @click="duplicateNode(node)">Duplicate</button>
-      <DangerButton @click="deleteNode(node)">Delete</DangerButton>
+      <button class="node-action" type="button" @click="triggerNode(node)">{{ t('board.trigger') }}</button>
+      <button class="node-action" type="button" @click="duplicateNode(node)">{{ t('board.duplicate') }}</button>
+      <DangerButton @click="deleteNode(node)">{{ t('common.delete') }}</DangerButton>
     </div>
   </div>
 </template>

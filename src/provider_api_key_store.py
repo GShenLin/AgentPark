@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 
+from src.file_transaction import atomic_write_text, run_with_interprocess_lock
+
 
 API_KEY_STORE_RELATIVE_PATH = os.path.join(".auth", "api-keys", "aliases.json")
 PROVIDER_CREDENTIAL_REFERENCE_FIELDS = (
@@ -11,6 +13,10 @@ PROVIDER_CREDENTIAL_REFERENCE_FIELDS = (
     "speechAccessKeyId",
     "speechSecretAccessKey",
 )
+
+
+class ApiKeyAliasValidationError(ValueError):
+    pass
 
 
 def api_key_store_path(workspace_root: str) -> str:
@@ -32,6 +38,39 @@ def load_api_key_store(path: str) -> dict[str, str]:
         if not isinstance(raw_value, str) or not raw_value.strip():
             raise ValueError(f"API key store entry '{raw_name}' must be a non-empty string")
     return payload
+
+
+def list_api_key_names(path: str) -> list[str]:
+    resolved_path = os.path.abspath(path)
+    if not os.path.isfile(resolved_path):
+        return []
+    return sorted(load_api_key_store(resolved_path), key=str.casefold)
+
+
+def add_api_key_alias(path: str, *, name: str, api_key: str) -> list[str]:
+    resolved_path = os.path.abspath(path)
+    safe_name = str(name or "").strip()
+    safe_api_key = str(api_key or "").strip()
+    if not safe_name:
+        raise ApiKeyAliasValidationError("API key name is required")
+    if safe_name != str(name):
+        raise ApiKeyAliasValidationError("API key name must not contain surrounding whitespace")
+    if not safe_api_key:
+        raise ApiKeyAliasValidationError("API key is required")
+
+    def persist() -> list[str]:
+        payload = load_api_key_store(resolved_path) if os.path.isfile(resolved_path) else {}
+        if safe_name in payload:
+            raise FileExistsError(f"API key name '{safe_name}' already exists")
+        payload[safe_name] = safe_api_key
+        atomic_write_text(
+            resolved_path,
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return sorted(payload, key=str.casefold)
+
+    return run_with_interprocess_lock(resolved_path + ".lock", persist)
 
 
 def resolve_provider_credential_references(
@@ -70,8 +109,11 @@ def resolve_provider_credential_references(
 
 
 __all__ = [
+    "ApiKeyAliasValidationError",
     "PROVIDER_CREDENTIAL_REFERENCE_FIELDS",
+    "add_api_key_alias",
     "api_key_store_path",
+    "list_api_key_names",
     "load_api_key_store",
     "resolve_provider_credential_references",
 ]

@@ -1,5 +1,6 @@
 {
   "id": "DouBao",
+  "description": "使用 Doubao Seed Evolving 的通用 Agent Profile，适合文本对话与常规任务处理。",
   "name": "DouBao",
   "node_type_id": "agent_node",
   "source_graph_id": "default",

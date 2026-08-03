@@ -6,6 +6,7 @@ class Node(BaseNode):
     name = "GUI Agent"
     description = "Single-node GUI loop: capture, plan, execute, verify"
     gui_mode = "GUIAgent"
+    support_modes = (gui_mode,)
     supported_action_names = {
         "click",
         "left_double",

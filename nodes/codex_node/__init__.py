@@ -35,6 +35,7 @@ _CODEX_PROVIDER_MODES = {"chat", "imagechat"}
 class Node(BaseNode):
     name = "Codex"
     description = "启动真实 Codex app-server，并通过 ProviderID 路由模型请求"
+    support_modes = tuple(sorted(_CODEX_PROVIDER_MODES))
     input_capabilities = CODEX_INPUT_CAPABILITIES
     output_capabilities = CODEX_OUTPUT_CAPABILITIES
     config_defaults = CODEX_CONFIG_DEFAULTS

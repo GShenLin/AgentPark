@@ -33,6 +33,7 @@ import MemoryPanelHeader from './MemoryPanelHeader.vue'
 import MemorySaveDialog from './MemorySaveDialog.vue'
 import CliSessionPicker from './CliSessionPicker.vue'
 import { renderMemoryMarkdown } from './memoryMarkdown'
+import { t } from '../i18n'
 
 const props = defineProps<{
   initialGraphs: GraphInfo[]
@@ -173,7 +174,7 @@ async function clearSelectedNodeMemory() {
   const nodeId = String(selectedNodeId.value || '').trim()
   if (!nodeId) return
   const targetLabel = cliMemoryClearTargetLabel(nodeId)
-  const ok = window.confirm(`Clear ${targetLabel}?`)
+  const ok = window.confirm(t('mobile.clearTargetConfirm', { target: targetLabel }))
   if (!ok) return
   try {
     await clearNodeInstanceMemory(nodeId, currentGraphId.value || 'default')
@@ -227,7 +228,7 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] |
   if (isTurn) {
     const userMessageId = String(((target as any).userMessage as any)?.id || '').trim()
     if (!nodeId || !userMessageId) return
-    const ok = window.confirm('Delete this entire turn?')
+    const ok = window.confirm(t('mobile.deleteTurnConfirm'))
     if (!ok) return
     const refreshHistoryMode = resolveTurnDeletionHistoryMode(
       memoryMessages.value,
@@ -239,7 +240,7 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] |
       recordDeletionUndo(result.undo_token ? {
         token: result.undo_token,
         kind: 'delete_dialogue',
-        label: 'conversation turn',
+        label: t('mobile.conversationTurn'),
       } : null)
       const deletedIds = new Set(result.message_ids)
       memoryMessages.value = memoryMessages.value.filter(
@@ -259,9 +260,9 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] |
   ))
   if (!nodeId || messageIds.length === 0) return
   const label = messageIds.length === 1
-    ? 'this conversation entry'
-    : `these ${messageIds.length} conversation entries`
-  const ok = window.confirm(`Delete ${label}?`)
+    ? t('mobile.conversationEntry')
+    : t('mobile.conversationEntries', { count: messageIds.length })
+  const ok = window.confirm(t('mobile.deleteEntryConfirm', { label }))
   if (!ok) return
   try {
     const result = messageIds.length === 1
@@ -367,11 +368,11 @@ async function toggleGraphNodes(item: GraphInfo) {
 }
 
 function promptProfileId(defaultValue: string) {
-  return String(window.prompt('Profile ID', defaultValue) || '').trim()
+  return String(window.prompt(t('memory.profileId'), defaultValue) || '').trim()
 }
 
 function promptProfileName(defaultValue: string) {
-  return String(window.prompt('Profile name', defaultValue) || '').trim()
+  return String(window.prompt(t('memory.profileName'), defaultValue) || '').trim()
 }
 
 function resolveGraphName(snapshot: GraphConfig | null) {
@@ -389,7 +390,7 @@ function updateGraphWorkingPath(value: string) {
 async function saveGraphConfig() {
   const snapshot = graphSnapshot.value
   if (!snapshot) {
-    graphStatus.value = 'No graph snapshot to save.'
+    graphStatus.value = t('memory.noGraphSnapshot')
     return
   }
 
@@ -418,7 +419,7 @@ async function saveGraphConfig() {
     }
     await setStartupGraphConfig(result.id, result.name).catch(() => null)
     await refreshGraphs()
-    graphStatus.value = 'Graph saved.'
+    graphStatus.value = t('memory.graphSaved')
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -449,7 +450,7 @@ async function saveGraphProfile() {
     })
     selectedGraphProfileId.value = result.profile.id
     graphProfiles.value = await listGraphProfiles()
-    graphStatus.value = 'Graph profile saved.'
+    graphStatus.value = t('memory.graphProfileSaved')
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -458,10 +459,10 @@ async function saveGraphProfile() {
 async function createGraphConfigFromProfile() {
   const profileId = String(selectedGraphProfileId.value || '').trim()
   if (!profileId) {
-    graphStatus.value = 'Select a graph profile first.'
+    graphStatus.value = t('memory.selectProfile')
     return
   }
-  const targetGraphId = String(window.prompt('GraphID', '') || '').trim()
+  const targetGraphId = String(window.prompt(t('mobile.graphId'), '') || '').trim()
   if (!targetGraphId) return
 
   graphStatus.value = null
@@ -477,7 +478,7 @@ async function createGraphConfigFromProfile() {
     memoryMode.value = 'graph'
     await setStartupGraphConfig(graph.id, graph.name || graph.id).catch(() => null)
     await refreshGraphs()
-    graphStatus.value = 'Graph created from profile.'
+    graphStatus.value = t('memory.createdFromProfile')
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -486,12 +487,12 @@ async function createGraphConfigFromProfile() {
 async function deleteSelectedGraphProfile() {
   const profileId = String(selectedGraphProfileId.value || '').trim()
   if (!profileId) {
-    graphStatus.value = 'Select a graph profile first.'
+    graphStatus.value = t('memory.selectProfile')
     return
   }
   const profile = graphProfiles.value.find((item) => item.id === profileId)
   const profileName = String(profile?.name || profileId)
-  const ok = window.confirm(`Delete profile "${profileName}"? This cannot be undone.`)
+  const ok = window.confirm(t('memory.deleteProfileConfirm', { name: profileName }))
   if (!ok) return
 
   graphStatus.value = null
@@ -499,7 +500,7 @@ async function deleteSelectedGraphProfile() {
     await deleteGraphProfile(profileId)
     selectedGraphProfileId.value = ''
     graphProfiles.value = await listGraphProfiles()
-    graphStatus.value = 'Graph profile deleted.'
+    graphStatus.value = t('memory.profileDeleted')
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -547,7 +548,7 @@ async function navigateToGraphNode(payload: { graph: GraphInfo; nodeId: string }
 
 async function deleteGraphConfig(item: GraphInfo) {
   const name = item.name || item.id
-  const ok = window.confirm(`Delete graph "${name}"? Press Ctrl+Z to undo after deletion.`)
+  const ok = window.confirm(t('memory.deleteGraphUndo', { name }))
   if (!ok) return
 
   graphStatus.value = null
@@ -568,7 +569,7 @@ async function deleteGraphConfig(item: GraphInfo) {
       await setStartupGraphConfig('default', 'default').catch(() => null)
     }
     await refreshGraphs()
-    graphStatus.value = `Graph deleted: ${name}`
+    graphStatus.value = t('mobile.graphDeleted', { name })
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -582,7 +583,10 @@ async function toggleGraphVisibility(item: GraphInfo) {
   try {
     await setGraphVisibility(graphId, nextPrivate)
     await refreshGraphs()
-    graphStatus.value = `Graph is now ${nextPrivate ? 'private' : 'public'}: ${item.name || graphId}`
+    graphStatus.value = t('memory.graphVisibility', {
+      visibility: nextPrivate ? t('memory.private') : t('memory.public'),
+      name: item.name || graphId,
+    })
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   }
@@ -592,7 +596,7 @@ async function clearGraphMemory(item: GraphInfo) {
   const graphId = String(item.id || '').trim()
   if (!graphId) return
   const name = item.name || graphId
-  const ok = window.confirm(`Clear all memory for every node in graph "${name}"?`)
+  const ok = window.confirm(t('memory.clearGraphConfirm', { name }))
   if (!ok) return
 
   graphStatus.value = null
@@ -615,7 +619,7 @@ async function clearGraphMemory(item: GraphInfo) {
       memoryActivityMessage.value = ''
       await loadAgentMemory()
     }
-    graphStatus.value = `Graph memory cleared: ${name} (${nodeIds.length} nodes, ${clearedFiles} files).`
+    graphStatus.value = t('memory.graphCleared', { name, nodes: nodeIds.length, files: clearedFiles })
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
   } finally {

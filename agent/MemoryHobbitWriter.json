@@ -1,5 +1,6 @@
 {
   "id": "MemoryHobbitWriter",
+  "description": "维护源节点的 Hobbit.md，整理用户偏好、沟通方式、工作习惯与长期协作模式。",
   "name": "Memory Hobbit Writer",
   "node_type_id": "agent_node",
   "node_name": "MemoryHobbitWriter",

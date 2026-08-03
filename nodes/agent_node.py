@@ -19,7 +19,7 @@ from nodes.agent_message_adapter import (
     extract_channel_meta,
 )
 from nodes.agent_node_config import load_agent_node_run_request
-from nodes.agent_node_modes import capability_mode, resolve_input_support_mode, settings_for_mode
+from nodes.agent_node_modes import MODE_ORDER, capability_mode, resolve_input_support_mode, settings_for_mode
 from nodes.agent_node_schema import build_agent_config_schema
 from nodes.agent_provider_runtime import effective_instruction
 from nodes.agent_provider_runtime import merge_structured_response
@@ -76,6 +76,7 @@ def _resolved_agent_node_settings():
 class Node(BaseNode):
     name = "Agent"
     description = "Agent 节点"
+    support_modes = MODE_ORDER
     input_capabilities = AGENT_INPUT_CAPABILITIES
     output_capabilities = AGENT_OUTPUT_CAPABILITIES
     config_defaults = AGENT_CONFIG_DEFAULTS
