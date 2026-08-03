@@ -4,7 +4,6 @@
     "port": 8788
   },
   "network": {
-    "httpProxy": "http://127.0.0.1:17891",
     "noProxy": "localhost,127.0.0.1,::1"
   },
   "mcpServers": {
