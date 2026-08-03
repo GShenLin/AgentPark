@@ -3,10 +3,44 @@
 
 [English](./README.md) | [中文](./README.zh.md)
 
+AgentPark is a local-first visual Agent platform built around two explicit, reusable contracts: **Agent Profile** and **RuntimePolicy**. Change what an Agent is or how it works without rebuilding the Graph around it.
 
-AgentPark is an Agent platform for Any work with AI . It starts from a local-first workspace, but its product direction is broader: make Agents reusable, make tools explicit, and make Graphs portable enough to become shared automation assets instead of one-off local experiments.
+## The Core: Profile Switching + RuntimePolicy
 
-The backend uses FastAPI to manage nodes, graph execution, providers, files, settings, and runtime state. The frontend uses Vue 3 + Vite to provide visual graph editing, node execution controls, memory browsing, file operations, desktop settings, and a mobile-first workspace for phone access.
+### Switch the Agent with a Profile
+
+An **Agent Profile** is a portable definition of an Agent's role and capabilities. It can carry the Provider, instructions, system prompt, tools, skills, plugins, MCP servers, reasoning options, RuntimePolicy selection, and Runtime Event rules.
+
+- Save an existing Agent node as a Profile.
+- Create a new Agent directly from a Profile.
+- Load another Profile into an existing node without recreating the node or rewiring the Graph; the node identity and name stay in place while its operational configuration and event rules are replaced.
+- Keep Profiles as reviewable, shareable files under [`agent/`](./agent/) instead of burying Agent behavior in one machine's runtime state.
+
+Profile switching turns a stable Graph position into a reusable role slot: the same node can become a code reader, architecture designer, incident diagnostician, or implementation Agent while the surrounding workflow remains intact.
+
+### Control How Work Is Done with RuntimePolicy
+
+**RuntimePolicy** defines the execution discipline of an Agent independently from the model transport. A Provider owns the endpoint, authentication, model, context capacity, and wire-level limits. RuntimePolicy owns how the Agent directs a task, checks implementation progress, reviews completion, and compacts context.
+
+- Select a versioned Policy per Profile, or inherit the workspace default.
+- Use task-specific Policies such as fast implementation, diagnostic investigation, architecture design, code review, or test engineering.
+- Edit Policies in the dedicated Settings section with strict validation; invalid fields and prompt references fail explicitly.
+- Inspect the effective Policy source, version, and SHA-256 manifest so the behavior used by a run can be audited and reproduced.
+
+RuntimePolicy lives in [`config/runtimePolicies.json`](./config/runtimePolicies.json) and [`config/runtime_policies/`](./config/runtime_policies/). See [RuntimePolicy and benchmark Harness](./docs/runtime-policy-harness.md) for the complete contract.
+
+### Four Explicit Layers
+
+| Layer | Owns | What can change independently |
+| --- | --- | --- |
+| **Agent Profile** | Role, prompts, capabilities, tools, skills, plugins, events, Policy selection | Who the Agent is and what it can use |
+| **RuntimePolicy** | Task direction, completion review, implementation checkpoints, context compaction | How the Agent approaches and finishes work |
+| **Provider** | Model transport, authentication, context capacity, protocol limits | Which model executes the Profile |
+| **Graph** | Nodes, triggers, routes, channels, collaboration topology | How Agents and automation steps work together |
+
+Because these boundaries stay separate, you can switch Profiles without rebuilding a workflow, compare Providers under the same Profile and RuntimePolicy, and reuse a proven Agent setup across Graphs.
+
+AgentPark combines this contract model with a FastAPI backend and a Vue 3 + Vite workspace for visual Graph editing, execution controls, memory and file operations, desktop settings, and mobile access.
 
 ## Project Goal
 
@@ -26,6 +60,8 @@ The long-term direction is an AgentPark-style ecosystem: users can design Agents
 
 ## Key Features
 
+- Agent Profile switching: save, create, load, inspect, and share complete Agent configurations without rewiring the Graph.
+- RuntimePolicy control: select or edit typed execution Policies independently from Provider configuration, with effective-policy previews and auditable manifests.
 - Visual Graph/Node workflows: create nodes, connect ports, save complete Graph workflows, and start the Graph Runner.
 - Agent execution: streaming output, tool calls, tool-call history, persistent node memory, and stop/cancel controls.
 - Provider integrations: Doubao, Gemini, OpenAI-compatible APIs, Zhipu, Hyper3D, and provider capability metadata.

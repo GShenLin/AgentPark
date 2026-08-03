@@ -2,9 +2,45 @@
 
 [English](./README.md) | [中文](./README.zh.md)
 <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
-AgentPark 是一个用于构建、运行和分享 Agent、工具与 Graph 工作流的 Agent 平台。它从本地优先的工作区出发，但产品方向不止于本地执行：让 Agent 可以复用，让工具能力显式化，让 Graph 成为可以沉淀和分享的自动化资产，而不是一次性的本地实验。
 
-后端使用 FastAPI 管理节点、图执行、模型服务商、文件、设置和运行时状态。前端使用 Vue 3 + Vite，提供可视化图编辑、节点执行控制、记忆浏览、文件操作、桌面端设置，以及适合手机访问的移动端工作区。
+AgentPark 是一个以本地优先为基础的可视化 Agent 平台，核心建立在两份显式、可复用的契约上：**Agent Profile** 与 **RuntimePolicy**。无需重建 Graph，就能分别切换“这个 Agent 是谁”以及“它如何完成工作”。
+
+## 核心亮点：Profile 切换 + RuntimePolicy
+
+### 用 Profile 切换 Agent
+
+**Agent Profile** 是一份可迁移的 Agent 角色与能力定义。它可以完整携带 Provider、指令、系统提示词、工具、Skills、Plugins、MCP Servers、推理选项、RuntimePolicy 选择和 Runtime Event 规则。
+
+- 将当前 Agent 节点保存为 Profile。
+- 直接通过 Profile 创建新的 Agent。
+- 把另一个 Profile 加载到现有节点，无需重新创建节点或重连 Graph；节点身份和名称保持不变，运行配置与事件规则会整体切换。
+- Profile 以可审查、可分享的独立文件存放在 [`agent/`](./agent/)，不会被埋在某一台机器的运行时状态里。
+
+Profile 切换让 Graph 中一个稳定的节点位置成为可复用的“角色槽位”：同一个节点可以切换为代码阅读、架构设计、故障诊断或实现 Agent，而周围的工作流保持不变。
+
+### 用 RuntimePolicy 控制工作方式
+
+**RuntimePolicy** 将 Agent 的执行纪律与模型传输配置明确分开。Provider 负责端点、认证、模型、上下文容量和协议限制；RuntimePolicy 负责 Agent 如何确定任务方向、检查实现进度、审查完成状态和压缩上下文。
+
+- 每个 Profile 可以显式选择一个版本化 Policy，也可以继承工作区默认值。
+- 可按任务选择快速实现、故障诊断、架构设计、代码审查、测试工程等不同 Policy。
+- 在 Settings 的独立页面中切换和编辑 Policy；字段或提示词引用不合法时会明确失败。
+- 查看最终生效 Policy 的来源、版本和 SHA-256 摘要，让一次运行使用的行为契约可以审计和复现。
+
+RuntimePolicy 目录位于 [`config/runtimePolicies.json`](./config/runtimePolicies.json) 与 [`config/runtime_policies/`](./config/runtime_policies/)。完整契约见 [RuntimePolicy 与测试 Harness](./docs/runtime-policy-harness.md)。
+
+### 四层显式边界
+
+| 层级 | 负责什么 | 可以独立切换什么 |
+| --- | --- | --- |
+| **Agent Profile** | 角色、提示词、能力、工具、Skills、Plugins、事件和 Policy 选择 | Agent 是谁、能使用什么 |
+| **RuntimePolicy** | 任务方向、完成审查、实现检查点、上下文压缩 | Agent 如何推进并完成工作 |
+| **Provider** | 模型传输、认证、上下文容量、协议限制 | 由哪个模型执行 Profile |
+| **Graph** | 节点、触发器、路由、通道和协作拓扑 | Agent 与自动化步骤如何协作 |
+
+这些边界彼此独立，因此你可以在不重建工作流的情况下切换 Profile，在同一 Profile 与 RuntimePolicy 下公平对比 Provider，也可以把验证过的 Agent 配置复用到不同 Graph。
+
+AgentPark 在这套契约模型之上，使用 FastAPI 后端与 Vue 3 + Vite 工作区提供可视化 Graph 编辑、执行控制、记忆与文件操作、桌面端设置和移动端访问。
 
 ## 项目目标
 
@@ -23,6 +59,8 @@ AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 
 ## 主要功能
 
+- Agent Profile 切换：保存、创建、加载、查看并分享完整 Agent 配置，无需重新连接 Graph。
+- RuntimePolicy 控制：把类型严格的执行策略与 Provider 配置分离，支持选择、编辑、生效预览和可审计摘要。
 - 可视化 Graph/Node 工作流：创建节点、连接端口、保存完整 Graph 工作流，并启动 Graph Runner。
 - Agent 执行：流式输出、工具调用、工具调用历史、持久化节点记忆，以及停止/取消控制。
 - 服务商集成：豆包、Gemini、OpenAI 兼容接口、智谱、Hyper3D，以及服务商能力元数据。
