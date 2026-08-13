@@ -1,3 +1,5 @@
+import { createBrowserUuid } from './utils/browserId'
+
 const ACCESS_CLIENT_ID_KEY = 'agentpark.accessClientId'
 const ACCESS_USERNAME_KEY = 'agentpark.accessUsername'
 let volatileClientId = ''
@@ -26,9 +28,7 @@ function setStorageValue(key: string, value: string) {
 export function getAccessClientId() {
   let clientId = storageValue(ACCESS_CLIENT_ID_KEY).trim()
   if (!clientId) {
-    clientId = typeof crypto?.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `browser-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    clientId = createBrowserUuid()
     setStorageValue(ACCESS_CLIENT_ID_KEY, clientId)
   }
   return clientId

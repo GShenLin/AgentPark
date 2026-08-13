@@ -38,17 +38,6 @@ def test_shared_control_primitives_use_one_semantic_token_system():
     assert "dialog-close-button" in close
 
 
-def test_runtime_policy_node_field_is_a_bottom_select_without_json_editor():
-    fields = _read("webui/src/components/agent-board/NodeConfigFields.vue")
-    selector = _read("webui/src/components/agent-board/RuntimePolicySelect.vue")
-
-    assert "key === 'runtime_policy'" in fields
-    assert fields.index('v-for="section in fieldSections"') < fields.index("<RuntimePolicySelect")
-    assert "<FormSelect" in selector
-    assert "<textarea" not in selector
-    assert "JSON.stringify" not in selector
-
-
 def test_provider_select_reveals_configured_descriptions_on_hover_and_focus():
     selector = _read("webui/src/components/ProviderSelect.vue")
     node_fields = _read("webui/src/components/agent-board/NodeConfigFields.vue")
@@ -61,18 +50,6 @@ def test_provider_select_reveals_configured_descriptions_on_hover_and_focus():
     assert "<ProviderSelect" in node_fields
     assert "<ProviderSelect" in companion
     assert "stringValue('description')" in settings
-
-
-def test_runtime_policy_settings_are_structured_by_data_type():
-    form = _read("webui/src/components/settings/RuntimePolicyConfigForm.vue")
-    list_field = _read("webui/src/components/settings/RuntimePolicyStringListField.vue")
-
-    assert "<FormTextInput" in form
-    assert "<FormCheckbox" in form
-    assert "<ExpandableTextarea" in form
-    assert "<RuntimePolicyStringListField" in form
-    assert "<DangerButton" in list_field
-    assert "<textarea" not in form
 
 
 def test_common_destructive_and_close_actions_are_reused_in_core_surfaces():

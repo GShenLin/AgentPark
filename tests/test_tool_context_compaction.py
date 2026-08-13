@@ -4,9 +4,6 @@ import json
 import pytest
 
 from src.base_agent import BaseAgent
-from src.providers.agent_runtime_context import AgentRuntimeContext
-from src.providers.agent_runtime_context import bind_agent_runtime_context
-from src.runtime_policy import resolve_runtime_policy
 from src.tool.tool_call_protocol import ToolCallExecution
 
 
@@ -172,62 +169,6 @@ def test_tool_context_compaction_provider_threshold_delays_gate(tmp_path):
     assert agent._tool_context_compaction_window.regular_tool_executions == 1
 
 
-def test_bound_runtime_policy_owns_compaction_threshold_and_prompt(tmp_path):
-    memory_path = tmp_path / "agent.md"
-    memory_path.write_text("", encoding="utf-8")
-    agent = DummyCompactionAgent(memory_path)
-    agent.config = _compaction_config(enabled=False, tool_calls=1)
-    resolved = resolve_runtime_policy(
-        {
-            "overrides": {
-                "context_compaction": {
-                    "enabled": True,
-                    "every_tool_calls": 2,
-                    "context_percent": 0,
-                    "current_input_tokens": 0,
-                    "gate_prompt": "Policy-owned compaction prompt.",
-                    "retry_prompt": "Policy-owned retry prompt.",
-                }
-            }
-        }
-    )
-    bind_agent_runtime_context(agent, AgentRuntimeContext(runtime_policy=resolved))
-    agent.messages = [
-        {"role": "user", "content": "inspect files"},
-        _tool_call_message("call-1", "read_file"),
-        {
-            "role": "tool",
-            "content": "alpha raw file content",
-            "tool_call_id": "call-1",
-            "name": "read_file",
-        },
-    ]
-
-    first = agent._run_tool_context_compaction_gate_if_needed(
-        [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
-    )
-    agent.messages.extend(
-        [
-            _tool_call_message("call-2", "read_file"),
-            {
-                "role": "tool",
-                "content": "beta raw file content",
-                "tool_call_id": "call-2",
-                "name": "read_file",
-            },
-        ]
-    )
-    second = agent._run_tool_context_compaction_gate_if_needed(
-        [ToolCallExecution("read_file", "call-2", "beta raw file content")]
-    )
-
-    assert first is False
-    assert second is True
-    assert agent._tool_context_compaction_gate_prompt["content"] == (
-        "Policy-owned compaction prompt."
-    )
-
-
 @pytest.mark.parametrize(
     ("input_limit", "output_limit", "actual_input", "actual_output"),
     [
@@ -387,6 +328,69 @@ def test_tool_context_compaction_resets_token_baseline_after_tool_completion(tmp
 
     assert third_ran is True
     assert agent._tool_context_compaction_gate_active is True
+
+
+def test_tool_context_compaction_does_not_retrigger_on_unchanged_absolute_context_size(tmp_path):
+    memory_path = tmp_path / "agent.md"
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyUsageCompactionAgent(memory_path)
+    agent.config = _compaction_config(tool_calls=0, current_input_tokens=50_000)
+    agent.last_actual_input_tokens = 50_000
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        _tool_call_message("call-1", "read_file"),
+        {"role": "tool", "content": "alpha raw file content", "tool_call_id": "call-1", "name": "read_file"},
+    ]
+
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
+    ) is True
+    completion = agent.tools.execute_tool(
+        "compact_tool_context",
+        {
+            "action": "replace",
+            "reason": "Replace the inspected tool exchange.",
+            "summary": _checkpoint("alpha.py was inspected."),
+        },
+    )
+    assert agent._tool_context_compaction_gate_completed(
+        [ToolCallExecution("compact_tool_context", "compact-gate", completion)]
+    ) is True
+    assert agent._tool_context_compaction_window.current_input_trigger_suppressed is True
+
+    agent.messages.extend(
+        [
+            _tool_call_message("call-2", "read_file"),
+            {"role": "tool", "content": "beta raw file content", "tool_call_id": "call-2", "name": "read_file"},
+        ]
+    )
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-2", "beta raw file content")]
+    ) is False
+    assert agent._tool_context_compaction_gate_active is False
+
+    agent.last_actual_input_tokens = 49_999
+    agent.messages.extend(
+        [
+            _tool_call_message("call-3", "read_file"),
+            {"role": "tool", "content": "gamma raw file content", "tool_call_id": "call-3", "name": "read_file"},
+        ]
+    )
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-3", "gamma raw file content")]
+    ) is False
+    assert agent._tool_context_compaction_window.current_input_trigger_suppressed is False
+
+    agent.last_actual_input_tokens = 50_000
+    agent.messages.extend(
+        [
+            _tool_call_message("call-4", "read_file"),
+            {"role": "tool", "content": "delta raw file content", "tool_call_id": "call-4", "name": "read_file"},
+        ]
+    )
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-4", "delta raw file content")]
+    ) is True
 
 
 def test_tool_context_compaction_requires_provider_enabled(tmp_path):
@@ -849,15 +853,59 @@ def test_failed_compaction_execution_keeps_gate_active(tmp_path):
             ToolCallExecution(
                 "compact_tool_context",
                 "compact-gate",
-                '{"status":"exception","error":"invalid arguments"}',
-                status="exception",
-                error="invalid arguments",
+                '{"status":"exception","error":"ValueError: immediate_next_step must exactly match one remaining_steps item"}',
             )
         ]
     )
 
     assert completed is False
     assert agent._tool_context_compaction_gate_active is True
+    assert agent._tool_context_compaction_retry_count == 1
     assert [item["function"]["name"] for item in agent._tool_context_compaction_active_tools([])] == [
         "compact_tool_context"
     ]
+    retry_messages = [
+        message
+        for message in agent.messages
+        if str(message.get("content") or "").startswith("[Tool Context Compaction Retry]")
+    ]
+    assert len(retry_messages) == 1
+    retry_prompt = retry_messages[0]["content"]
+    assert "compact_tool_context is the only function tool currently offered" in retry_prompt
+    assert "immediate_next_step must exactly match one remaining_steps item" in retry_prompt
+    assert "Ordinary function tools are restored after compaction succeeds" in retry_prompt
+
+    result = agent.tools.execute_tool(
+        "compact_tool_context",
+        {
+            "action": "replace",
+            "reason": "Correct the invalid checkpoint and replace the eligible tool exchange.",
+            "summary": _checkpoint("The inspected file result is preserved."),
+        },
+    )
+    assert agent._tool_context_compaction_gate_completed(
+        [ToolCallExecution("compact_tool_context", "compact-gate-retry", result)]
+    ) is True
+    assert agent._tool_context_compaction_gate_active_now() is False
+    regular_tools = [{"type": "function", "function": {"name": "read_file"}}]
+    assert agent._tool_context_compaction_active_tools(regular_tools) is regular_tools
+
+
+def test_unchanged_compaction_retry_has_a_finite_limit(tmp_path):
+    memory_path = tmp_path / "agent.md"
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyCompactionAgent(memory_path)
+    agent.config = _compaction_config(tool_calls=1)
+    agent.messages = [
+        {"role": "user", "content": "inspect files"},
+        _tool_call_message("call-1", "read_file"),
+        {"role": "tool", "content": "raw content", "tool_call_id": "call-1", "name": "read_file"},
+    ]
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-1", "raw content")]
+    ) is True
+
+    assert agent._retry_tool_context_compaction_gate("no context change") is True
+    assert agent._retry_tool_context_compaction_gate("still no context change") is True
+    assert agent._retry_tool_context_compaction_gate("third failure") is False
+    assert agent._tool_context_compaction_gate_active_now() is False

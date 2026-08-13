@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import type { AgentProfile } from '../../api'
 import ActionButton from '../ActionButton.vue'
+import DangerButton from '../DangerButton.vue'
 
 defineProps<{
   profile: AgentProfile | null
   dirty: boolean
   loading: boolean
   saving: boolean
+  deleting: boolean
 }>()
 
 defineEmits<{
+  delete: []
   reload: []
   save: []
 }>()
@@ -23,11 +26,18 @@ defineEmits<{
       <em v-if="dirty">Unsaved</em>
     </div>
     <div class="profile-actions">
-      <ActionButton compact :disabled="loading || saving" @click="$emit('reload')">Reload</ActionButton>
+      <DangerButton
+        compact
+        :disabled="!profile || loading || saving || deleting"
+        @click="$emit('delete')"
+      >
+        {{ deleting ? 'Deleting...' : 'Delete Profile' }}
+      </DangerButton>
+      <ActionButton compact :disabled="loading || saving || deleting" @click="$emit('reload')">Reload</ActionButton>
       <ActionButton
         variant="primary"
         compact
-        :disabled="!dirty || loading || saving"
+        :disabled="!dirty || loading || saving || deleting"
         @click="$emit('save')"
       >
         {{ saving ? 'Saving...' : 'Save Profile' }}

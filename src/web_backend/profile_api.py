@@ -88,6 +88,7 @@ class ProfileApi(AgentProfileApi, HostBoundService):
             raise HTTPException(status_code=500, detail=str(exc))
 
         graph_profile = dict(graph_config or {})
+        graph_profile.pop("node_notes", None)
         graph_profile["id"] = graph_id
         graph_profile["name"] = str(graph_profile.get("name") or graph_id)
 

@@ -10,6 +10,7 @@ import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
 import { t } from '../i18n'
+import { useGlobalState } from '../composables/useGlobalState'
 
 type MemoryMode = 'agent' | 'file' | 'graph'
 type InteractiveInputOptions = {
@@ -89,6 +90,7 @@ const emit = defineEmits<{
 const memoryPanelRef = ref<HTMLElement | null>(null)
 const gutterRef = ref<HTMLElement | null>(null)
 const interactiveInputRef = ref<InstanceType<typeof FormTextInput> | null>(null)
+const { nodeGraphDrag, nodeGraphDropTargetId, nodeGraphMoveInProgress } = useGlobalState()
 
 const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/) : []))
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
@@ -132,6 +134,20 @@ function updateMemoryText(event: Event) {
 
 function updateGraphName(value: string) {
   emit('update:graphNameInput', value)
+}
+
+function canReceiveDraggedNode(graph: GraphInfo) {
+  return !!nodeGraphDrag.value?.moved
+    && !nodeGraphMoveInProgress.value
+    && graph.id !== nodeGraphDrag.value.sourceGraphId
+}
+
+function onGraphDropPointerEnter(graph: GraphInfo) {
+  if (canReceiveDraggedNode(graph)) nodeGraphDropTargetId.value = graph.id
+}
+
+function onGraphDropPointerLeave(graph: GraphInfo) {
+  if (nodeGraphDropTargetId.value === graph.id) nodeGraphDropTargetId.value = ''
 }
 
 function updateGraphWorkingPath(value: string) {
@@ -255,7 +271,17 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         <div v-if="graphLoading" class="graph-empty">{{ t('memory.loadingGraphs') }}</div>
         <div v-else-if="graphs.length === 0" class="graph-empty">{{ t('memory.noGraphs') }}</div>
         <div v-else class="graph-items">
-          <div v-for="graph in graphs" :key="graph.id" class="graph-item-shell">
+          <div
+            v-for="graph in graphs"
+            :key="graph.id"
+            class="graph-item-shell"
+            :class="{
+              'node-drop-available': canReceiveDraggedNode(graph),
+              'node-drop-target': nodeGraphDropTargetId === graph.id,
+            }"
+            @pointerenter="onGraphDropPointerEnter(graph)"
+            @pointerleave="onGraphDropPointerLeave(graph)"
+          >
             <div class="graph-item">
               <div
                 class="graph-info graph-info-clickable"
@@ -270,6 +296,9 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
                   <div class="graph-name">{{ graph.name }}</div>
                 </div>
                 <div class="graph-meta">{{ graph.updated_at || graph.id }}</div>
+                <div v-if="nodeGraphDropTargetId === graph.id" class="graph-node-drop-hint">
+                  {{ t('memory.dropNodeToMove') }}
+                </div>
               </div>
               <div class="graph-item-actions">
                 <ActionButton
@@ -872,6 +901,22 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   --form-control-border: rgba(34, 211, 238, 0.32);
   --form-control-background: rgba(15, 23, 42, 0.82);
   --form-control-focus: rgba(34, 211, 238, 0.65);
+}
+
+.graph-item-shell.node-drop-available {
+  outline: 1px dashed rgba(56, 189, 248, 0.72);
+  outline-offset: 2px;
+}
+
+.graph-item-shell.node-drop-target {
+  background: rgba(14, 165, 233, 0.16);
+  box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.95);
+}
+
+.graph-node-drop-hint {
+  margin-top: 4px;
+  color: rgb(125, 211, 252);
+  font-size: 12px;
 }
 
 .interactive-bar-head {

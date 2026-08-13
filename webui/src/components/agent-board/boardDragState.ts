@@ -3,6 +3,20 @@ export type BoardPosition = {
   grid_y: number
 }
 
+export function didBoardItemsChangeGridPosition(options: {
+  itemIds: Iterable<string>
+  startPositions: Readonly<Record<string, BoardPosition>>
+  getPosition: (itemId: string) => BoardPosition | null
+}) {
+  for (const itemId of options.itemIds) {
+    const start = options.startPositions[itemId]
+    const current = options.getPosition(itemId)
+    if (!start || !current) return true
+    if (start.grid_x !== current.grid_x || start.grid_y !== current.grid_y) return true
+  }
+  return false
+}
+
 export function traceBoardDrag(event: string, payload: Record<string, unknown>) {
   if (typeof window === 'undefined') return
   const entry = {

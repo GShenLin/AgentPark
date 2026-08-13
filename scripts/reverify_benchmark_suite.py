@@ -150,15 +150,6 @@ def _reverify_case(
     result = benchmark.get("result")
     result = result if isinstance(result, dict) else {}
     runner_contract = runner_execution_contract(runner)
-    if runner.node_type == "agent":
-        summary = result.get("summary")
-        summary = summary if isinstance(summary, dict) else {}
-        captured_policy = summary.get("runtime_policy_manifest")
-        if captured_policy != runner_contract["effective_runtime_policy"]:
-            raise HarnessValidationError(
-                f"source run {case_id!r} effective RuntimePolicy does not match "
-                "the current runner contract."
-            )
     benchmark_status = str(
         result.get("status")
         or previous_verification.get("benchmark_status")

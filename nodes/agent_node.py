@@ -43,6 +43,7 @@ from nodes.agent_skill_scripts import register_skill_script_tools
 from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
+from src.restart_recovery_context import render_restart_recovery_context
 from src.config_loader import ConfigLoader
 from src.access_policy import nondeveloper_filtered_tools
 from src.media_resource_utils import resolve_public_base_url
@@ -53,13 +54,11 @@ from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_
 from src.providers.provider_request_usage import ProviderRequestTracker
 from src.runtime_events.context_injection import runtime_event_context_from_context
 from src.runtime_cancellation import raise_if_cancel_requested
-from src.runtime_policy import resolve_runtime_policy
 from src.switch_utils import parse_switch_mode
 from src.tool.tool_stats_store import ToolCallStatsRecorder
 from src.tool.access_filter import filter_configured_tool_modules
 from src.tool.access_filter import filter_registered_agent_tools
 from src.tool.access_filter import is_nondeveloper_context
-from src.task_direction_context import inject_task_direction_context
 from src.task_direction_store import archive_legacy_task_artifacts
 from src.workspace_settings import get_workspace_root
 from src.web_backend.node_goal_runtime import node_goal_context
@@ -145,11 +144,6 @@ class Node(BaseNode):
             messages_path=self._resolve_messages_path(ctx),
         )
         provider_request_tracker = ProviderRequestTracker()
-        resolved_runtime_policy = resolve_runtime_policy(
-            run_request.runtime_policy,
-            workspace_root=get_workspace_root(),
-        )
-
         def consume_mid_turn_user_inputs() -> list[dict]:
             messages: list[dict] = []
             for pending_item in _consume_node_mid_turn_user_inputs(config_path):
@@ -190,7 +184,6 @@ class Node(BaseNode):
                 responses_instruction=effective_instruction(agent, run_request.instruction)
                 if uses_responses_api_context(agent)
                 else "",
-                runtime_policy=resolved_runtime_policy,
                 skill_resource_roots=capability_plan.skill_resource_roots,
                 persist_assistant_progress=persist_progress,
                 persist_provider_turn_metadata=persist_turn_metadata,
@@ -235,11 +228,6 @@ class Node(BaseNode):
             resolved_instruction = effective_instruction(agent, run_request.instruction)
             if resolved_instruction:
                 agent.Message(instruction_role, resolved_instruction, persist=False)
-        inject_task_direction_context(
-            agent,
-            role=instruction_role,
-            runtime_policy=resolved_runtime_policy,
-        )
         operational_memory_summary = build_operational_memory_summary(
             os.path.join(os.path.dirname(memory_path), "operational_memory.json") if memory_path else ""
         )
@@ -277,6 +265,9 @@ class Node(BaseNode):
         ):
             agent.Message(history_message["role"], history_message["content"], persist=False)
 
+        restart_recovery_context = render_restart_recovery_context(ctx.get("restart_recovery"))
+        if restart_recovery_context:
+            agent.Message(instruction_role, restart_recovery_context, persist=False)
         user_content = build_agent_user_content(run_request.provider_id, run_mode, input_message, resolved_public_base_url)
         agent.Message("user", user_content, persist=False)
         web_search_mode = parse_switch_mode(run_request.web_search, default="disabled", allow_auto=False)

@@ -648,7 +648,7 @@ class NodeRuntimeEventSink:
                 trace_id=self.trace_id,
                 node_instance_id=self.node_id,
                 node_type_id=self.node_type_id,
-                runtime_event=event_name,
+                runtime_event=event_type,
                 error=_preview_text(warning, 1000),
             )
 

@@ -246,15 +246,16 @@ OpenAI Responses 工具调用后的逻辑上下文延续固定采用显式回放
 
 取值：
 
-- `false`: 不回放 `reasoning` item。当前推荐值。
-- `true`: 回放 `reasoning` item。只适用于 Provider 明确支持引用这些 item，且 response item 会被服务端持久保存的场景。
+- `false`: 不回放 `reasoning` item。第三方兼容 Provider 的默认推荐值。
+- `true`: 回放 `reasoning` item。只适用于已验证支持加密 reasoning 上下文回放的 Provider。
 
-当前配置均为 `false`。
+当前仅官方 Codex Provider `GPT_Official` 使用 `true`；其余 Provider 使用 `false`。这个字段只控制 Responses 显式上下文中的协议项回放，不是推理强度或任务完成质量开关；非 Responses Provider 不使用它。
 
 原因：
 
 - 当 Provider 使用 `store=false` 或不持久化 reasoning item 时，回放带 `rs_...` id 的 reasoning item 可能触发错误：`Item with id ... not found. Items are not persisted when store is set to false.`
 - 因此 Krill 这类兼容服务应保持 `false`。
+- `include: ["reasoning.encrypted_content"]` 负责请求服务端返回可续接的加密 reasoning 内容，与是否在下一次显式 input 中回放该 item 是两个独立动作。
 
 要求：
 
@@ -289,7 +290,7 @@ OpenAI Responses 工具调用后的逻辑上下文延续固定采用显式回放
 要求：
 
 - 必填于 `responsesApi: true` Provider。
-- 必须是大于 0 的整数。
+- 必须是大于等于 0 的整数；`0` 关闭按工具调用次数触发的阈值。
 
 ### `responsesApi`
 
@@ -318,7 +319,7 @@ Rules:
 
 ## 工具上下文压缩字段
 
-工具上下文压缩是 Provider 运行时的内部机制。达到明确阈值后，运行时会把已经完成的工具调用历史替换为有版本、可校验的结构化 replacement history；模型不会看到或调用专用压缩工具。
+工具上下文压缩由 Provider 运行时的 checkpoint gate 管理。达到明确阈值后，运行时会暂时只向模型提供 `compact_tool_context`；模型通过该工具提交结构化 continuation checkpoint，运行时再把符合条件的已完成工具调用历史替换为可校验的摘要，并恢复普通工具。
 
 当前这组字段已经从全局 `config/config.json` 移到每个 Provider 上。运行时只读取 Provider 配置，不再读取全局默认。
 
@@ -328,7 +329,7 @@ Rules:
 
 取值：
 
-- `true`: 启用。达到任一已配置阈值后，由 Provider 运行时直接安装 replacement history。
+- `true`: 启用。达到任一已配置阈值后，进入只提供 `compact_tool_context` 的 checkpoint；压缩成功后安装 replacement history 并恢复普通工具。
 - `false`: 关闭。运行时保留完整工具调用历史。
 
 要求：
@@ -345,7 +346,7 @@ Rules:
 
 - 非负整数。
 - `10` 表示累计 10 次普通工具执行后触发一次内部压缩。
-- `0` 表示每次有普通工具执行时都达到阈值；通常不建议这样配置。
+- `0` 表示关闭按普通工具执行次数触发；其他已配置的 token 阈值仍可独立触发。
 
 要求：
 
@@ -356,6 +357,7 @@ Rules:
 不计入阈值的内部工具：
 
 - `edit_operational_memory`
+- `compact_tool_context`
 
 ### `toolContextCompactionReplacementMaxChars`
 

@@ -39,10 +39,7 @@
     "web_search": "disabled",
     "thinking": "disabled",
     "reasoning_effort": "high",
-    "reasoning_summary": "auto",
-    "runtime_policy": {
-      "policy_id": "code-reading"
-    }
+    "reasoning_summary": "auto"
   },
   "event_rules": {},
   "created_at": "2026-08-01T00:00:00+08:00",

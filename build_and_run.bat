@@ -4,6 +4,10 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem Switch to the script directory to ensure relative paths work
 cd /d "%~dp0"
 set "AGENTPARK_WORKSPACE_ROOT=%cd%"
+if not "%~1"=="" (
+    echo [ERROR] build_and_run.bat does not accept arguments.
+    exit /b 2
+)
 for %%I in ("%AGENTPARK_WORKSPACE_ROOT%") do set "AGENTPARK_WORKSPACE_NAME=%%~nxI"
 title AgentPark Launcher - %AGENTPARK_WORKSPACE_NAME%
 echo [INFO] Checking repository before startup...
@@ -16,79 +20,18 @@ if not exist "%AGENTPARK_WORKSPACE_ROOT%\.runtime" mkdir "%AGENTPARK_WORKSPACE_R
 set "AGENTPARK_DEPENDENCY_UPDATE_LOG=%AGENTPARK_WORKSPACE_ROOT%\.runtime\dependency-update.log"
 >>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo.
 >>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo ===== AgentPark dependency update session %date% %time% =====
-set "AGENTPARK_LAUNCH_MODE=cli_web"
 set "AGENTPARK_CLI_ARGS=chat"
 set "AGENTPARK_RESTART_EXIT_CODE=43"
 set "AGENTPARK_CLI_WINDOW_MANAGED=1"
 set "AGENTPARK_CLI_START_HIDDEN=1"
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
-if /I "%~1"=="server" (
-    set "AGENTPARK_LAUNCH_MODE=server"
-    set "AGENTPARK_CLI_ARGS="
-)
-if /I "%~1"=="web" (
-    set "AGENTPARK_LAUNCH_MODE=server"
-    set "AGENTPARK_CLI_ARGS="
-)
-if /I "%~1"=="cli-only" (
-    set "AGENTPARK_LAUNCH_MODE=cli_only"
-    if "%~2"=="" (
-        set "AGENTPARK_CLI_ARGS=chat"
-    ) else if /I "%~2"=="chat" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else if /I "%~2"=="doctor" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else if /I "%~2"=="capabilities" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else if /I "%~2"=="config" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else (
-        set "AGENTPARK_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
-    )
-)
-if /I "%~1"=="cli" (
-    set "AGENTPARK_LAUNCH_MODE=cli_web"
-    if "%~2"=="" (
-        set "AGENTPARK_CLI_ARGS=chat"
-    ) else if /I "%~2"=="chat" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else if /I "%~2"=="doctor" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else if /I "%~2"=="capabilities" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else if /I "%~2"=="config" (
-        set "AGENTPARK_CLI_ARGS=%2 %3 %4 %5 %6 %7 %8 %9"
-    ) else (
-        set "AGENTPARK_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
-    )
-)
-if /I "%~1"=="chat" (
-    set "AGENTPARK_LAUNCH_MODE=cli_web"
-    set "AGENTPARK_CLI_ARGS=chat %2 %3 %4 %5 %6 %7 %8 %9"
-)
-if /I "%~1"=="ask-here" (
-    set "AGENTPARK_LAUNCH_MODE=ask_here"
-    set "AGENTPARK_ASK_HERE_PATH=%~2"
-    set "AGENTPARK_NO_PAUSE=1"
-)
-if /I "%AGENTPARK_LAUNCH_MODE%"=="ask_here" (
-    call "%AGENTPARK_WORKSPACE_ROOT%\scripts\bootstrap_windows_toolchain.bat" python-only
-) else (
-    call "%AGENTPARK_WORKSPACE_ROOT%\scripts\bootstrap_windows_toolchain.bat"
-)
+call "%AGENTPARK_WORKSPACE_ROOT%\scripts\bootstrap_windows_toolchain.bat"
 if errorlevel 1 (
     call :maybe_pause
     exit /b 1
 )
 echo [INFO] Using Python: %PYTHON_EXE%
-
-if /I "%AGENTPARK_LAUNCH_MODE%"=="ask_here" (
-    call :handle_ask_here
-    set "AGENTPARK_ASK_HERE_EXIT=!errorlevel!"
-    call :maybe_pause
-    exit /b !AGENTPARK_ASK_HERE_EXIT!
-)
 
 call :ensure_rg
 call :register_folder_context_menu
@@ -131,53 +74,26 @@ if exist "desktop\pet\package.json" (
     echo [WARN] Desktop pet package not found: desktop\pet\package.json
 )
 
-if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_web" (
-    call :stop_existing_workspace_processes
-    if errorlevel 1 (
-        call :maybe_pause
-        exit /b %errorlevel%
-    )
-    call :start_background_server
-    if errorlevel 1 (
-        call :maybe_pause
-        exit /b %errorlevel%
-    )
-)
-
-if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_web" (
-    if not defined AGENTPARK_CLI_ARGS set "AGENTPARK_CLI_ARGS=chat"
-    echo [INFO] Starting AgentPark CLI: python -m src.cli !AGENTPARK_CLI_ARGS!
-    "%PYTHON_EXE%" -m src.cli !AGENTPARK_CLI_ARGS!
-    set "AGENTPARK_CLI_EXIT=!errorlevel!"
-    if "!AGENTPARK_CLI_EXIT!"=="%AGENTPARK_RESTART_EXIT_CODE%" (
-        echo [INFO] Restart requested by companion CLI; exiting without pause.
-        exit /b 0
-    )
+call :stop_existing_workspace_processes
+if errorlevel 1 (
     call :maybe_pause
-    exit /b !AGENTPARK_CLI_EXIT!
+    exit /b %errorlevel%
 )
-
-if /I "%AGENTPARK_LAUNCH_MODE%"=="cli_only" (
-    if not defined AGENTPARK_CLI_ARGS set "AGENTPARK_CLI_ARGS=chat"
-    echo [INFO] Starting AgentPark CLI: python -m src.cli !AGENTPARK_CLI_ARGS!
-    "%PYTHON_EXE%" -m src.cli !AGENTPARK_CLI_ARGS!
-    set "AGENTPARK_CLI_EXIT=!errorlevel!"
-    if "!AGENTPARK_CLI_EXIT!"=="%AGENTPARK_RESTART_EXIT_CODE%" (
-        echo [INFO] Restart requested by companion CLI; exiting without pause.
-        exit /b 0
-    )
+call :start_background_server
+if errorlevel 1 (
     call :maybe_pause
-    exit /b !AGENTPARK_CLI_EXIT!
+    exit /b %errorlevel%
 )
 
-echo [INFO] Starting AgentPark server...
-
-"%PYTHON_EXE%" -m src.fast_api --workspace-root "%cd%"
-
+echo [INFO] Starting AgentPark CLI: python -m src.cli !AGENTPARK_CLI_ARGS!
+"%PYTHON_EXE%" -m src.cli !AGENTPARK_CLI_ARGS!
+set "AGENTPARK_CLI_EXIT=!errorlevel!"
+if "!AGENTPARK_CLI_EXIT!"=="%AGENTPARK_RESTART_EXIT_CODE%" (
+    echo [INFO] Restart requested by companion CLI; exiting without pause.
+    exit /b 0
+)
 call :maybe_pause
-endlocal
-
-exit /b 0
+exit /b !AGENTPARK_CLI_EXIT!
 
 :maybe_pause
 if /I "%AGENTPARK_NO_PAUSE%"=="1" exit /b 0
@@ -239,18 +155,6 @@ if errorlevel 1 (
     exit /b %errorlevel%
 )
 exit /b 0
-
-:handle_ask_here
-if not defined AGENTPARK_ASK_HERE_PATH (
-    echo [ERROR] Ask Here requires a target path.
-    exit /b 1
-)
-if not exist "%AGENTPARK_WORKSPACE_ROOT%\scripts\agentpark_ask_here.bat" (
-    echo [ERROR] Ask Here launcher is missing: "%AGENTPARK_WORKSPACE_ROOT%\scripts\agentpark_ask_here.bat"
-    exit /b 1
-)
-call "%AGENTPARK_WORKSPACE_ROOT%\scripts\agentpark_ask_here.bat" "%AGENTPARK_ASK_HERE_PATH%"
-exit /b %errorlevel%
 
 :register_folder_context_menu
 if not exist "scripts\register_folder_context_menu.ps1" exit /b 0

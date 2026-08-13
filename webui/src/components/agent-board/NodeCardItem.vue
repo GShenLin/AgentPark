@@ -3,6 +3,8 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { AgentBoardKey, type AgentBoardContext, type NodeCard } from './context'
 import { edgeResizeCursor, edgeResizeSize, type EdgeResizeHandle } from './edgeResize'
 import NodeAgentMeta from './NodeAgentMeta.vue'
+import NodeClockCountdown from './NodeClockCountdown.vue'
+import NodeFloatingNote from './NodeFloatingNote.vue'
 import NodeRuntimeDiagnostics from './NodeRuntimeDiagnostics.vue'
 import { createWindowPointerDrag } from './pointerDrag'
 import ToolActivityBadge from './ToolActivityBadge.vue'
@@ -168,6 +170,7 @@ onBeforeUnmount(stopNodeResize)
     @dragover.prevent.stop="ctx.onNodeCardDragOver(endpointId, $event)"
     @drop.prevent.stop="ctx.onNodeCardDrop(endpointId, $event)"
   >
+    <NodeFloatingNote :note="ctx.nodeNotes.value[props.node.id]" />
     <div class="node-card-inner" :key="donePulse" :class="{ done: isDone }">
       <div class="node-header">
         <FormTextInput
@@ -236,11 +239,16 @@ onBeforeUnmount(stopNodeResize)
           :runtime-tool-calls="props.node.runtimeToolCalls"
         />
         <MemoryResourcePart
-          v-if="previewImageResource"
+          v-if="!isClockRunning && previewImageResource"
           class="node-output-resource"
           :part="previewImageResource"
           compact
           @pointerdown.stop
+        />
+        <NodeClockCountdown
+          v-else-if="isClockRunning"
+          :next-fire-at="ctx.nodeConfigs.value[props.node.id]?.['_clock_next_fire_at']"
+          :fallback="previewText"
         />
         <div v-else class="node-message" :class="{ empty: !hasPreview }">
           {{ previewText || ' ' }}

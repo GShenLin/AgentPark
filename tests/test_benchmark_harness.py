@@ -134,10 +134,6 @@ def test_harness_contract_resolves_paths_and_requires_two_runners(tmp_path):
     assert suite.runners[0].profile.endswith("profile.json")
     agent_runner_contract = runner_execution_contract(suite.runners[0])
     assert agent_runner_contract["runtime_configuration"]["thinking"] == "enabled"
-    assert (
-        agent_runner_contract["effective_runtime_policy"]["policy_id"]
-        == "coding-default"
-    )
 
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["runners"] = payload["runners"][:1]

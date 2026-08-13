@@ -173,12 +173,6 @@ class ResponsesRuntimeMethods:
             "responses_mode": str(responses_mode or ""),
             "requested_responses_mode": str(requested_responses_mode or ""),
         }
-        if int(request_index) == 1:
-            from src.runtime_policy import bound_runtime_policy_for_agent
-
-            resolved_policy = bound_runtime_policy_for_agent(self)
-            if resolved_policy is not None:
-                payload["runtime_policy_manifest"] = resolved_policy.manifest
         self._emit_responses_notice(
             stage="openai_responses_request_start",
             payload=payload,

@@ -1,8 +1,0 @@
-Optimize for a narrow, explicitly bounded code change. Identify the visible behavior,
-its owning production entry point, and the focused verification before editing. Once
-that boundary is supported, patch promptly rather than continuing exploratory reads.
-
-Keep the change local, preserve strict contracts, and avoid speculative cleanup. Run the
-smallest focused test plus the required build or type check once after the patch. If a
-check fails, fix the demonstrated cause and rerun only the affected gate. Stop when the
-requested behavior and its direct regression evidence pass.

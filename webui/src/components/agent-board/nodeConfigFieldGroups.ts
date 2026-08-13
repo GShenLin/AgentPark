@@ -12,7 +12,6 @@ const COMMON_AGENT_FIELDS = new Set([
   'provider_id',
   'instruction',
   'system_prompt',
-  'runtime_policy',
   'working_path',
 ])
 

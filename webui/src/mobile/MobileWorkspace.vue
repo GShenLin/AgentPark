@@ -6,6 +6,10 @@ import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
 import { useMemoryTurnEntries } from '../components/memoryFeedTools'
+import {
+  isLatestMemoryTurn,
+  shouldLoadPreviousTurnsOnCollapse,
+} from '../components/memoryTurnHistoryPolicy'
 import CliSessionPicker from '../components/CliSessionPicker.vue'
 import AppErrorToast from '../components/AppErrorToast.vue'
 import ActionButton from '../components/ActionButton.vue'
@@ -69,6 +73,7 @@ const headerTitle = computed(() => {
   if (workspace.view.value === 'nodes') return workspace.selectedGraph.value?.display_name || t('mobile.selectNode')
   return workspace.selectedNode.value?.name || workspace.selectedNode.value?.id || t('mobile.nodeMessages')
 })
+const isNodeChatView = computed(() => workspace.view.value === 'chat')
 
 const messages = computed(() => workspace.conversation.value?.messages || [])
 const feedEntries = useMemoryTurnEntries(messages)
@@ -77,14 +82,16 @@ const mobileSectionLoading = ref<'progress' | 'metadata' | null>(null)
 let activeMobileSectionRequest: { section: 'progress' | 'metadata'; promise: Promise<void> } | null = null
 
 function isLatestTurn(index: number) {
-  for (let candidate = feedEntries.value.length - 1; candidate >= 0; candidate -= 1) {
-    if (feedEntries.value[candidate]?.type === 'turn') return candidate === index
-  }
-  return false
+  return isLatestMemoryTurn(feedEntries.value, index)
 }
 
 async function onMobileTurnToggle(index: number, expanded: boolean) {
-  if (expanded || historyComplete.value || !isLatestTurn(index)) return
+  if (!shouldLoadPreviousTurnsOnCollapse(
+    feedEntries.value,
+    index,
+    expanded,
+    historyComplete.value,
+  )) return
   await workspace.loadConversationHistory()
 }
 
@@ -656,10 +663,10 @@ onMounted(async () => {
       <div class="header-title">{{ headerTitle }}</div>
       <div class="header-actions">
         <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'graphs'" class="text-icon-btn" type="button" :aria-label="t('mobile.openSettings')" @click="openSettings">{{ t('common.settings') }}</button>
-        <LanguageSwitcher compact />
+        <LanguageSwitcher v-if="!isNodeChatView" compact />
         <DangerButton v-if="!settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" :aria-label="t('mobile.clearMemory')" @click="clearMemory">{{ t('mobile.clearMemory') }}</DangerButton>
         <button v-if="isDeveloper && !settingsOpen && workspace.view.value === 'chat' && !workspace.selectedNode.value?.readonly" class="text-icon-btn" type="button" :aria-label="t('mobile.openNodeConfig')" @click="openConfig">{{ t('common.config') }}</button>
-        <button v-if="!settingsOpen" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" :aria-label="t('common.restart')" @click="restartWorkspace">
+        <button v-if="!settingsOpen && !isNodeChatView" class="text-icon-btn restart-btn" type="button" :disabled="isRestarting" :aria-label="t('common.restart')" @click="restartWorkspace">
           {{ isRestarting ? t('common.restarting') : t('common.restart') }}
         </button>
       </div>
@@ -863,6 +870,7 @@ onMounted(async () => {
       :nodes="workspace.nodes.value"
       :output-routes="workspace.selectedNodeOutputRoutes.value"
       :save-fields="workspace.setSelectedNodeFields"
+      :save-note="workspace.setSelectedNodeNote"
       :rename-node="workspace.renameSelectedNode"
       :save-profile="workspace.saveSelectedNodeProfile"
       :load-profile="workspace.loadSelectedNodeProfile"

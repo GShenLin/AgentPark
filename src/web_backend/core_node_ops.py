@@ -7,6 +7,7 @@ from .node_instance_files import NodeInstanceFiles
 from .node_instance_config_query import NodeInstanceConfigQuery
 from .node_instance_queue import NodeInstanceQueue
 from .node_instance_registry import NodeInstanceRegistry
+from .node_instance_move import NodeInstanceMove
 from .node_instance_runtime import NodeInstanceRuntime
 from .node_visibility import NodeVisibilityService
 from .shared import *
@@ -26,6 +27,7 @@ class NodeOpsDomain(DomainBase):
                 NodeInstanceFiles(self),
                 NodeInstanceConfigQuery(self),
                 NodeInstanceRegistry(self),
+                NodeInstanceMove(self),
                 NodeInstanceRuntime(self),
                 NodeInstanceQueue(self),
                 NodeAsyncRuns(self),

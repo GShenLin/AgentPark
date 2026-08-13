@@ -22,6 +22,7 @@ from src.board_layout_settings import (
 )
 
 DEFAULT_GRID_COLUMNS = 4
+MIN_NODE_RENDER_SIZE = 1
 
 _thread_locks_guard = threading.Lock()
 _thread_locks: dict[str, threading.RLock] = {}
@@ -72,14 +73,14 @@ def normalize_node_grid_ui(value: object) -> dict[str, int]:
         normalized["width"] = _bounded_integer(
             value.get("width"),
             field="ui.width",
-            minimum=MIN_GRID_CELL_WIDTH,
+            minimum=MIN_NODE_RENDER_SIZE,
             maximum=MAX_GRID_CELL_SIZE,
         )
     if value.get("height") is not None and str(value.get("height")).strip():
         normalized["height"] = _bounded_integer(
             value.get("height"),
             field="ui.height",
-            minimum=MIN_GRID_CELL_HEIGHT,
+            minimum=MIN_NODE_RENDER_SIZE,
             maximum=MAX_GRID_CELL_SIZE,
         )
     return normalized

@@ -3,6 +3,7 @@ import type { GraphConfig } from '../../api'
 import type { LinkItem, NodeCard } from './context'
 import { buildBoardGraphConfig } from './boardModel'
 import { serializeBoardGridSettings, type BoardGridSettings } from './boardGrid'
+import { normalizeNodeNotes, type NodeNotes } from '../../nodeNotes'
 
 export function createBoardGraphPersistence(options: {
   graphSnapshot: Ref<GraphConfig | null>
@@ -11,6 +12,7 @@ export function createBoardGraphPersistence(options: {
   currentGraphName: Ref<string | null>
   currentGraphWorkingPath: Ref<string>
   nodes: Ref<NodeCard[]>
+  nodeNotes: Ref<NodeNotes>
   links: Ref<LinkItem[]>
   gridSettings: Ref<BoardGridSettings>
   saveGraph: (graphId: string, config: GraphConfig, options?: { saveReason?: string; sourceGraphId?: string }) => Promise<unknown>
@@ -29,6 +31,7 @@ export function createBoardGraphPersistence(options: {
       links: options.links.value,
       }),
       layout: serializeBoardGridSettings(options.gridSettings.value),
+      node_notes: normalizeNodeNotes(options.nodeNotes.value),
     }
   }
 

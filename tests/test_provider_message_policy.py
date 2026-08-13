@@ -16,6 +16,26 @@ def test_chat_policy_resolves_runtime_instruction_to_system():
     assert normalized == [{"role": "system", "content": "Keep the tool warning visible."}]
 
 
+def test_chat_policy_maps_restored_developer_instructions_to_system():
+    policy = ProviderMessagePolicy.from_config({"responsesApi": False})
+
+    normalized = policy.normalize_messages(
+        [
+            {"role": "developer", "content": "Restored Responses instruction."},
+            {"role": "user", "content": "Continue."},
+            {"role": "assistant", "content": "Working."},
+            {"role": "latest_reminder", "content": "Keep this provider-specific role."},
+        ]
+    )
+
+    assert normalized == [
+        {"role": "system", "content": "Restored Responses instruction."},
+        {"role": "user", "content": "Continue."},
+        {"role": "assistant", "content": "Working."},
+        {"role": "latest_reminder", "content": "Keep this provider-specific role."},
+    ]
+
+
 def test_responses_policy_maps_runtime_and_explicit_system_messages_to_developer():
     policy = ProviderMessagePolicy.from_config({"responsesApi": True})
 

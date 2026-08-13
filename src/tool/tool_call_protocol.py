@@ -20,7 +20,7 @@ class ToolCallEnvelope:
 class ToolCallExecution:
     func_name: str
     call_id: str
-    cleaned_result: Any
+    cleaned_result: str
     image_data: dict[str, Any] | None = None
     status: str = "completed"
     error: str | None = None

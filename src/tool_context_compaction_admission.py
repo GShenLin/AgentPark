@@ -17,8 +17,24 @@ class ToolContextCompactionAdmissionMixin:
             compaction_gate_active=self._tool_context_compaction_gate_active_now(),
         )
         if decision.rejected_calls:
+            self._record_tool_context_compaction_rejected_calls(decision)
             self._emit_tool_context_compaction_admission_notice(decision)
         return decision
+
+    def _record_tool_context_compaction_rejected_calls(
+        self,
+        decision: ToolTurnAdmissionDecision,
+    ) -> None:
+        if not self._tool_context_compaction_gate_active_now():
+            return
+        recorded = getattr(self, "_tool_context_compaction_rejected_call_ids", set())
+        rejected_call_ids = set(recorded) if isinstance(recorded, (set, list, tuple)) else set()
+        rejected_call_ids.update(
+            str(item.call_id).strip()
+            for item in decision.rejected_calls
+            if str(item.call_id).strip()
+        )
+        self._tool_context_compaction_rejected_call_ids = rejected_call_ids
 
     def _emit_tool_context_compaction_admission_notice(
         self,

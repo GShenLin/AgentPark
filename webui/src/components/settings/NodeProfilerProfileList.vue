@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { AgentProfile } from '../../api'
-import AgentProfileChoiceSummary from '../agent-board/AgentProfileChoiceSummary.vue'
 
 defineProps<{
   profiles: AgentProfile[]
@@ -29,7 +28,9 @@ defineEmits<{
       :disabled="loading || disabled"
       @click="$emit('select', profile.id)"
     >
-      <AgentProfileChoiceSummary :profile="profile" :compact="true" />
+      <span class="profile-option-name" :title="profile.name || profile.id">
+        {{ profile.name || profile.id }}
+      </span>
     </button>
     <div v-if="!loading && profiles.length === 0" class="profile-empty">
       No Agent Profiles found in agent/*.json.
@@ -62,9 +63,7 @@ defineEmits<{
 .profile-option {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
+  align-items: center;
   margin-bottom: 4px;
   padding: 10px 12px;
   border: 1px solid transparent;
@@ -72,6 +71,17 @@ defineEmits<{
   background: transparent;
   color: var(--text-secondary);
   text-align: left;
+}
+
+.profile-option-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-option:hover,

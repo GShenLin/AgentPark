@@ -1,3 +1,4 @@
+import asyncio
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from nodes.agent_plugin_api_loader import register_installed_plugin_apis
 from nodes.agent_plugin_loader import default_plugin_root
 from src.public_gateway.routes import register_public_gateway_routes
+from src.runtime_supervision import runtime_supervisor
 
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
@@ -52,20 +54,28 @@ class WebBackendFacade:
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI):
+        runtime_supervisor.attach_asyncio_loop(asyncio.get_running_loop())
+        runtime_supervisor.record("application_lifespan_starting")
         if self.companion_mcp is None:
             self._startup_services()
+            runtime_supervisor.record("application_lifespan_ready")
             try:
                 yield
             finally:
+                runtime_supervisor.record("application_lifespan_stopping")
                 self._shutdown_services()
+                runtime_supervisor.record("application_lifespan_stopped")
             return
 
         async with self.companion_mcp.session_manager.run():
             self._startup_services()
+            runtime_supervisor.record("application_lifespan_ready")
             try:
                 yield
             finally:
+                runtime_supervisor.record("application_lifespan_stopping")
                 self._shutdown_services()
+                runtime_supervisor.record("application_lifespan_stopped")
 
     def _startup_services(self) -> None:
         try:
@@ -86,6 +96,7 @@ class WebBackendFacade:
                     f"temporary_receivers_found={int(companion.get('temporary_receivers_found', 0))} "
                     f"temporary_receivers_cleaned={int(companion.get('temporary_receivers_cleaned', 0))}"
                 )
+            self._recover_restart_checkpoints()
             self.core.graph_runtime._ensure_timer_trigger_scheduler()
             channels = self.core.channel_service.start_autostart_receivers()
             if isinstance(channels, dict):
@@ -98,6 +109,22 @@ class WebBackendFacade:
                     print(f"[DesktopPet] skipped restore; hidden stale views={int(result.get('updated', 0))}")
         except Exception as e:
             print(f"[GraphRuntime] startup failed: {e}")
+
+    def _recover_restart_checkpoints(self) -> None:
+        try:
+            result = self.core.restart_recovery.recover_pending_nodes()
+            failures = result.get("failures") if isinstance(result, dict) else []
+            print(
+                "[RestartRecovery] startup "
+                f"recovered={int(result.get('recovered', 0))} "
+                f"claimed={int(result.get('claimed', 0))} "
+                f"completed_cleaned={int(result.get('completed_cleaned', 0))} "
+                f"failed={len(failures) if isinstance(failures, list) else 0}"
+            )
+            if failures:
+                print(f"[RestartRecovery] failures={failures}")
+        except Exception as e:
+            print(f"[RestartRecovery] startup failed; checkpoint retained: {e}")
 
     def _schedule_desktop_pet_restore(self) -> None:
         if self._desktop_pet_restore_timer is not None:

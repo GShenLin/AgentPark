@@ -22,7 +22,7 @@ from .public_gateway_api import PublicGatewayApiDomain
 from .provider_auth_api import ProviderAuthApiDomain
 from .remote_api import RemoteApiDomain
 from .remote_workspace_api import RemoteWorkspaceApiDomain
-from .runtime_policy_settings_api import RuntimePolicySettingsApiDomain
+from .restart_recovery import RestartRecoveryCoordinator
 from .settings_api import SettingsApiDomain
 from .doubao_speech_management import DoubaoSpeechManagementDomain
 from .user_interaction_api import UserInteractionApiDomain
@@ -66,6 +66,7 @@ class BackendCore:
         }
 
         self.graph_runtime = GraphRuntimeDomain(self)
+        self.restart_recovery = RestartRecoveryCoordinator(self)
         self.access_api = AccessApiDomain()
         self.channel_service = ChannelService(self)
         self.agent_domain = AgentDomain(self, self.graph_runtime)
@@ -79,7 +80,6 @@ class BackendCore:
         self.pet_avatars = PetAvatarDomain(self)
         self.remote_api = RemoteApiDomain(self)
         self.remote_workspace_api = RemoteWorkspaceApiDomain()
-        self.runtime_policy_settings_api = RuntimePolicySettingsApiDomain(self)
         self.settings_api = SettingsApiDomain(self)
         self.doubao_speech_management = DoubaoSpeechManagementDomain(self)
         self.user_interaction_api = UserInteractionApiDomain(self)

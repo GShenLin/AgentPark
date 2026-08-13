@@ -648,3 +648,18 @@ def test_node_runtime_event_sink_keeps_tool_end_nonfatal_when_history_persist_fa
     assert any(item["event_type"] == "runtime_notice" for item in live_events)
     assert live_events[-1]["event_type"] == "tool_call_end"
     assert "NodeMemoryPersistenceError" in live_events[-1]["event"]["memory_persistence_warning"]
+
+
+def test_node_runtime_event_sink_keeps_runtime_log_failure_nonfatal(tmp_path):
+    sink, _config_path, logs, _tool_entries, _runtime_logs = _build_sink(tmp_path)
+
+    def fail_append_runtime_log(_graph_id, _event_type, **_fields):
+        raise PermissionError("locked runtime log")
+
+    sink.append_runtime_log = fail_append_runtime_log
+
+    sink.handle({"type": "runtime_notice", "message": "runtime log test"})
+
+    failure_log = next(item for item in logs if item["event"] == "runtime_event_emit_failed")
+    assert failure_log["runtime_event"] == "runtime_notice"
+    assert "PermissionError" in failure_log["error"]

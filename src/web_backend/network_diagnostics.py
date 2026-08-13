@@ -28,7 +28,7 @@ class NetworkDiagnosticsMiddleware:
             return
 
         path = str(scope.get("path") or "")
-        if not path.startswith("/api/"):
+        if not _should_trace_path(path):
             await self.app(scope, receive, send)
             return
 
@@ -74,6 +74,8 @@ class NetworkDiagnosticsMiddleware:
             "referer": headers.get("referer", ""),
             "user_agent": headers.get("user-agent", ""),
             "private_network_preflight": headers.get("access-control-request-private-network", ""),
+            "authorization_present": bool(headers.get("authorization", "").strip()),
+            "content_type": headers.get("content-type", ""),
         }
         if error:
             record["error"] = error
@@ -98,6 +100,12 @@ def _address_label(value: object) -> str:
     if len(value) < 2 or value[1] is None:
         return host
     return f"{host}:{value[1]}"
+
+
+def _should_trace_path(path: str) -> bool:
+    if path.startswith("/api/") or path.startswith("/v1"):
+        return True
+    return path in {"/models", "/responses", "/chat/completions", "/messages"}
 
 
 def _rotate_log_if_needed(log_path: str, incoming_bytes: int) -> None:

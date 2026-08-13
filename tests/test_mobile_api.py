@@ -40,7 +40,12 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
 
         client = TestClient(app, client=("127.0.0.1", 12345))
 
-        graph = {"id": "default", "name": "Default", "output_routes": {}}
+        graph = {
+            "id": "default",
+            "name": "Default",
+            "node_notes": {"agent1": "Phone-visible note"},
+            "output_routes": {},
+        }
         assert client.post("/api/graphs/default", json={"graph": graph}).status_code == 200
         create_node = client.post(
             "/api/nodes/instances",
@@ -70,6 +75,7 @@ def test_mobile_api_lists_current_pc_graphs_nodes_and_sends_message(monkeypatch,
         nodes = client.get("/api/mobile/pcs/local/graphs/default/nodes")
         assert nodes.status_code == 200
         assert nodes.json()["nodes"][0]["id"] == "agent1"
+        assert nodes.json()["nodes"][0]["note"] == "Phone-visible note"
 
         config_path = facade.core.graph_runtime._node_config_path("agent1", "default")
         _set_node_config_runtime_event(

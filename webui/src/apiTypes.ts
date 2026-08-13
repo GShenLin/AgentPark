@@ -168,6 +168,7 @@ export type GraphConfig = {
     }
   }
   nodes: GraphNode[]
+  node_notes?: Record<string, string>
   output_routes: GraphOutputRoutes
   source_graph_id?: string
   version?: number
@@ -247,34 +248,6 @@ export type AgentProfileEditorPayload = {
   }
   instruction: string
   system_prompt: string
-}
-
-export type RuntimePolicyPreview = {
-  ok: boolean
-  policy: Record<string, unknown>
-  manifest: {
-    schema_version: number
-    policy_id: string
-    policy_version: string
-    selection_source: string
-    catalog_source: string
-    effective_sha256: string
-    prompts: Array<{
-      layer: string
-      source: string
-      chars: number
-      sha256: string
-    }>
-  }
-  catalog: {
-    schema_version: number
-    default_policy_id: string
-    policies: Array<{
-      policy_id: string
-      version: string
-      description: string
-    }>
-  }
 }
 
 export type GraphProfileNodeConfig = {
@@ -627,6 +600,7 @@ export type MobileNode = {
   name: string
   type_id: string
   graph_id: string
+  note?: string
   state?: NodeInstanceState
   pending_count?: number
   node_event_seq?: number

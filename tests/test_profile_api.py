@@ -255,90 +255,6 @@ def test_agent_profile_editor_rejects_prompt_fields_inside_node_profiler(tmp_pat
     assert "dedicated editor fields" in response.json()["detail"]
 
 
-def test_agent_profile_runtime_policy_preview_and_strict_save(tmp_path, monkeypatch):
-    _patch_profile_root(monkeypatch, tmp_path)
-
-    from fastapi.testclient import TestClient
-    from src.web_backend.facade import WebBackendFacade
-
-    profile_dir = tmp_path / "agent"
-    profile_dir.mkdir(parents=True)
-    profile_path = profile_dir / "runtime-policy-profile.json"
-    original = {
-        "id": "runtime-policy-profile",
-        "name": "Runtime Policy Profile",
-        "node_type_id": "agent_node",
-        "fields": {"provider_id": "GPT_Official"},
-        "event_rules": {},
-    }
-    profile_path.write_text(json.dumps(original), encoding="utf-8")
-    client = TestClient(WebBackendFacade().build())
-
-    preview = client.post(
-        "/api/profiles/agents/runtime-policy/preview",
-        json={"runtime_policy": None},
-    )
-
-    assert preview.status_code == 200
-    preview_payload = preview.json()
-    assert preview_payload["manifest"]["policy_id"] == "coding-default"
-    assert preview_payload["manifest"]["selection_source"] == "default"
-    assert len(preview_payload["manifest"]["prompts"]) == 6
-
-    runtime_policy = {
-        "policy_id": "coding-default",
-        "overrides": {
-            "completion_review": {
-                "passes": 2,
-                "prompt": "Review the actual production entry path.",
-            }
-        },
-    }
-    saved_response = client.put(
-        "/api/profiles/agents/runtime-policy-profile",
-        json={
-            "node_profiler": {
-                "name": "Runtime Policy Profile",
-                "node_type_id": "agent_node",
-                "fields": {
-                    "provider_id": "GPT_Official",
-                    "runtime_policy": runtime_policy,
-                },
-                "event_rules": {},
-            },
-            "instruction": "",
-            "system_prompt": "",
-        },
-    )
-
-    assert saved_response.status_code == 200
-    saved = json.loads(profile_path.read_text(encoding="utf-8"))
-    assert saved["fields"]["runtime_policy"] == runtime_policy
-
-    invalid_response = client.put(
-        "/api/profiles/agents/runtime-policy-profile",
-        json={
-            "node_profiler": {
-                "name": "Runtime Policy Profile",
-                "node_type_id": "agent_node",
-                "fields": {
-                    "provider_id": "GPT_Official",
-                    "runtime_policy": {
-                        "overrides": {"completion_review": {"passes": 0}}
-                    },
-                },
-                "event_rules": {},
-            },
-            "instruction": "",
-            "system_prompt": "",
-        },
-    )
-
-    assert invalid_response.status_code == 400
-    assert "passes must be between 1 and 5" in invalid_response.json()["detail"]
-    assert json.loads(profile_path.read_text(encoding="utf-8")) == saved
-
-
 def test_load_agent_profile_updates_fields_and_events_without_renaming_node(tmp_path, monkeypatch):
     _patch_profile_root(monkeypatch, tmp_path)
 
@@ -521,6 +437,7 @@ def test_graph_profile_create_retargets_graph_and_node_config_ids(tmp_path, monk
                     "id": source_graph_id,
                     "name": source_graph_id,
                     "nodes": [],
+                    "node_notes": {node_id: "temporary node note"},
                     "output_routes": {
                         node_id: [{"output_index": 0, "targets": [{"node_id": node_id, "input_index": 0}]}],
                     },
@@ -554,6 +471,7 @@ def test_graph_profile_create_retargets_graph_and_node_config_ids(tmp_path, monk
         graph_config = json.loads(open(os.path.join(target_dir, "config.json"), "r", encoding="utf-8").read())
         assert graph_config["id"] == target_graph_id
         assert graph_config["name"] == target_graph_id
+        assert "node_notes" not in graph_config
 
         node_config_path = os.path.join(target_dir, node_id, "config.json")
         target_cfg = json.loads(open(node_config_path, "r", encoding="utf-8").read())
@@ -569,6 +487,7 @@ def test_graph_profile_create_retargets_graph_and_node_config_ids(tmp_path, monk
 
         profile = json.loads((tmp_path / "graph" / f"{profile_id}.json").read_text(encoding="utf-8"))
         assert profile["graph"]["id"] == source_graph_id
+        assert "node_notes" not in profile["graph"]
         assert profile["node_configs"][0]["graph_id"] == source_graph_id
         assert profile["node_configs"][0]["fields"]["suffix"] == "world"
         assert "pending" not in profile["node_configs"][0]["fields"]

@@ -43,11 +43,11 @@ class ProviderMessagePolicy:
             item = dict(message)
             message_kind = str(item.pop(MESSAGE_KIND_FIELD, "") or "").strip().lower()
             role = str(item.get("role") or "").strip().lower()
-            if message_kind == RUNTIME_INSTRUCTION_KIND:
-                item["role"] = self.instruction_role
-            elif self.instruction_role == "developer" and role == "system":
-                # Responses-compatible providers express instruction messages
-                # with the developer role and reject system input items.
+            if message_kind == RUNTIME_INSTRUCTION_KIND or role in {"system", "developer"}:
+                # System and developer are provider-specific representations of
+                # the same AgentPark instruction semantics. Normalize both
+                # directions so restored history remains valid after switching
+                # between Responses and Chat Completions providers.
                 item["role"] = self.instruction_role
             normalized.append(item)
         return normalized

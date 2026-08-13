@@ -26,13 +26,21 @@ class ToolCallExecutionMixin:
             position = positions_by_identity.get(id(rejected.call))
             if position is None:
                 continue
+            if rejected.reason == "duplicate_compaction_call":
+                rejection_error = (
+                    "Only one compact_tool_context call is allowed during a context-compaction checkpoint. "
+                    "Wait for the admitted compact_tool_context result before making another tool request."
+                )
+            else:
+                rejection_error = (
+                    "This function tool was not offered during the active context-compaction checkpoint. "
+                    "compact_tool_context is the only function tool currently available. Call it first; "
+                    "ordinary function tools are restored after compaction succeeds."
+                )
             results[position] = build_tool_call_error_execution(
                 rejected.call,
                 status="rejected",
-                error=(
-                    "Tool call was not offered during the active context-compaction checkpoint. "
-                    "Complete compaction before requesting another function tool."
-                ),
+                error=rejection_error,
             )
         executable_calls = []
         executable_positions = []
@@ -54,8 +62,7 @@ class ToolCallExecutionMixin:
         )
         for position, execution in zip(executable_positions, executed):
             results[position] = execution
-        completed_results = [item for item in results if item is not None]
-        return completed_results
+        return [item for item in results if item is not None]
 
     def _tool_loop_guard_instance(self):
         guard = getattr(self, "_tool_loop_guard", None)

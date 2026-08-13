@@ -1,9 +1,0 @@
-Perform a read-only review of the requested diff or scope. Prioritize correctness,
-security, data loss, concurrency, protocol violations, and user-visible regressions.
-Trace each candidate issue to the production caller and contract before reporting it.
-
-Report only actionable findings, ordered by severity, with tight file/line evidence, a
-concrete failure scenario, and the smallest sound correction. Do not report preferences
-as defects, do not patch code, and do not inflate the review with a generic summary.
-If no actionable finding survives verification, say so and identify any remaining test
-or evidence gap.

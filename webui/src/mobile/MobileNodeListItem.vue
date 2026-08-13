@@ -54,6 +54,7 @@ function toggleOutput() {
 
 <template>
   <div class="node-row">
+    <div v-if="node.note" class="node-note">{{ node.note }}</div>
     <button
       class="node-select"
       type="button"
@@ -106,6 +107,18 @@ function toggleOutput() {
   line-height: 1.35;
   overflow: visible;
   user-select: none;
+}
+
+.node-note {
+  padding: 10px 12px;
+  border: 1px solid rgba(250, 204, 21, 0.42);
+  border-radius: 8px;
+  background: rgba(66, 52, 15, 0.9);
+  color: rgba(254, 249, 195, 0.98);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .node-select {

@@ -171,7 +171,7 @@ class CompanionTui:
             self.state.transcript.append(
                 TranscriptItem(
                     role="error",
-                    text="Console input reader stopped. Restart with `build_and_run.bat cli --backend plain` for line input.",
+                    text="Console input reader stopped. Run `python -m src.cli chat --backend plain` for line input.",
                 )
             )
 

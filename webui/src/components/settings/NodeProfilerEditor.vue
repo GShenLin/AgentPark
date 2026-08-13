@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import FormTextInput from '../FormTextInput.vue'
 import {
+  deleteAgentProfile,
   getNodeTemplate,
   listAgentProfiles,
   updateAgentProfile,
@@ -11,13 +12,11 @@ import {
 } from '../../api'
 import { normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
 import { agentProfileDescription } from '../../composables/agentProfilePresentation'
-import { useRuntimePolicyPreview } from '../../composables/useRuntimePolicyPreview'
 import { resolveAgentProviderSchemaContext } from '../../composables/useAgentNodeCreateSchema'
 import NodeConfigFields from '../agent-board/NodeConfigFields.vue'
 import NodeProfilerMetadataPanel from './NodeProfilerMetadataPanel.vue'
 import NodeProfilerProfileList from './NodeProfilerProfileList.vue'
 import NodeProfilerToolbar from './NodeProfilerToolbar.vue'
-import RuntimePolicyPreviewPanel from './RuntimePolicyPreviewPanel.vue'
 
 const props = defineProps<{
   providers: ProviderInfo[]
@@ -48,6 +47,7 @@ const baseline = ref('')
 const loading = ref(false)
 const templateLoading = ref(false)
 const saving = ref(false)
+const deleting = ref(false)
 const localError = ref('')
 let templateRequestId = 0
 let loadedSchemaContextKey = ''
@@ -76,20 +76,6 @@ function showError(error: unknown) {
   localError.value = message
   emit('error', message)
 }
-
-const {
-  preview: runtimePolicyPreview,
-  resolving: previewingRuntimePolicy,
-  clear: clearRuntimePolicyPreview,
-  resolve: previewRuntimePolicy,
-} = useRuntimePolicyPreview({
-  fieldSchema: fieldSchemaCache,
-  fields: draftFields,
-  onStart: () => {
-    localError.value = ''
-  },
-  onError: showError,
-})
 
 function profileFieldDraft(profile: AgentProfile, templateFields: Record<string, any>) {
   return {
@@ -146,7 +132,6 @@ async function loadProfileDraft(profile: AgentProfile | null) {
     persistedFieldKeys.value = []
     editedFieldKeys.value = {}
     eventRulesContent.value = '{}\n'
-    clearRuntimePolicyPreview()
     baseline.value = serializedDraft.value
     return
   }
@@ -162,7 +147,6 @@ async function loadProfileDraft(profile: AgentProfile | null) {
   eventRulesContent.value = `${JSON.stringify(profile.event_rules || {}, null, 2)}\n`
   templateSchema.value = {}
   draftFields.value = { ...(profile.fields || {}) }
-  clearRuntimePolicyPreview()
 
   templateLoading.value = true
   try {
@@ -232,7 +216,6 @@ function setNodeField(key: string, value: any) {
     [key]: true,
   }
   localError.value = ''
-  if (key === 'runtime_policy') clearRuntimePolicyPreview()
 }
 
 function parseEventRules() {
@@ -317,6 +300,36 @@ async function saveProfile() {
   }
 }
 
+async function deleteProfile() {
+  const profile = selectedProfile.value
+  if (!profile || deleting.value || saving.value) return
+
+  const displayName = String(profile.name || profile.id)
+  const unsavedWarning = dirty.value ? ' Unsaved changes will be lost.' : ''
+  if (!window.confirm(`Delete profile "${displayName}"?${unsavedWarning}`)) return
+
+  deleting.value = true
+  localError.value = ''
+  try {
+    const result = await deleteAgentProfile(profile.id)
+    if (!result.deleted) {
+      throw new Error(`Profile "${displayName}" no longer exists.`)
+    }
+
+    const deletedIndex = profiles.value.findIndex((item) => item.id === profile.id)
+    if (deletedIndex >= 0) profiles.value.splice(deletedIndex, 1)
+    const nextProfile = profiles.value[deletedIndex] || profiles.value[deletedIndex - 1] || null
+    selectedProfileId.value = nextProfile?.id || ''
+    await loadProfileDraft(nextProfile)
+    window.dispatchEvent(new CustomEvent('agent-profiles-changed'))
+    emit('status', `Deleted ${profile.id}`)
+  } catch (error) {
+    showError(error)
+  } finally {
+    deleting.value = false
+  }
+}
+
 watch(
   () => schemaContextKey(draftFields.value),
   (contextKey) => {
@@ -335,7 +348,7 @@ onMounted(() => loadProfiles())
       :profiles="profiles"
       :selected-profile-id="selectedProfileId"
       :loading="loading"
-      :disabled="templateLoading || saving"
+      :disabled="templateLoading || saving || deleting"
       @select="selectProfile"
     />
 
@@ -345,6 +358,8 @@ onMounted(() => loadProfiles())
         :dirty="dirty"
         :loading="loading || templateLoading"
         :saving="saving"
+        :deleting="deleting"
+        @delete="deleteProfile"
         @reload="reloadProfiles"
         @save="saveProfile"
       />
@@ -380,13 +395,6 @@ onMounted(() => loadProfiles())
               :reset-key="selectedProfileId"
               @update-field="setNodeField"
               @field-error="showError"
-            />
-
-            <RuntimePolicyPreviewPanel
-              :preview="runtimePolicyPreview"
-              :saving="saving"
-              :resolving="previewingRuntimePolicy"
-              @resolve="previewRuntimePolicy"
             />
 
             <NodeProfilerMetadataPanel

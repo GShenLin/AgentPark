@@ -15,6 +15,10 @@ class PublicGatewayService:
     def __init__(self, workspace_root: str | None = None) -> None:
         self.store = PublicGatewayStore(workspace_root)
 
+    @property
+    def workspace_root(self) -> str:
+        return self.store.workspace_root
+
     def settings(self) -> dict[str, Any]:
         return self.store.snapshot()
 
@@ -64,6 +68,16 @@ class PublicGatewayService:
                 }
                 for item in self.store.list_public_models()
             ],
+        }
+
+    def route_metadata(self, protocol: str, model_id: str) -> dict[str, Any]:
+        model, provider_config = self.store.resolve_model(model_id, protocol)
+        return {
+            "providerId": model["providerId"],
+            "accountId": model["accountId"] or None,
+            "upstreamModel": str(provider_config.get("model") or ""),
+            "providerType": str(provider_config.get("type") or ""),
+            "authMode": str(provider_config.get("authMode") or ""),
         }
 
     def dispatch(

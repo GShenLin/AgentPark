@@ -5,8 +5,7 @@ import {
   DEFAULT_NODE_WIDTH,
   MAX_NODE_HEIGHT,
   MAX_NODE_WIDTH,
-  MIN_NODE_HEIGHT,
-  MIN_NODE_WIDTH,
+  MIN_NODE_RENDER_SIZE,
   gridPositionToBoardPoint,
   sanitizeNodeGridUi,
   type BoardGridSettings,
@@ -17,8 +16,8 @@ import { normalizeRuntimeEvent, normalizeRuntimeEvents, normalizeRuntimeToolCall
 export type SwitchState = 'enabled' | 'disabled'
 export const NODE_CARD_DEFAULT_WIDTH = DEFAULT_NODE_WIDTH
 export const NODE_CARD_DEFAULT_HEIGHT = DEFAULT_NODE_HEIGHT
-export const NODE_CARD_MIN_WIDTH = MIN_NODE_WIDTH
-export const NODE_CARD_MIN_HEIGHT = MIN_NODE_HEIGHT
+export const NODE_CARD_MIN_WIDTH = MIN_NODE_RENDER_SIZE
+export const NODE_CARD_MIN_HEIGHT = MIN_NODE_RENDER_SIZE
 export const NODE_CARD_MAX_WIDTH = MAX_NODE_WIDTH
 export const NODE_CARD_MAX_HEIGHT = MAX_NODE_HEIGHT
 

@@ -48,6 +48,51 @@ def _capture_payload(agent, **send_options):
     return json.loads(requests[0]["payload_json"])
 
 
+def test_deepseek_chat_payload_normalizes_restored_developer_instruction_to_system():
+    agent = _build_deepseek_agent()
+    agent.messages = [
+        {"role": "developer", "content": "Instruction restored from a Responses provider."},
+        {"role": "user", "content": "hello"},
+    ]
+
+    payload = _capture_payload(agent)
+
+    assert payload["messages"] == [
+        {"role": "system", "content": "Instruction restored from a Responses provider."},
+        {"role": "user", "content": "hello"},
+    ]
+    assert all(message["role"] != "developer" for message in payload["messages"])
+
+
+def test_deepseek_stream_does_not_retry_http_402(monkeypatch):
+    from src.providers.deepseek_chat_runtime import DeepSeekChatRuntime
+    from src.providers.openai_transport_errors import OpenAIHttpError
+
+    runtime = DeepSeekChatRuntime(_build_deepseek_agent())
+    runtime.config = {"maxRetries": 3, "retryDelaySec": 0}
+    calls = {"count": 0}
+
+    def fail_once(**_kwargs):
+        calls["count"] += 1
+        raise OpenAIHttpError(
+            402,
+            '{"error":{"message":"Insufficient Balance"}}',
+        )
+
+    monkeypatch.setattr(runtime, "_stream_chat_completions_once", fail_once)
+
+    with pytest.raises(RuntimeError, match="HTTP 402"):
+        runtime._stream_chat_completions_with_retry(
+            endpoint="chat/completions",
+            url="https://api.deepseek.test/chat/completions",
+            headers={},
+            payload_json="{}",
+            stream_handler=None,
+        )
+
+    assert calls["count"] == 1
+
+
 def test_tavern_provider_uses_official_deepseek_non_thinking_contract():
     config_path = Path(__file__).resolve().parents[1] / "config" / "modelProvider.json"
     providers = json.loads(config_path.read_text(encoding="utf-8"))["providers"]
@@ -174,6 +219,52 @@ def test_deepseek_replays_reasoning_content_after_tool_call():
     assistant_tool_call = requests[1]["messages"][1]
     assert assistant_tool_call["reasoning_content"] == "I should use the echo tool."
     assert assistant_tool_call["tool_calls"][0]["function"]["name"] == "echo_tool"
+
+
+def test_deepseek_serializes_structured_tool_result_content_as_json_text():
+    agent = _build_deepseek_agent()
+    agent.tools.function_map["market_data"] = lambda: {
+        "status": "ok",
+        "data": {"symbol": "000300.SH", "close": [3988.42]},
+    }
+    responses = iter(
+        [
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_market_data",
+                                    "type": "function",
+                                    "function": {"name": "market_data", "arguments": "{}"},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+            {"choices": [{"message": {"role": "assistant", "content": "done"}}]},
+        ]
+    )
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return next(responses)
+
+    agent._curl_post_json_once = fake_post
+
+    assert agent.Send(thinking="enabled", reasoning_effort="high", stream=False) == "done"
+    tool_message = requests[1]["messages"][-1]
+    assert tool_message["role"] == "tool"
+    assert isinstance(tool_message["content"], str)
+    assert json.loads(tool_message["content"]) == {
+        "status": "ok",
+        "data": {"symbol": "000300.SH", "close": [3988.42]},
+    }
 
 
 def test_deepseek_stream_assembles_reasoning_content_for_tool_call_replay():

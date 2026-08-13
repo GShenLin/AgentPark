@@ -4,6 +4,17 @@
   "requireApiKey": true,
   "models": [
     {
+      "id": "gpt-5.5",
+      "providerId": "GPT_Official_55",
+      "accountId": "",
+      "protocols": [
+        "responses",
+        "chat_completions",
+        "messages"
+      ],
+      "enabled": true
+    },
+    {
       "id": "gpt-5.6",
       "providerId": "GPT_Official",
       "accountId": "c0296a9b407c",

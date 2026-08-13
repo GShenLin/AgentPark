@@ -5,9 +5,6 @@ import os
 import shutil
 from typing import Any
 
-from src.runtime_policy import RuntimePolicyCatalog, resolve_runtime_policy
-from src.runtime_policy.contracts import RuntimePolicyValidationError
-
 from .node_config_service import node_config_service
 from .profile_node_config import PROFILE_EXCLUDED_NODE_FIELDS, node_fields_from_config
 from .profile_storage import (
@@ -32,27 +29,6 @@ class AgentProfileApi:
     def list_agent_profiles(self):
         try:
             return read_profile_document(self._agent_profile_dir())
-        except Exception as exc:
-            raise self._profile_error(exc)
-
-    def preview_agent_runtime_policy(self, payload: dict):
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="payload must be object")
-        unknown = sorted(set(payload) - {"runtime_policy"})
-        if unknown:
-            raise HTTPException(
-                status_code=400,
-                detail=f"unknown runtime policy preview fields: {', '.join(unknown)}",
-            )
-        try:
-            resolved = resolve_runtime_policy(payload.get("runtime_policy"))
-            return {
-                "ok": True,
-                **resolved.to_payload(),
-                "catalog": RuntimePolicyCatalog.load().to_payload(),
-            }
-        except RuntimePolicyValidationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             raise self._profile_error(exc)
 
@@ -131,11 +107,6 @@ class AgentProfileApi:
             raise ProfileValidationError("system_prompt must be a string")
 
         next_fields = copy.deepcopy(fields)
-        if "runtime_policy" in next_fields:
-            try:
-                resolve_runtime_policy(next_fields.get("runtime_policy"))
-            except RuntimePolicyValidationError as exc:
-                raise ProfileValidationError(str(exc)) from exc
         next_fields["instruction"] = instruction
         next_fields["system_prompt"] = system_prompt
         next_profile: dict[str, Any] = {

@@ -27,7 +27,6 @@ class AgentRuntimeContext:
     network_access: str = ""
     approval_policy: str = ""
     responses_instruction: str = ""
-    runtime_policy: object = None
     skill_resource_roots: Mapping[str, str] = field(default_factory=dict)
     persist_assistant_progress: Callable[[dict[str, Any]], None] | None = None
     persist_provider_turn_metadata: Callable[[dict[str, Any]], None] | None = None
@@ -54,7 +53,6 @@ class AgentRuntimeContext:
             network_access=self.network_access,
             approval_policy=self.approval_policy,
             responses_instruction=str(self.responses_instruction or "").strip(),
-            runtime_policy=self.runtime_policy,
             skill_resource_roots=dict(self.skill_resource_roots or {}),
             persist_assistant_progress=self.persist_assistant_progress,
             persist_provider_turn_metadata=self.persist_provider_turn_metadata,
@@ -129,7 +127,6 @@ def _context_from_agent_attributes(agent: object = None) -> AgentRuntimeContext:
             getattr(agent, "_agentpark_responses_instruction", None),
             cfg.get("responses_instruction"),
         ),
-        runtime_policy=getattr(agent, "_agentpark_resolved_runtime_policy", None),
         skill_resource_roots=_mapping_attr(agent, "_agentpark_skill_resource_roots"),
         persist_assistant_progress=_callable_attr(agent, "_agentpark_persist_assistant_progress"),
         persist_provider_turn_metadata=_callable_attr(agent, "_agentpark_persist_provider_turn_metadata"),
@@ -164,8 +161,6 @@ def _write_runtime_attributes(agent: object, context: AgentRuntimeContext) -> No
             setattr(agent, name, value)
     if context.skill_resource_roots:
         setattr(agent, "_agentpark_skill_resource_roots", dict(context.skill_resource_roots))
-    if context.runtime_policy is not None:
-        setattr(agent, "_agentpark_resolved_runtime_policy", context.runtime_policy)
     if context.persist_assistant_progress is not None:
         setattr(agent, "_agentpark_persist_assistant_progress", context.persist_assistant_progress)
     if context.persist_provider_turn_metadata is not None:

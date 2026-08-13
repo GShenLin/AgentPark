@@ -15,7 +15,6 @@ from scripts.benchmark_harness_task_contract import (
     _integer,
     _non_empty_string,
     _object,
-    _path,
     _string,
     _unique_ids,
 )
@@ -28,7 +27,6 @@ class RunnerSpec:
     node_type: str
     provider_id: str
     profile: str
-    runtime_policy_file: Path | None
 
     @classmethod
     def from_payload(
@@ -42,26 +40,11 @@ class RunnerSpec:
             payload,
             field=field,
             required={"id", "node_type", "provider_id"},
-            optional={"profile", "runtime_policy_file"},
+            optional={"profile"},
         )
         node_type = _non_empty_string(data["node_type"], field=f"{field}.node_type")
         if node_type not in {"agent", "codex"}:
             raise HarnessValidationError(f"{field}.node_type must be 'agent' or 'codex'.")
-        runtime_policy_file = None
-        if data.get("runtime_policy_file") is not None:
-            runtime_policy_file = _path(
-                data["runtime_policy_file"],
-                field=f"{field}.runtime_policy_file",
-                base_dir=base_dir,
-            )
-            if not runtime_policy_file.is_file():
-                raise HarnessValidationError(
-                    f"{field}.runtime_policy_file does not exist: {runtime_policy_file}."
-                )
-            if node_type != "agent":
-                raise HarnessValidationError(
-                    f"{field}.runtime_policy_file is only valid for an agent runner."
-                )
         profile = _string(data.get("profile", ""), field=f"{field}.profile").strip()
         if node_type == "agent" and not profile:
             raise HarnessValidationError(f"{field}.profile is required for an agent runner.")
@@ -70,7 +53,6 @@ class RunnerSpec:
             node_type=node_type,
             provider_id=_non_empty_string(data["provider_id"], field=f"{field}.provider_id"),
             profile=profile,
-            runtime_policy_file=runtime_policy_file,
         )
 
 

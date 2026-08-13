@@ -4,6 +4,10 @@ import type { LatestTurnProgressSummary, MessageEnvelope } from '../api'
 import MemoryMessageParts from './MemoryMessageParts.vue'
 import MemoryTurnGroup from './MemoryTurnGroup.vue'
 import {
+  isLatestMemoryTurn,
+  shouldLoadPreviousTurnsOnCollapse,
+} from './memoryTurnHistoryPolicy'
+import {
   feedRoleClass,
   memoryRoleLabel,
   useMemoryTurnEntries,
@@ -31,14 +35,13 @@ const emit = defineEmits<{
 const feedEntries = useMemoryTurnEntries(toRef(props, 'messages'))
 
 function isLatestTurn(index: number) {
-  for (let candidate = feedEntries.value.length - 1; candidate >= 0; candidate -= 1) {
-    if (feedEntries.value[candidate]?.type === 'turn') return candidate === index
-  }
-  return false
+  return isLatestMemoryTurn(feedEntries.value, index)
 }
 
 function onTurnToggle(index: number, expanded: boolean) {
-  if (!expanded && props.historyComplete === false && isLatestTurn(index)) emit('requestHistory')
+  if (shouldLoadPreviousTurnsOnCollapse(feedEntries.value, index, expanded, props.historyComplete)) {
+    emit('requestHistory')
+  }
 }
 
 function requestLatestTurnSection(index: number, section: 'progress' | 'metadata') {

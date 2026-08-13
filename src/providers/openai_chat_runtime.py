@@ -6,6 +6,7 @@ from typing import Any, Callable
 from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.providers.openai_curl_transport import OpenAICurlTransport
 from src.providers.openai_transport_errors import OpenAIHttpError, OpenAITransportError
+from src.providers.provider_message_policy import ProviderMessagePolicy
 from src.providers.provider_runtime_events import ProviderRuntimeEventMixin
 from src.providers.provider_stream_emit import ProviderStreamEmitMixin
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
@@ -43,9 +44,10 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         thinking_mode: object,
         stream: bool,
     ) -> dict[str, Any]:
+        normalized_messages = ProviderMessagePolicy(instruction_role="system").normalize_messages(messages)
         payload: dict[str, Any] = {
             "model": self.config["model"],
-            "messages": prepare_chat_completions_messages(messages),
+            "messages": prepare_chat_completions_messages(normalized_messages),
         }
         if active_tools:
             payload["tools"] = active_tools
@@ -222,7 +224,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 )
             except (OpenAIHttpError, OpenAITransportError) as exc:
                 error_str = str(exc)
-                if attempt < max_retries:
+                if attempt < max_retries and self._openai_chat_stream_error_retryable(exc):
                     self._emit_retry_notice(error=error_str, delay=retry_delay, stage="openai_chat_completions_retry")
                     sleep_with_cancel(retry_delay, self._cancel_source())
                     continue
@@ -443,3 +445,9 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
     def _openai_chat_error_retryable(status_code: object) -> bool:
         code = int(status_code or 0)
         return code == 429 or code >= 500
+
+    @classmethod
+    def _openai_chat_stream_error_retryable(cls, error: object) -> bool:
+        if isinstance(error, OpenAIHttpError):
+            return cls._openai_chat_error_retryable(error.status_code)
+        return isinstance(error, OpenAITransportError)

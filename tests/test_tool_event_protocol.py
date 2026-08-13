@@ -41,6 +41,32 @@ def test_base_tool_emits_lifecycle_events_for_tool_call():
     assert agent.events[1]["result_tail_preview_truncated"] is False
 
 
+def test_base_tool_serializes_structured_tool_result_for_model_message():
+    agent = _DummyAgent()
+    tools = BaseTool(agent)
+
+    def structured_tool():
+        return {"status": "ok", "data": {"values": [1, 2, 3]}}
+
+    tools.function_map["structured_tool"] = structured_tool
+    call = ToolCallEnvelope(
+        name="structured_tool",
+        call_id="call-structured",
+        arguments={},
+        arguments_json="{}",
+        provider="unit",
+    )
+
+    execution = tools.execute_tool_call(call)
+
+    assert isinstance(execution.cleaned_result, str)
+    assert json.loads(execution.cleaned_result) == {
+        "status": "ok",
+        "data": {"values": [1, 2, 3]},
+    }
+    assert agent.events[-1]["result_preview"].startswith('{"status": "ok"')
+
+
 def test_base_tool_marks_large_result_preview_as_preview_truncated():
     agent = _DummyAgent()
     tools = BaseTool(agent)

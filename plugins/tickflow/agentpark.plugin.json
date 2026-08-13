@@ -1,0 +1,12 @@
+{
+  "id": "tickflow",
+  "name": "TickFlow",
+  "description": "Read-only cached market quotes, K-lines, instruments, universes, financial statements, and depth data.",
+  "version": "1.1.0",
+  "tools": [
+    "./tools/tickflow_tools.py"
+  ],
+  "skills": [
+    "./skills/tickflow"
+  ]
+}

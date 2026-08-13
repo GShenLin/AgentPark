@@ -12,6 +12,7 @@ import {
   listGraphs,
   listNodeInstanceConfigs,
   loadGraph,
+  moveNodeInstance,
   saveGraph,
   saveGraphProfileFromGraph,
   setGraphVisibility,
@@ -67,6 +68,8 @@ const {
   currentGraphName,
   currentGraphWorkingPath,
   lastError,
+  nodeGraphMoveRequest,
+  nodeGraphMoveInProgress,
 } = useGlobalState()
 
 let autoScrollFrame: number | null = null
@@ -545,6 +548,40 @@ async function navigateToGraphNode(payload: { graph: GraphInfo; nodeId: string }
   if (!nodeId) return
   await loadGraphConfig(payload.graph, nodeId)
 }
+
+let handledNodeGraphMoveNonce = 0
+watch(
+  () => nodeGraphMoveRequest.value,
+  async (request) => {
+    if (!request || request.nonce === handledNodeGraphMoveNonce || nodeGraphMoveInProgress.value) return
+    handledNodeGraphMoveNonce = request.nonce
+    nodeGraphMoveInProgress.value = true
+    graphStatus.value = null
+    try {
+      await moveNodeInstance(request.nodeId, request.sourceGraphId, request.targetGraphId)
+      const nextNodeCache = { ...graphNodesById.value }
+      delete nextNodeCache[request.sourceGraphId]
+      delete nextNodeCache[request.targetGraphId]
+      graphNodesById.value = nextNodeCache
+      if ((currentGraphId.value || 'default') === request.sourceGraphId) {
+        if (selectedNodeId.value === request.nodeId) selectedNodeId.value = null
+        graphLoadRequest.value = await loadGraph(request.sourceGraphId)
+      }
+      await refreshGraphs()
+      graphStatus.value = t('memory.nodeMoved', {
+        node: request.nodeId,
+        graph: request.targetGraphId,
+      })
+    } catch (e: any) {
+      const message = String(e?.message || e)
+      graphStatus.value = message
+      lastError.value = message
+    } finally {
+      nodeGraphMoveInProgress.value = false
+      if (nodeGraphMoveRequest.value?.nonce === request.nonce) nodeGraphMoveRequest.value = null
+    }
+  },
+)
 
 async function deleteGraphConfig(item: GraphInfo) {
   const name = item.name || item.id

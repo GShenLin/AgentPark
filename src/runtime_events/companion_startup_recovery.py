@@ -6,7 +6,11 @@ from typing import Any
 
 from src.file_transaction import atomic_write_text
 from src.web_backend.node_config_service import node_config_service
-from src.web_backend.graph_grid_layout import graph_layout_lock, resolve_available_node_ui
+from src.web_backend.graph_grid_layout import (
+    graph_layout_lock,
+    repair_missing_node_grid_positions,
+    resolve_available_node_ui,
+)
 from src.web_backend.node_memory_store import ensure_node_memory_files
 
 from .temporary_receiver_cleanup import runtime_receiver_meta
@@ -36,8 +40,9 @@ class CompanionStartupRecovery:
             os.makedirs(node_dir, exist_ok=True)
             node_created = True
         node_config = os.path.join(node_dir, "config.json")
-        if not os.path.exists(node_config):
-            with graph_layout_lock(graph_dir):
+        with graph_layout_lock(graph_dir):
+            repair_missing_node_grid_positions(graph_dir)
+            if not os.path.exists(node_config):
                 ui = resolve_available_node_ui(graph_dir, exclude_node_ids={"Companion"})
                 node_config_service.create_or_replace(
                     node_config,
@@ -50,7 +55,7 @@ class CompanionStartupRecovery:
                         "ui": ui,
                     },
                 )
-            node_created = True
+                node_created = True
         ensure_node_memory_files(
             self.core.graph_runtime._node_memory_path("Companion", "Companion"),
             self.core.graph_runtime._node_messages_path("Companion", "Companion"),

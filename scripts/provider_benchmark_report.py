@@ -34,7 +34,6 @@ def build_provider_report(
         f"- 原始结果：`{source_path}`",
         f"- 样本数：{len(metrics)}；Provider 数：{len(runner_ids)}；完整验收：{len(qualified)}",
         f"- Profile SHA-256：`{contracts['profile_sha256'] or '不一致/缺失'}`",
-        f"- RuntimePolicy：`{contracts['policy_id'] or '不一致/缺失'}`，有效配置 SHA-256：`{contracts['policy_sha256'] or '不一致/缺失'}`",
         f"- fixture revision：`{contracts['fixture_revision'] or '不一致/缺失'}`",
         "- 排名门槛：仅 `benchmark_status=completed` 且全部必选验收、路径门禁通过的样本参与速度排名。",
         "",
@@ -221,14 +220,6 @@ def _shared_contracts(runs: list[dict[str, Any]]) -> dict[str, str]:
     return {
         "profile_sha256": _single(
             run.get("runner_contract", {}).get("profile", {}).get("sha256") for run in runs
-        ),
-        "policy_id": _single(
-            run.get("runner_contract", {}).get("effective_runtime_policy", {}).get("policy_id")
-            for run in runs
-        ),
-        "policy_sha256": _single(
-            run.get("runner_contract", {}).get("effective_runtime_policy", {}).get("effective_sha256")
-            for run in runs
         ),
         "fixture_revision": _single(run.get("fixture", {}).get("resolved_revision") for run in runs),
     }

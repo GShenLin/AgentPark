@@ -29,10 +29,6 @@ def _run(provider_id: str, *, duration_ms: int, completed: bool, score: int):
         "provider_id": provider_id,
         "runner_contract": {
             "profile": {"sha256": "profile"},
-            "effective_runtime_policy": {
-                "policy_id": "coding-default",
-                "effective_sha256": "policy",
-            },
         },
         "fixture": {"resolved_revision": "revision"},
         "benchmark": {

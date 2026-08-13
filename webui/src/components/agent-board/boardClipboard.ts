@@ -1,22 +1,26 @@
 import type { LinkItem, NodeCard } from './context'
 import { findAvailableGridGroup, sanitizeNodeGridUi, type BoardGridSettings, type NodeGridPosition, type NodeGridUi } from './boardGrid'
+import { normalizeNodeNotes, type NodeNotes } from '../../nodeNotes'
 
 export type BoardClipboardSnapshot = {
   graphId: string
   nodes: NodeCard[]
   links: LinkItem[]
+  nodeNotes: NodeNotes
 }
 
 export type BoardPastePlan = {
   nodes: NodeCard[]
   links: LinkItem[]
   idMap: Map<string, string>
+  nodeNotes: NodeNotes
 }
 
 export function makeBoardCopySnapshot(options: {
   graphId: string
   nodes: NodeCard[]
   links: LinkItem[]
+  nodeNotes: NodeNotes
   selectedItemIds: string[]
 }): BoardClipboardSnapshot | null {
   const selected = new Set<string>(options.selectedItemIds)
@@ -34,7 +38,12 @@ export function makeBoardCopySnapshot(options: {
       from: { node: link.from.node, index: link.from.index },
       to: { node: link.to.node, index: link.to.index },
     }))
-  return { graphId: options.graphId, nodes: copiedNodes, links: copiedLinks }
+  const copiedNotes = Object.fromEntries(
+    copiedNodes
+      .map((node) => [node.id, options.nodeNotes[node.id]] as const)
+      .filter((entry): entry is readonly [string, string] => !!entry[1]),
+  )
+  return { graphId: options.graphId, nodes: copiedNodes, links: copiedLinks, nodeNotes: copiedNotes }
 }
 
 export function buildBoardPastePlan(options: {
@@ -66,6 +75,12 @@ export function buildBoardPastePlan(options: {
   const available = findAvailableGridGroup(desired, options.occupied, options.grid)
   for (const node of newNodes) node.ui = available.get(node.id) || node.ui
   const newLinks: LinkItem[] = []
+  const newNodeNotes: NodeNotes = {}
+  const sourceNotes = normalizeNodeNotes(options.snapshot.nodeNotes)
+  for (const [sourceNodeId, note] of Object.entries(sourceNotes)) {
+    const targetNodeId = idMap.get(sourceNodeId)
+    if (targetNodeId) newNodeNotes[targetNodeId] = note
+  }
   for (const link of options.snapshot.links) {
     const fromId = idMap.get(link.from.node)
     const toId = idMap.get(link.to.node)
@@ -76,7 +91,7 @@ export function buildBoardPastePlan(options: {
       to: { node: toId, index: link.to.index },
     })
   }
-  return { nodes: newNodes, links: newLinks, idMap }
+  return { nodes: newNodes, links: newLinks, idMap, nodeNotes: newNodeNotes }
 }
 
 function copyNodeForClipboard(node: NodeCard): NodeCard {

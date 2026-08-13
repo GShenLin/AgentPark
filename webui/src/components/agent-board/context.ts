@@ -12,6 +12,7 @@ import type {
   ProviderRequestTotals,
 } from '../../api'
 import type { BoardGridSettings, NodeGridUi } from './boardGrid'
+import type { NodeNotes } from '../../nodeNotes'
 
 export type LinkEndpoint = {
   node: string
@@ -65,6 +66,7 @@ export type NodeCard = {
 export type DragSession =
   | {
       itemId: string
+      movingIds: string[]
       pointerId: number
       moved: boolean
       focusOnClick: boolean
@@ -106,6 +108,7 @@ export type AgentBoardContext = {
   nodes: Ref<NodeCard[]>
   links: Ref<LinkItem[]>
   nodeConfigs: Ref<Record<string, NodeInstanceConfig>>
+  nodeNotes: Ref<NodeNotes>
 
   boardRef: Ref<HTMLElement | null>
   canvasRef: Ref<HTMLElement | null>
@@ -151,6 +154,7 @@ export type AgentBoardContext = {
   onNodePaletteDragStart: (node: NodeInfo, event: DragEvent) => void
   sendNodeMessage: (nodeId: string, message: string | MessageEnvelope) => Promise<void>
   renameNodeCard: (nodeId: string, nextName: string) => Promise<void>
+  setNodeNote: (nodeId: string, note: string) => Promise<void>
   deleteNodeCard: (nodeId: string) => Promise<void>
   refreshNodeConfigsAndMemory: () => Promise<void>
   ensureNodeConfig: (nodeId: string) => Promise<void>

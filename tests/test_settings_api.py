@@ -285,19 +285,20 @@ def test_settings_api_validates_board_layout_defaults(monkeypatch, tmp_path):
                     "boardLayout": {
                         "gridCellWidth": 400,
                         "gridCellHeight": 500,
-                        "nodeWidth": 320,
-                        "nodeHeight": 360,
+                        "nodeWidth": 50,
+                        "nodeHeight": 50,
                     }
                 }
             )
         },
     )
 
-    assert result["data"]["boardLayout"]["nodeWidth"] == 320
+    assert result["data"]["boardLayout"]["nodeWidth"] == 50
+    assert result["data"]["boardLayout"]["nodeHeight"] == 50
     with pytest.raises(HTTPException) as exc:
         domain.update_settings_section(
             "defaults",
-            {"content": json.dumps({"boardLayout": {"nodeWidth": 100}})},
+            {"content": json.dumps({"boardLayout": {"nodeWidth": 49}})},
         )
     assert "boardLayout.nodeWidth" in str(exc.value.detail)
 

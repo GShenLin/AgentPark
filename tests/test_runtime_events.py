@@ -684,11 +684,18 @@ def test_node_dispatch_rejects_explicit_receivers(tmp_path, monkeypatch):
 def test_node_dispatch_fallback_creates_temporary_profile_receiver(tmp_path, monkeypatch):
     _patch_workspace(monkeypatch, tmp_path)
     _write_graph_node(tmp_path, "Test", "Agent")
-    _write_graph_node(tmp_path, "Companion", "Companion", state="working")
+    _write_graph_node(
+        tmp_path,
+        "Companion",
+        "Companion",
+        state="working",
+        extra={"ui": {"x": 623, "y": 426, "width": 367, "height": 345}},
+    )
     _write_agent_profile(tmp_path)
     core = BackendCore()
     monkeypatch.setattr(core.graph_runtime, "_ensure_graph_runner", lambda graph_id: None)
     monkeypatch.setattr(core.graph_runtime, "_wake_graph_runner", lambda graph_id: None)
+    core.runtime_events.startup_recovery.run()
     group_config = _event_config(action="node.dispatch", target="companion_review")
     group_config["receiver_groups"] = {
         "companion_review": {
@@ -1091,6 +1098,24 @@ def test_companion_startup_recovery_ensures_canonical_graph_and_node(tmp_path, m
     assert graph_config.exists()
     assert node_config.exists()
     assert node_config_service.read_optional_object(str(node_config))["type_id"] == "agent_node"
+
+
+def test_companion_startup_recovery_migrates_legacy_canonical_node_ui(tmp_path, monkeypatch):
+    _patch_workspace(monkeypatch, tmp_path)
+    _write_graph_node(
+        tmp_path,
+        "Companion",
+        "Companion",
+        extra={"ui": {"x": 623, "y": 426, "width": 367, "height": 345}},
+    )
+    core = BackendCore()
+
+    result = core.runtime_events.startup_recovery.run()
+    config_path = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
+    cfg = node_config_service.read_optional_object(str(config_path))
+
+    assert result["canonical"]["node_created"] is False
+    assert cfg["ui"] == {"grid_x": 2, "grid_y": 1, "width": 367, "height": 345}
 
 
 def test_companion_startup_recovery_merges_and_deletes_leftover_receiver(tmp_path, monkeypatch):

@@ -5,6 +5,7 @@ import {
   gridRectangleCellKeys,
   normalizeBoardLayoutDefaults,
   occupiedGridCellKeys,
+  sanitizeNodeGridUi,
 } from '../src/components/agent-board/boardGrid'
 
 const grid = { cellWidth: 300, cellHeight: 320 }
@@ -15,10 +16,19 @@ describe('board grid', () => {
       boardLayout: {
         gridCellWidth: 400,
         gridCellHeight: 500,
-        nodeWidth: 320,
-        nodeHeight: 360,
+        nodeWidth: 50,
+        nodeHeight: 50,
       },
-    })).toEqual({ cellWidth: 400, cellHeight: 500, nodeWidth: 320, nodeHeight: 360 })
+    })).toEqual({ cellWidth: 400, cellHeight: 500, nodeWidth: 50, nodeHeight: 50 })
+  })
+
+  it('preserves node sizes below the default card dimensions', () => {
+    expect(sanitizeNodeGridUi({ grid_x: 1, grid_y: 2, width: 24, height: 16 })).toEqual({
+      grid_x: 1,
+      grid_y: 2,
+      width: 24,
+      height: 16,
+    })
   })
 
   it('snaps a canvas point to the nearest grid origin', () => {

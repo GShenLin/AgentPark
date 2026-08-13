@@ -9,7 +9,6 @@ from scripts.benchmark_harness_evidence import (
     runner_execution_contract,
     validate_profile_ab_runner_contracts,
 )
-from src.runtime_policy import RuntimePolicyCatalog
 from src.web_backend.profile_metadata import (
     profile_ab_comparison_contract,
     validate_profile_metadata,
@@ -46,8 +45,6 @@ def test_curated_profiles_form_ten_strict_ab_provider_pairs():
     providers = json.loads(
         (PROJECT_ROOT / "config" / "modelProvider.json").read_text(encoding="utf-8")
     )["providers"]
-    catalog = RuntimePolicyCatalog.load(str(PROJECT_ROOT))
-
     assert len(profiles) == 20
     assert {item["profile_metadata"]["task_family"] for item in profiles} == EXPECTED_FAMILIES
 
@@ -57,9 +54,6 @@ def test_curated_profiles_form_ten_strict_ab_provider_pairs():
         assert len(pair) == 2
         assert {item["profile_metadata"]["ab_test"]["variant"] for item in pair} == {"A", "B"}
         assert len({item["fields"]["provider_id"] for item in pair}) == 2
-        assert {item["fields"]["runtime_policy"]["policy_id"] for item in pair} == {family}
-        assert family in catalog.policies
-
         comparable_fields = [
             {key: value for key, value in item["fields"].items() if key != "provider_id"}
             for item in pair
@@ -85,25 +79,12 @@ def test_curated_profiles_form_ten_strict_ab_provider_pairs():
             assert item["fields"]["tools"] == ["system_tools"]
 
 
-def test_curated_runtime_policies_have_distinct_task_prompts():
-    catalog = RuntimePolicyCatalog.load(str(PROJECT_ROOT))
-    selected = {family: catalog.get(family) for family in EXPECTED_FAMILIES}
-
-    assert len({entry.policy.task_direction.code_prompt for entry in selected.values()}) == 10
-    assert all(entry.policy.description for entry in selected.values())
-    assert selected["localized-implementation"].policy.implementation_checkpoint.evidence_operation_limit == 6
-    assert selected["cross-module-implementation"].policy.completion_review.require_done_criteria is True
-    assert selected["incident-diagnosis"].policy.implementation_checkpoint.enabled is False
-    assert selected["code-review"].policy.implementation_checkpoint.enabled is False
-
-
 def test_benchmark_runner_records_curated_ab_comparison_contract():
     runner = RunnerSpec(
         runner_id="code-reader-a",
         node_type="agent",
         provider_id="Kimi_CodingPlan",
         profile="agent/CodeReader_Kimi.json",
-        runtime_policy_file=None,
     )
 
     contract = runner_execution_contract(runner)
@@ -120,14 +101,12 @@ def test_benchmark_runner_enforces_curated_ab_pair_contract():
             node_type="agent",
             provider_id="Kimi_CodingPlan",
             profile="agent/CodeReader_Kimi.json",
-            runtime_policy_file=None,
         ),
         RunnerSpec(
             runner_id="code-reader-b",
             node_type="agent",
             provider_id="sonnet-5-krill",
             profile="agent/CodeReader_Sonnet.json",
-            runtime_policy_file=None,
         ),
     ]
     contracts = [runner_execution_contract(runner) for runner in runners]
@@ -175,7 +154,6 @@ def test_curated_profiles_create_agent_nodes_through_public_api(tmp_path, monkey
             )
         )
         assert config["provider_id"] == profile["fields"]["provider_id"]
-        assert config["runtime_policy"] == profile["fields"]["runtime_policy"]
         assert config["instruction"] == profile["fields"]["instruction"]
         assert config["system_prompt"] == profile["fields"]["system_prompt"]
 

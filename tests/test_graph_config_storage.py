@@ -19,6 +19,7 @@ def test_graph_config_strips_nodes_field():
             "id": graph_id,
             "name": graph_id,
             "nodes": [{"id": "x", "typeId": "append_node", "name": "x", "ui": {"x": 1, "y": 2}}],
+            "node_notes": {"x": "  temporary graph note  "},
             "output_routes": {},
         }
         r = client.post(f"/api/graphs/{graph_id}", json={"graph": graph})
@@ -29,9 +30,11 @@ def test_graph_config_strips_nodes_field():
         assert "nodes" not in saved
         assert "links" not in saved
         assert saved.get("output_routes") == {}
+        assert saved.get("node_notes") == {"x": "temporary graph note"}
 
         loaded = client.get(f"/api/graphs/{graph_id}").json().get("graph") or {}
         assert "nodes" not in loaded
+        assert loaded.get("node_notes") == {"x": "temporary graph note"}
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
@@ -62,6 +65,32 @@ def test_graph_config_persists_working_path():
 
         loaded = client.get(f"/api/graphs/{graph_id}").json().get("graph") or {}
         assert loaded.get("working_path") == r"C:\Project\GraphRoot"
+    finally:
+        shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
+
+
+def test_graph_config_rejects_non_string_node_note():
+    import src.web_backend as backend
+
+    graph_id = f"ut_graph_bad_note_{uuid.uuid4().hex[:8]}"
+    from fastapi.testclient import TestClient
+    from src.web_backend.runtime_paths import _get_graphs_dir
+
+    try:
+        response = TestClient(backend.create_app()).post(
+            f"/api/graphs/{graph_id}",
+            json={
+                "graph": {
+                    "id": graph_id,
+                    "name": graph_id,
+                    "node_notes": {"Agent": {"unexpected": "object"}},
+                    "output_routes": {},
+                }
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "graph node_notes.Agent must be a string"
     finally:
         shutil.rmtree(os.path.join(_get_graphs_dir(), graph_id), ignore_errors=True)
 
@@ -256,6 +285,7 @@ def test_node_rename_and_delete_keep_output_routes_consistent():
                 "graph": {
                     "id": graph_id,
                     "name": graph_id,
+                    "node_notes": {"source": "source note", "target": "target note"},
                     "output_routes": {
                         "source": [
                             {
@@ -277,11 +307,13 @@ def test_node_rename_and_delete_keep_output_routes_consistent():
         after_rename = json.loads(open(os.path.join(graph_dir, "config.json"), "r", encoding="utf-8").read())
         assert "source" not in after_rename["output_routes"]
         assert after_rename["output_routes"]["renamed"][0]["targets"][0]["node_id"] == "target"
+        assert after_rename["node_notes"] == {"target": "target note", "renamed": "source note"}
 
         deleted = client.delete(f"/api/nodes/instances/target?graph_id={graph_id}")
         assert deleted.status_code == 200
         after_delete = json.loads(open(os.path.join(graph_dir, "config.json"), "r", encoding="utf-8").read())
         assert after_delete["output_routes"]["renamed"][0]["targets"] == []
+        assert after_delete["node_notes"] == {"renamed": "source note"}
         assert "links" not in after_delete
     finally:
         shutil.rmtree(graph_dir, ignore_errors=True)

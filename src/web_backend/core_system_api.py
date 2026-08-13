@@ -16,6 +16,14 @@ from .system_file_api import FileSystemApiMixin
 
 
 class SystemApiDomain(FileSystemApiMixin, DomainBase):
+    def checkpoint_restart(self, request: Request):
+        if not is_local_request(request):
+            raise HTTPException(status_code=403, detail="restart checkpoint is only available locally")
+        try:
+            return self.core.restart_recovery.capture_running_nodes()
+        except Exception as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
     def restart_server(self):
         runtime_root = _get_runtime_root()
         try:

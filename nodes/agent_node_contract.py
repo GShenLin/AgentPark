@@ -18,7 +18,6 @@ AGENT_CONFIG_DEFAULTS = {
     "provider_id": "",
     "instruction": "",
     "system_prompt": "",
-    "runtime_policy": None,
     "collaboration_mode": "default",
     "plugins": [],
     "tools": [],
@@ -34,17 +33,14 @@ AGENT_CONFIG_DEFAULTS = {
 }
 
 AGENT_CONFIG_SCHEMA = {
-    "provider_id": {"type": "text", "label": "provider_id"},
+    "provider_id": {
+        "type": "select",
+        "label": "provider_id",
+        "options": [],
+        "description": "Select a configured Provider supported by this Agent mode.",
+    },
     "instruction": {"type": "text", "label": "instruction"},
     "system_prompt": {"type": "text", "label": "system_prompt"},
-    "runtime_policy": {
-        "type": "json",
-        "label": "Runtime policy",
-        "description": (
-            "Optional strict policy selection and overrides. "
-            "Leave empty to use the configured default CodingRuntimePolicy."
-        ),
-    },
     "collaboration_mode": {
         "type": "select",
         "label": "collaboration_mode",

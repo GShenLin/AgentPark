@@ -49,7 +49,12 @@ class Node(BaseNode):
         "verify_timeout_seconds": "60",
     }
     config_schema = {
-        "provider_id": {"type": "text", "label": "provider_id"},
+        "provider_id": {
+            "type": "select",
+            "label": "provider_id",
+            "options": [],
+            "description": "Select the configured Provider used by the GUI planner.",
+        },
         "instruction": {"type": "text", "label": "instruction (fallback if input empty)"},
         "system_prompt": {"type": "text", "label": "planner system_prompt"},
         "verify_prompt": {"type": "text", "label": "verify prompt"},

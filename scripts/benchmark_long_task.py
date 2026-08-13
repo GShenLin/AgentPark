@@ -39,7 +39,6 @@ def _agent_config(
     node_id: str,
     *,
     provider_id: str,
-    runtime_policy: object = None,
 ) -> dict[str, Any]:
     profile = _read_json(profile_path)
     fields = profile.get("fields")
@@ -61,8 +60,6 @@ def _agent_config(
             "provider_id": provider_id,
         }
     )
-    if runtime_policy is not None:
-        config["runtime_policy"] = runtime_policy
     return config
 
 
@@ -98,7 +95,6 @@ def summarize_events(events: list[dict[str, Any]], *, duration_ms: int, output: 
     failed_tools = 0
     thinking_chars = 0
     gateway_requests: list[dict[str, Any]] = []
-    runtime_policy_manifest: dict[str, Any] | None = None
     for record in events:
         event = record.get("event")
         if not isinstance(event, dict):
@@ -119,10 +115,6 @@ def summarize_events(events: list[dict[str, Any]], *, duration_ms: int, output: 
         if stage == "provider_gateway_request":
             gateway_requests.append(payload)
             continue
-        if stage == "openai_responses_request_start":
-            candidate = payload.get("runtime_policy_manifest")
-            if runtime_policy_manifest is None and isinstance(candidate, dict):
-                runtime_policy_manifest = candidate
         try:
             request_index = int(payload.get("request_index"))
         except (TypeError, ValueError):
@@ -177,7 +169,6 @@ def summarize_events(events: list[dict[str, Any]], *, duration_ms: int, output: 
         "usage": usage_totals,
         "requests": requests,
         "provider_gateway_requests": gateway_requests,
-        "runtime_policy_manifest": runtime_policy_manifest,
     }
 
 
@@ -204,18 +195,11 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     messages_path = node_dir / "messages.jsonl"
     if args.node_type == "agent":
         profile_path = resolve_agent_profile(args.profile, project_root=PROJECT_ROOT)
-        runtime_policy_path_value = str(getattr(args, "runtime_policy_file", "") or "").strip()
-        runtime_policy = (
-            _read_json(Path(runtime_policy_path_value).resolve())
-            if runtime_policy_path_value
-            else None
-        )
         config = _agent_config(
             profile_path,
             workspace,
             node_id,
             provider_id=args.provider_id,
-            runtime_policy=runtime_policy,
         )
         node = AgentNode()
     else:
@@ -335,11 +319,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--result-dir", required=True)
     parser.add_argument("--provider-id", default="GPT_Official")
     parser.add_argument("--profile", default=str(PROJECT_ROOT / "agent" / "GPT1.json"))
-    parser.add_argument(
-        "--runtime-policy-file",
-        default="",
-        help="Optional JSON RuntimePolicy selection/override for the Agent runner.",
-    )
     return parser
 
 

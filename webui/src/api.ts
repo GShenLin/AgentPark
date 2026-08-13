@@ -38,12 +38,12 @@ import type {
   RemoteEndpoint,
   RemoteStatus,
   RemoteWorker,
-  RuntimePolicyPreview,
   RunInfo,
   UserInteractionRequest,
   WorkspaceBootstrap,
 } from './apiTypes'
 import { accessRequestHeaders, syncCanonicalAccessUsername } from './accessIdentity'
+import { createBrowserUuid } from './utils/browserId'
 
 export type {
   AccessStatus,
@@ -107,7 +107,6 @@ export type {
   RemoteEndpoint,
   RemoteStatus,
   RemoteWorker,
-  RuntimePolicyPreview,
   ResourceKind,
   RuntimeEvent,
   RuntimeNoticeEvent,
@@ -211,9 +210,7 @@ export function createApiNetworkError(baseUrl: string, path: string, init: Reque
 }
 
 function createRequestTraceId() {
-  return typeof crypto?.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `request-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return createBrowserUuid()
 }
 
 function waitForNetworkRetry(delayMs: number) {
@@ -765,6 +762,28 @@ export async function stopNodeRun(runId: string): Promise<{ status: NodeRunStatu
   })
 }
 
+export async function moveNodeInstance(
+  nodeId: string,
+  sourceGraphId: string,
+  targetGraphId: string,
+): Promise<{
+  ok: boolean
+  node_id: string
+  source_graph_id: string
+  target_graph_id: string
+  config_path: string
+  ui: { grid_x: number; grid_y: number; width?: number; height?: number }
+  removed_output_routes: number
+  moved_node_note: boolean
+  moved_event_handlers: number
+}> {
+  const query = new URLSearchParams({ graph_id: sourceGraphId })
+  return apiFetch(`/api/nodes/instances/${encodeURIComponent(nodeId)}/move?${query.toString()}`, {
+    method: 'POST',
+    body: JSON.stringify({ target_graph_id: targetGraphId }),
+  })
+}
+
 export async function listGraphs(): Promise<GraphInfo[]> {
   const res = await apiFetch('/api/graphs')
   return (res.graphs || []) as GraphInfo[]
@@ -826,15 +845,6 @@ export async function updateAgentProfile(
   return apiFetch(`/api/profiles/agents/${encodeURIComponent(profileId)}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
-  })
-}
-
-export async function previewAgentRuntimePolicy(
-  runtimePolicy: unknown,
-): Promise<RuntimePolicyPreview> {
-  return apiFetch('/api/profiles/agents/runtime-policy/preview', {
-    method: 'POST',
-    body: JSON.stringify({ runtime_policy: runtimePolicy }),
   })
 }
 

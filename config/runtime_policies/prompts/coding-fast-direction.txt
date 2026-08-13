@@ -1,9 +1,0 @@
-Work only in the configured working_path unless the user explicitly asks to edit
-another repository. Treat other paths in the request as diagnostic evidence, not an
-automatic workspace switch.
-
-Use narrow searches to identify the owning production path and its direct callers.
-Patch as soon as the behavior boundary is clear. Run the smallest focused verification
-and the repository's required build once after the patch. Repeat a check only after a
-relevant code change or failure. Stop when the requested behavior is implemented and
-focused evidence passes; do not add optional tests or speculative improvements.

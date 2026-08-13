@@ -17,6 +17,10 @@ export type BoardSelectionRect = {
   height: number
 }
 
+export function resolveNodeMoveIds(selectedIds: readonly string[], pressedId: string) {
+  return selectedIds.includes(pressedId) ? [...selectedIds] : [pressedId]
+}
+
 export function selectionRectFromSession(session: BoardSelectionSession | null): BoardSelectionRect | null {
   if (!session) return null
   const x = Math.min(session.startX, session.currentX)

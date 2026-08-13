@@ -741,7 +741,9 @@ def _load_latest_node_memory_turn_from_committed_prefix(
         for date_dir in _iter_archive_date_dirs(_node_memory_dir(memory_path, messages_path), reverse=True)
     )
     if state.record_count == 0:
-        return ([], not archive_exists)
+        if archive_exists:
+            return None
+        return [], True
 
     output_reversed: list[dict[str, Any]] = []
     found_user = False

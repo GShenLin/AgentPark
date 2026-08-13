@@ -274,6 +274,69 @@ class ToolContextCompactionActionsMixin:
                 selected.add(id(following))
         return selected
 
+    @staticmethod
+    def _tool_context_compaction_message_call_ids(message: object) -> set[str]:
+        if not isinstance(message, dict):
+            return set()
+        call_ids: set[str] = set()
+        direct_call_id = str(message.get("tool_call_id") or message.get("call_id") or "").strip()
+        if direct_call_id:
+            call_ids.add(direct_call_id)
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            call_ids.update(
+                call_id
+                for item in tool_calls
+                if isinstance(item, dict)
+                for call_id in [str(item.get("id") or item.get("call_id") or "").strip()]
+                if call_id
+            )
+        parts = message.get("parts")
+        if isinstance(parts, list):
+            for part in parts:
+                if not isinstance(part, dict) or not isinstance(part.get("functionCall"), dict):
+                    continue
+                function_call = part["functionCall"]
+                call_id = str(
+                    part.get("_agentpark_call_id")
+                    or function_call.get("id")
+                    or function_call.get("call_id")
+                    or ""
+                ).strip()
+                if call_id:
+                    call_ids.add(call_id)
+        return call_ids
+
+    def _tool_context_compaction_rejected_exchange_message_ids(
+        self,
+        messages: object,
+        rejected_call_ids: object,
+        *,
+        after_message: object,
+    ) -> set[int]:
+        if not isinstance(messages, list) or not isinstance(rejected_call_ids, (set, list, tuple)):
+            return set()
+        target_call_ids = {
+            str(call_id).strip()
+            for call_id in rejected_call_ids
+            if str(call_id).strip()
+        }
+        if not target_call_ids:
+            return set()
+        try:
+            start_index = next(
+                index + 1
+                for index, message in enumerate(messages)
+                if message is after_message
+            )
+        except StopIteration:
+            return set()
+        return {
+            id(message)
+            for message in messages[start_index:]
+            if self._tool_context_compaction_message_call_ids(message) & target_call_ids
+        }
+
     def _insert_tool_context_summary(
         self,
         messages: list[dict[str, Any]],

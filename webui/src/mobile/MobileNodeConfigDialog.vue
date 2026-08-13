@@ -14,6 +14,7 @@ import ActionButton from '../components/ActionButton.vue'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
 import DangerButton from '../components/DangerButton.vue'
 import DialogCloseButton from '../components/DialogCloseButton.vue'
+import ExpandableTextarea from '../components/ExpandableTextarea.vue'
 import FormSelect from '../components/FormSelect.vue'
 import FormTextInput from '../components/FormTextInput.vue'
 import { t } from '../i18n'
@@ -32,6 +33,7 @@ const props = defineProps<{
   nodes: MobileNode[]
   outputRoutes: MobileOutputRouteRow[]
   saveFields: (fields: Record<string, unknown>) => Promise<void>
+  saveNote: (note: string) => Promise<void>
   renameNode: (name: string) => Promise<void>
   saveProfile: (profileId: string, profileName: string) => Promise<unknown>
   loadProfile: (profileId: string) => Promise<AgentProfileLoadResponse>
@@ -62,6 +64,8 @@ const draftFields = ref<Record<string, any>>({})
 const dirtyKeys = ref<Record<string, true>>({})
 const nodeNameDraft = ref('')
 const nodeNameTouched = ref(false)
+const noteDraft = ref('')
+const noteTouched = ref(false)
 const routing = ref(false)
 let templateRequestId = 0
 let profileSavedTimer: number | null = null
@@ -71,7 +75,13 @@ const schema = computed(() => templateSchema.value)
 const fieldKeys = computed(() => Object.keys(schema.value || {}))
 const currentNodeName = computed(() => String(props.node?.name || props.node?.id || '').trim())
 const nodeNameDirty = computed(() => nodeNameTouched.value && nodeNameDraft.value.trim() !== currentNodeName.value)
-const dirtyCount = computed(() => Object.keys(dirtyKeys.value || {}).length + (nodeNameDirty.value ? 1 : 0))
+const currentNote = computed(() => String(props.node?.note || '').trim())
+const noteDirty = computed(() => noteTouched.value && noteDraft.value.trim() !== currentNote.value)
+const dirtyCount = computed(() => (
+  Object.keys(dirtyKeys.value || {}).length
+  + (nodeNameDirty.value ? 1 : 0)
+  + (noteDirty.value ? 1 : 0)
+))
 const canSave = computed(() => dirtyCount.value > 0 && !saving.value && (!nodeNameDirty.value || !!nodeNameDraft.value.trim()))
 const templateKey = computed(() => {
   if (!props.open) return 'closed'
@@ -104,6 +114,11 @@ function setField(key: string, value: any) {
 function setNodeName(value: string) {
   nodeNameDraft.value = value
   nodeNameTouched.value = true
+}
+
+function setNote(value: string) {
+  noteDraft.value = value
+  noteTouched.value = true
 }
 
 function portOptions(count: unknown) {
@@ -168,6 +183,11 @@ function resetNodeNameDraft() {
   nodeNameTouched.value = false
 }
 
+function resetNoteDraft() {
+  noteDraft.value = String(props.node?.note || '')
+  noteTouched.value = false
+}
+
 function schemaContextKey(fields: Record<string, any> | null | undefined) {
   const context = resolveAgentProviderSchemaContext(props.providers, fields)
   return context.providerId
@@ -229,8 +249,10 @@ async function persistPendingChanges(emitSaved = true) {
   if (!nodeId) return false
   const keys = Object.keys(dirtyKeys.value || {})
   const shouldRename = nodeNameDirty.value
+  const shouldSaveNote = noteDirty.value
   const nextNodeName = nodeNameDraft.value.trim()
-  if (!keys.length && !shouldRename) return true
+  const nextNote = noteDraft.value.trim()
+  if (!keys.length && !shouldRename && !shouldSaveNote) return true
   if (shouldRename && !nextNodeName) {
     showError('Node name is required')
     return false
@@ -251,6 +273,11 @@ async function persistPendingChanges(emitSaved = true) {
     if (keys.length) {
       await props.saveFields(fields)
       dirtyKeys.value = {}
+    }
+    if (shouldSaveNote) {
+      await props.saveNote(nextNote)
+      noteDraft.value = nextNote
+      noteTouched.value = false
     }
     if (emitSaved) emit('saved')
     return true
@@ -364,6 +391,15 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => [props.open, props.node?.id, props.node?.note],
+  () => {
+    if (saving.value || noteTouched.value) return
+    resetNoteDraft()
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(() => {
   if (profileSavedTimer != null) window.clearTimeout(profileSavedTimer)
 })
@@ -404,6 +440,20 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="config-body">
+        <section class="node-note-section">
+          <div class="node-note-label">{{ t('board.note') }}</div>
+          <ExpandableTextarea
+            :model-value="noteDraft"
+            :rows="3"
+            :title="t('board.note')"
+            :aria-label="t('board.note')"
+            :placeholder="t('board.notePlaceholder')"
+            :disabled="saving || profileSaving || !!node?.readonly"
+            @update:model-value="setNote"
+          />
+          <div class="node-note-hint">{{ t('board.noteHint') }}</div>
+        </section>
+
         <section class="config-fields-section">
           <div v-if="loading" class="config-empty">{{ t('board.loadingConfig') }}</div>
           <div v-else-if="fieldKeys.length === 0" class="config-empty">{{ t('board.noEditableFields') }}</div>
@@ -565,9 +615,32 @@ onBeforeUnmount(() => {
   padding: 12px;
 }
 
+.node-note-section,
 .config-fields-section,
 .output-routes-section {
   min-width: 0;
+}
+
+.node-note-section {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.node-note-label {
+  color: rgba(226, 232, 240, 0.96);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.node-note-hint {
+  color: rgba(148, 163, 184, 0.88);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .output-routes-section {

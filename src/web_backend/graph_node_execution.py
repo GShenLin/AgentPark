@@ -62,6 +62,7 @@ class GraphNodeExecution(HostBoundService):
             for key in ("_access_client_id", "_access_username", "_access_role")
             if str(pending_item.get(key) or "").strip()
         }
+        restart_recovery = pending_item.get("_restart_recovery")
 
         if os.path.exists(config_path):
             cfg = _read_json_dict(config_path)
@@ -87,6 +88,8 @@ class GraphNodeExecution(HostBoundService):
             "access_role": access_metadata.get("_access_role", ""),
         }
         self._inject_node_config_into_context(context, cfg)
+        if isinstance(restart_recovery, dict):
+            context["restart_recovery"] = restart_recovery
         bind_node_storage_context(context, config_path)
         self._log_graph_event(
             safe_graph_id,
@@ -166,6 +169,7 @@ class GraphNodeExecution(HostBoundService):
             return True
 
         work_completed = False
+        restart_recovery_started = False
         try:
             if stop_requested():
                 raise NodeStopRequested()
@@ -210,6 +214,7 @@ class GraphNodeExecution(HostBoundService):
                 context["runtime_event_context_fragments"] = []
             if stop_requested():
                 raise NodeStopRequested()
+            restart_recovery_started = isinstance(restart_recovery, dict)
             routed = _run_node_logic_with_routes(nodes_dir, type_id, pending_message, context)
             work_completed = True
             if finish_stop_requested():
@@ -315,6 +320,28 @@ class GraphNodeExecution(HostBoundService):
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
         finally:
+            if restart_recovery_started:
+                try:
+                    cleanup = self.core.restart_recovery.complete_node_recovery(restart_recovery)
+                    self._log_graph_event(
+                        safe_graph_id,
+                        "restart_recovery_completed",
+                        trace_id=trace_id,
+                        node_instance_id=entry,
+                        node_type_id=type_id,
+                        restart_id=str(restart_recovery.get("restart_id") or ""),
+                        checkpoint_removed=bool(cleanup.get("removed")),
+                    )
+                except Exception as cleanup_error:
+                    self._log_graph_event(
+                        safe_graph_id,
+                        "restart_recovery_cleanup_failed",
+                        trace_id=trace_id,
+                        node_instance_id=entry,
+                        node_type_id=type_id,
+                        restart_id=str(restart_recovery.get("restart_id") or ""),
+                        error=f"{type(cleanup_error).__name__}: {cleanup_error}",
+                    )
             runtime_event_sink.close()
             self.core.node_cancellations.end(config_path, cancel_event)
 

@@ -19,7 +19,12 @@ import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey, type NodeCard } from './context'
 import { withPersistedCapabilityState } from './capabilitySchemaState'
 import { formatNodeConfigChangeSummary, normalizeApplyError } from './nodeApplySummary'
+import {
+  createNodeConfigAutoApplyQueue,
+  type NodeConfigAutoApplyBatch,
+} from './nodeConfigAutoApply'
 import NodeConfigFields from './NodeConfigFields.vue'
+import NodeNoteField from './NodeNoteField.vue'
 import NodeProfileLoadControl from './NodeProfileLoadControl.vue'
 import NodeRuntimeEventsFieldGroup from './NodeRuntimeEventsFieldGroup.vue'
 import { t } from '../../i18n'
@@ -45,6 +50,8 @@ const loading = ref(false)
 const draftFields = ref<Record<string, any>>({})
 const dirtyKeys = ref<Record<string, true>>({})
 const applying = ref(false)
+const applyingKey = ref('')
+const autoApplying = ref(false)
 const profileLoading = ref(false)
 const runtimeEventsRevision = ref(0)
 const templateSchema = ref<Record<string, any>>({})
@@ -85,12 +92,51 @@ function getFieldType(key: string) {
   return getSchemaFieldType(schema.value, key)
 }
 
-function setField(key: string, value: any) {
+function revertFailedAutoApply(batch: NodeConfigAutoApplyBatch) {
+  if (String(props.node?.id || '').trim() !== batch.nodeId) return
+  const nextDraft = { ...draftFields.value }
+  let changed = false
+  for (const [key, failedValue] of Object.entries(batch.fields)) {
+    if (nextDraft[key] !== failedValue) continue
+    nextDraft[key] = (props.config as Record<string, any> | null)?.[key] ?? templateFields.value[key]
+    changed = true
+  }
+  if (changed) draftFields.value = nextDraft
+}
+
+const autoApplyQueue = createNodeConfigAutoApplyQueue({
+  persist: async ({ nodeId, fields }) => {
+    const normalizedFields: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(fields)) {
+      normalizedFields[key] = normalizeSchemaFieldValue(fieldSchemaCache.value, key, value)
+    }
+    await ctx.setNodeFields(nodeId, normalizedFields)
+  },
+  onError: (error, batch) => {
+    revertFailedAutoApply(batch)
+    showError(normalizeApplyError(error))
+  },
+  onBusyChange: (busy) => {
+    autoApplying.value = busy
+  },
+})
+
+function setField(key: string, value: any, applyMode: 'immediate' | 'explicit' = 'immediate') {
   draftFields.value = { ...draftFields.value, [key]: value }
   applySummary.value = ''
-  if (!dirtyKeys.value[key]) {
-    dirtyKeys.value = { ...dirtyKeys.value, [key]: true }
+  if (applyMode === 'explicit') {
+    if (!dirtyKeys.value[key]) {
+      dirtyKeys.value = { ...dirtyKeys.value, [key]: true }
+    }
+    return
   }
+  if (dirtyKeys.value[key]) {
+    const nextDirty = { ...dirtyKeys.value }
+    delete nextDirty[key]
+    dirtyKeys.value = nextDirty
+  }
+  showError('')
+  void autoApplyQueue.enqueue(String(props.node?.id || ''), key, value)
 }
 
 function resetDraftFromConfig(configOverride?: Record<string, any> | null) {
@@ -216,24 +262,35 @@ onBeforeUnmount(() => {
   openAbortController = null
 })
 
-async function applyChanges(): Promise<boolean> {
+async function applyChanges(requestedKeys?: string[]): Promise<boolean> {
   const nodeId = props.node?.id
   if (!nodeId) return false
-  const keys = Object.keys(dirtyKeys.value || {})
+  await autoApplyQueue.flush()
+  const keys = requestedKeys
+    ? requestedKeys.filter((key) => dirtyKeys.value[key])
+    : Object.keys(dirtyKeys.value || {})
   if (!keys.length) return true
 
   const fields: Record<string, unknown> = {}
+  const rawFields: Record<string, unknown> = {}
   for (const key of keys) {
-    fields[key] = normalizeSchemaFieldValue(fieldSchemaCache.value, key, draftFields.value[key])
+    const value = draftFields.value[key]
+    rawFields[key] = value
+    fields[key] = normalizeSchemaFieldValue(fieldSchemaCache.value, key, value)
   }
 
   applying.value = true
+  applyingKey.value = keys.length === 1 ? (keys[0] || '') : ''
   showError('')
   applySummary.value = ''
   try {
     const result = await ctx.setNodeFields(nodeId, fields)
     await ctx.ensureNodeConfig(nodeId).catch(() => null)
-    dirtyKeys.value = {}
+    const nextDirty = { ...dirtyKeys.value }
+    for (const key of keys) {
+      if (draftFields.value[key] === rawFields[key]) delete nextDirty[key]
+    }
+    dirtyKeys.value = nextDirty
     applySummary.value = formatNodeConfigChangeSummary(result)
     return true
   } catch (e: any) {
@@ -241,13 +298,18 @@ async function applyChanges(): Promise<boolean> {
     return false
   } finally {
     applying.value = false
+    applyingKey.value = ''
   }
+}
+
+function applyField(key: string) {
+  void applyChanges([key])
 }
 
 async function loadProfile(profileId: string) {
   const safeProfileId = String(profileId || '').trim()
   const nodeId = String(props.node?.id || '').trim()
-  if (!safeProfileId || !nodeId || profileLoading.value) return
+  if (!safeProfileId || !nodeId || profileLoading.value || applying.value || autoApplying.value) return
   if (dirtyCount.value > 0 && !window.confirm('加载 Profile 将替换当前尚未保存的修改，是否继续？')) return
 
   profileLoading.value = true
@@ -408,7 +470,7 @@ watch(
 watch(
   () => props.config,
   () => {
-    if (applying.value || profileLoading.value) return
+    if (applying.value || autoApplying.value || profileLoading.value) return
     if (dirtyCount.value > 0) return
     resetDraftFromConfig()
   },
@@ -431,14 +493,11 @@ watch(
         <div class="section-title">{{ t('common.config') }}</div>
         <NodeProfileLoadControl
           :node-type-id="node.typeId"
-          :busy="profileLoading || applying"
+          :busy="profileLoading || applying || autoApplying"
           @load="loadProfile"
           @error="showError"
         />
       </div>
-      <ActionButton variant="primary" compact :disabled="dirtyCount === 0 || applying || profileLoading" @click="applyChanges">
-        {{ applying ? 'Applying...' : `Apply${dirtyCount > 0 ? ` (${dirtyCount})` : ''}` }}
-      </ActionButton>
     </div>
 
     <div v-if="applySummary" class="apply-summary">{{ applySummary }}</div>
@@ -457,6 +516,9 @@ watch(
       :drop-target-key="dropFieldKey"
       :uploading-key="uploadingFieldKey"
       :reset-key="node.id"
+      :explicit-dirty-keys="Object.keys(dirtyKeys)"
+      :applying-key="applyingKey"
+      :apply-disabled="autoApplying || profileLoading"
       enable-asset-drop
       enable-prompt-library
       @update-field="setField"
@@ -464,6 +526,7 @@ watch(
       @field-dragleave="onFieldDragLeave"
       @field-drop="onFieldDrop"
       @field-error="showError"
+      @apply-field="applyField"
     />
 
     <div v-if="isChannelReceiver" class="channel-controls">
@@ -513,6 +576,11 @@ watch(
       :node="node"
       :graph-id="currentGraphId()"
       @error="showError"
+    />
+
+    <NodeNoteField
+      :node-id="node.id"
+      :note="ctx.nodeNotes.value[node.id]"
     />
   </section>
 </template>

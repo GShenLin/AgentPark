@@ -305,8 +305,6 @@ def _benchmark_command(
     ]
     if runner.profile:
         command.extend(["--profile", runner.profile])
-    if runner.runtime_policy_file is not None:
-        command.extend(["--runtime-policy-file", str(runner.runtime_policy_file)])
     if task.conversation_context_file is not None:
         command.extend(
             [

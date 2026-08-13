@@ -6,10 +6,11 @@ export const MAX_GRID_CELL_SIZE = 2000
 export const DEFAULT_GRID_COLUMNS = 4
 export const DEFAULT_NODE_WIDTH = 230
 export const DEFAULT_NODE_HEIGHT = 250
-export const MIN_NODE_WIDTH = 230
-export const MIN_NODE_HEIGHT = 250
+export const MIN_NODE_WIDTH = 50
+export const MIN_NODE_HEIGHT = 50
 export const MAX_NODE_WIDTH = 720
 export const MAX_NODE_HEIGHT = 760
+export const MIN_NODE_RENDER_SIZE = 1
 
 export type BoardGridSettings = { cellWidth: number; cellHeight: number }
 export type BoardLayoutDefaults = BoardGridSettings & { nodeWidth: number; nodeHeight: number }
@@ -54,8 +55,8 @@ export function sanitizeNodeGridUi(value: unknown): NodeGridUi {
   if (!Object.prototype.hasOwnProperty.call(value, 'grid_x') || !Object.prototype.hasOwnProperty.call(value, 'grid_y')) {
     throw new Error('Node ui.grid_x and ui.grid_y are required.')
   }
-  const width = value.width == null ? undefined : boundedInteger(value.width, MIN_GRID_CELL_WIDTH, MIN_GRID_CELL_WIDTH, MAX_GRID_CELL_SIZE)
-  const height = value.height == null ? undefined : boundedInteger(value.height, MIN_GRID_CELL_HEIGHT, MIN_GRID_CELL_HEIGHT, MAX_GRID_CELL_SIZE)
+  const width = value.width == null ? undefined : boundedInteger(value.width, MIN_NODE_RENDER_SIZE, MIN_NODE_RENDER_SIZE, MAX_GRID_CELL_SIZE)
+  const height = value.height == null ? undefined : boundedInteger(value.height, MIN_NODE_RENDER_SIZE, MIN_NODE_RENDER_SIZE, MAX_GRID_CELL_SIZE)
   return {
     grid_x: nonNegativeInteger(value.grid_x, 'ui.grid_x'),
     grid_y: nonNegativeInteger(value.grid_y, 'ui.grid_y'),

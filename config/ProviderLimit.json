@@ -195,6 +195,7 @@
       },
       "available_model_ids": [
         "gpt-5.6-sol",
+        "gpt-5.6-sol-wm",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
         "gpt-5.5",
@@ -205,7 +206,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:12",
+        "tested_at": "2026-08-10 20:54:00",
         "endpoint": "https://chatgpt.com/backend-api/codex/models?client_version=0.0.0",
         "status_code": 200
       }
@@ -506,8 +507,6 @@
       },
       "available_model_ids": [
         "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
         "wan2.7-image-pro",
@@ -544,13 +543,11 @@
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "claude-opus-5",
-        "grok-4.5",
-        "grok-imagine-1.0",
-        "grok-imagine-1.0-edit"
+        "grok-4.5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:13",
+        "tested_at": "2026-08-10 20:54:01",
         "endpoint": "https://api.krill-ai.com/codex/v1/models",
         "status_code": 200
       }
@@ -824,8 +821,6 @@
       },
       "available_model_ids": [
         "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
         "wan2.7-image-pro",
@@ -862,13 +857,11 @@
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "claude-opus-5",
-        "grok-4.5",
-        "grok-imagine-1.0",
-        "grok-imagine-1.0-edit"
+        "grok-4.5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:14",
+        "tested_at": "2026-08-10 20:54:02",
         "endpoint": "https://api.krill-ai.com/codex/v1/models",
         "status_code": 200
       }
@@ -1110,7 +1103,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:15",
+        "tested_at": "2026-08-10 20:54:03",
         "endpoint": "https://api.deepseek.com/models",
         "status_code": 200
       }
@@ -1120,7 +1113,7 @@
       "type": "deepseek",
       "model": "deepseek-v4-flash",
       "tested_at": "2026-07-14 13:50:07",
-      "test_channel": "chat_completions",
+      "test_channel": "responses",
       "accessible": true,
       "features": {
         "access": {
@@ -1352,7 +1345,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:15",
+        "tested_at": "2026-08-10 20:54:03",
         "endpoint": "https://api.deepseek.com/models",
         "status_code": 200
       }
@@ -1691,7 +1684,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:15",
+        "tested_at": "2026-08-10 20:54:04",
         "endpoint": "https://api.xiaomimimo.com/v1/models",
         "status_code": 200
       }
@@ -2017,7 +2010,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:15",
+        "tested_at": "2026-08-10 20:54:04",
         "endpoint": "https://www.371181668.xyz/v1/models",
         "status_code": 200
       }
@@ -2405,6 +2398,7 @@
         "hyper3d-gen2-260112",
         "hitem3d-2-0-251223",
         "doubao-seed3d-2-0-260328",
+        "doubao-seedream-4-0-20260415",
         "doubao-seed-2-0-mini-260428",
         "doubao-seed-2-0-lite-260428",
         "deepseek-v4-pro-260425",
@@ -2415,11 +2409,13 @@
         "doubao-seed-character-260628",
         "doubao-seed-evolving",
         "glm-5-2-260617",
-        "doubao-seedream-5-0-pro-260628"
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:16",
+        "tested_at": "2026-08-10 20:54:05",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -2694,9 +2690,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:17",
+        "tested_at": "2026-08-10 20:54:05",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
-        "reason": "HTTP 401: {\"error\":{\"code\":\"AuthenticationError\",\"message\":\"The API key or AK/SK in the request is missing or invalid. Request id: 021785464658032a5cf16cfa3c4ebff37e7c43914719d1ae74957\",\"param\":\"\",\"type\":\"Unauthorized\"}}",
+        "reason": "HTTP 401: {\"error\":{\"code\":\"AuthenticationError\",\"message\":\"The API key or AK/SK in the request is missing or invalid. Request id: 02178636644487378a562a5d1f9d83a31bddf8475539eafebcfe2\",\"param\":\"\",\"type\":\"Unauthorized\"}}",
         "status_code": 401
       }
     },
@@ -3093,7 +3089,10 @@
         "doubao-seed-character-260628",
         "doubao-seed-evolving",
         "glm-5-2-260617",
-        "doubao-seedream-5-0-pro-260628"
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedream-4-0-20260415",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
       ],
       "model_discovery": {
         "supported": true,
@@ -3443,6 +3442,7 @@
         "hyper3d-gen2-260112",
         "hitem3d-2-0-251223",
         "doubao-seed3d-2-0-260328",
+        "doubao-seedream-4-0-20260415",
         "doubao-seed-2-0-mini-260428",
         "doubao-seed-2-0-lite-260428",
         "deepseek-v4-pro-260425",
@@ -3453,11 +3453,13 @@
         "doubao-seed-character-260628",
         "doubao-seed-evolving",
         "glm-5-2-260617",
-        "doubao-seedream-5-0-pro-260628"
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:17",
+        "tested_at": "2026-08-10 20:54:06",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -3887,6 +3889,7 @@
         "hyper3d-gen2-260112",
         "hitem3d-2-0-251223",
         "doubao-seed3d-2-0-260328",
+        "doubao-seedream-4-0-20260415",
         "doubao-seed-2-0-mini-260428",
         "doubao-seed-2-0-lite-260428",
         "deepseek-v4-pro-260425",
@@ -3897,11 +3900,13 @@
         "doubao-seed-character-260628",
         "doubao-seed-evolving",
         "glm-5-2-260617",
-        "doubao-seedream-5-0-pro-260628"
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:19",
+        "tested_at": "2026-08-10 20:54:07",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4341,6 +4346,7 @@
         "hyper3d-gen2-260112",
         "hitem3d-2-0-251223",
         "doubao-seed3d-2-0-260328",
+        "doubao-seedream-4-0-20260415",
         "doubao-seed-2-0-mini-260428",
         "doubao-seed-2-0-lite-260428",
         "deepseek-v4-pro-260425",
@@ -4351,11 +4357,13 @@
         "doubao-seed-character-260628",
         "doubao-seed-evolving",
         "glm-5-2-260617",
-        "doubao-seedream-5-0-pro-260628"
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:23",
+        "tested_at": "2026-08-10 20:54:07",
         "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
         "status_code": 200
       }
@@ -4579,9 +4587,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:23",
+        "tested_at": "2026-08-10 20:54:07",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 02178546466438231ea6dc6600cd988fffc8a80c475ae42d346c8\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 02178636644672732ee9f11aaba1a9508918a66fa087ac750c18d\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       }
     },
@@ -4912,18 +4920,22 @@
         }
       },
       "available_model_ids": [
+        "claude-fable-5",
         "claude-opus-4-6",
         "claude-opus-4-7",
         "claude-opus-4-8",
+        "claude-opus-5",
         "claude-sonnet-4-6",
+        "claude-sonnet-5",
         "deepseek-tavern-v2-pro",
         "deepseek-tavern-v2-pro-low",
         "deepseek-tavern-v2-pro-xhigh",
         "deepseek-v4-flash",
         "deepseek-v4-pro",
-        "gemini-2.5",
-        "gemini-3",
-        "gemini-3.5",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gemini-3.5-flash",
+        "gemini-3.6-flash",
         "glm-5.1",
         "glm-5.2",
         "gpt-image-2",
@@ -4936,7 +4948,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:23",
+        "tested_at": "2026-08-10 20:54:08",
         "endpoint": "https://deepseektavern.com/v1/models",
         "status_code": 200
       }
@@ -5259,6 +5271,7 @@
         "hyper3d-gen2-260112",
         "hitem3d-2-0-251223",
         "doubao-seed3d-2-0-260328",
+        "doubao-seedream-4-0-20260415",
         "doubao-seed-2-0-mini-260428",
         "doubao-seed-2-0-lite-260428",
         "deepseek-v4-pro-260425",
@@ -5269,11 +5282,13 @@
         "doubao-seed-character-260628",
         "doubao-seed-evolving",
         "glm-5-2-260617",
-        "doubao-seedream-5-0-pro-260628"
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:24",
+        "tested_at": "2026-08-10 20:54:09",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -5615,6 +5630,7 @@
         "hyper3d-gen2-260112",
         "hitem3d-2-0-251223",
         "doubao-seed3d-2-0-260328",
+        "doubao-seedream-4-0-20260415",
         "doubao-seed-2-0-mini-260428",
         "doubao-seed-2-0-lite-260428",
         "deepseek-v4-pro-260425",
@@ -5625,11 +5641,13 @@
         "doubao-seed-character-260628",
         "doubao-seed-evolving",
         "glm-5-2-260617",
-        "doubao-seedream-5-0-pro-260628"
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:25",
+        "tested_at": "2026-08-10 20:54:09",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/models",
         "status_code": 200
       }
@@ -5853,9 +5871,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:25",
+        "tested_at": "2026-08-10 20:54:10",
         "endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2video/video-synthesis/models",
-        "reason": "HTTP 400: {\"requestId\":\"f53abf58-5394-9a59-9770-1b0befc1fc6d\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
+        "reason": "HTTP 400: {\"requestId\":\"31be08af-3f81-90ae-82ca-08b2642ca510\",\"code\":\"InvalidParameter\",\"message\":\"Request method 'GET' is not supported.\"}",
         "status_code": 400
       }
     },
@@ -6039,7 +6057,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:25",
+        "tested_at": "2026-08-10 20:54:10",
         "reason": "provider type 'hyper3d' has no model discovery endpoint"
       }
     },
@@ -6361,77 +6379,97 @@
       "available_model_ids": [
         "hy3",
         "hy3-preview",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-202605",
         "kimi-k3",
         "kimi-k2.7-code-highspeed",
         "glm-5.2",
         "kimi-k2.7-code",
         "minimax-m3",
-        "deepseek-v4-flash-202605",
         "deepseek-v4-pro-202606",
         "deepseek-v4-pro",
-        "deepseek-v4-flash",
-        "hy-mt2-pro",
-        "hy-3d-3.1",
-        "kl-video-v3",
-        "vd-video-q3-pro",
-        "hy-3d-3.0",
-        "hy-image-v3.0",
-        "hy-video-1.5",
-        "hy-image-lite",
-        "yt-video-2.0",
         "mimo-v2.5-pro",
-        "yt-video-humanactor",
-        "yt-video-fx",
-        "hy-3d-express",
+        "kling-video-v3",
+        "pixverse-video-c1",
+        "vidu-video-q3-pro",
+        "hy-image-v3",
+        "vidu-video-q2-turbo",
         "hy-vision-2.0-instruct",
-        "youtu-vita",
         "hunyuan-t1-vision-20250916",
         "hunyuan-turbos-vision-video-20250728",
-        "hy-role",
+        "hy-mt2-pro",
         "hy-mt2-plus",
         "hy-mt2-lite",
-        "hunyuan-role-latest",
-        "kinfra-text-embedding-4b",
-        "kinfra-text-embedding-0.6b",
         "kinfra-vl-embedding-8b",
+        "kinfra-text-embedding-0.6b",
+        "kinfra-text-embedding-4b",
         "kinfra-vl-embedding-2b",
+        "hy-role",
+        "hunyuan-role-latest",
+        "glm-5.1",
+        "glm-5",
+        "glm-5v-turbo",
+        "glm-5-turbo",
+        "kimi-k2.6",
+        "kimi-k2.5",
+        "minimax-m2.7",
+        "vidu-image-q2",
+        "kling-video-v3-turbo",
+        "youtu-vita",
         "qwen3.5-flash",
         "qwen3.5-plus",
-        "glm-5.1",
-        "glm-5v-turbo",
-        "glm-5",
-        "kimi-k2.6",
-        "minimax-m2.7",
-        "kimi-k2.5",
-        "glm-5-turbo",
         "minimax-m2.5",
         "deepseek-v3.2",
-        "hy-3d-format",
-        "hy-3d-rigging",
-        "hy-3d-motion",
-        "hy-3d-uv",
+        "hy-3d-express",
+        "hy-video-1.5",
         "hy-3d-component",
+        "hy-3d-format",
+        "hy-3d-motion",
         "hy-3d-retopology",
+        "hy-3d-rigging",
         "hy-3d-texture",
-        "tripo-3d-p1",
+        "hy-3d-uv",
         "tripo-3d-3.1",
-        "vd-video-q3-turbo",
+        "tripo-3d-p1",
+        "yt-video-humanactor",
+        "pixverse-video-v6.0",
+        "vidu-video-q3-turbo",
+        "kling-video-v3-omni",
+        "vidu-video-q3",
+        "pixverse-video-v5.6",
+        "kling-video-v2.6",
+        "kling-video-o1",
+        "minimax-music-v2.6",
+        "minimax-video-v2.3",
+        "minimax-video-v2.3-fast",
+        "kling-video-v2.5-turbo",
+        "vidu-video-q2",
+        "vidu-video-q2-pro",
         "kl-video-v2-6",
-        "vd-video-q2",
+        "vd-video-q3-turbo",
+        "kl-video-v2-5-turbo",
         "vd-video-q2-pro",
         "vd-video-q2-pro-fast",
         "vd-video-q2-turbo",
-        "kl-video-v2-5-turbo",
         "kl-video-v2-1",
         "kl-video-v2-1-master",
+        "vd-video-q2",
         "kl-video-v2-master",
         "kl-video-v1-6",
         "kl-video-v1-5",
-        "kl-video-v1"
+        "kl-video-v1",
+        "hy-image-lite",
+        "yt-video-fx",
+        "hy-image-v3.0",
+        "hy-3d-3.1",
+        "kl-video-v3",
+        "hy-3d-3.0",
+        "yt-video-2.0",
+        "vd-video-q3-pro"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:25",
+        "tested_at": "2026-08-10 20:54:10",
         "endpoint": "https://tokenhub.tencentmaas.com/v1/models",
         "status_code": 200
       }
@@ -6655,8 +6693,6 @@
       },
       "available_model_ids": [
         "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
         "wan2.7-image-pro",
@@ -6693,13 +6729,11 @@
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "claude-opus-5",
-        "grok-4.5",
-        "grok-imagine-1.0",
-        "grok-imagine-1.0-edit"
+        "grok-4.5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:26",
+        "tested_at": "2026-08-10 20:54:11",
         "endpoint": "https://api.krill-ai.com/v1/models",
         "status_code": 200
       }
@@ -6923,8 +6957,6 @@
       },
       "available_model_ids": [
         "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-image-2",
         "gpt-5.5",
         "wan2.7-image",
         "wan2.7-image-pro",
@@ -6961,13 +6993,11 @@
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "claude-opus-5",
-        "grok-4.5",
-        "grok-imagine-1.0",
-        "grok-imagine-1.0-edit"
+        "grok-4.5"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:27",
+        "tested_at": "2026-08-10 20:54:12",
         "endpoint": "https://api.krill-ai.com/v1/models",
         "status_code": 200
       }
@@ -6978,21 +7008,21 @@
       "model": "kimi-k3",
       "available_model_ids": [
         "kimi-k2.5",
-        "kimi-k2.7-code-highspeed",
-        "moonshot-v1-8k",
-        "moonshot-v1-32k-vision-preview",
-        "kimi-k3",
-        "moonshot-v1-8k-vision-preview",
-        "kimi-k2.7-code",
         "moonshot-v1-128k",
+        "kimi-k2.7-code",
         "moonshot-v1-32k",
-        "moonshot-v1-auto",
+        "moonshot-v1-128k-vision-preview",
+        "moonshot-v1-32k-vision-preview",
+        "moonshot-v1-8k",
+        "kimi-k2.7-code-highspeed",
         "kimi-k2.6",
-        "moonshot-v1-128k-vision-preview"
+        "moonshot-v1-auto",
+        "moonshot-v1-8k-vision-preview",
+        "kimi-k3"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:19",
+        "tested_at": "2026-08-10 20:54:07",
         "endpoint": "https://api.moonshot.cn/v1/models",
         "status_code": 200
       },
@@ -7009,9 +7039,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:23",
+        "tested_at": "2026-08-10 20:54:08",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217854646645076ccf9412c566ef0a3e60cd40e046467528d686\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021786366446888d1fe9146833e301f6be5de30142daa10ce0097\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       },
       "test_channel": "chat_completions",
@@ -7027,9 +7057,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:23",
+        "tested_at": "2026-08-10 20:54:08",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217854646646336bc656bbd49cfaee971fadc31892ba5b50baaf\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 02178636644704647abb978e3e4920a488c63f1abda1f417a0d6e\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       },
       "test_channel": "chat_completions",
@@ -7045,9 +7075,9 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:23",
+        "tested_at": "2026-08-10 20:54:08",
         "endpoint": "https://ark.cn-beijing.volces.com/api/v3/images/generations/models",
-        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 0217854646647658c80d243bafb90575ac6ccce9142197d7c57d6\",\"param\":\"\",\"type\":\"Not Found\"}}",
+        "reason": "HTTP 404: {\"error\":{\"code\":\"PathNotFound\",\"message\":\"The path of api not found. Request id: 021786366447214dd8ef7af441b125f2150dd3f48013f2af25134\",\"param\":\"\",\"type\":\"Not Found\"}}",
         "status_code": 404
       },
       "test_channel": "chat_completions",
@@ -7063,7 +7093,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:27",
+        "tested_at": "2026-08-10 20:54:12",
         "endpoint": "https://openspeech.bytedance.com/api/v3/tts/create/models",
         "reason": "HTTP 404: Endpoint \"tts/create/models\" does not exist",
         "status_code": 404
@@ -7081,7 +7111,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:27",
+        "tested_at": "2026-08-10 20:54:13",
         "reason": "provider type 'agnes' has no model discovery endpoint"
       },
       "test_channel": "native",
@@ -7097,7 +7127,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:27",
+        "tested_at": "2026-08-10 20:54:13",
         "reason": "provider type 'agnes' has no model discovery endpoint"
       },
       "test_channel": "native",
@@ -7113,7 +7143,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:27",
+        "tested_at": "2026-08-10 20:54:13",
         "reason": "provider type 'agnes' has no model discovery endpoint"
       },
       "test_channel": "native",
@@ -7129,7 +7159,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:27",
+        "tested_at": "2026-08-10 20:54:13",
         "endpoint": "https://ark.cn-beijing.volces.com/api/plan/v3/models",
         "reason": "HTTP 404:",
         "status_code": 404
@@ -7147,7 +7177,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:28",
+        "tested_at": "2026-08-10 20:54:13",
         "reason": "provider.apiKey is required"
       },
       "test_channel": "native",
@@ -7161,12 +7191,13 @@
       "type": "openai",
       "model": "gpt-5.6-sol",
       "available_model_ids": [
+        "gpt-5.5",
         "gpt-5.6",
         "gpt-5.6-sol"
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:28",
+        "tested_at": "2026-08-10 20:54:13",
         "endpoint": "http://10.231.113.104:8788/v1/models",
         "status_code": 200
       },
@@ -7207,7 +7238,7 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:28",
+        "tested_at": "2026-08-10 20:54:13",
         "endpoint": "https://api.vanyospace.com/v1/models",
         "status_code": 200
       },
@@ -7224,7 +7255,7 @@
       "available_model_ids": [],
       "model_discovery": {
         "supported": false,
-        "tested_at": "2026-07-31 10:24:29",
+        "tested_at": "2026-08-10 20:54:14",
         "endpoint": "https://ark.cn-beijing.volces.com/api/plan/v3/models",
         "reason": "HTTP 404:",
         "status_code": 404
@@ -7238,9 +7269,10 @@
     "GPT_53Fast_Official": {
       "provider_id": "GPT_53Fast_Official",
       "type": "openai",
-      "model": "gpt-5.6-sol",
+      "model": "gpt-5.3-codex-spark",
       "available_model_ids": [
         "gpt-5.6-sol",
+        "gpt-5.6-sol-wm",
         "gpt-5.6-terra",
         "gpt-5.6-luna",
         "gpt-5.5",
@@ -7251,7 +7283,199 @@
       ],
       "model_discovery": {
         "supported": true,
-        "tested_at": "2026-07-31 10:24:29",
+        "tested_at": "2026-08-10 20:54:14",
+        "endpoint": "https://chatgpt.com/backend-api/codex/models?client_version=0.0.0",
+        "status_code": 200
+      },
+      "test_channel": "responses",
+      "features": {},
+      "unsupported": {},
+      "accessible": true,
+      "status": "ok"
+    },
+    "DeepSeekV4-CodingPlan": {
+      "provider_id": "DeepSeekV4-CodingPlan",
+      "type": "deepseek",
+      "model": "deepseek-v4-pro-260425",
+      "available_model_ids": [
+        "doubao-lite-128k-240428",
+        "doubao-pro-128k-240515",
+        "doubao-lite-4k-240328",
+        "doubao-lite-32k-240428",
+        "doubao-pro-4k-240515",
+        "doubao-lite-4k-character-240515",
+        "doubao-embedding-text-240515",
+        "mistral-7b-instruct-v0.2",
+        "doubao-pro-4k-character-240515",
+        "doubao-pro-4k-functioncall-240515",
+        "doubao-lite-4k-pretrain-character-240516",
+        "doubao-pro-32k-character-240528",
+        "doubao-pro-4k-browsing-240524",
+        "doubao-pro-32k-functioncall-240515",
+        "doubao-pro-4k-functioncall-240615",
+        "doubao-pro-32k-browsing-240615",
+        "doubao-pro-32k-240615",
+        "doubao-lite-32k-240628",
+        "doubao-pro-128k-240628",
+        "doubao-embedding-text-240715",
+        "doubao-pro-4k-character-240728",
+        "doubao-pro-32k-functioncall-240815",
+        "doubao-pro-32k-240828",
+        "doubao-lite-4k-character-240828",
+        "doubao-pro-32k-character-240828",
+        "doubao-lite-32k-240828",
+        "doubao-lite-128k-240828",
+        "doubao-pro-32k-browsing-240828",
+        "doubao-pro-32k-functioncall-preview",
+        "doubao-embedding-large-text-240915",
+        "doubao-lite-32k-character-241015",
+        "doubao-pro-32k-functioncall-241028",
+        "doubao-pro-32k-browsing-241115",
+        "doubao-vision-pro-32k-241028",
+        "doubao-vision-lite-32k-241015",
+        "doubao-seaweed-241128",
+        "doubao-pro-256k-241115",
+        "doubao-pro-32k-character-241215",
+        "doubao-pro-32k-241215",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115",
+        "doubao-1-5-vision-pro-32k-250115",
+        "doubao-embedding-vision-241215",
+        "doubao-1-5-pro-256k-250115",
+        "deepseek-v3-241226",
+        "deepseek-r1-distill-qwen-7b-250120",
+        "deepseek-r1-distill-qwen-32b-250120",
+        "deepseek-r1-250120",
+        "doubao-1-5-pro-32k-character-250228",
+        "doubao-1.5-vision-lite-250315",
+        "deepseek-v3-250324",
+        "doubao-1.5-vision-pro-250328",
+        "doubao-lite-32k-character-250228",
+        "doubao-1.5-ui-tars-250328",
+        "doubao-embedding-vision-250328",
+        "doubao-1-5-thinking-pro-250415",
+        "wan2-1-14b-i2v-250225",
+        "wan2-1-14b-t2v-250225",
+        "doubao-1-5-thinking-pro-m-250415",
+        "doubao-seedance-1-0-lite-i2v-250428",
+        "doubao-seedance-1-0-lite-t2v-250428",
+        "doubao-seedream-3-0-t2i-250415",
+        "wan2-1-14b-flf2v-250417",
+        "doubao-1-5-thinking-vision-pro-250428",
+        "doubao-1-5-thinking-pro-m-250428",
+        "doubao-embedding-large-text-250515",
+        "doubao-1-5-ui-tars-250428",
+        "deepseek-r1-250528",
+        "doubao-seed-1-6-flash-250615",
+        "doubao-seed-1-6-250615",
+        "doubao-seed-1-6-thinking-250615",
+        "doubao-seedance-1-0-pro-250528",
+        "doubao-embedding-vision-250615",
+        "doubao-seed-1-6-thinking-250715",
+        "doubao-1-5-pro-32k-character-250715",
+        "doubao-seededit-3-0-i2i-250628",
+        "doubao-seed-1-6-flash-250715",
+        "kimi-k2-250711",
+        "doubao-seed-1-6-vision-250815",
+        "deepseek-v3-1-250821",
+        "doubao-seed-1-6-flash-250828",
+        "glm-4-5-air-20250728",
+        "qwen3-8b-20250429",
+        "qwen3-32b-20250429",
+        "qwen2-5-72b-20240919",
+        "doubao-seedream-4-0-250828",
+        "kimi-k2-250905",
+        "doubao-seed-translation-250915",
+        "deepseek-v3-1-terminus",
+        "doubao-smart-router-250928",
+        "doubao-seed-1-6-251015",
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seed-1-6-lite-251015",
+        "doubao-seed3d-1-0-250928",
+        "kimi-k2-thinking-251104",
+        "doubao-seed-code-preview-251028",
+        "qwen3-0-6b-20250429",
+        "qwen3-14b-20250429",
+        "doubao-seedream-4-5-251128",
+        "doubao-embedding-vision-251215",
+        "deepseek-v3-2-251201",
+        "doubao-seedance-1-5-pro-251215",
+        "glm-4-7-251222",
+        "doubao-seed-1-8-251228",
+        "doubao-seed-character-251128",
+        "doubao-seed-2-0-lite-260215",
+        "doubao-seedance-2-0-260128",
+        "doubao-seedream-5-0-260128",
+        "doubao-seed-2-0-mini-260215",
+        "doubao-seed-2-0-pro-260215",
+        "doubao-seedance-2-0-fast-260128",
+        "doubao-seed-2-0-code-preview-260215",
+        "hyper3d-gen2-260112",
+        "hitem3d-2-0-251223",
+        "doubao-seed3d-2-0-260328",
+        "doubao-seedream-4-0-20260415",
+        "doubao-seed-2-0-mini-260428",
+        "doubao-seed-2-0-lite-260428",
+        "deepseek-v4-pro-260425",
+        "deepseek-v4-flash-260425",
+        "doubao-seedance-2-0-mini-260615",
+        "doubao-seed-2-1-pro-260628",
+        "doubao-seed-2-1-turbo-260628",
+        "doubao-seed-character-260628",
+        "doubao-seed-evolving",
+        "glm-5-2-260617",
+        "doubao-seedream-5-0-pro-260628",
+        "doubao-seedance-2-5-260628",
+        "deepseek-v4-flash-ga-260731"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-08-10 20:54:06",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/coding/v3/models",
+        "status_code": 200
+      },
+      "test_channel": "responses",
+      "features": {},
+      "unsupported": {},
+      "accessible": true,
+      "status": "ok"
+    },
+    "DeepSeekV4-AgentPlan": {
+      "provider_id": "DeepSeekV4-AgentPlan",
+      "type": "deepseek",
+      "model": "doubao-seed-evolving",
+      "available_model_ids": [],
+      "model_discovery": {
+        "supported": false,
+        "tested_at": "2026-08-10 20:54:15",
+        "endpoint": "https://ark.cn-beijing.volces.com/api/plan/v3/models",
+        "reason": "HTTP 404:",
+        "status_code": 404
+      },
+      "test_channel": "responses",
+      "features": {},
+      "unsupported": {},
+      "accessible": false,
+      "status": "unavailable"
+    },
+    "GPT_Official_55": {
+      "provider_id": "GPT_Official_55",
+      "type": "openai",
+      "model": "gpt-5.6-sol",
+      "available_model_ids": [
+        "gpt-5.6-sol",
+        "gpt-5.6-sol-wm",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.3-codex-spark",
+        "codex-auto-review"
+      ],
+      "model_discovery": {
+        "supported": true,
+        "tested_at": "2026-08-10 20:03:24",
         "endpoint": "https://chatgpt.com/backend-api/codex/models?client_version=0.0.0",
         "status_code": 200
       },
@@ -7263,10 +7487,10 @@
     }
   },
   "model_refresh_status": "finished",
-  "model_refresh_completed_providers": 36,
-  "model_refresh_total_providers": 36,
+  "model_refresh_completed_providers": 38,
+  "model_refresh_total_providers": 38,
   "model_refresh_current_provider_id": "",
-  "model_refresh_started_at": "2026-07-31 10:24:12",
-  "model_refresh_duration_ms": 18453,
-  "model_refresh_finished_at": "2026-07-31 10:24:30"
+  "model_refresh_started_at": "2026-08-10 20:54:00",
+  "model_refresh_duration_ms": 15699,
+  "model_refresh_finished_at": "2026-08-10 20:54:15"
 }

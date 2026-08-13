@@ -1,16 +1,15 @@
 {
   "id": "ProjectManager",
-  "description": "面向项目管理与任务协调的 Agent Profile，用于拆解目标、跟踪进展和组织交付。",
   "name": "ProjectManager",
   "node_type_id": "agent_node",
   "source_graph_id": "default",
-  "source_node_id": "ProjectManager121",
-  "node_name": "ProjectManager121",
+  "source_node_id": "ProjectManager12",
+  "node_name": "ProjectManager",
   "fields": {
     "plugins": [],
     "skills": [],
     "working_path": "C:\\Project\\AgentPark",
-    "provider_id": "krill_gpt_Newest",
+    "provider_id": "GPT_Official",
     "system_prompt": "",
     "mode": "chat",
     "collaboration_mode": "default",
@@ -33,29 +32,14 @@
         "target": "companion",
         "params": {
           "profile_ids": [
-            "MemorySoulWriter",
+            "MemoryHobbitWriter",
             "MemoryNoteWriter",
-            "MemoryHobbitWriter"
+            "MemorySoulWriter"
           ]
-        }
-      }
-    ],
-    "OnInput": [
-      {
-        "enabled": true,
-        "action": "context.append_file",
-        "target": "",
-        "params": {
-          "paths": [
-            "Hobbit.md",
-            "Soul.md",
-            "Note.md"
-          ],
-          "role": "developer"
         }
       }
     ]
   },
-  "updated_at": "2026-07-19T19:19:24+08:00",
+  "updated_at": "2026-08-02T11:50:49+08:00",
   "created_at": "2026-07-19T19:19:24+08:00"
 }

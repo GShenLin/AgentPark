@@ -11,7 +11,7 @@ from .tool_event_protocol import build_tool_call_start
 from .tool_event_protocol import elapsed_ms
 from .tool_event_protocol import emit_tool_event
 from .tool_event_protocol import now_monotonic
-from .tool_call_protocol import ToolCallEnvelope, ToolCallExecution
+from .tool_call_protocol import ensure_json_text, ToolCallEnvelope, ToolCallExecution
 from .tool_execution_result import build_error_result
 from .tool_execution_result import build_user_stopped_result
 from .tool_execution_result import normalize_tool_execution_result
@@ -210,10 +210,11 @@ class BaseTool:
                 ),
             )
             cleaned_result = _attach_memory_persistence_warning(cleaned_result, event_feedback)
+            model_output = ensure_json_text(cleaned_result)
             return ToolCallExecution(
                 func_name=call.name,
                 call_id=call.call_id,
-                cleaned_result=cleaned_result,
+                cleaned_result=model_output,
                 image_data=image_data,
                 status=status,
                 error=error,

@@ -304,6 +304,44 @@ def test_graph_scheduler_does_not_scan_before_explicit_wake(monkeypatch):
         thread.join(timeout=1.0)
 
 
+def test_graph_scheduler_records_uncaught_failure(monkeypatch):
+    import src.web_backend as backend
+    import src.web_backend.graph_runner_runtime as runner_module
+
+    facade = backend.WebBackendFacade()
+    graph_runtime = facade.core.graph_runtime
+    recorded = []
+    monkeypatch.setattr(
+        runner_module.runtime_supervisor,
+        "record",
+        lambda event, **fields: recorded.append((event, fields)),
+    )
+    monkeypatch.setattr(
+        graph_runtime,
+        "_run_scheduler_batch",
+        lambda _graph_id, _state: (_ for _ in ()).throw(RuntimeError("scheduler exploded")),
+    )
+    state = GraphRunnerState(
+        scheduler_thread=None,
+        stop=threading.Event(),
+        wake=_GraphRunnerWakeSignal(),
+        executor=GraphExecutor("default"),
+    )
+    state.wake.set()
+
+    try:
+        graph_runtime._graph_scheduler_loop("default", state)
+    except RuntimeError as exc:
+        assert str(exc) == "scheduler exploded"
+    else:
+        raise AssertionError("scheduler failure must remain visible to threading.excepthook")
+
+    failure = next(fields for event, fields in recorded if event == "graph_scheduler_failed")
+    assert failure["graph_id"] == "default"
+    assert failure["exception_type"] == "RuntimeError"
+    assert any(event == "graph_scheduler_exited" for event, _fields in recorded)
+
+
 def test_graph_runner_wake_signal_broadcasts_only_on_explicit_wake():
     signal = _GraphRunnerWakeSignal()
     stop_event = threading.Event()

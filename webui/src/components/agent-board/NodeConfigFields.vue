@@ -42,10 +42,10 @@ import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 import ProviderSelect from '../ProviderSelect.vue'
 import WorkingPathField from './WorkingPathField.vue'
-import RuntimePolicySelect from './RuntimePolicySelect.vue'
 import { t } from '../../i18n'
 
 type NodeFields = Record<string, any>
+type NodeConfigFieldApplyMode = 'immediate' | 'explicit'
 
 const props = withDefaults(defineProps<{
   typeId: string
@@ -58,20 +58,27 @@ const props = withDefaults(defineProps<{
   uploadingKey?: string
   enableAssetDrop?: boolean
   resetKey?: string
+  explicitDirtyKeys?: string[]
+  applyingKey?: string
+  applyDisabled?: boolean
 }>(), {
   enablePromptLibrary: false,
   dropTargetKey: '',
   uploadingKey: '',
   enableAssetDrop: false,
   resetKey: '',
+  explicitDirtyKeys: () => [],
+  applyingKey: '',
+  applyDisabled: false,
 })
 
 const emit = defineEmits<{
-  'update-field': [key: string, value: any]
+  'update-field': [key: string, value: any, applyMode?: NodeConfigFieldApplyMode]
   'field-dragover': [key: string, event: DragEvent]
   'field-dragleave': [key: string, event: DragEvent]
   'field-drop': [key: string, event: DragEvent]
   'field-error': [message: string]
+  'apply-field': [key: string]
 }>()
 
 const multiSelectSearchQueries = ref<Record<string, string>>({})
@@ -81,11 +88,8 @@ const promptLibraryMode = ref<'' | 'save' | 'load'>('')
 const promptLibraryField = ref('')
 const promptLibraryFiles = ref<string[]>([])
 const promptSaveFilename = ref('system_prompt.txt')
-const hasRuntimePolicyField = computed(() => (
-  props.typeId === 'agent_node' && Boolean(props.schema?.runtime_policy)
-))
 const schemaKeys = computed(() => Object.keys(props.schema || {}).filter((key) => (
-  shouldShowField(key) && !(hasRuntimePolicyField.value && key === 'runtime_policy')
+  shouldShowField(key)
 )))
 const providerOptions = computed(() => dedupeStrings(
   props.providers
@@ -110,10 +114,19 @@ const fieldSections = computed(() => createNodeConfigFieldSections(
   activeSupportModes.value,
 ))
 const fieldGroupOpen = ref<Record<string, boolean>>({})
+const explicitDirtyKeySet = computed(() => new Set(props.explicitDirtyKeys))
 
-function setField(key: string, value: any) {
+function setField(key: string, value: any, applyMode: NodeConfigFieldApplyMode = 'immediate') {
   if (isPromptLibraryField(key)) promptActionMessage.value = ''
-  emit('update-field', key, value)
+  emit('update-field', key, value, applyMode)
+}
+
+function setExplicitField(key: string, value: any) {
+  setField(key, value, 'explicit')
+}
+
+function isExplicitDirty(key: string) {
+  return explicitDirtyKeySet.value.has(key)
 }
 
 function isPromptLibraryField(key: string) {
@@ -235,7 +248,7 @@ async function loadPromptFile(key: string, requested: string) {
   try {
     const content = await getPrompt(promptLibraryKindForField(key), filename)
     promptSaveFilename.value = filename
-    setField(key, content)
+    setExplicitField(key, content)
     promptLibraryMode.value = ''
     promptActionMessage.value = `Loaded ${filename}`
   } catch (error) {
@@ -507,8 +520,18 @@ watch(
         >
           <span class="field-head" :class="{ 'field-head-search': isDropdownMultiSelectField(key) }">
             <span class="field-label">{{ getFieldLabel(key) }}</span>
-            <span v-if="isPromptLibraryField(key)" class="field-prompt-actions">
+            <span v-if="isExplicitDirty(key) || isPromptLibraryField(key)" class="field-prompt-actions">
               <ActionButton
+                v-if="isExplicitDirty(key)"
+                variant="primary"
+                compact
+                :disabled="applyDisabled || !!applyingKey || !!promptActionBusy"
+                @click.prevent.stop="emit('apply-field', key)"
+              >
+                {{ applyingKey === key ? 'Applying...' : 'Apply' }}
+              </ActionButton>
+              <ActionButton
+                v-if="isPromptLibraryField(key)"
                 compact
                 :disabled="!!promptActionBusy"
                 @click.prevent.stop="openPromptLibraryForField('save', key)"
@@ -516,6 +539,7 @@ watch(
                 Save
               </ActionButton>
               <ActionButton
+                v-if="isPromptLibraryField(key)"
                 compact
                 :disabled="!!promptActionBusy"
                 @click.prevent.stop="openPromptLibraryForField('load', key)"
@@ -655,7 +679,7 @@ watch(
         :title="getFieldLabel(key)"
         :aria-label="getFieldLabel(key)"
         :rows="3"
-        @update:model-value="setField(key, $event)"
+        @update:model-value="setExplicitField(key, $event)"
         @dragover="enableAssetDrop ? emit('field-dragover', key, $event) : undefined"
         @dragleave="enableAssetDrop ? emit('field-dragleave', key, $event) : undefined"
         @drop="enableAssetDrop ? emit('field-drop', key, $event) : undefined"
@@ -735,12 +759,6 @@ watch(
       </div>
     </component>
 
-    <RuntimePolicySelect
-      v-if="hasRuntimePolicyField"
-      :value="fields.runtime_policy"
-      @update-value="setField('runtime_policy', $event)"
-      @error="emit('field-error', $event)"
-    />
   </div>
 </template>
 

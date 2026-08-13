@@ -8,7 +8,6 @@ from typing import Any
 
 from scripts.benchmark_harness_contract import CommandSpec, RunnerSpec, TaskSpec
 from scripts.long_task_benchmark_artifacts import resolve_agent_profile
-from src.runtime_policy import resolve_runtime_policy
 from src.web_backend.profile_metadata import profile_ab_comparison_contract
 
 
@@ -119,13 +118,6 @@ def runner_execution_contract(runner: RunnerSpec) -> dict[str, Any]:
     profile = _read_json_object(profile_path)
     fields = profile.get("fields")
     config = dict(fields) if isinstance(fields, dict) else dict(profile)
-    if runner.runtime_policy_file is not None:
-        selection = _read_json_object(runner.runtime_policy_file)
-        selection_source = file_manifest(runner.runtime_policy_file)
-    else:
-        selection = config.get("runtime_policy")
-        selection_source = None
-    resolved = resolve_runtime_policy(selection, workspace_root=str(PROJECT_ROOT))
     profile_ab_comparison = profile_ab_comparison_contract(profile)
     if (
         profile_ab_comparison is not None
@@ -156,8 +148,6 @@ def runner_execution_contract(runner: RunnerSpec) -> dict[str, Any]:
                 "web_search",
             )
         },
-        "runtime_policy_selection": selection_source,
-        "effective_runtime_policy": resolved.manifest,
     }
 
 

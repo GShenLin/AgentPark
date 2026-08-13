@@ -7,19 +7,12 @@ import pytest
 
 from src.tool.task_direction_tools import get_task_direction
 from src.tool.task_direction_tools import replace_task_direction
-from src.runtime_policy import resolve_runtime_policy
-from src.task_direction_context import inject_task_direction_context
 from src.task_direction_completion import TaskDirectionCompletion
 from src.task_direction_models import TaskDirectionContractError
 from src.task_direction_models import TaskDirectionState
 from src.task_direction_store import TaskDirectionRevisionConflict
 from src.task_direction_store import TaskDirectionStore
 from src.task_direction_store import archive_legacy_task_artifacts
-
-
-CORE_TASK_DIRECTION_CONTEXT = resolve_runtime_policy(None).policy.task_direction.core_prompt
-
-
 def _state(**overrides):
     payload = {
         "objective": "Analyze the repository and report evidence-backed architecture risks.",
@@ -199,33 +192,11 @@ def test_task_direction_rejects_unknown_evidence_reference(tmp_path):
         store.replace(expected_revision=0, state=invalid)
 
 
-def test_task_direction_context_injects_protocol_and_saved_state(tmp_path):
-    agent = _Agent(tmp_path / "memory.md")
-    replace_task_direction(expected_revision=0, state=_state(), agent=agent)
-
-    inject_task_direction_context(agent, role="developer")
-
-    assert agent.messages[0] == {
-        "role": "developer",
-        "content": CORE_TASK_DIRECTION_CONTEXT,
-        "persist": False,
-    }
-    assert "user-visible entry path" in CORE_TASK_DIRECTION_CONTEXT
-    assert "Record completion only with evidence" in CORE_TASK_DIRECTION_CONTEXT
-    assert "<agentpark_task_direction" in agent.messages[1]["content"]
-    assert '"revision": 1' in agent.messages[1]["content"]
-    assert '"task_id": "task-1"' in agent.messages[1]["content"]
-
-
 def test_task_direction_is_isolated_by_task_id_for_same_node_memory(tmp_path):
     first_agent = _Agent(tmp_path / "memory.md", task_id="task-1")
     second_agent = _Agent(tmp_path / "memory.md", task_id="task-2")
     replace_task_direction(expected_revision=0, state=_state(), agent=first_agent)
 
-    inject_task_direction_context(second_agent, role="developer")
-
-    assert len(second_agent.messages) == 1
-    assert second_agent.messages[0]["content"] == CORE_TASK_DIRECTION_CONTEXT
     assert TaskDirectionStore.for_agent(second_agent).read() is None
     assert TaskDirectionStore.for_agent(first_agent).path != TaskDirectionStore.for_agent(second_agent).path
 
@@ -346,12 +317,3 @@ def test_legacy_node_level_direction_and_analysis_artifacts_are_archived(tmp_pat
         "task_direction.json",
         "analysis_verification.json",
     }
-
-
-def test_task_direction_context_skips_agents_without_capability(tmp_path):
-    agent = _Agent(tmp_path / "memory.md")
-    agent.tools.function_map = {}
-
-    inject_task_direction_context(agent, role="system")
-
-    assert agent.messages == []

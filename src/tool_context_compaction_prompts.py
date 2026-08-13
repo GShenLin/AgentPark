@@ -16,9 +16,11 @@ RAW_CONTEXT_COMPACTION_GATE_PROMPT = (
 )
 
 RAW_CONTEXT_COMPACTION_RETRY_PROMPT = (
-    "The compaction checkpoint is still active. If more function-tool work is needed, call "
-    "compact_tool_context and reduce the eligible tool context first. If the task is already complete, "
-    "return the final answer directly; a substantive response closes this checkpoint."
+    "The compaction checkpoint is still active. compact_tool_context is the only function tool currently "
+    "offered. If more function-tool work is needed, correct the previous compaction error and call "
+    "compact_tool_context again before requesting any other function tool. Ordinary function tools are "
+    "restored after compaction succeeds. If the task is already complete, return the final answer directly; "
+    "a substantive response closes this checkpoint."
 )
 
 

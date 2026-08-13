@@ -234,11 +234,23 @@ def test_responses_stream_collector_builds_non_stream_response():
     assert response["output_text"] == "READY"
 
 
-def test_public_stream_reports_midstream_failure_as_protocol_event():
+def test_public_stream_reports_midstream_failure_as_protocol_event(tmp_path):
     class Service:
+        workspace_root = str(tmp_path)
+
         @staticmethod
         def authorize(_authorization, _x_api_key):
             return True
+
+        @staticmethod
+        def route_metadata(_protocol, _model_id):
+            return {
+                "providerId": "test-provider",
+                "accountId": None,
+                "upstreamModel": "test",
+                "providerType": "openai",
+                "authMode": "api_key",
+            }
 
         @staticmethod
         def dispatch(_protocol, _payload):

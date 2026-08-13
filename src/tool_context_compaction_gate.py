@@ -12,12 +12,14 @@ from src.tool_context_compaction_trigger import ToolContextCompactionLimits
 from src.tool_context_compaction_trigger import ToolContextCompactionWindow
 from src.tool_context_compaction_prompts import RAW_CONTEXT_COMPACTION_GATE_PROMPT
 from src.tool_context_compaction_prompts import RAW_CONTEXT_COMPACTION_RETRY_PROMPT
+from src.tool_context_compaction_failure import describe_tool_context_compaction_failure
 
 
 INTERNAL_TOOL_NAMES = {"edit_operational_memory", "compact_tool_context"}
 DEFAULT_MAX_GATE_PROMPT_CHARS = 200000
 DEFAULT_MAX_CANDIDATE_CONTENT_CHARS = 50000
 TOOL_CONTEXT_COMPACTION_RETRY_PREFIX = "[Tool Context Compaction Retry]"
+MAX_TOOL_CONTEXT_COMPACTION_RETRIES = 2
 
 
 class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolContextCompactionAdmissionMixin):
@@ -65,6 +67,8 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         }
         self._tool_context_compaction_applied = False
         self._tool_context_compaction_changed = False
+        self._tool_context_compaction_retry_count = 0
+        self._tool_context_compaction_rejected_call_ids = set()
         self._tool_context_compaction_gate_prompt = prompt_message
         self.messages.append(self._tool_context_compaction_gate_prompt)
         function_map = self.tools.function_map
@@ -76,15 +80,26 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
     def _tool_context_compaction_gate_completed(self, executions: object) -> bool:
         if not bool(getattr(self, "_tool_context_compaction_gate_active", False)):
             return False
-        for item in executions if isinstance(executions, list) else []:
+        execution_items = executions if isinstance(executions, list) else []
+        compaction_executions = [
+            item for item in execution_items if self._execution_tool_name(item) == "compact_tool_context"
+        ]
+        for item in compaction_executions:
             if (
-                self._execution_tool_name(item) == "compact_tool_context"
-                and self._execution_completed_successfully(item)
+                self._execution_completed_successfully(item)
                 and bool(getattr(self, "_tool_context_compaction_applied", False))
                 and bool(getattr(self, "_tool_context_compaction_changed", False))
             ):
                 self._complete_tool_context_compaction_gate()
                 return True
+        if compaction_executions:
+            self._retry_tool_context_compaction_gate(
+                describe_tool_context_compaction_failure(
+                    compaction_executions[0],
+                    applied=bool(getattr(self, "_tool_context_compaction_applied", False)),
+                    changed=bool(getattr(self, "_tool_context_compaction_changed", False)),
+                )
+            )
         return False
 
     def _tool_context_compaction_gate_active_now(self) -> bool:
@@ -104,12 +119,31 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         self._close_tool_context_compaction_gate()
         return True
 
-    def _retry_tool_context_compaction_gate(self, reason: object = "") -> None:
+    def _retry_tool_context_compaction_gate(self, reason: object = "") -> bool:
         if not self._tool_context_compaction_gate_active_now():
-            return
+            return False
+        retry_count = int(getattr(self, "_tool_context_compaction_retry_count", 0))
+        if retry_count >= MAX_TOOL_CONTEXT_COMPACTION_RETRIES:
+            emitter = getattr(self, "_emit_provider_runtime_notice", None)
+            if callable(emitter):
+                emitter(
+                    message=json.dumps(
+                        {
+                            "retry_count": retry_count,
+                            "max_retries": MAX_TOOL_CONTEXT_COMPACTION_RETRIES,
+                            "reason": str(reason or "").strip(),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    stage="tool_context_compaction_retry_limit_reached",
+                )
+            self._close_tool_context_compaction_gate()
+            return False
         messages = getattr(self, "messages", None)
         if not isinstance(messages, list):
             raise TypeError("agent.messages must be a list for tool context compaction retry")
+        self._tool_context_compaction_retry_count = retry_count + 1
         messages[:] = [
             message
             for message in messages
@@ -120,18 +154,13 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         ]
         detail = str(reason or "").strip()
         suffix = f" Previous attempt: {detail}" if detail else ""
-        policy = self._runtime_context_compaction_policy()
-        retry_prompt = (
-            policy.retry_prompt
-            if policy is not None
-            else RAW_CONTEXT_COMPACTION_RETRY_PROMPT
-        )
         messages.append(
             self.RuntimeInstructionMessage(
                 f"{TOOL_CONTEXT_COMPACTION_RETRY_PREFIX}\n"
-                f"{retry_prompt}{suffix}"
+                f"{RAW_CONTEXT_COMPACTION_RETRY_PROMPT}{suffix}"
             )
         )
+        return True
 
     def _tool_context_compaction_active_tools(self, active_tools: object) -> object:
         if not bool(getattr(self, "_tool_context_compaction_gate_active", False)):
@@ -142,10 +171,18 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         self._close_tool_context_compaction_gate()
 
     def _close_tool_context_compaction_gate(self) -> None:
+        compaction_changed = bool(getattr(self, "_tool_context_compaction_changed", False))
         prompt_message = getattr(self, "_tool_context_compaction_gate_prompt", None)
         if isinstance(prompt_message, dict):
             protocol_exchange_message_ids = self._tool_context_compaction_protocol_exchange_message_ids(
                 self.messages
+            )
+            protocol_exchange_message_ids.update(
+                self._tool_context_compaction_rejected_exchange_message_ids(
+                    self.messages,
+                    getattr(self, "_tool_context_compaction_rejected_call_ids", set()),
+                    after_message=prompt_message,
+                )
             )
             self.messages[:] = [
                 message
@@ -174,7 +211,11 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         self._tool_context_compaction_previous_function = None
         self._tool_context_compaction_applied = False
         self._tool_context_compaction_changed = False
-        self._reset_tool_context_compaction_window()
+        self._tool_context_compaction_retry_count = 0
+        self._tool_context_compaction_rejected_call_ids = set()
+        self._reset_tool_context_compaction_window(
+            suppress_current_input=compaction_changed,
+        )
 
     def _ensure_tool_context_compaction_tool_registered(self) -> dict[str, Any]:
         from src.tool_context_compaction_tool import compact_tool_context
@@ -262,9 +303,6 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
 
     def _build_tool_context_compaction_gate_prompt(self, candidates: list[dict[str, Any]]) -> str:
         _ = candidates
-        policy = self._runtime_context_compaction_policy()
-        if policy is not None:
-            return policy.gate_prompt
         return RAW_CONTEXT_COMPACTION_GATE_PROMPT
 
     def _latest_tool_context_compaction_user_input(self) -> dict[str, Any] | None:
@@ -312,14 +350,7 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         return count
 
     def _tool_context_compaction_limits(self) -> ToolContextCompactionLimits:
-        policy = self._runtime_context_compaction_policy()
-        if policy is None:
-            return ToolContextCompactionLimits.from_provider_config(self.config)
-        config = dict(self.config)
-        config.update(policy.provider_limit_overrides())
-        if policy.context_percent <= 0:
-            config.pop("toolContextCompactionContextPercent", None)
-        return ToolContextCompactionLimits.from_provider_config(config)
+        return ToolContextCompactionLimits.from_provider_config(self.config)
 
     def _tool_context_compaction_window_state(self) -> ToolContextCompactionWindow:
         window = getattr(self, "_tool_context_compaction_window", None)
@@ -338,15 +369,13 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         totals = snapshot.get("totals")
         return totals if isinstance(totals, dict) else {}
 
-    def _reset_tool_context_compaction_window(self) -> None:
+    def _reset_tool_context_compaction_window(self, *, suppress_current_input: bool = False) -> None:
         self._tool_context_compaction_window_state().reset(
-            self._tool_context_compaction_usage_totals()
+            self._tool_context_compaction_usage_totals(),
+            suppress_current_input=suppress_current_input,
         )
 
     def _tool_context_compaction_enabled(self) -> bool:
-        policy = self._runtime_context_compaction_policy()
-        if policy is not None:
-            return policy.enabled
         provider_config = self.config
         if "toolContextCompactionEnabled" not in provider_config:
             raise ValueError(
@@ -365,19 +394,10 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
         )
 
     def _tool_context_compaction_max_candidate_chars(self) -> int:
-        policy = self._runtime_context_compaction_policy()
-        if policy is not None:
-            return policy.max_candidate_chars
         return self._tool_context_compaction_min_chars(
             "toolContextCompactionMaxCandidateChars",
             DEFAULT_MAX_CANDIDATE_CONTENT_CHARS,
         )
-
-    def _runtime_context_compaction_policy(self):
-        from src.runtime_policy.resolver import bound_runtime_policy_for_agent
-
-        resolved = bound_runtime_policy_for_agent(self)
-        return resolved.policy.context_compaction if resolved is not None else None
 
     def _tool_context_compaction_min_chars(self, key: str, default: int) -> int:
         field_name = f"provider.{key}"

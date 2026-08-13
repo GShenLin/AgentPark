@@ -8,6 +8,21 @@ export type NodeEditorAttachment = {
   mime?: string
 }
 
+export type NodeGraphDragState = {
+  sourceGraphId: string
+  nodeId: string
+  moved: boolean
+  clientX: number
+  clientY: number
+}
+
+export type NodeGraphMoveRequest = {
+  sourceGraphId: string
+  targetGraphId: string
+  nodeId: string
+  nonce: number
+}
+
 const selectedNodeId = ref<string | null>(null)
 const providers = ref<ProviderInfo[]>([])
 const availableTools = ref<string[]>([])
@@ -43,6 +58,10 @@ const nodeEditorAttachments = ref<NodeEditorAttachment[]>([])
 const nodeEditorAttachmentDrafts = ref<Record<string, NodeEditorAttachment[]>>({})
 const nodeTriggerInputs = ref<Record<string, string>>({})
 const nodeConfigDockWidth = ref(360)
+const nodeGraphDrag = ref<NodeGraphDragState | null>(null)
+const nodeGraphDropTargetId = ref('')
+const nodeGraphMoveRequest = ref<NodeGraphMoveRequest | null>(null)
+const nodeGraphMoveInProgress = ref(false)
 
 export function useGlobalState() {
   return {
@@ -80,5 +99,9 @@ export function useGlobalState() {
     nodeEditorAttachmentDrafts,
     nodeTriggerInputs,
     nodeConfigDockWidth,
+    nodeGraphDrag,
+    nodeGraphDropTargetId,
+    nodeGraphMoveRequest,
+    nodeGraphMoveInProgress,
   }
 }

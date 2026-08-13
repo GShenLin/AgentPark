@@ -1,7 +1,10 @@
 import os
 import threading
 import time
+import traceback
 import uuid
+
+from src.runtime_supervision import runtime_supervisor
 
 from . import runtime_paths, state_store
 from .graph_runtime_registry import GraphConfigReadError
@@ -22,12 +25,30 @@ class GraphRunnerRuntime(HostBoundService):
         safe_graph_id = self._sanitize_graph_id(graph_id)
         observed_wake_generation = 0
         self._log_graph_event(safe_graph_id, "scheduler_start", nodes_dir=runtime_paths._get_nodes_dir())
-        while not state.stop.is_set():
-            observed_wake_generation = state.wake.wait(observed_wake_generation, state.stop)
-            if state.stop.is_set():
-                break
-            self._run_scheduler_batch(safe_graph_id, state)
-        self._log_graph_event(safe_graph_id, "scheduler_stop")
+        runtime_supervisor.record("graph_scheduler_entered", graph_id=safe_graph_id)
+        try:
+            while not state.stop.is_set():
+                observed_wake_generation = state.wake.wait(observed_wake_generation, state.stop)
+                if state.stop.is_set():
+                    break
+                self._run_scheduler_batch(safe_graph_id, state)
+        except BaseException as exc:
+            runtime_supervisor.record(
+                "graph_scheduler_failed",
+                level="error",
+                graph_id=safe_graph_id,
+                exception_type=type(exc).__name__,
+                exception=str(exc),
+                traceback="".join(traceback.format_exception(exc)),
+            )
+            raise
+        finally:
+            runtime_supervisor.record(
+                "graph_scheduler_exited",
+                graph_id=safe_graph_id,
+                stop_requested=state.stop.is_set(),
+            )
+            self._log_graph_event(safe_graph_id, "scheduler_stop")
 
     def _run_scheduler_batch(self, safe_graph_id: str, state: GraphRunnerState) -> None:
         self._cleanup_finished_tasks(safe_graph_id, state)
@@ -255,6 +276,11 @@ class GraphRunnerRuntime(HostBoundService):
             state.scheduler_thread = scheduler_thread
             self.graph_runners[safe_graph_id] = state
             scheduler_thread.start()
+            runtime_supervisor.register_critical_thread(
+                scheduler_thread.name,
+                scheduler_thread,
+                expected_running=lambda state=state: not state.stop.is_set(),
+            )
         self._log_graph_event(safe_graph_id, "scheduler_thread_started")
 
     def _wake_graph_runner(self, graph_id: str) -> None:

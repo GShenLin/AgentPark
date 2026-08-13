@@ -11,8 +11,6 @@ from src.providers.responses_runtime_context import build_responses_agent_enviro
 from src.providers.responses_runtime_context import build_responses_turn_context
 from src.providers.responses_runtime_context import runtime_context_history_items
 from src.providers.responses_empty_message import EmptyMessageFeedbackController
-from src.providers.responses_completion_review import ResponsesCompletionReview
-from src.providers.responses_implementation_checkpoint import ResponsesImplementationCheckpoint
 from src.providers.responses_item_runtime import ResponsesItemLevelToolRunner
 from src.providers.responses_runtime_request import build_and_emit_responses_request_payload
 from src.providers.responses_runtime_mode import resolve_responses_runtime_mode
@@ -66,9 +64,6 @@ def send_via_responses(
         reset_loop_guard()
     last_request_summary: dict[str, Any] | None = None
     structured_result_accumulator = ResponsesStructuredResultAccumulator()
-    completion_review = ResponsesCompletionReview.from_agent(self)
-    implementation_checkpoint = ResponsesImplementationCheckpoint.from_agent(self)
-    had_regular_tool_executions = False
     self._last_responses_structured_result = {}
     thinking_text = ResponsesStreamText()
     stream_callbacks = ResponsesStreamCallbacks(
@@ -267,10 +262,6 @@ def send_via_responses(
                     tool_call_items=function_calls,
                     execute_tool_call_envelopes=self._execute_tool_call_envelopes_parallel,
                 )
-            had_regular_tool_executions = (
-                had_regular_tool_executions
-                or self._count_regular_tool_executions(executions) > 0
-            )
             self._emit_responses_tool_results_ready(
                 response_id=response_id,
                 function_call_count=len(function_calls),
@@ -279,28 +270,6 @@ def send_via_responses(
             )
             followup_items = self._build_responses_followup_items(executions)
             _close_item_tool_runner()
-
-            if implementation_checkpoint.observe(
-                self,
-                function_calls=function_calls,
-                executions=executions,
-            ):
-                tools_payload = self._build_responses_tools(
-                    regular_active_tools,
-                    web_search_mode,
-                )
-                current_input = self._build_responses_input(self._get_messages_with_memory())
-                explicit_context_input = list(current_input)
-                _emit_turn_debug(
-                    response_id=response_id,
-                    content=content,
-                    function_call_count=len(function_calls),
-                    next_continuation_mode="implementation_checkpoint",
-                    request_input_item_count=request_input_item_count,
-                    followup_item_count=len(followup_items),
-                    stream=use_stream,
-                )
-                continue
 
             compaction_changed = bool(getattr(self, "_tool_context_compaction_changed", False))
             compaction_completed = self._tool_context_compaction_gate_completed(executions)
@@ -323,12 +292,6 @@ def send_via_responses(
                     stream=use_stream,
                 )
                 continue
-
-            if self._tool_context_compaction_gate_active_now() and any(
-                self._execution_tool_name(execution) == "compact_tool_context"
-                for execution in executions
-            ):
-                self._retry_tool_context_compaction_gate("the compaction tool did not produce a context change")
 
             if not followup_items or (self._responses_requires_response_id_for_tool_followup() and not response_id):
                 _emit_turn_debug(
@@ -404,30 +367,6 @@ def send_via_responses(
                 continue
 
         final_text = content or (stream_text.text if use_stream else "")
-        if completion_review.start_if_needed(
-            self,
-            draft_text=final_text,
-            had_regular_tool_executions=had_regular_tool_executions,
-        ):
-            self.AssistantProgress(final_text, **turn_structured_result)
-            implementation_checkpoint.start_phase(self)
-            tools_payload = self._build_responses_tools(regular_active_tools, web_search_mode)
-            current_input = self._build_responses_input(self._get_messages_with_memory())
-            explicit_context_input = list(current_input)
-            _emit_turn_debug(
-                response_id=response_id,
-                content=final_text,
-                function_call_count=0,
-                next_continuation_mode="completion_review",
-                request_input_item_count=request_input_item_count,
-                followup_item_count=0,
-                stream=use_stream,
-            )
-            _close_item_tool_runner()
-            continue
-        completion_review.finish(self)
-        implementation_checkpoint.finish(self)
-
         next_continuation_mode = "final_message"
         if not content and use_stream and stream_text.text:
             next_continuation_mode = "stream_text_fallback"

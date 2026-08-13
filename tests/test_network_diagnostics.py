@@ -58,3 +58,34 @@ def test_network_diagnostics_ignores_static_requests(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert not (tmp_path / "logs" / "network-requests.jsonl").exists()
+
+
+def test_network_diagnostics_records_gateway_paths_without_exposing_authorization(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "src.web_backend.network_diagnostics._get_runtime_root",
+        lambda: str(tmp_path),
+    )
+    app = FastAPI()
+    app.add_middleware(NetworkDiagnosticsMiddleware)
+
+    @app.post("/responses")
+    def responses():
+        return {"ok": True}
+
+    response = TestClient(app).post(
+        "/responses",
+        headers={
+            "Authorization": "Bearer secret-value",
+            "Content-Type": "application/json",
+        },
+        json={"model": "gpt-5.5"},
+    )
+
+    assert response.status_code == 200
+    records = (tmp_path / "logs" / "network-requests.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(records) == 1
+    record = json.loads(records[0])
+    assert record["path"] == "/responses"
+    assert record["authorization_present"] is True
+    assert record["content_type"] == "application/json"
+    assert "secret-value" not in records[0]

@@ -18,6 +18,7 @@ from .graph_output_routes import normalize_output_routes
 from . import runtime_paths
 from .deletion_undo_store import deletion_undo_store
 from .node_deletion import NodeDeletionBlocked, delete_node_directory
+from .node_notes import NodeNotesDataError, normalize_node_notes
 from .runtime_state_memory_store import runtime_state_memory_store
 from .request_access import is_local_request
 from .service_host import HostBoundService
@@ -69,6 +70,11 @@ class GraphApiStorage(HostBoundService):
             raise HTTPException(status_code=400, detail=str(exc))
         if "private" in graph and not isinstance(graph.get("private"), bool):
             raise HTTPException(status_code=400, detail="graph private must be a boolean")
+        if "node_notes" in graph:
+            try:
+                graph["node_notes"] = normalize_node_notes(graph.get("node_notes"))
+            except NodeNotesDataError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
         graph.pop("nodes", None)
         graph.pop("links", None)
         return graph

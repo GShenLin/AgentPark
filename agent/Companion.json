@@ -1,10 +1,9 @@
 {
   "id": "Companion",
-  "description": "审阅节点的持久化运行记录与失败通知，提炼可复用的行为纠正并维护节点 operational memory。",
   "name": "Companion",
   "node_type_id": "agent_node",
   "fields": {
-    "provider_id": "krill_gpt55",
+    "provider_id": "GPT_Official",
     "mode": "chat",
     "plugins": [],
     "tools": [
@@ -22,8 +21,9 @@
   },
   "event_rules": {},
   "created_at": "2026-07-09T00:40:57+08:00",
+  "description": "审阅节点的持久化运行记录与失败通知，提炼可复用的行为纠正并维护节点 operational memory。",
   "source_graph_id": "Companion",
   "source_node_id": "Companion",
   "node_name": "Companion",
-  "updated_at": "2026-07-21T14:29:30+08:00"
+  "updated_at": "2026-08-12T13:41:06+08:00"
 }

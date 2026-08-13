@@ -19,6 +19,8 @@ dependencies = [
     "protobuf>=7.35.0",
     "claude-agent-sdk>=0.2.128,<0.3",
     "websockets>=16.0,<17",
+    "tickflow>=0.1.24,<0.2",
+    "tzdata>=2025.2",
 ]
 
 [tool.setuptools.packages.find]

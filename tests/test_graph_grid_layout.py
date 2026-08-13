@@ -8,9 +8,16 @@ from src.web_backend.graph_grid_layout import (
     find_available_grid_origin,
     graph_layout_lock,
     grid_rectangle_cells,
+    normalize_node_grid_ui,
     occupied_grid_cells,
     resolve_available_node_ui,
 )
+
+
+def test_node_grid_ui_accepts_sizes_below_the_default_node_dimensions():
+    assert normalize_node_grid_ui(
+        {"grid_x": 1, "grid_y": 2, "width": 24, "height": 16}
+    ) == {"grid_x": 1, "grid_y": 2, "width": 24, "height": 16}
 
 
 def _write_json(path: Path, payload: dict) -> None:

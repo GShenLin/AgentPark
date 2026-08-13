@@ -148,7 +148,7 @@ def test_apply_webui_payload_clears_named_fields(tmp_path):
     assert not config_path.with_name("runtime_state.json").exists()
 
 
-def test_apply_webui_payload_preserves_node_ui_size(tmp_path):
+def test_apply_webui_payload_preserves_node_ui_size_below_defaults(tmp_path):
     config_path = tmp_path / "node" / "config.json"
     node_config_service.write(
         str(config_path),
@@ -161,15 +161,15 @@ def test_apply_webui_payload_preserves_node_ui_size(tmp_path):
 
     result = node_config_service.apply_webui_payload(
         str(config_path),
-        {"ui": {"grid_x": 3, "grid_y": 4, "width": 360, "height": 420}},
+        {"ui": {"grid_x": 3, "grid_y": 4, "width": 24, "height": 16}},
     )
 
-    assert result.after["ui"] == {"grid_x": 3, "grid_y": 4, "width": 360, "height": 420}
+    assert result.after["ui"] == {"grid_x": 3, "grid_y": 4, "width": 24, "height": 16}
     assert json.loads(config_path.read_text(encoding="utf-8"))["ui"] == {
         "grid_x": 3,
         "grid_y": 4,
-        "width": 360,
-        "height": 420,
+        "width": 24,
+        "height": 16,
     }
 
 

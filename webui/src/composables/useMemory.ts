@@ -20,6 +20,10 @@ import { consumeAudioStreamEvents } from './streamingAudioPlayback'
 import { subscribeAppEvents } from './useAppEventStream'
 import { classifyLiveStreamFrame } from '../eventStreamProtocol'
 import { SELECTION_REQUEST_SETTLE_MS } from '../selectionRequestPolicy'
+import {
+  ConversationRequestCoordinator,
+  type ConversationRequestScope,
+} from '../conversationRequestCoordinator'
 
 const isSaving = ref(false)
 const memoryAutoScroll = ref(true)
@@ -33,6 +37,7 @@ let graphMemoryRefreshInFlightGeneration = -1
 let graphMemoryRefreshMode: 'latest_turn' | 'latest_turn_progress' | null = null
 let baseMemoryAbortController: AbortController | null = null
 const sectionMemoryAbortControllers = new Map<string, AbortController>()
+const memoryRequests = new ConversationRequestCoordinator()
 type LiveRefreshState = { promise: Promise<void>; controller: AbortController }
 const liveRefreshStates = new Map<string, LiveRefreshState>()
 let pendingCommittedLiveText = ''
@@ -87,42 +92,55 @@ export function useMemory() {
     return nodeId || ''
   }
 
+  function conversationSelectionKey(graphId: string, nodeId: string) {
+    return `${graphId}:${nodeId}`
+  }
+
+  function isLazyHistoryMode(historyMode: MemoryHistoryMode) {
+    return historyMode === 'latest_turn_progress' || historyMode === 'latest_turn_metadata'
+  }
+
+  function clearMissingAgentSelection() {
+    memoryText.value = ''
+    memoryMessages.value = []
+    memoryHistoryComplete.value = true
+    memoryLatestTurnProgressLoaded.value = true
+    memoryLatestTurnMetadataLoaded.value = true
+    memoryLatestTurnProgressSummary.value = null
+    memoryLiveMessage.value = ''
+    memoryThinkingMessage.value = ''
+    memoryActivityMessage.value = ''
+    memoryActivityBlocks.value = []
+    clearPendingCommittedLive()
+    memoryInteractiveSessionId.value = ''
+    memoryTitle.value = ''
+    memoryMeta.value = null
+    agentImages.value = []
+  }
+
   async function loadAgentMemoryOnce(
-    options: { historyMode?: MemoryHistoryMode },
+    historyMode: MemoryHistoryMode,
     signal: AbortSignal,
     generation: number,
+    requestScope: ConversationRequestScope,
   ) {
     if (memoryMode.value !== 'agent') return
     const nodeId = resolveSelectedTargetId()
     const graphId = currentGraphId.value || 'default'
     if (!nodeId) {
       if (generation !== memorySelectionGeneration || memoryMode.value !== 'agent') return
-      memoryText.value = ''
-      memoryMessages.value = []
-      memoryHistoryComplete.value = true
-      memoryLatestTurnProgressLoaded.value = true
-      memoryLatestTurnMetadataLoaded.value = true
-      memoryLatestTurnProgressSummary.value = null
-      memoryLiveMessage.value = ''
-      memoryThinkingMessage.value = ''
-      memoryActivityMessage.value = ''
-      memoryActivityBlocks.value = []
-      clearPendingCommittedLive()
-      memoryInteractiveSessionId.value = ''
-      memoryTitle.value = ''
-      memoryMeta.value = null
-      agentImages.value = []
+      clearMissingAgentSelection()
       return
     }
     try {
-      const historyMode = options.historyMode || (memoryHistoryComplete.value ? 'all' : 'latest_turn')
       const res = await getNodeInstanceMemory(nodeId, 20000, graphId, historyMode, { signal })
       if (signal.aborted || generation !== memorySelectionGeneration) return
+      if (!memoryRequests.isActiveScope(requestScope)) return
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
       const baseMessages = Array.isArray((res as any)?.messages) ? ([...(res as any).messages] as any[]) : []
-      const isLazySection = historyMode === 'latest_turn_progress' || historyMode === 'latest_turn_metadata'
+      const isLazySection = isLazyHistoryMode(historyMode)
       if (isLazySection) {
         const merged = new Map<string, MessageEnvelope>()
         for (const message of [...memoryMessages.value, ...baseMessages]) {
@@ -169,10 +187,11 @@ export function useMemory() {
       agentImages.value = []
     } catch (e: any) {
       if (signal.aborted || generation !== memorySelectionGeneration) return
+      if (!memoryRequests.isActiveScope(requestScope)) return
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
-      if (options.historyMode === 'latest_turn_progress' || options.historyMode === 'latest_turn_metadata') {
+      if (isLazyHistoryMode(historyMode)) {
         lastError.value = String(e?.message || e)
         return
       }
@@ -195,8 +214,29 @@ export function useMemory() {
   }
 
   async function loadAgentMemory(options: { historyMode?: MemoryHistoryMode } = {}) {
+    if (memoryMode.value !== 'agent') return
+    const nodeId = resolveSelectedTargetId()
+    const graphId = currentGraphId.value || 'default'
+    if (!nodeId) {
+      stopLoading()
+      clearMissingAgentSelection()
+      return
+    }
     const generation = memorySelectionGeneration
-    const sectionKey = String(options.historyMode || '').trim()
+    const selectionKey = conversationSelectionKey(graphId, nodeId)
+    const requestedHistoryMode = options.historyMode || (memoryHistoryComplete.value ? 'all' : 'latest_turn')
+    const lazySection = isLazyHistoryMode(requestedHistoryMode)
+    let requestScope: ConversationRequestScope
+    let historyMode: MemoryHistoryMode
+    if (lazySection) {
+      requestScope = memoryRequests.captureScope(selectionKey)
+      historyMode = requestedHistoryMode
+    } else {
+      const requestToken = memoryRequests.begin(selectionKey, requestedHistoryMode)
+      requestScope = requestToken
+      historyMode = requestToken.historyMode
+    }
+    const sectionKey = lazySection ? historyMode : ''
     const controller = new AbortController()
     if (sectionKey) {
       sectionMemoryAbortControllers.get(sectionKey)?.abort()
@@ -206,7 +246,7 @@ export function useMemory() {
       baseMemoryAbortController = controller
     }
     try {
-      await loadAgentMemoryOnce(options, controller.signal, generation)
+      await loadAgentMemoryOnce(historyMode, controller.signal, generation, requestScope)
     } finally {
       if (sectionKey) {
         if (sectionMemoryAbortControllers.get(sectionKey) === controller) {
@@ -487,6 +527,7 @@ export function useMemory() {
 
   function stopLoading() {
     memorySelectionGeneration += 1
+    memoryRequests.deactivate()
     if (selectionLoadTimer != null) {
       window.clearTimeout(selectionLoadTimer)
       selectionLoadTimer = null
@@ -503,6 +544,8 @@ export function useMemory() {
     stopLoading()
     if (memoryMode.value !== 'agent') return
     const nodeId = resolveSelectedTargetId()
+    const graphId = currentGraphId.value || 'default'
+    if (nodeId) memoryRequests.activate(conversationSelectionKey(graphId, nodeId))
     memoryText.value = ''
     memoryMessages.value = []
     memoryHistoryComplete.value = false

@@ -12,6 +12,10 @@ from src.tool.tool_call_protocol import ToolCallParseFailure
 
 
 class ResponsesMapping(HostBoundService):
+    _TOOL_ARGUMENTS_PARSE_ERROR_REPLAY = {
+        "_agentpark_protocol_error": "tool_arguments_json_parse_failed",
+    }
+
     def _responses_message_roles(self) -> set[str]:
         return {"system", "developer", "user", "assistant"}
 
@@ -113,7 +117,7 @@ class ResponsesMapping(HostBoundService):
 
     def _build_responses_input(self, messages):
         items = []
-        normalized_messages = ProviderMessagePolicy.from_config(self.config).normalize_messages(messages)
+        normalized_messages = ProviderMessagePolicy(instruction_role="developer").normalize_messages(messages)
         for message in normalized_messages:
             item = self._message_to_responses_input_item(message)
             if isinstance(item, list):
@@ -130,11 +134,16 @@ class ResponsesMapping(HostBoundService):
             raw = call.raw if isinstance(call.raw, dict) else {}
             item_id = str(raw.get("id") or "").strip()
             status = str(raw.get("status") or "").strip()
+            arguments = (
+                self._TOOL_ARGUMENTS_PARSE_ERROR_REPLAY
+                if isinstance(call, ToolCallParseFailure)
+                else call.arguments_json
+            )
             items.append(
                 build_responses_function_call_input_item(
                     call_id=call.call_id,
                     name=call.name,
-                    arguments=call.arguments_json,
+                    arguments=arguments,
                     item_id=item_id,
                     status=status,
                 )

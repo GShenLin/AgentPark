@@ -479,6 +479,10 @@ def test_doubao_responses_invalid_tool_arguments_return_tool_error_and_continue(
     assert tool_payload["status"] == "invalid_arguments"
     assert "failed to parse tool arguments JSON" in tool_payload["error"]
     continuation_input = _without_environment_context(requests[1]["input"])
+    function_call = next(item for item in continuation_input if item.get("type") == "function_call")
+    assert json.loads(function_call["arguments"]) == {
+        "_agentpark_protocol_error": "tool_arguments_json_parse_failed",
+    }
     tool_output = next(item for item in continuation_input if item.get("type") == "function_call_output")
     assert tool_output["status"] == "completed"
     output_payload = json.loads(tool_output["output"])

@@ -29,10 +29,12 @@ import {
   type PasteAgentConfig,
 } from '../../api'
 import { ensureBoundRemoteWorkerOnline } from '../../remoteWorkerConnection'
+import { createBrowserUuid } from '../../utils/browserId'
 import type { Ref } from 'vue'
 import { resolveDroppedPaths, uploadPastedImageFiles, type DroppedPathItem } from '../../composables/droppedPaths'
 import { useGlobalState } from '../../composables/useGlobalState'
 import { recordDeletionUndo } from '../../composables/useDeletionUndo'
+import { createUniqueNodeId } from '../../nodeId'
 import {
   buildBoardPastePlan,
   makeBoardCopySnapshot,
@@ -47,6 +49,7 @@ import {
 } from './boardClipboardProtocol'
 import {
   clearPendingBoardPosition,
+  didBoardItemsChangeGridPosition,
   rememberPendingBoardPositions,
   traceBoardDrag,
   type BoardPosition,
@@ -64,6 +67,7 @@ import { appendUniqueBoardAttachment, isBoardFileDropEvent } from './boardFiles'
 import { createBoardGraphPersistence } from './boardGraphPersistence'
 import { createBoardNodeConfigRefresh } from './boardNodeConfigRefresh'
 import { removeBoardNodeRuntimeState, renameBoardNodeIdentity } from './boardNodeIdentity'
+import { normalizeNodeNotes, removeNodeNote, renameNodeNote, setNodeNote as updateNodeNoteMap } from '../../nodeNotes'
 import { createBoardRuntimeRefresh } from './boardRuntimeRefresh'
 import {
   getBoardNodeState,
@@ -75,6 +79,7 @@ import {
 } from './boardNodeRuntime'
 import {
   computeNodeIdsInSelectionRect,
+  resolveNodeMoveIds,
   selectionRectExceedsThreshold,
   selectionRectFromSession,
   type BoardSelectionSession,
@@ -141,6 +146,10 @@ export function useAgentBoard(options: {
     nodeSettingsRequest,
     nodeEditorAttachments,
     nodeTriggerInputs,
+    nodeGraphDrag,
+    nodeGraphDropTargetId,
+    nodeGraphMoveRequest,
+    nodeGraphMoveInProgress,
   } =
     useGlobalState()
 
@@ -396,6 +405,7 @@ export function useAgentBoard(options: {
   async function applyPastePlanToBoard(plan: BoardPastePlan, persistReason: string) {
     nodes.value.push(...plan.nodes)
     links.value.push(...plan.links)
+    nodeNotes.value = { ...nodeNotes.value, ...plan.nodeNotes }
 
     updateCanvasSize()
     syncGraphSnapshot()
@@ -586,20 +596,7 @@ export function useAgentBoard(options: {
   }
 
   function makeUniqueId(base: string, excludeId = '') {
-    const raw = String(base || '').trim() || 'node'
-    const cleaned = raw.replace(/[<>:"/\\|?*]/g, '_').trim() || 'node'
-    const hasId = (id: string) => id !== excludeId && nodes.value.some((node) => node.id === id)
-
-    if (!hasId(cleaned)) {
-      return cleaned
-    }
-    for (let i = 1; i < 10000; i += 1) {
-      const candidate = `${cleaned}${i}`
-      if (!hasId(candidate)) {
-        return candidate
-      }
-    }
-    return `${cleaned}-${Date.now()}`
+    return createUniqueNodeId(base, nodes.value.map((node) => node.id), excludeId)
   }
 
   function applyLocalRename(oldId: string, newId: string) {
@@ -629,6 +626,7 @@ export function useAgentBoard(options: {
     await renameNodeInstance(itemId, graphId, finalId, finalId)
 
     applyLocalRename(itemId, finalId)
+    nodeNotes.value = renameNodeNote(nodeNotes.value, itemId, finalId)
 
     syncGraphSnapshot()
     await persistGraphConfig('rename_board_item')
@@ -642,6 +640,7 @@ export function useAgentBoard(options: {
   const availableNodes = ref<NodeInfo[]>([])
   const nodes = ref<NodeCard[]>([])
   const links = ref<LinkItem[]>([])
+  const nodeNotes = ref<Record<string, string>>({})
   const nodeConfigs = ref<Record<string, NodeInstanceConfig>>({})
   const linkSession = ref<LinkSession | null>(null)
   const dragSession = ref<DragSession>(null)
@@ -682,6 +681,7 @@ export function useAgentBoard(options: {
     currentGraphName,
     currentGraphWorkingPath,
     nodes,
+    nodeNotes,
     links,
     gridSettings,
     saveGraph,
@@ -725,6 +725,7 @@ export function useAgentBoard(options: {
     if ((currentGraphId.value || 'default') !== graphId) return
     if (!config || config.unchanged) return
     links.value = normalizeGraphLinks(config.output_routes || {})
+    nodeNotes.value = normalizeNodeNotes(config.node_notes)
     syncGraphSnapshot()
     if (graphSnapshot.value && Number(config.version || 0) > 0) {
       graphSnapshot.value = { ...graphSnapshot.value, version: Number(config.version || 0) }
@@ -736,6 +737,7 @@ export function useAgentBoard(options: {
     graphSnapshot.value = { ...config }
     gridSettings.value = boardGridSettingsFromDefaults(boardLayoutDefaults.value)
     currentGraphWorkingPath.value = String((config as any)?.working_path || '').trim()
+    nodeNotes.value = normalizeNodeNotes(config.node_notes)
     activeDragItemIds.clear()
     pendingUiPositions.clear()
     selectedNodeId.value = null
@@ -788,6 +790,7 @@ export function useAgentBoard(options: {
     if (confirmedIndex !== -1) {
       nodes.value.splice(confirmedIndex, 1)
     }
+    nodeNotes.value = removeNodeNote(nodeNotes.value, nodeId)
     selectedItemIds.value = selectedItemIds.value.filter((id) => id !== nodeId)
     if (selectedNodeId.value === nodeId) {
       selectedNodeId.value = null
@@ -846,13 +849,8 @@ export function useAgentBoard(options: {
     cancelBoardViewportScroll()
 
     dragHoverTargetId.value = null
-    const selected = new Set<string>(selectedItemIds.value)
-    if (!selected.has(id) && !event.ctrlKey && !event.metaKey) {
-      if (nodes.value.some((n) => n.id === id)) {
-        selectNode(id)
-      }
-    }
-    const movingIds = selectedItemIds.value.length ? selectedItemIds.value : [id]
+    const movingIds = resolveNodeMoveIds(selectedItemIds.value, id)
+    const focusOnClick = !(event.ctrlKey || event.metaKey || event.altKey)
     activeDragItemIds.clear()
     for (const itemId of movingIds) activeDragItemIds.add(itemId)
     dragBatchStart = {}
@@ -864,13 +862,24 @@ export function useAgentBoard(options: {
 
     const node = nodes.value.find((n) => n.id === id)
     if (!node) return
+    nodeGraphDropTargetId.value = ''
+    nodeGraphDrag.value = movingIds.length === 1 && !nodeGraphMoveInProgress.value
+      ? {
+          sourceGraphId: currentGraphId.value || 'default',
+          nodeId: id,
+          moved: false,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        }
+      : null
     const startX = node.ui.grid_x
     const startY = node.ui.grid_y
     nodeMoveDrag.start({
       itemId: id,
+      movingIds,
       pointerId: event.pointerId,
       moved: false,
-      focusOnClick: !(event.ctrlKey || event.metaKey || event.altKey),
+      focusOnClick,
     }, event, { preventDefault: true, stopPropagation: true })
     traceBoardDrag('drag_start', {
       itemId: id,
@@ -886,8 +895,16 @@ export function useAgentBoard(options: {
       if (Math.hypot(dx, dy) <= 4) return
       session.moved = true
     }
+    if (nodeGraphDrag.value?.nodeId === session.itemId) {
+      nodeGraphDrag.value = {
+        ...nodeGraphDrag.value,
+        moved: true,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }
+    }
 
-    const movingIds = selectedItemIds.value.length ? selectedItemIds.value : [session.itemId]
+    const movingIds = session.movingIds
     for (const itemId of movingIds) {
       const startPos = dragBatchStart?.[itemId]
       if (!startPos) continue
@@ -1172,6 +1189,17 @@ export function useAgentBoard(options: {
     return result
   }
 
+  async function setNodeNote(nodeId: string, note: string) {
+    const id = String(nodeId || '').trim()
+    if (!id || !nodes.value.some((node) => node.id === id)) return
+    const normalizedNote = String(note || '').trim()
+    if (String(nodeNotes.value[id] || '') === normalizedNote) return
+    const nextNotes = updateNodeNoteMap(nodeNotes.value, id, normalizedNote)
+    nodeNotes.value = nextNotes
+    syncGraphSnapshot()
+    await persistGraphConfig('set_node_note')
+  }
+
   async function setNodePrivacy(nodeId: string, privateNode: boolean) {
     const id = String(nodeId || '').trim()
     if (!id) return
@@ -1280,14 +1308,19 @@ export function useAgentBoard(options: {
   }
 
   function finishNodeDrag(end: PointerDragEnd, session: NonNullable<DragSession>) {
-    const movingIds = selectedItemIds.value.length ? [...selectedItemIds.value] : [session.itemId]
+    const movingIds = session.movingIds
     const targetId = getDropTargetItemId(end.clientX, end.clientY, new Set(movingIds))
     const payload = getLastItemPayload(session.itemId)
     const wasMoved = session.moved
+    const releasedByPointer = end.pointerEvent?.type === 'pointerup'
+    const graphMoveTargetId = String(nodeGraphDropTargetId.value || '').trim()
+    const graphMoveDrag = nodeGraphDrag.value
+    nodeGraphDrag.value = null
+    nodeGraphDropTargetId.value = ''
     dragHoverTargetId.value = null
     activeDragItemIds.clear()
     if (!wasMoved) {
-      if (session.focusOnClick && nodes.value.some((node) => node.id === session.itemId)) {
+      if (releasedByPointer && session.focusOnClick && nodes.value.some((node) => node.id === session.itemId)) {
         suppressClickUntil.value = Date.now() + 250
         selectAndFocusNode(session.itemId).catch(() => null)
       }
@@ -1310,12 +1343,33 @@ export function useAgentBoard(options: {
       sentByDrop: !!(targetId && payload),
     })
 
+    if (
+      releasedByPointer &&
+      graphMoveDrag?.moved &&
+      graphMoveDrag.nodeId === session.itemId &&
+      graphMoveTargetId &&
+      graphMoveTargetId !== graphMoveDrag.sourceGraphId
+    ) {
+      restoreDraggedPreviewPositions(movingIds)
+      updateCanvasSize({ preserveCurrentExtent: true })
+      syncGraphSnapshot()
+      dragBatchStart = null
+      nodeGraphMoveRequest.value = {
+        sourceGraphId: graphMoveDrag.sourceGraphId,
+        targetGraphId: graphMoveTargetId,
+        nodeId: graphMoveDrag.nodeId,
+        nonce: Date.now(),
+      }
+      if (end.pointerEvent?.cancelable) end.pointerEvent.preventDefault()
+      return
+    }
+
     if (targetId && payload) {
       restoreDraggedPreviewPositions(movingIds)
       updateCanvasSize({ preserveCurrentExtent: true })
       syncGraphSnapshot()
       lastError.value = null
-      if (nodes.value.some((n) => n.id === targetId)) selectNode(targetId)
+      if (releasedByPointer && nodes.value.some((n) => n.id === targetId)) selectNode(targetId)
       sendNodeMessage(targetId, payload).catch((e: any) => {
         lastError.value = String(e?.message || e)
       })
@@ -1327,6 +1381,14 @@ export function useAgentBoard(options: {
     settleDraggedGridPositions(movingIds)
     updateCanvasSize({ preserveCurrentExtent: true })
     syncGraphSnapshot()
+    const changedGridPosition = didBoardItemsChangeGridPosition({
+      itemIds: movingIds,
+      startPositions: dragBatchStart || {},
+      getPosition: getItemPosition,
+    })
+    if (releasedByPointer && !changedGridPosition && session.focusOnClick && nodes.value.some((node) => node.id === session.itemId)) {
+      selectAndFocusNode(session.itemId).catch(() => null)
+    }
     rememberPendingUiPositions(movingIds, 'end_drag')
     void persistDraggedItemPositions(movingIds).catch((e: any) => {
       lastError.value = String(e?.message || e)
@@ -1660,6 +1722,7 @@ export function useAgentBoard(options: {
       graphId: currentGraphId.value || 'default',
       nodes: nodes.value,
       links: links.value,
+      nodeNotes: nodeNotes.value,
       selectedItemIds: selectedItemIds.value,
     })
   }
@@ -1686,7 +1749,7 @@ export function useAgentBoard(options: {
     if (!snapshot) return
 
     try {
-      const marker = createBoardClipboardMarker(snapshot, crypto.randomUUID())
+      const marker = createBoardClipboardMarker(snapshot, createBrowserUuid())
       writeBoardClipboardMarker(event.clipboardData, marker)
       activeBoardClipboard = { marker, snapshot }
       pasteCount = 0
@@ -2071,6 +2134,7 @@ export function useAgentBoard(options: {
     availableNodes,
     nodes,
     links,
+    nodeNotes,
     nodeConfigs,
 
     boardRef,
@@ -2112,6 +2176,7 @@ export function useAgentBoard(options: {
     previewMessage,
     onNodePaletteDragStart,
     renameNodeCard,
+    setNodeNote,
     deleteNodeCard,
     refreshNodeConfigsAndMemory,
     ensureNodeConfig,

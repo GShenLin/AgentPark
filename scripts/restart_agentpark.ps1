@@ -58,6 +58,23 @@ function Clear-CompanionInbox {
     Write-Host "[INFO] Cleared companion inbox: $inboxPath"
 }
 
+function Save-RestartCheckpoint {
+    param([Parameter(Mandatory = $true)][int]$Port)
+    $endpoint = "http://127.0.0.1:$Port/api/system/restart/checkpoint"
+    Write-Host "[INFO] Saving restart checkpoint through $endpoint"
+    try {
+        $response = Invoke-RestMethod -Method Post -Uri $endpoint -TimeoutSec 30
+    } catch [System.Net.WebException] {
+        Write-Host "[WARN] AgentPark checkpoint endpoint is unavailable: $($_.Exception.Message)"
+        Write-Host '[WARN] Continuing process cleanup because the verified server process is unhealthy.'
+        return $false
+    }
+    if ($null -eq $response -or -not [bool]$response.ok) {
+        throw 'AgentPark did not confirm that the restart checkpoint was saved.'
+    }
+    Write-Host "[INFO] Restart checkpoint saved: active nodes=$([int]$response.captured) restart_id=$([string]$response.restart_id)"
+    return $true
+}
 function Test-ProjectProcess {
     param(
         [Parameter(Mandatory = $true)]$ProcessInfo,
@@ -89,7 +106,6 @@ function Test-ProjectProcess {
     }
     return ($hasWorkspaceRoot -or (Test-ProcessTreeHasWorkspaceRoot -ProcessInfo $ProcessInfo -Root $Root))
 }
-
 function Test-ServerCommandLine {
     param([Parameter(Mandatory = $true)][string]$CommandLine)
     return (
@@ -98,7 +114,6 @@ function Test-ServerCommandLine {
         $CommandLine -like '*src/fast_api.py*'
     )
 }
-
 function Test-CompanionCliCommandLine {
     param([Parameter(Mandatory = $true)][string]$CommandLine)
     return (
@@ -107,7 +122,6 @@ function Test-CompanionCliCommandLine {
         ($CommandLine -like '*/src/cli.py chat*')
     )
 }
-
 function Test-DesktopPetCommandLine {
     param([Parameter(Mandatory = $true)][string]$CommandLine)
     return (
@@ -342,6 +356,20 @@ if ($candidates.Count -eq 0 -and $wrapperProcessIds.Count -eq 0) {
         Write-Host "[INFO] Stopping PID $processId ($($candidate.Reason)): $($candidate.Name)"
     }
     if ($processIds.Count -gt 0) {
+        $serverProcessIds = @($processIds | Where-Object { $candidates[$_].Kind -eq 'server' })
+        if ($serverProcessIds.Count -gt 0) {
+            $listeningProcessIds = @(Get-ListeningPids -Port $configuredPort)
+            $listeningServerProcessIds = @($serverProcessIds | Where-Object { $listeningProcessIds -contains $_ })
+            if ($listeningServerProcessIds.Count -gt 0) {
+                $checkpointSaved = Save-RestartCheckpoint -Port $configuredPort
+                if (-not $checkpointSaved) {
+                    Write-Host '[WARN] Restart will rely on persisted node state and startup recovery.'
+                }
+            } else {
+                Write-Host "[WARN] Verified AgentPark server PID(s) $($serverProcessIds -join ', ') are not listening on port $configuredPort."
+                Write-Host '[WARN] Skipping the unavailable checkpoint API and continuing stale-process cleanup.'
+            }
+        }
         foreach ($processId in $processIds) {
             Stop-Process -Id $processId -ErrorAction SilentlyContinue
         }

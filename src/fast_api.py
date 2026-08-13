@@ -3,12 +3,14 @@ import logging
 import os
 import sys
 import threading
+import traceback
 from copy import deepcopy
 
 import uvicorn
 from uvicorn.config import LOGGING_CONFIG
 
 from src.project_process_environment import apply_project_process_environment
+from src.runtime_supervision import runtime_supervisor
 from src.server_pid_file import get_server_pid_file_path, install_server_pid_file, remove_server_pid_file
 from src.web_backend import create_app
 from src.web_backend import runtime_paths
@@ -50,6 +52,9 @@ def _build_uvicorn_log_config() -> dict:
 
 
 def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
+    runtime_supervisor.configure_listener(host, port)
+    runtime_supervisor.start()
+    runtime_supervisor.record("uvicorn_run_entered", host=host, port=port)
     config = uvicorn.Config(
         app,
         host=host,
@@ -116,8 +121,27 @@ def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
     app.state.request_workspace_exit = _request_workspace_exit
     start_frozen_parent_exit_monitor(exit_func=_request_exit)
     start_env_parent_exit_monitor(exit_func=_request_exit)
-    server.run()
-    print("[server] uvicorn server.run returned", file=sys.stderr)
+    try:
+        server.run()
+    except BaseException as exc:
+        runtime_supervisor.record(
+            "uvicorn_run_failed",
+            level="error",
+            exception_type=type(exc).__name__,
+            exception=str(exc),
+            traceback="".join(traceback.format_exception(exc)),
+        )
+        raise
+    finally:
+        runtime_supervisor.record(
+            "uvicorn_run_returned",
+            should_exit=server.should_exit,
+            force_exit=server.force_exit,
+            started=server.started,
+            threads=runtime_supervisor.thread_snapshot(),
+        )
+        runtime_supervisor.stop(reason="uvicorn server.run returned")
+        print("[server] uvicorn server.run returned", file=sys.stderr)
 
 
 def main(argv=None):

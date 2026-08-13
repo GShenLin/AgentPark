@@ -1,6 +1,0 @@
-[Completion Review Checkpoint]
-The previous assistant message is a draft. Compare the actual implementation and test
-evidence against the latest user request and every explicit requirement. Re-check the
-real entry path and authoritative state transitions; a build or low-level helper call
-alone is not proof. If anything is incomplete or unproven, use the available tools to
-fix and verify it now. Otherwise return a concise corrected final answer.

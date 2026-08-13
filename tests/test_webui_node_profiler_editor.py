@@ -23,64 +23,6 @@ def test_node_profiler_editor_is_shared_by_desktop_and_mobile_settings():
     assert "<SettingsPage" in mobile_workspace
 
 
-def test_settings_exposes_runtime_policy_catalog_and_profile_selection():
-    settings_page = _read("webui/src/components/SettingsPage.vue")
-    settings_panel = _read(
-        "webui/src/components/settings/RuntimePolicySettingsPanel.vue"
-    )
-    settings_form = _read(
-        "webui/src/components/settings/RuntimePolicyConfigForm.vue"
-    )
-    policy_select = _read(
-        "webui/src/components/agent-board/RuntimePolicySelect.vue"
-    )
-    editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
-    desktop_node_config = _read(
-        "webui/src/components/agent-board/NodeConfigSection.vue"
-    )
-    mobile_node_config = _read("webui/src/mobile/MobileNodeConfigDialog.vue")
-    node_config_fields = _read(
-        "webui/src/components/agent-board/NodeConfigFields.vue"
-    )
-    settings_api = _read("webui/src/settingsApi.ts")
-    routes = _read("src/web_backend/route_registry.py")
-
-    assert "label: 'RuntimePolicy'" in settings_page
-    assert "<RuntimePolicySettingsPanel" in settings_page
-    assert '@dirty="runtimePolicyDirty = $event"' in settings_page
-    assert "updateDefaultRuntimePolicy" in settings_panel
-    assert "updateRuntimePolicy" in settings_panel
-    assert "Workspace default" in settings_panel
-    assert "Save Policy" in settings_panel
-    assert "<RuntimePolicyConfigForm" in settings_panel
-    assert "runtime-policy-json" not in settings_panel
-    assert "<textarea" not in settings_panel
-    assert "FormCheckbox" in settings_form
-    assert "FormTextInput" in settings_form
-    assert "ExpandableTextarea" in settings_form
-    assert 'type="number"' in settings_form
-    assert "RuntimePolicyStringListField" in settings_form
-    assert "Metadata" in settings_form
-    assert "Task direction" in settings_form
-    assert "Completion review" in settings_form
-    assert "Implementation checkpoint" in settings_form
-    assert "Context compaction" in settings_form
-    assert "<RuntimePolicySelect" in node_config_fields
-    assert "<FormCheckbox" in node_config_fields
-    assert "<FormTextInput" in node_config_fields
-    assert "key === 'runtime_policy'" in node_config_fields
-    assert node_config_fields.index("v-for=\"section in fieldSections\"") < node_config_fields.index("<RuntimePolicySelect")
-    assert "<NodeConfigFields" in editor
-    assert "<NodeConfigFields" in desktop_node_config
-    assert "<NodeConfigFields" in mobile_node_config
-    assert "Workspace default" in policy_select
-    assert "getRuntimePolicySettings" in settings_api
-    assert "updateDefaultRuntimePolicy" in settings_api
-    assert "updateRuntimePolicy" in settings_api
-    assert '"/api/runtime-policies/default"' in routes
-    assert '"/api/runtime-policies/{policy_id}"' in routes
-
-
 def test_shared_action_controls_are_used_across_settings_and_dialogs():
     danger_button = _read("webui/src/components/DangerButton.vue")
     image_lightbox = _read("webui/src/components/ImageLightbox.vue")
@@ -107,12 +49,6 @@ def test_shared_action_controls_are_used_across_settings_and_dialogs():
 
 def test_node_profiler_editor_reuses_node_configuration_fields():
     editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
-    runtime_policy_preview = _read(
-        "webui/src/components/settings/RuntimePolicyPreviewPanel.vue"
-    )
-    runtime_policy_composable = _read(
-        "webui/src/composables/useRuntimePolicyPreview.ts"
-    )
     api = _read("webui/src/api.ts")
     api_types = _read("webui/src/apiTypes.ts")
 
@@ -135,17 +71,9 @@ def test_node_profiler_editor_reuses_node_configuration_fields():
     assert "node_profiler:" in api_types
     assert "instruction: string" in api_types
     assert "system_prompt: string" in api_types
-    assert "previewAgentRuntimePolicy" in runtime_policy_composable
-    assert "RuntimePolicyPreviewPanel" in editor
-    assert "useRuntimePolicyPreview" in editor
     assert "NodeProfilerMetadataPanel" in editor
     assert "NodeProfilerProfileList" in editor
     assert "NodeProfilerToolbar" in editor
-    assert "Effective RuntimePolicy" in runtime_policy_preview
-    assert "Empty Profile value resolves to the catalog default." in runtime_policy_preview
-    assert "runtime_policy_manifest" not in editor
-    assert "export type RuntimePolicyPreview" in api_types
-    assert "/api/profiles/agents/runtime-policy/preview" in api
 
 
 def test_desktop_node_config_loads_profile_into_current_node():
@@ -157,8 +85,9 @@ def test_desktop_node_config_loads_profile_into_current_node():
     )
 
     assert "<NodeProfileLoadControl" in desktop_config
-    assert '<div class="section-title">Config</div>' in desktop_config
-    assert desktop_config.index('<div class="section-title">Config</div>') < desktop_config.index("<NodeProfileLoadControl")
+    config_title = '<div class="section-title">{{ t(\'common.config\') }}</div>'
+    assert config_title in desktop_config
+    assert desktop_config.index(config_title) < desktop_config.index("<NodeProfileLoadControl")
     assert "loadAgentProfileIntoNode" in desktop_config
     assert "graph_id: currentGraphId()" in desktop_config
     assert "node_id: nodeId" in desktop_config
@@ -181,6 +110,27 @@ def test_desktop_node_config_loads_profile_into_current_node():
     assert 'v-model="description"' in metadata_panel
 
 
+def test_desktop_node_config_auto_applies_non_text_fields():
+    desktop_config = _read("webui/src/components/agent-board/NodeConfigSection.vue")
+    config_fields = _read("webui/src/components/agent-board/NodeConfigFields.vue")
+    auto_apply = _read("webui/src/components/agent-board/nodeConfigAutoApply.ts")
+
+    assert "createNodeConfigAutoApplyQueue" in desktop_config
+    assert "applyMode === 'explicit'" in desktop_config
+    assert ':explicit-dirty-keys="Object.keys(dirtyKeys)"' in desktop_config
+    assert '@apply-field="applyField"' in desktop_config
+    assert "async function applyChanges(requestedKeys?: string[])" in desktop_config
+    assert "Apply${dirtyCount" not in desktop_config
+    assert "function setExplicitField(key: string, value: any)" in config_fields
+    assert '@update:model-value="setExplicitField(key, $event)"' in config_fields
+    assert 'v-if="isExplicitDirty(key)"' in config_fields
+    assert "emit('apply-field', key)" in config_fields
+    assert "setField('provider_id', String(providerId || '').trim())" in config_fields
+    assert "await ctx.setNodeFields(nodeId, normalizedFields)" in desktop_config
+    assert "revertFailedAutoApply(batch)" in desktop_config
+    assert "pendingByNode" in auto_apply
+
+
 def test_node_profiler_editor_does_not_persist_unedited_template_defaults():
     editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
 
@@ -189,6 +139,21 @@ def test_node_profiler_editor_does_not_persist_unedited_template_defaults():
     assert "const includedKeys = new Set" in editor
     assert "...persistedFieldKeys.value" in editor
     assert "...Object.keys(editedFieldKeys.value)" in editor
+
+
+def test_node_profiler_editor_has_delete_action_and_name_only_profile_list():
+    editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
+    toolbar = _read("webui/src/components/settings/NodeProfilerToolbar.vue")
+    profile_list = _read("webui/src/components/settings/NodeProfilerProfileList.vue")
+
+    assert "deleteAgentProfile" in editor
+    assert "async function deleteProfile()" in editor
+    assert "window.dispatchEvent(new CustomEvent('agent-profiles-changed'))" in editor
+    assert '@delete="deleteProfile"' in editor
+    assert "<DangerButton" in toolbar
+    assert "Delete Profile" in toolbar
+    assert "{{ profile.name || profile.id }}" in profile_list
+    assert "AgentProfileChoiceSummary" not in profile_list
 
 
 def test_agent_node_config_is_partitioned_by_support_mode_without_changing_other_nodes():

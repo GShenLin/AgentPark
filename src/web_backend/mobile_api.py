@@ -5,6 +5,8 @@ import uuid
 from fastapi import Request
 
 from .domain_base import DomainBase
+from .graph_runtime_registry import GraphConfigReadError
+from .node_notes import NodeNotesDataError, normalize_node_notes
 from .shared import (
     HTTPException,
     _get_runtime_root,
@@ -71,7 +73,7 @@ class MobileApiDomain(DomainBase):
             )
         return result
 
-    def _mobile_node_from_config(self, item: dict, graph_id: str) -> dict:
+    def _mobile_node_from_config(self, item: dict, graph_id: str, node_notes: dict[str, str]) -> dict:
         node_id = str(item.get("node_id") or "").strip()
         type_id = str(item.get("type_id") or "").strip()
         if not node_id or not type_id:
@@ -81,6 +83,7 @@ class MobileApiDomain(DomainBase):
             "name": str(item.get("name") or node_id),
             "type_id": type_id,
             "graph_id": graph_id,
+            "note": node_notes.get(node_id, ""),
             "state": item.get("state"),
             "pending_count": item.get("pending_count"),
             "node_event_seq": int(item.get("node_event_seq") or 0),
@@ -97,6 +100,11 @@ class MobileApiDomain(DomainBase):
         }
 
     def _list_mobile_nodes_for_graph(self, graph_id: str, request: Request = None) -> list[dict]:
+        try:
+            graph = self.graph_runtime._read_graph_config(graph_id)
+            node_notes = normalize_node_notes(graph.get("node_notes"))
+        except (GraphConfigReadError, NodeNotesDataError) as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
         payload = self.core.node_ops.list_node_instance_configs(graph_id, request=request)
         nodes = payload.get("nodes") if isinstance(payload, dict) else None
         if not isinstance(nodes, list):
@@ -106,7 +114,7 @@ class MobileApiDomain(DomainBase):
         for item in nodes:
             if not isinstance(item, dict):
                 raise HTTPException(status_code=500, detail="invalid node list item")
-            result.append(self._mobile_node_from_config(item, graph_id))
+            result.append(self._mobile_node_from_config(item, graph_id, node_notes))
         return result
 
     def _mobile_node_snapshot(self, graph_id: str, node_id: str, request: Request = None) -> dict:

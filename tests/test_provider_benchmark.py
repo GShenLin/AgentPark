@@ -8,7 +8,7 @@ from scripts.run_benchmark_suite import _timeout_benchmark_result
 PROJECT_ROOT = Path(__file__).parents[1]
 
 
-def test_provider_comparison_uses_one_profile_and_one_runtime_policy():
+def test_provider_comparison_uses_one_profile():
     suites = [
         HarnessSuite.load(PROJECT_ROOT / "benchmarks" / "manifests" / name)
         for name in ("provider-comparison-smoke.json", "provider-comparison-coding.json")
@@ -27,12 +27,6 @@ def test_provider_comparison_uses_one_profile_and_one_runtime_policy():
     ]
     assert {item["profile"]["sha256"] for item in contracts} == {
         contracts[0]["profile"]["sha256"]
-    }
-    assert {item["effective_runtime_policy"]["effective_sha256"] for item in contracts} == {
-        contracts[0]["effective_runtime_policy"]["effective_sha256"]
-    }
-    assert {item["effective_runtime_policy"]["policy_id"] for item in contracts} == {
-        "coding-default"
     }
     assert {item["runtime_configuration"]["reasoning_effort"] for item in contracts} == {
         ""

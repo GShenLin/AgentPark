@@ -4,7 +4,8 @@
     "port": 8788
   },
   "network": {
-    "noProxy": "localhost,127.0.0.1,::1"
+    "noProxy": "localhost,127.0.0.1,::1",
+    "httpProxy": "http://127.0.0.1:17891"
   },
   "mcpServers": {
     "ark-docs-mcp": {
@@ -42,8 +43,8 @@
   "boardLayout": {
     "gridCellWidth": 300,
     "gridCellHeight": 320,
-    "nodeWidth": 230,
-    "nodeHeight": 250
+    "nodeWidth": 280,
+    "nodeHeight": 150
   },
   "undo": {
     "maxSteps": 5

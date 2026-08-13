@@ -293,6 +293,7 @@ def test_delete_turn_includes_unloaded_records_and_can_be_undone(monkeypatch, tm
 def test_delete_latest_turn_exposes_previous_turn_to_latest_turn_reader(monkeypatch, tmp_path):
     from src.web_backend.node_memory_store import append_node_memory_entry
 
+    monkeypatch.setattr("src.web_backend.node_memory_store._read_max_active_memory_entries", lambda: 2)
     client = _client(monkeypatch, tmp_path)
     graph_id = f"delete_latest_turn_{uuid.uuid4().hex[:8]}"
     node_id = "speaker"
@@ -320,6 +321,13 @@ def test_delete_latest_turn_exposes_previous_turn_to_latest_turn_reader(monkeypa
                 "created_at": f"2026-07-29T00:00:{index:02d}+00:00",
             },
         )
+
+    archived_messages = list((node_dir / "archive").rglob("messages.jsonl"))
+    assert len(archived_messages) == 1
+    assert [
+        json.loads(line)["id"]
+        for line in archived_messages[0].read_text(encoding="utf-8").splitlines()
+    ] == ["previous-user", "previous-assistant"]
 
     deleted = client.post(
         f"/api/nodes/instances/{node_id}/memory/turns/delete?graph_id={graph_id}",

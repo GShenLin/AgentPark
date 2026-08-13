@@ -30,7 +30,6 @@ import GatewaySettingsPanel from './settings/GatewaySettingsPanel.vue'
 import ModelProviderSettingsForm from './settings/ModelProviderSettingsForm.vue'
 import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
-import RuntimePolicySettingsPanel from './settings/RuntimePolicySettingsPanel.vue'
 import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
 import StaticSettingsPanel from './settings/StaticSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
@@ -94,7 +93,6 @@ const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[
 const themePresets = ref<ThemePresetInfo[]>([])
 const activeThemePresetId = ref('default')
 const nodeProfilerDirty = ref(false)
-const runtimePolicyDirty = ref(false)
 const backButtonLabel = computed(() => {
   if (props.backLabel === 'Board') return t('common.board')
   if (props.backLabel === 'Back') return t('common.back')
@@ -113,7 +111,6 @@ const SECTION_MESSAGE_KEYS: Record<string, string> = {
   'tool-stats': 'settings.statistics',
   'anim-editor': 'settings.animationEditor',
   'node-profiler-editor': 'settings.nodeProfiler',
-  'runtime-policy': 'settings.runtimePolicy',
   exit: 'settings.exit',
   theme: 'settings.theme',
 }
@@ -176,14 +173,6 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
       filename: '*.json',
     })
   }
-  if (!base.some((item) => item.id === 'runtime-policy')) {
-    base.push({
-      id: 'runtime-policy',
-      label: 'RuntimePolicy',
-      path: 'config/runtimePolicies.json · config/runtime_policies/*.json',
-      filename: 'runtimePolicies.json',
-    })
-  }
   if (!base.some((item) => item.id === 'exit')) {
     base.push({
       id: 'exit',
@@ -212,9 +201,8 @@ const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
 const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
 const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profiler-editor')
-const isRuntimePolicy = computed(() => activeSection.value === 'runtime-policy')
 const isExitSection = computed(() => activeSection.value === 'exit')
-const isVirtualSection = computed(() => isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isRuntimePolicy.value || isExitSection.value)
+const isVirtualSection = computed(() => isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isExitSection.value)
 const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
 const validationWarnings = computed(() => Array.isArray(loadedDocument.value?.warnings)
   ? loadedDocument.value.warnings.map((item) => String(item || '').trim()).filter(Boolean)
@@ -285,7 +273,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'runtime-policy' || sectionId === 'exit') {
+  if (sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -316,19 +304,12 @@ async function selectSection(sectionId: string) {
   if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm(t('settings.discardNodeProfiler'))) {
     return
   }
-  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm(t('settings.discardRuntimePolicy'))) {
-    return
-  }
   nodeProfilerDirty.value = false
-  runtimePolicyDirty.value = false
   await loadSection(sectionId)
 }
 
 function handleBack() {
   if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm(t('settings.discardNodeProfiler'))) {
-    return
-  }
-  if (isRuntimePolicy.value && runtimePolicyDirty.value && !window.confirm(t('settings.discardRuntimePolicy'))) {
     return
   }
   emit('back')
@@ -454,7 +435,7 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>{{ t('common.settings') }}</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isRuntimePolicy ? 'config/runtimePolicies.json · config/runtime_policies/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div class="settings-head-actions">
         <ActionButton compact @click="handleBack">{{ backButtonLabel }}</ActionButton>
@@ -511,12 +492,6 @@ onMounted(async () => {
           @error="error = $event"
           @status="status = $event"
           @dirty="nodeProfilerDirty = $event"
-        />
-        <RuntimePolicySettingsPanel
-          v-else-if="isRuntimePolicy"
-          @error="error = $event"
-          @status="status = $event"
-          @dirty="runtimePolicyDirty = $event"
         />
         <SystemExitPanel v-else-if="isExitSection" />
 

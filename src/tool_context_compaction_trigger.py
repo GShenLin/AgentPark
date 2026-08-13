@@ -99,6 +99,7 @@ class ToolContextCompactionWindow:
     regular_tool_executions: int = 0
     input_tokens_baseline: int = 0
     output_tokens_baseline: int = 0
+    current_input_trigger_suppressed: bool = False
 
     def add_tool_executions(self, count: int) -> None:
         if isinstance(count, bool):
@@ -133,11 +134,13 @@ class ToolContextCompactionWindow:
             reasons.append("tool_executions")
         if limits.input_tokens > 0 and input_tokens >= limits.input_tokens:
             reasons.append("input_tokens_since_reset")
-        if (
-            limits.current_input_tokens > 0
-            and current_input_tokens >= limits.current_input_tokens
-        ):
-            reasons.append("current_input_tokens")
+        if limits.current_input_tokens > 0:
+            current_input_allowed = self._current_input_trigger_allowed(
+                current_input_tokens,
+                limits.current_input_tokens,
+            )
+            if current_input_tokens >= limits.current_input_tokens and current_input_allowed:
+                reasons.append("current_input_tokens")
         if limits.output_tokens > 0 and output_tokens >= limits.output_tokens:
             reasons.append("output_tokens_since_reset")
         return ToolContextCompactionDecision(
@@ -152,11 +155,28 @@ class ToolContextCompactionWindow:
     def reached(self, limits: ToolContextCompactionLimits, totals: object) -> bool:
         return self.evaluate(limits, totals).reached
 
-    def reset(self, totals: object) -> None:
+    def reset(self, totals: object, *, suppress_current_input: bool = False) -> None:
         normalized = totals if isinstance(totals, dict) else {}
         self.regular_tool_executions = 0
         self.input_tokens_baseline = _non_negative_int(normalized.get("actual_input_tokens"))
         self.output_tokens_baseline = _non_negative_int(normalized.get("actual_output_tokens"))
+        self.current_input_trigger_suppressed = bool(suppress_current_input)
+
+    def _current_input_trigger_allowed(self, current_input_tokens: int, limit: int) -> bool:
+        """Prevent a successful compaction from retriggering on the same high watermark.
+
+        ``last_actual_input_tokens`` is the absolute size of the latest provider
+        request, so resetting the cumulative baselines cannot make it smaller.
+        Keep the current-input trigger suppressed until a later request is
+        actually below the configured limit.  Other triggers (tool count and
+        cumulative input/output usage) remain independent and can still fire.
+        """
+        if not self.current_input_trigger_suppressed:
+            return True
+        if current_input_tokens < limit:
+            self.current_input_trigger_suppressed = False
+            return True
+        return False
 
 
 def _non_negative_int(value: object) -> int:

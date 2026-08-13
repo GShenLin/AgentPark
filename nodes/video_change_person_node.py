@@ -52,8 +52,9 @@ class Node(BaseNode):
     }
     config_schema = {
         "provider_id": {
-            "type": "string",
+            "type": "select",
             "label": "provider_id",
+            "options": [],
             "description": "Only providers whose supportmode contains video_change_person should be selected.",
         },
         "image_path": {
@@ -105,7 +106,6 @@ class Node(BaseNode):
         )
         if options:
             provider_schema = dict(schema.get("provider_id") or {})
-            provider_schema["type"] = "select"
             provider_schema["options"] = options
             schema["provider_id"] = provider_schema
         return schema

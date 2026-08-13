@@ -221,6 +221,19 @@ def test_compaction_window_reset_uses_current_usage_as_new_baseline():
     ) is True
 
 
+def test_current_input_trigger_is_suppressed_after_compaction_until_context_drops():
+    window = ToolContextCompactionWindow()
+    limits = _limits(current_input_tokens=50_000)
+
+    window.reset({"actual_input_tokens": 2_000_000}, suppress_current_input=True)
+
+    assert window.reached(limits, {"last_actual_input_tokens": 50_000}) is False
+    assert window.current_input_trigger_suppressed is True
+    assert window.reached(limits, {"last_actual_input_tokens": 49_999}) is False
+    assert window.current_input_trigger_suppressed is False
+    assert window.reached(limits, {"last_actual_input_tokens": 50_000}) is True
+
+
 @pytest.mark.parametrize(
     "config",
     [

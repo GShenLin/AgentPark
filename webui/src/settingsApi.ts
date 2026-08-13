@@ -23,19 +23,6 @@ export type SettingsDocument = {
   presets?: ThemePresetInfo[]
 }
 
-export type RuntimePolicySettingsEntry = {
-  policy_id: string
-  path: string
-  config: Record<string, unknown>
-}
-
-export type RuntimePolicySettingsDocument = {
-  schema_version: number
-  default_policy_id: string
-  catalog_path: string
-  policies: RuntimePolicySettingsEntry[]
-}
-
 export type ThemePresetInfo = {
   id: string
   path: string
@@ -612,29 +599,6 @@ export async function updateSettingsSection(section: string, content: string): P
     method: 'POST',
     body: JSON.stringify({ content }),
   }) as Promise<SettingsDocument>
-}
-
-export async function getRuntimePolicySettings(): Promise<RuntimePolicySettingsDocument> {
-  return requestJson('/api/runtime-policies') as Promise<RuntimePolicySettingsDocument>
-}
-
-export async function updateDefaultRuntimePolicy(
-  policyId: string,
-): Promise<RuntimePolicySettingsDocument> {
-  return requestJson('/api/runtime-policies/default', {
-    method: 'PUT',
-    body: JSON.stringify({ policy_id: policyId }),
-  }) as Promise<RuntimePolicySettingsDocument>
-}
-
-export async function updateRuntimePolicy(
-  policyId: string,
-  config: Record<string, unknown>,
-): Promise<RuntimePolicySettingsDocument> {
-  return requestJson(`/api/runtime-policies/${encodeURIComponent(policyId)}`, {
-    method: 'PUT',
-    body: JSON.stringify({ config }),
-  }) as Promise<RuntimePolicySettingsDocument>
 }
 
 export async function listTurnAudits(

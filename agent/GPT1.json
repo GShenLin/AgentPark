@@ -1,11 +1,7 @@
 {
   "id": "GPT1",
-  "description": "OpenAI 官方 GPT 的备用通用 Agent Profile，用于文本、代码与工具驱动任务。",
   "name": "GPT1",
   "node_type_id": "agent_node",
-  "source_graph_id": "default",
-  "source_node_id": "GPT1",
-  "node_name": "GPT1",
   "fields": {
     "plugins": [],
     "skills": [
@@ -13,8 +9,6 @@
     ],
     "working_path": "",
     "provider_id": "GPT_Official",
-    "instruction": "",
-    "system_prompt": "",
     "mode": "chat",
     "collaboration_mode": "default",
     "tools": [
@@ -28,9 +22,15 @@
     "reasoning_effort": "high",
     "reasoning_summary": "",
     "remote_enabled": false,
-    "remote_worker_id": ""
+    "remote_worker_id": "",
+    "instruction": "1",
+    "system_prompt": ""
   },
   "event_rules": {},
-  "updated_at": "2026-07-23T23:54:57+08:00",
-  "created_at": "2026-07-23T22:36:55+08:00"
+  "created_at": "2026-07-23T22:36:55+08:00",
+  "description": "OpenAI 官方 GPT 的备用通用 Agent Profile，用于文本、代码与工具驱动任务。",
+  "source_graph_id": "default",
+  "source_node_id": "GPT1",
+  "node_name": "GPT1",
+  "updated_at": "2026-08-12T13:44:09+08:00"
 }

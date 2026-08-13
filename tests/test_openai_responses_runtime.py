@@ -749,106 +749,6 @@ def test_stream_does_not_return_stale_tool_call_intro():
     assert "README.md" in payloads[1]["input"][-1]["output"]
 
 
-def test_responses_completion_review_intercepts_first_draft_after_tool_work():
-    from src.providers.openai_agent import OpenAIAgent
-    from src.runtime_policy import resolve_runtime_policy
-
-    resolved_runtime_policy = resolve_runtime_policy(
-        {
-            "policy_id": "coding-default",
-            "overrides": {"completion_review": {"enabled": True}},
-        }
-    )
-    completion_review_instruction = resolved_runtime_policy.policy.completion_review.prompt
-
-    agent = OpenAIAgent.__new__(OpenAIAgent)
-    agent.config = {
-        "apiKey": "test",
-        "baseUrl": "https://api.openai.test/v1",
-        "model": "gpt-test",
-        "responsesApi": True,
-        "responsesReplayReasoningItems": False,
-        "toolResultSubmissionMaxChars": 50000,
-        "toolContextCompactionEnabled": False,
-        "toolContextCompactionEveryToolCalls": 0,
-    }
-    agent._agentpark_resolved_runtime_policy = resolved_runtime_policy
-    agent.provider_name = "openai"
-    agent.messages = [{"role": "user", "content": "fix startup"}]
-    agent.tools = BaseTool(agent)
-    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
-        {"role": role, "content": content, **kwargs}
-    )
-    progress_messages = []
-    agent._agentpark_persist_assistant_progress = lambda message: progress_messages.append(
-        dict(message)
-    )
-    agent._get_messages_with_memory = lambda: list(agent.messages)
-    payloads = []
-
-    def fake_stream(**kwargs):
-        payloads.append(json.loads(kwargs["payload_json"]))
-        if len(payloads) == 1:
-            return {
-                "id": "resp-1",
-                "output": [
-                    {
-                        "type": "function_call",
-                        "id": "fc-1",
-                        "call_id": "call-1",
-                        "name": "rg_list_files",
-                        "arguments": "{}",
-                    }
-                ],
-            }
-        text = "draft answer" if len(payloads) == 2 else "reviewed final answer"
-        return {
-            "id": f"resp-{len(payloads)}",
-            "output": [
-                {
-                    "type": "message",
-                    "content": [{"type": "output_text", "text": text}],
-                }
-            ],
-        }
-
-    agent._stream_responses_with_retry = fake_stream
-    agent._execute_tool_call_envelopes_parallel = lambda _calls: [
-        ToolCallExecution(
-            func_name="rg_list_files",
-            call_id="call-1",
-            cleaned_result='{"status":"success","files":["README.md"]}',
-            image_data=None,
-        )
-    ]
-
-    out = agent._send_via_responses(
-        messages=list(agent.messages),
-        active_tools=[],
-        run_tools=True,
-        reasoning_effort="medium",
-    )
-
-    assert out == "reviewed final answer"
-    assert len(payloads) == 3
-    review_texts = [
-        part.get("text", "")
-        for item in payloads[2]["input"]
-        if item.get("type") == "message"
-        for part in item.get("content", [])
-    ]
-    assert "draft answer" in review_texts
-    assert completion_review_instruction in review_texts
-    assert [message.get("content") for message in progress_messages] == ["draft answer"]
-    assert progress_messages[0]["role"] == "assistant_progress"
-    assert progress_messages[0]["context_policy"] == "exclude"
-    assert all(message.get("content") != "draft answer" for message in agent.messages)
-    assert all(
-        message.get("content") != completion_review_instruction
-        for message in agent.messages
-    )
-
-
 def test_openai_responses_empty_output_feeds_back_error_before_returning_final_message():
     from src.providers.openai_agent import OpenAIAgent
 
@@ -1382,7 +1282,11 @@ def test_responses_invalid_tool_arguments_return_tool_error_and_continue():
     assert tool_payload["status"] == "invalid_arguments"
     assert "failed to parse tool arguments JSON" in tool_payload["error"]
     function_index = next(index for index, item in enumerate(payloads[1]["input"]) if item.get("type") == "function_call")
-    assert payloads[1]["input"][function_index]["call_id"] == "call-bad"
+    function_call = payloads[1]["input"][function_index]
+    assert function_call["call_id"] == "call-bad"
+    assert json.loads(function_call["arguments"]) == {
+        "_agentpark_protocol_error": "tool_arguments_json_parse_failed",
+    }
     assert payloads[1]["input"][function_index + 1]["type"] == "function_call_output"
     output_payload = json.loads(payloads[1]["input"][function_index + 1]["output"])
     assert output_payload["status"] == "invalid_arguments"
