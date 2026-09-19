@@ -5,7 +5,7 @@ from fastapi import Request
 from src.file_transaction import atomic_write_text
 
 from .domain_base import DomainBase
-from .request_access import is_local_request
+from .request_access import is_local_request, has_owner_access
 from .shared import *
 
 
@@ -112,7 +112,7 @@ class RemoteApiDomain(DomainBase):
         return is_local_request(request)
 
     def _filter_remotes_for_request(self, config: dict, request: Request = None) -> dict:
-        if self._is_local_request(request):
+        if has_owner_access(request):
             return config
         remotes = [item for item in config.get("remotes", []) if isinstance(item, dict) and not item.get("private")]
         return {"remotes": remotes}
@@ -128,7 +128,7 @@ class RemoteApiDomain(DomainBase):
 
     def add_remote(self, payload: dict, request: Request = None):
         remote = self._validate_remote(payload or {})
-        if remote.get("private") and not self._is_local_request(request):
+        if remote.get("private") and not has_owner_access(request):
             raise HTTPException(status_code=403, detail="private remotes can only be created from a local client")
         config = self._load_remote_config()
         remotes = config.get("remotes", [])
@@ -149,7 +149,7 @@ class RemoteApiDomain(DomainBase):
         config = self._load_remote_config()
         remotes = [item for item in config.get("remotes", []) if isinstance(item, dict)]
         target = next((item for item in remotes if item.get("id") == safe_id), None)
-        if target and target.get("private") and not self._is_local_request(request):
+        if target and target.get("private") and not has_owner_access(request):
             raise HTTPException(status_code=404, detail="remote not found")
         next_remotes = [item for item in remotes if item.get("id") != safe_id]
         if len(next_remotes) == len(remotes):

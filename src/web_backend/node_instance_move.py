@@ -6,6 +6,7 @@ from contextlib import ExitStack
 from typing import Any
 
 from src.file_transaction import atomic_write_text
+from src.long_term_memory.lifecycle import require_memory_idle, rebind_memory
 
 from . import runtime_paths
 from .graph_config_file import read_graph_config, write_graph_config
@@ -60,6 +61,10 @@ class NodeInstanceMove(HostBoundService):
         except NodeConfigReadError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         self._require_idle(source_config_path, source_node_config)
+        try:
+            require_memory_idle(source_node_dir)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         source_graph_config_path = os.path.join(source_graph_dir, "config.json")
         target_graph_config_path = os.path.join(target_graph_dir, "config.json")
@@ -96,6 +101,7 @@ class NodeInstanceMove(HostBoundService):
                 )
                 os.replace(source_node_dir, target_node_dir)
                 moved_directory = True
+                rebind_memory(target_node_dir, source_graph_id, target_graph_id, safe_node_id, safe_node_id)
                 node_config_service.patch_persistent_fields(
                     target_config_path,
                     {"graph_id": target_graph_id, "ui": target_ui},
@@ -329,6 +335,7 @@ class NodeInstanceMove(HostBoundService):
                 lambda: runtime_state_memory_store.rename(data["target_config_path"], data["source_config_path"]),
             )
         if data["moved_directory"] and os.path.isdir(data["target_node_dir"]) and not os.path.exists(data["source_node_dir"]):
+            attempt("restore memory owner", lambda: rebind_memory(data["target_node_dir"], data["target_graph_id"], data["source_graph_id"], data["node_id"], data["node_id"]))
             attempt("restore node directory", lambda: os.replace(data["target_node_dir"], data["source_node_dir"]))
         if data["source_node_before"] is not None and os.path.isdir(data["source_node_dir"]):
             attempt("restore node config", lambda: self._restore_file(data["source_config_path"], data["source_node_before"]))

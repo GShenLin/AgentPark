@@ -17,6 +17,7 @@ CLAUDE_OUTPUT_CAPABILITIES = ["text", "structured", "tool_call", "meta"]
 
 CLAUDE_CONFIG_DEFAULTS = {
     "provider_id": "",
+    "model": "",
     "instruction": "",
     "claude_command": "claude",
     "permission_mode": "acceptEdits",

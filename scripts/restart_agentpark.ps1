@@ -90,18 +90,14 @@ function Test-ProjectProcess {
         $processName -ieq 'python.exe' -or
         $processName -ieq 'pythonw.exe'
     )
-    $isDesktopPetProcess = (
-        $processName -ieq 'electron.exe'
-    )
     $rootText = (Normalize-PathText -PathText $Root)
     $hasServerEntry = $isPythonProcess -and (Test-ServerCommandLine -CommandLine $commandLine)
     $hasCompanionCliEntry = $isPythonProcess -and (Test-CompanionCliCommandLine -CommandLine $commandLine)
-    $hasDesktopPetEntry = $isDesktopPetProcess -and (Test-DesktopPetCommandLine -CommandLine $commandLine)
     $hasWorkspaceRoot = $commandLine.IndexOf($rootText, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
     if ($TrustWorkspaceIdentity) {
         return $hasServerEntry
     }
-    if (-not $hasServerEntry -and -not $hasCompanionCliEntry -and -not $hasDesktopPetEntry) {
+    if (-not $hasServerEntry -and -not $hasCompanionCliEntry) {
         return $false
     }
     return ($hasWorkspaceRoot -or (Test-ProcessTreeHasWorkspaceRoot -ProcessInfo $ProcessInfo -Root $Root))
@@ -122,13 +118,6 @@ function Test-CompanionCliCommandLine {
         ($CommandLine -like '*/src/cli.py chat*')
     )
 }
-function Test-DesktopPetCommandLine {
-    param([Parameter(Mandatory = $true)][string]$CommandLine)
-    return (
-        $CommandLine -like '*desktop\pet*' -or
-        $CommandLine -like '*desktop/pet*'
-    )
-}
 
 function Get-ProjectProcessKind {
     param([Parameter(Mandatory = $true)][string]$CommandLine)
@@ -137,9 +126,6 @@ function Get-ProjectProcessKind {
     }
     if (Test-CompanionCliCommandLine -CommandLine $CommandLine) {
         return 'companion-cli'
-    }
-    if (Test-DesktopPetCommandLine -CommandLine $CommandLine) {
-        return 'desktop-pet'
     }
     return 'unknown'
 }
@@ -259,18 +245,6 @@ function Get-ProjectWrapperProcessIds {
     return $ids
 }
 
-function Get-CurrentWrapperProcessId {
-    $currentProcess = Get-CimProcessById -ProcessId ([System.Diagnostics.Process]::GetCurrentProcess().Id)
-    if ($null -eq $currentProcess) {
-        return 0
-    }
-    $parent = Get-CimProcessById -ProcessId ([int]$currentProcess.ParentProcessId)
-    if ($null -eq $parent -or [string]$parent.Name -ine 'cmd.exe') {
-        return 0
-    }
-    return [int]$parent.ProcessId
-}
-
 function Get-ListeningPids {
     param([Parameter(Mandatory = $true)][int]$Port)
     return @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
@@ -302,7 +276,8 @@ $runtimeDir = Join-Path $root '.runtime'
 $pidFile = Join-Path $runtimeDir 'agentpark-server.pid'
 $candidates = @{}
 $wrapperProcessIds = @{}
-$currentWrapperProcessId = Get-CurrentWrapperProcessId
+$currentProcessInfo = Get-CimProcessById -ProcessId $PID
+$protectedWrapperIds = @(Get-ProjectWrapperProcessIds -ProcessInfo $currentProcessInfo -Root $root -MaxDepth 16)
 
 Write-Host "[INFO] Workspace: $root"
 Write-Host "[INFO] Configured server port: $configuredPort"
@@ -328,7 +303,7 @@ foreach ($proc in $projectProcesses) {
 $projectWrapperProcesses = @(Get-CimInstance Win32_Process | Where-Object { Test-ProjectWrapperProcess -ProcessInfo $_ -Root $root })
 foreach ($proc in $projectWrapperProcesses) {
     $wrapperProcessId = [int]$proc.ProcessId
-    if ($wrapperProcessId -eq [int]$currentWrapperProcessId) {
+    if ($protectedWrapperIds -contains $wrapperProcessId) {
         continue
     }
     if (-not $wrapperProcessIds.ContainsKey($wrapperProcessId)) {
@@ -385,7 +360,7 @@ if ($candidates.Count -eq 0 -and $wrapperProcessIds.Count -eq 0) {
         }
     }
     foreach ($wrapperProcessId in @($wrapperProcessIds.Keys | Sort-Object)) {
-        if ([int]$wrapperProcessId -eq [int]$currentWrapperProcessId) {
+        if ($protectedWrapperIds -contains [int]$wrapperProcessId) {
             continue
         }
         if (Get-Process -Id $wrapperProcessId -ErrorAction SilentlyContinue) {

@@ -15,7 +15,11 @@ from src.tool_context_compaction_prompts import RAW_CONTEXT_COMPACTION_RETRY_PRO
 from src.tool_context_compaction_failure import describe_tool_context_compaction_failure
 
 
-INTERNAL_TOOL_NAMES = {"edit_operational_memory", "compact_tool_context"}
+INTERNAL_TOOL_NAMES = {
+    "add_node_memory_note",
+    "compact_tool_context",
+    "compact_session_context",
+}
 DEFAULT_MAX_GATE_PROMPT_CHARS = 200000
 DEFAULT_MAX_CANDIDATE_CONTENT_CHARS = 50000
 TOOL_CONTEXT_COMPACTION_RETRY_PREFIX = "[Tool Context Compaction Retry]"

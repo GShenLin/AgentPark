@@ -15,7 +15,6 @@ MODE_VIDEO_GENERATION = "video_generation"
 MODE_AUDIO_GENERATION = "audio_generation"
 MODE_IMAGE_CHAT = "imagechat"
 MODE_VISION_UNDERSTAND = "vision_understand"
-MODE_GUI_AGENT = "guiagent"
 
 MODE_ORDER = (
     MODE_CHAT,
@@ -24,7 +23,6 @@ MODE_ORDER = (
     MODE_AUDIO_GENERATION,
     MODE_IMAGE_CHAT,
     MODE_VISION_UNDERSTAND,
-    MODE_GUI_AGENT,
 )
 
 MODE_LABELS = {
@@ -34,7 +32,6 @@ MODE_LABELS = {
     MODE_AUDIO_GENERATION: "Audio Generation",
     MODE_IMAGE_CHAT: "Image Chat",
     MODE_VISION_UNDERSTAND: "Vision Understand",
-    MODE_GUI_AGENT: "GUI Agent",
 }
 
 COMMON_FIELDS = frozenset({
@@ -218,7 +215,6 @@ MODE_FIELDS = {
     MODE_AUDIO_GENERATION: COMMON_FIELDS | AUDIO_FIELDS,
     MODE_IMAGE_CHAT: COMMON_FIELDS | CHAT_FIELDS,
     MODE_VISION_UNDERSTAND: COMMON_FIELDS,
-    MODE_GUI_AGENT: COMMON_FIELDS | CHAT_FIELDS,
 }
 
 
@@ -231,7 +227,7 @@ def modes_for_field(field_name: str) -> tuple[str, ...]:
 
 
 def capability_mode(mode: object) -> bool:
-    return str(mode or "").strip().lower() in {MODE_CHAT, MODE_IMAGE_CHAT, MODE_GUI_AGENT}
+    return str(mode or "").strip().lower() in {MODE_CHAT, MODE_IMAGE_CHAT}
 
 
 def resolve_input_support_mode(support_modes: object, message: object) -> str:

@@ -10,6 +10,7 @@ from typing import Any
 
 from src.providers.agent_runtime_context import get_agent_runtime_context
 from src.workspace_settings import get_workspace_root
+from src.runtime_environment import get_runtime_environment
 
 
 ENVIRONMENT_CONTEXT_TEXT_PREFIX = "<environment_context>"
@@ -202,11 +203,9 @@ def _normalized_path(value: object) -> str:
 def _resolve_shell(agent: object) -> str:
     runtime_context = get_agent_runtime_context(agent)
     value = _first_non_empty(runtime_context.shell, _config_value(agent, "shell"))
-    if value:
+    if value and runtime_context.remote_enabled:
         return value
-    if os.name == "nt":
-        return "powershell"
-    return os.path.basename(os.environ.get("SHELL") or "sh") or "sh"
+    return get_runtime_environment().shell
 
 
 def _resolve_timezone(now: datetime) -> str:

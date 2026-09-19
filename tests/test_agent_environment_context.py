@@ -28,7 +28,7 @@ def test_agent_environment_context_includes_only_stable_model_visible_fields(mon
 
     assert set(context) == {"workspace_path", "shell", "current_date", "timezone", "request_time"}
     assert context["workspace_path"] == str(working)
-    assert context["shell"] == "powershell"
+    assert context["shell"] == module.get_runtime_environment().shell
     assert context["workspace_path"] != str(workspace)
     assert "secret" not in json.dumps(context, ensure_ascii=False)
     assert "rg_search_text" not in json.dumps(context, ensure_ascii=False)

@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import threading
+import uuid
 from datetime import datetime, timezone
 from typing import Any
+from fastapi import Request
 
 
 _WRITE_LOCK = threading.Lock()
@@ -35,4 +37,19 @@ def safe_error_message(exc: Exception, *, limit: int = 500) -> str:
     return text[:limit]
 
 
-__all__ = ["PublicGatewayAccessLog", "safe_error_message"]
+def request_fields(request: Request, request_id: str) -> dict[str, Any]:
+    return {
+        "requestId": request_id,
+        "clientIp": request.client.host if request.client else "",
+        "method": request.method,
+        "path": request.url.path,
+        "userAgent": request.headers.get("user-agent", "")[:200],
+        "authorizationPresent": bool(request.headers.get("authorization") or request.headers.get("x-api-key")),
+    }
+
+
+def new_request_id() -> str:
+    return f"req_{uuid.uuid4().hex}"
+
+
+__all__ = ["PublicGatewayAccessLog", "safe_error_message", "request_fields", "new_request_id"]

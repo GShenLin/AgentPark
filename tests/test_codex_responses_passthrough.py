@@ -55,7 +55,8 @@ def test_doubao_responses_flattens_namespace_tools_and_history():
     assert original["tools"][0]["type"] == "namespace"
     assert prepared.payload["tools"][0]["type"] == "function"
     assert prepared.payload["tools"][0]["name"] == "workspace__read"
-    assert prepared.payload["tools"][1]["type"] == "custom"
+    assert prepared.payload["tools"][1]["type"] == "function"
+    assert prepared.payload["tools"][1]["parameters"]["required"] == ["input"]
     assert prepared.payload["tool_choice"] == {"type": "function", "name": "workspace__read"}
     assert prepared.payload["input"][0]["name"] == "workspace__read"
     assert "namespace" not in prepared.payload["input"][0]

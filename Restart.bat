@@ -3,6 +3,8 @@ setlocal
 
 rem Keep this wrapper short-lived. The restart worker must outlive the server
 rem process that invoked this file through a node tool call.
+rem The worker records startup logs, invokes standalone Companion on failure,
+rem and reruns build_and_run.bat with an HTTP readiness check after repair.
 cd /d "%~dp0"
 set "WORKSPACE_ROOT=%CD%"
 

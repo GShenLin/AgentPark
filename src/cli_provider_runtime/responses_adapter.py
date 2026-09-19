@@ -32,12 +32,15 @@ class ResponsesConversationAdapter:
         response = self._open(prepared.payload, stream=requires_stream)
         if requires_stream:
             value = collect_responses_stream(
-                passthrough.transform_stream(response, prepared.tools_by_wire_name)
+                passthrough.transform_stream(
+                    response, prepared.tools_by_wire_name, seed_tools=prepared.seed_tools
+                )
             )
         else:
             value = passthrough.transform_response(
                 read_json_response(response),
                 prepared.tools_by_wire_name,
+                seed_tools=prepared.seed_tools,
             )
         return _result(value)
 
@@ -47,7 +50,9 @@ class ResponsesConversationAdapter:
         passthrough = ResponsesPassthrough(self.config)
         prepared = passthrough.prepare_request(payload)
         response = self._open(prepared.payload, stream=True)
-        yield from passthrough.transform_stream(response, prepared.tools_by_wire_name)
+        yield from passthrough.transform_stream(
+            response, prepared.tools_by_wire_name, seed_tools=prepared.seed_tools
+        )
 
     def _open(self, payload: dict[str, Any], *, stream: bool):
         credentials = resolve_provider_request_credentials(self.config)

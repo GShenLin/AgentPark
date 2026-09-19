@@ -10,7 +10,6 @@ class GrokResponsesRuntime(OpenAIResponsesRuntime):
     def _responses_payload_extra(self, **provider_options):
         payload = {}
         effort = require_grok_reasoning_effort(
-            self.config.get("model"),
             provider_options.get("reasoning_effort"),
         )
         if effort:

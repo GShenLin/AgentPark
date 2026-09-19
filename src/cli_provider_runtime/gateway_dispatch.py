@@ -49,7 +49,9 @@ def dispatch_responses(config: dict[str, Any], payload: dict[str, Any]) -> Gatew
             upstream_payload["stream"] = True
         response = _open_responses(config, upstream_payload, force_refresh=False)
         content_type = response.headers.get("content-type", "application/json")
-        transformed = passthrough.transform_stream(response, prepared.tools_by_wire_name)
+        transformed = passthrough.transform_stream(
+            response, prepared.tools_by_wire_name, seed_tools=prepared.seed_tools
+        )
         if requested_stream:
             return GatewayDispatchResult(
                 status=response.status,
@@ -66,6 +68,7 @@ def dispatch_responses(config: dict[str, Any], payload: dict[str, Any]) -> Gatew
         value = passthrough.transform_response(
             read_json_response(response),
             prepared.tools_by_wire_name,
+            seed_tools=prepared.seed_tools,
         )
         return GatewayDispatchResult(status=200, content_type="application/json", json_body=value)
 

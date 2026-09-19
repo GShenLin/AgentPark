@@ -16,6 +16,7 @@ AGENT_OUTPUT_CAPABILITIES = [
 
 AGENT_CONFIG_DEFAULTS = {
     "provider_id": "",
+    "model": "",
     "instruction": "",
     "system_prompt": "",
     "collaboration_mode": "default",
@@ -38,6 +39,12 @@ AGENT_CONFIG_SCHEMA = {
         "label": "provider_id",
         "options": [],
         "description": "Select a configured Provider supported by this Agent mode.",
+    },
+    "model": {
+        "type": "select",
+        "label": "model",
+        "options": [],
+        "description": "Select a model ID allowed by the selected Provider.",
     },
     "instruction": {"type": "text", "label": "instruction"},
     "system_prompt": {"type": "text", "label": "system_prompt"},

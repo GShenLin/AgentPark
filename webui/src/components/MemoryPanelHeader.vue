@@ -13,6 +13,7 @@ defineProps<{
   isSaving: boolean
   graphStatus: string | null
   canClearMemory: boolean
+  closable: boolean
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   (event: 'update:isWordWrap', value: boolean): void
   (event: 'toggleFileMode'): void
   (event: 'clearMemory'): void
+  (event: 'close'): void
 }>()
 
 </script>
@@ -58,6 +60,16 @@ const emit = defineEmits<{
 
     <div v-if="isSaving && memoryMode === 'file'" class="panel-status">{{ t('common.saving') }}</div>
     <div v-if="graphStatus && memoryMode === 'graph'" class="panel-status">{{ graphStatus }}</div>
+    <button
+      v-if="closable"
+      class="panel-close"
+      type="button"
+      :aria-label="t('common.close')"
+      :title="t('common.close')"
+      @click="emit('close')"
+    >
+      ×
+    </button>
   </div>
 </template>
 
@@ -98,6 +110,29 @@ const emit = defineEmits<{
 .panel-status {
   font-size: var(--theme-panel-memory-panel-font-meta, 11px);
   color: rgba(56, 189, 248, 0.98);
+}
+
+.panel-close {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--theme-panel-memory-panel-button-border, rgba(148, 163, 184, 0.3));
+  border-radius: 9px;
+  background: var(--theme-panel-memory-panel-button-background, rgba(15, 23, 42, 0.7));
+  color: var(--theme-panel-memory-panel-text-secondary, rgba(226, 232, 240, 0.94));
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.panel-close:hover {
+  border-color: var(--theme-panel-memory-panel-button-active-border, rgba(56, 189, 248, 0.65));
+  background: var(--theme-panel-memory-panel-button-active-background, rgba(14, 116, 144, 0.28));
 }
 
 .mode-tabs {

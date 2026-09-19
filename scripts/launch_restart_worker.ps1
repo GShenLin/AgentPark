@@ -24,6 +24,11 @@ if (-not (Test-Path -LiteralPath $root -PathType Container)) {
     throw "Workspace root does not exist: $root"
 }
 $workerPath = Join-Path $root 'scripts\restart_agentpark_worker.ps1'
+. (Join-Path $PSScriptRoot 'restart_guard.ps1')
+if (Test-RestartInProgress (Join-Path $root '.runtime')) {
+    Write-Host '[INFO] Restart already in progress for this workspace; using the existing restart.'
+    exit 0
+}
 if (-not (Test-Path -LiteralPath $workerPath -PathType Leaf)) {
     throw "Restart worker does not exist: $workerPath"
 }
@@ -71,6 +76,10 @@ do {
         exit 0
     }
     if (-not (Get-Process -Id $workerPid -ErrorAction SilentlyContinue)) {
+        if (Test-RestartInProgress (Join-Path $root '.runtime')) {
+            Write-Host '[INFO] Another worker owns this restart; using the existing restart.'
+            exit 0
+        }
         throw 'The independent restart worker exited before stopping the previous server.'
     }
     Start-Sleep -Milliseconds 250

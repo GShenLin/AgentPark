@@ -48,6 +48,14 @@ class ProviderRuntimeEventMixin(ProviderSseDebugMixin):
         attempt: int | None = None,
         max_retries: int | None = None,
     ) -> None:
+        recorder = getattr(self, "_record_provider_retry_scheduled", None)
+        if callable(recorder) and attempt is not None and max_retries is not None:
+            recorder(
+                stage=stage,
+                attempt=attempt,
+                max_retries=max_retries,
+                error=error,
+            )
         progress = (
             f" Attempt {attempt}/{max_retries}."
             if attempt is not None and max_retries is not None

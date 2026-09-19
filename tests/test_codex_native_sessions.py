@@ -187,7 +187,7 @@ def test_session_manager_resumes_selected_native_thread_through_agentpark_provid
     captures = {}
 
     class Gateway:
-        def register(self, provider_id):
+        def register(self, provider_id, *, model=""):
             captures["provider_id"] = provider_id
             return SimpleNamespace(base_url="http://127.0.0.1:1234/v1", token="lease")
 

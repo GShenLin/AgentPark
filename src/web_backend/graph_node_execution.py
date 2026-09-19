@@ -5,6 +5,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from src.runtime_cancellation import CancellationRequested
+from src.long_term_memory.service import schedule_memory
 
 from .service_host import HostBoundService
 from .route_parser import NodeRouteParser
@@ -59,7 +60,7 @@ class GraphNodeExecution(HostBoundService):
         from_node = str(pending_item.get("from") or "").strip()
         access_metadata = {
             key: str(pending_item.get(key) or "").strip()
-            for key in ("_access_client_id", "_access_username", "_access_role")
+            for key in ("_access_client_id", "_access_username", "_access_role", "_access_ip")
             if str(pending_item.get(key) or "").strip()
         }
         restart_recovery = pending_item.get("_restart_recovery")
@@ -86,6 +87,7 @@ class GraphNodeExecution(HostBoundService):
             "access_client_id": access_metadata.get("_access_client_id", ""),
             "access_username": access_metadata.get("_access_username", ""),
             "access_role": access_metadata.get("_access_role", ""),
+            "access_ip": access_metadata.get("_access_ip", ""),
         }
         self._inject_node_config_into_context(context, cfg)
         if isinstance(restart_recovery, dict):
@@ -398,6 +400,7 @@ class GraphNodeExecution(HostBoundService):
             )
         )
         _touch_node_config_last_run_at(config_path)
+        schedule_memory(self._node_dir(safe_graph_id, entry), safe_graph_id, entry, str(cfg.get("provider_id") or ""))
         if safe_graph_id.lower() != "companion" and self._runtime_events_available():
             source_node_dir = self._node_dir(safe_graph_id, entry)
             self._emit_runtime_event(
@@ -412,8 +415,7 @@ class GraphNodeExecution(HostBoundService):
                     "messages_path": self._node_messages_path(entry, safe_graph_id),
                     "runtime_events_path": os.path.join(source_node_dir, NODE_RUNTIME_EVENTS_FILENAME),
                     "user_context_path": os.path.join(source_node_dir, "User.md"),
-                    "soul_context_path": os.path.join(source_node_dir, "Soul.md"),
-                    "long_term_memory_path": os.path.join(source_node_dir, "long_term_memory.sqlite3"),
+                    "long_term_memory_path": os.path.join(source_node_dir, "long_term_memory", "state.sqlite3"),
                 },
             )
         self._log_graph_event(

@@ -227,6 +227,8 @@ def test_select_folder_returns_workspace_relative_selection(monkeypatch, tmp_pat
     fake_tk_module = types.SimpleNamespace(Tk=FakeTk, filedialog=fake_filedialog)
     monkeypatch.setitem(__import__("sys").modules, "tkinter", fake_tk_module)
     monkeypatch.setitem(__import__("sys").modules, "tkinter.filedialog", fake_filedialog)
+    from src.native_path_picker import _show_dialog
+    monkeypatch.setattr("src.web_backend.system_file_api.select_native_path", _show_dialog)
 
     result = api.select_folder({"initial_path": "nested"})
 
@@ -254,6 +256,8 @@ def test_select_folder_allows_paths_outside_runtime_root(monkeypatch, tmp_path):
     fake_tk_module = types.SimpleNamespace(Tk=FakeTk, filedialog=fake_filedialog)
     monkeypatch.setitem(__import__("sys").modules, "tkinter", fake_tk_module)
     monkeypatch.setitem(__import__("sys").modules, "tkinter.filedialog", fake_filedialog)
+    from src.native_path_picker import _show_dialog
+    monkeypatch.setattr("src.web_backend.system_file_api.select_native_path", _show_dialog)
 
     result = api.select_folder({})
 
@@ -286,6 +290,8 @@ def test_select_folder_allows_initial_path_outside_runtime_root(monkeypatch, tmp
     fake_tk_module = types.SimpleNamespace(Tk=FakeTk, filedialog=fake_filedialog)
     monkeypatch.setitem(__import__("sys").modules, "tkinter", fake_tk_module)
     monkeypatch.setitem(__import__("sys").modules, "tkinter.filedialog", fake_filedialog)
+    from src.native_path_picker import _show_dialog
+    monkeypatch.setattr("src.web_backend.system_file_api.select_native_path", _show_dialog)
 
     result = api.select_folder({"initial_path": str(outside)})
 
@@ -319,6 +325,8 @@ def test_select_file_uses_node_directory_as_initial_path(monkeypatch, tmp_path):
     fake_tk_module = types.SimpleNamespace(Tk=FakeTk, filedialog=fake_filedialog)
     monkeypatch.setitem(__import__("sys").modules, "tkinter", fake_tk_module)
     monkeypatch.setitem(__import__("sys").modules, "tkinter.filedialog", fake_filedialog)
+    from src.native_path_picker import _show_dialog
+    monkeypatch.setattr("src.web_backend.system_file_api.select_native_path", _show_dialog)
 
     result = api.select_file({"initial_path": "memories/Main/Worker"})
 
@@ -348,6 +356,8 @@ def test_select_file_allows_file_outside_runtime_root(monkeypatch, tmp_path):
     fake_tk_module = types.SimpleNamespace(Tk=FakeTk, filedialog=fake_filedialog)
     monkeypatch.setitem(__import__("sys").modules, "tkinter", fake_tk_module)
     monkeypatch.setitem(__import__("sys").modules, "tkinter.filedialog", fake_filedialog)
+    from src.native_path_picker import _show_dialog
+    monkeypatch.setattr("src.web_backend.system_file_api.select_native_path", _show_dialog)
 
     result = api.select_file({})
 

@@ -304,8 +304,8 @@ def test_analyze_responses_payload_log_flags_duplicate_context_parts(tmp_path):
                             "type": "input_text",
                             "text": "<permissions instructions>\nNo sandbox.\n</permissions instructions>",
                         },
-                        {"type": "input_text", "text": "Operational memory for this node:\n- one"},
-                        {"type": "input_text", "text": "Operational memory for this node:\n- two"},
+                        {"type": "input_text", "text": "Long-term memory for this node:\n- one"},
+                        {"type": "input_text", "text": "Long-term memory for this node:\n- two"},
                     ],
                 },
                 {
@@ -325,7 +325,7 @@ def test_analyze_responses_payload_log_flags_duplicate_context_parts(tmp_path):
 
     analysis = analyze_responses_payload_log(str(path))
 
-    assert any("repeats operational_memory context parts 2 times" in gap for gap in analysis["gaps"])
+    assert any("repeats long_term_memory context parts 2 times" in gap for gap in analysis["gaps"])
 
 
 def test_analyze_responses_payload_log_accepts_codex_tool_request_fields(tmp_path):

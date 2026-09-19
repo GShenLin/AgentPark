@@ -83,8 +83,16 @@ class OpenAIRetryTransportMixin:
                         max_retries=decision.max_retries,
                     )
                     sleep_with_cancel(retry_delay, self._cancel_source())
+                    self._record_provider_retry_started(
+                        stage="openai_post_json_retry",
+                        attempt=decision.attempt,
+                    )
                     continue
-                raise RuntimeError(error_str) from exc
+                raise self._responses_terminal_error(
+                    endpoint=endpoint,
+                    error=exc,
+                    message=error_str,
+                ) from exc
             except OpenAITransportError as exc:
                 error_str = str(exc)
                 decision = retry_state.next_retry()
@@ -101,9 +109,16 @@ class OpenAIRetryTransportMixin:
                         max_retries=decision.max_retries,
                     )
                     sleep_with_cancel(retry_delay, self._cancel_source())
+                    self._record_provider_retry_started(
+                        stage="openai_post_json_retry",
+                        attempt=decision.attempt,
+                    )
                     continue
-                raise RuntimeError(
-                    f"{endpoint}: Error after retry budget was exhausted: {error_str}"
+                message = f"{endpoint}: Error after retry budget was exhausted: {error_str}"
+                raise self._responses_terminal_error(
+                    endpoint=endpoint,
+                    error=exc,
+                    message=message,
                 ) from exc
 
     def _stream_responses_with_retry(
@@ -234,6 +249,10 @@ class OpenAIRetryTransportMixin:
                         max_retries=decision.max_retries,
                     )
                     sleep_with_cancel(retry_delay, self._cancel_source())
+                    self._record_provider_retry_started(
+                        stage=retry_stage,
+                        attempt=decision.attempt,
+                    )
                     continue
                 if retryable and self._fallback_responses_websocket_to_http(
                     reason=error_str,
@@ -247,4 +266,13 @@ class OpenAIRetryTransportMixin:
                         scope="stream",
                     )
                     continue
-                raise RuntimeError(f"{endpoint}: {error_str}") from exc
+                raise self._responses_terminal_error(
+                    endpoint=endpoint,
+                    error=exc,
+                    message=f"{endpoint}: {error_str}",
+                ) from exc
+
+    @staticmethod
+    def _responses_terminal_error(*, endpoint: str, error: object, message: str) -> RuntimeError:
+        _ = endpoint, error
+        return RuntimeError(message)

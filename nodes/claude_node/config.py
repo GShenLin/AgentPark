@@ -15,6 +15,7 @@ class ClaudeNodeRunRequest:
     graph_id: str
     node_id: str
     provider_id: str
+    model_id: str
     instruction: str
     command: str
     cwd: str
@@ -56,6 +57,7 @@ def load_claude_node_run_request(
         graph_id=str(ctx.get("graph_id") or "default").strip() or "default",
         node_id=str(ctx.get("node_instance_id") or ctx.get("node_id") or "claude").strip() or "claude",
         provider_id=provider_id,
+        model_id=str(setting("model", "") or "").strip(),
         instruction=str(setting("instruction") or "").strip(),
         command=command,
         cwd=cwd,

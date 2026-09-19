@@ -1,0 +1,367 @@
+{
+  "scripts": [
+    {
+      "id": "list",
+      "name": "List knowledge libraries or documents",
+      "description": "不传 library_id 时列出开放的知识库；传 library_id 后分页列出已扫描文档和 document_id。",
+      "entry": "scripts/query.py",
+      "cwd": ".",
+      "timeoutSeconds": 30,
+      "allowWrite": false,
+      "argsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "library_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Library Id"
+          },
+          "after": {
+            "default": 0,
+            "minimum": 0,
+            "title": "After",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "id": "search",
+      "name": "Search knowledge",
+      "description": "检索知识库，返回片段、document_id、文件路径和页码/段落/工作表行列出处。",
+      "entry": "scripts/query.py",
+      "cwd": ".",
+      "timeoutSeconds": 300,
+      "allowWrite": false,
+      "argsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "maximum": 30,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "hybrid",
+            "enum": [
+              "hybrid",
+              "semantic",
+              "keyword"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "library_id": {
+            "minLength": 1,
+            "title": "Library Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "library_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "id": "read",
+      "name": "Read knowledge source",
+      "description": "用 chunk_id 读取索引片段；或用 document_id 分页读取源文档。Excel 不传 sheet 时列出工作表，传 sheet 后 offset 为从零开始的行偏移；其他文档 offset 为片段偏移。",
+      "entry": "scripts/query.py",
+      "cwd": ".",
+      "timeoutSeconds": 180,
+      "allowWrite": false,
+      "argsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "library_id": {
+            "minLength": 1,
+            "title": "Library Id",
+            "type": "string"
+          },
+          "chunk_id": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Chunk Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Document Id"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sheet"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1048576,
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "library_id"
+        ],
+        "type": "object",
+        "oneOf": [
+          {
+            "required": [
+              "chunk_id"
+            ],
+            "not": {
+              "required": [
+                "document_id"
+              ]
+            }
+          },
+          {
+            "required": [
+              "document_id"
+            ],
+            "not": {
+              "required": [
+                "chunk_id"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "table",
+      "name": "Analyze knowledge spreadsheet",
+      "description": "读取 Excel 源文件，按明确的工作表和行范围过滤、分组、计数、求和、均值、最小最大值。使用列字母，不执行代码。start_row 应跳过用户确认的表头。公式仅用保存值；缺失或错误将报错。",
+      "entry": "scripts/query.py",
+      "cwd": ".",
+      "timeoutSeconds": 300,
+      "allowWrite": false,
+      "argsSchema": {
+        "$defs": {
+          "TableFilter": {
+            "additionalProperties": false,
+            "properties": {
+              "column": {
+                "title": "Column",
+                "type": "string"
+              },
+              "op": {
+                "enum": [
+                  "eq",
+                  "ne",
+                  "gt",
+                  "ge",
+                  "lt",
+                  "le",
+                  "contains",
+                  "is_blank",
+                  "not_blank"
+                ],
+                "title": "Op",
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Value"
+              }
+            },
+            "required": [
+              "column",
+              "op"
+            ],
+            "title": "TableFilter",
+            "type": "object"
+          },
+          "TableMetric": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 80,
+                "minLength": 1,
+                "title": "Name",
+                "type": "string"
+              },
+              "op": {
+                "enum": [
+                  "count_rows",
+                  "count",
+                  "sum",
+                  "mean",
+                  "min",
+                  "max"
+                ],
+                "title": "Op",
+                "type": "string"
+              },
+              "column": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Column"
+              }
+            },
+            "required": [
+              "name",
+              "op"
+            ],
+            "title": "TableMetric",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "library_id": {
+            "minLength": 1,
+            "title": "Library Id",
+            "type": "string"
+          },
+          "document_id": {
+            "minimum": 1,
+            "title": "Document Id",
+            "type": "integer"
+          },
+          "sheet": {
+            "minLength": 1,
+            "title": "Sheet",
+            "type": "string"
+          },
+          "start_row": {
+            "default": 1,
+            "maximum": 1048576,
+            "minimum": 1,
+            "title": "Start Row",
+            "type": "integer"
+          },
+          "end_row": {
+            "anyOf": [
+              {
+                "maximum": 1048576,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "End Row"
+          },
+          "filters": {
+            "items": {
+              "$ref": "#/$defs/TableFilter"
+            },
+            "maxItems": 12,
+            "title": "Filters",
+            "type": "array"
+          },
+          "group_by": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Group By",
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/$defs/TableMetric"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Metrics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "library_id",
+          "document_id",
+          "sheet",
+          "metrics"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

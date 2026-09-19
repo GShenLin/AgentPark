@@ -7,7 +7,7 @@ from fastapi import Request
 from . import runtime_paths
 from .graph_config_file import read_graph_config, write_graph_config
 from .graph_runtime_registry import GraphConfigReadError
-from .request_access import is_local_request
+from .request_access import has_owner_access
 from .service_host import HostBoundService
 from .shared import HTTPException
 
@@ -27,7 +27,7 @@ class GraphVisibilityService(HostBoundService):
 
     def require_graph_visible(self, graph_id: str, request: Request | None = None) -> None:
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        if is_local_request(request):
+        if has_owner_access(request):
             return
         if self._graph_is_private(safe_id):
             raise HTTPException(status_code=404, detail="graph not found")
@@ -36,7 +36,7 @@ class GraphVisibilityService(HostBoundService):
         safe_id = self.graph_runtime._sanitize_graph_id(graph_id)
         if not safe_id:
             raise HTTPException(status_code=400, detail="invalid graph id")
-        if not is_local_request(request):
+        if not has_owner_access(request):
             raise HTTPException(status_code=403, detail="graph visibility can only be changed from a local client")
         private = (payload or {}).get("private")
         if not isinstance(private, bool):

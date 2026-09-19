@@ -1,0 +1,5 @@
+{$AGENTPARK_SIGNALING_DOMAIN} {
+    # The coordinator serves the portal UI, login, device directory and signaling.
+    # /api and /memories business requests are handled by the browser's P2P worker.
+    reverse_proxy 127.0.0.1:8790
+}

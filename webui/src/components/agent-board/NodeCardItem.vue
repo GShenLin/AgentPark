@@ -54,7 +54,7 @@ const hasPreview = computed(() => (
   || !!String(previewText.value || '').trim()
 ))
 
-const isEditingName = ref(false)
+const isEditingName = computed(() => ctx.renamingNodeId.value === props.node.id)
 const editingName = ref('')
 const nameInputRef = ref<InstanceType<typeof FormTextInput> | null>(null)
 type ResizeHandle = Extract<EdgeResizeHandle, 'right' | 'bottom' | 'bottom-right'>
@@ -76,24 +76,25 @@ watch(
   { immediate: true },
 )
 
-function startEditName() {
-  isEditingName.value = true
+watch(isEditingName, (editing) => {
+  if (!editing) return
   editingName.value = String(props.node.name || props.node.id)
   void nextTick(() => {
     nameInputRef.value?.focus()
     nameInputRef.value?.select()
   })
-}
+})
 
 async function commitEditName() {
+  if (!isEditingName.value) return
   const value = String(editingName.value || '').trim()
-  isEditingName.value = false
+  ctx.finishNodeRename(props.node.id)
   if (!ctx) return
   await ctx.renameNodeCard(props.node.id, value || props.node.id).catch(() => null)
 }
 
 function cancelEditName() {
-  isEditingName.value = false
+  ctx.finishNodeRename(props.node.id)
   editingName.value = String(props.node.name || props.node.id)
 }
 
@@ -143,7 +144,12 @@ function stopNodeResize() {
   nodeResizeDrag.stop()
 }
 
-onBeforeUnmount(stopNodeResize)
+function cleanupNodeCard() {
+  stopNodeResize()
+  ctx.finishNodeRename(props.node.id)
+}
+
+onBeforeUnmount(cleanupNodeCard)
 </script>
 
 <template>
@@ -190,7 +196,6 @@ onBeforeUnmount(stopNodeResize)
           class="node-title"
           @pointerdown.stop
           @click.stop="selectItemOnly()"
-          @dblclick.stop.prevent="startEditName()"
         >
           {{ props.node.name }}
         </div>

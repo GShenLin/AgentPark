@@ -1,4 +1,5 @@
 ﻿import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { beginNodeOpenTrace, nodeOpenMarker } from '../../nodeOpenDiagnostics'
 import {
   cloneNodeInstance,
   controlNodeInstance,
@@ -155,6 +156,7 @@ export function useAgentBoard(options: {
 
   const boardRef = ref<HTMLElement | null>(null)
   const canvasRef = ref<HTMLElement | null>(null)
+  const renamingNodeId = ref<string | null>(null)
   const canvasScale = ref(1)
   const boardLayoutDefaults = ref<BoardLayoutDefaults>(normalizeBoardLayoutDefaults(options.boardLayoutDefaults))
   const gridSettings = ref(boardGridSettingsFromDefaults(boardLayoutDefaults.value))
@@ -164,6 +166,7 @@ export function useAgentBoard(options: {
   const selectedItemIds = ref<string[]>([])
   let selectionSession: BoardSelectionSession | null = null
   let boardViewportGestureVersion = 0
+  let nodePresentationVersion = 0
 
   let dragBatchStart: Record<string, NodeGridPosition> | null = null
   const activeDragItemIds = new Set<string>()
@@ -173,11 +176,25 @@ export function useAgentBoard(options: {
   let pasteAgentConfigCache: PasteAgentConfig | null = null
   let lastBoardPointerClient: { x: number; y: number } | null = null
 
-  function selectNode(id: string) {
+  function applyNodeSelection(id: string) {
+    beginNodeOpenTrace(currentGraphId.value || 'default', id)
     selectedNodeId.value = id
     selectedItemIds.value = [id]
-    memoryMode.value = 'agent'
     syncSelectedNodeWorkingPath(id)
+  }
+
+  function selectNode(id: string) {
+    nodePresentationVersion += 1
+    applyNodeSelection(id)
+    memoryMode.value = 'agent'
+  }
+
+  function waitForViewportPaint() {
+    return new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve())
+      })
+    })
   }
 
   function measureBoardViewport(board: HTMLElement) {
@@ -273,11 +290,29 @@ export function useAgentBoard(options: {
     if (!nodeId) return false
     if (!nodes.value.some((node) => node.id === nodeId)) return false
 
-    selectNode(nodeId)
+    const presentationVersion = ++nodePresentationVersion
+    const selectionGraphId = currentGraphId.value || 'default'
+    applyNodeSelection(nodeId)
+    const markOpen = nodeOpenMarker(selectionGraphId, nodeId)
+    const presentationStarted = performance.now()
+    memoryMode.value = 'graph'
+    await nextTick()
+    markOpen?.('board_selection_flush', { elapsed_ms: performance.now() - presentationStarted })
     const shouldRefresh = options.refreshConfig === true
     const shouldFocus = options.focusViewport !== false
     const refreshPromise = shouldRefresh ? refreshNodeConfig(nodeId).catch(() => null) : Promise.resolve()
     const focused = shouldFocus ? await focusNodeInViewport(nodeId) : false
+    markOpen?.('board_focus', { elapsed_ms: performance.now() - presentationStarted, focused: Number(focused) })
+    if (shouldFocus && focused) await waitForViewportPaint()
+    if (
+      presentationVersion === nodePresentationVersion &&
+      selectedNodeId.value === nodeId &&
+      (currentGraphId.value || 'default') === selectionGraphId &&
+      memoryMode.value === 'graph'
+    ) {
+      memoryMode.value = 'agent'
+      markOpen?.('memory_shown', { elapsed_ms: performance.now() - presentationStarted })
+    }
     await refreshPromise
     return focused
   }
@@ -303,6 +338,7 @@ export function useAgentBoard(options: {
   }
 
   function openGraphPanel() {
+    nodePresentationVersion += 1
     memoryMode.value = 'graph'
   }
 
@@ -352,6 +388,7 @@ export function useAgentBoard(options: {
   }
 
   function openEmptyBoardPanel() {
+    nodePresentationVersion += 1
     selectedNodeId.value = null
     selectedItemIds.value = []
     memoryMode.value = 'graph'
@@ -631,6 +668,51 @@ export function useAgentBoard(options: {
     syncGraphSnapshot()
     await persistGraphConfig('rename_board_item')
     refreshNodeConfigsAndMemory().catch(() => null)
+  }
+
+  async function duplicateNodeCard(nodeId: string) {
+    const sourceNodeId = String(nodeId || '').trim()
+    const sourceNode = nodes.value.find((node) => node.id === sourceNodeId)
+    if (!sourceNode) return null
+
+    const snapshot = makeBoardCopySnapshot({
+      graphId: currentGraphId.value || 'default',
+      nodes: nodes.value,
+      links: [],
+      nodeNotes: nodeNotes.value,
+      selectedItemIds: [sourceNodeId],
+    })
+    if (!snapshot) return null
+
+    lastError.value = null
+    try {
+      const targetGraphId = currentGraphId.value || 'default'
+      const plan = buildPastePlanFromSnapshot(snapshot, { kind: 'selection-anchor' })
+      await clonePastePlanNodes(snapshot, plan, targetGraphId)
+
+      nodes.value.push(...plan.nodes)
+      nodeNotes.value = { ...nodeNotes.value, ...plan.nodeNotes }
+      updateCanvasSize()
+      syncGraphSnapshot()
+      await persistGraphConfig('duplicate_node_card')
+      refreshNodeConfigsAndMemory().catch(() => null)
+      return plan.nodes[0]?.id || null
+    } catch (error: any) {
+      lastError.value = String(error?.message || error)
+      throw error
+    }
+  }
+
+  function startNodeRename(nodeId: string) {
+    const safeNodeId = String(nodeId || '').trim()
+    if (!safeNodeId || !nodes.value.some((item) => item.id === safeNodeId)) return
+    renamingNodeId.value = safeNodeId
+  }
+
+  function finishNodeRename(nodeId: string) {
+    if (renamingNodeId.value === nodeId) {
+      renamingNodeId.value = null
+    }
   }
 
   const CARD_WIDTH = NODE_CARD_DEFAULT_WIDTH
@@ -2123,6 +2205,7 @@ export function useAgentBoard(options: {
 
   return {
     selectedNodeId,
+    renamingNodeId,
     lastError,
     memoryMode,
     graphSnapshot,
@@ -2176,6 +2259,9 @@ export function useAgentBoard(options: {
     previewMessage,
     onNodePaletteDragStart,
     renameNodeCard,
+    startNodeRename,
+    finishNodeRename,
+    duplicateNodeCard,
     setNodeNote,
     deleteNodeCard,
     refreshNodeConfigsAndMemory,

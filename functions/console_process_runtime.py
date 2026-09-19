@@ -1,8 +1,10 @@
 import os
+import signal
 import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from src.runtime_environment import get_runtime_environment
 
 
 @dataclass
@@ -10,6 +12,21 @@ class PipeReader:
     thread: threading.Thread
     chunks: list[bytes]
     errors: list[BaseException]
+
+
+def console_process_options(command: str) -> tuple[list[str], dict]:
+    environment = get_runtime_environment()
+    child_env = os.environ.copy()
+    child_env.update(environment.variables())
+    if environment.is_windows:
+        return (
+            [environment.shell_executable, "-NoProfile", "-Command", powershell_utf8_script(command)],
+            {"env": child_env},
+        )
+    return (
+        [environment.shell_executable, "-c", command],
+        {"env": child_env, "start_new_session": True},
+    )
 
 
 def powershell_utf8_script(command: str) -> str:
@@ -35,6 +52,9 @@ def terminate_process(proc: subprocess.Popen | None) -> None:
     if os.name == "nt":
         _terminate_windows_process_tree(proc)
         return
+    if getattr(proc, "_agentpark_process_group", False):
+        _terminate_posix_process_group(proc)
+        return
     if proc.poll() is not None:
         return
     try:
@@ -46,6 +66,28 @@ def terminate_process(proc: subprocess.Popen | None) -> None:
             proc.wait(timeout=0.5)
         except Exception:
             pass
+
+
+def _terminate_posix_process_group(proc: subprocess.Popen) -> None:
+    # Only processes explicitly started in their own session reach this branch.
+    # Kill the group even if the shell exited but descendants still hold its pipes.
+    if int(getattr(proc, "pid", 0) or 0) <= 0:
+        _terminate_process_fallback(proc)
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        proc.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        pass
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    proc.wait(timeout=0.5)
 
 
 def start_process_pipe_readers(

@@ -1,6 +1,5 @@
 import asyncio
 import os
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,11 +13,13 @@ from src.runtime_supervision import runtime_supervisor
 from .companion_mcp import build_companion_mcp
 from .core import BackendCore
 from .network_diagnostics import NetworkDiagnosticsMiddleware
-from .node_desktop_pet_launcher import terminate_registered_desktop_pet_processes
+from .node_open_diagnostics import NodeOpenDiagnosticsMiddleware
 from .memory_static_files import VisibilityAwareMemoriesStaticFiles
 from . import runtime_paths
 from .private_network_cors import PrivateNetworkCORSMiddleware
 from .route_registry import ApiRouteRegistry
+from .peer_api import register_peer_routes
+from .knowledge_api import register_knowledge_routes
 
 
 class WebBackendFacade:
@@ -39,10 +40,12 @@ class WebBackendFacade:
             allow_private_network=True,
         )
         self.app.add_middleware(NetworkDiagnosticsMiddleware)
-        self._desktop_pet_restore_timer = None
+        self.app.add_middleware(NodeOpenDiagnosticsMiddleware)
 
     def register_routes(self) -> None:
         ApiRouteRegistry.register(self.app, self.core)
+        register_knowledge_routes(self.app, self.core.knowledge_service)
+        register_peer_routes(self.app, self.core)
         register_public_gateway_routes(self.app, self.core.public_gateway_api.service)
         register_installed_plugin_apis(
             self.app,
@@ -60,9 +63,11 @@ class WebBackendFacade:
             self._startup_services()
             runtime_supervisor.record("application_lifespan_ready")
             try:
+                await self.core.peer_api.start()
                 yield
             finally:
                 runtime_supervisor.record("application_lifespan_stopping")
+                await self.core.peer_api.close()
                 self._shutdown_services()
                 runtime_supervisor.record("application_lifespan_stopped")
             return
@@ -71,13 +76,16 @@ class WebBackendFacade:
             self._startup_services()
             runtime_supervisor.record("application_lifespan_ready")
             try:
+                await self.core.peer_api.start()
                 yield
             finally:
                 runtime_supervisor.record("application_lifespan_stopping")
+                await self.core.peer_api.close()
                 self._shutdown_services()
                 runtime_supervisor.record("application_lifespan_stopped")
 
     def _startup_services(self) -> None:
+        self.core.knowledge_service.start()
         try:
             recovery = self.core.graph_runtime._recover_node_runtime_state_on_startup()
             if isinstance(recovery, dict):
@@ -101,12 +109,6 @@ class WebBackendFacade:
             channels = self.core.channel_service.start_autostart_receivers()
             if isinstance(channels, dict):
                 print(f"[ChannelService] autostart receivers={int(channels.get('started', 0))}")
-            if str(os.environ.get("AGENTPARK_RESTORE_DESKTOP_PETS") or "").strip() == "1":
-                self._schedule_desktop_pet_restore()
-            else:
-                result = self.core.node_desktop_views.mark_all_desktop_pets_hidden()
-                if isinstance(result, dict) and int(result.get("updated", 0)) > 0:
-                    print(f"[DesktopPet] skipped restore; hidden stale views={int(result.get('updated', 0))}")
         except Exception as e:
             print(f"[GraphRuntime] startup failed: {e}")
 
@@ -126,49 +128,8 @@ class WebBackendFacade:
         except Exception as e:
             print(f"[RestartRecovery] startup failed; checkpoint retained: {e}")
 
-    def _schedule_desktop_pet_restore(self) -> None:
-        if self._desktop_pet_restore_timer is not None:
-            return
-
-        def restore() -> None:
-            try:
-                result = self.core.node_desktop_views.restore_visible_desktop_pets()
-                failed = result.get("failed") if isinstance(result, dict) else []
-                print(
-                    "[DesktopPet] restore "
-                    f"requested={int(result.get('requested', 0))} "
-                    f"restored={int(result.get('restored', 0))} "
-                    f"failed={len(failed) if isinstance(failed, list) else 0}"
-                )
-                if failed:
-                    print(f"[DesktopPet] restore failures={failed}")
-            except Exception as e:
-                print(f"[DesktopPet] restore failed: {e}")
-
-        timer = threading.Timer(1.0, restore)
-        timer.daemon = True
-        self._desktop_pet_restore_timer = timer
-        timer.start()
-
     def _shutdown_services(self) -> None:
-        timer = self._desktop_pet_restore_timer
-        if timer is not None:
-            timer.cancel()
-            self._desktop_pet_restore_timer = None
-        try:
-            result = terminate_registered_desktop_pet_processes()
-            if isinstance(result, dict) and int(result.get("requested") or 0) > 0:
-                failed = result.get("failed") if isinstance(result.get("failed"), list) else []
-                print(
-                    "[DesktopPet] shutdown "
-                    f"requested={int(result.get('requested') or 0)} "
-                    f"terminated={len(result.get('terminated') or [])} "
-                    f"failed={len(failed)}"
-                )
-                if failed:
-                    print(f"[DesktopPet] shutdown failures={failed}")
-        except Exception as e:
-            print(f"[DesktopPet] shutdown failed: {e}")
+        self.core.knowledge_service.close()
         try:
             self.core.graph_runtime._stop_timer_trigger_scheduler()
         except Exception:

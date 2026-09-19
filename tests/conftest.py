@@ -4,6 +4,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def isolate_background_node_memory(monkeypatch):
+    """Unrelated unit tests must not dispatch paid background model calls.
+
+    Memory integration tests explicitly opt in and substitute their model boundary.
+    """
+    from src.long_term_memory import service
+    from src.long_term_memory.settings import MemorySettings
+    monkeypatch.setattr(service, "configured_settings", lambda: MemorySettings(enabled=False))
+
+
+@pytest.fixture(autouse=True)
 def isolated_memories_root(monkeypatch, tmp_path):
     from src import memory_root
 

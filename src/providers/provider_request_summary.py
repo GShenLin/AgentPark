@@ -59,8 +59,8 @@ def build_provider_request_summary(
     internal_context_chars = sum(_context_text_chars(raw, _is_internal_context_text) for raw in items)
     skills_context_chars = sum(_context_text_chars(raw, _is_skills_context_text) for raw in items)
     mcp_servers_context_chars = sum(_context_text_chars(raw, _is_mcp_servers_context_text) for raw in items)
-    operational_memory_context_chars = sum(
-        _context_text_chars(raw, _is_operational_memory_context_text) for raw in items
+    long_term_memory_context_chars = sum(
+        _context_text_chars(raw, _is_long_term_memory_context_text) for raw in items
     )
     project_instructions_context_chars = sum(
         _context_text_chars(raw, is_agent_project_instructions_text) for raw in items
@@ -85,7 +85,7 @@ def build_provider_request_summary(
         "internal_context_chars": internal_context_chars,
         "skills_context_chars": skills_context_chars,
         "mcp_servers_context_chars": mcp_servers_context_chars,
-        "operational_memory_context_chars": operational_memory_context_chars,
+        "long_term_memory_context_chars": long_term_memory_context_chars,
         "project_instructions_context_chars": project_instructions_context_chars,
         "input_items": item_summaries[:MAX_INPUT_ITEMS_INCLUDED],
         "largest_input_items": sorted(
@@ -270,8 +270,8 @@ def _is_mcp_servers_context_item(item: Any) -> bool:
     return _is_message_with_context_text(item, _is_mcp_servers_context_text)
 
 
-def _is_operational_memory_context_item(item: Any) -> bool:
-    return _is_message_with_context_text(item, _is_operational_memory_context_text)
+def _is_long_term_memory_context_item(item: Any) -> bool:
+    return _is_message_with_context_text(item, _is_long_term_memory_context_text)
 
 
 def _is_project_instructions_context_item(item: Any) -> bool:
@@ -333,8 +333,8 @@ def _attach_context_kinds(item_summaries: list[dict[str, Any]], raw_items: list[
             kinds.append("skills")
         if _is_mcp_servers_context_item(raw):
             kinds.append("mcp_servers")
-        if _is_operational_memory_context_item(raw):
-            kinds.append("operational_memory")
+        if _is_long_term_memory_context_item(raw):
+            kinds.append("long_term_memory")
         if _is_project_instructions_context_item(raw):
             kinds.append("project_instructions")
         if kinds:
@@ -457,8 +457,8 @@ def _is_mcp_servers_context_text(value: object) -> bool:
     return text.startswith("<mcp_servers>") and text.endswith("</mcp_servers>")
 
 
-def _is_operational_memory_context_text(value: object) -> bool:
-    return str(value or "").strip().startswith("Operational memory for this node:")
+def _is_long_term_memory_context_text(value: object) -> bool:
+    return str(value or "").strip().startswith("Long-term memory for this node:")
 
 
 def _tools_included(tools_payload: Any) -> list[str]:

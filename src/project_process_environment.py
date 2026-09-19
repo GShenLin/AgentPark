@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from src.workspace_settings import load_workspace_settings
+from src.runtime_environment import initialize_runtime_environment
 
 
 DEFAULT_NO_PROXY = "localhost,127.0.0.1,::1"
@@ -37,6 +38,7 @@ def apply_project_process_environment(
     payload: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     proxy = read_project_proxy_settings(payload)
+    initialize_runtime_environment()
     http_proxy = proxy["http_proxy"]
     no_proxy = proxy["no_proxy"]
 

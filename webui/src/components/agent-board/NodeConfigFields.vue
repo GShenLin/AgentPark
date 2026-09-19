@@ -5,12 +5,13 @@ import { ASSET_FIELD_KEYS } from '../../composables/droppedPaths'
 import {
   agentProviderModes,
   cliProviderModes,
-  CLAUDE_NODE_TYPE,
+  HARNESS_NODE_TYPES,
   dedupeStrings,
-  GUI_AGENT_NODE_TYPE,
   normalizeSwitch,
   normalizeToolSelection,
   providerReasoningEffortOptions,
+  providerThinkingDefault,
+  providerModelIds,
   providerModes,
   switchOptions,
 } from '../../composables/useAgentNodeCreateSchema'
@@ -95,7 +96,7 @@ const providerOptions = computed(() => dedupeStrings(
   props.providers
     .filter((provider) => {
       if (props.typeId === 'agent_node') return agentProviderModes(provider).length > 0
-      if (['codex_node', CLAUDE_NODE_TYPE].includes(props.typeId)) return cliProviderModes(provider).length > 0
+      if (HARNESS_NODE_TYPES.includes(props.typeId)) return cliProviderModes(provider).length > 0
       return true
     })
     .map((provider) => String(provider.id || '').trim())
@@ -262,14 +263,24 @@ function isProviderField(key: string) {
   if (key !== 'provider_id') return false
   return (
     props.typeId === 'agent_node' ||
-    props.typeId === 'codex_node' ||
-    props.typeId === CLAUDE_NODE_TYPE ||
-    props.typeId === GUI_AGENT_NODE_TYPE
+    HARNESS_NODE_TYPES.includes(props.typeId)
   )
 }
 
 function setProvider(providerId: string) {
+  const normalizedProviderId = String(providerId || '').trim()
   setField('provider_id', String(providerId || '').trim())
+  if (props.typeId !== 'agent_node' && !HARNESS_NODE_TYPES.includes(props.typeId)) return
+  const provider = props.providers.find((item) => String(item.id || '').trim() === normalizedProviderId)
+  const modelIds = providerModelIds(provider)
+  setField('model', modelIds[0] || '')
+  if (props.typeId === 'agent_node') setField('thinking', providerThinkingDefault(provider))
+  if (['hermes_agent_node', 'openclaw_node'].includes(props.typeId)) {
+    const feature = provider?.features?.reasoning_effort
+    const efforts = feature?.supported ? feature.values || [] : []
+    const current = String(props.fields.reasoning_effort || '')
+    if (!efforts.includes(current)) setField('reasoning_effort', efforts[0] || '')
+  }
 }
 
 function isWebSearchField(key: string) {
@@ -593,8 +604,8 @@ watch(
       <FormSelect
         v-else-if="isThinkingField(key)"
         class="field-input"
-        :model-value="normalizeSwitch(fields.thinking, 'disabled')"
-        @change="setField('thinking', normalizeSwitch($event, 'disabled'))"
+        :model-value="normalizeSwitch(fields.thinking, providerThinkingDefault(getSelectedProvider()))"
+        @change="setField('thinking', normalizeSwitch($event, providerThinkingDefault(getSelectedProvider())))"
       >
         <option v-for="option in switchOptions" :key="`thinking-${option.value}`" :value="option.value">
           {{ option.label }}

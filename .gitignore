@@ -64,3 +64,10 @@ tmp/
 config/events.json
 .auth/
 .agents/
+
+# Local provider bindings and generated deployment trust data
+/config/modelProvider.json
+/config/pastagent.json
+/config/remote.json
+/deploy/peer-network/client-trust/*.crt
+/deploy/peer-network/client-trust/certificate-info.json

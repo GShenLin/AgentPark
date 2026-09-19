@@ -11,7 +11,7 @@ from .node_board_view import BOARD_RUNTIME_FIELDS, build_node_board_view
 from .node_metadata_reader import NodeMetadataError
 from .node_diagnostics_projection import node_diagnostics_projection_store
 from .node_state_machine import parse_node_state
-from .request_access import is_local_request
+from .request_access import has_owner_access
 from .service_host import HostBoundService
 from .shared import HTTPException, _write_json_dict
 
@@ -48,7 +48,7 @@ class NodeInstanceConfigQuery(HostBoundService):
     ):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         self.core.graph_api.require_graph_visible(safe_graph_id, request)
-        local_request = is_local_request(request)
+        local_request = has_owner_access(request)
         safe_view = str(view or "full").strip().lower()
         if safe_view not in {"full", "board"}:
             raise HTTPException(status_code=400, detail="view must be 'full' or 'board'")

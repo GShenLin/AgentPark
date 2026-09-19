@@ -160,8 +160,8 @@ def _context_kinds(item: dict[str, Any]) -> list[str]:
             kinds.append("skills")
         if raw_text.startswith("<mcp_servers>") and raw_text.endswith("</mcp_servers>") and "mcp_servers" not in kinds:
             kinds.append("mcp_servers")
-        if raw_text.startswith("Operational memory for this node:") and "operational_memory" not in kinds:
-            kinds.append("operational_memory")
+        if raw_text.startswith("Long-term memory for this node:") and "long_term_memory" not in kinds:
+            kinds.append("long_term_memory")
         if raw_text.startswith("<agentpark_internal_context") and raw_text.endswith("</agentpark_internal_context>"):
             if "internal_context" not in kinds:
                 kinds.append("internal_context")
@@ -213,7 +213,7 @@ def _codex_like_gaps(requests: list[dict[str, Any]]) -> list[str]:
                 f"request {request.get('request_index')} has reasoning but lacks include=reasoning.encrypted_content"
             )
         kind_counts = request.get("context_kind_counts") if isinstance(request.get("context_kind_counts"), dict) else {}
-        for kind in ("permissions", "collaboration_mode", "environment", "project_instructions", "operational_memory"):
+        for kind in ("permissions", "collaboration_mode", "environment", "project_instructions", "long_term_memory"):
             count = int(kind_counts.get(kind) or 0)
             if count > 1:
                 gaps.append(f"request {request.get('request_index')} repeats {kind} context parts {count} times")

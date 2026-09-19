@@ -445,7 +445,7 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
 
     messages = [
         {"role": "system", "content": "System prompt."},
-        {"role": "developer", "content": "Operational memory for this node:\n- Keep the shared context."},
+        {"role": "developer", "content": "Long-term memory for this node:\n- Keep the shared context."},
         {"role": "user", "content": "do work"},
     ]
     assert openai_agent._send_via_responses(messages=messages, active_tools=[], run_tools=True) == "ok"
@@ -458,7 +458,7 @@ def test_doubao_responses_plain_chat_context_matches_openai_responses_context(tm
         developer_texts = [part["text"] for part in payload["input"][0]["content"]]
         assert developer_texts[0].startswith("<permissions instructions>")
         assert developer_texts[1] == "System prompt."
-        assert developer_texts[2].startswith("Operational memory for this node:")
+        assert developer_texts[2].startswith("Long-term memory for this node:")
         assert payload["input"][1]["role"] == "user"
         user_context_texts = [part["text"] for part in payload["input"][1]["content"]]
         assert user_context_texts[0].startswith("<environment_context>")

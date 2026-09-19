@@ -25,20 +25,7 @@
     "reasoning_summary": ""
   },
   "event_rules": {
-    "WorkPersisted": [
-      {
-        "enabled": true,
-        "action": "node.dispatch",
-        "target": "companion",
-        "params": {
-          "profile_ids": [
-            "MemoryHobbitWriter",
-            "MemoryNoteWriter",
-            "MemorySoulWriter"
-          ]
-        }
-      }
-    ]
+    "WorkPersisted": []
   },
   "updated_at": "2026-08-02T11:50:49+08:00",
   "created_at": "2026-07-19T19:19:24+08:00"

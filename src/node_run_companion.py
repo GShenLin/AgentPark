@@ -4,7 +4,6 @@ from typing import Any
 
 from src.companion_inbox import deliver_companion_notice
 from src.companion_paths import COMPANION_GRAPH_ID
-from src.operational_memory_notice_context import build_operational_memory_notice_context
 
 
 def notify_companion_about_node_run(
@@ -67,10 +66,6 @@ def build_node_run_review_notice(
         "node_type_id": str(node_type_id or "").strip(),
     }
     goal_state = _goal_state(goal_result)
-    memory_context = build_operational_memory_notice_context(
-        node_dir=node_dir,
-        memory_path=memory_path,
-    )
     return {
         "type": "node_review_notice",
         "source": source,
@@ -91,7 +86,6 @@ def build_node_run_review_notice(
             "messages_path": str(messages_path or "").strip(),
             "runtime_events_path": str(runtime_events_path or "").strip(),
         },
-        "memory": memory_context,
     }
 
 

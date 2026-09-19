@@ -1,5 +1,7 @@
 import json
 import io
+import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -9,6 +11,7 @@ import pytest
 import functions.console_tools as console_tools
 import functions.console_process_runtime as console_process_runtime
 from functions.console_tools import execute_console_command
+from src.runtime_environment import RuntimeEnvironment
 
 
 class _FakePopen:
@@ -54,7 +57,7 @@ def test_execute_console_command_decodes_powershell_stdout_as_utf8(monkeypatch, 
     assert capsys.readouterr().out == ""
 
 
-@pytest.mark.skipif(shutil.which("powershell") is None, reason="PowerShell is unavailable")
+@pytest.mark.skipif(os.name != "nt" or shutil.which("powershell") is None, reason="Windows PowerShell is unavailable")
 def test_execute_console_command_propagates_native_process_exit_code():
     result = json.loads(
         execute_console_command(
@@ -144,6 +147,10 @@ def test_execute_console_command_blocks_interactive_npx_skills_find(monkeypatch)
 
 
 def test_execute_console_command_runs_commands_through_powershell_without_shell_true(monkeypatch):
+    monkeypatch.setattr(
+        console_process_runtime, "get_runtime_environment",
+        lambda: RuntimeEnvironment("windows", "powershell", "powershell"),
+    )
     popen_args = []
     popen_kwargs = {}
 
@@ -165,6 +172,8 @@ def test_execute_console_command_runs_commands_through_powershell_without_shell_
     assert "& {\npwd\nif (-not $?)" in powershell_script
     assert "exit $LASTEXITCODE" in powershell_script
     assert "shell" not in popen_kwargs
+    assert "start_new_session" not in popen_kwargs
+    assert popen_kwargs["env"]["AGENTPARK_PLATFORM"] == "windows"
 
 
 def test_execute_console_command_blocks_high_context_git_diff(monkeypatch):
@@ -373,7 +382,11 @@ def test_execute_console_command_errors_when_agent_working_path_is_missing(tmp_p
 
 
 def test_execute_console_command_drains_large_stdout_without_pipe_deadlock():
-    command = f'& "{sys.executable}" -c "import sys; sys.stdout.write(\'x\' * 200000)"'
+    script = "import sys; sys.stdout.write('x' * 200000)"
+    command = (
+        f'& "{sys.executable}" -c "{script}"' if os.name == "nt"
+        else f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+    )
 
     result = json.loads(execute_console_command(command, timeout_seconds=10))
 

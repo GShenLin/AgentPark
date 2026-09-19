@@ -124,6 +124,10 @@ def materialize_image_generation_schema(schema: dict, provider_config: dict | No
     provider_type = str(provider.get("type") or "").strip().lower()
     image_fields = set(IMAGE_CONFIG_SCHEMA)
 
+    if provider_type == "openai":
+        supported = {"image_references", "image_filename_prefix"}
+        return {key: value for key, value in output.items() if key not in image_fields or key in supported}
+
     if provider_type == "gemini":
         supported = {"image_references", "image_size", "image_aspect_ratio", "image_filename_prefix"}
         output = {key: value for key, value in output.items() if key not in image_fields or key in supported}

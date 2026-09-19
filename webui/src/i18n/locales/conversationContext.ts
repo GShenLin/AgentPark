@@ -1,0 +1,28 @@
+export const conversationZh = {
+  'conversation.title': '当前对话上下文',
+  'conversation.description': '按预算保留节点历史，超出时将较早内容压缩成续聊摘要。下一次输入恢复摘要和后续消息，不等待长期记忆提取；原始聊天保留。',
+  'conversation.effect': '使用顶部“保存”，下一次输入生效。预算采用 UTF-8 字节数 / 4 估算，不等同于实际计费 token，也不自动识别模型窗口。需为模型输出留出空间。',
+  'conversation.input_tokens': '输入预算（估算 token）',
+  'conversation.input_tokensHelp': '包含当前输入、指令、工具定义及历史。超出预算时先压缩旧历史；当前输入过大或压缩失败会明确报错。',
+  'conversation.retain_tokens': '压缩后保留的近期原文预算',
+  'conversation.retain_tokensHelp': '压缩时优先保留从用户消息开始的连续近期对话；当前输入始终单独保留。',
+  'conversation.summary_tokens': '续聊摘要上限（估算 token）',
+  'conversation.summary_tokensHelp': '保存约定、事实、更正、未完成请求和下一步。近期原文预算加摘要上限必须比输入预算至少小 1025。',
+  'conversation.provider': '对话压缩 Provider',
+  'conversation.providerDefault': '使用各节点自己的 Provider',
+  'conversation.providerHelp': '超预算时同步调用，会产生用量；关闭长期记忆不影响对话压缩。清空节点记忆也会清除续聊摘要。',
+}
+export const conversationEn: Record<keyof typeof conversationZh, string> = {
+  'conversation.title': 'Current conversation context',
+  'conversation.description': 'Retain node history within a budget and compact older content into a continuation checkpoint when needed. Restore the checkpoint and subsequent messages on the next input without waiting for long-term extraction. Original history remains.',
+  'conversation.effect': 'Save at the top; changes apply on the next input. Budgets estimate UTF-8 bytes / 4, not billed tokens or automatic model-window detection. Leave room for model output.',
+  'conversation.input_tokens': 'Input budget (estimated tokens)',
+  'conversation.input_tokensHelp': 'Includes current input, instructions, tool definitions and history. Compact older history before submission; oversized current input or failed compaction produces an explicit error.',
+  'conversation.retain_tokens': 'Recent verbatim history budget after compaction',
+  'conversation.retain_tokensHelp': 'Prefer a contiguous recent tail starting at a user message. The current input is always retained separately.',
+  'conversation.summary_tokens': 'Continuation checkpoint limit (estimated tokens)',
+  'conversation.summary_tokensHelp': 'Preserve constraints, facts, corrections, pending requests and next actions. Retained history plus summary must be at least 1025 below the input budget.',
+  'conversation.provider': 'Conversation compaction provider',
+  'conversation.providerDefault': 'Use each node’s provider',
+  'conversation.providerHelp': 'Runs synchronously and consumes usage when over budget. Independent of long-term memory. Clearing node memory also removes this checkpoint.',
+}

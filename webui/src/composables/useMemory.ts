@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { nodeOpenMarker } from '../nodeOpenDiagnostics'
 import {
   getNodeInstanceLive,
   getNodeInstanceMemory,
@@ -185,6 +186,10 @@ export function useMemory() {
       memoryTitle.value = `Node ${nodeId}`
       memoryMeta.value = res.memory_path || null
       agentImages.value = []
+      nodeOpenMarker(graphId, nodeId)?.('memory_applied', {
+        messages: baseMessages.length, text_chars: memoryText.value.length,
+        live_chars: memoryLiveMessage.value.length,
+      })
     } catch (e: any) {
       if (signal.aborted || generation !== memorySelectionGeneration) return
       if (!memoryRequests.isActiveScope(requestScope)) return
@@ -284,6 +289,7 @@ export function useMemory() {
       memoryLiveMessage.value = nextLiveMessage || pendingCommittedLiveText
       memoryThinkingMessage.value = String((res as any)?.thinking_message || '')
       memoryActivityBlocks.value = Array.isArray((res as any)?.activity_blocks) ? (res as any).activity_blocks : []
+      nodeOpenMarker(graphId, nodeId)?.('live_applied', { live_chars: memoryLiveMessage.value.length, thinking_chars: memoryThinkingMessage.value.length })
     } catch {
       if (signal.aborted || generation !== memorySelectionGeneration) return
       if (memoryMode.value !== 'agent') return
@@ -541,6 +547,7 @@ export function useMemory() {
   }
 
   function beginAgentSelection() {
+    nodeOpenMarker(currentGraphId.value || 'default', resolveSelectedTargetId())?.('selection_watch')
     stopLoading()
     if (memoryMode.value !== 'agent') return
     const nodeId = resolveSelectedTargetId()

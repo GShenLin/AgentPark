@@ -9,7 +9,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from nodes.codex_node.runtime.live_bridge import CodexLiveBridge
-from nodes.codex_node.runtime.provider_gateway import CodexProviderGateway
+from src.harness.responses_gateway import HarnessResponsesGateway
 from nodes.codex_node.runtime.session_manager import CodexSessionManager
 from nodes.codex_node.runtime.session_manager import CodexSessionSpec
 
@@ -98,7 +98,7 @@ def test_real_codex_app_server_uses_provider_id_chat_conversion_and_runs_tool(tm
         encoding="utf-8",
     )
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
-    gateway = CodexProviderGateway()
+    gateway = HarnessResponsesGateway()
     manager = CodexSessionManager(gateway=gateway)
     events = []
     bridge = CodexLiveBridge(events.append)

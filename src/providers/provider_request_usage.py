@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections.abc import Callable
 from typing import Any
 
 
@@ -93,7 +94,11 @@ def add_provider_usage_totals(totals: dict[str, Any], usage: object) -> None:
 
 
 class ProviderRequestTracker:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        on_completion: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        self._on_completion = on_completion
         self.reset()
 
     def reset(self) -> None:
@@ -126,8 +131,10 @@ class ProviderRequestTracker:
         normalized_usage = sanitize_provider_usage(usage)
         if normalized_index is None:
             return None
+        matched_summary: dict[str, Any] | None = None
         for summary in reversed(self._summaries):
             if _non_negative_int(summary.get("request_index")) == normalized_index:
+                matched_summary = summary
                 summary["completed"] = True
                 if normalized_usage:
                     summary["usage"] = dict(normalized_usage)
@@ -143,6 +150,11 @@ class ProviderRequestTracker:
         completion: dict[str, Any] = {"request_index": normalized_index}
         if normalized_usage:
             completion["usage"] = normalized_usage
+        request_api = str((matched_summary or {}).get("request_api") or "").strip()
+        if request_api:
+            completion["request_api"] = request_api
+        if self._on_completion is not None:
+            self._on_completion(dict(completion))
         return completion
 
     def snapshot(self) -> dict[str, Any]:

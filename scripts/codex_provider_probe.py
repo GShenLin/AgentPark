@@ -10,7 +10,7 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from typing import Any
 
-from nodes.codex_node.runtime.provider_gateway import CodexProviderGateway
+from src.harness.responses_gateway import HarnessResponsesGateway
 from nodes.codex_node.runtime.session_manager import CodexSessionManager
 from nodes.codex_node.runtime.session_manager import CodexSessionSpec
 from src.cli_provider_runtime.provider_adapter import provider_protocol
@@ -94,7 +94,7 @@ def _response_preview(response: object, limit: int = 500) -> str:
 def _probe_one(
     *,
     loader: ConfigLoader,
-    gateway: CodexProviderGateway,
+    gateway: HarnessResponsesGateway,
     provider_id: str,
     codex_command: str,
     working_path: str,
@@ -194,7 +194,7 @@ def main() -> int:
         raise ValueError(f"Working path does not exist: {working_path}")
     loader = ConfigLoader()
     provider_ids = _selected_provider_ids(loader, [str(item) for item in args.provider])
-    gateway = CodexProviderGateway()
+    gateway = HarnessResponsesGateway()
     failures = 0
     try:
         for provider_id in provider_ids:

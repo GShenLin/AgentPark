@@ -80,8 +80,7 @@ def _record_grok_reasoning_features(
     probe: Callable[[str], ProbeResult],
 ) -> None:
     set_feature(result, "thinking", ProbeResult(False, "Grok uses reasoning_effort and does not send thinking"))
-    supported_efforts = set(grok_reasoning_effort_values(config.get("model")))
-    model = str(config.get("model") or "").strip() or "configured model"
+    supported_efforts = set(grok_reasoning_effort_values())
     set_value_features(
         result,
         "reasoning_effort",
@@ -89,7 +88,7 @@ def _record_grok_reasoning_features(
             effort: (
                 probe(effort)
                 if effort in supported_efforts
-                else ProbeResult(False, f"Grok reasoning_effort '{effort}' is not defined for model '{model}'")
+                else ProbeResult(False, f"Grok reasoning_effort '{effort}' is not supported by the Grok provider")
             )
             for effort in REASONING_EFFORT_VALUES
         },

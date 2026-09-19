@@ -5,6 +5,7 @@ from importlib import import_module
 from typing import Any
 
 from src.config_loader import ConfigLoader
+from src.provider_models import resolve_provider_model
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ def create_agent(
     memory_file_path: str | None = None,
     system_prompt: str | None = None,
     internal_memory_enabled: bool = True,
+    model_id: object = None,
 ) -> Any:
     normalized_provider_id = str(provider_id)
     config = ConfigLoader().get_provider_config(normalized_provider_id)
@@ -61,9 +63,14 @@ def create_agent(
             f"Provider '{normalized_provider_id}' has unsupported type: {provider_type or '<empty>'}"
         )
     provider_class = registration.load_class()
-    return provider_class(
+    agent = provider_class(
         provider_id=normalized_provider_id,
         memory_file_path=memory_file_path,
         system_prompt=system_prompt,
         internal_memory_enabled=internal_memory_enabled,
     )
+    selected_model = resolve_provider_model({**config, "id": normalized_provider_id}, model_id)
+    agent.selected_model_id = selected_model
+    if selected_model:
+        agent.config = {**agent.config, "model": selected_model}
+    return agent

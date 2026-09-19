@@ -8,9 +8,17 @@ import FormTextInput from '../FormTextInput.vue'
 import PasteAgentProfileSettingsGroup from './PasteAgentProfileSettingsGroup.vue'
 import StorageSettingsGroup from './StorageSettingsGroup.vue'
 import { t } from '../../i18n'
+import type { ProviderInfo } from '../../api'
+import type { LongTermMemorySettings } from '../../longTermMemorySettings'
+import LongTermMemorySettingsGroup from './LongTermMemorySettingsGroup.vue'
+import ConversationContextSettingsGroup from './ConversationContextSettingsGroup.vue'
+import type { ConversationContextSettings } from '../../conversationContextSettings'
 
 const props = defineProps<{
   data: Record<string, unknown>
+  providers: ProviderInfo[]
+  memoryDefaults?: LongTermMemorySettings
+  conversationDefaults?: ConversationContextSettings
   runtime?: {
     active_memories_root?: string
     configured_memories_root?: string
@@ -144,6 +152,15 @@ function deleteMcpServer() {
 
     <PasteAgentProfileSettingsGroup />
 
+    <ConversationContextSettingsGroup
+      :data="section('conversationContext')" :defaults="conversationDefaults" :providers="providers"
+      @update:data="emit('update:data', { ...props.data, conversationContext: $event })"
+    />
+    <LongTermMemorySettingsGroup
+      :data="section('longTermMemory')" :defaults="memoryDefaults" :providers="providers"
+      @update:data="emit('update:data', { ...props.data, longTermMemory: $event })"
+    />
+
     <section class="settings-group">
       <h2>{{ t('defaults.boardLayout') }}</h2>
       <div class="form-grid">
@@ -235,10 +252,6 @@ function deleteMcpServer() {
         <label>
           <span>{{ t('defaults.minSendDelay') }}</span>
           <FormTextInput :model-value="fieldText('agentNode', 'minSendDelayMs')" type="number" min="0" @update:model-value="setNestedNumber('agentNode', 'minSendDelayMs', $event)" />
-        </label>
-        <label>
-          <span>{{ t('defaults.historyLimit') }}</span>
-          <FormTextInput :model-value="fieldText('agentNode', 'historyMessageLimit')" type="number" min="0" @update:model-value="setNestedNumber('agentNode', 'historyMessageLimit', $event)" />
         </label>
       </div>
     </section>

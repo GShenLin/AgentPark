@@ -20,7 +20,7 @@ from .deletion_undo_store import deletion_undo_store
 from .node_deletion import NodeDeletionBlocked, delete_node_directory
 from .node_notes import NodeNotesDataError, normalize_node_notes
 from .runtime_state_memory_store import runtime_state_memory_store
-from .request_access import is_local_request
+from .request_access import has_owner_access
 from .service_host import HostBoundService
 from .shared import HTTPException
 
@@ -102,7 +102,7 @@ class GraphApiStorage(HostBoundService):
     def list_graphs(self, request: Request = None):
         graphs_dir = runtime_paths._get_graphs_dir()
         graphs = []
-        local_request = is_local_request(request)
+        local_request = has_owner_access(request)
         if not os.path.isdir(graphs_dir):
             graphs.append(
                 _graph_list_item(

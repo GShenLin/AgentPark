@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUpdate, onUpdated, ref } from 'vue'
+import { nodeOpenMarker } from '../nodeOpenDiagnostics'
 import { selectFolder, type GraphInfo, type GraphProfile, type LatestTurnProgressSummary, type LiveActivityBlock, type MessageEnvelope, type NodeInstanceConfig } from '../api'
 import ActionButton from './ActionButton.vue'
 import DangerButton from './DangerButton.vue'
 import FormSelect from './FormSelect.vue'
 import FormTextInput from './FormTextInput.vue'
 import LiveActivityBlocks from './LiveActivityBlocks.vue'
+import VirtualLiveText from './VirtualLiveText.vue'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
@@ -88,6 +90,22 @@ const emit = defineEmits<{
 }>()
 
 const memoryPanelRef = ref<HTMLElement | null>(null)
+let updateStarted = 0
+let updateMarker: ReturnType<typeof nodeOpenMarker> = null
+onBeforeUpdate(() => {
+  updateMarker = nodeOpenMarker(props.graphId, props.nodeId)
+  updateStarted = performance.now()
+})
+onUpdated(() => {
+  const mark = updateMarker
+  if (!mark) return
+  const flushed = performance.now()
+  mark('vue_flush', { duration_ms: flushed - updateStarted, live_chars: props.liveMessage.length, messages: props.messages.length, wrap: Number(props.wordWrap) })
+  // Two frame callbacks are a presentation opportunity, not a precise paint timer.
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    mark('frame_after_update', { elapsed_ms: performance.now() - flushed, visible: Number(document.visibilityState === 'visible') })
+  }))
+})
 const gutterRef = ref<HTMLElement | null>(null)
 const interactiveInputRef = ref<InstanceType<typeof FormTextInput> | null>(null)
 const { nodeGraphDrag, nodeGraphDropTargetId, nodeGraphMoveInProgress } = useGlobalState()
@@ -188,7 +206,15 @@ function syncScroll(event: Event) {
 function scrollToBottom() {
   const panel = memoryPanelRef.value
   if (panel) {
-    panel.scrollTop = panel.scrollHeight
+    const mark = nodeOpenMarker(props.graphId, props.nodeId)
+    const started = performance.now()
+    const height = panel.scrollHeight
+    const measured = performance.now()
+    panel.scrollTop = height
+    mark?.('scroll_layout', {
+      height_read_ms: measured - started, scroll_write_ms: performance.now() - measured,
+      scroll_height: height, live_chars: props.liveMessage.length,
+    })
   }
 }
 
@@ -379,11 +405,25 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
         <LiveActivityBlocks :blocks="activityBlocks" :node-id="nodeId" :graph-id="graphId" />
         <section v-if="thinkingMessage" class="live-section thinking">
           <div class="live-section-label">{{ t('memory.thinking') }}</div>
-          <div class="live-body live-stream-text">{{ thinkingMessage }}</div>
+          <VirtualLiveText
+            :key="`${graphId}/${nodeId}/thinking`"
+            :text="thinkingMessage"
+            :word-wrap="wordWrap"
+            :label="t('memory.thinking')"
+            @copy="emit('copyMessage', $event)"
+            @save="emit('saveMessage', $event)"
+          />
         </section>
         <section v-if="liveMessage" class="live-section">
           <div v-if="thinkingMessage || activityMessage" class="live-section-label">{{ t('memory.answer') }}</div>
-        <div class="live-body live-stream-text">{{ liveMessage }}</div>
+          <VirtualLiveText
+            :key="`${graphId}/${nodeId}/answer`"
+            :text="liveMessage"
+            :word-wrap="wordWrap"
+            :label="t('memory.answer')"
+            @copy="emit('copyMessage', $event)"
+            @save="emit('saveMessage', $event)"
+          />
         </section>
       </div>
     </div>

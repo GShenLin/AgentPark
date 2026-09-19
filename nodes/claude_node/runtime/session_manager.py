@@ -175,6 +175,7 @@ class ClaudeSessionManager:
         lease = self._gateway.register(
             spec.provider_id,
             reasoning_effort=spec.reasoning_effort,
+            model=spec.model,
         )
         selected_session_id = read_selected_session_id(spec.state_path)
         session_id = selected_session_id or str(uuid.uuid4())

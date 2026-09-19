@@ -41,7 +41,7 @@ def test_shared_control_primitives_use_one_semantic_token_system():
 def test_provider_select_reveals_configured_descriptions_on_hover_and_focus():
     selector = _read("webui/src/components/ProviderSelect.vue")
     node_fields = _read("webui/src/components/agent-board/NodeConfigFields.vue")
-    companion = _read("webui/src/components/settings/CompanionSettingsForm.vue")
+    companion = _read("webui/src/components/settings/CompanionModelSettings.vue")
     settings = _read("webui/src/components/settings/ModelProviderSettingsForm.vue")
 
     assert "provider.description" in selector
@@ -59,7 +59,6 @@ def test_common_destructive_and_close_actions_are_reused_in_core_surfaces():
         "webui/src/components/agent-board/NodeCardItem.vue",
         "webui/src/components/agent-board/NodeRuntimeEventsSection.vue",
         "webui/src/mobile/MobileWorkspace.vue",
-        "webui/src/components/pet-avatar/PetContextMenu.vue",
     )
     closable_surfaces = (
         "webui/src/components/ImageLightbox.vue",
@@ -113,3 +112,24 @@ def test_major_dialogs_share_surface_tokens():
         assert "var(--ui-dialog-backdrop)" in source, path
         assert "var(--ui-dialog-background)" in source, path
         assert "var(--ui-dialog-border)" in source, path
+
+
+def test_node_rename_is_started_from_the_context_menu_not_title_double_click():
+    card = _read("webui/src/components/agent-board/NodeCardItem.vue")
+    menu = _read("webui/src/components/agent-board/NodeContextMenu.vue")
+    context = _read("webui/src/components/agent-board/context.ts")
+
+    assert "@dblclick" not in card
+    assert "ctx.startNodeRename(nodeId)" in menu
+    assert "t('board.renameNode')" in menu
+    assert "renamingNodeId: Ref<string | null>" in context
+
+
+def test_escape_closes_the_floating_memory_overlay_without_closing_a_child_dialog():
+    workspace = _read("webui/src/DesktopWorkspace.vue")
+
+    assert "event.key === 'Escape'" in workspace
+    assert "isMemoryFloating.value" in workspace
+    assert "!hasOpenDialogAboveMemory()" in workspace
+    assert "void closeMemoryOverlay()" in workspace
+    assert ':data-memory-overlay="isMemoryFloating ? \'true\' : undefined"' in workspace

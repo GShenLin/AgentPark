@@ -1,4 +1,5 @@
 import { appEventsStreamUrl } from '../api'
+import { measureNodeOpenWork } from '../nodeOpenDiagnostics'
 import { resolveStreamSnapshotTransition } from '../eventStreamProtocol'
 import { notifyUserInteractionGraphEvent } from './useUserInteractions'
 import { notifyWorkAlertGraphEvent } from './useWorkAlerts'
@@ -12,7 +13,7 @@ const listeners = new Set<(payload: Record<string, unknown>) => void>()
 const STREAM_GAP_RESYNC_MIN_INTERVAL_MS = 2000
 
 function dispatchAppEvent(payload: Record<string, unknown>) {
-  for (const listener of listeners) listener(payload)
+  for (const listener of listeners) measureNodeOpenWork('sse_listener', 0, () => listener(payload))
   notifyUserInteractionGraphEvent(payload)
   notifyWorkAlertGraphEvent(payload)
 }
@@ -59,8 +60,9 @@ export function startAppEventStream() {
     source = new EventSource(appEventsStreamUrl())
     source.onmessage = (event) => {
       try {
-        const payload = JSON.parse(String(event.data || '{}')) as Record<string, unknown>
-        processAppEvent(payload)
+        const raw = String(event.data || '{}')
+        const payload = measureNodeOpenWork('sse_parse', raw.length, () => JSON.parse(raw)) as Record<string, unknown>
+        measureNodeOpenWork('sse_dispatch', raw.length, () => processAppEvent(payload))
       } catch (error) {
         console.error('Failed to process app event stream payload.', error)
       }

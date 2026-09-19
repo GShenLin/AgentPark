@@ -17,11 +17,17 @@ from src.cli_provider_runtime.responses_conversion import stream_failed
 
 from .access_log import PublicGatewayAccessLog
 from .access_log import safe_error_message
+from .access_log import request_fields as _request_fields, new_request_id as _request_id
 from .service import PublicGatewayService
+from .usage_stats import GatewayUsageAccumulator
+from .usage_stats import PublicGatewayUsageStore
+from .request_diagnostics import register_request_diagnostics
 
 
 def register_public_gateway_routes(app: FastAPI, service: PublicGatewayService) -> None:
     access_log = PublicGatewayAccessLog(service.workspace_root)
+    register_request_diagnostics(app, access_log)
+    usage_store = PublicGatewayUsageStore(service.workspace_root)
 
     @app.get("/v1/models")
     def list_models(request: Request):
@@ -50,15 +56,23 @@ def register_public_gateway_routes(app: FastAPI, service: PublicGatewayService) 
 
     @app.post("/v1/responses")
     def responses(request: Request, payload: dict[str, Any]):
-        return _dispatch(request, service, "responses", payload, access_log)
+        return _dispatch(request, service, "responses", payload, access_log, usage_store)
 
     @app.post("/v1/chat/completions")
     def chat_completions(request: Request, payload: dict[str, Any]):
-        return _dispatch(request, service, "chat_completions", payload, access_log)
+        return _dispatch(request, service, "chat_completions", payload, access_log, usage_store)
 
     @app.post("/v1/messages")
     def messages(request: Request, payload: dict[str, Any]):
-        return _dispatch(request, service, "messages", payload, access_log)
+        return _dispatch(request, service, "messages", payload, access_log, usage_store)
+
+    @app.post("/v1/images/generations")
+    def images_generations(request: Request, payload: dict[str, Any]):
+        return _dispatch(request, service, "images_generations", payload, access_log, usage_store)
+
+    @app.post("/v1/images/edits")
+    def images_edits(request: Request, payload: dict[str, Any]):
+        return _dispatch(request, service, "images_edits", payload, access_log, usage_store)
 
 
 def _dispatch(
@@ -67,6 +81,7 @@ def _dispatch(
     protocol: str,
     payload: dict[str, Any],
     access_log: PublicGatewayAccessLog,
+    usage_store: PublicGatewayUsageStore,
 ):
     request_id = _request_id()
     started_at = time.perf_counter()
@@ -93,6 +108,7 @@ def _dispatch(
         request_fields.update(route)
         access_log.record("request_routed", **request_fields)
         result = service.dispatch(protocol, payload)
+        usage_accumulator = GatewayUsageAccumulator(protocol)
         headers = {"x-request-id": request_id}
         if result.stream is not None:
             access_log.record(
@@ -109,10 +125,22 @@ def _dispatch(
                     access_log=access_log,
                     request_fields=request_fields,
                     started_at=started_at,
+                    status=result.status,
+                    usage_accumulator=usage_accumulator,
+                    usage_store=usage_store,
                 ),
                 status_code=result.status,
                 media_type=result.content_type,
                 headers={**headers, "Cache-Control": "no-cache"},
+            )
+        usage_accumulator.consume_json(result.json_body)
+        if 200 <= result.status < 300:
+            _record_usage(
+                usage_store,
+                usage_accumulator,
+                access_log=access_log,
+                request_fields=request_fields,
+                protocol=protocol,
             )
         access_log.record(
             "request_completed",
@@ -173,9 +201,14 @@ def _guard_stream(
     access_log: PublicGatewayAccessLog,
     request_fields: dict[str, Any],
     started_at: float,
+    status: int,
+    usage_accumulator: GatewayUsageAccumulator,
+    usage_store: PublicGatewayUsageStore,
 ) -> Iterable[bytes]:
     try:
-        yield from stream
+        for chunk in stream:
+            usage_accumulator.consume_stream_chunk(chunk)
+            yield chunk
     except Exception as exc:
         access_log.record(
             "stream_failed",
@@ -204,11 +237,44 @@ def _guard_stream(
         }
         yield f"data: {_json(payload)}\n\ndata: [DONE]\n\n".encode("utf-8")
     else:
+        if 200 <= status < 300:
+            _record_usage(
+                usage_store,
+                usage_accumulator,
+                access_log=access_log,
+                request_fields=request_fields,
+                protocol=protocol,
+            )
         access_log.record(
             "stream_completed",
             **request_fields,
             status=200,
             durationMs=_duration_ms(started_at),
+        )
+
+
+def _record_usage(
+    usage_store: PublicGatewayUsageStore,
+    accumulator: GatewayUsageAccumulator,
+    *,
+    access_log: PublicGatewayAccessLog,
+    request_fields: dict[str, Any],
+    protocol: str,
+) -> None:
+    try:
+        usage_store.record_completed(
+            request_id=str(request_fields["requestId"]),
+            client_ip=str(request_fields.get("clientIp") or ""),
+            model_id=str(request_fields.get("publicModel") or ""),
+            protocol=protocol,
+            usage=accumulator.usage(),
+        )
+    except Exception as exc:
+        access_log.record(
+            "usage_record_failed",
+            **request_fields,
+            errorType=type(exc).__name__,
+            error=safe_error_message(exc),
         )
 
 
@@ -232,24 +298,6 @@ def _logged_error(
     response = _error(protocol, status, message)
     response.headers["x-request-id"] = str(request_fields["requestId"])
     return response
-
-
-def _request_fields(request: Request, request_id: str) -> dict[str, Any]:
-    client_ip = request.client.host if request.client else ""
-    return {
-        "requestId": request_id,
-        "clientIp": client_ip,
-        "method": request.method,
-        "path": request.url.path,
-        "userAgent": request.headers.get("user-agent", "")[:200],
-        "authorizationPresent": bool(
-            request.headers.get("authorization") or request.headers.get("x-api-key")
-        ),
-    }
-
-
-def _request_id() -> str:
-    return f"req_{uuid.uuid4().hex}"
 
 
 def _duration_ms(started_at: float) -> int:

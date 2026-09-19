@@ -50,7 +50,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
         )
     if provider_type == "grok":
         responses_api = config.get("responsesApi") is True
-        reasoning_effort_values = grok_reasoning_effort_values(config.get("model"))
+        reasoning_effort_values = grok_reasoning_effort_values()
         return _payload(
             responses_api={
                 "supported": responses_api,
@@ -75,6 +75,9 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
         )
     if provider_type == "deepseek":
         responses_api = config.get("responsesApi") is True
+        thinking_default = str(config.get("thinking") or "enabled").strip().lower()
+        if thinking_default not in {"enabled", "disabled"}:
+            thinking_default = "enabled"
         return _payload(
             responses_api={
                 "supported": responses_api,
@@ -87,6 +90,7 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
             thinking={
                 "supported": True,
                 "values": ["enabled", "disabled"],
+                "default": thinking_default,
                 "transport": "responses" if responses_api else "chat_completions",
             },
             reasoning_effort={
@@ -94,7 +98,12 @@ def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dic
                 "values": ["high", "max"],
                 "transport": "responses" if responses_api else "chat_completions",
             },
-            reasoning_summary={"supported": False, "values": []},
+            reasoning_summary={
+                "supported": responses_api,
+                "values": ["auto", "concise", "detailed", "disabled"] if responses_api else [],
+                "requires": "responsesApi=true",
+                "transport": "responses" if responses_api else "",
+            },
         )
     if provider_type == "kimi":
         family = kimi_model_family(config.get("model"))
@@ -214,4 +223,7 @@ def _feature(value: dict[str, Any]) -> dict[str, Any]:
     transport = str(value.get("transport") or "").strip()
     if transport:
         out["transport"] = transport
+    default = str(value.get("default") or "").strip()
+    if default:
+        out["default"] = default
     return out

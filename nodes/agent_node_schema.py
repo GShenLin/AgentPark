@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.capabilities.registry import CapabilityRegistry
 from src.audio_speaker_catalog import AudioSpeakerCatalog
 from src.config_loader import ConfigLoader
+from src.provider_models import provider_model_ids
 from nodes.agent_node_modes import MODE_ORDER, capability_mode, modes_for_field
 from nodes.agent_image_generation_schema import materialize_image_generation_schema
 
@@ -19,6 +20,13 @@ def build_agent_config_schema(base_schema: dict, context: dict | None) -> dict:
     else:
         provider_config = {}
     provider_features = dict(provider_config.get("features") or {})
+    model_schema = dict(schema.get("model") or {})
+    model_schema["type"] = "select"
+    model_schema["options"] = [
+        {"value": model_id, "label": model_id}
+        for model_id in provider_model_ids(provider_config)
+    ]
+    schema["model"] = model_schema
     configured_modes = provider_config.get("supportmode")
     provider_modes = (
         [str(mode).strip() for mode in configured_modes if str(mode).strip() in MODE_ORDER]

@@ -39,6 +39,11 @@ import { t } from '../i18n'
 const props = defineProps<{
   initialGraphs: GraphInfo[]
   initialGraphProfiles: GraphProfile[]
+  closable?: boolean
+}>()
+
+const emit = defineEmits<{
+  close: []
 }>()
 
 const {
@@ -761,8 +766,10 @@ onBeforeUnmount(() => {
       :is-saving="isSaving"
       :graph-status="graphStatus"
       :can-clear-memory="canClearMemory"
+      :closable="props.closable === true"
       @clear-memory="clearSelectedNodeMemory"
       @toggle-file-mode="toggleFileMode"
+      @close="emit('close')"
     />
 
     <CliSessionPicker

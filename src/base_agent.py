@@ -6,6 +6,7 @@ import os
 import time
 from src.base_agent_manager import BaseAgentManager
 from src.config_loader import ConfigLoader
+from src.provider_models import resolve_provider_model
 from src.base_memory import BaseMemory
 from src.providers.provider_request_summary import build_provider_request_summary
 from src.providers.provider_request_summary import next_provider_request_index
@@ -22,9 +23,13 @@ from src.tool.base_tool import BaseTool
 from src.tool_failure_memory_notice import ToolFailureMemoryNoticeMixin
 from src.tool_context_compaction_gate import ToolContextCompactionGateMixin
 from src.tool_context_compaction_trigger import ToolContextCompactionWindow
+from src.agent_step_ledger import AgentStepLedgerMixin
+from src.session_context_compaction import SessionContextCompactionMixin
 
 
 class BaseAgent(
+    AgentStepLedgerMixin,
+    SessionContextCompactionMixin,
     ProviderMessagePolicyMixin,
     ToolContextCompactionGateMixin,
     ToolFailureMemoryNoticeMixin,
@@ -41,6 +46,8 @@ class BaseAgent(
         self.tools = BaseTool(self)
         self.manager = BaseAgentManager(self)
         self._provider_request_tracker = ProviderRequestTracker()
+        self._agentpark_current_step_id = ""
+        self._agentpark_current_request_id = ""
         if isinstance(system_prompt, str) and system_prompt.strip():
             self.RuntimeInstruction(system_prompt.strip())
         if self.internal_memory_enabled:
@@ -194,7 +201,12 @@ class BaseAgent(
         if not provider_name:
             return self.config
 
-        return ConfigLoader().get_provider_config(provider_name)
+        config = ConfigLoader().get_provider_config(provider_name)
+        selected_model = getattr(self, "selected_model_id", None)
+        resolved_model = resolve_provider_model({**config, "id": provider_name}, selected_model)
+        if resolved_model:
+            config["model"] = resolved_model
+        return config
 
     def _get_provider_config(self):
         return self.config

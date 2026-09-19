@@ -1932,7 +1932,7 @@ def test_responses_merges_developer_context_after_persisted_runtime_user_context
     assert agent._send_via_responses(
         messages=[
             {"role": "system", "content": "Base instructions."},
-            {"role": "developer", "content": "Operational memory for this node:\n- Use current evidence."},
+            {"role": "developer", "content": "Long-term memory for this node:\n- Use current evidence."},
             {"role": "user", "content": "hello"},
         ],
         active_tools=[],
@@ -1943,12 +1943,12 @@ def test_responses_merges_developer_context_after_persisted_runtime_user_context
     assert first["role"] == "developer"
     first_texts = [part["text"] for part in first["content"]]
     assert first_texts[0].startswith("<permissions instructions>")
-    assert any(text.startswith("Operational memory for this node:") for text in first_texts)
+    assert any(text.startswith("Long-term memory for this node:") for text in first_texts)
     assert all(
         not (
             item.get("role") == "developer"
             and item.get("content")
-            and item["content"][0].get("text", "").startswith("Operational memory for this node:")
+            and item["content"][0].get("text", "").startswith("Long-term memory for this node:")
         )
         for item in payloads[0]["input"][1:]
     )
@@ -1989,7 +1989,7 @@ def test_responses_context_history_strips_operational_memory_from_persisted_deve
                 "role": "developer",
                 "content": [
                     {"type": "input_text", "text": "<permissions instructions>\nExisting.\n</permissions instructions>"},
-                    {"type": "input_text", "text": "Operational memory for this node:\n- stale memory."},
+                    {"type": "input_text", "text": "Long-term memory for this node:\n- stale memory."},
                 ],
                 "status": "completed",
             }
@@ -2006,7 +2006,7 @@ def test_responses_context_history_strips_operational_memory_from_persisted_deve
 
     assert agent._send_via_responses(
         messages=[
-            {"role": "developer", "content": "Operational memory for this node:\n- fresh memory."},
+            {"role": "developer", "content": "Long-term memory for this node:\n- fresh memory."},
             {"role": "user", "content": "hello"},
         ],
         active_tools=[],
@@ -2014,10 +2014,10 @@ def test_responses_context_history_strips_operational_memory_from_persisted_deve
     ) == "ok"
 
     developer_texts = [part["text"] for part in payloads[0]["input"][0]["content"]]
-    operational_texts = [text for text in developer_texts if text.startswith("Operational memory for this node:")]
-    assert operational_texts == ["Operational memory for this node:\n- fresh memory."]
+    operational_texts = [text for text in developer_texts if text.startswith("Long-term memory for this node:")]
+    assert operational_texts == ["Long-term memory for this node:\n- fresh memory."]
     saved_history = json.loads((tmp_path / "agent_context_history.json").read_text(encoding="utf-8"))
-    assert "Operational memory for this node:" not in json.dumps(saved_history, ensure_ascii=False)
+    assert "Long-term memory for this node:" not in json.dumps(saved_history, ensure_ascii=False)
 
 
 def test_responses_plan_collaboration_mode_injects_developer_context(tmp_path):
@@ -2368,7 +2368,7 @@ def test_responses_merges_initial_developer_context_before_user_context(tmp_path
     assert agent._send_via_responses(
         messages=[
             {"role": "system", "content": "System prompt."},
-            {"role": "developer", "content": "Operational memory for this node:\n- Keep it short."},
+            {"role": "developer", "content": "Long-term memory for this node:\n- Keep it short."},
             {"role": "user", "content": "hello"},
         ],
         active_tools=[],
@@ -2380,7 +2380,7 @@ def test_responses_merges_initial_developer_context_before_user_context(tmp_path
     assert first["role"] == "developer"
     assert first["content"][0]["text"].startswith("<permissions instructions>")
     assert first["content"][1]["text"] == "System prompt."
-    assert first["content"][2]["text"].startswith("Operational memory for this node:")
+    assert first["content"][2]["text"].startswith("Long-term memory for this node:")
     assert not any(item.get("role") == "system" for item in payloads[0]["input"])
     assert any(item.get("role") == "user" and item["content"][0]["text"].startswith("<environment_context>") for item in payloads[0]["input"])
     assert all(item.get("role") != "developer" for item in payloads[0]["input"][1:])

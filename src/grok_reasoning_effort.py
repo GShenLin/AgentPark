@@ -1,35 +1,32 @@
 from __future__ import annotations
 
 
-GROK_REASONING_EFFORT_VALUES_BY_MODEL = {
-    "grok-4.5": ("low", "medium", "high"),
-}
+GROK_REASONING_EFFORT_VALUES = ("low", "medium", "high", "xhigh")
 
 
-def require_grok_reasoning_effort(model: object, value: object) -> str:
+def normalize_grok_reasoning_effort(value: object) -> str:
+    """Translate AgentPark's provider-neutral value at the Grok boundary."""
     if value in (None, ""):
         return ""
     if not isinstance(value, str):
-        raise ValueError(_error_message(model))
+        raise ValueError("Grok reasoning_effort must be a string.")
     effort = value.strip().lower()
-    if not effort:
+    # `none` is part of AgentPark's common agent configuration. At the Grok
+    # provider boundary it means no explicit effort field is sent.
+    if effort in {"", "none"}:
         return ""
-    model_name = str(model or "").strip().lower()
-    supported_values = GROK_REASONING_EFFORT_VALUES_BY_MODEL.get(model_name)
-    if supported_values is None:
-        raise ValueError(f"Grok reasoning_effort is not defined for model '{model_name or '<empty>'}'.")
-    if effort not in supported_values:
-        raise ValueError(_error_message(model))
     return effort
 
 
-def grok_reasoning_effort_values(model: object) -> list[str]:
-    model_name = str(model or "").strip().lower()
-    return list(GROK_REASONING_EFFORT_VALUES_BY_MODEL.get(model_name, ()))
+def require_grok_reasoning_effort(value: object) -> str:
+    effort = normalize_grok_reasoning_effort(value)
+    if not effort:
+        return ""
+    if effort not in GROK_REASONING_EFFORT_VALUES:
+        allowed = ", ".join(GROK_REASONING_EFFORT_VALUES)
+        raise ValueError(f"Grok reasoning_effort must be one of: {allowed}.")
+    return effort
 
 
-def _error_message(model: object) -> str:
-    model_name = str(model or "").strip() or "configured model"
-    if model_name.lower() == "grok-4.5":
-        return "Grok 4.5 reasoning_effort must be low, medium, or high."
-    return f"Grok reasoning_effort is invalid for model '{model_name}'."
+def grok_reasoning_effort_values() -> list[str]:
+    return list(GROK_REASONING_EFFORT_VALUES)

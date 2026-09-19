@@ -11,7 +11,7 @@ from src.web_backend.core import BackendCore
 from src.web_backend.graph_node_execution import GraphNodeExecution
 from src.web_backend.node_config_service import node_config_service
 from src.web_backend.node_memory_store import append_node_memory_entry, load_recent_node_memory_records
-from src.operational_memory import load_operational_memory
+from src.long_term_memory.store import MemoryStore
 from src.message_protocol import build_text_envelope
 
 
@@ -593,8 +593,7 @@ def test_graph_execution_emits_work_persisted_after_success(tmp_path, monkeypatc
     assert host.runtime_events.events[-1]["payload"]["final_message_preview"] == "done"
     assert host.runtime_events.events[-1]["payload"]["messages_path"].endswith("messages.jsonl")
     assert host.runtime_events.events[-1]["payload"]["user_context_path"].endswith("User.md")
-    assert host.runtime_events.events[-1]["payload"]["soul_context_path"].endswith("Soul.md")
-    assert host.runtime_events.events[-1]["payload"]["long_term_memory_path"].endswith("long_term_memory.sqlite3")
+    assert host.runtime_events.events[-1]["payload"]["long_term_memory_path"].endswith("state.sqlite3")
     alert = next(item for item in host.graph_events if item["event"] == "work_persisted_alert")
     assert alert["graph_id"] == "Test"
     assert alert["node_instance_id"] == "Agent"
@@ -629,7 +628,7 @@ def test_graph_execution_emits_work_failed_after_error_persistence(tmp_path, mon
     assert "RuntimeError: boom" in host.runtime_events.events[-1]["payload"]["error"]
 
 
-def test_persistent_context_result_uses_operational_memory_patch(tmp_path, monkeypatch):
+def test_persistent_context_result_adds_node_memory_note(tmp_path, monkeypatch):
     _patch_workspace(monkeypatch, tmp_path)
     _write_graph_node(tmp_path, "Test", "Agent")
     core = BackendCore()
@@ -645,11 +644,11 @@ def test_persistent_context_result_uses_operational_memory_patch(tmp_path, monke
         trace_id="trace-memory",
         payload={},
     )
-    memory = load_operational_memory(str(tmp_path / "memories" / "Test" / "Agent" / "operational_memory.json"))
+    memory = MemoryStore(tmp_path / "memories" / "Test" / "Agent", "Test", "Agent")
 
     assert result["matched"] == 1
     assert result["artifacts"] == 1
-    assert memory["memories"]
+    assert memory.notes()
     assert core.runtime_events.consume_context_fragments(graph_id="Test", node_id="Agent") == []
 
 
@@ -949,7 +948,6 @@ def test_temporary_receiver_cleanup_preserves_merge_state_when_destroy_fails(tmp
     assert temp_dir.exists()
     assert state["status"] == "merge_error"
     assert state["records_merged"] is True
-    assert state["operational_memory_merged"] is True
     assert any("destroy failed" in json.dumps(item, ensure_ascii=False) for item in records)
 
 

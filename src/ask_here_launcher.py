@@ -7,9 +7,7 @@ import os
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
-import webbrowser
 from datetime import datetime
 from typing import Any
 
@@ -78,88 +76,13 @@ def wait_for_server(timeout_seconds: float) -> str:
 
 def dispatch_folder(folder_path: str) -> dict[str, Any]:
     target = _resolve_target(folder_path)
-    path = target["path"]
-    working_path = target["working_path"]
-    base_url = resolve_server_base_url()
-    _debug_log("dispatch-start", path=path, working_path=working_path, target_kind=target["kind"], base_url=base_url)
-    views_payload = _request_json("GET", _node_views_url(base_url))
-    views = _running_pet_views(views_payload.get("views"))
-    matching_views = _matching_working_path_views(views, working_path) if working_path else []
-    _debug_log(
-        "dispatch-views",
-        path=path,
-        working_path=working_path,
-        target_kind=target["kind"],
-        total_views=len(views),
-        matching_views=len(matching_views),
-        view_ids=[str(view.get("view_id") or "") for view in views],
-    )
-    if len(matching_views) == 1:
-        return _launch_pet_for_path(base_url, matching_views[0], target, "matching_pet")
-    if len(matching_views) > 1:
-        picker_url = _ask_here_picker_url(base_url, target)
-        opened = webbrowser.open_new_tab(picker_url)
-        if not opened:
-            raise AskHereError(f"failed to open Pet picker tab: {picker_url}")
-        _debug_log("dispatch-picker", mode="matching_picker", path=path, working_path=working_path, target_kind=target["kind"], pet_count=len(matching_views), url=picker_url)
-        print(f"[AskHere] opened matching Pet picker for {path}")
-        return {"mode": "matching_picker", "path": path, "working_path": working_path, "url": picker_url, "pet_count": len(matching_views)}
-    if len(views) == 1:
-        return _launch_pet_for_path(base_url, views[0], target, "single_pet")
-    if not views:
-        companion_working_path = working_path or os.path.dirname(path)
-        try:
-            result = dispatch_to_companion_cli(companion_working_path)
-        except Exception as exc:
-            raise AskHereError(f"failed to route folder to Companion CLI: {exc}") from exc
-        _debug_log(
-            "dispatch-companion-cli",
-            path=path,
-            working_path=companion_working_path,
-            target_kind=target["kind"],
-            mode=result.get("mode"),
-            pid=result.get("pid"),
-        )
-        print(f"[AskHere] routed {path} to Companion CLI")
-        return {"path": path, **result}
-
-    picker_url = _ask_here_picker_url(base_url, target)
-    opened = webbrowser.open_new_tab(picker_url)
-    if not opened:
-        raise AskHereError(f"failed to open Pet picker tab: {picker_url}")
-    _debug_log("dispatch-picker", mode="picker", path=path, working_path=working_path, target_kind=target["kind"], pet_count=len(views), url=picker_url)
-    print(f"[AskHere] opened Pet picker for {path}")
-    return {"mode": "picker", "path": path, "working_path": working_path, "url": picker_url, "pet_count": len(views)}
-
-
-def _launch_pet_for_path(base_url: str, view: dict[str, Any], target: dict[str, str], mode: str) -> dict[str, Any]:
-    path = target["path"]
-    working_path = target["working_path"]
-    payload = {
-        "graph_id": str(view.get("graph_id") or ""),
-        "node_id": str(view.get("node_id") or ""),
-        "visible": True,
-        "pinned": bool(view.get("pinned", True)),
-        "open_chat": True,
-        "draft_prefix": f"{path}\n",
-    }
-    if working_path:
-        payload["working_path"] = working_path
-    _debug_log(
-        "dispatch-launch",
-        mode=mode,
-        path=path,
-        working_path=working_path,
-        target_kind=target["kind"],
-        graph_id=payload["graph_id"],
-        node_id=payload["node_id"],
-        view_id=str(view.get("view_id") or ""),
-        base_url=base_url,
-    )
-    result = _request_json("POST", f"{base_url}/api/node-desktop-views/launch", payload)
-    _debug_log("dispatch-launch-success", mode=mode, path=path, working_path=working_path, target_kind=target["kind"], pid=result.get("pid"))
-    print(f"[AskHere] opened Pet chat for {path}")
-    return {"mode": mode, "path": path, "working_path": working_path, "result": result}
+    working_path = target["working_path"] or os.path.dirname(target["path"])
+    try:
+        result = dispatch_to_companion_cli(working_path)
+    except Exception as exc:
+        raise AskHereError(f"failed to route folder to Companion CLI: {exc}") from exc
+    _debug_log("dispatch-companion-cli", path=target["path"], working_path=working_path, mode=result.get("mode"))
+    return {"path": target["path"], **result}
 
 
 def resolve_server_base_url() -> str:
@@ -248,10 +171,6 @@ def _base_url_from_host_port(host: object, port: object) -> str:
     return f"http://{safe_host}:{safe_port}"
 
 
-def _node_views_url(base_url: str) -> str:
-    return f"{base_url}/api/node-desktop-views"
-
-
 def _health_url(base_url: str) -> str:
     return f"{base_url}/api/graphs"
 
@@ -276,53 +195,6 @@ def _request_json(method: str, url: str, payload: dict[str, Any] | None = None, 
     if not isinstance(parsed, dict):
         raise AskHereError("AgentPark API response must be an object")
     return parsed
-
-
-def _running_pet_views(value: object) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        raise AskHereError("node desktop views response field 'views' must be a list")
-    result: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        if item.get("available") is False:
-            continue
-        if item.get("visible") is False:
-            continue
-        graph_id = str(item.get("graph_id") or "").strip()
-        node_id = str(item.get("node_id") or "").strip()
-        view_id = str(item.get("view_id") or "").strip()
-        if graph_id and node_id and view_id:
-            result.append(item)
-    return result
-
-
-def _matching_working_path_views(views: list[dict[str, Any]], folder_path: str) -> list[dict[str, Any]]:
-    target = _normalize_match_path(folder_path)
-    result: list[dict[str, Any]] = []
-    for view in views:
-        node = view.get("node")
-        if not isinstance(node, dict):
-            continue
-        working_path = _normalize_match_path(str(node.get("working_path") or ""))
-        if working_path and working_path == target:
-            result.append(view)
-    return result
-
-
-def _normalize_match_path(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    return os.path.normcase(os.path.abspath(os.path.expanduser(text)))
-
-
-def _ask_here_picker_url(base_url: str, target: dict[str, str]) -> str:
-    query_payload = {"ask_here": "1", "target_path": target["path"], "target_kind": target["kind"]}
-    if target["working_path"]:
-        query_payload["working_path"] = target["working_path"]
-    query = urllib.parse.urlencode(query_payload)
-    return f"{base_url}/?{query}"
 
 
 def _resolve_target(value: object) -> dict[str, str]:

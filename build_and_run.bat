@@ -8,6 +8,18 @@ if not "%~1"=="" (
     echo [ERROR] build_and_run.bat does not accept arguments.
     exit /b 2
 )
+rem Capture only startup output. The interactive Companion must retain its console.
+if defined AGENTPARK_STARTUP_LOG (
+    call :prepare_startup > "%AGENTPARK_STARTUP_LOG%" 2>&1
+) else (
+    call :prepare_startup
+)
+set "AGENTPARK_START_EXIT=!errorlevel!"
+if not "!AGENTPARK_START_EXIT!"=="0" exit /b !AGENTPARK_START_EXIT!
+if defined AGENTPARK_STARTUP_READY_FILE >"%AGENTPARK_STARTUP_READY_FILE%" echo ready
+goto run_companion
+
+:prepare_startup
 for %%I in ("%AGENTPARK_WORKSPACE_ROOT%") do set "AGENTPARK_WORKSPACE_NAME=%%~nxI"
 title AgentPark Launcher - %AGENTPARK_WORKSPACE_NAME%
 echo [INFO] Checking repository before startup...
@@ -43,16 +55,17 @@ cd webui
 echo [INFO] Current working directory: %cd%
 
 echo [INFO] Installing/updating WebUI dependencies...
-set "AGENTPARK_UPDATE_COMMAND=npm install"
+set "AGENTPARK_UPDATE_COMMAND=npm install --no-audit"
 call :run_optional_dependency_update "WebUI dependency update"
 
 echo [INFO] Compiling WebUI...
 call npm run build
 
 if %errorlevel% neq 0 (
-    echo [ERROR] WebUI build failed with error code %errorlevel%
+    set "AGENTPARK_BUILD_EXIT=!errorlevel!"
+    echo [ERROR] WebUI build failed with error code !AGENTPARK_BUILD_EXIT!
     call :maybe_pause
-    exit /b %errorlevel%
+    exit /b !AGENTPARK_BUILD_EXIT!
 )
 
 echo [INFO] WebUI build successful.
@@ -64,27 +77,22 @@ echo [INFO] Installing/updating AgentPark Python dependencies...
 set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install --no-build-isolation -e ."
 call :run_optional_dependency_update "AgentPark Python dependency update"
 
-if exist "desktop\pet\package.json" (
-    echo [INFO] Installing/updating Desktop pet dependencies...
-    pushd desktop\pet
-    set "AGENTPARK_UPDATE_COMMAND=npm install"
-    call :run_optional_dependency_update "Desktop pet dependency update"
-    popd
-) else (
-    echo [WARN] Desktop pet package not found: desktop\pet\package.json
-)
-
 call :stop_existing_workspace_processes
 if errorlevel 1 (
+    set "AGENTPARK_START_EXIT=!errorlevel!"
     call :maybe_pause
-    exit /b %errorlevel%
+    exit /b !AGENTPARK_START_EXIT!
 )
 call :start_background_server
 if errorlevel 1 (
+    set "AGENTPARK_START_EXIT=!errorlevel!"
     call :maybe_pause
-    exit /b %errorlevel%
+    exit /b !AGENTPARK_START_EXIT!
 )
 
+exit /b 0
+
+:run_companion
 echo [INFO] Starting AgentPark CLI: python -m src.cli !AGENTPARK_CLI_ARGS!
 "%PYTHON_EXE%" -m src.cli !AGENTPARK_CLI_ARGS!
 set "AGENTPARK_CLI_EXIT=!errorlevel!"
@@ -135,16 +143,18 @@ set "AGENTPARK_WEB_STDOUT=%cd%\.runtime\agentpark-server.log"
 set "AGENTPARK_WEB_STDERR=%cd%\.runtime\agentpark-server.err.log"
 set "AGENTPARK_WORKSPACE_ROOT=%cd%"
 set "AGENTPARK_PYTHON_EXE=%PYTHON_EXE%"
+set "AGENTPARK_STARTED_PROCESS_FILE=%cd%\.runtime\startup-process.pid"
 echo [INFO] Starting AgentPark web server in background. Logs:
 echo [INFO]   %AGENTPARK_WEB_STDOUT%
 echo [INFO]   %AGENTPARK_WEB_STDERR%
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AGENTPARK_PYTHON_EXE; $root=$env:AGENTPARK_WORKSPACE_ROOT; $stdout=$env:AGENTPARK_WEB_STDOUT; $stderr=$env:AGENTPARK_WEB_STDERR; $launcher=(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId; $env:AGENTPARK_EXIT_WHEN_PID_EXITS=[string]$launcher; $arguments=@('-m','src.fast_api','--workspace-root',$root); Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AGENTPARK_PYTHON_EXE; $root=$env:AGENTPARK_WORKSPACE_ROOT; $stdout=$env:AGENTPARK_WEB_STDOUT; $stderr=$env:AGENTPARK_WEB_STDERR; $launcher=(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId; $env:AGENTPARK_EXIT_WHEN_PID_EXITS=[string]$launcher; $arguments=@('-m','src.fast_api','--workspace-root',('\"' + $root + '\"')); $serverProcess=Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru; Set-Content -LiteralPath $env:AGENTPARK_STARTED_PROCESS_FILE -Value $serverProcess.Id -Encoding UTF8"
 if errorlevel 1 (
     echo [ERROR] Failed to start AgentPark web server in background.
     exit /b %errorlevel%
 )
-echo [INFO] Web server process launched.
-exit /b 0
+echo [INFO] Waiting for the new web server to become ready...
+"%PYTHON_EXE%" -m src.startup_health --workspace-root "%cd%" --process-file "%AGENTPARK_STARTED_PROCESS_FILE%"
+exit /b %errorlevel%
 
 :stop_existing_workspace_processes
 if not exist "scripts\restart_agentpark.ps1" exit /b 0

@@ -19,7 +19,7 @@ def test_codex_node_exposes_provider_dropdown_and_runtime_configuration(monkeypa
         ]
 
     monkeypatch.setattr(
-        "nodes.codex_node.build_provider_options_for_support_modes",
+        "src.harness.node.build_provider_options_for_support_modes",
         fake_provider_options,
     )
     node = Node()
@@ -70,14 +70,15 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
             return "done"
 
     monkeypatch.setattr(
-        "nodes.codex_node.ConfigLoader",
+        "src.harness.provider_binding.ConfigLoader",
         lambda: SimpleNamespace(get_provider_config=lambda _provider_id: {
             "model": "test-model",
-            "type": "custom",
+            "type": "openai",
+            "supportmode": ["chat"],
         }),
     )
     monkeypatch.setattr(
-        "nodes.codex_node.CodexSessionManager.instance",
+        "src.harness.adapters.codex.CodexSessionManager.instance",
         lambda: FakeManager(),
     )
     context = {

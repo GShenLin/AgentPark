@@ -11,6 +11,7 @@ from nodes.agent_node_contract import (
 )
 from nodes.agent_assistant_memory import persist_provider_turn_metadata
 from nodes.agent_history import load_agent_history_messages
+from nodes.agent_gateway_usage import build_agent_gateway_usage_recorder
 from nodes.agent_message_adapter import (
     append_channel_meta,
     build_agent_output_message,
@@ -45,11 +46,14 @@ from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
 from src.restart_recovery_context import render_restart_recovery_context
 from src.config_loader import ConfigLoader
+from src.conversation_context.checkpoint import estimate_tokens
+from src.conversation_context.settings import ConversationSettings
 from src.access_policy import nondeveloper_filtered_tools
 from src.media_resource_utils import resolve_public_base_url
 from src.message_protocol import envelope_text, normalize_envelope
-from src.operational_memory import build_operational_memory_summary
+from src.long_term_memory.service import prepare_node_memory
 from src.providers import create_agent
+from src.provider_models import resolve_provider_model
 from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
 from src.providers.provider_request_usage import ProviderRequestTracker
 from src.runtime_events.context_injection import runtime_event_context_from_context
@@ -65,11 +69,15 @@ from src.web_backend.node_goal_runtime import node_goal_context
 from src.web_backend.state_store import _consume_node_mid_turn_user_inputs
 
 
-def _resolved_agent_node_settings():
+def _workspace_config():
     loader = ConfigLoader()
     workspace_config = getattr(loader, "get_workspace_config", None)
     config = workspace_config() if callable(workspace_config) else loader.get_config()
-    return resolve_agent_node_settings(config)
+    return config
+
+
+def _resolved_agent_node_settings():
+    return resolve_agent_node_settings(_workspace_config())
 
 
 class Node(BaseNode):
@@ -97,6 +105,10 @@ class Node(BaseNode):
         run_request = load_agent_node_run_request(ctx, config_path=config_path)
         input_message = normalize_envelope(message, default_role="user")
         provider_config = ConfigLoader().get_provider_config(run_request.provider_id)
+        selected_model_id = resolve_provider_model(
+            {**provider_config, "id": run_request.provider_id},
+            run_request.model_id,
+        )
         run_mode = resolve_input_support_mode(provider_config.get("supportmode"), input_message)
         capability_plan = (
             resolve_agent_capabilities(
@@ -127,6 +139,7 @@ class Node(BaseNode):
             memory_file_path=memory_path,
             system_prompt=run_request.system_prompt if isinstance(run_request.system_prompt, str) else None,
             internal_memory_enabled=False,
+            model_id=selected_model_id,
         )
         resolved_public_base_url = resolve_public_base_url(run_request.public_base_url, run_request.provider_id)
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
@@ -143,7 +156,19 @@ class Node(BaseNode):
             memory_path=memory_path,
             messages_path=self._resolve_messages_path(ctx),
         )
-        provider_request_tracker = ProviderRequestTracker()
+        provider_config = getattr(agent, "config", None)
+        provider_model_id = (
+            str(provider_config.get("model") or "").strip()
+            if isinstance(provider_config, dict)
+            else ""
+        )
+        record_provider_usage = build_agent_gateway_usage_recorder(
+            workspace_root=get_workspace_root(),
+            client_ip=str(ctx.get("access_ip") or ""),
+            task_id=task_id,
+            model_id=provider_model_id,
+        )
+        provider_request_tracker = ProviderRequestTracker(on_completion=record_provider_usage)
         def consume_mid_turn_user_inputs() -> list[dict]:
             messages: list[dict] = []
             for pending_item in _consume_node_mid_turn_user_inputs(config_path):
@@ -180,6 +205,7 @@ class Node(BaseNode):
                 remote_enabled=run_request.remote_enabled,
                 remote_worker_id=run_request.remote_worker_id,
                 collaboration_mode=run_request.collaboration_mode,
+                client_ip=str(ctx.get("access_ip") or ""),
                 shell="powershell" if os.name == "nt" else "",
                 responses_instruction=effective_instruction(agent, run_request.instruction)
                 if uses_responses_api_context(agent)
@@ -228,11 +254,12 @@ class Node(BaseNode):
             resolved_instruction = effective_instruction(agent, run_request.instruction)
             if resolved_instruction:
                 agent.Message(instruction_role, resolved_instruction, persist=False)
-        operational_memory_summary = build_operational_memory_summary(
-            os.path.join(os.path.dirname(memory_path), "operational_memory.json") if memory_path else ""
-        )
-        if operational_memory_summary:
-            agent.Message(instruction_role, operational_memory_summary, persist=False)
+        if capability_mode(run_mode):
+            prepare_node_memory(
+                agent, node_dir=agent_dir, graph_id=run_request.graph_id,
+                node_id=run_request.agent_id, provider_id=run_request.provider_id,
+                role=instruction_role, active_trace=task_id,
+            )
         if capability_plan.mcp_server_names:
             inject_mcp_server_context(
                 agent,
@@ -254,21 +281,38 @@ class Node(BaseNode):
         for fragment in runtime_event_context:
             agent.Message(fragment["role"], fragment["content"], persist=False)
 
-        history_message_limit = _resolved_agent_node_settings().history_message_limit
-        for history_message in load_agent_history_messages(
-            memory_path=memory_path,
-            messages_path=self._resolve_messages_path(ctx),
-            current_message=input_message,
-            provider_id=run_request.provider_id,
-            public_base_url=resolved_public_base_url,
-            history_message_limit=history_message_limit,
-        ):
-            agent.Message(history_message["role"], history_message["content"], persist=False)
-
         restart_recovery_context = render_restart_recovery_context(ctx.get("restart_recovery"))
+        user_content = build_agent_user_content(run_request.provider_id, run_mode, input_message, resolved_public_base_url)
+        if capability_mode(run_mode):
+            context_settings = ConversationSettings.from_config(_workspace_config())
+            compaction_provider_config = ConfigLoader().get_provider_config(context_settings.provider or run_request.provider_id)
+            compaction_tracker = ProviderRequestTracker(on_completion=build_agent_gateway_usage_recorder(
+                workspace_root=get_workspace_root(), client_ip=str(ctx.get("access_ip") or ""),
+                task_id=f"{task_id}:context", model_id=str(compaction_provider_config.get("model") or ""),
+            ))
+            reserved_tokens = estimate_tokens({
+                "messages": getattr(agent, "messages", []), "current_input": user_content,
+                "tools": getattr(agent, "tool_declarations", []),
+                "instructions": effective_instruction(agent, run_request.instruction),
+                "restart_context": restart_recovery_context,
+            }) + 256
+            # Persistent conversation history owns cross-input restoration. In-run provider compaction
+            # may still operate, but must not reinject an unrelated previous task ledger checkpoint.
+            agent._session_context_checkpoint_restored = True
+            for history_message in load_agent_history_messages(
+                memory_path=memory_path,
+                messages_path=self._resolve_messages_path(ctx),
+                current_message=input_message,
+                provider_id=run_request.provider_id,
+                public_base_url=resolved_public_base_url,
+                settings=context_settings, reserved_tokens=reserved_tokens,
+                graph_id=run_request.graph_id, node_id=run_request.agent_id,
+                cancel_source=cancel_source, tracker=compaction_tracker,
+            ):
+                agent.Message(history_message["role"], history_message["content"], persist=False)
+
         if restart_recovery_context:
             agent.Message(instruction_role, restart_recovery_context, persist=False)
-        user_content = build_agent_user_content(run_request.provider_id, run_mode, input_message, resolved_public_base_url)
         agent.Message("user", user_content, persist=False)
         web_search_mode = parse_switch_mode(run_request.web_search, default="disabled", allow_auto=False)
         thinking_mode = parse_switch_mode(run_request.thinking, default="disabled", allow_auto=False)

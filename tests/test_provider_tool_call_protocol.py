@@ -1966,11 +1966,13 @@ def test_gemini_function_response_content_parses_only_json_objects():
 
 
 def test_gemini_tool_schema_preserves_action_specific_composites():
-    from functions.operational_memory_tools import edit_operational_memory_declaration
+    declaration = {"type": "function", "function": {"name": "resolve_item", "description": "Resolve an item",
+        "parameters": {"type": "object", "oneOf": [{"properties": {"action": {"type": "string", "enum": ["resolve"]}},
+            "anyOf": [{"required": ["key"]}, {"required": ["resolve_key"]}]}]}}}
     from src.providers.gemini_agent import GeminiAgent
 
     agent = GeminiAgent.__new__(GeminiAgent)
-    converted = agent._convert_tool_to_gemini(edit_operational_memory_declaration)
+    converted = agent._convert_tool_to_gemini(declaration)
     params = converted["parameters"]
 
     assert params["type"] == "OBJECT"

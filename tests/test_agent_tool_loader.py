@@ -31,21 +31,6 @@ def test_load_configured_tools_loads_unique_tools_in_order():
     assert agent.loaded == ["read_file", "READ_FILE", "rg_tools"]
 
 
-def test_operational_memory_tool_is_configurable_function_tool():
-    from src.tool.base_tool import BaseTool
-
-    class Agent:
-        pass
-
-    options = {item["value"] for item in list_available_tool_options()}
-    assert "operational_memory_tools" in options
-
-    tools = BaseTool(Agent())
-    tools.addTool("operational_memory_tools")
-
-    assert "edit_operational_memory" in tools.function_map
-
-
 def test_load_configured_tools_aggregates_protocol_and_unexpected_errors():
     class Agent:
         def addTool(self, name):

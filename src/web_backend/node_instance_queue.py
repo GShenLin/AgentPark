@@ -47,7 +47,7 @@ class NodeInstanceQueue(HostBoundService):
         if request is not None:
             item.update(self.core.access_api.message_access_metadata(request))
         else:
-            for key in ("_access_client_id", "_access_username", "_access_role"):
+            for key in ("_access_client_id", "_access_username", "_access_role", "_access_ip"):
                 value = (payload or {}).get(key)
                 if isinstance(value, str) and value.strip():
                     item[key] = value.strip()

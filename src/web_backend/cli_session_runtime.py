@@ -13,6 +13,7 @@ from nodes.claude_node.runtime.session_state import read_selected_session_id
 from nodes.claude_node.runtime.session_state import session_runtime_key as claude_runtime_key
 from nodes.claude_node.runtime.session_state import write_selected_session_id
 from nodes.codex_node.runtime.app_server_client import CodexAppServerError
+from src.harness.install_manager import resolve_command
 from nodes.codex_node.runtime.session_manager import CodexSessionManager
 from nodes.codex_node.runtime.thread_projection import project_thread_records
 from nodes.codex_node.runtime.thread_state import THREAD_STATE_FILENAME
@@ -191,7 +192,7 @@ class CliSessionRuntime(HostBoundService):
             ),
             "memory_path": self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id),
             "messages_path": self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id),
-            "command": str(config.get("codex_command") or "codex").strip() or "codex",
+            "command": resolve_command("codex", str(config.get("codex_command") or "codex").strip()),
             "cwd": cwd,
         }
 

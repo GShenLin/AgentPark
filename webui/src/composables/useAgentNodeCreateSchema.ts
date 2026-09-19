@@ -20,10 +20,9 @@ export const reasoningEffortOptions = [
   { value: 'max', label: 'max' },
 ]
 
-export const GUI_AGENT_NODE_TYPE = 'gui_agent_node'
 export const CODEX_NODE_TYPE = 'codex_node'
 export const CLAUDE_NODE_TYPE = 'claude_node'
-export const GUI_AGENT_MODE = 'guiagent'
+export const HARNESS_NODE_TYPES = [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE, 'openclaw_node', 'deepseek_harness_node', 'pi_node', 'hermes_agent_node']
 export const AUDIO_GENERATION_MODE = 'audio_generation'
 
 export function dedupeStrings(values: unknown[]): string[] {
@@ -72,8 +71,21 @@ export function providerReasoningEffortOptions(
   }))
 }
 
+export function providerThinkingDefault(
+  provider: Pick<ProviderInfo, 'features'> | null | undefined,
+): 'enabled' | 'disabled' {
+  return normalizeSwitch(provider?.features?.thinking?.default, 'disabled')
+}
+
 export function providerModes(provider: Pick<ProviderInfo, 'supportmode'>) {
   return normalizeModeList(provider?.supportmode)
+}
+
+export function providerModelIds(provider: Pick<ProviderInfo, 'model' | 'models'> | null | undefined): string[] {
+  const values = Array.isArray(provider?.models)
+    ? provider.models
+    : provider?.model ? [provider.model] : []
+  return dedupeStrings(values)
 }
 
 export function agentProviderModes(provider: Pick<ProviderInfo, 'supportmode' | 'type'>): string[] {
@@ -116,13 +128,12 @@ export function useAgentNodeCreateSchema(options: {
   availableTools: Ref<string[]>
 }) {
   const { selectedTypeId, selectedNodeFields, providers, availableTools } = options
+  let lastAgentProviderId = ''
 
   const createProviderOptions = computed(() => {
     const ids = providers.value
       .filter((provider) => (
-        selectedTypeId.value === GUI_AGENT_NODE_TYPE
-          ? providerModes(provider).includes(GUI_AGENT_MODE)
-          : [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE].includes(selectedTypeId.value)
+        HARNESS_NODE_TYPES.includes(selectedTypeId.value)
             ? cliProviderModes(provider).length > 0
             : agentProviderModes(provider).length > 0
       ))
@@ -146,9 +157,7 @@ export function useAgentNodeCreateSchema(options: {
     if (key !== 'provider_id') return false
     return (
       selectedTypeId.value === 'agent_node' ||
-      selectedTypeId.value === CODEX_NODE_TYPE ||
-      selectedTypeId.value === CLAUDE_NODE_TYPE ||
-      selectedTypeId.value === GUI_AGENT_NODE_TYPE
+      HARNESS_NODE_TYPES.includes(selectedTypeId.value)
     )
   }
 
@@ -171,10 +180,11 @@ export function useAgentNodeCreateSchema(options: {
   function ensureCreateAgentSelections() {
     if (
       selectedTypeId.value !== 'agent_node' &&
-      selectedTypeId.value !== CODEX_NODE_TYPE &&
-      selectedTypeId.value !== CLAUDE_NODE_TYPE &&
-      selectedTypeId.value !== GUI_AGENT_NODE_TYPE
-    ) return
+      !HARNESS_NODE_TYPES.includes(selectedTypeId.value)
+    ) {
+      lastAgentProviderId = ''
+      return
+    }
 
     let providerId = String(selectedNodeFields.value.provider_id || '').trim()
     if (createProviderOptions.value.length) {
@@ -187,13 +197,35 @@ export function useAgentNodeCreateSchema(options: {
       providerId = ''
     }
 
+    if (HARNESS_NODE_TYPES.includes(selectedTypeId.value)) {
+      const selectedProvider = providers.value.find(item => item.id === providerId)
+      const modelIds = providerModelIds(selectedProvider)
+      if (!modelIds.includes(String(selectedNodeFields.value.model || ''))) selectedNodeFields.value.model = modelIds[0] || ''
+      if (['hermes_agent_node', 'openclaw_node'].includes(selectedTypeId.value)) {
+        const feature = selectedProvider?.features?.reasoning_effort
+        const efforts = feature?.supported ? feature.values || [] : []
+        if (!efforts.includes(String(selectedNodeFields.value.reasoning_effort || ''))) {
+          selectedNodeFields.value.reasoning_effort = efforts[0] || ''
+        }
+      }
+    }
     if (selectedTypeId.value === 'agent_node') {
+      const selectedProvider = providers.value.find((provider) => String(provider.id || '').trim() === providerId)
+      const modelIds = providerModelIds(selectedProvider)
+      const modelId = String(selectedNodeFields.value.model || '').trim()
+      if (!modelIds.includes(modelId)) selectedNodeFields.value.model = modelIds[0] || ''
       selectedNodeFields.value.tools = normalizeToolSelection(selectedNodeFields.value.tools, toolOptions.value)
       selectedNodeFields.value.web_search = normalizeSwitch(selectedNodeFields.value.web_search, 'disabled')
-      selectedNodeFields.value.thinking = normalizeSwitch(selectedNodeFields.value.thinking, 'disabled')
+      const thinkingDefault = providerThinkingDefault(selectedProvider)
+      selectedNodeFields.value.thinking = providerId !== lastAgentProviderId
+        ? thinkingDefault
+        : normalizeSwitch(selectedNodeFields.value.thinking, thinkingDefault)
+      lastAgentProviderId = providerId
       if (selectedNodeFields.value.reasoning_effort == null) {
         selectedNodeFields.value.reasoning_effort = 'high'
       }
+    } else {
+      lastAgentProviderId = ''
     }
   }
 

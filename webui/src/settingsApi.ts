@@ -1,4 +1,6 @@
 import { createApiNetworkError, getActiveApiBase, requestApiJson } from './api'
+import type { LongTermMemorySettings } from './longTermMemorySettings'
+import type { ConversationContextSettings } from './conversationContextSettings'
 
 export type SettingsSectionInfo = {
   id: string
@@ -15,12 +17,29 @@ export type SettingsDocument = {
   data: Record<string, unknown>
   warnings?: string[]
   restart_required?: boolean
+  long_term_memory_defaults?: LongTermMemorySettings
+  conversation_context_defaults?: ConversationContextSettings
   runtime?: {
     active_memories_root?: string
     configured_memories_root?: string
   }
   active_preset_id?: string
   presets?: ThemePresetInfo[]
+  provider_limit_update?: {
+    copied_targets: string[]
+    added_models: ProviderModelAdditionRequest[]
+    missing_sources: string[]
+  }
+}
+
+export type ProviderLimitCopyRequest = {
+  source_provider_id: string
+  target_provider_id: string
+}
+
+export type ProviderModelAdditionRequest = {
+  provider_id: string
+  model_id: string
 }
 
 export type ThemePresetInfo = {
@@ -57,10 +76,11 @@ export type ProviderLimitEntry = {
   tested_at: string
   test_channel?: ProviderResolvedTestChannel
   test_endpoint?: string
-  accessible: boolean
-  status: 'ok' | 'unsupported' | 'unavailable'
+  accessible?: boolean
+  status?: 'ok' | 'unsupported' | 'unavailable'
   access_error?: string
   available_model_ids?: string[]
+  manual_model_ids?: string[]
   model_discovery?: ProviderLimitFeature & {
     tested_at?: string
     endpoint?: string
@@ -391,11 +411,10 @@ export type TurnAuditDetailDocument = {
   timeline: TurnAuditTimelineEntry[]
 }
 
-export type DeleteOptionalMemoryResponse = {
+export type ClearLongTermMemoryResponse = {
   ok: boolean
-  returncode: number
+  cleared_nodes: number
   stdout: string
-  stderr: string
 }
 
 export type CodexAuthStatus = {
@@ -433,69 +452,7 @@ export type ApiKeyAliasCatalog = {
   selected?: string
 }
 
-export type ClearLogsResponse = DeleteOptionalMemoryResponse
-
-export type GatewayProtocol = 'responses' | 'chat_completions' | 'messages'
-
-export type GatewayAccount = {
-  id: string
-  alias: string
-  identity: string
-  kind: 'oauth' | 'api_key'
-  active: boolean
-  needsReauth: boolean
-}
-
-export type GatewayProvider = {
-  id: string
-  model: string
-  protocol: 'responses' | 'openai_chat' | 'anthropic' | 'gemini'
-  authProvider: string
-  accounts: GatewayAccount[]
-  kind: 'provider'
-}
-
-export type GatewaySourceError = {
-  id: string
-  error: string
-}
-
-export type GatewayModel = {
-  id: string
-  providerId: string
-  accountId: string
-  protocols: GatewayProtocol[]
-  enabled: boolean
-}
-
-export type GatewayKey = {
-  id: string
-  name: string
-  prefix: string
-  createdAt: number
-}
-
-export type GatewaySettings = {
-  enabled: boolean
-  requireApiKey: boolean
-  models: GatewayModel[]
-  keys: GatewayKey[]
-  providers: GatewayProvider[]
-  sourceErrors: GatewaySourceError[]
-}
-
-export type GatewayCreateKeyResponse = {
-  created: GatewayKey & { key: string }
-  keys: GatewayKey[]
-}
-
-export type GatewayTestResponse = {
-  ok: boolean
-  status: number
-  protocol: GatewayProtocol
-  model: string
-  response: Record<string, unknown>
-}
+export type ClearLogsResponse = { ok: boolean; returncode: number; stdout: string; stderr: string }
 
 async function requestJson(path: string, init?: RequestInit) {
   return requestApiJson(getActiveApiBase(), path, init)
@@ -531,60 +488,6 @@ export async function updateAccessSettings(data: AccessPolicyData): Promise<Acce
   }) as Promise<AccessSettingsDocument>
 }
 
-export async function getGatewaySettings(): Promise<GatewaySettings> {
-  return requestJson('/api/gateway') as Promise<GatewaySettings>
-}
-
-export async function updateGatewayOptions(payload: {
-  enabled: boolean
-  requireApiKey: boolean
-}): Promise<GatewaySettings> {
-  return requestJson('/api/gateway/options', {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  }) as Promise<GatewaySettings>
-}
-
-export async function upsertGatewayModel(payload: GatewayModel): Promise<GatewaySettings> {
-  return requestJson('/api/gateway/models', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }) as Promise<GatewaySettings>
-}
-
-export async function deleteGatewayModel(modelId: string): Promise<GatewaySettings> {
-  return requestJson(`/api/gateway/models/${encodeURIComponent(modelId)}`, {
-    method: 'DELETE',
-  }) as Promise<GatewaySettings>
-}
-
-export async function createGatewayKey(payload: {
-  name: string
-  key?: string
-}): Promise<GatewayCreateKeyResponse> {
-  return requestJson('/api/gateway/keys', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }) as Promise<GatewayCreateKeyResponse>
-}
-
-export async function deleteGatewayKey(keyId: string): Promise<{ deleted: boolean; keys: GatewayKey[] }> {
-  return requestJson(`/api/gateway/keys/${encodeURIComponent(keyId)}`, {
-    method: 'DELETE',
-  }) as Promise<{ deleted: boolean; keys: GatewayKey[] }>
-}
-
-export async function testGateway(payload: {
-  model: string
-  protocol: GatewayProtocol
-  prompt?: string
-}): Promise<GatewayTestResponse> {
-  return requestJson('/api/gateway/test', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }) as Promise<GatewayTestResponse>
-}
-
 export async function listSettingsSections(): Promise<SettingsSectionInfo[]> {
   const res = await requestJson('/api/settings')
   return (res.sections || []) as SettingsSectionInfo[]
@@ -594,10 +497,19 @@ export async function getSettingsSection(section: string): Promise<SettingsDocum
   return requestJson(`/api/settings/${encodeURIComponent(section)}`) as Promise<SettingsDocument>
 }
 
-export async function updateSettingsSection(section: string, content: string): Promise<SettingsDocument> {
+export async function updateSettingsSection(
+  section: string,
+  content: string,
+  providerLimitCopies: ProviderLimitCopyRequest[] = [],
+  providerModelAdditions: ProviderModelAdditionRequest[] = [],
+): Promise<SettingsDocument> {
   return requestJson(`/api/settings/${encodeURIComponent(section)}`, {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({
+      content,
+      ...(providerLimitCopies.length ? { provider_limit_copies: providerLimitCopies } : {}),
+      ...(providerModelAdditions.length ? { provider_model_additions: providerModelAdditions } : {}),
+    }),
   }) as Promise<SettingsDocument>
 }
 
@@ -770,8 +682,8 @@ export async function clearToolStats(graphId = '', scopeHours = 0): Promise<Tool
   return requestJson(`/api/tool-stats${suffix}`, { method: 'DELETE' }) as Promise<ToolStatsDocument>
 }
 
-export async function deleteOptionalMemory(): Promise<DeleteOptionalMemoryResponse> {
-  return requestJson('/api/operational-memory/delete-optional', { method: 'POST' }) as Promise<DeleteOptionalMemoryResponse>
+export async function clearLongTermMemory(): Promise<ClearLongTermMemoryResponse> {
+  return requestJson('/api/node-memory/clear-derived', { method: 'POST' }) as Promise<ClearLongTermMemoryResponse>
 }
 
 export async function clearLogs(): Promise<ClearLogsResponse> {

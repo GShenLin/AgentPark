@@ -131,7 +131,7 @@ def _summary_for_payload_log(summary: dict[str, Any]) -> dict[str, Any]:
         "internal_context_chars",
         "skills_context_chars",
         "mcp_servers_context_chars",
-        "operational_memory_context_chars",
+        "long_term_memory_context_chars",
         "project_instructions_context_chars",
         "tools_included_count",
         "context_item_hash",

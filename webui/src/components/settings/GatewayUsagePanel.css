@@ -1,0 +1,31 @@
+.gateway-usage-card { display: grid; gap: 14px; }
+.usage-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.usage-head h2 { margin: 0 0 4px; font-size: 16px; }
+.usage-head p, .usage-empty { margin: 0; color: var(--text-muted, #94a3b8); font-size: 12px; }
+.date-filter { display: flex; align-items: center; gap: 8px; }
+.date-filter input { min-width: 150px; }
+.usage-summary { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; }
+.usage-summary > div { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--border-color, #303846); border-radius: 8px; }
+.usage-summary span { color: var(--text-muted, #94a3b8); font-size: 11px; }
+.usage-summary strong { font-size: 17px; }
+.usage-warning, .usage-error { padding: 9px 11px; border-radius: 7px; font-size: 12px; }
+.usage-warning { color: #fcd34d; background: rgba(245, 158, 11, .13); }
+.usage-error { color: #fda4af; background: rgba(244, 63, 94, .18); }
+.usage-ip-list { display: grid; gap: 10px; }
+.usage-ip-card { overflow: hidden; border: 1px solid var(--border-color, #303846); border-radius: 8px; }
+.usage-ip-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: rgba(148, 163, 184, .07); }
+.usage-ip-card > header code { color: #93c5fd; font-weight: 600; }
+.usage-ip-card > header span { color: var(--text-muted, #94a3b8); font-size: 12px; }
+.usage-table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 8px 12px; border-top: 1px solid var(--border-color, #303846); text-align: right; white-space: nowrap; }
+th { color: var(--text-muted, #94a3b8); font-weight: 500; }
+th:first-child, td:first-child { text-align: left; }
+td code { color: inherit; }
+@media (max-width: 760px) {
+  .usage-head { align-items: stretch; flex-direction: column; }
+  .date-filter { width: 100%; }
+  .date-filter input { min-width: 0; }
+  .usage-summary { grid-template-columns: repeat(2, minmax(100px, 1fr)); }
+  .usage-ip-card > header { align-items: flex-start; flex-direction: column; }
+}

@@ -5,25 +5,25 @@ from src.tool.tool_timeout_config import resolve_tool_timeout_seconds
 
 
 def test_resolve_tool_timeout_seconds_allows_function_override_disable_timeout():
-    def gui_tool():
+    def long_tool():
         return None
 
-    gui_tool.tool_timeout_seconds = 0
+    long_tool.tool_timeout_seconds = 0
 
-    assert resolve_tool_timeout_seconds(config={}, name="run_gui_agent_task", func=gui_tool) is None
+    assert resolve_tool_timeout_seconds(config={}, name="long_running_task", func=long_tool) is None
 
 
 def test_resolve_tool_timeout_seconds_prefers_named_config_override():
-    def gui_tool():
+    def long_tool():
         return None
 
-    gui_tool.tool_timeout_seconds = 0
+    long_tool.tool_timeout_seconds = 0
 
     assert (
         resolve_tool_timeout_seconds(
-            config={"toolExecutionTimeoutSecByName": {"run_gui_agent_task": 120}},
-            name="run_gui_agent_task",
-            func=gui_tool,
+            config={"toolExecutionTimeoutSecByName": {"long_running_task": 120}},
+            name="long_running_task",
+            func=long_tool,
         )
         == 120
     )

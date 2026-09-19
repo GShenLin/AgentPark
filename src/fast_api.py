@@ -14,7 +14,6 @@ from src.runtime_supervision import runtime_supervisor
 from src.server_pid_file import get_server_pid_file_path, install_server_pid_file, remove_server_pid_file
 from src.web_backend import create_app
 from src.web_backend import runtime_paths
-from src.web_backend.node_desktop_pet_launcher import terminate_registered_desktop_pet_processes
 from src.workspace_session_shutdown import start_workspace_session_shutdown
 from src.windows_parent_monitor import start_env_parent_exit_monitor
 from src.windows_parent_monitor import start_frozen_parent_exit_monitor
@@ -75,10 +74,6 @@ def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
         def force_exit() -> None:
             print(f"[server] force exit after graceful shutdown timeout: {reason}", file=sys.stderr)
             try:
-                terminate_registered_desktop_pet_processes()
-            except Exception as exc:
-                print(f"[server] force exit desktop pet cleanup failed: {exc}", file=sys.stderr)
-            try:
                 remove_server_pid_file(get_server_pid_file_path(), expected_pid=os.getpid())
             except Exception as exc:
                 print(f"[server] force exit pid cleanup failed: {exc}", file=sys.stderr)
@@ -97,7 +92,6 @@ def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
         if not exit_requested.is_set():
             exit_requested.set()
             print(f"[server] {reason}", file=sys.stderr)
-            terminate_registered_desktop_pet_processes()
         server.should_exit = True
         _schedule_force_exit(reason)
 
@@ -105,10 +99,6 @@ def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
         if not exit_requested.is_set():
             exit_requested.set()
             print(f"[server] {reason}", file=sys.stderr)
-            try:
-                terminate_registered_desktop_pet_processes()
-            except Exception as exc:
-                print(f"[server] desktop pet cleanup failed before workspace exit: {exc}", file=sys.stderr)
             try:
                 result = start_workspace_session_shutdown(reason=reason)
                 print(f"[server] workspace shutdown started: {result}", file=sys.stderr)
@@ -153,6 +143,13 @@ def main(argv=None):
         raise SystemExit(cli_main(argv))
 
     server_settings = read_server_settings()
+    preserve_listener = os.environ.pop("AGENTPARK_RESTART_LISTENER", "") == "1"
+    if preserve_listener:
+        server_settings = {
+            **server_settings,
+            "host": os.environ["AGENTPARK_SERVER_HOST"],
+            "port": int(os.environ["AGENTPARK_SERVER_PORT"]),
+        }
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default=server_settings["host"])
     parser.add_argument("--port", type=int, default=server_settings["port"])
@@ -164,13 +161,11 @@ def main(argv=None):
         provided_root = os.path.abspath(args.workspace_root)
         if os.path.normcase(provided_root) != os.path.normcase(expected_root):
             raise ValueError(f"--workspace-root must match the resolved workspace root: {expected_root}")
-    actual_port = find_available_server_port(args.host, args.port)
+    actual_port = args.port if preserve_listener else find_available_server_port(args.host, args.port)
     if actual_port != int(args.port):
         print(f"[server] preferred port {args.port} unavailable, using {actual_port}")
     os.environ["AGENTPARK_SERVER_HOST"] = str(args.host)
     os.environ["AGENTPARK_SERVER_PORT"] = str(actual_port)
-    if "AGENTPARK_RESTORE_DESKTOP_PETS" not in os.environ:
-        os.environ["AGENTPARK_RESTORE_DESKTOP_PETS"] = "1"
     runtime_paths.configure_graphs_dir(read_storage_settings()["memories_root"])
     pid_path = install_server_pid_file(args.host, actual_port)
     print(f"[server] pid file: {pid_path}")
@@ -183,5 +178,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main(sys.argv[1:])
 

@@ -1,0 +1,22 @@
+[Unit]
+Description=AgentPark connection coordinator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentpark
+WorkingDirectory=/opt/agentpark-coordinator
+EnvironmentFile=/etc/agentpark/signaling.env
+StateDirectory=agentpark-signaling
+Environment=AGENTPARK_SIGNALING_STATE=/var/lib/agentpark-signaling
+ExecStart=/opt/agentpark-coordinator/.venv/bin/python -m src.peer_network.signaling
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

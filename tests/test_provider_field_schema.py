@@ -1,7 +1,6 @@
 from nodes.agent_node_contract import AGENT_CONFIG_SCHEMA
 from nodes.claude_node.contract import CLAUDE_CONFIG_SCHEMA
 from nodes.codex_node.contract import CODEX_CONFIG_SCHEMA
-from nodes.gui_agent_node import Node as GuiAgentNode
 from nodes.image_matting_node import Node as ImageMattingNode
 from nodes.model_generation_node import Node as ModelGenerationNode
 from nodes.model_texture_generation_node import Node as ModelTextureGenerationNode
@@ -13,7 +12,6 @@ def test_provider_id_fields_use_select_schema_contract():
         "agent_node": AGENT_CONFIG_SCHEMA,
         "claude_node": CLAUDE_CONFIG_SCHEMA,
         "codex_node": CODEX_CONFIG_SCHEMA,
-        "gui_agent_node": GuiAgentNode.config_schema,
         "image_matting_node": ImageMattingNode.config_schema,
         "model_generation_node": ModelGenerationNode.config_schema,
         "model_texture_generation_node": ModelTextureGenerationNode.config_schema,

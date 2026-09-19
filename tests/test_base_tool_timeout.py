@@ -32,7 +32,7 @@ def test_process_tool_result_attaches_final_image_path(tmp_path):
     cleaned, image_data = tool.process_tool_result(
         {
             "status": "done",
-            "tool": "run_gui_agent_task",
+            "tool": "long_running_task",
             "final_image_path": str(image_path),
         }
     )
@@ -49,7 +49,7 @@ def test_process_tool_result_reports_missing_final_image_path(tmp_path):
     outcome = process_tool_result_outcome(
         {
             "status": "done",
-            "tool": "run_gui_agent_task",
+            "tool": "long_running_task",
             "final_image_path": str(missing),
         }
     )

@@ -10,8 +10,9 @@ from fastapi.responses import FileResponse
 
 from src.file_transaction import atomic_write_text
 from src.message_protocol import build_resource_part
+from src.native_path_picker import NativePathPickerError, select_native_path
 
-from .request_access import is_local_request
+from .request_access import has_owner_access
 from .runtime_paths import _get_graphs_dir, _get_runtime_root
 
 
@@ -278,7 +279,7 @@ class FileSystemApiMixin:
         return FileResponse(resolved_path, media_type=media_type)
 
     def open_file(self, payload: dict | None = None, request: Request = None):
-        if not is_local_request(request):
+        if not has_owner_access(request):
             raise HTTPException(status_code=403, detail="opening local files is only available from the server machine")
 
         resolved_path = self._resolve_file_api_path((payload or {}).get("path"))
@@ -309,28 +310,10 @@ class FileSystemApiMixin:
             if os.path.isdir(resolved_initial_path):
                 initial_dir = resolved_initial_path
 
-        root = None
         try:
-            import tkinter as tk
-            from tkinter import filedialog
-
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            selected = filedialog.askdirectory(
-                parent=root,
-                initialdir=initial_dir,
-                title="Select node working path",
-                mustexist=True,
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"failed to open folder selector: {str(e)}")
-        finally:
-            if root is not None:
-                try:
-                    root.destroy()
-                except Exception:
-                    pass
+            selected = select_native_path("folder", initial_dir)
+        except (NativePathPickerError, OSError) as e:
+            raise HTTPException(status_code=500, detail=f"failed to open folder selector: {e}") from e
 
         if not selected:
             return {"ok": True, "path": ""}
@@ -355,28 +338,10 @@ class FileSystemApiMixin:
                 if os.path.isdir(candidate_dir):
                     initial_dir = candidate_dir
 
-        root = None
         try:
-            import tkinter as tk
-            from tkinter import filedialog
-
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            selected = filedialog.askopenfilename(
-                parent=root,
-                initialdir=initial_dir,
-                initialfile=initial_file,
-                title="Select context file",
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"failed to open file selector: {str(e)}")
-        finally:
-            if root is not None:
-                try:
-                    root.destroy()
-                except Exception:
-                    pass
+            selected = select_native_path("file", initial_dir, initial_file)
+        except (NativePathPickerError, OSError) as e:
+            raise HTTPException(status_code=500, detail=f"failed to open file selector: {e}") from e
 
         if not selected:
             return {"ok": True, "path": ""}

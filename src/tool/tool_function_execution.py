@@ -7,6 +7,7 @@ from typing import Any, Callable
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.runtime_cancellation import tool_call_cancellation_scope
+from src.runtime_cancellation import combine_cancel_sources
 
 from .tool_execution_result import build_error_result
 from .tool_execution_result import build_cancellation_failed_result
@@ -29,6 +30,24 @@ def execute_local_tool_function(
     timeout_seconds: float | None,
     cancel_source: Any,
 ) -> ToolExecutionResult:
+    if timeout_seconds is not None and getattr(func, 'tool_cooperative_cancellation', False):
+        # Native input must finish its cancellation/finally cleanup before returning.
+        # A deadline requests cancellation; it must never detach the operation.
+        expired = threading.Event()
+        timer = threading.Timer(float(timeout_seconds), expired.set)
+        timer.daemon = True
+        timer.start()
+        try:
+            result = execute_local_tool_function(
+                func=func, args=args, agent=agent, tool_name=tool_name,
+                timeout_seconds=None, cancel_source=combine_cancel_sources(cancel_source, expired),
+            )
+        finally:
+            timer.cancel()
+        if expired.is_set():
+            return build_error_result('timeout', tool_name=tool_name,
+                                      error=f'Tool deadline of {timeout_seconds:.2f}s expired; operation has stopped.')
+        return result
     if timeout_seconds is None:
         try:
             with tool_call_cancellation_scope(cancel_source):
