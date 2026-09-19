@@ -15,6 +15,7 @@ from src.provider_limit_schema import PROVIDER_LIMIT_SCHEMA_VERSION
 from src.provider_limit_schema import provider_limit_path
 from src.provider_limit_schema import read_provider_limit_file
 from src.provider_auth import resolve_provider_request_credentials
+from src.provider_model_settings import append_discovered_model_ids
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -32,7 +33,9 @@ def run_provider_model_discovery(
     timeout_seconds: float = 30.0,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
-    config = ConfigLoader().get_config()
+    loader = ConfigLoader()
+    config_path = loader.get_provider_config_path()
+    config = loader.get_config()
     providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
     output = _load_existing_provider_limit()
     started = time.monotonic()
@@ -61,6 +64,8 @@ def run_provider_model_discovery(
             provider if isinstance(provider, dict) else {},
             timeout_seconds=max(1.0, float(timeout_seconds or 30.0)),
         )
+        if result["supported"]:
+            append_discovered_model_ids(config_path, safe_provider_id, result["model_ids"])
         _merge_model_result(output, safe_provider_id, provider if isinstance(provider, dict) else {}, result)
         output["model_refresh_completed_providers"] = index
         _write_snapshot(path, output, started=started)
@@ -121,12 +126,14 @@ def _load_existing_provider_limit() -> dict[str, Any]:
 def _merge_model_result(output: dict[str, Any], provider_id: str, provider: dict[str, Any], result: dict[str, Any]) -> None:
     providers = output.setdefault("providers", {})
     entry = providers.get(provider_id) if isinstance(providers.get(provider_id), dict) else {}
+    manual_model_ids = _normalized_model_ids(entry.get("manual_model_ids"))
     entry.update(
         {
             "provider_id": provider_id,
             "type": str(provider.get("type") or entry.get("type") or "").strip(),
             "model": str(provider.get("model") or entry.get("model") or ""),
-            "available_model_ids": result["model_ids"],
+            "available_model_ids": _normalized_model_ids([*result["model_ids"], *manual_model_ids]),
+            "manual_model_ids": manual_model_ids,
             "model_discovery": {
                 "supported": result["supported"],
                 "tested_at": result["tested_at"],
@@ -146,6 +153,17 @@ def _merge_model_result(output: dict[str, Any], provider_id: str, provider: dict
         entry.setdefault("accessible", False)
         entry.setdefault("status", "unavailable")
     providers[provider_id] = entry
+
+
+def _normalized_model_ids(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    result: list[str] = []
+    for value in values:
+        model_id = str(value or "").strip()
+        if model_id and model_id not in result:
+            result.append(model_id)
+    return result
 
 
 def _default_provider_test_channel(provider: dict[str, Any]) -> str:

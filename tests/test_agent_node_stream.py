@@ -887,8 +887,8 @@ def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
     monkeypatch.setattr(
         agent_node_module,
-        "build_operational_memory_summary",
-        lambda *_args, **_kwargs: "Operational memory for this node:\n- keep context developer-scoped",
+        "prepare_node_memory",
+        lambda agent, **kwargs: agent.Message(kwargs["role"], "Node long-term memory: keep context developer-scoped", persist=False),
     )
 
     result = agent_node_module.Node().on_input(
@@ -902,7 +902,7 @@ def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch
 
     assert str(result.get("display") or "") == "ok"
     memory_message = next(
-        item for item in created_agents[0].messages if "Operational memory" in str(item.get("content") or "")
+        item for item in created_agents[0].messages if "Node long-term memory" in str(item.get("content") or "")
     )
     assert memory_message["role"] == "developer"
 
@@ -987,8 +987,8 @@ def test_agent_node_uses_developer_context_role_for_doubao_responses(monkeypatch
     monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
     monkeypatch.setattr(
         agent_node_module,
-        "build_operational_memory_summary",
-        lambda *_args, **_kwargs: "Operational memory for this node:\n- keep context developer-scoped",
+        "prepare_node_memory",
+        lambda agent, **kwargs: agent.Message(kwargs["role"], "Node long-term memory: keep context developer-scoped", persist=False),
     )
 
     result = agent_node_module.Node().on_input(
@@ -1002,7 +1002,7 @@ def test_agent_node_uses_developer_context_role_for_doubao_responses(monkeypatch
 
     assert str(result.get("display") or "") == "ok"
     memory_message = next(
-        item for item in created_agents[0].messages if "Operational memory" in str(item.get("content") or "")
+        item for item in created_agents[0].messages if "Node long-term memory" in str(item.get("content") or "")
     )
     assert memory_message["role"] == "developer"
 
@@ -1444,11 +1444,12 @@ def test_agent_node_loads_structured_node_history(monkeypatch):
     assert [item["content"] for item in user_assistant_messages] == [
         "old question",
         "old answer",
+        "[Historical tool evidence]\nTool tool call_id=call-1: result_preview=(empty)",
         "current question",
     ]
 
 
-def test_agent_node_uses_configured_history_message_limit(monkeypatch):
+def test_agent_node_restores_full_conversation_within_budget(monkeypatch):
     import nodes.agent_node as agent_node_module
 
     created_agents = []
@@ -1469,7 +1470,7 @@ def test_agent_node_uses_configured_history_message_limit(monkeypatch):
 
     class DummyLoader:
         def get_config(self):
-            return {"agentNode": {"historyMessageLimit": 1, "minSendDelayMs": 0}}
+            return {"agentNode": {"minSendDelayMs": 0}, "conversationContext": {"input_tokens": 24000}}
 
         def get_provider_config(self, _provider_id):
             return {"supportmode": ["chat"]}
@@ -1501,6 +1502,7 @@ def test_agent_node_uses_configured_history_message_limit(monkeypatch):
         item for item in created_agents[0].messages if item.get("role") in {"user", "assistant"}
     ]
     assert [item["content"] for item in user_assistant_messages] == [
+        "old question",
         "old answer",
         "current question",
     ]

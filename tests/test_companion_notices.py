@@ -112,9 +112,8 @@ def test_node_review_notice_format_instructs_companion_to_review_without_report(
     assert "Triggered by node: default/Trigger1" in text
     assert "Goal status after run: complete" in text
     assert "Memory file: C:/tmp/default/Agent1/memory.md" in text
-    assert "Operational memory file to edit when warranted:" in text
-    assert "operational_memory.json" in text
-    assert "If the persisted run reveals a reusable behavior correction" in text
+    assert "Each node consolidates its own long-term memory" in text
+    assert "Do not edit another node" in text
     assert "Write report to:" not in text
     assert "tool calls, tool results, and final answer" in text
 

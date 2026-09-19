@@ -15,6 +15,7 @@ class CodexNodeRunRequest:
     graph_id: str
     node_id: str
     provider_id: str
+    model_id: str
     instruction: str
     command: str
     cwd: str
@@ -56,6 +57,7 @@ def load_codex_node_run_request(context: dict[str, Any] | None, *, config_path: 
         graph_id=str(ctx.get("graph_id") or "default").strip() or "default",
         node_id=str(ctx.get("node_instance_id") or ctx.get("node_id") or "codex").strip() or "codex",
         provider_id=provider_id,
+        model_id=str(setting("model", "") or "").strip(),
         instruction=str(setting("instruction") or "").strip(),
         command=command,
         cwd=cwd,

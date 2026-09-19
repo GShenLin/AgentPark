@@ -26,7 +26,49 @@ def validate_responses_provider_config(
     _require_fields(provider_name, provider)
     _validate_submission_limit(provider_name, provider)
     _validate_compaction_contract(provider_name, provider)
+    _validate_session_durability_contract(provider_name, provider)
     _validate_openai_responses_contract(provider_name, provider, provider_type)
+
+
+def _validate_session_durability_contract(
+    provider_name: str,
+    provider: dict[str, Any],
+) -> None:
+    ledger_enabled = provider.get("agentStepLedgerEnabled", False)
+    if not isinstance(ledger_enabled, bool):
+        raise ValueError(
+            f"Provider '{provider_name}' has invalid agentStepLedgerEnabled; expected a boolean."
+        )
+    compaction_enabled = provider.get("sessionContextCompactionEnabled", False)
+    if not isinstance(compaction_enabled, bool):
+        raise ValueError(
+            f"Provider '{provider_name}' has invalid sessionContextCompactionEnabled; expected a boolean."
+        )
+    for key, default in (
+        ("sessionContextCompactionThresholdPercent", 80),
+        ("sessionContextCompactionRetainPercent", 16),
+    ):
+        value = provider.get(key, default)
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 100:
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid {key}; expected an integer between 1 and 100."
+            )
+    max_attempts = provider.get("sessionContextCompactionMaxAttempts", 3)
+    if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 5:
+        raise ValueError(
+            f"Provider '{provider_name}' has invalid sessionContextCompactionMaxAttempts; "
+            "expected an integer between 1 and 5."
+        )
+    context_window = provider.get("modelContextWindowTokens")
+    if compaction_enabled and (
+        not isinstance(context_window, int)
+        or isinstance(context_window, bool)
+        or context_window <= 0
+    ):
+        raise ValueError(
+            f"Provider '{provider_name}' enables session context compaction without a positive "
+            "modelContextWindowTokens integer."
+        )
 
 
 def _require_fields(provider_name: str, provider: dict[str, Any]) -> None:
@@ -137,9 +179,9 @@ def _validate_openai_responses_contract(
     provider: dict[str, Any],
     provider_type: str,
 ) -> None:
-    if provider_type not in {"openai", "grok"}:
+    if provider_type not in {"openai", "grok", "deepseek"}:
         return
-    if provider_type == "openai":
+    if provider_type in {"openai", "deepseek"}:
         _validate_openai_reasoning_summary(provider_name, provider)
     if "responsesReplayReasoningItems" not in provider:
         raise ValueError(

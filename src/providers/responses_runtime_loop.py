@@ -76,6 +76,16 @@ def send_via_responses(
     _emit_turn_debug = partial(emit_responses_turn_debug, self, mode_decision)
 
     while True:
+        session_gate_started = run_tools and self._prepare_session_context_compaction_if_needed(
+            regular_active_tools
+        )
+        if session_gate_started:
+            tools_payload = self._build_responses_tools(
+                self._session_context_compaction_active_tools(regular_active_tools),
+                web_search_mode,
+            )
+            current_input = self._build_responses_input(self._get_messages_with_memory())
+            explicit_context_input = list(current_input)
         item_tool_runner = ResponsesItemLevelToolRunner(self, run_tools=run_tools) if use_item_level_mode else None
 
         _close_item_tool_runner = partial(
@@ -139,6 +149,24 @@ def send_via_responses(
         payload_json = request_payload.payload_json
         last_request_summary = request_payload.request_summary
         request_input_item_count = request_payload.input_item_count
+        if run_tools and self._prepare_session_context_compaction_if_needed(
+            regular_active_tools,
+            observed_input_tokens=last_request_summary.get("approx_input_tokens")
+            if isinstance(last_request_summary, dict)
+            else None,
+        ):
+            tools_payload = self._build_responses_tools(
+                self._session_context_compaction_active_tools(regular_active_tools),
+                web_search_mode,
+            )
+            current_input = self._build_responses_input(self._get_messages_with_memory())
+            explicit_context_input = list(current_input)
+            _close_item_tool_runner()
+            continue
+        self._checkpoint_provider_request(
+            request_api="responses",
+            request_summary=last_request_summary,
+        )
         try:
             result = self._send_responses_request(
                 url=url,
@@ -150,18 +178,23 @@ def send_via_responses(
             )
         except CancellationRequested as exc:
             _abort_item_tool_runner("cancelled", exc)
+            self._record_provider_failure(exc)
             raise
         except RuntimeError as exc:
             _abort_item_tool_runner("stream_failed", exc)
-            if self._replace_recent_tool_result_with_submission_error(str(exc)):
+            recovered = self._replace_recent_tool_result_with_submission_error(str(exc))
+            self._record_provider_failure(exc, terminal=not recovered)
+            if recovered:
                 current_input = self._build_responses_input(self._get_messages_with_memory())
                 explicit_context_input = list(current_input)
                 continue
             raise
         except Exception as exc:
             _abort_item_tool_runner("stream_failed", exc)
+            self._record_provider_failure(exc)
             raise
 
+        self._record_provider_response(result)
         self._emit_provider_request_completed(last_request_summary, result)
         self._emit_responses_service_tier_result(result)
         content, function_calls, response_id = self._parse_responses_output_envelopes(result)
@@ -248,6 +281,7 @@ def send_via_responses(
                     stream=use_stream,
                 )
                 _close_item_tool_runner()
+                self._close_current_agent_step(reason="function_call_returned")
                 return {
                     "type": "function_call",
                     "function": display_tool_calls[0]["function"],
@@ -272,8 +306,24 @@ def send_via_responses(
             _close_item_tool_runner()
 
             compaction_changed = bool(getattr(self, "_tool_context_compaction_changed", False))
+            session_compaction_completed = self._session_context_compaction_gate_completed(executions)
             compaction_completed = self._tool_context_compaction_gate_completed(executions)
             self._notify_companion_about_failed_tool_executions(executions)
+
+            if session_compaction_completed:
+                current_input = self._build_responses_input(self._get_messages_with_memory())
+                explicit_context_input = list(current_input)
+                tools_payload = self._build_responses_tools(regular_active_tools, web_search_mode)
+                _emit_turn_debug(
+                    response_id=response_id,
+                    content=content,
+                    function_call_count=len(function_calls),
+                    next_continuation_mode="session_context_compaction",
+                    request_input_item_count=request_input_item_count,
+                    followup_item_count=len(followup_items),
+                    stream=use_stream,
+                )
+                continue
 
             if compaction_completed and compaction_changed:
                 mid_turn_user_messages = consume_mid_turn_user_messages(self)
@@ -303,10 +353,16 @@ def send_via_responses(
                     followup_item_count=0,
                     stream=use_stream,
                 )
+                self._close_current_agent_step(reason="invalid_tool_continuation")
                 return content or "Error: invalid function call continuation in Responses API."
 
             gate_started = self._run_tool_context_compaction_gate_if_needed(executions)
-            if self._tool_context_compaction_gate_active_now():
+            if self._session_context_compaction_active_now():
+                tools_payload = self._build_responses_tools(
+                    self._session_context_compaction_active_tools(regular_active_tools),
+                    web_search_mode,
+                )
+            elif self._tool_context_compaction_gate_active_now():
                 tools_payload = self._build_responses_tools(
                     self._tool_context_compaction_active_tools(active_tools),
                     web_search_mode,
@@ -366,6 +422,10 @@ def send_via_responses(
                 _close_item_tool_runner()
                 continue
 
+        if self._session_context_compaction_active_now():
+            raise RuntimeError(
+                "session context compaction required compact_session_context, but the model returned no tool call"
+            )
         final_text = content or (stream_text.text if use_stream else "")
         next_continuation_mode = "final_message"
         if not content and use_stream and stream_text.text:
@@ -384,10 +444,12 @@ def send_via_responses(
         if content or (use_stream and stream_text.text):
             empty_message_feedback.reset()
         _close_item_tool_runner()
-        return finish_responses_message(
+        finished = finish_responses_message(
             self,
             content=content,
             stream_text=stream_text.text if use_stream else "",
             structured_result=structured_result,
             raw_result=result,
         )
+        self._close_current_agent_step(reason="assistant_final")
+        return finished

@@ -10,20 +10,20 @@ from .core_node_ops import NodeOpsDomain
 from .core_system_api import SystemApiDomain
 from .graph_event_stream import GraphEventStreamStore
 from .mobile_api import MobileApiDomain
-from .node_desktop_view import NodeDesktopViewDomain
 from .node_cancellation import NodeCancellationRegistry
 from .node_live_event_publisher import NodeLiveEventPublisher
 from .node_live_output import NodeLiveOutputStore
 from .tool_call_cancellation import ToolCallCancellationRegistry
 from .node_config_service import RUNTIME_STATE_FIELDS
-from .pet_avatar import PetAvatarDomain
 from .profile_api import ProfileApi
 from .public_gateway_api import PublicGatewayApiDomain
 from .provider_auth_api import ProviderAuthApiDomain
 from .remote_api import RemoteApiDomain
+from .peer_api import PeerApiDomain
 from .remote_workspace_api import RemoteWorkspaceApiDomain
 from .restart_recovery import RestartRecoveryCoordinator
 from .settings_api import SettingsApiDomain
+from .harness_api import HarnessApiDomain
 from .doubao_speech_management import DoubaoSpeechManagementDomain
 from .user_interaction_api import UserInteractionApiDomain
 from .undo_api import UndoApiDomain
@@ -31,6 +31,9 @@ from .workspace_bootstrap import WorkspaceBootstrapDomain
 from src.channels.service import ChannelService
 from src.provider_limit_jobs import ProviderLimitJobStore
 from src.runtime_events import RuntimeEventDomain
+from pathlib import Path
+from src.knowledge.service import KnowledgeService
+from src.workspace_settings import get_workspace_root
 
 
 class BackendCore:
@@ -76,11 +79,12 @@ class BackendCore:
         self.provider_auth_api = ProviderAuthApiDomain(self)
         self.public_gateway_api = PublicGatewayApiDomain()
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
-        self.node_desktop_views = NodeDesktopViewDomain(self, self.graph_runtime)
-        self.pet_avatars = PetAvatarDomain(self)
         self.remote_api = RemoteApiDomain(self)
+        self.peer_api = PeerApiDomain(self)
         self.remote_workspace_api = RemoteWorkspaceApiDomain()
         self.settings_api = SettingsApiDomain(self)
+        self.harness_api = HarnessApiDomain(self)
+        self.knowledge_service = KnowledgeService(Path(get_workspace_root()))
         self.doubao_speech_management = DoubaoSpeechManagementDomain(self)
         self.user_interaction_api = UserInteractionApiDomain(self)
         self.undo_api = UndoApiDomain(self, self.graph_runtime)

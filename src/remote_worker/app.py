@@ -6,6 +6,7 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from src.runtime_environment import initialize_runtime_environment
 
 from .client import RemoteWorkerClient, default_display_name
 from .discovery import DiscoveryServer
@@ -19,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     state_directory = Path(arguments.state_directory).expanduser().resolve()
     logger = _configure_logging(state_directory)
     try:
+        initialize_runtime_environment()
         workspace_path = validate_working_path(arguments.workspace)
         store = IdentityStore(state_directory / "identity.json")
         identity = store.load_or_create()

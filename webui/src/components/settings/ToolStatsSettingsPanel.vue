@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   clearToolStats,
-  deleteOptionalMemory,
+  clearLongTermMemory,
   getToolStats,
   type ToolCallStatRecord,
   type ToolStatsDocument,
@@ -30,7 +30,7 @@ const scopeGraphId = ref('')
 const scopeHours = ref(0)
 const loading = ref(false)
 const clearing = ref(false)
-const deletingOptionalMemory = ref(false)
+const clearingLongTermMemory = ref(false)
 const error = ref('')
 const operationStatus = ref('')
 
@@ -147,19 +147,19 @@ async function clearStats() {
   }
 }
 
-async function deleteOptionalMemoryFiles() {
-  const ok = window.confirm('Delete every operational_memory.json file under the memories folder?')
+async function clearLongTermMemoryFiles() {
+  const ok = window.confirm('Clear derived long-term memories for all nodes? Original chat histories remain and can be summarized again.')
   if (!ok) return
-  deletingOptionalMemory.value = true
+  clearingLongTermMemory.value = true
   error.value = ''
   operationStatus.value = ''
   try {
-    const result = await deleteOptionalMemory()
-    operationStatus.value = result.stdout || 'DeleteOptionalMemory completed.'
+    const result = await clearLongTermMemory()
+    operationStatus.value = result.stdout || 'Long-term memory cleared.'
   } catch (e: any) {
     error.value = String(e?.message || e)
   } finally {
-    deletingOptionalMemory.value = false
+    clearingLongTermMemory.value = false
   }
 }
 
@@ -169,18 +169,18 @@ onMounted(loadStats)
 <template>
   <div class="tool-stats">
     <aside class="tool-stats-side">
-      <ActionButton class="tool-stats-action" block :disabled="loading || clearing || deletingOptionalMemory" @click="loadStats">
+      <ActionButton class="tool-stats-action" block :disabled="loading || clearing || clearingLongTermMemory" @click="loadStats">
         {{ loading ? 'Loading...' : 'Reload' }}
       </ActionButton>
-      <DangerButton class="tool-stats-action" :disabled="loading || clearing || deletingOptionalMemory" @click="clearStats">
+      <DangerButton class="tool-stats-action" :disabled="loading || clearing || clearingLongTermMemory" @click="clearStats">
         {{ clearing ? 'Clearing...' : 'Clear' }}
       </DangerButton>
       <DangerButton
         class="tool-stats-action"
-        :disabled="loading || clearing || deletingOptionalMemory"
-        @click="deleteOptionalMemoryFiles"
+        :disabled="loading || clearing || clearingLongTermMemory"
+        @click="clearLongTermMemoryFiles"
       >
-        {{ deletingOptionalMemory ? 'Deleting...' : 'DeleteOptionalMemory' }}
+        {{ clearingLongTermMemory ? 'Clearing...' : 'Clear long-term memory' }}
       </DangerButton>
 
       <button

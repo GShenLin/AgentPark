@@ -96,6 +96,7 @@ export type NodeRunState = {
 
 export type AgentBoardContext = {
   selectedNodeId: Ref<string | null>
+  renamingNodeId: Ref<string | null>
   lastError: Ref<string | null>
   memoryMode: Ref<'agent' | 'file' | 'graph'>
   graphSnapshot: Ref<GraphConfig | null>
@@ -154,6 +155,9 @@ export type AgentBoardContext = {
   onNodePaletteDragStart: (node: NodeInfo, event: DragEvent) => void
   sendNodeMessage: (nodeId: string, message: string | MessageEnvelope) => Promise<void>
   renameNodeCard: (nodeId: string, nextName: string) => Promise<void>
+  startNodeRename: (nodeId: string) => void
+  finishNodeRename: (nodeId: string) => void
+  duplicateNodeCard: (nodeId: string) => Promise<string | null>
   setNodeNote: (nodeId: string, note: string) => Promise<void>
   deleteNodeCard: (nodeId: string) => Promise<void>
   refreshNodeConfigsAndMemory: () => Promise<void>

@@ -36,6 +36,22 @@ def test_provider_limit_probe_writes_unsupported_features(monkeypatch, tmp_path)
         ),
         encoding="utf-8",
     )
+    (config_dir / "ProviderLimit.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "providers": {
+                    "demo": {
+                        "provider_id": "demo",
+                        "available_model_ids": ["demo-model", "manual-model"],
+                        "manual_model_ids": ["manual-model"],
+                        "model_discovery": {"supported": True},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
@@ -63,6 +79,8 @@ def test_provider_limit_probe_writes_unsupported_features(monkeypatch, tmp_path)
     assert responses["unsupported"]["reasoning_effort"]["max"].startswith("HTTP 400")
     saved = json.loads((config_dir / "ProviderLimit.json").read_text(encoding="utf-8"))
     assert saved["providers"]["demo"]["provider_id"] == "demo"
+    assert saved["providers"]["demo"]["available_model_ids"] == ["demo-model", "manual-model"]
+    assert saved["providers"]["demo"]["manual_model_ids"] == ["manual-model"]
     assert saved["status"] == "finished"
     assert saved["completed_providers"] == 1
     assert saved["total_providers"] == 1
@@ -232,9 +250,9 @@ def test_provider_limit_probe_tests_grok_chat_and_responses_contracts(monkeypatc
     assert responses["features"]["responses_api"]["supported"] is True
     assert responses["features"]["web_search"]["supported"] is True
     assert responses["features"]["thinking"]["supported"] is False
-    assert chat["features"]["reasoning_effort"]["supported_values"] == ["low", "medium", "high"]
-    assert responses["features"]["reasoning_effort"]["supported_values"] == ["low", "medium", "high"]
-    assert responses["features"]["reasoning_effort"]["values"]["xhigh"]["supported"] is False
+    assert chat["features"]["reasoning_effort"]["supported_values"] == ["low", "medium", "high", "xhigh"]
+    assert responses["features"]["reasoning_effort"]["supported_values"] == ["low", "medium", "high", "xhigh"]
+    assert responses["features"]["reasoning_effort"]["values"]["xhigh"]["supported"] is True
 
     chat_payloads = [payload for url, payload in observed if url.endswith("/chat/completions")]
     responses_payloads = [payload for url, payload in observed if url.endswith("/responses")]
@@ -244,11 +262,13 @@ def test_provider_limit_probe_tests_grok_chat_and_responses_contracts(monkeypatc
         "low",
         "medium",
         "high",
+        "xhigh",
     }
     assert {payload["reasoning"]["effort"] for payload in responses_payloads if "reasoning" in payload} == {
         "low",
         "medium",
         "high",
+        "xhigh",
     }
     assert any(payload.get("tools") == [{"type": "web_search"}] for payload in responses_payloads)
     assert not any("thinking" in payload for _url, payload in observed)
@@ -593,6 +613,21 @@ def test_provider_model_discovery_writes_available_models(monkeypatch, tmp_path)
         ),
         encoding="utf-8",
     )
+    (config_dir / "ProviderLimit.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "providers": {
+                    "demo": {
+                        "provider_id": "demo",
+                        "manual_model_ids": ["manual-model"],
+                        "available_model_ids": ["manual-model"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_dir / "modelProvider.json"))
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
 
@@ -607,11 +642,16 @@ def test_provider_model_discovery_writes_available_models(monkeypatch, tmp_path)
 
     provider = result["providers"]["demo"]
     assert provider["accessible"] is True
-    assert provider["available_model_ids"] == ["demo-model", "next-model"]
+    assert provider["available_model_ids"] == ["demo-model", "next-model", "manual-model"]
+    assert provider["manual_model_ids"] == ["manual-model"]
     assert provider["model_discovery"]["supported"] is True
     assert result["model_refresh_status"] == "finished"
     saved = json.loads((config_dir / "ProviderLimit.json").read_text(encoding="utf-8"))
-    assert saved["providers"]["demo"]["available_model_ids"] == ["demo-model", "next-model"]
+    assert saved["providers"]["demo"]["available_model_ids"] == [
+        "demo-model",
+        "next-model",
+        "manual-model",
+    ]
 
 
 def test_provider_model_discovery_strips_gemini_model_prefix(monkeypatch, tmp_path):

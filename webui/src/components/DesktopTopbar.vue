@@ -13,20 +13,25 @@ import FormSelect from './FormSelect.vue'
 import FormTextInput from './FormTextInput.vue'
 import LanguageSwitcher from './LanguageSwitcher.vue'
 import { t } from '../i18n'
+import { isCloudBoard } from '../portal/environment'
+import { inject } from 'vue'
+import { cloudBoardRestart } from '../portal/restartContext'
+const restartConnectedServer = inject(cloudBoardRestart, restartServer)
+const cloudBoard = isCloudBoard()
 
 const props = defineProps<{
   activeView: 'board' | 'settings'
   leftCollapsed: boolean
-  rightCollapsed: boolean
+  graphCollapsed: boolean
   canAccessLocalFiles: boolean
   canOpenSettings: boolean
   initialRemotes: RemoteEndpoint[]
 }>()
 
 const emit = defineEmits<{
-  'update:activeView': [value: 'board' | 'settings']
   toggleLeft: []
-  toggleRight: []
+  toggleGraph: []
+  toggleSettings: []
   error: [message: string]
 }>()
 
@@ -107,7 +112,7 @@ async function restartWorkspace() {
   isRestarting.value = true
   emit('error', '')
   try {
-    await restartServer()
+    await restartConnectedServer()
   } catch (e: any) {
     emit('error', String(e?.message || e))
     isRestarting.value = false
@@ -119,7 +124,7 @@ async function restartWorkspace() {
 <template>
   <header class="topbar">
     <div class="brand">{{ t('topbar.title') }}</div>
-    <div class="remote-switcher">
+    <div v-if="!cloudBoard" class="remote-switcher">
       <span class="remote-label">{{ t('topbar.remote') }}</span>
       <FormSelect v-model="selectedRemoteId" class="remote-select" compact @change="selectRemote">
         <option v-for="remote in remoteEndpoints" :key="remote.id" :value="remote.id">
@@ -154,8 +159,8 @@ async function restartWorkspace() {
       <ActionButton v-if="props.activeView === 'board' && props.canAccessLocalFiles" compact @click="emit('toggleLeft')">
         {{ props.leftCollapsed ? t('topbar.showFiles') : t('topbar.hideFiles') }}
       </ActionButton>
-      <ActionButton v-if="props.activeView === 'board'" compact @click="emit('toggleRight')">
-        {{ props.rightCollapsed ? t('topbar.showMemory') : t('topbar.hideMemory') }}
+      <ActionButton v-if="props.activeView === 'board'" compact @click="emit('toggleGraph')">
+        {{ props.graphCollapsed ? t('topbar.showGraph') : t('topbar.hideGraph') }}
       </ActionButton>
       <ActionButton class="restart" compact :disabled="isRestarting" @click="restartWorkspace">
         {{ isRestarting ? t('common.restarting') : t('common.restart') }}
@@ -165,7 +170,7 @@ async function restartWorkspace() {
         class="settings"
         compact
         :class="{ active: props.activeView === 'settings' }"
-        @click="emit('update:activeView', 'settings')"
+        @click="emit('toggleSettings')"
       >
         {{ t('common.settings') }}
       </ActionButton>

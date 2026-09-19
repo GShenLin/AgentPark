@@ -8,7 +8,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from src.operational_memory import record_operational_memory_entry
+from pathlib import Path
+from src.long_term_memory.store import MemoryStore
 from src.web_backend.state_store import _preview_text
 
 from .action_results import context_fragment, notice, truncate_text
@@ -291,7 +292,7 @@ class RuntimeEventDomain:
                 "target": {
                     "graph_id": envelope.source_graph_id,
                     "node_id": envelope.source_node_id,
-                    "memory": "operational_memory",
+                    "memory": "node_long_term_memory",
                 },
                 "payload": {
                     "kind": "runtime_event_correction",
@@ -359,16 +360,11 @@ class RuntimeEventDomain:
         graph_id = str(target.get("graph_id") or envelope.source_graph_id)
         node_id = str(target.get("node_id") or envelope.source_node_id)
         payload = result.get("payload") if isinstance(result.get("payload"), dict) else {}
-        operational_path = os.path.join(self.core.graph_runtime._node_dir(graph_id, node_id), "operational_memory.json")
-        record_operational_memory_entry(
-            path=operational_path,
-            action=str(result.get("operation") or "upsert"),
-            reason=str(payload.get("reason") or f"runtime event {envelope.event}"),
-            kind=str(payload.get("kind") or "runtime_event_correction"),
-            title=str(payload.get("title") or f"{envelope.event} correction"),
-            lesson=str(payload.get("lesson") or payload.get("evidence") or "See runtime event context."),
-            evidence=str(payload.get("evidence") or json.dumps(envelope.to_dict(), ensure_ascii=False)[:1000]),
-        )
+        if (graph_id, node_id) != (envelope.source_graph_id, envelope.source_node_id):
+            raise ValueError("memory patches must target the source node")
+        store = MemoryStore(Path(self.core.graph_runtime._node_dir(graph_id, node_id)), graph_id, node_id)
+        store.add_note(json.dumps({"event": envelope.event, "trace_id": envelope.trace_id,
+                                   "operation": result.get("operation"), "payload": payload}, ensure_ascii=False))
         self.metrics.inc("memory_patch_applied", event=envelope.event)
 
     def _is_deduped(self, envelope: RuntimeEventEnvelope, config: dict[str, Any]) -> bool:

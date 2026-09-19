@@ -20,13 +20,13 @@ Agent / Tool / Graph **可视化构建 + 运行 + 分享平台**,理念是 "loca
 ```
 AgentPark/
 ├─ config/          服务/Provider/Events/PastAgent/ProviderLimit/Remote/ModelProvider 配置(config.json 默认 port=8788)
-├─ nodes/           32+ 可视化节点实现(BaseNode + Agent / GUI Agent / 图像·视频·模型生成 / trigger / loop / multi_input / channel / save_file / console_command / …)
-├─ functions/       20+ Agent 工具模块(file / code / shell / network / memory / curl / capability_management / gui_agent / parallel / user_interaction / skill_resource / operational_memory / console / rg / multi_tool_use / …)
+├─ nodes/           32+ 可视化节点实现(BaseNode + Agent / 图像·视频·模型生成 / trigger / loop / multi_input / channel / save_file / console_command / …)
+├─ functions/       20+ Agent 工具模块(file / code / shell / network / memory / curl / capability_management / computer_use / parallel / user_interaction / skill_resource / operational_memory / console / rg / multi_tool_use / …)
 ├─ src/             FastAPI 后端 + Provider + Tool + Runtime Event + CLI + Channels + MCP
-├─ webui/           Vue 3 + Vite 前端(desktop + mobile + pet + settings)
+├─ webui/           Vue 3 + Vite 前端(desktop + mobile + settings)
 ├─ memories/        图/节点持久化 memory(Companion 为默认保护图)
 ├─ skills/, plugins/  节点级可插拔能力资源
-├─ tests/, docs/, scripts/, logs/, resource/, graph/, prompt/, agent/, petAvatars/
+├─ tests/, docs/, scripts/, logs/, resource/, graph/, prompt/, agent//
 └─ *.bat            启动/重启/打包/卸载/同步脚本
 ```
 
@@ -39,12 +39,12 @@ AgentPark/
 2. 子命令分流: 首参数是 `doctor/capabilities/config/chat` 时转交 `src.cli`;否则进入服务器模式
 3. 读取 `workspace_settings` 决定 host/port、`find_available_server_port` 找可用端口、写入 PID 文件
 4. 调用 `src.web_backend.create_app()` 构造 FastAPI 实例
-5. 启动 uvicorn 并装配: `Ignore200OKFilter`、desktop pet 进程退出监听、5s 强制退出兜底、`start_frozen_parent_exit_monitor` / `start_env_parent_exit_monitor`
+5. 启动 uvicorn 并装配: `Ignore200OKFilter`、5s 强制退出兜底、`start_frozen_parent_exit_monitor` / `start_env_parent_exit_monitor`
 
 ### 3.2 应用工厂与路由注册
 - `src/web_backend/__init__.py::create_app(tool_names)` → `WebBackendFacade(tool_names).build()`
 - `WebBackendFacade` 持有 `BackendCore`(全部子系统聚合器)、FastAPI 实例、Companion MCP、CORS / Private-Network 中间件
-- 启动 lifespan: `_recover_node_runtime_state_on_startup` → `runtime_events.startup` → `_ensure_timer_trigger_scheduler` → `channel_service.start_autostart_receivers` → 可选的 desktop pet 延迟恢复
+- 启动 lifespan: `_recover_node_runtime_state_on_startup` → `runtime_events.startup` → `_ensure_timer_trigger_scheduler` → `channel_service.start_autostart_receivers`
 - **路由集中表** `src/web_backend/route_registry.py::ApiRouteRegistry.ROUTES`: 95+ 条 `(method, path, resolver)` 元组,`register()` 一行 `getattr(app, method_name)(path)(handler)` 批量挂载;channel 路由通过 `channel_http_endpoint` 包装
 - handler 通过 `core.<子域>.<方法>` 引用,例如 `core.node_ops.run_node` / `core.graph_api.start_graph_runner` / `core.settings_api.get_provider_pressure`
 
@@ -68,8 +68,6 @@ AgentPark/
 | `graph_api` | `GraphApiDomain` 图 CRUD/runner/UE |
 | `profile_api` | `ProfileApi` agent/graph profile 持久化 |
 | `mobile_api` | `MobileApiDomain` 移动端 API |
-| `node_desktop_views` | `NodeDesktopViewDomain` 桌面宠物视图 |
-| `pet_avatars` | `PetAvatarDomain` 宠物形象资源 |
 | `remote_api` | `RemoteApiDomain` 远端实例 |
 | `settings_api` | `SettingsApiDomain` settings + provider 压力/限额 |
 | `user_interaction_api` | `UserInteractionApiDomain` 用户交互请求 |
@@ -85,7 +83,7 @@ AgentPark/
 - 记忆:`node_memory_store` `node_memory_records` `node_memory_paths` `node_memory_archive` `node_memory_markdown` `node_memory_limits` `node_memory_errors` `runtime_state_memory_store`
 - 图运行:`graph_runner_runtime` `graph_runner_state` `graph_runtime_registry` `graph_node_execution` `graph_node_store` `graph_message_dispatch` `graph_event_stream` `graph_output_routes` `graph_schedule_registration` `graph_timer_scheduler` `graph_api_storage`
 - Agent 域:`agent_domain`(28 行,已拆,内含 `PasteAgentSettings` + `PromptLibrary` 两个 service target)
-- 移动/桌面/MCP/Profile/Pet:`mobile_api` `node_desktop_view` `node_desktop_pet_launcher` `pet_avatar` `pet_avatar_schema` `profile_api` `profile_storage` `companion_mcp*`(8 个 MCP 编排文件) `companion_capabilities` `companion_node_summary` `paste_agent_settings` `user_interaction_api` `remote_api` `prompt_library` `clock_runtime`
+- 移动/MCP/Profile:`mobile_api` `profile_api` `profile_storage` `companion_mcp*`(8 个 MCP 编排文件) `companion_capabilities` `companion_node_summary` `paste_agent_settings` `user_interaction_api` `remote_api` `prompt_library` `clock_runtime`
 - 调度:`scheduled_node_registry` `scheduled_node_index` `scheduled_node_config_cache`
 - 运行时/事件:`runtime_event_store` `runtime_paths` `state_store`
 - 频道:`channel_api`(HTTP 端点)+ `src/channels/service.py` 业务服务
@@ -145,7 +143,7 @@ AgentPark/
   - 关键模型:`input_capabilities = [text, resource:{image,video,audio,doc,file,url}, structured, meta]`,`output_capabilities = [text, resource:{image,video}, structured, tool_call, meta]`
   - 配置:`provider_id` `instruction` `system_prompt` `mode` `collaboration_mode` `plugins` `tools` `mcp_servers` `web_search` `thinking` `reasoning_effort`
   - `get_config_schema(context)` 从 `ConfigLoader().get_all_providers()[provider_id]["features"]` 取 provider 能力,`provider_feature` 字段直接暴露给前端表单
-- GUI Agent 拆为 `gui_agent_node + actions/capture/executor/markers/observation/output/prompts/run/runtime/verifier`
+- 桌面操作由普通 Agent 加载 `functions/computer_use_tools.py`，后端位于 `src/computer_use/`；详见 [Computer Use](../computer-use.md)。
 - 其他节点:trigger/basic_trigger_node/timer_trigger_node/clock_node/loop_node/event_node/multi_input_node/input_output_test/channel_receiver_node/channel_sender_node/echo_node/append_node/response_node/save_file_node/console_command_node/video_change_person_node/model_generation_node/model_texture_generation_node/...
 - 节点注册:`type_id = filename` 规则;`nodes/__init__.py` 暴露 `Node` 类列表
 
@@ -168,9 +166,6 @@ AgentPark/
 
 ### 4.1 入口与视图分发(`webui/src/App.vue`)
 ```
-URL: pathname='/pet'              → <PetDesktopView />
-URL: ?pet=1                       → <PetDesktopView />
-URL: ?ask_here=1                  → <PetPickerView />
 matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 其他                              → <DesktopWorkspace />
 ```
@@ -179,7 +174,7 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 ### 4.2 API 集中层
 - `webui/src/api.ts` 1035 行:**后端所有路由的 1:1 镜像**,统一 `apiFetch(path, init) = requestApiJson(readActiveApiBase(), path, init)`
 - 远端覆盖: `setActiveApiBase(base)` 写入 `localStorage['agentpark.activeRemoteBaseUrl']`,后续 `readActiveApiBase()` 优先使用
-- `apiTypes.ts` 定义全部请求/响应类型(GraphConfig、NodeInstanceConfig、MessageEnvelope、MobileNode、NodeDesktopView、PetAvatarFrame、RuntimeEvent…);`uploadApi.ts` / `settingsApi.ts` 为大文件/设置专用
+- `apiTypes.ts` 定义全部请求/响应类型(GraphConfig、NodeInstanceConfig、MessageEnvelope、MobileNode、RuntimeEvent…);`uploadApi.ts` / `settingsApi.ts` 为大文件/设置专用
 - SSE / WebSocket URL 工厂:`graphEventsStreamUrl(graphId)`、`nodeInstanceLiveStreamUrl(nodeId, graphId)` 直接拼到 `readActiveApiBase()`
 
 ### 4.3 桌面视图
@@ -194,15 +189,11 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 - `mobile/MobileWorkspace.vue` + composable `useMobileWorkspace.ts`
 - 子组件: `MobileNodeListItem / MobileNodeConfigDialog / MobileNodeCreateDialog / MobileMessageText / MobileLiveMessage / mobileMessageRender`
 
-### 4.5 桌面宠物(Pet)
-- `PetDesktopView.vue` / `PetPickerView.vue` + `pet-avatar/PetAvatarRenderer.vue` / `PetContextMenu.vue`
-- composables: `usePetAvatarWindow / usePetPanelResize`
-
-### 4.6 设置页
+### 4.5 设置页
 - `SettingsPage.vue` + `settings/` 子目录 12+ 子组件:
-  Provider / Companion / Default / Pressure / ProviderTest / RuntimeEvents / ToolStats / SystemExit / AnimEditor / AnimTrackEditor / SupportModeMultiSelect / CompanionCapabilitySelect / ModelProviderSettingsForm / CompanionSettingsForm / DefaultSettingsForm / RuntimeEventsSettingsForm
+  Provider / Companion / Default / Pressure / ProviderTest / RuntimeEvents / ToolStats / SystemExit / SupportModeMultiSelect / CompanionCapabilitySelect / ModelProviderSettingsForm / CompanionSettingsForm / DefaultSettingsForm / RuntimeEventsSettingsForm
 
-### 4.7 其他关键组件 / composables
+### 4.6 其他关键组件 / composables
 - `FileExplorer.vue` / `FileNode.vue` / `NodeInspector.vue` / `UserInteractionDialog.vue` / `UserInteractionCustomFrame.vue`
 - composables: `droppedPaths` / `nodeSchemaFields` / `useAgentNodeCreateSchema` / `useGlobalState` / `useMemory` / `useMemoryMessageExport`
 - `liveActivity.ts` / `runtimeEventsConfig.ts` 实时事件总线
@@ -238,7 +229,7 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  webui (Vue 3)              api.ts  ──HTTP/JSON──▶  FastAPI ROUTES       │
-│  App.vue → Desktop / Mobile / Pet                                          │
+│  App.vue → Desktop / Mobile                                          │
 │       │                                                                   │
 │       ▼                                                                   │
 │  ApiRouteRegistry.register(app, BackendCore)                              │
@@ -246,7 +237,7 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 │       ▼                                                                   │
 │  BackendCore:                                                             │
 │    node_ops / graph_api / settings_api / system_api / remote_api /         │
-│    mobile_api / node_desktop_views / pet_avatars /                        │
+│    mobile_api /                        │
 │    user_interaction_api / profile_api / runtime_events /                  │
 │    channel_service / graph_runtime / agent_domain                         │
 │       │                                                                   │
@@ -271,10 +262,10 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 3. **能力描述符单一来源**:`CapabilityRegistry` 返回 `{kind, id, label, version, source, enabled, dependencies, config_schema, status, diagnostics}`,webui/AI/CLI 都消费同一形状(含 `schema_version: 1`)
 4. **provider 能力矩阵**:`build_provider_feature_matrix` 单点决定 webui 控件是否禁用;`ConfigLoader.PROVIDER_UNSUPPORTED_CONFIG_KEYS` 强制白名单
 5. **记忆落盘路径统一**:`memories/<graph_id>/<node_id>/memory.md` + `messages.jsonl`,`agent_turn_context.json` + `agent_context_history.json` 为 Companion 专属
-6. **运行时保护**:lifespan 中 `_recover_node_runtime_state_on_startup` 恢复 graphs/nodes 状态,desktop pet 走 1s 延迟线程恢复
+6. **运行时保护**:lifespan 中 `_recover_node_runtime_state_on_startup` 恢复 graphs/nodes 状态
 7. **远端访问支持**:后端 `config/remote.json` + `/api/remotes/*`;前端 `setActiveApiBase` 写入 localStorage,后续请求自动切到远端 base
 8. **CLI 与服务器同入口**:`src.fast_api.main` 在收到 `doctor/capabilities/config/chat` 时直接转交 `src.cli`,保持单一入口
-9. **AGENTS.md 约束落地**:Agent 节点被拆为 10+ 独立模块,GUI Agent 拆为 10 个子包,`agent_node.py` 主体 440 行做编排(`BaseNode.common_config_schema` 三字段 + `config_schema` + `get_config_schema` 动态注入)
+9. **AGENTS.md 约束落地**:Agent 节点被拆为 10+ 独立模块,`agent_node.py` 主体 440 行做编排(`BaseNode.common_config_schema` 三字段 + `config_schema` + `get_config_schema` 动态注入)
 10. **schema_version 显式化**:provider feature matrix / capability registry / runtime config 都带 schema_version,迁移可见
 11. **OpenAI Responses 协议独立成栈**:`src/providers/responses_*.py` 16 个文件 + `responses_websocket_transport` + `responses_stream_events`,把 `responsesApi=true` 的所有 openai/doubao 适配共享
 12. **能力修改 take effect: next_agent_run**:UI/CLI 显式标注,不假装 hot reload
@@ -305,7 +296,7 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 
 - 跟踪一条 `run_node` 完整调用链:API → `node_ops.run_node` → `agent_node.on_input` → `AgentStreamRuntime` → Provider → 事件 sink
 - 跟踪一条 `emit_graph` 链路:移动端 / 桌面 / 通道 → `graph_runtime` → 节点 routing → memory 持久化
-- 跟踪桌面宠物启动:`launch_node_desktop_pet` → `node_desktop_pet_launcher` → 子进程
+- 跟踪桌面工具链：Agent → `computer_use_tools` → `ComputerUseService` → Windows WGC / UIA / SendInput。
 - 对比 `src/providers/*` 中各家的 transport / tool_call / loop_guard 实现差异
 - 跟踪一条 `channel_receiver_node` 链路:Weixin 消息 → `ChannelService._receiver_loop` → `route_receiver_envelope` → `graph_api.emit_graph` → 节点 on_input
 - 读 `src/providers/responses_runtime*.py` 摸清 OpenAI Responses 协议栈

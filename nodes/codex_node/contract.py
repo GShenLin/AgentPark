@@ -17,6 +17,7 @@ CODEX_OUTPUT_CAPABILITIES = ["text", "structured", "tool_call", "meta"]
 
 CODEX_CONFIG_DEFAULTS = {
     "provider_id": "",
+    "model": "",
     "instruction": "",
     "codex_command": "codex",
     "sandbox": "workspace-write",

@@ -51,6 +51,9 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         }
         if active_tools:
             payload["tools"] = active_tools
+            session_gate = getattr(self, "_session_context_compaction_active_now", None)
+            if callable(session_gate) and session_gate():
+                payload["tool_choice"] = "required"
         thinking_type = str(thinking_mode or "").strip()
         # When thinking is disabled, omit both thinking and reasoning_effort.
         # Some OpenAI-compatible gateways (e.g. hy3) keep reasoning on solely
@@ -91,23 +94,48 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             request_api="chat_completions",
             stream=bool(stream),
         )
+        if run_tools and self._prepare_session_context_compaction_if_needed(
+            active_tools,
+            observed_input_tokens=request_summary.get("approx_input_tokens")
+            if isinstance(request_summary, dict)
+            else None,
+        ):
+            return self.Send(
+                run_tools=run_tools,
+                mode="chat",
+                web_search=web_search_mode,
+                thinking=thinking_mode,
+                reasoning_effort=reasoning_effort,
+                stream=stream,
+                stream_handler=stream_handler,
+                thinking_stream_handler=thinking_stream_handler,
+            )
         payload_json = json.dumps(payload, ensure_ascii=False)
-        if stream:
-            result = self._stream_chat_completions_with_retry(
-                endpoint="chat/completions",
-                url=url,
-                headers=self._chat_headers(),
-                payload_json=payload_json,
-                stream_handler=stream_handler if callable(stream_handler) else None,
-                thinking_stream_handler=thinking_stream_handler if callable(thinking_stream_handler) else None,
-            )
-        else:
-            result = self._post_json_with_retry(
-                endpoint="chat/completions",
-                url=url,
-                headers=self._chat_headers(),
-                payload_json=payload_json,
-            )
+        self._checkpoint_provider_request(
+            request_api="chat_completions",
+            request_summary=request_summary,
+        )
+        try:
+            if stream:
+                result = self._stream_chat_completions_with_retry(
+                    endpoint="chat/completions",
+                    url=url,
+                    headers=self._chat_headers(),
+                    payload_json=payload_json,
+                    stream_handler=stream_handler if callable(stream_handler) else None,
+                    thinking_stream_handler=thinking_stream_handler if callable(thinking_stream_handler) else None,
+                )
+            else:
+                result = self._post_json_with_retry(
+                    endpoint="chat/completions",
+                    url=url,
+                    headers=self._chat_headers(),
+                    payload_json=payload_json,
+                )
+        except Exception as exc:
+            self._record_provider_failure(exc)
+            raise
+        self._record_provider_response(result)
         self._emit_provider_request_completed(request_summary, result)
         return self._handle_chat_completions_result(
             result,
@@ -134,6 +162,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
     ):
         message, selected_idx = self._pick_chat_response_message(result.get("choices") if isinstance(result, dict) else None, run_tools)
         if not isinstance(message, dict):
+            self._close_current_agent_step(reason="invalid_provider_message")
             return f"Error: Invalid message format in choice[{selected_idx}]"
         tool_calls = self._extract_openai_chat_tool_calls(message)
         if tool_calls:
@@ -145,12 +174,14 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 **self._assistant_tool_call_message_fields(message, tool_calls),
             )
             if not run_tools:
+                self._close_current_agent_step(reason="function_call_returned")
                 return {"type": "function_call", "function": tool_calls[0]["function"], "tool_calls": tool_calls}
             executions = execute_tool_call_items_parallel(
                 tool_call_items=parse_openai_tool_call_items(tool_calls, provider="openai_chat"),
                 execute_tool_call_envelopes=self._execute_tool_call_envelopes_parallel,
             )
             self._append_tool_execution_messages_then_warnings(executions)
+            self._session_context_compaction_gate_completed(executions)
             self._tool_context_compaction_gate_completed(executions)
             self._notify_companion_about_failed_tool_executions(executions)
             self._run_tool_context_compaction_gate_if_needed(executions)
@@ -166,6 +197,10 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 thinking_stream_handler=thinking_stream_handler,
             )
 
+        if self._session_context_compaction_active_now():
+            raise RuntimeError(
+                "session context compaction required compact_session_context, but the model returned no tool call"
+            )
         content = message.get("content")
         text = "" if content is None else str(content)
         if self._tool_context_compaction_gate_active_now() and not self._finish_tool_context_compaction_gate_with_response(
@@ -183,6 +218,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                 thinking_stream_handler=thinking_stream_handler,
             )
         self.Message("assistant", text, **self._assistant_final_message_fields(message))
+        self._close_current_agent_step(reason="assistant_final")
         return text
 
     def _post_json_with_retry(self, *, endpoint, url, headers, payload_json):
@@ -194,17 +230,45 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             except OpenAIHttpError as exc:
                 error_str = f"{endpoint}: HTTP {int(exc.status_code or 0)} - {exc.response_body}"
                 if attempt < max_retries and self._openai_chat_error_retryable(exc.status_code):
+                    self._record_provider_retry_scheduled(
+                        stage="openai_chat_completions_retry",
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        error=error_str,
+                    )
                     self._emit_retry_notice(error=error_str, delay=retry_delay, stage="openai_chat_completions_retry")
                     sleep_with_cancel(retry_delay, self._cancel_source())
+                    self._record_provider_retry_started(
+                        stage="openai_chat_completions_retry",
+                        attempt=attempt + 1,
+                    )
                     continue
-                raise RuntimeError(error_str) from exc
+                raise self._chat_terminal_error(
+                    endpoint=endpoint,
+                    error=exc,
+                    message=error_str,
+                ) from exc
             except OpenAITransportError as exc:
                 error_str = str(exc)
                 if attempt < max_retries:
+                    self._record_provider_retry_scheduled(
+                        stage="openai_chat_completions_retry",
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        error=error_str,
+                    )
                     self._emit_retry_notice(error=error_str, delay=retry_delay, stage="openai_chat_completions_retry")
                     sleep_with_cancel(retry_delay, self._cancel_source())
+                    self._record_provider_retry_started(
+                        stage="openai_chat_completions_retry",
+                        attempt=attempt + 1,
+                    )
                     continue
-                raise RuntimeError(f"{endpoint}: Error after {max_retries} retries: {error_str}") from exc
+                raise self._chat_terminal_error(
+                    endpoint=endpoint,
+                    error=exc,
+                    message=f"{endpoint}: Error after {max_retries} retries: {error_str}",
+                ) from exc
             except CancellationRequested:
                 raise
         raise RuntimeError(f"{endpoint}: max retries exceeded")
@@ -225,10 +289,24 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             except (OpenAIHttpError, OpenAITransportError) as exc:
                 error_str = str(exc)
                 if attempt < max_retries and self._openai_chat_stream_error_retryable(exc):
+                    self._record_provider_retry_scheduled(
+                        stage="openai_chat_completions_retry",
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        error=error_str,
+                    )
                     self._emit_retry_notice(error=error_str, delay=retry_delay, stage="openai_chat_completions_retry")
                     sleep_with_cancel(retry_delay, self._cancel_source())
+                    self._record_provider_retry_started(
+                        stage="openai_chat_completions_retry",
+                        attempt=attempt + 1,
+                    )
                     continue
-                raise RuntimeError(f"{endpoint}: Error after {max_retries} retries: {error_str}") from exc
+                raise self._chat_terminal_error(
+                    endpoint=endpoint,
+                    error=exc,
+                    message=f"{endpoint}: Error after {max_retries} retries: {error_str}",
+                ) from exc
             except CancellationRequested:
                 raise
         raise RuntimeError(f"{endpoint}: max retries exceeded")
@@ -239,6 +317,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
         tool_calls_by_index: dict[int, dict] = {}
         debug_events: list[dict] = []
         usage: dict[str, Any] = {}
+        saw_done = False
         emitted_web_search_signatures: set[str] = set()
         for data_text in self._curl_post_sse_data_lines(
             url=url,
@@ -249,6 +328,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
             if not data_text:
                 continue
             if data_text == "[DONE]":
+                saw_done = True
                 debug_events.append({"index": len(debug_events), "raw": "[DONE]"})
                 continue
             event = self._parse_sse_json_event(data_text, stage="openai_chat_completions_stream_parse")
@@ -287,6 +367,7 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
                         "openai_chat",
                     )
                 self._accumulate_chat_tool_call_delta(tool_calls_by_index, delta.get("tool_calls"))
+        self._validate_chat_stream_completion(saw_done=saw_done)
         message: dict[str, Any] = {"role": "assistant", "content": "".join(text_chunks)}
         tool_calls = self._assembled_chat_tool_calls(tool_calls_by_index)
         if tool_calls:
@@ -313,6 +394,14 @@ class OpenAIChatRuntime(ProviderStreamEmitMixin, OpenAICurlTransport, ProviderRu
 
     def _attach_stream_thinking_to_message(self, message: dict[str, Any], thinking_text: str) -> None:
         _ = message, thinking_text
+
+    def _validate_chat_stream_completion(self, *, saw_done: bool) -> None:
+        _ = saw_done
+
+    @staticmethod
+    def _chat_terminal_error(*, endpoint: str, error: object, message: str) -> RuntimeError:
+        _ = endpoint, error
+        return RuntimeError(message)
 
     @classmethod
     def _extract_chat_thinking_delta(cls, delta: dict[str, Any]) -> str:

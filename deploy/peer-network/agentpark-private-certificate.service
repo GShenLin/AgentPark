@@ -1,0 +1,12 @@
+[Unit]
+Description=Renew AgentPark private IP certificate locally
+After=nginx.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/agentpark-coordinator/deploy/peer-network
+ExecStart=/opt/agentpark-coordinator/.venv/bin/python private_ca_server.py renew
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

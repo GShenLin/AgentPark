@@ -36,14 +36,7 @@ def responses_request_to_canonical(payload: dict[str, Any], *, model: str) -> Ca
 
     raw_input = payload.get("input", [])
     embedded_tools = _additional_tools_from_input(raw_input) if isinstance(raw_input, list) else []
-    tools = tuple(
-        tool
-        for item in [*_list(payload.get("tools"), "tools"), *embedded_tools]
-        for tool in _convert_tools(item)
-    )
-    wire_names = [tool.wire_name for tool in tools]
-    if len(wire_names) != len(set(wire_names)):
-        raise CodexProtocolError("Responses tools collide after namespace flattening.")
+    tools = responses_tools_to_canonical([*_list(payload.get("tools"), "tools"), *embedded_tools])
     tool_kinds = {(tool.namespace, tool.name): tool.kind for tool in tools}
     messages: list[CanonicalMessage] = []
     instructions = str(payload.get("instructions") or "").strip()
@@ -179,6 +172,14 @@ def _additional_tools_from_input(items: list[Any]) -> list[Any]:
             raise CodexProtocolError("Responses additional_tools role must be developer or system.")
         output.extend(_list(raw.get("tools"), "additional_tools tools"))
     return output
+
+
+def responses_tools_to_canonical(raw_tools: list[Any]) -> tuple[CanonicalTool, ...]:
+    tools = tuple(tool for raw in raw_tools for tool in _convert_tools(raw))
+    wire_names = [tool.wire_name for tool in tools]
+    if len(wire_names) != len(set(wire_names)):
+        raise CodexProtocolError("Responses tools collide after namespace flattening.")
+    return tools
 
 
 def _convert_tools(raw: Any) -> tuple[CanonicalTool, ...]:

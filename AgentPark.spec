@@ -1,17 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
+import sys
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 hiddenimports = []
 hiddenimports += collect_submodules('src')
 hiddenimports += collect_submodules('fastapi')
 hiddenimports += collect_submodules('uvicorn')
+computer_datas, computer_binaries = [], []
+if sys.platform == 'win32':
+    for package in ('windows_capture', 'pywinauto', 'comtypes'):
+        package_datas, package_binaries, package_imports = collect_all(package)
+        computer_datas += package_datas
+        computer_binaries += package_binaries
+        hiddenimports += package_imports
+
+# Knowledge indexing uses LanceDB/Arrow, PDFium and the Chinese tokenizer at
+# runtime. These packages contain dynamically loaded native/data files which
+# ordinary import analysis does not reliably discover in a frozen executable.
+for package in ('lancedb', 'pyarrow', 'pypdfium2', 'jieba'):
+    package_datas, package_binaries, package_imports = collect_all(package)
+    computer_datas += package_datas
+    computer_binaries += package_binaries
+    hiddenimports += package_imports
 
 
 a = Analysis(
     ['src\\fast_api.py'],
     pathex=[],
-    binaries=[],
-    datas=[('webui\\dist', 'webui\\dist')],
+    binaries=computer_binaries,
+    datas=[('webui\\dist', 'webui\\dist')] + computer_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

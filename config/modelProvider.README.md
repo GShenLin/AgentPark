@@ -31,7 +31,7 @@ Provider 实现类型。运行时根据它选择具体 Agent / runtime。
 
 当前常用取值：
 
-- `openai`: OpenAI Responses API 兼容实现。当前 `OpenAIAgent` 固定走 `/responses`。
+- `openai`: 支持对话及 Images API。`image_generation` 模式走 `/images/generations`，带参考图时走 `/images/edits`。
 - `claude`: Claude 原生 Anthropic Messages API 实现，走 `/messages`，支持 Claude tools、web search tool、thinking 与 `output_config.effort`；不使用 OpenAI Responses API 字段。
 - `doubao`: Ark Responses implementation. When `responsesApi: true`, chat/Agent uses `/responses`; otherwise it uses `/chat/completions`.
 - `gemini`: Gemini chat / image generation 实现。
@@ -128,7 +128,6 @@ Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provide
 - `image_generation`: 图片生成节点可选。
 - `image_matting`: 单图抠图节点可选。
 - `vision_understand`: 视觉理解节点可选。
-- `GUIAgent`: GUI Agent 相关工具可选。
 - `video_generation`: 视频生成节点可选。
 - `video_change_person`: 换人视频节点可选。
 - `model_generation`: 3D 模型生成节点可选。
@@ -356,12 +355,63 @@ Rules:
 
 不计入阈值的内部工具：
 
-- `edit_operational_memory`
+- `add_node_memory_note`
 - `compact_tool_context`
 
 ### `toolContextCompactionReplacementMaxChars`
 
 单次结构化 replacement history 的最大字符数。缺省值为 `50000`，显式配置时必须是大于等于 `4000` 的整数。超出预算的明细会按契约降为带摘要哈希的元数据，运行时不会把非结构化截断文本伪装成完整结果。
+
+### `modelContextWindowTokens` / `toolContextCompactionContextPercent`
+
+按当前请求输入占模型上下文窗口的比例触发压缩。两个字段必须成对使用：上下文窗口必须是正整数，比例必须是 `1` 到 `100` 的整数，同时 `toolContextCompactionCurrentInputTokens` 必须为 `0`。例如 `1000000` 与 `80` 会在最新请求输入达到约 800,000 token 时触发。
+
+## 会话持久化与整会话压缩字段
+
+这组字段管理 Agent harness 自己的可恢复执行状态，不改变 Provider 的 API 类型，也不会把 Responses 请求退回 Chat Completions。
+
+运行时在节点目录写入 append-only `agent_steps.jsonl`。每次模型请求形成一个独立 step；Provider 请求、重试、工具开始、工具结束、最终回答和整会话压缩 checkpoint 都形成带序号的持久化事件。若进程在有副作用的工具开始后、结果持久化前退出，下一次启动会持久化并注入一组配对的历史 tool call 与 `TOOL_OUTCOME_UNKNOWN` tool result，要求模型先核验外部状态，不能直接重放有副作用的工具。
+
+### `agentStepLedgerEnabled`
+
+- 必须是布尔值；缺省为 `false`。
+- `true` 启用持久化 step ledger。
+- 工具执行遵守 write-ahead 语义：`tool_call_started` 必须落盘成功后才进入工具主体；落盘失败会明确中止，不会以未记录状态继续执行。
+
+### `sessionContextCompactionEnabled`
+
+- 必须是布尔值；缺省为 `false`。
+- `true` 启用 provider request 前的整会话 checkpoint gate。
+- 启用时必须配置正整数 `modelContextWindowTokens`。
+
+整会话压缩与 `compact_tool_context` 不同：后者只替换已完成的工具调用历史；前者会选择会话中最旧的完整前缀，临时只提供 `compact_session_context`，让模型提交严格结构化 checkpoint，再保留最近对话继续执行。原始消息和 ledger 不会被删除，checkpoint 还会在新 Agent 实例恢复时注入上下文。
+
+### `sessionContextCompactionThresholdPercent`
+
+整会话压缩的上下文压力阈值，必须是 `1` 到 `100` 的整数，缺省为 `80`。运行时优先使用完整 Provider 请求 envelope 的 token 估算，确保 instructions、tools 和历史输入都计入判断。
+
+### `sessionContextCompactionRetainPercent`
+
+压缩后希望保留的最近会话比例，必须是 `1` 到 `100` 的整数，缺省为 `16`。运行时始终保留最新用户消息，并调整边界以避免切断 assistant tool call 与对应 tool result。
+
+### `sessionContextCompactionMaxAttempts`
+
+结构化 checkpoint 的最大提交次数，必须是 `1` 到 `5` 的整数，缺省为 `3`。模型提交不符合严格 schema 的结果时，运行时会把确切工具错误带入同一个压缩 gate 继续重试；达到上限仍失败则明确终止，不会放宽 schema 或跳过压缩。
+
+## DeepSeek 字段与运行时合同
+
+`type: "deepseek"` 同时拥有 Responses 主路径和 Chat Completions 兼容路径。内置 `deepseek_v4_pro`、`deepseek_v4_flash` 已通过 `/responses` 实际请求验证，因此都配置为 `responsesApi: true`、`responsesWebSocket: false`；需要排查兼容网关时仍可显式配置 `responsesApi: false` 使用 `/chat/completions`。
+
+内置 V4 配置采用以下明确默认值：
+
+- `thinking: "enabled"` 与 `reasoningEffort: "high"`。DeepSeek 只接受 `enabled` / `disabled`，启用时 reasoning effort 只接受 `high` / `max`。
+- `maxTokens: 256000`。Chat 路径映射为 `max_tokens`，Responses 路径映射为 `max_output_tokens`。
+- `modelContextWindowTokens: 1000000` 与 `toolContextCompactionContextPercent: 80`。按上下文压力触发，不再额外按固定工具调用次数触发。
+- `agentStepLedgerEnabled: true`。Provider 请求和工具副作用边界会写入节点级持久化 ledger，重启后可识别结果未知的工具调用。
+- `sessionContextCompactionEnabled: true`、`sessionContextCompactionThresholdPercent: 80`、`sessionContextCompactionRetainPercent: 16` 与 `sessionContextCompactionMaxAttempts: 3`。达到阈值时仍沿用 Responses 主路径，先完成整会话 checkpoint，再继续正常请求。
+- `responsesReplayReasoningItems: false`。Responses 历史不回放提供方 reasoning item；Chat 工具调用轮次仍会按 DeepSeek 协议回传 `reasoning_content`。
+
+Chat 兼容路径还执行以下严格协议规则：纯工具调用 assistant 消息的 `content` 固定序列化为 `""`，不会发送 `null`；SSE 必须以 `[DONE]` 结束；畸形 JSON、截断流和空响应分别以稳定的 `MALFORMED_RESPONSE`、`STREAM_CLOSED`、`EMPTY_RESPONSE` code 失败。HTTP 与传输失败也会分类为 `AUTH`、`QUOTA`、`RATE_LIMIT`、`CONTEXT_WINDOW_EXCEEDED`、`INVALID_REQUEST`、`SERVER` 或 `TRANSPORT`，不会静默降级。
 
 ## Claude Messages 字段
 

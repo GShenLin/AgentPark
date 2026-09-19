@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import asdict
 
 from fastapi import File, Form, HTTPException, UploadFile
 
@@ -9,6 +10,8 @@ from src import workspace_settings
 from src.board_layout_settings import normalize_board_layout_settings
 from src.companion_paths import companion_node_config_path
 from src.config_loader import ConfigLoader
+from src.long_term_memory.settings import MemorySettings
+from src.conversation_context.settings import ConversationSettings
 from src.file_transaction import atomic_write_text
 from src.project_process_environment import DEFAULT_NO_PROXY, read_project_proxy_settings
 from src.provider_limit_schema import read_provider_limit_file
@@ -36,6 +39,7 @@ from .default_settings_storage import (
     defaults_without_memory_local_config,
     memory_local_config_from_defaults,
 )
+from .provider_limit_update import prepare_provider_limit_update_plan
 from .settings_maintenance import MemoryMaintenanceError, run_memory_maintenance
 from .tool_stats_document import build_scoped_tool_failure_history, build_scoped_tool_stats_document
 from .turn_audit_query import get_turn_audit, list_turn_audits
@@ -131,6 +135,8 @@ class SettingsApiDomain(DomainBase):
                 or configured_no_proxy != active_no_proxy
             )
         return {
+            "long_term_memory_defaults": asdict(MemorySettings()),
+            "conversation_context_defaults": asdict(ConversationSettings()),
             "restart_required": (
                 os.path.normcase(configured_root) != os.path.normcase(active_root)
                 or proxy_restart_required
@@ -225,6 +231,8 @@ class SettingsApiDomain(DomainBase):
                 "server",
                 "storage",
                 "agentNode",
+                "longTermMemory",
+                "conversationContext",
                 "graphRunner",
                 "consoleCommand",
                 "nodeMemory",
@@ -240,6 +248,8 @@ class SettingsApiDomain(DomainBase):
                 memory_local_config_from_defaults(payload)
                 read_project_proxy_settings(payload)
                 normalize_board_layout_settings(payload.get("boardLayout"))
+                MemorySettings.from_config(payload)
+                ConversationSettings.from_config(payload)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             undo = payload.get("undo")
@@ -263,6 +273,9 @@ class SettingsApiDomain(DomainBase):
             type_id = str(payload.get("type_id") or "agent_node").strip() or "agent_node"
             if type_id != "agent_node":
                 raise HTTPException(status_code=400, detail="companion config field 'type_id' must be 'agent_node'")
+            for key in ("provider_id", "model"):
+                if key in payload and not isinstance(payload[key], str):
+                    raise HTTPException(status_code=400, detail=f"companion config field '{key}' must be a string")
             for key in ("tools", "mcp_servers", "skills", "plugins"):
                 value = payload.get(key)
                 if value is not None and not isinstance(value, list):
@@ -335,6 +348,31 @@ class SettingsApiDomain(DomainBase):
         meta = self._section_meta(section)
         path = self._settings_path(meta["id"])
         parsed = self._parse_content(meta["id"], (payload or {}).get("content"))
+        if meta["id"] == "companion":
+            from src.companion_model import validate_companion_model
+
+            try:
+                providers = ConfigLoader().get_all_providers() if parsed.get("provider_id") else {}
+                validate_companion_model(parsed, providers)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        provider_limit_update_plan = None
+        raw_provider_limit_copies = (payload or {}).get("provider_limit_copies")
+        raw_provider_model_additions = (payload or {}).get("provider_model_additions")
+        if raw_provider_limit_copies is not None or raw_provider_model_additions is not None:
+            if meta["id"] != "model-provider":
+                raise HTTPException(
+                    status_code=400,
+                    detail="provider limit updates are only valid for model-provider settings",
+                )
+            try:
+                provider_limit_update_plan = prepare_provider_limit_update_plan(
+                    raw_provider_limit_copies,
+                    raw_provider_model_additions,
+                    parsed["providers"],
+                )
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         response_content = json.dumps(parsed, ensure_ascii=False, indent=2) + "\n"
         persisted = parsed
         if meta["id"] == "defaults":
@@ -347,6 +385,12 @@ class SettingsApiDomain(DomainBase):
         persisted_content = json.dumps(persisted, ensure_ascii=False, indent=2) + "\n"
         try:
             atomic_write_text(path, persisted_content, encoding="utf-8")
+            if provider_limit_update_plan is not None and provider_limit_update_plan.content:
+                atomic_write_text(
+                    provider_limit_update_plan.path,
+                    provider_limit_update_plan.content,
+                    encoding="utf-8",
+                )
         except OSError as exc:
             raise HTTPException(status_code=500, detail=f"failed to write {meta['id']} settings: {exc}") from exc
         return {
@@ -357,6 +401,20 @@ class SettingsApiDomain(DomainBase):
             "content": response_content,
             "data": parsed,
             "warnings": [],
+            **(
+                {
+                    "provider_limit_update": {
+                        "copied_targets": list(provider_limit_update_plan.copied_targets),
+                        "added_models": [
+                            {"provider_id": provider_id, "model_id": model_id}
+                            for provider_id, model_id in provider_limit_update_plan.added_models
+                        ],
+                        "missing_sources": list(provider_limit_update_plan.missing_sources),
+                    }
+                }
+                if provider_limit_update_plan is not None
+                else {}
+            ),
             **self._settings_runtime_metadata(meta["id"], parsed),
             **({"active_preset_id": active_theme_preset_id(), **list_theme_presets()} if meta["id"] == "theme" else {}),
         }
@@ -488,8 +546,10 @@ class SettingsApiDomain(DomainBase):
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to clear tool stats: {exc}") from exc
 
-    def delete_optional_memory(self):
-        return self._run_memory_maintenance("delete_operational_memory.bat")
+    def clear_long_term_memory(self):
+        from src.long_term_memory.lifecycle import clear_derived_memories
+        from .runtime_paths import _get_graphs_dir
+        return clear_derived_memories(_get_graphs_dir())
 
     def clear_logs(self):
         return self._run_memory_maintenance("ClearLog.bat")

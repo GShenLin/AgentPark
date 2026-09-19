@@ -93,13 +93,13 @@ def test_deepseek_stream_does_not_retry_http_402(monkeypatch):
     assert calls["count"] == 1
 
 
-def test_tavern_provider_uses_official_deepseek_non_thinking_contract():
+def test_tavern_provider_keeps_its_private_gateway_model_contract():
     config_path = Path(__file__).resolve().parents[1] / "config" / "modelProvider.json"
     providers = json.loads(config_path.read_text(encoding="utf-8"))["providers"]
     provider = providers["tavern_deepseek_v31"]
 
     assert provider["type"] == "deepseek"
-    assert provider["model"] == "deepseek-v4-pro"
+    assert provider["model"] == "deepseek-tavern-v2-pro"
 
 
 def test_deepseek_send_uses_responses_endpoint_when_enabled():
@@ -107,6 +107,7 @@ def test_deepseek_send_uses_responses_endpoint_when_enabled():
     agent.config["responsesApi"] = True
     agent.config["reasoningEffort"] = "high"
     agent.config["responsesReplayReasoningItems"] = False
+    agent.config["maxTokens"] = 256000
     requests = []
 
     def fake_post(**kwargs):
@@ -142,6 +143,58 @@ def test_deepseek_send_uses_responses_endpoint_when_enabled():
     assert "input" in payload
     assert "messages" not in payload
     assert payload["reasoning"] == {"effort": "high"}
+    assert payload["max_output_tokens"] == 256000
+
+
+def test_deepseek_responses_disabled_thinking_overrides_provider_effort_default():
+    agent = _build_deepseek_agent()
+    agent.config.update(
+        {
+            "responsesApi": True,
+            "thinking": "enabled",
+            "reasoningEffort": "high",
+            "responsesReplayReasoningItems": False,
+        }
+    )
+    requests = []
+
+    def fake_post(**kwargs):
+        requests.append(json.loads(kwargs["payload_json"]))
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "disabled ok"}],
+                }
+            ]
+        }
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+
+    assert agent.Send(run_tools=False, thinking="disabled", stream=False) == "disabled ok"
+    assert requests[0]["reasoning"] == {"effort": "none"}
+    assert "include" not in requests[0]
+
+
+def test_deepseek_uses_provider_thinking_defaults_when_send_omits_them():
+    agent = _build_deepseek_agent()
+    agent.config["thinking"] = "enabled"
+    agent.config["reasoningEffort"] = "high"
+
+    payload = _capture_payload(agent)
+
+    assert payload["thinking"] == {"type": "enabled"}
+    assert payload["reasoning_effort"] == "high"
+
+
+def test_deepseek_chat_maps_max_tokens():
+    agent = _build_deepseek_agent()
+    agent.config["maxTokens"] = 256000
+
+    payload = _capture_payload(agent, thinking="enabled", reasoning_effort="high")
+
+    assert payload["max_tokens"] == 256000
 
 
 def test_deepseek_explicitly_disables_thinking_and_omits_reasoning_effort():
@@ -191,7 +244,7 @@ def test_deepseek_replays_reasoning_content_after_tool_call():
                     {
                         "message": {
                             "role": "assistant",
-                            "content": "",
+                            "content": None,
                             "reasoning_content": "I should use the echo tool.",
                             "tool_calls": [
                                 {
@@ -217,6 +270,7 @@ def test_deepseek_replays_reasoning_content_after_tool_call():
 
     assert agent.Send(thinking="enabled", reasoning_effort="high", stream=False) == "done"
     assistant_tool_call = requests[1]["messages"][1]
+    assert assistant_tool_call["content"] == ""
     assert assistant_tool_call["reasoning_content"] == "I should use the echo tool."
     assert assistant_tool_call["tool_calls"][0]["function"]["name"] == "echo_tool"
 
@@ -295,12 +349,25 @@ def test_deepseek_stream_assembles_reasoning_content_for_tool_call_replay():
 
 
 def test_bundled_deepseek_v4_providers_use_deepseek_runtime():
+    from src.tool_context_compaction_trigger import ToolContextCompactionLimits
+
     provider_document = json.loads(
         (Path(__file__).parents[1] / "config" / "modelProvider.json").read_text(encoding="utf-8")
     )
 
-    assert provider_document["providers"]["deepseek_v4_flash"]["type"] == "deepseek"
-    assert provider_document["providers"]["deepseek_v4_pro"]["type"] == "deepseek"
+    for name in ("deepseek_v4_flash", "deepseek_v4_pro"):
+        provider = provider_document["providers"][name]
+        assert provider["type"] == "deepseek"
+        assert provider["responsesApi"] is True
+        assert provider["thinking"] == "enabled"
+        assert provider["reasoningEffort"] == "high"
+        assert provider["maxTokens"] == 256000
+        assert provider["modelContextWindowTokens"] == 1000000
+        assert provider["toolContextCompactionContextPercent"] == 80
+        assert provider["toolContextCompactionEveryToolCalls"] == 0
+        limits = ToolContextCompactionLimits.from_provider_config(provider)
+        assert limits.current_input_tokens == 800000
+        assert limits.tool_executions == 0
 
 
 def test_model_provider_settings_can_select_deepseek_type():

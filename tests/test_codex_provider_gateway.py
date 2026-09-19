@@ -6,7 +6,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 
-from nodes.codex_node.runtime.provider_gateway import CodexProviderGateway
+from src.harness.responses_gateway import HarnessResponsesGateway
 
 
 def test_gateway_transparently_forwards_responses_for_non_openai_provider_type(monkeypatch):
@@ -42,8 +42,8 @@ def test_gateway_transparently_forwards_responses_for_non_openai_provider_type(m
         "model": "native-responses-model",
         "supportmode": ["chat"],
     }
-    monkeypatch.setattr("nodes.codex_node.runtime.provider_gateway.ConfigLoader.get_provider_config", lambda _self, _id: dict(config))
-    gateway = CodexProviderGateway()
+    monkeypatch.setattr("src.harness.responses_gateway.ConfigLoader.get_provider_config", lambda _self, _id: dict(config))
+    gateway = HarnessResponsesGateway()
     lease = gateway.register("native-provider")
     observations = []
     try:

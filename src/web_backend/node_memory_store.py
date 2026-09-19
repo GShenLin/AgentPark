@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from src.long_term_memory.store import invalidate_node_memory
+from src.conversation_context.checkpoint import clear_checkpoint
 from src.file_transaction import KeyedTransactionQueue
 from src.file_transaction import append_text
 from src.file_transaction import atomic_write_text
@@ -219,12 +221,15 @@ def replace_node_memory_records(
 
 
 def _clear_node_memory_unlocked(memory_path: str, messages_path: str) -> int:
+    invalidate_node_memory(_node_memory_dir(memory_path, messages_path), reset=True)
     failures: list[NodeMemoryPersistenceFailure] = []
     node_dir = _node_memory_dir(memory_path, messages_path)
     if not node_dir:
         failures.append(NodeMemoryPersistenceFailure(target="memory", path="", error="node memory dir is empty"))
         _raise_if_failures(failures)
         return 0
+
+    clear_checkpoint(node_dir)
 
     paths_to_clear: set[str] = set()
     for date_dir in _iter_archive_date_dirs(node_dir, reverse=False):
@@ -295,6 +300,7 @@ def _delete_node_memory_record_unlocked(
     *,
     capture_deleted: bool,
 ) -> dict[str, Any]:
+    invalidate_node_memory(_node_memory_dir(memory_path, messages_path), reset=False)
     failures: list[NodeMemoryPersistenceFailure] = []
     node_dir = _node_memory_dir(memory_path, messages_path)
     if not node_dir:
@@ -396,6 +402,7 @@ def _delete_node_memory_turn_unlocked(
     *,
     capture_deleted: bool,
 ) -> dict[str, Any]:
+    invalidate_node_memory(_node_memory_dir(memory_path, messages_path), reset=False)
     failures: list[NodeMemoryPersistenceFailure] = []
     current_messages_path = current_node_memory_paths(memory_path, messages_path)["messages_path"]
     node_dir = _node_memory_dir(memory_path, messages_path)
@@ -549,6 +556,7 @@ def _restore_node_memory_records_unlocked(
     messages_path: str,
     snapshots: list[dict[str, Any]],
 ) -> int:
+    invalidate_node_memory(_node_memory_dir(memory_path, messages_path), reset=False)
     failures: list[NodeMemoryPersistenceFailure] = []
     current_messages_path = current_node_memory_paths(memory_path, messages_path)["messages_path"]
     restored = 0

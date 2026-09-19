@@ -11,8 +11,8 @@ from typing import Callable
 
 from .app_server_client import CodexAppServerClient
 from .model_catalog import resolve_codex_runtime_model
-from .provider_gateway import CodexProviderGateway
-from .provider_gateway import GatewayLease
+from src.harness.responses_gateway import HarnessResponsesGateway
+from src.harness.responses_gateway import GatewayLease
 from .thread_state import read_selected_thread_id
 from .thread_state import write_selected_thread_id
 
@@ -70,10 +70,10 @@ class CodexSessionManager:
     def __init__(
         self,
         *,
-        gateway: CodexProviderGateway | None = None,
+        gateway: HarnessResponsesGateway | None = None,
         client_factory: Callable[[str], CodexAppServerClient] = CodexAppServerClient,
     ) -> None:
-        self._gateway = gateway or CodexProviderGateway.instance()
+        self._gateway = gateway or HarnessResponsesGateway.instance()
         self._client_factory = client_factory
         self._lock = threading.RLock()
         self._sessions: dict[str, _ManagedSession] = {}
@@ -150,7 +150,7 @@ class CodexSessionManager:
             return session
 
     def _create_session(self, spec: CodexSessionSpec, signature: str) -> _ManagedSession:
-        lease = self._gateway.register(spec.provider_id)
+        lease = self._gateway.register(spec.provider_id, model=spec.model)
         client: CodexAppServerClient | None = None
         try:
             client = self._client_factory(spec.command)

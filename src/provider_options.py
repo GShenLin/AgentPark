@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 
 from src.config_loader import ConfigLoader
+from src.provider_models import provider_model_ids
 
 
 PROVIDER_VISIBILITY_CONTEXT_KEY = "_include_private_providers"
@@ -99,15 +100,20 @@ def build_provider_support_list(
             raw_features = config.get("features")
             if isinstance(raw_features, dict):
                 features = dict(raw_features)
-        items.append(
-            {
-                "id": provider_id,
-                "type": provider_type,
-                "description": description,
-                "supportmode": modes,
-                "features": features,
-            }
-        )
+        item = {
+            "id": provider_id,
+            "type": provider_type,
+            "description": description,
+            "supportmode": modes,
+            "features": features,
+        }
+        if isinstance(config, dict):
+            model_ids = provider_model_ids(config)
+            if model_ids:
+                item["model"] = model_ids[0]
+            if "models" in config or isinstance(config.get("model"), list):
+                item["models"] = model_ids
+        items.append(item)
 
     items.sort(key=lambda item: item.get("id", ""))
     return items

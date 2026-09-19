@@ -2,6 +2,7 @@ import uuid
 
 from src.base_agent import BaseAgent
 from src.providers.openai_chat_runtime import OpenAIChatRuntime
+from src.providers.openai_image_generation import OpenAIImageGeneration
 from src.providers.openai_mapping import OpenAIResponsesMapping
 from src.providers.openai_responses_runtime import OpenAIResponsesRuntime
 from src.providers.openai_transport import OpenAITransport
@@ -29,6 +30,9 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
     def _create_chat_runtime(self):
         return OpenAIChatRuntime(self)
 
+    def _create_responses_runtime(self):
+        return OpenAIResponsesRuntime(self)
+
     def _create_tool_call_runtime(self):
         return ToolCallExecutionRuntime(self)
 
@@ -47,7 +51,7 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                 self._create_chat_runtime(),
                 OpenAIResponsesMapping(self),
                 self._create_tool_call_runtime(),
-                OpenAIResponsesRuntime(self),
+                self._create_responses_runtime(),
             )
             object.__setattr__(self, "_service_targets_cache", cached)
         return cached
@@ -64,30 +68,39 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         stream=False,
         stream_handler=None,
         thinking_stream_handler=None,
+        mode_options=None,
     ):
         self.config = self._read_provider_config_from_file()
+        if str(mode).strip().lower() == "image_generation":
+            return OpenAIImageGeneration(self).send(mode_options)
         if str(mode or "chat").strip().lower() not in {"chat", "imagechat"}:
-            raise ValueError("OpenAI agent currently supports chat and imagechat modes.")
+            raise ValueError("OpenAI agent supports chat, imagechat and image_generation modes.")
 
-        messages = self._get_messages_with_memory()
-        messages = self._ensure_runtime_instruction(messages, self.system_prompt)
-
+        self._inject_unknown_tool_outcomes()
         effort_source = reasoning_effort
         if effort_source is None or effort_source == "":
             effort_source = self.config.get("reasoningEffort", "")
         summary_source = reasoning_summary
         if summary_source is None or summary_source == "":
             summary_source = self.config.get("reasoningSummary", "")
-        regular_active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
-        active_tools = self._tool_context_compaction_active_tools(regular_active_tools)
+        regular_active_tools = tools if tools else list(self.tool_declarations or [])
+        if run_tools:
+            self._prepare_session_context_compaction_if_needed(regular_active_tools)
+        active_tools = self._session_context_compaction_active_tools(regular_active_tools)
+        active_tools = self._tool_context_compaction_active_tools(active_tools)
+        messages = self._get_messages_with_memory()
+        messages = self._ensure_runtime_instruction(messages, self.system_prompt)
         web_search_mode = self._effective_feature_switch(
             "web_search",
             parse_switch_mode(web_search, default="disabled"),
             supported_default=self._supports_responses_api(),
         )
+        thinking_source = thinking
+        if thinking_source is None or thinking_source == "":
+            thinking_source = self.config.get("thinking", "")
         thinking_mode = self._effective_feature_switch(
             "thinking",
-            parse_switch_mode(thinking, default="disabled"),
+            parse_switch_mode(thinking_source, default="disabled"),
             supported_default=not self._supports_responses_api(),
         )
         if (

@@ -30,6 +30,7 @@ class ResponsesRuntimeMethods:
         provider_options,
         instructions="",
     ) -> dict[str, Any]:
+        provider_options = self._responses_maintenance_provider_options(provider_options)
         payload = {"model": self.config["model"], "input": current_input}
         if str(instructions or "").strip():
             payload["instructions"] = str(instructions).strip()
@@ -46,6 +47,9 @@ class ResponsesRuntimeMethods:
             payload["stream"] = True
         return payload
 
+    def _responses_maintenance_provider_options(self, provider_options: object) -> dict[str, Any]:
+        return dict(provider_options) if isinstance(provider_options, dict) else {}
+
     def _responses_required_includes(self, tools_payload) -> list[str]:
         _ = tools_payload
         return []
@@ -54,6 +58,9 @@ class ResponsesRuntimeMethods:
         return extract_responses_server_tool_result(result)
 
     def _responses_tool_choice(self) -> str:
+        session_gate = getattr(self, "_session_context_compaction_active_now", None)
+        if callable(session_gate) and session_gate():
+            return "required"
         text = str(self.config.get("responsesToolChoice") or "").strip()
         return text or "auto"
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import {
   listProviders,
   loadGraph,
@@ -18,6 +18,7 @@ import SettingsPage from './components/SettingsPage.vue'
 import DesktopTopbar from './components/DesktopTopbar.vue'
 import { AgentBoardKey } from './components/agent-board/context'
 import NodeConfigDock from './components/agent-board/NodeConfigDock.vue'
+import NodeInputDock from './components/agent-board/NodeInputDock.vue'
 import { useAgentBoard } from './components/agent-board/useAgentBoard'
 import { t } from './i18n'
 
@@ -53,7 +54,7 @@ const RIGHT_MEMORY_WIDTH_KEY = 'agentpark.rightPanelWidth.memory'
 const RIGHT_GRAPH_WIDTH_KEY = 'agentpark.rightPanelWidth.graph'
 const LEGACY_RIGHT_WIDTH_KEY = 'agentpark.rightPanelWidth'
 const LEFT_COLLAPSED_KEY = 'agentpark.leftCollapsed.defaultHidden'
-const RIGHT_COLLAPSED_KEY = 'agentpark.rightCollapsed'
+const GRAPH_COLLAPSED_KEY = 'agentpark.rightCollapsed'
 
 function readStoredNumber(key: string, fallback: number, min: number, max: number) {
   try {
@@ -83,12 +84,14 @@ const isResizingMemory = ref(false)
 const leftSidebarWidth = ref(280)
 const isResizingLeft = ref(false)
 const leftCollapsed = ref(false)
-const rightCollapsed = ref(false)
+const graphCollapsed = ref(false)
+const memoryOverlayOpen = ref(false)
 const isLocalClient = ref(false)
 const canAccessLocalFiles = computed(() => isLocalClient.value)
 const isDeveloper = computed(() => props.bootstrap.access.is_developer === true)
 const fileExplorerRootPath = ref('')
 const activeView = ref<'board' | 'settings'>('board')
+const settingsPageRef = ref<{ requestBack: () => void } | null>(null)
 let graphNavigationVersion = 0
 
 const leftWidth = computed(() => (leftCollapsed.value ? 44 : leftSidebarWidth.value))
@@ -104,10 +107,13 @@ const activeRightPanelWidth = computed({
     }
   },
 })
-const rightWidth = computed(() => (rightCollapsed.value ? 44 : activeRightPanelWidth.value))
+const rightWidth = computed(() => (graphCollapsed.value ? 44 : activeRightPanelWidth.value))
+const isMemoryFloating = computed(() => memoryOverlayOpen.value)
+const boardRightWidth = computed(() => (isMemoryFloating.value ? 0 : rightWidth.value))
+const rightPanelStyle = computed(() => (isMemoryFloating.value ? undefined : { width: `${rightWidth.value}px` }))
 
 function startMemoryResize(event: MouseEvent) {
-  if (rightCollapsed.value) return
+  if (graphCollapsed.value) return
   if (event.button !== 0) return
   isResizingMemory.value = true
   event.preventDefault()
@@ -147,6 +153,25 @@ function onUndoKeyDown(event: KeyboardEvent) {
     })
 }
 
+function hasOpenDialogAboveMemory() {
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'))
+    .some((dialog) => dialog.dataset.memoryOverlay !== 'true')
+}
+
+function onWorkspaceKeyDown(event: KeyboardEvent) {
+  if (
+    event.key === 'Escape'
+    && isMemoryFloating.value
+    && !event.defaultPrevented
+    && !hasOpenDialogAboveMemory()
+  ) {
+    event.preventDefault()
+    void closeMemoryOverlay()
+    return
+  }
+  onUndoKeyDown(event)
+}
+
 function handleMemoryResize(event: MouseEvent) {
   if (!isResizingMemory.value) return
   const content = document.querySelector('.content') as HTMLElement | null
@@ -180,8 +205,24 @@ function toggleLeftSidebar() {
   leftCollapsed.value = !leftCollapsed.value
 }
 
-function toggleRightPanel() {
-  rightCollapsed.value = !rightCollapsed.value
+function toggleGraphPanel() {
+  graphCollapsed.value = !graphCollapsed.value
+}
+
+function toggleSettingsView() {
+  if (activeView.value === 'settings') {
+    settingsPageRef.value?.requestBack()
+    return
+  }
+  activeView.value = 'settings'
+}
+
+async function closeMemoryOverlay() {
+  const nodeId = String(selectedNodeId.value || '').trim()
+  agentBoard.openGraphPanel()
+  if (!nodeId) return
+  await nextTick()
+  await agentBoard.focusNodeInViewport(nodeId)
 }
 
 async function refreshProviders() {
@@ -230,13 +271,13 @@ onMounted(async () => {
   )
   graphPanelWidth.value = readStoredNumber(RIGHT_GRAPH_WIDTH_KEY, 560, 360, 980)
   leftCollapsed.value = readStoredBoolean(LEFT_COLLAPSED_KEY, true)
-  rightCollapsed.value = readStoredBoolean(RIGHT_COLLAPSED_KEY, false)
+  graphCollapsed.value = readStoredBoolean(GRAPH_COLLAPSED_KEY, false)
 
   window.addEventListener('mousemove', handleMemoryResize)
   window.addEventListener('mousemove', handleLeftResize)
   window.addEventListener('mouseup', stopMemoryResize)
   window.addEventListener('mouseup', stopLeftResize)
-  window.addEventListener('keydown', onUndoKeyDown)
+  window.addEventListener('keydown', onWorkspaceKeyDown)
 
   if (navigationRequest.value) consumeWorkAlertNavigation(navigationRequest.value)
 
@@ -275,7 +316,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousemove', handleLeftResize)
   window.removeEventListener('mouseup', stopMemoryResize)
   window.removeEventListener('mouseup', stopLeftResize)
-  window.removeEventListener('keydown', onUndoKeyDown)
+  window.removeEventListener('keydown', onWorkspaceKeyDown)
 })
 
 watch(leftSidebarWidth, (value) => {
@@ -310,11 +351,19 @@ watch(leftCollapsed, (value) => {
   }
 })
 
-watch(rightCollapsed, (value) => {
+watch(graphCollapsed, (value) => {
   try {
-    window.localStorage.setItem(RIGHT_COLLAPSED_KEY, value ? '1' : '0')
+    window.localStorage.setItem(GRAPH_COLLAPSED_KEY, value ? '1' : '0')
   } catch {
     // ignore local storage errors
+  }
+})
+
+watch(memoryMode, (mode) => {
+  if (mode === 'agent') {
+    memoryOverlayOpen.value = true
+  } else if (mode === 'graph') {
+    memoryOverlayOpen.value = false
   }
 })
 
@@ -329,25 +378,28 @@ watch(
 <template>
   <div class="desktop-workspace">
     <DesktopTopbar
-      v-model:active-view="activeView"
+      :active-view="activeView"
       :left-collapsed="leftCollapsed"
-      :right-collapsed="rightCollapsed"
+      :graph-collapsed="graphCollapsed"
       :can-access-local-files="canAccessLocalFiles"
       :can-open-settings="isDeveloper"
       :initial-remotes="props.bootstrap.remotes"
       @toggle-left="toggleLeftSidebar"
-      @toggle-right="toggleRightPanel"
+      @toggle-graph="toggleGraphPanel"
+      @toggle-settings="toggleSettingsView"
       @error="lastError = $event || null"
     />
 
     <SettingsPage
       v-if="activeView === 'settings'"
+      ref="settingsPageRef"
+      :show-back-button="false"
       @back="activeView = 'board'"
       @providers-updated="refreshProviders"
       @defaults-updated="agentBoard.applyBoardLayoutDefaults"
     />
 
-    <div v-else class="content" :style="{ '--right-panel-width': `${rightWidth}px` }">
+    <div v-else class="content" :style="{ '--right-panel-width': `${boardRightWidth}px` }">
       <aside v-if="canAccessLocalFiles" class="left-sidebar" :class="{ collapsed: leftCollapsed }" :style="{ width: `${leftWidth}px` }">
         <FileExplorer v-if="!leftCollapsed" :root-path="fileExplorerRootPath" @file-selected="onFileSelected" />
         <div v-else class="collapsed-mark">{{ t('common.files') }}</div>
@@ -366,13 +418,34 @@ watch(
         </main>
       </div>
 
-      <div class="memory-resizer" data-board-occlusion="right" @mousedown="startMemoryResize"></div>
-      <aside class="right" data-board-occlusion="right" :class="{ collapsed: rightCollapsed }" :style="{ width: `${rightWidth}px` }">
-        <MemoryPanel
-          v-if="!rightCollapsed"
-          :initial-graphs="props.bootstrap.graphs"
-          :initial-graph-profiles="props.bootstrap.graph_profiles"
-        />
+      <div
+        v-if="!isMemoryFloating"
+        class="memory-resizer"
+        data-board-occlusion="right"
+        @mousedown="startMemoryResize"
+      ></div>
+      <div v-if="isMemoryFloating" class="memory-overlay-backdrop" @mousedown.self="closeMemoryOverlay"></div>
+      <aside
+        class="right"
+        :data-board-occlusion="isMemoryFloating ? undefined : 'right'"
+        :class="{ collapsed: graphCollapsed && !isMemoryFloating, floating: isMemoryFloating }"
+        :style="rightPanelStyle"
+        :role="isMemoryFloating ? 'dialog' : undefined"
+        :aria-label="isMemoryFloating ? t('common.memory') : undefined"
+        :aria-modal="isMemoryFloating ? 'true' : undefined"
+        :data-memory-overlay="isMemoryFloating ? 'true' : undefined"
+      >
+        <template v-if="isMemoryFloating || !graphCollapsed">
+          <div class="memory-panel-content">
+            <MemoryPanel
+              :initial-graphs="props.bootstrap.graphs"
+              :initial-graph-profiles="props.bootstrap.graph_profiles"
+              :closable="isMemoryFloating"
+              @close="closeMemoryOverlay"
+            />
+          </div>
+          <NodeInputDock v-show="isMemoryFloating" />
+        </template>
         <div v-else class="collapsed-mark">{{ t('common.memory') }}</div>
       </aside>
     </div>
@@ -493,5 +566,58 @@ watch(
   background-position: var(--theme-panel-memory-panel-background-position, center);
   background-repeat: var(--theme-panel-memory-panel-background-repeat, no-repeat);
   background-blend-mode: var(--theme-panel-memory-panel-background-blend-mode, normal);
+}
+
+.memory-panel-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.memory-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  background: rgba(2, 6, 23, 0.54);
+  backdrop-filter: blur(3px);
+  animation: memory-backdrop-in 160ms ease-out;
+}
+
+.right.floating {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  z-index: 510;
+  width: min(1040px, calc(100% - 80px));
+  height: min(820px, calc(100% - 64px));
+  border: 1px solid var(--ui-dialog-border);
+  border-radius: 16px;
+  box-shadow: var(--ui-dialog-shadow);
+  transform: translate(-50%, -50%);
+  animation: memory-panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.right.floating .memory-panel-content :deep(.panel) {
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 15px 15px 0 0;
+}
+
+@keyframes memory-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes memory-panel-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 12px)) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 </style>

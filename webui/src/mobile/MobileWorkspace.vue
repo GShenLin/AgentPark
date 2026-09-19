@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AccessStatus, MessageEnvelope, MobileGraph, MobileNode, ResourceKind } from '../api'
 import { restartServer } from '../api'
+import { cloudBoardRestart } from '../portal/restartContext'
+const restartConnectedServer = inject(cloudBoardRestart, restartServer)
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
@@ -27,12 +29,17 @@ import { recordDeletionUndo } from '../composables/useDeletionUndo'
 import { useAudioRecorder } from '../composables/useAudioRecorder'
 import { useWorkAlerts } from '../composables/useWorkAlerts'
 import { useMobileWorkspace } from './useMobileWorkspace'
+import { useMobileBoardLocation } from './useMobileBoardLocation'
 import { buildMessageSignature } from './mobileMessageRender'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { t } from '../i18n'
+import { isCloudBoard } from '../portal/environment'
+import { downloadMarkdown } from './downloadMarkdown'
 
 const props = defineProps<{ access: AccessStatus }>()
-const workspace = useMobileWorkspace()
+const cloudBoard = isCloudBoard()
+const workspace = useMobileWorkspace({ initialPcId: cloudBoard ? 'local' : undefined })
+const boardLocation = useMobileBoardLocation(workspace, cloudBoard)
 const { navigationRequest, completeWorkAlertNavigation } = useWorkAlerts()
 const {
   saveDialogOpen,
@@ -74,6 +81,11 @@ const headerTitle = computed(() => {
   return workspace.selectedNode.value?.name || workspace.selectedNode.value?.id || t('mobile.nodeMessages')
 })
 const isNodeChatView = computed(() => workspace.view.value === 'chat')
+
+function saveMessage(text: string) {
+  if (cloudBoard) downloadMarkdown(text)
+  else void openSaveMessageDialog(text)
+}
 
 const messages = computed(() => workspace.conversation.value?.messages || [])
 const feedEntries = useMemoryTurnEntries(messages)
@@ -585,7 +597,7 @@ async function restartWorkspace() {
   isRestarting.value = true
   workspace.error.value = ''
   try {
-    await restartServer()
+    await restartConnectedServer()
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
     isRestarting.value = false
@@ -646,7 +658,7 @@ onBeforeUnmount(() => {
 })
 
 onMounted(async () => {
-  await workspace.loadPcs()
+  await boardLocation.initialize()
   workspaceMounted.value = true
   if (navigationRequest.value) consumeWorkAlertNavigation(navigationRequest.value)
 })
@@ -656,7 +668,7 @@ onMounted(async () => {
   <div class="mobile-shell">
     <header class="mobile-header">
       <button v-if="settingsOpen" class="icon-btn" type="button" :aria-label="t('common.back')" @click="closeSettings">&lt;</button>
-      <button v-else-if="workspace.view.value === 'graphs'" class="icon-btn" type="button" :aria-label="t('mobile.backToPc')" @click="workspace.backToPcs">&lt;</button>
+      <button v-else-if="!cloudBoard && workspace.view.value === 'graphs'" class="icon-btn" type="button" :aria-label="t('mobile.backToPc')" @click="workspace.backToPcs">&lt;</button>
       <button v-else-if="workspace.view.value === 'nodes'" class="icon-btn" type="button" :aria-label="t('mobile.backToGraph')" @click="workspace.backToGraphs">&lt;</button>
       <button v-else-if="workspace.view.value === 'chat'" class="icon-btn" type="button" :aria-label="t('mobile.backToNodes')" @click="workspace.backToNodes">&lt;</button>
       <div v-else class="header-spacer"></div>
@@ -772,7 +784,7 @@ onMounted(async () => {
             <MobileMemoryMessageCard
               v-if="entry.type === 'message'"
               :message="entry.message"
-              @save="openSaveMessageDialog"
+              @save="saveMessage"
               @copy="copyMessageText"
               @delete="deleteMobileMessages"
             />
@@ -787,7 +799,7 @@ onMounted(async () => {
               :loading-section="isLatestTurn(index) ? mobileSectionLoading : null"
               :progress-summary="isLatestTurn(index) ? workspace.conversation.value?.latest_turn_progress_summary : null"
               :ensure-metadata="isLatestTurn(index) ? ensureMobileTurnMetadata : undefined"
-              @save="openSaveMessageDialog"
+              @save="saveMessage"
               @copy="copyMessageText"
               @delete="deleteMobileMessages"
               @toggle="onMobileTurnToggle(index, $event)"
@@ -910,6 +922,9 @@ onMounted(async () => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
   background: #08111f;
 }
 
@@ -1378,6 +1393,7 @@ onMounted(async () => {
 
 .composer-tools {
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .composer-row {

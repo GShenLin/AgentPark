@@ -9,7 +9,7 @@ import {
   type ProviderInfo,
 } from '../api'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
-import { resolveAgentProviderSchemaContext } from '../composables/useAgentNodeCreateSchema'
+import { HARNESS_NODE_TYPES } from '../composables/useAgentNodeCreateSchema'
 import ActionButton from '../components/ActionButton.vue'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
 import DangerButton from '../components/DangerButton.vue'
@@ -21,6 +21,10 @@ import { t } from '../i18n'
 import MobileNodeProfilePickerSheet from './MobileNodeProfilePickerSheet.vue'
 import NodeRuntimeEventsFieldGroup from '../components/agent-board/NodeRuntimeEventsFieldGroup.vue'
 import type { MobileOutputRouteRow } from './useMobileWorkspace'
+import {
+  mobileNodeTemplateRequestKey,
+  resolveMobileNodeTemplateProviderId,
+} from './mobileNodeTemplateContext'
 
 const props = defineProps<{
   open: boolean
@@ -82,12 +86,14 @@ const dirtyCount = computed(() => (
   + (nodeNameDirty.value ? 1 : 0)
   + (noteDirty.value ? 1 : 0)
 ))
-const canSave = computed(() => dirtyCount.value > 0 && !saving.value && (!nodeNameDirty.value || !!nodeNameDraft.value.trim()))
+const canSave = computed(() => dirtyCount.value > 0 && !loading.value && !saving.value && (!nodeNameDirty.value || !!nodeNameDraft.value.trim()))
 const templateKey = computed(() => {
-  if (!props.open) return 'closed'
-  const nodeId = String(props.node?.id || '').trim()
-  const typeId = String(props.node?.type_id || '').trim()
-  return `${nodeId}:${typeId}`
+  return mobileNodeTemplateRequestKey(
+    props.open,
+    props.node,
+    props.config as Record<string, unknown> | null,
+    props.providers,
+  )
 })
 const targetNodes = computed(() => {
   const sourceNodeId = String(props.node?.id || '').trim()
@@ -189,8 +195,7 @@ function resetNoteDraft() {
 }
 
 function schemaContextKey(fields: Record<string, any> | null | undefined) {
-  const context = resolveAgentProviderSchemaContext(props.providers, fields)
-  return context.providerId
+  return resolveMobileNodeTemplateProviderId(props.providers, fields)
 }
 
 async function loadTemplate(
@@ -245,6 +250,7 @@ async function loadTemplate(
 }
 
 async function persistPendingChanges(emitSaved = true) {
+  if (loading.value) return false
   const nodeId = String(props.node?.id || '').trim()
   if (!nodeId) return false
   const keys = Object.keys(dirtyKeys.value || {})
@@ -376,8 +382,12 @@ watch(
 watch(
   () => schemaContextKey(draftFields.value),
   (contextKey) => {
-    if (String(props.node?.type_id || '').trim() !== 'agent_node') return
-    if (loading.value || !props.open || contextKey === loadedSchemaContextKey) return
+    const typeId = String(props.node?.type_id || '').trim()
+    if (typeId !== 'agent_node' && !HARNESS_NODE_TYPES.includes(typeId)) return
+    // A provider change during an in-flight template request must supersede it.
+    // Initial draft hydration is the only loading state that should be ignored.
+    if (!props.open || (loading.value && !dirtyKeys.value.provider_id)) return
+    if (!loading.value && contextKey === loadedSchemaContextKey) return
     void loadTemplate(draftFields.value, true)
   },
 )
@@ -458,7 +468,7 @@ onBeforeUnmount(() => {
           <div v-if="loading" class="config-empty">{{ t('board.loadingConfig') }}</div>
           <div v-else-if="fieldKeys.length === 0" class="config-empty">{{ t('board.noEditableFields') }}</div>
           <NodeConfigFields
-            v-if="!loading && fieldKeys.length > 0"
+            v-if="fieldKeys.length > 0"
             :type-id="node?.type_id || ''"
             :schema="schema"
             :fields="draftFields"

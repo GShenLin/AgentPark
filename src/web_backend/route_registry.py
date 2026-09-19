@@ -1,10 +1,16 @@
 from fastapi import Depends, FastAPI, Request
 
 from .channel_api import channel_http_endpoint
+from .node_open_diagnostics import receive_browser_trace
 
 
 class ApiRouteRegistry:
     ROUTES = [
+        ("get", "/api/harnesses", lambda core: core.harness_api.list_harnesses),
+        ("get", "/api/harnesses/{harness_id}", lambda core: core.harness_api.check_harness),
+        ("post", "/api/harnesses/{harness_id}/operations", lambda core: core.harness_api.operate_harness),
+        ("get", "/api/harness-jobs/{job_id}", lambda core: core.harness_api.get_job),
+        ("post", "/api/nodes/instances/{node_id}/open-diagnostics", lambda core: receive_browser_trace),
         ("get", "/api/workspace/bootstrap", lambda core: core.workspace_bootstrap.get_workspace_bootstrap),
         ("get", "/api/access/status", lambda core: core.access_api.get_status),
         ("get", "/api/access/settings", lambda core: core.access_api.get_settings),
@@ -18,20 +24,6 @@ class ApiRouteRegistry:
         ("post", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/messages/delete", lambda core: core.mobile_api.delete_mobile_node_messages),
         ("post", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/turns/delete", lambda core: core.mobile_api.delete_mobile_node_turn),
         ("post", "/api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/messages", lambda core: core.mobile_api.send_mobile_node_message),
-        ("get", "/api/node-desktop-views", lambda core: core.node_desktop_views.list_node_desktop_views),
-        ("post", "/api/node-desktop-views", lambda core: core.node_desktop_views.upsert_node_desktop_view),
-        ("post", "/api/node-desktop-views/summon", lambda core: core.node_desktop_views.summon_node_desktop_view),
-        ("post", "/api/node-desktop-views/launch", lambda core: core.node_desktop_views.launch_node_desktop_pet),
-        ("get", "/api/node-desktop-views/{view_id}", lambda core: core.node_desktop_views.get_node_desktop_view),
-        ("post", "/api/node-desktop-views/{view_id}", lambda core: core.node_desktop_views.update_node_desktop_view),
-        ("post", "/api/node-desktop-views/{view_id}/messages", lambda core: core.node_desktop_views.send_node_desktop_view_message),
-        ("delete", "/api/node-desktop-views/{view_id}", lambda core: core.node_desktop_views.delete_node_desktop_view),
-        ("get", "/api/pet-avatars", lambda core: core.pet_avatars.list_pet_avatars),
-        ("post", "/api/pet-avatars", lambda core: core.pet_avatars.create_pet_avatar),
-        ("get", "/api/pet-avatars/{avatar_id}", lambda core: core.pet_avatars.get_pet_avatar),
-        ("post", "/api/pet-avatars/{avatar_id}/frame", lambda core: core.pet_avatars.update_pet_avatar_frame),
-        ("post", "/api/pet-avatars/{avatar_id}/assets", lambda core: core.pet_avatars.upload_pet_avatar_asset),
-        ("get", "/api/pet-avatars/{avatar_id}/assets/{asset_path:path}", lambda core: core.pet_avatars.get_pet_avatar_asset),
         ("post", "/api/runs/{task_id}/subagents/{name}/stop", lambda core: core.agent_domain.stop_subagent),
         ("get", "/api/paste-agent/config", lambda core: core.agent_domain.get_paste_agent_config),
         ("post", "/api/paste-agent/config", lambda core: core.agent_domain.update_paste_agent_config),
@@ -127,9 +119,9 @@ class ApiRouteRegistry:
         ("post", "/api/provider-auth/{provider_id}/accounts/{account_id}/activate", lambda core: core.provider_auth_api.activate_provider_account),
         ("delete", "/api/provider-auth/{provider_id}/accounts/{account_id}", lambda core: core.provider_auth_api.delete_provider_account),
         ("get", "/api/gateway", lambda core: core.public_gateway_api.get_settings),
-        ("put", "/api/gateway/options", lambda core: core.public_gateway_api.update_options),
-        ("post", "/api/gateway/models", lambda core: core.public_gateway_api.upsert_model),
-        ("delete", "/api/gateway/models/{model_id:path}", lambda core: core.public_gateway_api.delete_model),
+        ("get", "/api/gateway/usage/{date_text}", lambda core: core.public_gateway_api.get_usage),
+        ("put", "/api/gateway", lambda core: core.public_gateway_api.update_settings),
+        ("put", "/api/gateway/models", lambda core: core.public_gateway_api.replace_models),
         ("post", "/api/gateway/keys", lambda core: core.public_gateway_api.create_key),
         ("delete", "/api/gateway/keys/{key_id}", lambda core: core.public_gateway_api.delete_key),
         ("post", "/api/gateway/test", lambda core: core.public_gateway_api.test),
@@ -144,7 +136,7 @@ class ApiRouteRegistry:
         ("delete", "/api/tool-stats", lambda core: core.settings_api.clear_tool_stats),
         ("get", "/api/turn-audits", lambda core: core.settings_api.list_turn_audits),
         ("get", "/api/turn-audits/{trace_id}", lambda core: core.settings_api.get_turn_audit),
-        ("post", "/api/operational-memory/delete-optional", lambda core: core.settings_api.delete_optional_memory),
+        ("post", "/api/node-memory/clear-derived", lambda core: core.settings_api.clear_long_term_memory),
         ("post", "/api/logs/clear", lambda core: core.settings_api.clear_logs),
         ("get", "/api/settings", lambda core: core.settings_api.list_settings_sections),
         ("get", "/api/settings/{section}", lambda core: core.settings_api.get_settings_section),
@@ -155,6 +147,7 @@ class ApiRouteRegistry:
         ("post", "/api/theme/assets", lambda core: core.settings_api.upload_theme_asset),
         ("get", "/api/theme/img/{asset_path:path}", lambda core: core.settings_api.get_theme_image),
         ("post", "/api/system/restart/checkpoint", lambda core: core.system_api.checkpoint_restart),
+        ("get", "/api/system/status", lambda core: core.system_api.server_status),
         ("post", "/api/system/restart", lambda core: core.system_api.restart_server),
         ("post", "/api/system/exit", lambda core: core.system_api.exit_server),
         ("get", "/api/remote-workers", lambda core: core.remote_workspace_api.list_workers),

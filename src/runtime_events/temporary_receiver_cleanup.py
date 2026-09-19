@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Any
 
 from src.file_transaction import KeyedTransactionQueue, atomic_write_text, run_with_interprocess_lock
-from src.operational_memory import load_operational_memory, record_operational_memory_entry
 from src.web_backend.node_config_service import node_config_service
 from src.web_backend.node_memory_store import append_node_memory_entry_once, load_recent_node_memory_records
 from src.web_backend.node_memory_records import read_jsonl_records
@@ -144,7 +143,6 @@ class TemporaryReceiverCleanup:
         creation_trace_id = str(meta.get("creation_trace_id") or "").strip()
         merge_id = f"runtime-event-merge:{graph_id}:{node_id}:{creation_trace_id or node_id}"
         records_merged = bool(state.get("records_merged"))
-        memories_merged = bool(state.get("operational_memory_merged"))
 
         if not records_merged:
             all_records = _read_temp_records(temp_messages_path)
@@ -176,31 +174,7 @@ class TemporaryReceiverCleanup:
             append_node_memory_entry_once(target_memory_path, target_messages_path, "system", envelope)
             records_merged = True
 
-        if not memories_merged:
-            temp_operational_path = os.path.join(os.path.dirname(temp_memory_path), "operational_memory.json")
-            target_operational_path = os.path.join(os.path.dirname(target_memory_path), "operational_memory.json")
-            temp_memory = load_operational_memory(temp_operational_path)
-            for key, item in (temp_memory.get("memories") or {}).items():
-                if not isinstance(item, dict) or str(item.get("status") or "active") != "active":
-                    continue
-                record_operational_memory_entry(
-                    path=target_operational_path,
-                    action="upsert",
-                    reason=f"merged from temporary runtime-event receiver {graph_id}/{node_id}",
-                    kind=str(item.get("kind") or "runtime_event_correction"),
-                    title=str(item.get("title") or key or "Runtime event correction"),
-                    lesson=str(item.get("lesson") or item.get("evidence") or "See merged runtime event receiver record."),
-                    evidence=str(item.get("evidence") or f"temporary receiver {graph_id}/{node_id}, trace {creation_trace_id}"),
-                    scope=item.get("scope") if isinstance(item.get("scope"), dict) else {},
-                    tool_name=str(item.get("tool_name") or ""),
-                    avoid=item.get("avoid") if isinstance(item.get("avoid"), list) else [],
-                    prefer=item.get("prefer") if isinstance(item.get("prefer"), list) else [],
-                    confidence=str(item.get("confidence") or "medium"),
-                    key=str(item.get("key") or key or ""),
-                )
-            memories_merged = True
-
-        return {"records_merged": records_merged, "operational_memory_merged": memories_merged}
+        return {"records_merged": records_merged}
 
     def _mark_cleanup_state(self, graph_id: str, node_id: str, status: str, *, error: str = "") -> None:
         config_path = self.core.graph_runtime._node_config_path(node_id, graph_id)

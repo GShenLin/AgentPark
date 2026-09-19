@@ -18,7 +18,7 @@ popd
 
 echo [INFO] Packaging server executable...
 if exist "dist\AgentPark.exe" del /f /q "dist\AgentPark.exe" >nul 2>nul
-"%PYTHON_EXE%" -m PyInstaller --noconfirm --onefile --name AgentPark --add-data "webui\dist;webui\dist" --collect-submodules src --collect-submodules fastapi --collect-submodules uvicorn --exclude-module flask src\fast_api.py
+"%PYTHON_EXE%" -m PyInstaller --noconfirm --onefile --name AgentPark --add-data "webui\dist;webui\dist" --collect-submodules src --collect-submodules fastapi --collect-submodules uvicorn --collect-all lancedb --collect-all pyarrow --collect-all pypdfium2 --collect-all jieba --exclude-module flask src\fast_api.py
 if errorlevel 1 goto :fail
 if not exist "dist\AgentPark.exe" goto :fail
 

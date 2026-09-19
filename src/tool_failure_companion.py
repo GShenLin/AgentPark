@@ -6,7 +6,6 @@ from typing import Any
 from src.companion_inbox import deliver_companion_notice
 from src.companion_notice_settings import companion_tool_failure_memory_enabled
 from src.companion_paths import COMPANION_GRAPH_ID
-from src.operational_memory_notice_context import build_operational_memory_notice_context
 
 
 TOOL_FAILURE_RESULT_PREVIEW_CHARS = 1600
@@ -34,7 +33,6 @@ def build_tool_failure_memory_notice(agent: object, failures: list[dict[str, Any
 
     context = get_agent_runtime_context(agent)
     memory_path = str(getattr(agent, "current_memory_path", "") or "").strip()
-    memory_context = build_operational_memory_notice_context(memory_path=memory_path)
     node_dir = os.path.dirname(os.path.abspath(memory_path)) if memory_path else ""
     failure = _first_failure(failures)
     return {
@@ -49,7 +47,6 @@ def build_tool_failure_memory_notice(agent: object, failures: list[dict[str, Any
             "trace_id": "",
         },
         "failure": failure,
-        "memory": memory_context,
         "context": {
             "workspace_root": context.workspace_root,
             "working_path": context.working_path,

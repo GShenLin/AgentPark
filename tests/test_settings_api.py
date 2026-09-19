@@ -58,6 +58,173 @@ def test_settings_api_reads_and_writes_model_provider(monkeypatch, tmp_path):
     assert saved["providers"]["demo"]["type"] == "gemini"
 
 
+def test_settings_api_copies_provider_limit_snapshot_for_duplicated_provider(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    provider_path = config_dir / "modelProvider.json"
+    provider_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "demo": {
+                        "type": "openai",
+                        "apiKey": "test-key",
+                        "model": "demo-model",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    provider_limit_path = config_dir / "ProviderLimit.json"
+    provider_limit_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "providers": {
+                    "demo": {
+                        "provider_id": "demo",
+                        "type": "openai",
+                        "model": "demo-model",
+                        "accessible": True,
+                        "status": "ok",
+                        "available_model_ids": ["demo-model", "next-model"],
+                        "model_discovery": {"supported": True},
+                        "features": {},
+                        "unsupported": {},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    duplicated_provider = {
+        "type": "openai",
+        "apiKey": "test-key",
+        "model": "demo-model",
+    }
+    result = SettingsApiDomain(SimpleNamespace()).update_settings_section(
+        "model-provider",
+        {
+            "content": json.dumps(
+                {"providers": {"demo": duplicated_provider, "demo1": duplicated_provider}}
+            ),
+            "provider_limit_copies": [
+                {
+                    "source_provider_id": "demo",
+                    "target_provider_id": "demo1",
+                }
+            ],
+        },
+    )
+
+    saved_limits = json.loads(provider_limit_path.read_text(encoding="utf-8"))
+    assert saved_limits["providers"]["demo1"]["provider_id"] == "demo1"
+    assert saved_limits["providers"]["demo1"]["available_model_ids"] == [
+        "demo-model",
+        "next-model",
+    ]
+    assert result["provider_limit_update"] == {
+        "copied_targets": ["demo1"],
+        "added_models": [],
+        "missing_sources": [],
+    }
+
+
+def test_settings_api_adds_manual_provider_model_id(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    provider = {
+        "type": "openai",
+        "apiKey": "test-key",
+        "model": "manual-model",
+    }
+    (config_dir / "modelProvider.json").write_text(
+        json.dumps({"providers": {"demo": provider}}),
+        encoding="utf-8",
+    )
+    provider_limit_path = config_dir / "ProviderLimit.json"
+    provider_limit_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "providers": {
+                    "demo": {
+                        "provider_id": "demo",
+                        "type": "openai",
+                        "model": "discovered-model",
+                        "available_model_ids": ["discovered-model"],
+                        "features": {},
+                        "unsupported": {},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    result = SettingsApiDomain(SimpleNamespace()).update_settings_section(
+        "model-provider",
+        {
+            "content": json.dumps({"providers": {"demo": provider}}),
+            "provider_model_additions": [
+                {"provider_id": "demo", "model_id": "manual-model"}
+            ],
+        },
+    )
+
+    saved_limits = json.loads(provider_limit_path.read_text(encoding="utf-8"))
+    assert saved_limits["providers"]["demo"]["manual_model_ids"] == ["manual-model"]
+    assert saved_limits["providers"]["demo"]["available_model_ids"] == [
+        "discovered-model",
+        "manual-model",
+    ]
+    assert result["provider_limit_update"]["added_models"] == [
+        {"provider_id": "demo", "model_id": "manual-model"}
+    ]
+
+
+def test_settings_api_rejects_provider_limit_copy_without_saved_target(monkeypatch, tmp_path):
+    from src import workspace_settings
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "modelProvider.json").write_text(
+        json.dumps({"providers": {"demo": {"type": "openai", "apiKey": "test-key"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AGENTPARK_CONFIG_PATH", raising=False)
+    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
+
+    with pytest.raises(HTTPException) as exc:
+        SettingsApiDomain(SimpleNamespace()).update_settings_section(
+            "model-provider",
+            {
+                "content": json.dumps(
+                    {"providers": {"demo": {"type": "openai", "apiKey": "test-key"}}}
+                ),
+                "provider_limit_copies": [
+                    {
+                        "source_provider_id": "demo",
+                        "target_provider_id": "missing",
+                    }
+                ],
+            },
+        )
+
+    assert exc.value.status_code == 400
+    assert "missing" in str(exc.value.detail)
+
+
 def test_settings_api_rejects_model_provider_without_providers(monkeypatch, tmp_path):
     from src import workspace_settings
 
@@ -339,6 +506,9 @@ def test_settings_api_rejects_non_boolean_tool_failure_memory_switch(monkeypatch
 
 def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
     from src.web_backend import runtime_paths
+    from src.config_loader import ConfigLoader
+
+    monkeypatch.setattr(ConfigLoader, "get_all_providers", lambda self: {"next": {"models": ["model-a", "model-b"]}})
 
     graphs_dir = tmp_path / "memories"
     companion_dir = graphs_dir / "Companion" / "Companion"
@@ -374,6 +544,7 @@ def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
                     "type_id": "agent_node",
                     "graph_id": "Companion",
                     "provider_id": "next",
+                    "model": "model-b",
                     "tools": ["file_read_tools"],
                 },
                 ensure_ascii=False,
@@ -384,6 +555,7 @@ def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
     assert result["ok"] is True
     saved = json.loads(companion_path.read_text(encoding="utf-8"))
     assert saved["provider_id"] == "next"
+    assert saved["model"] == "model-b"
     assert saved["tools"] == ["file_read_tools"]
 
 
@@ -518,35 +690,20 @@ def test_settings_api_clears_tool_stats(monkeypatch, tmp_path):
     assert result["failure_analysis"]["total_failures"] == 0
 
 
-def test_settings_api_delete_optional_memory_runs_bat(monkeypatch, tmp_path):
-    from src import workspace_settings
-    from src.web_backend import runtime_paths, settings_maintenance
-
-    script_path = tmp_path / "delete_operational_memory.bat"
-    script_path.write_text("@echo off\necho Deleted 2 files. Failed 0 files. Matched 2 files.\n", encoding="utf-8")
-    monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
-    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
-    calls = []
-
-    def fake_run(command, **kwargs):
-        calls.append((command, kwargs))
-        return SimpleNamespace(
-            returncode=0,
-            stdout="Deleted 2 files. Failed 0 files. Matched 2 files.\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(settings_maintenance.subprocess, "run", fake_run)
-
-    domain = SettingsApiDomain(SimpleNamespace())
-    result = domain.delete_optional_memory()
-
-    assert result["ok"] is True
-    assert result["stdout"] == "Deleted 2 files. Failed 0 files. Matched 2 files."
-    assert calls
-    assert calls[0][1]["cwd"] == str(tmp_path)
-    assert str(script_path) in calls[0][0]
-    assert str(tmp_path / "memories") in calls[0][0]
+def test_settings_api_clears_derived_memory_and_keeps_source_history(monkeypatch, tmp_path):
+    from src.web_backend import runtime_paths
+    from src.long_term_memory.store import MemoryStore
+    root = tmp_path / "memories"
+    node_dir = root / "graph" / "node"
+    store = MemoryStore(node_dir, "graph", "node")
+    store.add_note("Use Chinese")
+    history = node_dir / "messages.jsonl"
+    history.write_text("source-history", encoding="utf-8")
+    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(root))
+    result = SettingsApiDomain(SimpleNamespace()).clear_long_term_memory()
+    assert result["ok"] and result["cleared_nodes"] == 1
+    assert store.notes() == []
+    assert history.read_text(encoding="utf-8") == "source-history"
 
 
 def test_settings_api_clear_logs_runs_clear_log_bat(monkeypatch, tmp_path):

@@ -184,6 +184,9 @@ class BaseTool:
         combined_cancel_source = combine_cancel_sources(node_cancel_source, call_cancel_event)
         started_at = now_monotonic()
         try:
+            checkpoint = getattr(self.agent, "_record_tool_call_started", None)
+            if callable(checkpoint):
+                checkpoint(call)
             emit_tool_event(event_callback, build_tool_call_start(call))
             with tool_call_cancellation_scope(combined_cancel_source):
                 tool_result = self.execute_tool_result(call.name, call.arguments)
@@ -198,6 +201,9 @@ class BaseTool:
             image_data = processed.image_data
             status = tool_result.status
             error = tool_result.error
+            finish_checkpoint = getattr(self.agent, "_record_tool_call_finished", None)
+            if callable(finish_checkpoint):
+                finish_checkpoint(call, status=status, error=error)
             event_feedback = emit_tool_event(
                 event_callback,
                 build_tool_call_end(

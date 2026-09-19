@@ -365,7 +365,7 @@ def _sanitize_provider_request_summary(summary: dict[str, Any]) -> dict[str, Any
         "internal_context_chars",
         "skills_context_chars",
         "mcp_servers_context_chars",
-        "operational_memory_context_chars",
+        "long_term_memory_context_chars",
         "project_instructions_context_chars",
         "input_items",
         "largest_input_items",

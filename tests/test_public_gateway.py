@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -16,6 +17,7 @@ from src.cli_provider_runtime.responses_stream import collect_responses_stream
 from src.public_gateway.routes import register_public_gateway_routes
 from src.public_gateway.service import PublicGatewayService
 from src.public_gateway.store import PublicGatewayStore
+from src.public_gateway.usage_stats import PublicGatewayUsageStore
 
 
 def test_gateway_key_lifecycle_uses_one_time_plaintext(tmp_path):
@@ -60,14 +62,14 @@ def test_public_routes_require_endpoint_key_and_list_configured_models(tmp_path,
     )
     service = PublicGatewayService(str(tmp_path))
     provider = service.store.list_providers()[0]
-    service.store.upsert_model(
-        {
+    service.store.replace_models(
+        {"models": [{
             "id": "public/test-model",
             "providerId": provider["id"],
             "accountId": "",
             "protocols": ["responses", "chat_completions", "messages"],
             "enabled": True,
-        }
+        }]}
     )
     created = service.store.create_key({"name": "route test"})
     app = FastAPI()
@@ -277,3 +279,5 @@ def test_public_stream_reports_midstream_failure_as_protocol_event(tmp_path):
     assert "response.created" in response.text
     assert "response.failed" in response.text
     assert "upstream disconnected" in response.text
+    today = datetime.now().astimezone().date().isoformat()
+    assert PublicGatewayUsageStore(str(tmp_path)).aggregate(today)["totals"]["requestCount"] == 0

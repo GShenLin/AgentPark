@@ -4,8 +4,11 @@ from dataclasses import dataclass
 import os
 
 from src.task_direction_store import clear_task_direction_states
+from src.long_term_memory.store import invalidate_node_memory
+from src.harness.memory_reset import clear_harness_memory
 
 from .node_memory_store import clear_node_memory
+from .node_config_service import read_node_config_optional
 from .state_store import _cancel_node_work
 
 
@@ -14,7 +17,7 @@ class NodeMemoryResetBlocked(RuntimeError):
 
 
 class NodeMemoryResetError(RuntimeError):
-    """Raised when task-scoped state cannot be removed after work stops."""
+    """Raised when node-owned runtime state cannot be removed after work stops."""
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,7 @@ class NodeMemoryResetResult:
     active_runs_cancelled: int
     async_runs_stopped: int
     pending_items_cleared: int
+    cleared_harness_paths: tuple[str, ...]
 
 
 def reset_node_memory(
@@ -52,6 +56,12 @@ def reset_node_memory(
             f"node still has {active_count} active run(s); memory was not cleared"
         )
 
+    try:
+        cleared_harness_paths = clear_harness_memory(
+            node_directory, read_node_config_optional(config_path))
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise NodeMemoryResetError(f"failed to clear Harness memory: {type(exc).__name__}: {exc}") from exc
+    invalidate_node_memory(node_directory, reset=True)
     cleared_file_count = clear_node_memory(memory_path, messages_path)
     try:
         cleared_task_files = clear_task_direction_states(node_directory)
@@ -65,6 +75,7 @@ def reset_node_memory(
         active_runs_cancelled=active_runs_cancelled,
         async_runs_stopped=async_runs_stopped,
         pending_items_cleared=int(cancel_result.get("cleared_pending") or 0),
+        cleared_harness_paths=cleared_harness_paths,
     )
 
 

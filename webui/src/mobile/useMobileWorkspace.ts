@@ -16,7 +16,6 @@ import {
   listAgentProfiles,
   listGraphProfiles,
   listNodes,
-  listNodeInstanceConfigs,
   listMobileGraphs,
   listMobileNodes,
   listMobilePcs,
@@ -56,6 +55,7 @@ import { renameMobileNodeIdentity } from './mobileNodeIdentity'
 import { resolveTurnDeletionHistoryMode } from '../turnDeletionRefresh'
 import { useCliSessions } from '../composables/useCliSessions'
 import { formatLiveActivity } from '../liveActivity'
+import { loadMobileNodeEditorConfig } from './mobileNodeEditorConfig'
 import {
   ConversationRequestCoordinator,
   type ConversationRequestToken,
@@ -310,7 +310,7 @@ function pruneOutputRoutesForNode(routes: GraphOutputRoutes, nodeId: string): Gr
   return next
 }
 
-export function useMobileWorkspace() {
+export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
   const { nodeTriggerInputs } = useGlobalState()
   const view = ref<MobileView>('pcs')
   const pcs = ref<MobilePc[]>([])
@@ -645,6 +645,11 @@ export function useMobileWorkspace() {
       const nextPcs = await listMobilePcs()
       if (requestId !== loadRequestId) return
       pcs.value = nextPcs
+      if (options.initialPcId) {
+        const pc = nextPcs.find((item) => item.id === options.initialPcId)
+        if (!pc) throw new Error(`PC not found: ${options.initialPcId}`)
+        await selectPc(pc)
+      }
     } catch (e) {
       if (requestId !== loadRequestId) return
       setError(e)
@@ -766,10 +771,7 @@ export function useMobileWorkspace() {
     const nodeId = String(selectedNode.value?.id || '').trim()
     if (!graphId) throw new Error('Graph selection is required')
     if (!nodeId) throw new Error('Node selection is required')
-    const response = await listNodeInstanceConfigs(graphId, 0, 'board')
-    const configs = response.nodes || []
-    const selected = configs.find((item) => String(item.node_id || '').trim() === nodeId)
-    if (!selected) return
+    const selected = await loadMobileNodeEditorConfig(nodeId, graphId)
     nodeConfigs.value = {
       ...nodeConfigs.value,
       [nodeId]: selected,

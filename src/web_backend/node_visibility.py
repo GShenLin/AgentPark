@@ -8,7 +8,7 @@ from fastapi import Request
 from .graph_output_routes import normalize_output_routes
 from .node_config_errors import NodeConfigReadError, NodeConfigWriteError
 from .node_config_service import node_config_service
-from .request_access import is_local_request
+from .request_access import has_owner_access
 from .service_host import HostBoundService
 from .shared import HTTPException
 
@@ -70,7 +70,7 @@ class NodeVisibilityService(HostBoundService):
         self.core.graph_api.require_graph_visible(safe_graph_id, request)
         if not config_path or not os.path.isfile(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
-        if not is_local_request(request) and self._node_is_private(safe_graph_id, safe_node_id):
+        if not has_owner_access(request) and self._node_is_private(safe_graph_id, safe_node_id):
             raise HTTPException(status_code=404, detail="node instance not found")
 
     def set_node_visibility(
@@ -82,7 +82,7 @@ class NodeVisibilityService(HostBoundService):
     ) -> dict:
         safe_graph_id, safe_node_id, config_path = self._node_config_for_visibility(graph_id, node_id)
         self.core.graph_api.require_graph_visible(safe_graph_id, request)
-        if not is_local_request(request):
+        if not has_owner_access(request):
             raise HTTPException(status_code=403, detail="node visibility can only be changed from a local client")
         if not config_path or not os.path.isfile(config_path):
             raise HTTPException(status_code=404, detail="node instance not found")
@@ -120,7 +120,7 @@ class NodeVisibilityService(HostBoundService):
         request: Request | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         routes = normalize_output_routes(output_routes)
-        if is_local_request(request):
+        if has_owner_access(request):
             return routes
         private_ids = self.private_node_ids(graph_id)
         if not private_ids:
@@ -150,7 +150,7 @@ class NodeVisibilityService(HostBoundService):
         request: Request | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         incoming = normalize_output_routes(incoming_routes)
-        if is_local_request(request):
+        if has_owner_access(request):
             return incoming
         private_ids = self.private_node_ids(graph_id)
         if not private_ids:
@@ -222,7 +222,7 @@ class NodeVisibilityService(HostBoundService):
         request: Request | None = None,
     ) -> dict[str, Any]:
         payload = dict(event or {})
-        if is_local_request(request):
+        if has_owner_access(request):
             return payload
         private_ids = self.private_node_ids(graph_id)
         if not private_ids:

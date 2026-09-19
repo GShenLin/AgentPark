@@ -22,7 +22,6 @@ const {
   nodeEditorAttachments,
   nodeEditorAttachmentDrafts,
   nodeTriggerInputs,
-  nodeConfigDockWidth,
 } = useGlobalState()
 
 const isUploadingFiles = ref(false)
@@ -322,8 +321,6 @@ watch(
   <section
     v-if="selectedNode"
     class="node-input-dock"
-    data-board-occlusion="bottom"
-    :style="{ left: `${nodeConfigDockWidth}px` }"
     @pointerdown.stop
     @click.stop
   >
@@ -353,15 +350,14 @@ watch(
 
 <style scoped>
 .node-input-dock {
-  position: absolute;
-  right: var(--right-panel-width, 0px);
-  bottom: 0;
-  z-index: 70;
+  position: relative;
+  flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  width: 100%;
   box-sizing: border-box;
-  max-height: calc(100vh - 52px);
+  max-height: min(42%, 320px);
   overflow: auto;
   padding: 8px 10px;
   border-top: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.24));
@@ -371,7 +367,7 @@ watch(
   background-position: var(--theme-panel-node-side-editor-background-position, center);
   background-repeat: var(--theme-panel-node-side-editor-background-repeat, no-repeat);
   background-blend-mode: var(--theme-panel-node-side-editor-background-blend-mode, normal);
-  box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.24);
+  box-shadow: 0 -10px 28px rgba(2, 6, 23, 0.28);
 }
 
 .node-input-dock :deep(.input-section) {

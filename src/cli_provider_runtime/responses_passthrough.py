@@ -9,6 +9,10 @@ from typing import Any
 
 from .contracts import CanonicalTool
 from .contracts import CodexProtocolError
+from .doubao_seed_response import SeedResponseNormalizer
+from .doubao_seed_stream import normalize_seed_stream
+from .doubao_seed_tools import SeedToolRegistry
+from .doubao_responses_request import prepare_doubao_request, unwrap_custom_arguments
 from .http_transport import UpstreamResponse
 
 
@@ -16,12 +20,14 @@ from .http_transport import UpstreamResponse
 class ResponsesToolIdentity:
     namespace: str
     name: str
+    kind: str = "function"
 
 
 @dataclass(frozen=True)
 class PreparedResponsesRequest:
     payload: dict[str, Any]
     tools_by_wire_name: dict[str, ResponsesToolIdentity]
+    seed_tools: SeedToolRegistry | None = None
 
 
 class ResponsesPassthrough:
@@ -37,6 +43,11 @@ class ResponsesPassthrough:
 
     def prepare_request(self, payload: dict[str, Any]) -> PreparedResponsesRequest:
         request = copy.deepcopy(payload)
+        seed_tools = (
+            SeedToolRegistry(payload)
+            if str(self.config.get("type") or "").strip().lower() == "doubao"
+            else None
+        )
         if str(self.config.get("authMode") or "").strip().lower() == "codex":
             # ChatGPT's Codex Responses endpoint is stateless and rejects stored responses.
             request["store"] = False
@@ -45,41 +56,68 @@ class ResponsesPassthrough:
         if not self.flattens_namespace_tools:
             return PreparedResponsesRequest(payload=request, tools_by_wire_name={})
 
+        custom_names = prepare_doubao_request(request) if seed_tools is not None else set()
         tools, identities = _flatten_namespace_tools(request.get("tools"))
+        for name in custom_names:
+            if name in identities:
+                raise CodexProtocolError("Doubao custom tool name collides with a flattened namespace tool.")
+            identities[name] = ResponsesToolIdentity(namespace="", name=name, kind="custom")
         if tools is not None:
             request["tools"] = tools
         _flatten_tool_choice(request, identities)
         _flatten_input_calls(request.get("input"), identities)
         _remove_unsupported_reasoning_summary(request)
         request.pop("client_metadata", None)
-        return PreparedResponsesRequest(payload=request, tools_by_wire_name=identities)
+        return PreparedResponsesRequest(payload=request, tools_by_wire_name=identities, seed_tools=seed_tools)
 
     @staticmethod
     def transform_response(
         payload: dict[str, Any],
         tools_by_wire_name: dict[str, ResponsesToolIdentity],
+        *,
+        seed_tools: SeedToolRegistry | None = None,
     ) -> dict[str, Any]:
         response = copy.deepcopy(payload)
         _restore_calls(response, tools_by_wire_name)
+        if seed_tools is not None:
+            response = SeedResponseNormalizer(seed_tools).response(response)
         return response
 
     @staticmethod
     def transform_stream(
         response: UpstreamResponse,
         tools_by_wire_name: dict[str, ResponsesToolIdentity],
+        *,
+        seed_tools: SeedToolRegistry | None = None,
+    ) -> Iterable[bytes]:
+        frames = ResponsesPassthrough._transform_stream(response, tools_by_wire_name)
+        if seed_tools is not None:
+            yield from normalize_seed_stream(frames, seed_tools)
+        else:
+            yield from frames
+
+    @staticmethod
+    def _transform_stream(
+        response: UpstreamResponse,
+        tools_by_wire_name: dict[str, ResponsesToolIdentity],
     ) -> Iterable[bytes]:
         try:
             frame: list[bytes] = []
+            custom_items: set[str] = set()
             while True:
                 line = response.body.readline()
                 if not line:
                     if frame:
-                        yield _transform_sse_frame(frame, tools_by_wire_name)
+                        transformed = _transform_sse_frame(frame, tools_by_wire_name, custom_items)
+                        if transformed:
+                            yield transformed
                     return
                 frame.append(line)
                 if line.rstrip(b"\r\n"):
                     continue
-                yield _transform_sse_frame(frame, tools_by_wire_name)
+                transformed = _transform_sse_frame(frame, tools_by_wire_name, custom_items)
+                if transformed:
+                    yield transformed
                 frame.clear()
         finally:
             response.close()
@@ -195,7 +233,15 @@ def _restore_calls(
         identity = identities.get(str(value.get("name") or ""))
         if identity is not None:
             value["name"] = identity.name
-            value["namespace"] = identity.namespace
+            if identity.kind == "custom":
+                arguments = value.pop("arguments", "")
+                value["input"] = (
+                    "" if arguments == "" and value.get("status") == "in_progress"
+                    else unwrap_custom_arguments(arguments)
+                )
+                value["type"] = "custom_tool_call"
+            elif identity.namespace:
+                value["namespace"] = identity.namespace
     for child in value.values():
         _restore_calls(child, identities)
 
@@ -203,6 +249,7 @@ def _restore_calls(
 def _transform_sse_frame(
     lines: list[bytes],
     identities: dict[str, ResponsesToolIdentity],
+    custom_items: set[str],
 ) -> bytes:
     data_lines: list[bytes] = []
     other_lines: list[bytes] = []
@@ -225,6 +272,22 @@ def _transform_sse_frame(
             payload = json.loads(raw_data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise CodexProtocolError("Responses SSE data is not valid UTF-8 JSON.") from exc
+        item = payload.get("item") if isinstance(payload, dict) else None
+        if isinstance(item, dict) and item.get("type") == "function_call":
+            identity = identities.get(str(item.get("name") or ""))
+            if identity is not None and identity.kind == "custom":
+                custom_items.add(str(item.get("id") or ""))
+        if isinstance(payload, dict) and payload.get("item_id") in custom_items:
+            event_type = payload.get("type")
+            if event_type == "response.function_call_arguments.delta":
+                return b""
+            if event_type == "response.function_call_arguments.done":
+                payload["type"] = "response.custom_tool_call_input.done"
+                payload["input"] = unwrap_custom_arguments(payload.pop("arguments"))
+                other_lines = [
+                    b"event: response.custom_tool_call_input.done" if line.startswith(b"event:") else line
+                    for line in other_lines
+                ]
         _restore_calls(payload, identities)
         transformed_data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return newline.join([*other_lines, b"data: " + transformed_data]) + newline + newline

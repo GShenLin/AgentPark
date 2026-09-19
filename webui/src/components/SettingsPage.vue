@@ -16,6 +16,8 @@ import {
   listSettingsSections,
   saveThemePreset,
   updateSettingsSection,
+  type ProviderLimitCopyRequest,
+  type ProviderModelAdditionRequest,
   type SettingsDocument,
   type SettingsSectionInfo,
   type ThemePresetInfo,
@@ -26,7 +28,10 @@ import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
 import AccessSettingsPanel from './settings/AccessSettingsPanel.vue'
 import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySelect.vue'
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
+import HarnessSettingsPanel from './settings/HarnessSettingsPanel.vue'
+import KnowledgeSettingsPanel from './settings/KnowledgeSettingsPanel.vue'
 import GatewaySettingsPanel from './settings/GatewaySettingsPanel.vue'
+import PeerNetworkPanel from './settings/PeerNetworkPanel.vue'
 import ModelProviderSettingsForm from './settings/ModelProviderSettingsForm.vue'
 import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
@@ -37,7 +42,6 @@ import ThemeSettingsForm from './settings/ThemeSettingsForm.vue'
 import { applyWorkspaceTheme } from '../theme'
 import { t } from '../i18n'
 
-const AnimEditor = defineAsyncComponent(() => import('./settings/AnimEditor.vue'))
 const NodeProfilerEditor = defineAsyncComponent(() => import('./settings/NodeProfilerEditor.vue'))
 const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
   {
@@ -68,8 +72,10 @@ const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
 
 const props = withDefaults(defineProps<{
   backLabel?: string
+  showBackButton?: boolean
 }>(), {
-  backLabel: 'Board',
+  backLabel: 'Back',
+  showBackButton: true,
 })
 
 const emit = defineEmits<{
@@ -93,8 +99,11 @@ const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[
 const themePresets = ref<ThemePresetInfo[]>([])
 const activeThemePresetId = ref('default')
 const nodeProfilerDirty = ref(false)
+const pendingProviderLimitCopies = ref<ProviderLimitCopyRequest[]>([])
+const pendingProviderModelAdditions = ref<ProviderModelAdditionRequest[]>([])
+const providerLimitSourceIds = ref<Record<string, string>>({})
+const modelProviderFormRevision = ref(0)
 const backButtonLabel = computed(() => {
-  if (props.backLabel === 'Board') return t('common.board')
   if (props.backLabel === 'Back') return t('common.back')
   return props.backLabel
 })
@@ -103,13 +112,13 @@ const SECTION_MESSAGE_KEYS: Record<string, string> = {
   authorization: 'settings.authorization',
   'model-provider': 'settings.modelProvider',
   gateway: 'settings.gateway',
+  harness: 'settings.harness',
   defaults: 'settings.defaults',
   companion: 'settings.companion',
   events: 'settings.runtimeEvents',
   'provider-test': 'settings.providerTest',
   pressure: 'settings.pressure',
   'tool-stats': 'settings.statistics',
-  'anim-editor': 'settings.animationEditor',
   'node-profiler-editor': 'settings.nodeProfiler',
   exit: 'settings.exit',
   theme: 'settings.theme',
@@ -117,6 +126,9 @@ const SECTION_MESSAGE_KEYS: Record<string, string> = {
 
 const displaySections = computed<SettingsSectionInfo[]>(() => {
   const base = sections.value.slice()
+  base.push({ id: 'harness', label: 'Harness', path: '', filename: '' })
+  base.push({ id: 'knowledge', label: 'Knowledge', path: '本地文件夹知识库', filename: '' })
+  base.push({ id: 'peer-network', label: '设备互联', path: '', filename: '' })
   if (!base.some((item) => item.id === 'authorization')) {
     base.unshift({
       id: 'authorization',
@@ -157,14 +169,6 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
       filename: 'summary.json',
     })
   }
-  if (!base.some((item) => item.id === 'anim-editor')) {
-    base.push({
-      id: 'anim-editor',
-      label: 'AnimEditor',
-      path: 'petAvatars',
-      filename: 'frame.json',
-    })
-  }
   if (!base.some((item) => item.id === 'node-profiler-editor')) {
     base.push({
       id: 'node-profiler-editor',
@@ -185,7 +189,7 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
 })
 
 const currentSection = computed(() => {
-  return sections.value.find((item) => item.id === activeSection.value) || null
+  return displaySections.value.find((item) => item.id === activeSection.value) || null
 })
 
 const activeLabel = computed(() => {
@@ -196,14 +200,25 @@ const activeLabel = computed(() => {
 
 const isProviderTest = computed(() => activeSection.value === 'provider-test')
 const isAuthorization = computed(() => activeSection.value === 'authorization')
+const isHarness = computed(() => activeSection.value === 'harness')
+const isKnowledge = computed(() => activeSection.value === 'knowledge')
 const isGateway = computed(() => activeSection.value === 'gateway')
 const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
-const isAnimEditor = computed(() => activeSection.value === 'anim-editor')
 const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profiler-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
-const isVirtualSection = computed(() => isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isAnimEditor.value || isNodeProfilerEditor.value || isExitSection.value)
-const dirty = computed(() => !isVirtualSection.value && editorContent.value !== String(loadedDocument.value?.content || ''))
+const isPeerNetwork = computed(() => activeSection.value === 'peer-network')
+const isVirtualSection = computed(() => isKnowledge.value || isHarness.value || isPeerNetwork.value || isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isNodeProfilerEditor.value || isExitSection.value)
+const dirty = computed(() => (
+  !isVirtualSection.value
+  && (
+    editorContent.value !== String(loadedDocument.value?.content || '')
+    || (
+      activeSection.value === 'model-provider'
+      && (pendingProviderLimitCopies.value.length > 0 || pendingProviderModelAdditions.value.length > 0)
+    )
+  )
+))
 const validationWarnings = computed(() => Array.isArray(loadedDocument.value?.warnings)
   ? loadedDocument.value.warnings.map((item) => String(item || '').trim()).filter(Boolean)
   : [])
@@ -273,7 +288,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
+  if (sectionId === 'knowledge' || sectionId === 'harness' || sectionId === 'peer-network' || sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -290,6 +305,12 @@ async function loadSection(sectionId = activeSection.value) {
     const document = await getSettingsSection(sectionId)
     loadedDocument.value = document
     editorContent.value = document.content
+    if (sectionId === 'model-provider') {
+      pendingProviderLimitCopies.value = []
+      pendingProviderModelAdditions.value = []
+      providerLimitSourceIds.value = {}
+      modelProviderFormRevision.value += 1
+    }
     syncThemePresetState(document)
     advancedMode.value = false
   } catch (e: any) {
@@ -314,6 +335,73 @@ function handleBack() {
   }
   emit('back')
 }
+
+function handleProviderDuplicated(sourceProviderId: string, targetProviderId: string) {
+  const sourceId = providerLimitSourceIds.value[sourceProviderId] || sourceProviderId
+  pendingProviderLimitCopies.value.push({
+    source_provider_id: sourceId,
+    target_provider_id: targetProviderId,
+  })
+  providerLimitSourceIds.value = {
+    ...providerLimitSourceIds.value,
+    [targetProviderId]: sourceId,
+  }
+}
+
+function handleProviderIdChanged(previousProviderId: string, nextProviderId: string) {
+  const sourceId = providerLimitSourceIds.value[previousProviderId] || previousProviderId
+  pendingProviderLimitCopies.value = pendingProviderLimitCopies.value.map((copy) => (
+    copy.target_provider_id === previousProviderId
+      ? { ...copy, target_provider_id: nextProviderId }
+      : copy
+  ))
+  pendingProviderModelAdditions.value = pendingProviderModelAdditions.value.map((addition) => (
+    addition.provider_id === previousProviderId
+      ? { ...addition, provider_id: nextProviderId }
+      : addition
+  ))
+  const nextSourceIds = { ...providerLimitSourceIds.value }
+  delete nextSourceIds[previousProviderId]
+  nextSourceIds[nextProviderId] = sourceId
+  providerLimitSourceIds.value = nextSourceIds
+}
+
+function handleProviderDeleted(providerId: string) {
+  pendingProviderLimitCopies.value = pendingProviderLimitCopies.value.filter(
+    (copy) => copy.target_provider_id !== providerId,
+  )
+  pendingProviderModelAdditions.value = pendingProviderModelAdditions.value.filter(
+    (addition) => addition.provider_id !== providerId,
+  )
+  const nextSourceIds = { ...providerLimitSourceIds.value }
+  delete nextSourceIds[providerId]
+  providerLimitSourceIds.value = nextSourceIds
+}
+
+function handleProviderModelAdded(providerId: string, modelId: string) {
+  if (pendingProviderModelAdditions.value.some(
+    (addition) => addition.provider_id === providerId && addition.model_id === modelId,
+  )) return
+  pendingProviderModelAdditions.value.push({ provider_id: providerId, model_id: modelId })
+}
+
+function providerLimitCopiesForSave() {
+  const dataProviders = formData.value?.providers
+  if (!dataProviders || typeof dataProviders !== 'object' || Array.isArray(dataProviders)) return []
+  return pendingProviderLimitCopies.value.filter(
+    (copy) => Object.prototype.hasOwnProperty.call(dataProviders, copy.target_provider_id),
+  )
+}
+
+function providerModelAdditionsForSave() {
+  const dataProviders = formData.value?.providers
+  if (!dataProviders || typeof dataProviders !== 'object' || Array.isArray(dataProviders)) return []
+  return pendingProviderModelAdditions.value.filter(
+    (addition) => Object.prototype.hasOwnProperty.call(dataProviders, addition.provider_id),
+  )
+}
+
+defineExpose({ requestBack: handleBack })
 
 function formatJson() {
   error.value = ''
@@ -349,9 +437,19 @@ async function saveSection() {
       status.value = t('settings.applied')
       return
     }
-    const document = await updateSettingsSection(activeSection.value, editorContent.value)
+    const document = await updateSettingsSection(
+      activeSection.value,
+      editorContent.value,
+      activeSection.value === 'model-provider' ? providerLimitCopiesForSave() : [],
+      activeSection.value === 'model-provider' ? providerModelAdditionsForSave() : [],
+    )
     loadedDocument.value = document
     editorContent.value = document.content
+    if (activeSection.value === 'model-provider') {
+      pendingProviderLimitCopies.value = []
+      pendingProviderModelAdditions.value = []
+      providerLimitSourceIds.value = {}
+    }
     syncThemePresetState(document)
     status.value = document.restart_required ? t('settings.restartRequired') : t('common.saved')
     if (activeSection.value === 'model-provider') {
@@ -435,9 +533,9 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>{{ t('common.settings') }}</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isAnimEditor ? 'petAvatars/*/frame.json' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
-      <div class="settings-head-actions">
+      <div v-if="props.showBackButton" class="settings-head-actions">
         <ActionButton compact @click="handleBack">{{ backButtonLabel }}</ActionButton>
       </div>
     </header>
@@ -456,7 +554,7 @@ onMounted(async () => {
       </nav>
 
       <main class="settings-editor">
-        <div class="editor-toolbar">
+        <div v-if="!isGateway" class="editor-toolbar">
           <div class="editor-title">
             <span>{{ activeLabel }}</span>
             <span v-if="dirty" class="editor-state">{{ t('settings.unsaved') }}</span>
@@ -480,11 +578,13 @@ onMounted(async () => {
         </div>
 
         <AccessSettingsPanel v-if="isAuthorization" />
+        <HarnessSettingsPanel v-else-if="isHarness" />
+        <KnowledgeSettingsPanel v-else-if="isKnowledge" />
         <GatewaySettingsPanel v-else-if="isGateway" />
+        <PeerNetworkPanel v-else-if="isPeerNetwork" />
         <ProviderTestSettingsPanel v-else-if="isProviderTest" />
         <PressureSettingsPanel v-else-if="isPressure" />
         <StaticSettingsPanel v-else-if="isToolStats" />
-        <AnimEditor v-else-if="isAnimEditor" @error="error = $event" @status="status = $event" />
         <NodeProfilerEditor
           v-else-if="isNodeProfilerEditor"
           :providers="providers"
@@ -507,12 +607,20 @@ onMounted(async () => {
         <template v-else>
           <ModelProviderSettingsForm
             v-if="activeSection === 'model-provider' && formData"
+            :key="modelProviderFormRevision"
             :data="formData"
             @update:data="replaceData"
+            @provider-duplicated="handleProviderDuplicated"
+            @provider-id-changed="handleProviderIdChanged"
+            @provider-deleted="handleProviderDeleted"
+            @provider-model-added="handleProviderModelAdded"
           />
           <DefaultSettingsForm
             v-else-if="activeSection === 'defaults' && formData"
             :data="formData"
+            :providers="providers"
+            :memory-defaults="loadedDocument?.long_term_memory_defaults"
+            :conversation-defaults="loadedDocument?.conversation_context_defaults"
             :runtime="loadedDocument?.runtime"
             @update:data="replaceData"
           />

@@ -32,17 +32,57 @@ def test_grok_responses_payload_uses_grok_reasoning_contract():
     assert payload["prompt_cache_key"] == "conversation-1"
 
 
-@pytest.mark.parametrize("effort", ["none", "xhigh"])
-def test_grok_45_rejects_unsupported_reasoning_effort(effort):
+def test_grok_rejects_unsupported_reasoning_effort():
     agent = _agent()
 
-    with pytest.raises(ValueError, match="Grok 4.5 reasoning_effort"):
+    with pytest.raises(ValueError, match="Grok reasoning_effort must be one of"):
         agent._build_responses_payload(
             current_input=[],
             tools_payload=[],
             use_stream=False,
-            provider_options={"reasoning_effort": effort},
+            provider_options={"reasoning_effort": "max"},
         )
+
+
+def test_grok_provider_neutral_none_omits_reasoning_payload():
+    agent = _agent({"model": "grok-4.6"})
+
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[],
+        use_stream=False,
+        provider_options={"thinking_mode": "disabled", "reasoning_effort": "none"},
+    )
+
+    assert "reasoning" not in payload
+    assert "include" not in payload
+
+
+def test_grok_provider_neutral_none_does_not_depend_on_model_id():
+    agent = _agent({"model": "grok-future-model"})
+
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[],
+        use_stream=False,
+        provider_options={"thinking_mode": "disabled", "reasoning_effort": "none"},
+    )
+
+    assert "reasoning" not in payload
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh"])
+def test_grok_type_accepts_reasoning_efforts_without_model_matching(effort):
+    agent = _agent({"model": "grok-future-model"})
+
+    payload = agent._build_responses_payload(
+        current_input=[],
+        tools_payload=[],
+        use_stream=False,
+        provider_options={"reasoning_effort": effort},
+    )
+
+    assert payload["reasoning"] == {"effort": effort}
 
 
 def test_grok_responses_mapping_preserves_xai_hosted_tools():

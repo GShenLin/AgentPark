@@ -163,7 +163,7 @@ onBeforeUnmount(() => {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   padding: 6px;
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 10px;
@@ -172,8 +172,9 @@ onBeforeUnmount(() => {
 }
 
 .profile-option {
+  flex: 0 0 auto;
   width: 100%;
-  min-height: 30px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -182,7 +183,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: transparent;
   color: rgba(226, 232, 240, 0.95);
-  padding: 4px 4px 4px 8px;
+  padding: 7px 4px 7px 8px;
   text-align: left;
 }
 

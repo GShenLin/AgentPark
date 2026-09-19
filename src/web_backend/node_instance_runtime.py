@@ -36,6 +36,7 @@ from .node_memory_store import read_node_memory_text
 from .node_memory_store import restore_node_memory_records
 from .node_live_output import build_live_output_payload
 from .node_execution_context import bind_node_storage_context
+from .node_open_diagnostics import checkpoint
 
 
 def _copy_live_activity_blocks(item: object) -> list[dict]:
@@ -217,11 +218,13 @@ class NodeInstanceRuntime(HostBoundService):
         messages_limit: int | None = 400,
         history_mode: str = "recent",
     ):
+        checkpoint("memory_handler_enter")
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         memory_path = self.graph_runtime._node_memory_path(safe_node_id, safe_graph_id)
         messages_path = self.graph_runtime._node_messages_path(safe_node_id, safe_graph_id)
+        checkpoint("memory_paths_resolved")
         return self.get_node_instance_memory_from_paths(
             config_path,
             memory_path,
@@ -245,6 +248,7 @@ class NodeInstanceRuntime(HostBoundService):
         history_mode: str = "recent",
     ):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
+        checkpoint("memory_config_read")
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
         if bool(cfg.get("_delete_requested")):
@@ -271,21 +275,25 @@ class NodeInstanceRuntime(HostBoundService):
                 messages_path,
                 materialize_roles=materialize_roles,
             )
+            checkpoint("memory_records_read", records=len(latest_turn_records))
             records = _select_latest_turn_records(latest_turn_records, safe_history_mode)
             text = render_memory_markdown(records)
             if max_chars is not None:
                 text = text[-max(0, int(max_chars)):]
+            checkpoint("memory_markdown_built", text_chars=len(text))
         else:
             effective_limit = None if safe_history_mode == "all" else messages_limit
             records = load_recent_node_memory_records(memory_path, messages_path, limit=effective_limit)
             history_complete = effective_limit is None or len(records) < max(0, int(effective_limit))
             text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
+            checkpoint("memory_history_read", records=len(records), text_chars=len(text))
         messages = [normalize_envelope(item, default_role="assistant") for item in records]
         progress_summary = _latest_turn_progress_summary(
             latest_turn_records if safe_history_mode in lazy_turn_modes else records
         )
         current_paths = current_node_memory_paths(memory_path, messages_path)
         live = self.core.node_live_outputs.get(graph_id, node_id) or {}
+        checkpoint("memory_payload_ready", messages=len(messages), live_chars=len(str(live.get("text") or "")))
         return {
             "memory_path": current_paths.get("memory_path") or memory_path,
             "messages_path": current_paths.get("messages_path") or messages_path,
@@ -505,16 +513,20 @@ class NodeInstanceRuntime(HostBoundService):
         }
 
     def get_node_instance_live(self, node_id: str, graph_id: str = ""):
+        checkpoint("live_handler_enter")
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, node_id)
         config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
+        checkpoint("live_config_read")
         if not isinstance(cfg, dict) or not cfg:
             raise HTTPException(status_code=404, detail="node instance not found")
         if bool(cfg.get("_delete_requested")):
             raise HTTPException(status_code=409, detail="node is being deleted")
         live = self.core.node_live_outputs.get(safe_graph_id, safe_node_id) or {}
-        return build_live_output_payload(safe_graph_id, safe_node_id, live, snapshot=True)
+        payload = build_live_output_payload(safe_graph_id, safe_node_id, live, snapshot=True)
+        checkpoint("live_payload_ready", live_chars=len(payload.get("live_message", "")))
+        return payload
 
     def set_node_instance_state(self, node_id: str, payload: dict, graph_id: str = ""):
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)

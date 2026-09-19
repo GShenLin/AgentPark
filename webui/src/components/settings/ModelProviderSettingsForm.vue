@@ -21,6 +21,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:data': [value: Record<string, unknown>]
+  'provider-duplicated': [sourceProviderId: string, targetProviderId: string]
+  'provider-id-changed': [previousProviderId: string, nextProviderId: string]
+  'provider-deleted': [providerId: string]
+  'provider-model-added': [providerId: string, modelId: string]
 }>()
 
 const selectedProviderId = ref('')
@@ -29,6 +33,10 @@ const providerIdError = ref('')
 const newProviderId = ref('')
 const providerLimits = ref<ProviderLimitDocument | null>(null)
 const limitWarning = ref('')
+const addingModelId = ref(false)
+const newModelId = ref('')
+const modelIdError = ref('')
+const pendingManualModelIds = ref<Record<string, string[]>>({})
 const {
   status: codexAuthStatus,
   busy: codexAuthBusy,
@@ -53,13 +61,18 @@ const isDoubaoAudioProvider = computed(() => (
   && selectedProvider.value.supportmode.includes('audio_generation')
 ))
 const selectedLimit = computed(() => providerLimits.value?.providers?.[selectedProviderId.value] || null)
-const availableModelIds = computed(() => selectedLimit.value?.available_model_ids || [])
-const modelOptions = computed(() => {
-  const current = currentModelValue()
-  const ids = availableModelIds.value
-    .map((modelId) => String(modelId || '').trim())
-    .filter(Boolean)
-  return current && !ids.includes(current) ? [current, ...ids] : ids
+const availableModelIds = computed(() => {
+  const discovered = selectedLimit.value?.available_model_ids || []
+  const pending = pendingManualModelIds.value[selectedProviderId.value] || []
+  return [...new Set([...discovered, ...pending])]
+})
+const providerModelIds = computed(() => {
+  const rawModels = selectedProvider.value?.models
+  const rawModel = selectedProvider.value?.model
+  const values = Array.isArray(rawModels)
+    ? rawModels
+    : Array.isArray(rawModel) ? rawModel : [rawModel]
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
 })
 const activeLimitWarnings = computed(() => {
   const warnings: string[] = []
@@ -150,6 +163,13 @@ function stringValue(key: string) {
   return String(selectedProvider.value?.[key] ?? '')
 }
 
+function providerModelSummary(providerId: string) {
+  const provider = providers.value[providerId]
+  const model = Array.isArray(provider?.models) ? provider.models : provider?.model
+  if (Array.isArray(model)) return model.map((value) => String(value || '').trim()).filter(Boolean).join(', ')
+  return String(model || '').trim()
+}
+
 function booleanValue(key: string) {
   return selectedProvider.value?.[key] === true
 }
@@ -161,7 +181,60 @@ function numberValue(key: string) {
 }
 
 function currentModelValue() {
+  const model = selectedProvider.value?.model
+  if (Array.isArray(model)) return String(model[0] || '').trim()
   return stringValue('model').trim()
+}
+
+function setProviderModels(modelIds: string[]) {
+  const normalized = [...new Set(modelIds.map((value) => String(value || '').trim()).filter(Boolean))]
+  setField('model', normalized)
+  const current = currentModelValue()
+  if (!current || !normalized.includes(current)) setField('model', normalized[0] || '')
+}
+
+function updateProviderModel(index: number, value: string) {
+  const next = [...providerModelIds.value]
+  next[index] = value
+  setProviderModels(next)
+}
+
+function removeProviderModel(index: number) {
+  if (providerModelIds.value.length <= 1) return
+  setProviderModels(providerModelIds.value.filter((_, itemIndex) => itemIndex !== index))
+}
+
+function openAddModelForm() {
+  addingModelId.value = true
+  newModelId.value = ''
+  modelIdError.value = ''
+}
+
+function closeAddModelForm() {
+  addingModelId.value = false
+  newModelId.value = ''
+  modelIdError.value = ''
+}
+
+function addModelId() {
+  const providerId = selectedProviderId.value
+  const modelId = newModelId.value.trim()
+  if (!providerId || !modelId) {
+    modelIdError.value = t('provider.modelIdRequired')
+    return
+  }
+  if (!providerModelIds.value.includes(modelId)) {
+    setProviderModels([...providerModelIds.value, modelId])
+  }
+  if (!availableModelIds.value.includes(modelId)) {
+    pendingManualModelIds.value = {
+      ...pendingManualModelIds.value,
+      [providerId]: [...(pendingManualModelIds.value[providerId] || []), modelId],
+    }
+    emit('provider-model-added', providerId, modelId)
+  }
+  if (!currentModelValue()) setField('model', modelId)
+  closeAddModelForm()
 }
 
 function setField(key: string, value: unknown) {
@@ -259,7 +332,24 @@ function setProviderId(rawProviderId: string) {
       providerId === currentId ? [nextId, provider] : [providerId, provider]
     )),
   )
+  const currentLimit = providerLimits.value?.providers?.[currentId]
+  if (providerLimits.value && currentLimit) {
+    const renamedLimit = JSON.parse(JSON.stringify(currentLimit)) as typeof currentLimit
+    renamedLimit.provider_id = nextId
+    const nextLimits = { ...providerLimits.value.providers }
+    delete nextLimits[currentId]
+    nextLimits[nextId] = renamedLimit
+    providerLimits.value = { ...providerLimits.value, providers: nextLimits }
+  }
+  const currentPendingModels = pendingManualModelIds.value[currentId]
+  if (currentPendingModels) {
+    const nextPending = { ...pendingManualModelIds.value }
+    nextPending[nextId] = currentPendingModels
+    delete nextPending[currentId]
+    pendingManualModelIds.value = nextPending
+  }
   emit('update:data', next)
+  emit('provider-id-changed', currentId, nextId)
   selectedProviderId.value = nextId
 }
 
@@ -283,7 +373,32 @@ function duplicateProvider() {
     ...providers.value,
     [duplicateId]: JSON.parse(JSON.stringify(sourceProvider)) as Record<string, unknown>,
   }
+  const sourceLimit = providerLimits.value?.providers?.[sourceId]
+  if (providerLimits.value && sourceLimit) {
+    const duplicateLimit = JSON.parse(JSON.stringify(sourceLimit)) as typeof sourceLimit
+    duplicateLimit.provider_id = duplicateId
+    duplicateLimit.type = String(sourceProvider.type || duplicateLimit.type || '').trim()
+    duplicateLimit.model = String(sourceProvider.model || duplicateLimit.model || '').trim()
+    providerLimits.value = {
+      ...providerLimits.value,
+      providers: {
+        ...providerLimits.value.providers,
+        [duplicateId]: duplicateLimit,
+      },
+    }
+  }
+  const sourcePendingModels = pendingManualModelIds.value[sourceId] || []
+  if (sourcePendingModels.length) {
+    pendingManualModelIds.value = {
+      ...pendingManualModelIds.value,
+      [duplicateId]: [...sourcePendingModels],
+    }
+    for (const modelId of sourcePendingModels) {
+      emit('provider-model-added', duplicateId, modelId)
+    }
+  }
   emit('update:data', next)
+  emit('provider-duplicated', sourceId, duplicateId)
   selectedProviderId.value = duplicateId
 }
 
@@ -294,7 +409,18 @@ function deleteProvider() {
   const nextProviders = { ...providers.value }
   delete nextProviders[id]
   next.providers = nextProviders
+  if (providerLimits.value?.providers?.[id]) {
+    const nextLimits = { ...providerLimits.value.providers }
+    delete nextLimits[id]
+    providerLimits.value = { ...providerLimits.value, providers: nextLimits }
+  }
+  if (pendingManualModelIds.value[id]) {
+    const nextPending = { ...pendingManualModelIds.value }
+    delete nextPending[id]
+    pendingManualModelIds.value = nextPending
+  }
   emit('update:data', next)
+  emit('provider-deleted', id)
   selectedProviderId.value = Object.keys(nextProviders)[0] || ''
 }
 
@@ -361,19 +487,21 @@ onMounted(() => {
 <template>
   <div class="provider-settings">
     <aside class="provider-list">
-      <SelectionButton
-        v-for="providerId in providerIds"
-        :key="providerId"
-        stacked
-        :active="selectedProviderId === providerId"
-        @click="selectedProviderId = providerId"
-      >
-        {{ providerId }}
-        <template #detail>{{ providers[providerId]?.model || providers[providerId]?.type || '' }}</template>
-      </SelectionButton>
       <div class="provider-add">
         <FormTextInput v-model="newProviderId" :placeholder="t('provider.newId')" @keydown.enter.prevent="addProvider" />
         <ActionButton compact @click="addProvider">{{ t('common.add') }}</ActionButton>
+      </div>
+      <div class="provider-list-items">
+        <SelectionButton
+          v-for="providerId in providerIds"
+          :key="providerId"
+          stacked
+          :active="selectedProviderId === providerId"
+          @click="selectedProviderId = providerId"
+        >
+          {{ providerId }}
+          <template #detail>{{ providerModelSummary(providerId) || providers[providerId]?.type || '' }}</template>
+        </SelectionButton>
       </div>
     </aside>
 
@@ -434,17 +562,39 @@ onMounted(() => {
           @status="setProviderAuthStatus"
           @account="setField('authAccountId', $event)"
         />
-        <label>
-          <span>{{ t('provider.model') }}</span>
-          <FormSelect
-            :model-value="stringValue('model')"
-            :disabled="modelOptions.length === 0"
-            @change="setField('model', $event)"
-          >
-            <option value="">{{ modelOptions.length ? 'Unset' : 'No discovered models' }}</option>
-            <option v-for="modelId in modelOptions" :key="modelId" :value="modelId">{{ modelId }}</option>
-          </FormSelect>
-        </label>
+        <div class="model-field">
+          <span>{{ t('provider.models') }}</span>
+          <div class="model-allowlist">
+            <div v-for="(modelId, modelIndex) in providerModelIds" :key="`${modelId}-${modelIndex}`" class="model-id-row">
+              <FormTextInput
+                :model-value="modelId"
+                :placeholder="t('provider.modelId')"
+                autocomplete="off"
+                spellcheck="false"
+                @update:model-value="updateProviderModel(modelIndex, $event)"
+              />
+              <ActionButton compact :disabled="providerModelIds.length <= 1" @click="removeProviderModel(modelIndex)">×</ActionButton>
+            </div>
+            <span v-if="!providerModelIds.length" class="model-empty">{{ t('provider.noModels') }}</span>
+            <ActionButton compact @click="openAddModelForm">{{ t('common.add') }}</ActionButton>
+          </div>
+          <div v-if="addingModelId" class="model-add-form">
+            <FormTextInput
+              v-model="newModelId"
+              :placeholder="t('provider.modelId')"
+              autocomplete="off"
+              spellcheck="false"
+              @keydown.enter.prevent="addModelId"
+              @keydown.escape.prevent="closeAddModelForm"
+            />
+            <div class="model-add-actions">
+              <ActionButton variant="primary" @click="addModelId">{{ t('common.add') }}</ActionButton>
+              <ActionButton @click="closeAddModelForm">{{ t('common.cancel') }}</ActionButton>
+            </div>
+          </div>
+          <small v-if="modelIdError" class="model-id-error">{{ modelIdError }}</small>
+          <small v-else>{{ t('provider.modelsHelp') }}</small>
+        </div>
         <label class="form-field-wide">
           <span>{{ t('provider.description') }}</span>
           <ExpandableTextarea

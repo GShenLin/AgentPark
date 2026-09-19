@@ -8,7 +8,8 @@ from src.access_policy import load_access_policy
 from src.access_policy import register_remote_user
 from src.access_policy import save_access_policy
 
-from .request_access import is_local_request
+from .request_access import is_local_request, is_cloud_board_administrator
+from src.peer_network.principal import PeerPrincipal
 from .shared import HTTPException
 
 
@@ -18,6 +19,18 @@ ACCESS_USERNAME_HEADER = "x-agentpark-username"
 
 class AccessApiDomain:
     def get_status(self, request: Request = None) -> dict:
+        principal = getattr(getattr(request, "state", None), "peer_principal", None)
+        if isinstance(principal, PeerPrincipal):
+            administrator = is_cloud_board_administrator(request)
+            return {
+                "client_id": "peer:" + principal.peer_id,
+                "username": principal.name,
+                "role": "developer" if administrator else "nondeveloper",
+                "is_developer": administrator,
+                "is_local_client": False,
+                "username_required": False,
+                "ip": "peer:" + principal.peer_id,
+            }
         if is_local_request(request):
             return {
                 "client_id": "local",
@@ -95,6 +108,7 @@ class AccessApiDomain:
             "_access_client_id": str(status.get("client_id") or ""),
             "_access_username": str(status.get("username") or ""),
             "_access_role": str(status.get("role") or "nondeveloper"),
+            "_access_ip": str(status.get("ip") or ""),
         }
 
 

@@ -1,0 +1,15 @@
+.knowledge-panel { display: grid; gap: 16px; padding: 20px; color: var(--text-primary); }
+.knowledge-panel p { margin: 0; line-height: 1.6; color: var(--text-secondary); }
+.knowledge-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.knowledge-actions > .form-text-input { flex: 1; min-width: 180px; }
+.knowledge-card, .knowledge-form { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--border-medium); border-radius: 10px; background: var(--bg-secondary); min-width: 0; }
+.knowledge-form label { display: grid; gap: 6px; }
+.knowledge-form .knowledge-check { display: flex; align-items: center; gap: 8px; }
+.knowledge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+.knowledge-path { overflow-wrap: anywhere; font-family: monospace; }
+.knowledge-panel .knowledge-error { color: var(--danger, #f87171); overflow-wrap: anywhere; }
+.knowledge-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; }
+.knowledge-documents { list-style: none; padding: 0; margin: 0; }
+.knowledge-documents li { border-bottom: 1px solid var(--border-subtle); padding: 10px 0; overflow-wrap: anywhere; }
+.knowledge-hit { border-bottom: 1px solid var(--border-subtle); padding: 12px 0; overflow-wrap: anywhere; }
+.knowledge-hit pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; }

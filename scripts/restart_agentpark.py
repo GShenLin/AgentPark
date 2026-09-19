@@ -35,8 +35,14 @@ def _process_exists(pid: int) -> bool:
         return False
     try:
         os.kill(pid, 0)
+        if sys.platform.startswith("linux") or sys.platform == "android":
+            # Zombies still have a PID, but have already stopped running.
+            with open(f"/proc/{pid}/stat", "r", encoding="utf-8") as handle:
+                state = handle.read().rsplit(")", 1)[1].split()[0]
+            if state == "Z":
+                return False
         return True
-    except ProcessLookupError:
+    except (ProcessLookupError, FileNotFoundError):
         return False
     except PermissionError:
         return True
@@ -81,14 +87,25 @@ def _is_expected_server_process(pid: int, payload: dict, workspace_root: str) ->
 def _terminate(pid: int, timeout: float) -> bool:
     if not _process_exists(pid):
         return True
-    os.kill(pid, signal.SIGTERM)
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if not _process_exists(pid):
             return True
         time.sleep(0.05)
     if _process_exists(pid):
-        os.kill(pid, signal.SIGKILL)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return True
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if not _process_exists(pid):
+                return True
+            time.sleep(0.05)
     return not _process_exists(pid)
 
 

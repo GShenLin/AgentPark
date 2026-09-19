@@ -7,13 +7,17 @@ from src.cli_provider_runtime.gateway_dispatch import GatewayDispatchResult
 from src.cli_provider_runtime.gateway_dispatch import dispatch_chat_completions
 from src.cli_provider_runtime.gateway_dispatch import dispatch_messages
 from src.cli_provider_runtime.gateway_dispatch import dispatch_responses
+from src.cli_provider_runtime.images_dispatch import dispatch_images
 
 from .store import PublicGatewayStore
+from .usage_stats import PublicGatewayUsageStore
+from .protocols import IMAGE_PROTOCOLS
 
 
 class PublicGatewayService:
     def __init__(self, workspace_root: str | None = None) -> None:
         self.store = PublicGatewayStore(workspace_root)
+        self.usage_store = PublicGatewayUsageStore(self.store.workspace_root)
 
     @property
     def workspace_root(self) -> str:
@@ -22,16 +26,15 @@ class PublicGatewayService:
     def settings(self) -> dict[str, Any]:
         return self.store.snapshot()
 
-    def update_options(self, payload: dict[str, Any]) -> dict[str, Any]:
-        self.store.update_options(payload)
+    def usage(self, date_text: str) -> dict[str, Any]:
+        return self.usage_store.aggregate(date_text)
+
+    def update_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.store.update_settings(payload)
         return self.settings()
 
-    def upsert_model(self, payload: dict[str, Any]) -> dict[str, Any]:
-        self.store.upsert_model(payload)
-        return self.settings()
-
-    def delete_model(self, model_id: str) -> dict[str, Any]:
-        self.store.delete_model(model_id)
+    def replace_models(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.store.replace_models(payload)
         return self.settings()
 
     def create_key(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -95,6 +98,8 @@ class PublicGatewayService:
             result = dispatch_chat_completions(provider_config, payload)
         elif protocol == "messages":
             result = dispatch_messages(provider_config, payload)
+        elif protocol in IMAGE_PROTOCOLS:
+            result = dispatch_images(provider_config, payload, protocol)
         else:
             raise ValueError(f"Unsupported Gateway protocol: {protocol!r}.")
         return _prime_stream(result)
@@ -120,6 +125,10 @@ class PublicGatewayService:
                 "max_tokens": 128,
                 "stream": False,
             }
+        elif protocol in IMAGE_PROTOCOLS:
+            request = {"model": model, "prompt": prompt, "stream": False}
+            if protocol == "images_edits":
+                request["images"] = payload.get("images")
         else:
             raise ValueError(f"Unsupported Gateway protocol: {protocol!r}.")
         result = self.dispatch(protocol, request)

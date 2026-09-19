@@ -1,5 +1,26 @@
 # Troubleshooting
 
+## Command Execution Environment
+
+The Web server, CLI and standalone remote worker detect their execution environment
+at startup. Windows retains `powershell -NoProfile -Command` with the existing
+UTF-8 wrapper and native exit-code propagation. Termux/Linux/macOS use the shell
+from `SHELL`, or `sh` when `SHELL` is unset, with `-c`. The executable must exist;
+POSIX shells supported here are `sh`, `bash`, `dash`, `zsh` and `ksh`.
+
+Startup exports `AGENTPARK_PLATFORM`, `AGENTPARK_SHELL`,
+`AGENTPARK_SHELL_EXECUTABLE`, `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8`.
+These variables describe the detected host and are inherited by child commands.
+They are not overrides; set `SHELL` before startup to choose a POSIX shell.
+Missing or unsupported shells produce an explicit error.
+
+`system_tools.execute_console_command` and `workspace_exec` run commands in that
+same shell. Local Agent environment context reports it as well; remote worker
+shell metadata remains separate. Commands must use the reported shell syntax.
+On POSIX, timeout and Stop terminate the command's process group, including
+ordinary child processes that keep output pipes open. Windows keeps its existing
+process-tree cleanup. Windows GUI/desktop tools still require Windows.
+
 ## Run Doctor
 
 Use the offline CLI when the WebUI is unavailable:

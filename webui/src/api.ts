@@ -1,3 +1,4 @@
+import { isCloudBoard } from './portal/environment'
 import type {
   AccessStatus,
   FileListResponse,
@@ -18,18 +19,12 @@ import type {
   MobileNodeConversation,
   MobilePc,
   NodeConfigChangeResponse,
-  NodeDesktopView,
-  NodeDesktopViewListResponse,
-  NodeDesktopViewPanelSize,
-  NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
   NodeInstanceFileListResponse,
   NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
-  PetAvatarFrame,
-  PetAvatarSummary,
   NodeTemplate,
   NodeTemplateContext,
   PasteAgentConfig,
@@ -44,6 +39,8 @@ import type {
 } from './apiTypes'
 import { accessRequestHeaders, syncCanonicalAccessUsername } from './accessIdentity'
 import { createBrowserUuid } from './utils/browserId'
+import { waitForRestart } from './utils/serverRestart'
+import { setNodeOpenTraceTransport, traceNodeOpenRequest } from './nodeOpenDiagnostics'
 
 export type {
   AccessStatus,
@@ -76,11 +73,6 @@ export type {
   MobilePc,
   MobilePcInstance,
   NodeConfigChangeResponse,
-  NodeDesktopView,
-  NodeDesktopViewListResponse,
-  NodeDesktopViewLive,
-  NodeDesktopViewPanelSize,
-  NodeDesktopViewPosition,
   NodeInfo,
   NodeInstanceConfig,
   NodeInstanceFile,
@@ -88,15 +80,6 @@ export type {
   NodeInstanceConfigListResponse,
   NodeInstanceState,
   NodeRunStatus,
-  PetAvatarFrame,
-  PetAvatarAnimationTracks,
-  PetAvatarColorKeyframe,
-  PetAvatarGifState,
-  PetAvatarSequenceFrame,
-  PetAvatarSequenceState,
-  PetAvatarState,
-  PetAvatarTransformKeyframe,
-  PetAvatarSummary,
   NodeTemplate,
   NodeTemplateContext,
   PasteAgentConfig,
@@ -119,10 +102,11 @@ export type {
   WorkspaceBootstrap,
 } from './apiTypes'
 
-const DEFAULT_API_BASE = (import.meta as any).env?.VITE_API_BASE || ''
+const DEFAULT_API_BASE = isCloudBoard() ? '' : (import.meta as any).env?.VITE_API_BASE || ''
 const ACTIVE_REMOTE_KEY = 'agentpark.activeRemoteBaseUrl'
 
 function readActiveApiBase() {
+  if (isCloudBoard()) return ''
   try {
     return window.localStorage.getItem(ACTIVE_REMOTE_KEY) || DEFAULT_API_BASE
   } catch {
@@ -131,6 +115,10 @@ function readActiveApiBase() {
 }
 
 export function setActiveApiBase(baseUrl: string) {
+  if (isCloudBoard()) {
+    if (baseUrl) throw new Error('Switch devices from the cloud device list.')
+    return
+  }
   try {
     window.localStorage.setItem(ACTIVE_REMOTE_KEY, String(baseUrl || '').replace(/\/$/, ''))
   } catch {
@@ -231,7 +219,12 @@ async function retryApiNetworkRequest<T>(request: () => Promise<T>) {
 }
 
 export async function requestApiJson(baseUrl: string, path: string, init?: RequestInit) {
+  const diagnostic = traceNodeOpenRequest(path)
   const headers = new Headers(init?.headers)
+  if (diagnostic) {
+    headers.set('X-Node-Open-Trace', diagnostic.traceId)
+    headers.set('X-Node-Open-Request', diagnostic.requestId)
+  }
   for (const [name, value] of Object.entries(accessRequestHeaders())) {
     if (!headers.has(name)) headers.set(name, value)
   }
@@ -245,10 +238,13 @@ export async function requestApiJson(baseUrl: string, path: string, init?: Reque
       headers,
     })
   } catch (error) {
+    diagnostic?.mark('request_failed', { aborted: Number(!!init?.signal?.aborted) })
     if (init?.signal?.aborted) throw error
     throw createApiNetworkError(baseUrl, path, init, error)
   }
+  diagnostic?.mark('response_headers', { status: res.status, content_bytes: Number(res.headers.get('content-length') || 0) })
   if (!res.ok) {
+    diagnostic?.mark('request_failed', { status: res.status })
     const text = await res.text().catch(() => '')
     let detail = text.trim()
     if (detail) {
@@ -263,8 +259,33 @@ export async function requestApiJson(baseUrl: string, path: string, init?: Reque
     }
     throw new ApiHttpError(res.status, detail)
   }
-  return res.json()
+  const jsonStarted = performance.now()
+  try {
+    const payload = await res.json()
+    diagnostic?.mark('response_json', { body_and_json_ms: performance.now() - jsonStarted })
+    return payload
+  } catch (error) {
+    diagnostic?.mark('request_failed', { body_and_json_ms: performance.now() - jsonStarted, aborted: Number(!!init?.signal?.aborted) })
+    throw error
+  }
 }
+
+setNodeOpenTraceTransport(async (trace, attribution) => {
+  const baseUrl = readActiveApiBase()
+  // Detailed source evidence is a separate diagnostic artifact. The existing
+  // file API lets us collect it without restarting the live node process.
+  const results = await Promise.allSettled([
+    requestApiJson(baseUrl,
+      `/api/nodes/instances/${encodeURIComponent(trace.node_id)}/open-diagnostics?graph_id=${encodeURIComponent(trace.graph_id)}`,
+      { method: 'POST', body: JSON.stringify(trace) }),
+    requestApiJson(baseUrl, '/api/files/write', {
+      method: 'POST',
+      body: JSON.stringify({ path: `logs/node-open-sources/${trace.trace_id}.json`, content: JSON.stringify(attribution, null, 2) }),
+    }),
+  ])
+  const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (failures.length) throw new Error(`Failed to save node-open diagnostic evidence: ${failures.map(result => errorDetail(result.reason)).join(' | ')}`)
+})
 
 export async function getAccessStatus(): Promise<AccessStatus> {
   const status = await requestApiJson(readActiveApiBase(), '/api/access/status') as AccessStatus
@@ -283,7 +304,14 @@ async function remoteConfigFetch(path: string, init?: RequestInit) {
 }
 
 export async function restartServer(): Promise<{ ok: boolean }> {
-  return remoteConfigFetch('/api/system/restart', { method: 'POST' })
+  const result = await remoteConfigFetch('/api/system/restart', { method: 'POST' })
+  if (!result.ok) throw new Error('The server did not accept the restart request.')
+  await waitForRestart(result.instance_id, signal => remoteConfigFetch('/api/system/status', {
+    signal,
+    cache: 'no-store',
+  }))
+  window.location.reload()
+  return result
 }
 
 export async function exitServer(): Promise<{ ok: boolean }> {
@@ -1344,150 +1372,14 @@ export async function sendMobileNodeMessage(
   ))
 }
 
-export async function listNodeDesktopViews(): Promise<NodeDesktopView[]> {
-  const res = await apiFetch('/api/node-desktop-views') as NodeDesktopViewListResponse
-  return res.views || []
-}
-
-export async function getNodeDesktopView(viewId: string): Promise<NodeDesktopView> {
-  const res = await apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}`)
-  return res.view as NodeDesktopView
-}
-
-export async function upsertNodeDesktopView(payload: {
-  graph_id: string
-  node_id: string
-  visible?: boolean
-  pinned?: boolean
-  position?: NodeDesktopViewPosition
-  panel_size?: NodeDesktopViewPanelSize
-  avatar_style?: string
-}): Promise<NodeDesktopView> {
-  const res = await apiFetch('/api/node-desktop-views', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-  return res.view as NodeDesktopView
-}
-
-export async function summonNodeDesktopView(payload: {
-  graph_id: string
-  node_id: string
-  working_path?: string
-  visible?: boolean
-  pinned?: boolean
-  position?: NodeDesktopViewPosition
-  panel_size?: NodeDesktopViewPanelSize
-  avatar_style?: string
-}): Promise<NodeDesktopView> {
-  const res = await apiFetch('/api/node-desktop-views/summon', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-  return res.view as NodeDesktopView
-}
-
-export async function launchNodeDesktopPet(payload: {
-  graph_id: string
-  node_id: string
-  working_path?: string
-  visible?: boolean
-  pinned?: boolean
-  position?: NodeDesktopViewPosition
-  panel_size?: NodeDesktopViewPanelSize
-  avatar_style?: string
-  open_chat?: boolean
-  draft_prefix?: string
-}): Promise<{ ok: boolean; view: NodeDesktopView; pid: number }> {
-  return apiFetch('/api/node-desktop-views/launch', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function updateNodeDesktopView(
-  viewId: string,
-  payload: {
-    visible?: boolean
-    pinned?: boolean
-    position?: NodeDesktopViewPosition | null
-    panel_size?: NodeDesktopViewPanelSize | null
-    avatar_style?: string
-  },
-): Promise<NodeDesktopView> {
-  const res = await apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-  return res.view as NodeDesktopView
-}
-
-export async function sendNodeDesktopViewMessage(
-  viewId: string,
-  message: string | MessageEnvelope,
-): Promise<{ ok: boolean; queued: boolean; trace_id?: string; view_id: string }> {
-  return apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ message }),
-  })
-}
-
-export async function deleteNodeDesktopView(
-  viewId: string,
-): Promise<{ ok: boolean; view_id: string; graph_id: string; node_id: string }> {
-  return apiFetch(`/api/node-desktop-views/${encodeURIComponent(viewId)}`, { method: 'DELETE' })
-}
-
-export async function listPetAvatars(): Promise<{ root: string; avatars: PetAvatarSummary[] }> {
-  const res = await apiFetch('/api/pet-avatars')
-  return { root: String(res.root || ''), avatars: (res.avatars || []) as PetAvatarSummary[] }
-}
-
-export async function getPetAvatar(avatarId: string): Promise<{ avatar: PetAvatarFrame; path: string }> {
-  const res = await apiFetch(`/api/pet-avatars/${encodeURIComponent(avatarId)}`)
-  return { avatar: res.avatar as PetAvatarFrame, path: String(res.path || '') }
-}
-
-export async function createPetAvatar(payload: { id: string; name?: string }): Promise<{ ok: boolean; avatar: PetAvatarFrame; path: string }> {
-  return apiFetch('/api/pet-avatars', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function savePetAvatarFrame(avatarId: string, frame: PetAvatarFrame): Promise<{ ok: boolean; avatar: PetAvatarFrame; path: string }> {
-  return apiFetch(`/api/pet-avatars/${encodeURIComponent(avatarId)}/frame`, {
-    method: 'POST',
-    body: JSON.stringify({ frame }),
-  })
-}
-
-export async function uploadPetAvatarAsset(payload: {
-  avatar_id: string
-  state: string
-  filename: string
-  content_base64: string
-}): Promise<{ ok: boolean; src: string; url: string; extension: string }> {
-  return apiFetch(`/api/pet-avatars/${encodeURIComponent(payload.avatar_id)}/assets`, {
-    method: 'POST',
-    body: JSON.stringify({
-      state: payload.state,
-      filename: payload.filename,
-      content_base64: payload.content_base64,
-    }),
-  })
-}
-
 export async function deleteMobileNodeMessage(
   pcId: string,
   graphId: string,
   nodeId: string,
   messageId: string,
 ): Promise<{ ok: boolean; deleted: number; message_id: string }> {
-  return apiFetch(
-    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages/${encodeURIComponent(messageId)}`,
-    { method: 'DELETE' },
-  )
+  if (pcId !== 'local') throw new Error('Mobile node deletion requires the current device.')
+  return deleteNodeInstanceMemoryMessage(nodeId, messageId, graphId)
 }
 
 export async function deleteMobileNodeMessages(
@@ -1496,13 +1388,8 @@ export async function deleteMobileNodeMessages(
   nodeId: string,
   messageIds: string[],
 ): Promise<{ ok: boolean; deleted: number; message_ids: string[]; undo_token?: string | null }> {
-  return apiFetch(
-    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/messages/delete`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ message_ids: messageIds }),
-    },
-  )
+  if (pcId !== 'local') throw new Error('Mobile node deletion requires the current device.')
+  return deleteNodeInstanceMemoryMessages(nodeId, messageIds, graphId)
 }
 
 export async function deleteMobileNodeTurn(
@@ -1511,11 +1398,6 @@ export async function deleteMobileNodeTurn(
   nodeId: string,
   userMessageId: string,
 ): Promise<{ ok: boolean; deleted: number; message_ids: string[]; user_message_id: string; undo_token?: string | null }> {
-  return apiFetch(
-    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/turns/delete`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ user_message_id: userMessageId }),
-    },
-  )
+  if (pcId !== 'local') throw new Error('Mobile node deletion requires the current device.')
+  return deleteNodeInstanceMemoryTurn(nodeId, userMessageId, graphId)
 }

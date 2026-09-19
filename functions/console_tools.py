@@ -3,13 +3,16 @@ import subprocess
 import time
 from dataclasses import dataclass
 
+from functions.console_command_contract import (
+    MIN_PROGRESS_TIMEOUT_SECONDS, MAX_PROGRESS_TIMEOUT_SECONDS, execute_console_command_declaration,
+)
 from functions.console_completion_policy import ConsoleCommandProfile
 from functions.console_completion_policy import analyze_console_completion
 from functions.console_completion_policy import classify_console_command
 from functions.console_output_policy import build_console_command_result
 from functions.console_output_policy import resolve_tool_submission_char_limit
 from functions.console_process_runtime import collect_process_output
-from functions.console_process_runtime import powershell_utf8_script
+from functions.console_process_runtime import console_process_options
 from functions.console_process_runtime import start_process_pipe_readers
 from functions.console_process_runtime import terminate_process
 from functions.console_progress_watchdog import PytestProgressWatchdog
@@ -22,8 +25,6 @@ DEFAULT_CONSOLE_COMMAND_TIMEOUT_SECONDS = 120
 MAX_CONSOLE_COMMAND_TIMEOUT_SECONDS = 3600
 DEFAULT_CONSOLE_COMMAND_OUTPUT_CHARS = 131072
 MAX_CONSOLE_COMMAND_OUTPUT_CHARS = 262144
-MIN_PROGRESS_TIMEOUT_SECONDS = 5
-MAX_PROGRESS_TIMEOUT_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -165,7 +166,7 @@ def _decode_output(data: bytes | None) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError(
-            "PowerShell output violated the UTF-8 console protocol "
+            "Shell output violated the UTF-8 console protocol "
             f"at byte {exc.start}; output was not replaced or guessed"
         ) from exc
 
@@ -243,12 +244,15 @@ def execute_console_command(
                 command_timeout_seconds=command_timeout,
             )
             cwd = _resolve_command_cwd(agent)
+            argv, process_options = console_process_options(str(command))
             proc = subprocess.Popen(
-                ["powershell", "-NoProfile", "-Command", powershell_utf8_script(str(command))],
+                argv,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=cwd,
+                **process_options,
             )
+            proc._agentpark_process_group = bool(process_options.get("start_new_session"))
             stdout_reader, stderr_reader = start_process_pipe_readers(proc)
             started_at = time.monotonic()
             deadline = started_at + command_timeout if command_timeout is not None else None
@@ -380,51 +384,5 @@ def execute_console_command(
         )
 
 
-execute_console_command_declaration = {
-    "type": "function",
-    "function": {
-        "name": "execute_console_command",
-        "description": (
-            "Execute a shell command on the local machine. Prefer structured tools "
-            "(rg_search_text/rg_list_files) for file and text search. Commands run through PowerShell "
-            "with powershell -NoProfile -Command, so use PowerShell syntax such as Get-ChildItem, "
-            "Get-Location, pipelines, semicolon-separated statements, and & before quoted executable paths. "
-            "Native non-zero exit codes are propagated. If a native outcome such as rg exit 1 for no matches "
-            "is an expected branch, inspect $LASTEXITCODE explicitly and end the script with exit 0 only after "
-            "validating that outcome; do not rely on PowerShell to mask it. "
-            "Large stdout/stderr values are hard-limited; successful commands retain tail content, while "
-            "failed or timed-out commands retain both the beginning and tail with explicit truncation metadata."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The PowerShell command to execute (e.g., 'Get-ChildItem', 'git status', 'python --version')",
-                },
-                "timeout_seconds": {
-                    "type": "number",
-                    "description": (
-                        "Optional command timeout in seconds. Defaults to 120; use 300 or more for known long "
-                        "project builds such as WebUI production builds. Use 0 to disable the command timeout "
-                        "and rely on Stop cancellation."
-                    ),
-                },
-                "progress_timeout_seconds": {
-                    "type": ["number", "null"],
-                    "description": (
-                        "Optional pytest-only semantic no-progress watchdog. It terminates the "
-                        "test command when no quiet progress glyph run or verbose test terminal "
-                        "status appears on stdout for this many seconds. Repeated logs and "
-                        "tracebacks do not count as progress. Use null to disable it. A numeric "
-                        f"value must be between {MIN_PROGRESS_TIMEOUT_SECONDS} and "
-                        f"{MAX_PROGRESS_TIMEOUT_SECONDS} and less than timeout_seconds."
-                    ),
-                }
-            },
-            "required": ["command"],
-        },
-    },
-}
 
 execute_console_command.tool_timeout_seconds = 0

@@ -16,10 +16,10 @@ from src.file_transaction import run_with_interprocess_lock
 from src.provider_auth.store import get_account
 from src.provider_auth.store import list_accounts
 from src.workspace_settings import get_workspace_root
+from .protocols import PROTOCOLS, supported_protocols
 
 
 CONFIG_VERSION = 1
-PROTOCOLS = ("responses", "chat_completions", "messages")
 _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _ACCOUNT_ID = re.compile(r"^[a-f0-9]{12}$")
 _KEY_ID = re.compile(r"^[a-f0-9]{12}$")
@@ -54,48 +54,34 @@ class PublicGatewayStore:
         )
         return self._validate_config(payload)
 
-    def update_options(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def update_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
-            raise ValueError("Gateway options must be an object.")
-        if not isinstance(payload.get("enabled"), bool):
-            raise ValueError("Gateway enabled must be a boolean.")
-        if not isinstance(payload.get("requireApiKey"), bool):
-            raise ValueError("Gateway requireApiKey must be a boolean.")
+            raise ValueError("Gateway settings must be an object.")
+        config = self._validate_config({**payload, "version": CONFIG_VERSION})
+        for model in config["models"]:
+            self._validate_model_source(model)
 
         def mutate() -> dict[str, Any]:
-            config = self.load_config()
-            config["enabled"] = payload["enabled"]
-            config["requireApiKey"] = payload["requireApiKey"]
             self._write_json(self.config_path, config)
             return config
 
         return run_with_interprocess_lock(self.config_path + ".lock", mutate)
 
-    def upsert_model(self, payload: dict[str, Any]) -> dict[str, Any]:
-        model = self._validate_model(payload)
-        self._validate_model_source(model)
+    def replace_models(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+            raise ValueError("Gateway models payload must contain a models array.")
+        models = [self._validate_model(item) for item in payload["models"]]
+        ids = [item["id"] for item in models]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Gateway model ids must be unique.")
+        for model in models:
+            self._validate_model_source(model)
 
-        def mutate() -> dict[str, Any]:
+        def mutate() -> list[dict[str, Any]]:
             config = self.load_config()
-            models = [item for item in config["models"] if item["id"] != model["id"]]
-            models.append(model)
-            config["models"] = sorted(models, key=lambda item: item["id"].lower())
-            self._write_json(self.config_path, config)
-            return model
-
-        return run_with_interprocess_lock(self.config_path + ".lock", mutate)
-
-    def delete_model(self, model_id: str) -> dict[str, Any]:
-        safe_id = self._model_id(model_id)
-
-        def mutate() -> dict[str, Any]:
-            config = self.load_config()
-            models = [item for item in config["models"] if item["id"] != safe_id]
-            if len(models) == len(config["models"]):
-                raise KeyError(f"Gateway model {safe_id!r} does not exist.")
             config["models"] = models
             self._write_json(self.config_path, config)
-            return {"deleted": True, "id": safe_id}
+            return models
 
         return run_with_interprocess_lock(self.config_path + ".lock", mutate)
 
@@ -114,7 +100,7 @@ class PublicGatewayStore:
         if protocol not in model["protocols"]:
             raise ValueError(f"Gateway model {safe_id!r} does not enable protocol {protocol!r}.")
         self._validate_model_source(model)
-        provider_config = self._resolve_source_config(model["providerId"])
+        provider_config = {**self._resolve_source_config(model["providerId"]), "model": safe_id}
         if model["accountId"]:
             provider_config = {**provider_config, "authAccountId": model["accountId"]}
         return model, provider_config
@@ -128,11 +114,11 @@ class PublicGatewayStore:
     def list_providers(self) -> list[dict[str, Any]]:
         output: list[dict[str, Any]] = []
         for provider_id, config in ConfigLoader().get_provider_catalog().items():
-            modes = config.get("supportmode")
-            if not isinstance(modes, list) or not any(mode in {"chat", "imagechat"} for mode in modes):
-                continue
             try:
-                protocol = provider_protocol(config)
+                protocols = supported_protocols(config)
+                if not protocols:
+                    continue
+                protocol = "images" if protocols[0] == "images_generations" else provider_protocol(config)
             except ValueError:
                 continue
             auth_provider = str(config.get("authProvider") or config.get("type") or "").strip().lower()
@@ -142,6 +128,7 @@ class PublicGatewayStore:
                     "id": provider_id,
                     "model": str(config.get("model") or ""),
                     "protocol": protocol,
+                    "protocols": list(protocols),
                     "authProvider": auth_provider,
                     "accounts": accounts,
                     "kind": "provider",
@@ -279,7 +266,10 @@ class PublicGatewayStore:
 
     def _validate_model_source(self, model: dict[str, Any]) -> None:
         provider = self._resolve_source_config(model["providerId"])
-        provider_protocol(provider)
+        supported = supported_protocols(provider)
+        unsupported = set(model["protocols"]) - set(supported)
+        if unsupported:
+            raise ValueError(f"Gateway Provider {model['providerId']!r} does not support protocols {sorted(unsupported)!r}.")
         account_id = model["accountId"]
         if not account_id:
             return

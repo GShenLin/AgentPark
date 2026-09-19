@@ -15,14 +15,14 @@ class PublicGatewayApiDomain:
     def get_settings(self) -> dict[str, Any]:
         return self.service.settings()
 
-    def update_options(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._management_call(self.service.update_options, payload)
+    def get_usage(self, date_text: str) -> dict[str, Any]:
+        return self._management_call(self.service.usage, date_text)
 
-    def upsert_model(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._management_call(self.service.upsert_model, payload)
+    def update_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._management_call(self.service.update_settings, payload)
 
-    def delete_model(self, model_id: str) -> dict[str, Any]:
-        return self._management_call(self.service.delete_model, model_id)
+    def replace_models(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._management_call(self.service.replace_models, payload)
 
     def create_key(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._management_call(self.service.create_key, payload)

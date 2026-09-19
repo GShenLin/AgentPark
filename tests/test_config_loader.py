@@ -1219,7 +1219,7 @@ def test_openai_responses_api_provider_validates_reasoning_summary(monkeypatch, 
         ConfigLoader().get_all_providers()
 
 
-def test_grok_45_provider_validates_reasoning_effort(monkeypatch, tmp_path):
+def test_grok_provider_reasoning_effort_does_not_depend_on_model_id(monkeypatch, tmp_path):
     config_path = tmp_path / "modelProvider.json"
     config_path.write_text(
         json.dumps(
@@ -1228,7 +1228,7 @@ def test_grok_45_provider_validates_reasoning_effort(monkeypatch, tmp_path):
                     "grok": {
                         "type": "grok",
                         "apiKey": "grok-key",
-                        "model": "grok-4.5",
+                        "model": "grok-future-model",
                         "reasoningEffort": "xhigh",
                         **_responses_contract(responsesReplayReasoningItems=False),
                     }
@@ -1242,8 +1242,7 @@ def test_grok_45_provider_validates_reasoning_effort(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
     _reset_loader_singleton()
 
-    with pytest.raises(ValueError, match="Grok 4.5 reasoning_effort"):
-        ConfigLoader().get_all_providers()
+    assert ConfigLoader().get_provider_config("grok")["reasoningEffort"] == "xhigh"
 
 
 def test_grok_provider_rejects_reasoning_summary(monkeypatch, tmp_path):
@@ -1272,6 +1271,32 @@ def test_grok_provider_rejects_reasoning_summary(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="do not support reasoningSummary"):
         ConfigLoader().get_all_providers()
+
+
+def test_grok_46_provider_accepts_xhigh_reasoning_effort(monkeypatch, tmp_path):
+    config_path = tmp_path / "modelProvider.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "grok": {
+                        "type": "grok",
+                        "apiKey": "grok-key",
+                        "model": "grok-4.6",
+                        "reasoningEffort": "xhigh",
+                        **_responses_contract(responsesReplayReasoningItems=False),
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    assert ConfigLoader().get_provider_config("grok")["reasoningEffort"] == "xhigh"
 
 
 def test_responses_api_provider_validates_field_types(monkeypatch, tmp_path):
@@ -1314,7 +1339,15 @@ def test_deepseek_provider_accepts_responses_api(monkeypatch, tmp_path):
                         "baseUrl": "https://api.deepseek.test",
                         "model": "deepseek-v4-flash",
                         "responsesApi": True,
-                        **_responses_contract(),
+                        **_responses_contract(
+                            agentStepLedgerEnabled=True,
+                            sessionContextCompactionEnabled=True,
+                            sessionContextCompactionThresholdPercent=80,
+                            sessionContextCompactionRetainPercent=16,
+                            sessionContextCompactionMaxAttempts=3,
+                            modelContextWindowTokens=1_000_000,
+                        ),
+                        "responsesReplayReasoningItems": False,
                     }
                 }
             },
@@ -1330,6 +1363,80 @@ def test_deepseek_provider_accepts_responses_api(monkeypatch, tmp_path):
 
     assert provider["type"] == "deepseek"
     assert provider["responsesApi"] is True
+    assert provider["agentStepLedgerEnabled"] is True
+    assert provider["sessionContextCompactionEnabled"] is True
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"agentStepLedgerEnabled": "yes"}, "agentStepLedgerEnabled"),
+        ({"sessionContextCompactionEnabled": "yes"}, "sessionContextCompactionEnabled"),
+        (
+            {
+                "sessionContextCompactionEnabled": True,
+                "sessionContextCompactionThresholdPercent": 0,
+                "modelContextWindowTokens": 1_000_000,
+            },
+            "sessionContextCompactionThresholdPercent",
+        ),
+        (
+            {
+                "sessionContextCompactionEnabled": True,
+                "sessionContextCompactionRetainPercent": 101,
+                "modelContextWindowTokens": 1_000_000,
+            },
+            "sessionContextCompactionRetainPercent",
+        ),
+        ({"sessionContextCompactionEnabled": True}, "modelContextWindowTokens"),
+        (
+            {"sessionContextCompactionEnabled": True, "modelContextWindowTokens": 0},
+            "modelContextWindowTokens",
+        ),
+        ({"sessionContextCompactionMaxAttempts": 6}, "sessionContextCompactionMaxAttempts"),
+    ],
+)
+def test_responses_provider_rejects_invalid_session_durability_contract(
+    monkeypatch,
+    tmp_path,
+    overrides,
+    message,
+):
+    config_path = _write_openai_responses_provider(tmp_path, **overrides)
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match=message):
+        ConfigLoader().get_all_providers()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("thinking", "auto", "invalid thinking"),
+        ("reasoningEffort", "xhigh", "invalid reasoningEffort"),
+        ("maxTokens", 0, "invalid maxTokens"),
+    ],
+)
+def test_deepseek_provider_rejects_invalid_owned_defaults(monkeypatch, tmp_path, field, value, message):
+    config_path = tmp_path / "modelProvider.json"
+    provider = {
+        "type": "deepseek",
+        "apiKey": "deepseek-key",
+        "baseUrl": "https://api.deepseek.test",
+        "model": "deepseek-v4-pro",
+        field: value,
+    }
+    config_path.write_text(
+        json.dumps({"providers": {"deepseek": provider}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("AGENTPARK_CONFIG_PATH", str(config_path))
+    _reset_loader_singleton()
+
+    with pytest.raises(ValueError, match=message):
+        ConfigLoader().get_all_providers()
 
 
 def test_kimi_provider_rejects_responses_api(monkeypatch, tmp_path):

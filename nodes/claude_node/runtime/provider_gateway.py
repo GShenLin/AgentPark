@@ -16,6 +16,7 @@ from src.cli_provider_runtime.http_transport import UpstreamHttpError
 from src.cli_provider_runtime.gateway_dispatch import dispatch_messages
 from src.cli_provider_runtime.provider_adapter import provider_protocol
 from src.config_loader import ConfigLoader
+from src.provider_models import resolve_provider_model
 
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
@@ -35,6 +36,7 @@ class ClaudeProviderGateway:
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        self._models: dict[str, str] = {}
         self._leases: dict[str, str] = {}
         self._reasoning_efforts: dict[str, str] = {}
         self._request_indices: dict[str, int] = {}
@@ -61,6 +63,7 @@ class ClaudeProviderGateway:
         provider_id: str,
         *,
         reasoning_effort: str = "",
+        model: str = "",
     ) -> ClaudeGatewayLease:
         safe_provider_id = str(provider_id or "").strip()
         if not safe_provider_id:
@@ -75,8 +78,10 @@ class ClaudeProviderGateway:
         normalized_effort = str(reasoning_effort or "").strip()
         if normalized_effort not in {"", "low", "medium", "high", "xhigh", "max"}:
             raise ValueError(f"Unsupported Claude reasoning effort: {normalized_effort!r}.")
+        selected_model = resolve_provider_model(config, model)
         token = secrets.token_urlsafe(32)
         with self._lock:
+            self._models[token] = selected_model
             self._leases[token] = safe_provider_id
             self._reasoning_efforts[token] = normalized_effort
             self._request_indices[token] = 0
@@ -91,6 +96,7 @@ class ClaudeProviderGateway:
         with self._lock:
             value = str(token or "")
             self._leases.pop(value, None)
+            self._models.pop(value, None)
             self._reasoning_efforts.pop(value, None)
             self._request_indices.pop(value, None)
             self._request_observers.pop(value, None)
@@ -137,6 +143,7 @@ class ClaudeProviderGateway:
         self._thread.join(timeout=2)
         with self._lock:
             self._leases.clear()
+            self._models.clear()
             self._reasoning_efforts.clear()
             self._request_indices.clear()
             self._request_observers.clear()
@@ -254,12 +261,14 @@ class ClaudeProviderGateway:
                 payload: dict[str, Any],
             ) -> None:
                 config = ConfigLoader().get_provider_config(provider_id)
-                model = str(config.get("model") or "").strip()
+                model = resolve_provider_model(config, self.server.gateway._models[token])
+                config["model"] = model
                 if not model:
                     raise ValueError(f"Provider {provider_id!r} has no model.")
                 requested_model = str(payload.get("model") or "").strip()
                 protocol = provider_protocol(config)
                 request_payload = dict(payload)
+                request_payload["model"] = model
                 if reasoning_effort:
                     _validate_provider_reasoning_effort(
                         config,

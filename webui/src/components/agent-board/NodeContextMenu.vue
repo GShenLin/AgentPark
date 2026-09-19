@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { launchNodeDesktopPet, saveAgentProfileFromNode } from '../../api'
+import { saveAgentProfileFromNode } from '../../api'
 import ActionButton from '../ActionButton.vue'
+import { t } from '../../i18n'
 import { AgentBoardKey } from './context'
 
 const injected = inject(AgentBoardKey, null)
@@ -15,7 +16,7 @@ const showMenu = ref(false)
 const menuLeft = ref(0)
 const menuTop = ref(0)
 const targetNodeId = ref('')
-const launchingPet = ref(false)
+const duplicatingNode = ref(false)
 const openingFolder = ref<'node' | 'work' | null>(null)
 const changingPrivacy = ref(false)
 const targetIsPrivate = computed(() => {
@@ -23,7 +24,9 @@ const targetIsPrivate = computed(() => {
   return nodeId ? ctx.nodeConfigs.value[nodeId]?.private === true : false
 })
 
-const actionBusy = computed(() => launchingPet.value || openingFolder.value !== null || changingPrivacy.value)
+const actionBusy = computed(
+  () => duplicatingNode.value || openingFolder.value !== null || changingPrivacy.value,
+)
 
 function closeMenu() {
   showMenu.value = false
@@ -38,28 +41,6 @@ function updateMenuPosition() {
   const margin = 12
   menuLeft.value = Math.max(margin, Math.min(menuLeft.value, window.innerWidth - width - margin))
   menuTop.value = Math.max(margin, Math.min(menuTop.value, window.innerHeight - height - margin))
-}
-
-async function showPet() {
-  const nodeId = String(targetNodeId.value || '').trim()
-  if (!nodeId || launchingPet.value) return
-  const node = ctx.nodes.value.find((item) => item.id === nodeId)
-  launchingPet.value = true
-  ctx.lastError.value = null
-  try {
-    await launchNodeDesktopPet({
-      graph_id: ctx.currentGraphId.value || 'default',
-      node_id: nodeId,
-      working_path: String(node?.workingPath || '').trim() || undefined,
-      visible: true,
-      pinned: true,
-    })
-    closeMenu()
-  } catch (error: any) {
-    ctx.lastError.value = String(error?.message || error)
-  } finally {
-    launchingPet.value = false
-  }
 }
 
 async function openFolder(kind: 'node' | 'work') {
@@ -86,6 +67,25 @@ function openAt(screenPoint: { x: number; y: number }, nodeId: string) {
   menuTop.value = Number(screenPoint?.y ?? 0)
   showMenu.value = true
   void nextTick(updateMenuPosition)
+}
+
+function renameNode() {
+  const nodeId = String(targetNodeId.value || '').trim()
+  if (!nodeId) return
+  closeMenu()
+  ctx.startNodeRename(nodeId)
+}
+
+async function duplicateNode() {
+  const nodeId = String(targetNodeId.value || '').trim()
+  if (!nodeId || duplicatingNode.value) return
+  duplicatingNode.value = true
+  try {
+    await ctx.duplicateNodeCard(nodeId)
+    closeMenu()
+  } finally {
+    duplicatingNode.value = false
+  }
 }
 
 async function saveToProfile() {
@@ -153,8 +153,11 @@ defineExpose({
         @pointerdown.stop
         @contextmenu.prevent
       >
-        <ActionButton variant="menu" :disabled="actionBusy" @click="showPet">
-          {{ launchingPet ? 'ShowingPet...' : 'ShowPet' }}
+        <ActionButton variant="menu" :disabled="actionBusy" @click="renameNode">
+          {{ t('board.renameNode') }}
+        </ActionButton>
+        <ActionButton variant="menu" :disabled="actionBusy" @click="duplicateNode">
+          {{ t('board.duplicate') }}
         </ActionButton>
         <ActionButton variant="menu" :disabled="actionBusy" @click="openFolder('node')">
           {{ openingFolder === 'node' ? 'OpeningNodeFolder...' : 'OpenNodeFolder' }}

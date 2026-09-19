@@ -66,10 +66,13 @@ export type ProviderInfo = {
   id: string
   type?: string
   description?: string
+  model?: string
+  models?: string[]
   supportmode: string[]
   features?: Record<string, {
     supported?: boolean
     values?: string[]
+    default?: string
     requires?: string
     transport?: string
   }>
@@ -615,116 +618,6 @@ export type MobileNode = {
   input_num?: number
   output_num?: number
   readonly?: boolean
-}
-
-export type NodeDesktopViewPosition = {
-  display_id?: string
-  x: number
-  y: number
-}
-
-export type NodeDesktopViewPanelSize = {
-  width: number
-  height: number
-}
-
-export type NodeDesktopViewLive = {
-  text?: string
-  trace_id?: string
-  updated_at?: number
-  is_streaming?: boolean
-  version?: number
-  event_type?: string
-  event?: Record<string, unknown>
-  interactive_session_id?: string
-}
-
-export type NodeDesktopView = {
-  view_id: string
-  graph_id: string
-  node_id: string
-  visible: boolean
-  pinned: boolean
-  position?: NodeDesktopViewPosition
-  panel_size?: NodeDesktopViewPanelSize
-  avatar_style?: string
-  created_at?: string
-  updated_at?: string
-  last_invoked_at?: string
-  node: MobileNode & {
-    working_path?: string
-  }
-  live?: NodeDesktopViewLive
-}
-
-export type NodeDesktopViewListResponse = {
-  schema_version: number
-  views: NodeDesktopView[]
-}
-
-export type PetAvatarSequenceFrame = {
-  src: string
-  url?: string
-  holdFrames: number
-}
-
-export type PetAvatarTransformKeyframe = {
-  frame: number
-  x: number
-  y: number
-  rotation: number
-  scaleX: number
-  scaleY: number
-}
-
-export type PetAvatarColorKeyframe = {
-  frame: number
-  color: string
-  opacity: number
-}
-
-export type PetAvatarAnimationTracks = {
-  transform?: PetAvatarTransformKeyframe[]
-  color?: PetAvatarColorKeyframe[]
-}
-
-export type PetAvatarGifState = {
-  type: 'gif'
-  src: string
-  url?: string
-  loop: boolean
-}
-
-export type PetAvatarSequenceState = {
-  type: 'sequence'
-  loop: boolean
-  frames: PetAvatarSequenceFrame[]
-  tracks?: PetAvatarAnimationTracks
-}
-
-export type PetAvatarState = PetAvatarGifState | PetAvatarSequenceState
-
-export type PetAvatarFrame = {
-  version: 1
-  id: string
-  name: string
-  renderer: 'sprite2d'
-  fps: number
-  states: Record<string, PetAvatarState>
-  created_at?: string
-  updated_at?: string
-}
-
-export type PetAvatarSummary = {
-  id: string
-  name: string
-  renderer: 'sprite2d'
-  fps: number
-  states: string[]
-  path: string
-  valid: boolean
-  asset_validation?: 'deferred'
-  error?: string
 }
 
 export type MobileNodeConversation = {

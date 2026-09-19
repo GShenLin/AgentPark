@@ -4,6 +4,7 @@ import os
 
 from src.provider_feature_matrix import build_provider_feature_matrix
 from src.doubao_reasoning_effort import require_doubao_reasoning_effort
+from src.deepseek_provider_config import validate_deepseek_provider_config
 from src.grok_reasoning_effort import require_grok_reasoning_effort
 from src.provider_api_key_store import api_key_store_path, resolve_provider_credential_references
 from src.provider_auth.store import get_account
@@ -11,6 +12,7 @@ from src.provider_auth.kimi_oauth import refresh_authorization as refresh_kimi_a
 from src.provider_auth.xai_oauth import refresh_authorization as refresh_xai_authorization
 from src.provider_auth.anthropic_oauth import refresh_authorization as refresh_anthropic_authorization
 from src.responses_provider_config import validate_responses_provider_config
+from src.provider_models import provider_model_ids
 from src.alpha_matting_contract import (
     ALPHA_MATTING_PROVIDER_TYPE,
     validate_alpha_matting_provider_config,
@@ -163,6 +165,37 @@ class ConfigLoader:
             )
 
         provider = copy.deepcopy(payload)
+        raw_models = provider.get("models")
+        if raw_models is not None and not isinstance(raw_models, list):
+            raise ValueError(
+                f"Provider '{provider_name}' has invalid models; expected an array of model IDs."
+            )
+        raw_model_list = raw_models if isinstance(raw_models, list) else provider.get("model")
+        if isinstance(raw_models, list) or isinstance(provider.get("model"), list):
+            seen_models = set()
+            for index, model_id in enumerate(raw_model_list):
+                if not isinstance(model_id, str) or not model_id.strip():
+                    raise ValueError(
+                        f"Provider '{provider_name}' has invalid model ID at index {index}; "
+                        "expected a non-empty string."
+                    )
+                normalized_model_id = model_id.strip()
+                if normalized_model_id in seen_models:
+                    raise ValueError(
+                        f"Provider '{provider_name}' has duplicate model ID: {normalized_model_id}."
+                    )
+                seen_models.add(normalized_model_id)
+            models = provider_model_ids(provider)
+            if not models:
+                raise ValueError(f"Provider '{provider_name}' must declare at least one model ID.")
+            provider["models"] = models
+            raw_model = provider.get("model")
+            if raw_model is None or isinstance(raw_model, list) or not str(raw_model).strip():
+                provider["model"] = models[0]
+            elif str(raw_model).strip() not in models:
+                raise ValueError(
+                    f"Provider '{provider_name}' model must be one of the configured models."
+                )
         unsupported_keys = sorted(key for key in self.PROVIDER_UNSUPPORTED_CONFIG_KEYS if key in provider)
         if unsupported_keys:
             joined = ", ".join(unsupported_keys)
@@ -186,6 +219,8 @@ class ConfigLoader:
             self._validate_doubao_reasoning_effort_fields(provider)
         if provider_type == "grok":
             self._validate_grok_reasoning_effort_fields(provider)
+        if provider_type == "deepseek":
+            validate_deepseek_provider_config(provider_name, provider)
 
         auth_mode = str(provider.get("authMode") or "api_key").strip().lower()
         if auth_mode not in {"api_key", "codex", "oauth", "none"}:
@@ -365,10 +400,7 @@ class ConfigLoader:
             raise ValueError("Grok providers do not support reasoningSummary.")
         if "reasoningEffort" not in provider:
             return
-        effort = require_grok_reasoning_effort(
-            provider.get("model"),
-            provider.get("reasoningEffort"),
-        )
+        effort = require_grok_reasoning_effort(provider.get("reasoningEffort"))
         if effort:
             provider["reasoningEffort"] = effort
 
@@ -440,12 +472,16 @@ class ConfigLoader:
         catalog = {}
         for raw_provider_name, provider_payload in providers.items():
             provider_name = str(raw_provider_name)
+            declares_model_allowlist = (
+                isinstance(provider_payload, dict)
+                and ("models" in provider_payload or isinstance(provider_payload.get("model"), list))
+            )
             provider = self._validate_provider_config(
                 provider_name,
                 provider_payload,
                 require_api_key=False,
             )
-            catalog[provider_name] = {
+            catalog_entry = {
                 "model": str(provider.get("model") or ""),
                 "supportmode": list(provider["supportmode"]),
                 "type": str(provider.get("type") or ""),
@@ -455,6 +491,9 @@ class ConfigLoader:
                 "private": provider.get("private") is True,
                 "features": copy.deepcopy(provider.get("features") or {}),
             }
+            if declares_model_allowlist:
+                catalog_entry["models"] = provider_model_ids(provider)
+            catalog[provider_name] = catalog_entry
         return catalog
 
     def get_all_providers(self):

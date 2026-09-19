@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   agentProviderModes,
   providerReasoningEffortOptions,
+  providerThinkingDefault,
   reasoningEffortOptions,
 } from '../src/composables/useAgentNodeCreateSchema'
 
@@ -30,5 +31,18 @@ describe('reasoning effort options', () => {
 
   it('filters generic Agent providers by declared Agent modes', () => {
     expect(agentProviderModes({ type: 'openai', supportmode: ['chat', 'audio', 'imagechat'] })).toEqual(['chat', 'imagechat'])
+  })
+
+  it('uses the provider-owned thinking default without changing other providers', () => {
+    expect(providerThinkingDefault({
+      features: {
+        thinking: {
+          supported: true,
+          values: ['enabled', 'disabled'],
+          default: 'enabled',
+        },
+      },
+    })).toBe('enabled')
+    expect(providerThinkingDefault({ features: {} })).toBe('disabled')
   })
 })

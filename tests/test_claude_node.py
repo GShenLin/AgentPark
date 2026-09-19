@@ -18,7 +18,7 @@ def test_claude_node_exposes_provider_and_native_permission_contract(monkeypatch
         return [{"value": "provider-a", "label": "provider-a"}]
 
     monkeypatch.setattr(
-        "nodes.claude_node.build_provider_options_for_support_modes",
+        "src.harness.node.build_provider_options_for_support_modes",
         fake_provider_options,
     )
     node = Node()
@@ -75,16 +75,17 @@ def test_claude_node_uses_native_session_state_and_live_bridge(tmp_path, monkeyp
             return "done"
 
     monkeypatch.setattr(
-        "nodes.claude_node.ConfigLoader",
+        "src.harness.provider_binding.ConfigLoader",
         lambda: SimpleNamespace(
             get_provider_config=lambda _provider_id: {
                 "model": "test-model",
+                "type": "openai",
                 "supportmode": ["chat"],
             }
         ),
     )
     monkeypatch.setattr(
-        "nodes.claude_node.ClaudeSessionManager.instance",
+        "src.harness.adapters.claude.ClaudeSessionManager.instance",
         lambda: FakeManager(),
     )
     context = {

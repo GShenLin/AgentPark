@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { getPrompt, listPrompts, savePrompt, type ProviderInfo } from '../../api'
-import { providerReasoningEffortOptions } from '../../composables/useAgentNodeCreateSchema'
 import ActionButton from '../ActionButton.vue'
 import ExpandableTextarea from '../ExpandableTextarea.vue'
 import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
-import ProviderSelect from '../ProviderSelect.vue'
+import CompanionModelSettings from './CompanionModelSettings.vue'
 import CompanionCapabilitySelect, { type CompanionCapabilityOption } from './CompanionCapabilitySelect.vue'
 
 const props = defineProps<{
@@ -20,29 +19,12 @@ const emit = defineEmits<{
   'update:data': [value: Record<string, unknown>]
 }>()
 
-const modeOptions = ['chat', 'imagechat', 'vision_understand']
-const switchOptions = ['disabled', 'enabled']
 const promptActionBusy = ref('')
 const promptActionMessage = ref('')
 const promptLibraryMode = ref<'' | 'save' | 'load'>('')
 const promptLibraryFiles = ref<string[]>([])
 const promptSaveFilename = ref('system_prompt.txt')
 
-const providerOptions = computed(() =>
-  props.providers
-    .filter((provider) => provider.supportmode.includes('chat') || provider.supportmode.includes('imagechat'))
-    .map((provider) => String(provider.id || '').trim())
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b)),
-)
-const selectedProvider = computed(() => {
-  const providerId = String(props.data.provider_id || '').trim()
-  return props.providers.find((provider) => String(provider.id || '').trim() === providerId) || null
-})
-const reasoningEffortOptions = computed(() => [
-  { value: '', label: 'Unset' },
-  ...providerReasoningEffortOptions(selectedProvider.value),
-])
 const fallbackToolOptions = computed(() => props.availableTools.map((value) => ({ value, label: value })))
 
 function cloneData() {
@@ -178,46 +160,7 @@ async function loadSystemPrompt() {
   <div class="companion-form">
     <section class="settings-group">
       <h2>Model</h2>
-      <div class="form-grid">
-        <label>
-          <span>Provider</span>
-          <ProviderSelect
-            :model-value="stringValue('provider_id')"
-            :providers="providers"
-            :option-ids="providerOptions"
-            placeholder="Unset"
-            @change="setField('provider_id', $event)"
-          />
-        </label>
-        <label>
-          <span>Mode</span>
-          <FormSelect :model-value="stringValue('mode') || 'chat'" @change="setField('mode', $event)">
-            <option v-for="mode in modeOptions" :key="mode" :value="mode">{{ mode }}</option>
-          </FormSelect>
-        </label>
-        <label>
-          <span>Web Search</span>
-          <FormSelect :model-value="stringValue('web_search') || 'disabled'" @change="setField('web_search', $event)">
-            <option v-for="option in switchOptions" :key="option" :value="option">{{ option }}</option>
-          </FormSelect>
-        </label>
-        <label>
-          <span>Thinking</span>
-          <FormSelect :model-value="stringValue('thinking') || 'disabled'" @change="setField('thinking', $event)">
-            <option v-for="option in switchOptions" :key="option" :value="option">{{ option }}</option>
-          </FormSelect>
-        </label>
-        <label>
-          <span>Reasoning Effort</span>
-          <FormSelect :model-value="stringValue('reasoning_effort')" @change="setField('reasoning_effort', $event)">
-            <option v-for="option in reasoningEffortOptions" :key="option.value || 'unset'" :value="option.value">{{ option.label }}</option>
-          </FormSelect>
-        </label>
-        <label>
-          <span>Working Path</span>
-          <FormTextInput :model-value="stringValue('working_path')" @update:model-value="setField('working_path', $event)" />
-        </label>
-      </div>
+      <CompanionModelSettings :data="data" :providers="providers" @update:data="emit('update:data', $event)" />
       <label class="wide-field">
         <span class="field-head">
           <span>System Prompt</span>
@@ -361,7 +304,6 @@ async function loadSystemPrompt() {
   font-size: 15px;
 }
 
-.form-grid,
 .capability-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -437,7 +379,6 @@ label {
 }
 
 @media (max-width: 1120px) {
-  .form-grid,
   .capability-grid {
     grid-template-columns: 1fr;
   }

@@ -187,7 +187,6 @@ def _dispatch_message(
         "messages_path",
         "runtime_events_path",
         "user_context_path",
-        "soul_context_path",
         "long_term_memory_path",
         "final_message_preview",
     )

@@ -196,7 +196,15 @@ function clearPoll() {
 }
 
 function providerState(provider: ProviderLimitEntry | undefined) {
-  return provider?.accessible ? 'ok' : 'bad'
+  if (provider?.accessible === true) return 'ok'
+  if (provider?.accessible === false) return 'bad'
+  return 'untested'
+}
+
+function providerStatusLabel(provider: ProviderLimitEntry | undefined) {
+  if (provider?.accessible === true) return 'Accessible'
+  if (provider?.accessible === false) return 'Unavailable'
+  return 'Untested'
 }
 
 function testChannelLabel(channel: string | undefined) {
@@ -239,7 +247,7 @@ onUnmounted(clearPoll)
             <span class="provider-name" :title="providerId">{{ providerId }}</span>
             <span class="provider-health">
               <span class="provider-health-dot" aria-hidden="true"></span>
-              {{ limits?.providers?.[providerId]?.accessible ? 'Ready' : 'Unavailable' }}
+              {{ providerStatusLabel(limits?.providers?.[providerId]) }}
             </span>
           </span>
           <span class="provider-meta">
@@ -287,7 +295,7 @@ onUnmounted(clearPoll)
 
       <template v-if="selectedProvider">
         <div class="status-line" :class="providerState(selectedProvider)">
-          <strong>{{ selectedProvider.accessible ? 'Accessible' : 'Unavailable' }}</strong>
+          <strong>{{ providerStatusLabel(selectedProvider) }}</strong>
           <span>{{ selectedProvider.type }} / {{ selectedProvider.model }}</span>
         </div>
 
@@ -300,7 +308,7 @@ onUnmounted(clearPoll)
           >
             <div class="channel-result-head">
               <strong>{{ testChannelLabel(channelResult.channel) }}</strong>
-              <span>{{ channelResult.result.accessible ? 'Accessible' : 'Unavailable' }}</span>
+              <span>{{ providerStatusLabel(channelResult.result) }}</span>
             </div>
             <div class="channel-summary">
               <div v-if="channelResult.result.test_endpoint">

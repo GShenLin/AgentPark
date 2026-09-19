@@ -148,7 +148,7 @@ workspace_exec_declaration = {
         "description": (
             "Execute a strictly structured workspace program. Stages run sequentially; operations inside one "
             "stage run concurrently. Use it to combine independent reads, searches, file inventories, and "
-            "PowerShell commands without extra model round trips. It can also sequence an exclusive "
+            "commands in the detected host shell without extra model round trips. It can also sequence an exclusive "
             "update_task_direction stage before an exclusive apply_patch stage. A failed stage stops the "
             "program before later stages. The only top-level argument is stages. "
             "Every apply_patch operation declares non-empty required_changes. The runtime verifies each "

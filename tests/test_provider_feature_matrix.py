@@ -42,31 +42,39 @@ def test_provider_feature_matrix_covers_all_supported_provider_transports():
         ),
     )
 
-    assert build_provider_feature_matrix({"type": "grok", "model": "grok-4.5", "responsesApi": True}) == _matrix(
+    grok_matrix = _matrix(
         responses_api=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
         web_search=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
         tools=_feature(True, ["enabled", "disabled"]),
         thinking=_feature(False, []),
-        reasoning_effort=_feature(True, ["low", "medium", "high"], transport="responses"),
+        reasoning_effort=_feature(True, ["low", "medium", "high", "xhigh"], transport="responses"),
         reasoning_summary=_feature(False, []),
     )
+    assert build_provider_feature_matrix({"type": "grok", "model": "grok-4.5", "responsesApi": True}) == grok_matrix
+    assert build_provider_feature_matrix({"type": "grok", "model": "grok-4.6", "responsesApi": True}) == grok_matrix
+    assert build_provider_feature_matrix({"type": "grok", "model": "grok-future", "responsesApi": True}) == grok_matrix
 
     assert build_provider_feature_matrix({"type": "deepseek"}) == _matrix(
         responses_api=_feature(False, ["enabled", "disabled"], requires="responsesApi=true"),
         web_search=_feature(False, []),
         tools=_feature(True, ["enabled", "disabled"]),
-        thinking=_feature(True, ["enabled", "disabled"], transport="chat_completions"),
+        thinking=_feature(True, ["enabled", "disabled"], default="enabled", transport="chat_completions"),
         reasoning_effort=_feature(True, ["high", "max"], transport="chat_completions"),
-        reasoning_summary=_feature(False, []),
+        reasoning_summary=_feature(False, [], requires="responsesApi=true"),
     )
 
     assert build_provider_feature_matrix({"type": "deepseek", "responsesApi": True}) == _matrix(
         responses_api=_feature(True, ["enabled", "disabled"], requires="responsesApi=true", transport="responses"),
         web_search=_feature(False, []),
         tools=_feature(True, ["enabled", "disabled"]),
-        thinking=_feature(True, ["enabled", "disabled"], transport="responses"),
+        thinking=_feature(True, ["enabled", "disabled"], default="enabled", transport="responses"),
         reasoning_effort=_feature(True, ["high", "max"], transport="responses"),
-        reasoning_summary=_feature(False, []),
+        reasoning_summary=_feature(
+            True,
+            ["auto", "concise", "detailed", "disabled"],
+            requires="responsesApi=true",
+            transport="responses",
+        ),
     )
 
     assert build_provider_feature_matrix({"type": "kimi", "model": "kimi-k3"}) == _matrix(

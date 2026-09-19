@@ -1,5 +1,6 @@
 import os
 
+from src.public_gateway.usage_stats import PublicGatewayUsageStore
 from src.web_backend.node_execution_context import bind_node_storage_context
 
 
@@ -24,6 +25,7 @@ def test_agent_node_mid_turn_input_uses_explicit_external_config_path(monkeypatc
     class DummyAgent:
         def __init__(self):
             self.messages = []
+            self.config = {"model": "gpt-test"}
 
         def addTool(self, _name):
             return None
@@ -51,6 +53,7 @@ def test_agent_node_mid_turn_input_uses_explicit_external_config_path(monkeypatc
         lambda _loader, _provider_id: {"supportmode": ["chat"]},
     )
     monkeypatch.setattr(agent_node_module, "create_agent", fake_create_agent)
+    monkeypatch.setattr(agent_node_module, "get_workspace_root", lambda: str(tmp_path))
     monkeypatch.setattr(agent_node_module, "bind_agent_runtime_context", fake_bind_agent_runtime_context)
     monkeypatch.setattr(
         agent_node_module,
@@ -74,6 +77,7 @@ def test_agent_node_mid_turn_input_uses_explicit_external_config_path(monkeypatc
             "node_config_path": str(config_path),
             "memory_path": str(memory_path),
             "messages_path": str(messages_path),
+            "access_ip": "127.0.0.1",
         },
     )
     captured["runtime_context"].consume_mid_turn_user_inputs()
@@ -81,3 +85,10 @@ def test_agent_node_mid_turn_input_uses_explicit_external_config_path(monkeypatc
     assert str(result.get("display") or "") == "ok"
     assert captured["create_kwargs"]["memory_file_path"] == str(memory_path)
     assert captured["consumed_config_path"] == str(config_path)
+    assert captured["runtime_context"].client_ip == "127.0.0.1"
+    tracker = captured["runtime_context"].provider_request_tracker
+    tracker.record_summary({"request_index": 1, "request_api": "responses"})
+    tracker.record_completion(1, {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5})
+    usage_file = next((tmp_path / ".runtime" / "public-gateway-usage").glob("*.jsonl"))
+    stats = PublicGatewayUsageStore(str(tmp_path)).aggregate(usage_file.stem)
+    assert stats["ips"][0]["models"][0]["totalTokens"] == 5

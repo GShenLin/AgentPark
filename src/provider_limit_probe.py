@@ -24,6 +24,7 @@ from src.provider_auth import resolve_provider_request_credentials
 from src.provider_limit_schema import PROVIDER_LIMIT_SCHEMA_VERSION
 from src.provider_limit_schema import ProbeResult
 from src.provider_limit_schema import provider_limit_path
+from src.provider_limit_schema import read_provider_limit_file
 from src.provider_limit_static_contract import record_static_contract_limits
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -38,6 +39,7 @@ def run_provider_limit_tests(
     providers = config.get("providers")
     if not isinstance(providers, dict):
         providers = {}
+    model_catalogs = _load_existing_model_catalogs()
     started = time.monotonic()
     output = {
         "schema_version": PROVIDER_LIMIT_SCHEMA_VERSION,
@@ -48,7 +50,11 @@ def run_provider_limit_tests(
         "completed_providers": 0,
         "total_providers": 0,
         "current_provider_id": "",
-        "providers": {},
+        "providers": {
+            provider_id: copy.deepcopy(catalog)
+            for provider_id, catalog in model_catalogs.items()
+            if provider_id in providers
+        },
     }
     provider_items = list(providers.items())
     total = len(provider_items)
@@ -78,6 +84,9 @@ def run_provider_limit_tests(
                 provider,
                 exc,
             )
+        existing_catalog = model_catalogs.get(safe_provider_id)
+        if existing_catalog:
+            output["providers"][safe_provider_id].update(existing_catalog)
         output["completed_providers"] = index
         _write_provider_limit_snapshot(path, output, started=started)
         _emit_progress(
@@ -92,6 +101,28 @@ def run_provider_limit_tests(
     _write_provider_limit_snapshot(path, output, started=started)
     output_with_path = {**output, "path": path}
     return output_with_path
+
+
+def _load_existing_model_catalogs() -> dict[str, dict[str, Any]]:
+    try:
+        document = read_provider_limit_file()
+    except Exception:
+        return {}
+    providers = document.get("providers")
+    if not isinstance(providers, dict):
+        return {}
+    catalogs: dict[str, dict[str, Any]] = {}
+    for provider_id, entry in providers.items():
+        if not isinstance(entry, dict):
+            continue
+        catalog = {
+            key: copy.deepcopy(entry[key])
+            for key in ("available_model_ids", "manual_model_ids", "model_discovery")
+            if key in entry
+        }
+        if catalog:
+            catalogs[str(provider_id)] = catalog
+    return catalogs
 
 
 def _write_provider_limit_snapshot(path: str, output: dict[str, Any], *, started: float) -> None:

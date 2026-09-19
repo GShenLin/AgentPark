@@ -6,7 +6,6 @@ const SUPPORT_MODE_ORDER = [
   'image_generation',
   'image_matting',
   'vision_understand',
-  'guiagent',
   'video_generation',
   'video_change_person',
   'model_generation',
@@ -15,7 +14,6 @@ const SUPPORT_MODE_ORDER = [
 ] as const
 
 const SUPPORT_MODE_LABELS: Record<string, string> = {
-  guiagent: 'GUIAgent',
 }
 
 export type NodeSupportModeGroup = {

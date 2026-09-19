@@ -37,6 +37,7 @@ def test_remote_user_registration_records_username_ip_and_defaults_to_nondevelop
         "_access_client_id": "browser-1",
         "_access_username": "Alice",
         "_access_role": "nondeveloper",
+        "_access_ip": "10.0.0.8",
     }
 
     policy = load_access_policy()

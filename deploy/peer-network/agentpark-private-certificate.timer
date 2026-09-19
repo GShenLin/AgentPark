@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily AgentPark private certificate renewal check
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=agentpark-private-certificate.service
+
+[Install]
+WantedBy=timers.target

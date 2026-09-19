@@ -29,6 +29,7 @@ def test_agent_runtime_context_bind_and_read(tmp_path):
             workspace_root=str(tmp_path),
             working_path=str(tmp_path / "work"),
             collaboration_mode="plan",
+            client_ip="127.0.0.1",
             shell="powershell",
             responses_instruction="Use the Responses instructions field.",
             skill_resource_roots={"demo": str(tmp_path / "skill")},
@@ -46,6 +47,7 @@ def test_agent_runtime_context_bind_and_read(tmp_path):
     assert resolved.node_id == "Agent1"
     assert resolved.node_directory == str(tmp_path / "node")
     assert resolved.collaboration_mode == "plan"
+    assert resolved.client_ip == "127.0.0.1"
     assert resolved.responses_instruction == "Use the Responses instructions field."
     assert resolved.skill_resource_roots == {"demo": str(tmp_path / "skill")}
     assert resolved.persist_assistant_progress is not None
