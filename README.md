@@ -1,46 +1,45 @@
 # AgentPark
-<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
 
 [English](./README.md) | [中文](./README.zh.md)
 
-AgentPark is a local-first visual Agent platform built around two explicit, reusable contracts: **Agent Profile** and **RuntimePolicy**. Change what an Agent is or how it works without rebuilding the Graph around it.
+<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
 
-## The Core: Profile Switching + RuntimePolicy
+> **Text your home PC from WeChat, and let it do the work.**
+>
+> AgentPark is a local-first visual Agent platform: drag-and-drop nodes to build workflows, plug into WeChat in one step, with Doubao / Zhipu / Gemini / OpenAI working out of the box. It runs on your own machine, your data never leaves your network, and your Agents stay on duty 24/7.
 
-### Switch the Agent with a Profile
+## Why AgentPark?
 
-An **Agent Profile** is a portable definition of an Agent's role and capabilities. It can carry the Provider, instructions, system prompt, tools, skills, plugins, MCP servers, reasoning options, RuntimePolicy selection, and Runtime Event rules.
+| Pain point | How AgentPark solves it |
+|---|---|
+| You want an AI assistant inside WeChat, but WeChat offers no official Bot API | **Channel nodes**: WeChat messages reach your Agent directly, replies go back the same way |
+| Switching models means rewriting a pile of configs | **Agent Profile**: one config, swap between Doubao / Zhipu / Gemini / OpenAI freely — no rewiring |
+| Prompts pile up, Agent behavior becomes unreproducible | **RuntimePolicy**: versioned execution policies with SHA-256 manifests — auditable and reproducible |
+| Multi-step tasks require writing orchestration code | **Visual Graph**: drag nodes, connect ports; scheduled triggers, loops, and routing built in |
+| You don't trust cloud Agents with your data | **Local-first**: FastAPI + Vue running entirely on your machine, operable from your phone |
 
-- Save an existing Agent node as a Profile.
-- Create a new Agent directly from a Profile.
-- Load another Profile into an existing node without recreating the node or rewiring the Graph; the node identity and name stay in place while its operational configuration and event rules are replaced.
-- Keep Profiles as reviewable, shareable files under [`agent/`](./agent/) instead of burying Agent behavior in one machine's runtime state.
+## The core design in 30 seconds
 
-Profile switching turns a stable Graph position into a reusable role slot: the same node can become a code reader, architecture designer, incident diagnostician, or implementation Agent while the surrounding workflow remains intact.
-
-### Control How Work Is Done with RuntimePolicy
-
-**RuntimePolicy** defines the execution discipline of an Agent independently from the model transport. A Provider owns the endpoint, authentication, model, context capacity, and wire-level limits. RuntimePolicy owns how the Agent directs a task, checks implementation progress, reviews completion, and compacts context.
-
-- Select a versioned Policy per Profile, or inherit the workspace default.
-- Use task-specific Policies such as fast implementation, diagnostic investigation, architecture design, code review, or test engineering.
-- Edit Policies in the dedicated Settings section with strict validation; invalid fields and prompt references fail explicitly.
-- Inspect the effective Policy source, version, and SHA-256 manifest so the behavior used by a run can be audited and reproduced.
-
-RuntimePolicy lives in [`config/runtimePolicies.json`](./config/runtimePolicies.json) and [`config/runtime_policies/`](./config/runtime_policies/). See [RuntimePolicy and benchmark Harness](./docs/runtime-policy-harness.md) for the complete contract.
-
-### Four Explicit Layers
+AgentPark splits an Agent into four layers, each swappable independently:
 
 | Layer | Owns | What can change independently |
-| --- | --- | --- |
-| **Agent Profile** | Role, prompts, capabilities, tools, skills, plugins, events, Policy selection | Who the Agent is and what it can use |
-| **RuntimePolicy** | Task direction, completion review, implementation checkpoints, context compaction | How the Agent approaches and finishes work |
-| **Provider** | Model transport, authentication, context capacity, protocol limits | Which model executes the Profile |
-| **Graph** | Nodes, triggers, routes, channels, collaboration topology | How Agents and automation steps work together |
+|---|---|---|
+| **Agent Profile** | Role, prompts, tools, skills, plugins | Who the Agent is and what it can do |
+| **RuntimePolicy** | Task direction, completion review, context compaction | How it works and what counts as done |
+| **Provider** | Model endpoints, auth, billing | Which model runs it (Doubao / Zhipu / Gemini / OpenAI-compatible) |
+| **Graph** | Nodes, triggers, routes, channel topology | How multiple Agents collaborate |
 
-Because these boundaries stay separate, you can switch Profiles without rebuilding a workflow, compare Providers under the same Profile and RuntimePolicy, and reuse a proven Agent setup across Graphs.
+Switch models without rebuilding workflows. Switch tasks without rewriting prompts. That's what sets AgentPark apart from thin wrappers.
 
-AgentPark combines this contract model with a FastAPI backend and a Vue 3 + Vite workspace for visual Graph editing, execution controls, memory and file operations, desktop settings, and mobile access.
+## What can you build with it?
+
+- 📱 **WeChat personal assistant**: send a WeChat message, the Agent checks your calendar, replies to emails, runs scripts — results come back to WeChat
+- 🎬 **Media pipelines**: image gen → video gen → face-swap video → 3D modeling, fully automated in one Graph
+- 🖥️ **Desktop automation**: the GUI Agent sees the screen and clicks the mouse — hand it your repetitive work
+- 🧪 **Model A/B testing**: same Profile, same task across Doubao / Zhipu / Gemini — see who's best at a glance
+- 🏠 **Multi-device mesh**: old phones, home PC, office computer — networked together, calling each other
+
+---
 
 ## Project Goal
 
