@@ -1,46 +1,45 @@
 # AgentPark
 
 [English](./README.md) | [中文](./README.zh.md)
+
 <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
 
-AgentPark 是一个以本地优先为基础的可视化 Agent 平台，核心建立在两份显式、可复用的契约上：**Agent Profile** 与 **RuntimePolicy**。无需重建 Graph，就能分别切换“这个 Agent 是谁”以及“它如何完成工作”。
+> **在微信里发句话，让家里的电脑替你干活。**
+>
+> AgentPark 是一个本地优先的可视化 Agent 平台：拖拽节点编排工作流，一键接入微信，豆包 / 智谱 / Gemini / OpenAI 开箱即用。跑在你自己的机器上，数据不出内网，Agent 7×24 待命。
 
-## 核心亮点：Profile 切换 + RuntimePolicy
+## 为什么选 AgentPark？
 
-### 用 Profile 切换 Agent
+| 痛点 | AgentPark 的解法 |
+|---|---|
+| 想在微信里使唤 AI，微信又没有官方 Bot API | **Channel 节点**：微信消息直达你的 Agent，回复原路返回 |
+| 换个模型就要重写一堆配置 | **Agent Profile**：一套配置，豆包 / 智谱 / Gemini / OpenAI 随便换，不用重连工作流 |
+| prompt 越堆越乱，Agent 行为不可复现 | **RuntimePolicy**：执行策略版本化，带 SHA-256 摘要，可审计、可复现 |
+| 多步骤任务只能写代码编排 | **可视化 Graph**：拖节点、连线，定时触发、循环、路由开箱即用 |
+| 嫌云端 Agent 不放心，数据要出境 | **本地优先**：FastAPI + Vue 全跑在你自己机器上，手机也能远程操作 |
 
-**Agent Profile** 是一份可迁移的 Agent 角色与能力定义。它可以完整携带 Provider、指令、系统提示词、工具、Skills、Plugins、MCP Servers、推理选项、RuntimePolicy 选择和 Runtime Event 规则。
+## 30 秒看懂核心设计
 
-- 将当前 Agent 节点保存为 Profile。
-- 直接通过 Profile 创建新的 Agent。
-- 把另一个 Profile 加载到现有节点，无需重新创建节点或重连 Graph；节点身份和名称保持不变，运行配置与事件规则会整体切换。
-- Profile 以可审查、可分享的独立文件存放在 [`agent/`](./agent/)，不会被埋在某一台机器的运行时状态里。
+AgentPark 把 Agent 拆成四层，每层独立可换：
 
-Profile 切换让 Graph 中一个稳定的节点位置成为可复用的“角色槽位”：同一个节点可以切换为代码阅读、架构设计、故障诊断或实现 Agent，而周围的工作流保持不变。
+| 层级 | 管什么 | 能独立换什么 |
+|---|---|---|
+| **Agent Profile** | 角色、提示词、工具、Skills、插件 | 这个 Agent 是谁、会什么 |
+| **RuntimePolicy** | 任务推进、完成检查、上下文压缩 | 它怎么做事、做到什么程度算完 |
+| **Provider** | 模型接口、认证、计费 | 用哪家模型跑（豆包 / 智谱 / Gemini / OpenAI 兼容） |
+| **Graph** | 节点、触发器、路由、通道拓扑 | 多个 Agent 如何协作 |
 
-### 用 RuntimePolicy 控制工作方式
+换模型不用重搭工作流，换任务不用重写 prompt——这是 AgentPark 和简单套壳工具的根本区别。
 
-**RuntimePolicy** 将 Agent 的执行纪律与模型传输配置明确分开。Provider 负责端点、认证、模型、上下文容量和协议限制；RuntimePolicy 负责 Agent 如何确定任务方向、检查实现进度、审查完成状态和压缩上下文。
+## 能用来干什么？
 
-- 每个 Profile 可以显式选择一个版本化 Policy，也可以继承工作区默认值。
-- 可按任务选择快速实现、故障诊断、架构设计、代码审查、测试工程等不同 Policy。
-- 在 Settings 的独立页面中切换和编辑 Policy；字段或提示词引用不合法时会明确失败。
-- 查看最终生效 Policy 的来源、版本和 SHA-256 摘要，让一次运行使用的行为契约可以审计和复现。
+- 📱 **微信个人助理**：微信发句话，Agent 查日程、回邮件、跑脚本，结果发回微信
+- 🎬 **多媒体流水线**：图片生成 → 视频生成 → 换人视频 → 3D 建模，一条 Graph 全自动
+- 🖥️ **桌面自动化**：GUI Agent 看屏幕、点鼠标，重复操作交给它
+- 🧪 **模型 AB 测试**：同一套 Profile，豆包 / 智谱 / Gemini 同题对比，一眼看出谁更强
+- 🏠 **多设备协同**：旧手机、家里的 PC、办公室电脑，组网后互相调用
 
-RuntimePolicy 目录位于 [`config/runtimePolicies.json`](./config/runtimePolicies.json) 与 [`config/runtime_policies/`](./config/runtime_policies/)。完整契约见 [RuntimePolicy 与测试 Harness](./docs/runtime-policy-harness.md)。
-
-### 四层显式边界
-
-| 层级 | 负责什么 | 可以独立切换什么 |
-| --- | --- | --- |
-| **Agent Profile** | 角色、提示词、能力、工具、Skills、Plugins、事件和 Policy 选择 | Agent 是谁、能使用什么 |
-| **RuntimePolicy** | 任务方向、完成审查、实现检查点、上下文压缩 | Agent 如何推进并完成工作 |
-| **Provider** | 模型传输、认证、上下文容量、协议限制 | 由哪个模型执行 Profile |
-| **Graph** | 节点、触发器、路由、通道和协作拓扑 | Agent 与自动化步骤如何协作 |
-
-这些边界彼此独立，因此你可以在不重建工作流的情况下切换 Profile，在同一 Profile 与 RuntimePolicy 下公平对比 Provider，也可以把验证过的 Agent 配置复用到不同 Graph。
-
-AgentPark 在这套契约模型之上，使用 FastAPI 后端与 Vue 3 + Vite 工作区提供可视化 Graph 编辑、执行控制、记忆与文件操作、桌面端设置和移动端访问。
+---
 
 ## 项目目标
 
