@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "panels": {
+    "nodeOutputRoutes": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "border": {
+        "color": "#e5e5e5"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "dangerBackground": "#fff6f6",
+        "dangerText": "#ad3333"
+      },
+      "input": {
+        "background": "#ffffff",
+        "text": "#242424",
+        "border": "#dedede"
+      }
+    },
+    "nodeSideEditor": {
+      "background": {
+        "color": "#f8f8f8",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "text": {
+        "primary": "#242424",
+        "secondary": "#626262"
+      },
+      "border": {
+        "color": "#e5e5e5"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede"
+      },
+      "input": {
+        "background": "#ffffff",
+        "text": "#242424",
+        "border": "#dedede",
+        "focusBorder": "#888888",
+        "fontSize": "13px"
+      }
+    },
+    "canvasContextMenu": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "hoverBackground": "#f1f1f1"
+      }
+    },
+    "nodeContextMenu": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "hoverBackground": "#f1f1f1"
+      }
+    },
+    "app": {
+      "background": {
+        "color": "#f8f8f8",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "text": {
+        "primary": "#242424",
+        "secondary": "#626262",
+        "muted": "#7a7a7a",
+        "accent": "#2563b9"
+      },
+      "border": {
+        "subtle": "#eeeeee",
+        "light": "#e5e5e5",
+        "medium": "#d4d4d4"
+      }
+    },
+    "topbar": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "text": {
+        "primary": "#242424",
+        "secondary": "#626262",
+        "muted": "#7a7a7a"
+      },
+      "border": {
+        "color": "#e5e5e5"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "hoverBackground": "#f1f1f1",
+        "hoverText": "#202020",
+        "activeBackground": "#ebebeb",
+        "activeText": "#202020"
+      },
+      "input": {
+        "background": "#ffffff",
+        "text": "#242424",
+        "border": "#dedede"
+      }
+    },
+    "settingsPanel": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "header": {
+        "background": "#fafafa",
+        "border": "#e9e9e9"
+      },
+      "tabs": {
+        "background": "#f7f7f7",
+        "border": "#e9e9e9",
+        "text": "#666666",
+        "hoverBackground": "#ededed",
+        "hoverText": "#242424",
+        "activeBackground": "#e9e9e9",
+        "activeText": "#202020"
+      },
+      "editor": {
+        "background": "#ffffff",
+        "toolbarBackground": "#fafafa",
+        "text": "#242424",
+        "muted": "#737373",
+        "border": "#e9e9e9"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "primaryBackground": "#202020",
+        "primaryBorder": "#202020",
+        "primaryText": "#ffffff"
+      },
+      "input": {
+        "background": "#ffffff",
+        "text": "#242424",
+        "border": "#dedede",
+        "focusBackground": "#fafafa"
+      },
+      "error": {
+        "background": "#fff3f3",
+        "text": "#a62f2f",
+        "border": "#edcaca"
+      }
+    },
+    "filePanel": {
+      "background": {
+        "color": "#f8f8f8",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "header": {
+        "background": "#fafafa",
+        "border": "#e9e9e9"
+      },
+      "border": {
+        "color": "#e5e5e5"
+      },
+      "text": {
+        "primary": "#242424",
+        "secondary": "#626262",
+        "muted": "#7a7a7a"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "hoverBackground": "#f1f1f1"
+      },
+      "input": {
+        "background": "#ffffff",
+        "text": "#242424",
+        "border": "#dedede",
+        "focusBorder": "#888888"
+      },
+      "item": {
+        "text": "#303030",
+        "hoverBackground": "#f1f1f1"
+      }
+    },
+    "memoryPanel": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "header": {
+        "background": "#fafafa",
+        "border": "#e9e9e9"
+      },
+      "text": {
+        "primary": "#242424",
+        "secondary": "#343434",
+        "muted": "#7a7a7a"
+      },
+      "font": {
+        "body": "16px",
+        "title": "14px",
+        "ui": "13px",
+        "meta": "11px",
+        "small": "11px",
+        "diff": "12px"
+      },
+      "border": {
+        "color": "#e5e5e5"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "activeBackground": "#ebebeb",
+        "activeBorder": "#c7c7c7"
+      }
+    },
+    "graphPanel": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "primaryBackground": "#202020",
+        "primaryBorder": "#202020",
+        "dangerBackground": "#fff6f6",
+        "dangerBorder": "#ebcaca",
+        "dangerText": "#ad3333"
+      },
+      "input": {
+        "background": "#ffffff",
+        "text": "#242424",
+        "border": "#dedede",
+        "focusBorder": "#888888"
+      },
+      "item": {
+        "background": "#ffffff",
+        "text": "#303030",
+        "muted": "#737373",
+        "border": "#e5e5e5"
+      }
+    },
+    "nodeCard": {
+      "background": {
+        "color": "#ffffff",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "text": {
+        "title": "#242424",
+        "body": "#454545",
+        "muted": "#7a7a7a"
+      },
+      "border": {
+        "color": "#e5e5e5",
+        "selected": "#737373"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede",
+        "hoverBackground": "#f1f1f1"
+      }
+    },
+    "nodePalette": {
+      "background": {
+        "color": "#f8f8f8",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      },
+      "item": {
+        "background": "#ffffff",
+        "text": "#303030",
+        "border": "#e5e5e5"
+      },
+      "button": {
+        "background": "#ffffff",
+        "text": "#454545",
+        "border": "#dedede"
+      }
+    },
+    "boardCanvas": {
+      "background": {
+        "color": "#f1f1f1",
+        "image": "",
+        "size": "cover",
+        "position": "center",
+        "repeat": "no-repeat",
+        "blendMode": "normal"
+      }
+    }
+  }
+}

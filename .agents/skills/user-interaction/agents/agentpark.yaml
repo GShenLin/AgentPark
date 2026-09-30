@@ -1,0 +1,4 @@
+dependencies:
+  tools:
+    - type: tool
+      value: user_interaction_tools

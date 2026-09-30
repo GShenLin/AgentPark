@@ -28,6 +28,14 @@ if errorlevel 1 (
     echo [WARN] Repository update did not complete. Continuing startup.
 )
 
+echo [INFO] Checking AgentPark private CA trust...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%AGENTPARK_WORKSPACE_ROOT%\deploy\peer-network\client-trust\install-windows.ps1"
+if errorlevel 1 (
+    echo [ERROR] Failed to prepare AgentPark private CA trust.
+    call :maybe_pause
+    exit /b 1
+)
+
 if not exist "%AGENTPARK_WORKSPACE_ROOT%\.runtime" mkdir "%AGENTPARK_WORKSPACE_ROOT%\.runtime"
 set "AGENTPARK_DEPENDENCY_UPDATE_LOG=%AGENTPARK_WORKSPACE_ROOT%\.runtime\dependency-update.log"
 >>"%AGENTPARK_DEPENDENCY_UPDATE_LOG%" echo.
@@ -74,7 +82,7 @@ rem Return to root directory
 cd ..
 
 echo [INFO] Installing/updating AgentPark Python dependencies...
-set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install --no-build-isolation -e ."
+set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install -e ."
 call :run_optional_dependency_update "AgentPark Python dependency update"
 
 call :stop_existing_workspace_processes

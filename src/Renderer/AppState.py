@@ -146,7 +146,7 @@ class HtmlChatRenderer:
 
 def _run_agent_send(state: AppState):
     try:
-        state.agent.Send()
+        state.agent.send()
     except Exception as e:
         state.set_error(str(e))
         state.agent.Message("assistant", f"Error: {e}")

@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from src.config_loader import ConfigLoader
-from .model import ProviderMemoryModel
+from .model import ProfileMemoryModel
 from .pipeline import MemoryPipeline
 from .prompts import READ_INSTRUCTIONS
 from .retrieval import MemoryReader
@@ -36,8 +36,8 @@ def schedule_memory(node_dir: str, graph_id: str, node_id: str, provider_id: str
     def process():
         try:
             store = MemoryStore(Path(node_dir), graph_id, node_id)
-            model = ProviderMemoryModel(settings.extract_provider or provider_id,
-                                        settings.consolidation_provider or settings.extract_provider or provider_id,
+            model = ProfileMemoryModel(settings.extract_profile_id,
+                                        settings.consolidation_profile_id,
                                         graph_id=graph_id, node_id=node_id)
             report = MemoryPipeline(store, model, settings).run(active_trace=active_trace)
             if report.get("failed"):

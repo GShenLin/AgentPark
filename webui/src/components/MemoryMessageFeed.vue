@@ -1,63 +1,26 @@
 <script setup lang="ts">
 import { toRef } from 'vue'
-import type { LatestTurnProgressSummary, MessageEnvelope } from '../api'
+import type { LoadMemoryTurnDetails, MessageEnvelope } from '../api'
 import MemoryMessageParts from './MemoryMessageParts.vue'
 import MemoryTurnGroup from './MemoryTurnGroup.vue'
-import {
-  isLatestMemoryTurn,
-  shouldLoadPreviousTurnsOnCollapse,
-} from './memoryTurnHistoryPolicy'
-import {
-  feedRoleClass,
-  memoryRoleLabel,
-  useMemoryTurnEntries,
-} from './memoryFeedTools'
+import { feedRoleClass, memoryRoleLabel, useMemoryTurnEntries } from './memoryFeedTools'
 
 const props = defineProps<{
   messages: MessageEnvelope[]
   markdownPreview: boolean
-  historyComplete?: boolean
-  progressLoaded?: boolean
-  metadataLoaded?: boolean
-  progressSummary?: LatestTurnProgressSummary | null
-  loadingSection?: 'progress' | 'metadata' | null
-  ensureLatestTurnMetadata?: () => Promise<void>
+  loadTurnDetails: LoadMemoryTurnDetails
 }>()
-
 const emit = defineEmits<{
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
   (event: 'deleteMessage', target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }): void
-  (event: 'requestHistory'): void
-  (event: 'requestSection', section: 'progress' | 'metadata'): void
 }>()
-
 const feedEntries = useMemoryTurnEntries(toRef(props, 'messages'))
-
-function isLatestTurn(index: number) {
-  return isLatestMemoryTurn(feedEntries.value, index)
-}
-
-function onTurnToggle(index: number, expanded: boolean) {
-  if (shouldLoadPreviousTurnsOnCollapse(feedEntries.value, index, expanded, props.historyComplete)) {
-    emit('requestHistory')
-  }
-}
-
-function requestLatestTurnSection(index: number, section: 'progress' | 'metadata') {
-  if (!isLatestTurn(index) || props.loadingSection) return
-  emit('requestSection', section)
-}
-
-function sectionDeferred(index: number, section: 'progress' | 'metadata') {
-  if (!isLatestTurn(index)) return false
-  return section === 'progress' ? props.progressLoaded === false : props.metadataLoaded === false
-}
 </script>
 
 <template>
   <template v-if="feedEntries.length > 0">
-    <template v-for="(entry, index) in feedEntries" :key="entry.key">
+    <template v-for="entry in feedEntries" :key="entry.key">
       <div
         v-if="entry.type === 'message'"
         class="feed-item"
@@ -78,18 +41,11 @@ function sectionDeferred(index: number, section: 'progress' | 'metadata') {
       <MemoryTurnGroup
         v-else
         :entry="entry"
+        :load-turn-details="loadTurnDetails"
         :markdown-preview="markdownPreview"
-        :default-expanded="isLatestTurn(index)"
-        :progress-deferred="sectionDeferred(index, 'progress')"
-        :metadata-deferred="sectionDeferred(index, 'metadata')"
-        :loading-section="isLatestTurn(index) ? loadingSection : null"
-        :progress-summary="isLatestTurn(index) ? progressSummary : null"
-        :ensure-metadata="isLatestTurn(index) ? ensureLatestTurnMetadata : undefined"
         @save="emit('saveMessage', $event)"
         @copy="emit('copyMessage', $event)"
         @delete="emit('deleteMessage', $event)"
-        @toggle="onTurnToggle(index, $event)"
-        @request-section="requestLatestTurnSection(index, $event)"
       />
     </template>
   </template>

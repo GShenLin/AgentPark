@@ -1,3 +1,4 @@
+from tests.agent_invocation_helpers import configured_fake
 def test_agent_video_generation_schema_excludes_provider_owned_and_advanced_task_fields(monkeypatch):
     from nodes.agent_generation_schema import GENERATION_CONFIG_DEFAULTS
     from nodes.agent_node_contract import AGENT_CONFIG_SCHEMA
@@ -127,7 +128,7 @@ def test_agent_node_outputs_video_resource(monkeypatch):
                 "task_id": "task-1",
             }
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     node = agent_node_module.Node()
     result = node.on_input(

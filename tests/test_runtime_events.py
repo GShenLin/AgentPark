@@ -606,12 +606,17 @@ def test_graph_execution_emits_work_failed_after_error_persistence(tmp_path, mon
 
     node_dir = _write_graph_node(tmp_path, "Test", "Agent")
     config_path = node_dir / "config.json"
+    scheduled = []
+    monkeypatch.setattr(graph_node_execution, "schedule_agent_history_compaction",
+                        lambda **kwargs: scheduled.append(kwargs))
 
     def fake_run_node_logic(_nodes_dir, _type_id, _pending_message, _context):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(graph_node_execution, "_run_node_logic_with_routes", fake_run_node_logic)
     host = _GraphExecutionHost(tmp_path)
+    persisted = []
+    monkeypatch.setattr(host, "_append_node_memory_entry", lambda *args: persisted.append(args))
 
     GraphNodeExecution(host)._run_single_node_iteration(
         safe_graph_id="Test",
@@ -626,6 +631,9 @@ def test_graph_execution_emits_work_failed_after_error_persistence(tmp_path, mon
 
     assert [item["event"] for item in host.runtime_events.events][-1] == "WorkFailed"
     assert "RuntimeError: boom" in host.runtime_events.events[-1]["payload"]["error"]
+    assert len(scheduled) == 1
+    assert scheduled[0]["output_message"]["role"] == "system"
+    assert scheduled[0]["output_message"]["id"] == persisted[-1][3]["id"]
 
 
 def test_persistent_context_result_adds_node_memory_note(tmp_path, monkeypatch):

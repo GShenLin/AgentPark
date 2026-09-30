@@ -18,7 +18,7 @@ from src.provider_options import build_provider_options_for_support_modes, provi
 class HarnessNode(BaseNode):
     harness_id = ""
     provider_reasoning_options = False
-    support_modes = ("chat", "imagechat")
+    support_modes = ("chat",)
     input_capabilities = ["text", "resource:image", "resource:video", "resource:audio",
                           "resource:doc", "resource:file", "resource:url", "structured", "meta"]
     output_capabilities = ["text", "structured", "tool_call", "meta"]

@@ -10,15 +10,12 @@ from typing import Any
 from src.memory_root import get_memories_root
 from src.runtime_cancellation import cancel_source_from_agent, raise_if_cancel_requested
 
-_ALLOWED_FIELD_TYPES = {"text", "textarea", "select", "multiselect", "checkbox", "file", "custom_html"}
+_ALLOWED_FIELD_TYPES = {"text", "textarea", "select", "multiselect", "checkbox", "file"}
 _TERMINAL_STATUSES = {"submitted", "cancelled", "expired"}
 _DEFAULT_TIMEOUT_SEC = 600
 _MAX_TIMEOUT_SEC = 3600
 _MAX_FIELDS = 20
 _MAX_OPTIONS = 100
-_MAX_CUSTOM_HTML_CHARS = 20000
-_MAX_CUSTOM_CSS_CHARS = 12000
-_MAX_CUSTOM_JS_CHARS = 20000
 
 
 def _interaction_dir() -> str:
@@ -95,17 +92,6 @@ def _normalize_field(raw: Any, index: int) -> dict:
         "placeholder": _safe_text(raw.get("placeholder"), limit=500),
         "required": bool(raw.get("required")),
     }
-
-    if field_type == "custom_html":
-        field["html"] = _safe_text(raw.get("html"), limit=_MAX_CUSTOM_HTML_CHARS)
-        field["css"] = _safe_text(raw.get("css"), limit=_MAX_CUSTOM_CSS_CHARS)
-        field["js"] = _safe_text(raw.get("js"), limit=_MAX_CUSTOM_JS_CHARS)
-        field["height"] = max(180, min(int(float(raw.get("height") or 360)), 900))
-        initial_data = raw.get("initial_data")
-        field["initial_data"] = initial_data if isinstance(initial_data, dict) else {}
-        if not field["html"]:
-            raise ValueError(f"fields[{index}].html is required for custom_html")
-        return field
 
     if "default" in raw:
         field["default"] = raw.get("default")

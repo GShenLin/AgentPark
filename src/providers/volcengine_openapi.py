@@ -1,13 +1,12 @@
 """Volcengine HMAC-SHA256 OpenAPI transport used by speech management."""
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import datetime as dt
 import hashlib
 import hmac
 import json
-import urllib.error
 import urllib.parse
-import urllib.request
 
 
 class VolcengineOpenApi:
@@ -68,27 +67,22 @@ class VolcengineOpenApi:
             f"HMAC-SHA256 Credential={self.access_key_id}/{scope}, "
             f"SignedHeaders={signed_headers}, Signature={signature}"
         )
-        request = urllib.request.Request(
-            f"https://{self.domain}/?{query}",
-            data=body,
-            method="POST",
-            headers={
+        request = dict(url=f"https://{self.domain}/?{query}", body=body, method="POST", headers={
                 "Content-Type": content_type,
                 "Host": self.domain,
                 "X-Date": x_date,
                 "X-Content-Sha256": payload_hash,
                 "Authorization": authorization,
-            },
-        )
+            })
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                raw = response.read()
-                status = int(getattr(response, "status", 200))
-        except urllib.error.HTTPError as exc:
-            raw = exc.read()
-            status = int(exc.code)
-        except urllib.error.URLError as exc:
-            raise ValueError(f"Volcengine OpenAPI request failed: {exc.reason}") from exc
+            response = CurlHttpTransport().request(**request, timeout_sec=self.timeout).raise_for_status()
+            raw = response.content
+            status = int(response.status_code)
+        except CurlHttpError as exc:
+            raw = exc.content
+            status = int(exc.status_code)
+        except CurlTransportError as exc:
+            raise ValueError(f"Volcengine OpenAPI request failed: {str(exc)}") from exc
         try:
             result = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:

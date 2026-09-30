@@ -11,6 +11,7 @@ from typing import Callable
 from functions.apply_patch_tool import apply_patch
 from functions.console_tools import execute_console_command
 from functions.file_read_tools import read_file
+from functions.image_tools import view_image
 from functions.file_write_tools import write_file
 from functions.rg_tools import rg_list_files, rg_search_text
 from src.remote_workspace.capabilities import STANDALONE_REMOTE_CAPABILITIES
@@ -39,6 +40,7 @@ class StandaloneOperationRegistry:
             "apply_patch": apply_patch,
             "execute_console_command": execute_console_command,
             "read_file": read_file,
+            "view_image": view_image,
             "rg_list_files": rg_list_files,
             "rg_search_text": rg_search_text,
             "write_file": write_file,

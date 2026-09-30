@@ -5,8 +5,7 @@ import argparse
 import json
 from pathlib import Path
 import time
-import urllib.error
-import urllib.request
+from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
 
 
 def probe_server(root: Path, expected_pid: int) -> dict:
@@ -19,9 +18,8 @@ def probe_server(root: Path, expected_pid: int) -> dict:
     host = "127.0.0.1" if host == "0.0.0.0" else "::1" if host == "::" else host
     authority = f"[{host}]" if ":" in host else host
     url = f"http://{authority}:{int(identity['port'])}/api/system/status"
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(url, timeout=2) as response:
-        status = json.load(response)
+    response = CurlHttpTransport().request(url=url, timeout_sec=2, trust_env=False).raise_for_status()
+    status = response.json()
     if status.get("ok") is not True or status.get("pid") != expected_pid:
         raise ValueError("HTTP status does not identify the newly launched server.")
     if not isinstance(status.get("instance_id"), str) or not status["instance_id"]:
@@ -35,7 +33,7 @@ def wait_for_server(root: Path, expected_pid: int, timeout: float = 90) -> dict:
     while time.monotonic() < deadline:
         try:
             return probe_server(root, expected_pid)
-        except (OSError, ValueError, KeyError, TypeError, urllib.error.URLError) as exc:
+        except (OSError, ValueError, KeyError, TypeError, CurlTransportError) as exc:
             last_error = f"{type(exc).__name__}: {exc}"
         time.sleep(0.5)
     raise TimeoutError(f"AgentPark did not become ready within {timeout:g}s. Last probe: {last_error}")

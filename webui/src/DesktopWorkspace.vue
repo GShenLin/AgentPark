@@ -14,6 +14,8 @@ import FileExplorer from './components/FileExplorer.vue'
 import AgentBoard from './components/AgentBoard.vue'
 import AppErrorToast from './components/AppErrorToast.vue'
 import MemoryPanel from './components/MemoryPanel.vue'
+import ConversationWindow from './components/ConversationWindow.vue'
+import { conversationWindowSettings } from './components/conversationWindowSettings'
 import SettingsPage from './components/SettingsPage.vue'
 import DesktopTopbar from './components/DesktopTopbar.vue'
 import { AgentBoardKey } from './components/agent-board/context'
@@ -21,6 +23,8 @@ import NodeConfigDock from './components/agent-board/NodeConfigDock.vue'
 import NodeInputDock from './components/agent-board/NodeInputDock.vue'
 import { useAgentBoard } from './components/agent-board/useAgentBoard'
 import { t } from './i18n'
+import { normalizeAgentPanelSettings } from './agentPanelSettings'
+import { resolveWorkspaceEscapeAction } from './workspaceKeyboard'
 
 const props = defineProps<{ bootstrap: WorkspaceBootstrap }>()
 
@@ -110,7 +114,14 @@ const activeRightPanelWidth = computed({
 const rightWidth = computed(() => (graphCollapsed.value ? 44 : activeRightPanelWidth.value))
 const isMemoryFloating = computed(() => memoryOverlayOpen.value)
 const boardRightWidth = computed(() => (isMemoryFloating.value ? 0 : rightWidth.value))
-const rightPanelStyle = computed(() => (isMemoryFloating.value ? undefined : { width: `${rightWidth.value}px` }))
+const agentPanelSettings = ref(props.bootstrap.agent_panel)
+provide(conversationWindowSettings, agentPanelSettings)
+const rightPanelStyle = computed(() => isMemoryFloating.value ? {} : { width: `${rightWidth.value}px` })
+
+function applyDefaultSettings(value: Record<string, unknown>) {
+  agentPanelSettings.value = normalizeAgentPanelSettings(value.agentPanel)
+  agentBoard.applyBoardLayoutDefaults(value)
+}
 
 function startMemoryResize(event: MouseEvent) {
   if (graphCollapsed.value) return
@@ -153,20 +164,19 @@ function onUndoKeyDown(event: KeyboardEvent) {
     })
 }
 
-function hasOpenDialogAboveMemory() {
+function hasBlockingDialogForWorkspaceEscape() {
   return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'))
-    .some((dialog) => dialog.dataset.memoryOverlay !== 'true')
+    .some((dialog) => dialog.getClientRects().length > 0)
 }
 
 function onWorkspaceKeyDown(event: KeyboardEvent) {
-  if (
-    event.key === 'Escape'
-    && isMemoryFloating.value
-    && !event.defaultPrevented
-    && !hasOpenDialogAboveMemory()
-  ) {
+  const escapeAction = resolveWorkspaceEscapeAction(event, {
+    activeView: activeView.value,
+    hasBlockingDialog: event.key === 'Escape' && hasBlockingDialogForWorkspaceEscape(),
+  })
+  if (escapeAction === 'settings-back') {
     event.preventDefault()
-    void closeMemoryOverlay()
+    settingsPageRef.value?.requestBack()
     return
   }
   onUndoKeyDown(event)
@@ -396,7 +406,7 @@ watch(
       :show-back-button="false"
       @back="activeView = 'board'"
       @providers-updated="refreshProviders"
-      @defaults-updated="agentBoard.applyBoardLayoutDefaults"
+      @defaults-updated="applyDefaultSettings"
     />
 
     <div v-else class="content" :style="{ '--right-panel-width': `${boardRightWidth}px` }">
@@ -424,16 +434,12 @@ watch(
         data-board-occlusion="right"
         @mousedown="startMemoryResize"
       ></div>
-      <div v-if="isMemoryFloating" class="memory-overlay-backdrop" @mousedown.self="closeMemoryOverlay"></div>
-      <aside
-        class="right"
+      <ConversationWindow
+        class="right" :floating="isMemoryFloating" :label="t('common.memory')"
         :data-board-occlusion="isMemoryFloating ? undefined : 'right'"
         :class="{ collapsed: graphCollapsed && !isMemoryFloating, floating: isMemoryFloating }"
-        :style="rightPanelStyle"
-        :role="isMemoryFloating ? 'dialog' : undefined"
-        :aria-label="isMemoryFloating ? t('common.memory') : undefined"
-        :aria-modal="isMemoryFloating ? 'true' : undefined"
-        :data-memory-overlay="isMemoryFloating ? 'true' : undefined"
+        :style="rightPanelStyle" :data-memory-overlay="isMemoryFloating ? 'true' : undefined"
+        @close="closeMemoryOverlay"
       >
         <template v-if="isMemoryFloating || !graphCollapsed">
           <div class="memory-panel-content">
@@ -447,7 +453,7 @@ watch(
           <NodeInputDock v-show="isMemoryFloating" />
         </template>
         <div v-else class="collapsed-mark">{{ t('common.memory') }}</div>
-      </aside>
+      </ConversationWindow>
     </div>
   </div>
 </template>
@@ -479,8 +485,7 @@ watch(
   overflow: hidden;
 }
 
-.left-sidebar.collapsed,
-.right.collapsed {
+.left-sidebar.collapsed {
   align-items: center;
   justify-content: center;
 }
@@ -549,75 +554,10 @@ watch(
   background: var(--theme-panel-app-text-accent, var(--accent-blue));
 }
 
-/* 右侧记忆面板 */
-.right {
-  width: 560px;
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 110;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background-color: var(--theme-panel-memory-panel-background-color, var(--bg-primary));
-  background-image: var(--theme-panel-memory-panel-background-image, none);
-  background-size: var(--theme-panel-memory-panel-background-size, cover);
-  background-position: var(--theme-panel-memory-panel-background-position, center);
-  background-repeat: var(--theme-panel-memory-panel-background-repeat, no-repeat);
-  background-blend-mode: var(--theme-panel-memory-panel-background-blend-mode, normal);
-}
-
 .memory-panel-content {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
 
-.memory-overlay-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 500;
-  background: rgba(2, 6, 23, 0.54);
-  backdrop-filter: blur(3px);
-  animation: memory-backdrop-in 160ms ease-out;
-}
-
-.right.floating {
-  top: 50%;
-  right: auto;
-  bottom: auto;
-  left: 50%;
-  z-index: 510;
-  width: min(1040px, calc(100% - 80px));
-  height: min(820px, calc(100% - 64px));
-  border: 1px solid var(--ui-dialog-border);
-  border-radius: 16px;
-  box-shadow: var(--ui-dialog-shadow);
-  transform: translate(-50%, -50%);
-  animation: memory-panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.right.floating .memory-panel-content :deep(.panel) {
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-  border-radius: 15px 15px 0 0;
-}
-
-@keyframes memory-backdrop-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes memory-panel-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, calc(-50% + 12px)) scale(0.975);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
 </style>

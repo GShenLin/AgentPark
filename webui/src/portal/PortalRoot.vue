@@ -5,6 +5,8 @@ import { attachBoardWorker } from './workerBridge'
 import { cloudBoardRestart } from './restartContext'
 import { restartBoardConnection } from './restartConnection'
 import { useBoardReconnect } from './useBoardReconnect'
+import { cloudBoardSession, createBoardSession } from './boardSession'
+import { resumeBoardRequests, suspendBoardRequests } from './boardRequests'
 
 interface Device { peer_id: string; name: string; connected_at: string; portal_board: boolean; stun_urls: string[]; state: string }
 interface Enrollment { peer_id: string; name: string; state: 'pending' | 'approved' | 'rejected'; requested_at: number }
@@ -18,6 +20,9 @@ const busy = ref(false)
 const error = ref('')
 const state = ref('')
 const boardReady = ref(false)
+const boardMounted = ref(false)
+const boardSession = createBoardSession()
+provide(cloudBoardSession, boardSession)
 const restarting = ref(false)
 let restartAbort: AbortController | undefined
 const selectedId = /^\/board\/([a-f0-9]{64})$/.exec(location.pathname)?.[1] || ''
@@ -35,6 +40,8 @@ useBoardReconnect({
 })
 
 function disconnected(message: string) {
+  boardSession.suspend()
+  suspendBoardRequests()
   boardReady.value = false
   if (!restarting.value && !disposed) error.value = message
 }
@@ -43,6 +50,8 @@ async function restartBoard(): Promise<{ ok: boolean }> {
   if (restarting.value) throw new Error('设备正在重启，请稍候。')
   if (!connection || !boardReady.value) throw new Error('请先连接设备。')
   restarting.value = true; boardReady.value = false; error.value = ''
+  boardSession.suspend()
+  suspendBoardRequests()
   state.value = '正在读取设备重启状态…'
   restartAbort = new AbortController()
   detachWorker?.(); detachWorker = undefined
@@ -57,7 +66,7 @@ async function restartBoard(): Promise<{ ok: boolean }> {
     }, message => { state.value = message }, restartAbort.signal)
     if (disposed) { connection.close(); throw new Error('页面已关闭。') }
     detachWorker = await attachBoardWorker(connection.rpc)
-    state.value = await connection.describeTransport(); boardReady.value = true
+    await finishConnection()
     return { ok: true }
   } catch (cause) {
     connection?.close(); connection = undefined
@@ -72,10 +81,24 @@ async function restartFromHeader() {
 
 async function reconnectBoard() {
   if (busy.value || restarting.value || disposed) return
+  boardSession.suspend()
+  suspendBoardRequests()
   detachWorker?.(); detachWorker = undefined
   connection?.close(); connection = undefined
   boardReady.value = false
   await initialize()
+}
+
+async function finishConnection() {
+  if (!connection) throw new Error('设备连接不存在。')
+  resumeBoardRequests()
+  state.value = '正在恢复当前页面…'
+  try { await boardSession.restore() }
+  catch (cause) { suspendBoardRequests(); throw cause }
+  if (disposed) return
+  state.value = await connection.describeTransport()
+  boardReady.value = true
+  boardMounted.value = true
 }
 
 async function loadDevices() {
@@ -117,7 +140,7 @@ async function openBoard() {
   if (disposed) { connection.close(); return }
   try { detachWorker = await attachBoardWorker(connection.rpc) }
   catch (cause) { connection.close(); connection = undefined; throw cause }
-  state.value = await connection.describeTransport(); boardReady.value = true
+  await finishConnection()
 }
 async function initialize() {
   error.value = ''; busy.value = true
@@ -143,7 +166,7 @@ onMounted(async () => {
     if (signedIn.value && !busy.value) void loadDevices().catch(cause => { error.value = String(cause) })
   }, 5000)
 })
-onUnmounted(() => { disposed = true; restartAbort?.abort(); if (timer) clearInterval(timer); detachWorker?.(); connection?.close() })
+onUnmounted(() => { disposed = true; boardSession.suspend(); suspendBoardRequests(); restartAbort?.abort(); if (timer) clearInterval(timer); detachWorker?.(); connection?.close() })
 </script>
 
 <template>
@@ -165,8 +188,20 @@ onUnmounted(() => { disposed = true; restartAbort?.abort(); if (timer) clearInte
       <button :disabled="!boardReady || restarting" @click="restartFromHeader">{{ restarting ? '重启中…' : '更新并重启' }}</button>
       <button @click="logout">退出登录</button>
     </header>
-    <div v-if="error" class="connection-message" role="alert"><p>{{ error }}</p><button :disabled="busy || restarting" @click="reconnectBoard">重新连接</button> <a href="/">返回设备列表</a></div>
-    <BoardApp v-else-if="boardReady" />
+    <div v-if="boardMounted" class="retained-board">
+      <div class="board-content" :inert="!boardReady"><BoardApp /></div>
+      <div v-if="!boardReady" class="reconnect-overlay" role="status" aria-live="polite">
+        <div class="reconnect-card">
+          <strong>{{ busy || restarting ? state : '连接已断开' }}</strong>
+          <p v-if="error" role="alert">{{ error }}</p>
+          <p>当前页面和输入已保留，连接恢复后继续。</p>
+          <button :disabled="busy || restarting" @click="reconnectBoard">重新连接</button>
+          <a :href="`/board/${selectedId}`">返回 Board 列表</a>
+          <a href="/">返回设备列表</a>
+        </div>
+      </div>
+    </div>
+    <div v-else-if="error" class="connection-message" role="alert"><p>{{ error }}</p><button :disabled="busy || restarting" @click="reconnectBoard">重新连接</button> <a href="/">返回设备列表</a></div>
     <div v-else class="connection-message"><h2>{{ restarting ? '正在更新并重启设备' : '正在打开设备 Board' }}</h2><p>{{ state }}</p><p>{{ restarting ? '重启只请求一次，页面会等待新进程启动并自动恢复连接。' : '优先直连；直连不可用时通过云端中继传输，数据仍在浏览器与设备之间端到端加密。' }}</p></div>
   </div>
   <main v-else class="portal">
@@ -201,6 +236,11 @@ onUnmounted(() => { disposed = true; restartAbort?.abort(); if (timer) clearInte
 </template>
 
 <style scoped>
+.retained-board, .board-content { display: flex; flex: 1; min-height: 0; min-width: 0; flex-direction: column; }
+.retained-board { position: relative; }
+.reconnect-overlay { position: absolute; inset: 0; z-index: 1000; display: grid; place-items: center; background: rgb(8 17 31 / 55%); padding: 20px; }
+.reconnect-card { max-width: 440px; padding: 24px; background: #132029; color: #eaf1f4; border: 1px solid #3c4b55; border-radius: 12px; overflow-wrap: anywhere; }
+.reconnect-card a { display: inline-block; margin: 12px; color: #a8e8cc; }
 .portal {
   height: 100vh;
   height: 100dvh;

@@ -192,7 +192,7 @@ def test_dimension_binding_preserves_pending_chunks_and_rebuilds_only_empty_tabl
     updated = catalog.bind_dimensions(key, 16)
     assert updated.dimensions == catalog.get(key).dimensions == 16
     vectors = VectorIndex(store.directory, 16)
-    assert vectors.table.count_rows() == 0
+    assert vectors.count_rows() == 0
     with store.connect() as db:
         assert db.execute("SELECT count(*) FROM chunks").fetchone()[0] == 1
     # A write before the SQLite checkpoint must also prohibit dimension changes.
@@ -200,7 +200,7 @@ def test_dimension_binding_preserves_pending_chunks_and_rebuilds_only_empty_tabl
     with pytest.raises(ValueError, match="已有向量"):
         catalog.bind_dimensions(key, 32)
     assert catalog.get(key).dimensions == 16
-    assert vectors.table.count_rows() == 1
+    assert vectors.count_rows() == 1
 
 
 def test_published_index_dimension_cannot_change(library):

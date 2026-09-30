@@ -16,11 +16,13 @@ const props = withDefaults(defineProps<{
   entry: FeedProgressGroupEntry
   markdownPreview: boolean
   compact?: boolean
+  processing?: boolean
   lazyLoad?: boolean
   loading?: boolean
   summary?: LatestTurnProgressSummary | null
 }>(), {
   compact: false,
+  processing: false,
   lazyLoad: false,
   loading: false,
   summary: null,
@@ -77,7 +79,7 @@ function groupLabel() {
       <button class="progress-group-toggle" type="button" :aria-expanded="expanded" @click="toggleProgress">
         <span class="progress-group-left">
           <span class="progress-group-caret">{{ expanded ? 'v' : '>' }}</span>
-          <span class="progress-group-role">Progress</span>
+          <span class="progress-group-role">{{ processing ? 'Processing' : 'Progress' }}</span>
           <span class="progress-group-count">{{ loading ? 'Loading…' : groupLabel() }}</span>
         </span>
         <span class="progress-group-time">{{ toolGroupTime(entry) }}</span>

@@ -1,7 +1,7 @@
 export interface LongTermMemorySettings {
   enabled: boolean
-  extract_provider: string
-  consolidation_provider: string
+  extract_profile_id: string
+  consolidation_profile_id: string
   min_idle_seconds: number
   max_age_days: number
   max_unused_days: number
@@ -13,7 +13,7 @@ export interface LongTermMemorySettings {
   retry_seconds: number
 }
 
-type NumericKey = Exclude<keyof LongTermMemorySettings, 'enabled' | 'extract_provider' | 'consolidation_provider'>
+type NumericKey = Exclude<keyof LongTermMemorySettings, 'enabled' | 'extract_profile_id' | 'consolidation_profile_id'>
 export const memoryNumericFields: { key: NumericKey; advanced: boolean; min: number }[] = [
   { key: 'min_idle_seconds', advanced: false, min: 0 },
   { key: 'max_age_days', advanced: false, min: 1 },

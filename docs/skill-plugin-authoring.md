@@ -2,10 +2,10 @@
 
 ## Skill Layout
 
-A skill is a directory under `skills/` with a required `SKILL.md`:
+A workspace skill is a directory under `.agents/skills/` with a required `SKILL.md`:
 
 ```text
-skills/<skill_id>/
+.agents/skills/<skill_id>/
   SKILL.md
   skill.json
   references/

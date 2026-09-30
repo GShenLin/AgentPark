@@ -12,6 +12,7 @@ def isolate_background_node_memory(monkeypatch):
     from src.long_term_memory import service
     from src.long_term_memory.settings import MemorySettings
     monkeypatch.setattr(service, "configured_settings", lambda: MemorySettings(enabled=False))
+    monkeypatch.setattr("src.web_backend.graph_node_execution.schedule_agent_history_compaction", lambda **_: None)
 
 
 @pytest.fixture(autouse=True)

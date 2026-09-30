@@ -11,6 +11,12 @@ try {
 if ($actual -ne $metadata.root_sha256) { throw 'Root certificate fingerprint mismatch.' }
 $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'CurrentUser')
 try {
+    $store.Open('ReadOnly')
+    if ($store.Certificates.Find('FindByThumbprint', $certificate.Thumbprint, $false).Count -gt 0) {
+        Write-Output 'AgentPark private CA is already trusted; skipping installation.'
+        return
+    }
+    $store.Close()
     $store.Open('ReadWrite')
     $store.Add($certificate)
     if ($store.Certificates.Find('FindByThumbprint', $certificate.Thumbprint, $false).Count -ne 1) {

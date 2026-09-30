@@ -307,6 +307,7 @@ class DouBaoAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
                         self._inject_image_message(
                             image_data.get("path"),
                             base64_data=image_data.get("base64"),
+                            text=image_data.get('label'),
                             mime_type=image_data.get("mime_type", "image/png"),
                         )
 

@@ -49,7 +49,7 @@ def cli_session(harness_id: str, context: HarnessContext):
         raise_if_cancel_requested(request.cancel_source)
         request.state_dir.mkdir(parents=True, exist_ok=True)
         lease = gateway.register(request.binding.provider_id, model=request.binding.model_id,
-                                 reasoning_effort=request.reasoning_effort if harness_id == "openclaw" else "")
+                                 reasoning_effort=request.reasoning_effort if harness_id in {"openclaw", "minimax_code"} else "")
         env = {**os.environ, "AGENTPARK_HARNESS_TOKEN": lease.token}
         callback = stream_callback(context.values)
         stats = ToolCallStatsRecorder(provider_id=request.binding.provider_id,

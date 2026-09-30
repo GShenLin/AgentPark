@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Request
 
 from src.board_layout_settings import read_board_layout_settings
+from src.agent_panel_settings import read_agent_panel_settings
 
 from .domain_base import DomainBase
 
@@ -41,6 +42,7 @@ class WorkspaceBootstrapDomain(DomainBase):
                 "active_preset_id": theme.get("active_preset_id", ""),
             },
             "board_layout": read_board_layout_settings(),
+            "agent_panel": read_agent_panel_settings(),
             "mobile_pcs": mobile_pcs.get("pcs", []),
             "user_interactions": interactions.get("requests", []),
         }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ConversationHeader from './ConversationHeader.vue'
 import DangerButton from './DangerButton.vue'
 import FormCheckbox from './FormCheckbox.vue'
 import { t } from '../i18n'
@@ -28,12 +29,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="panel-head">
-    <div class="panel-left">
-      <div class="panel-title">{{ memoryTitle || t('common.memory') }}</div>
-      <div v-if="memoryMeta" class="panel-meta" :title="memoryMeta">{{ memoryMeta }}</div>
-    </div>
-
+  <ConversationHeader :title="memoryTitle || t('common.memory')" :subtitle="memoryMeta" :closable="closable" @close="emit('close')">
     <div class="mode-tabs">
       <DangerButton v-if="memoryMode === 'agent'" compact :disabled="!canClearMemory" @click="emit('clearMemory')">{{ t('memory.clear') }}</DangerButton>
       <button v-if="memoryMode !== 'graph'" class="mode-tab" :class="{ active: memoryMode === 'file' }" @click="emit('toggleFileMode')">{{ t('memory.fileMode') }}</button>
@@ -60,79 +56,13 @@ const emit = defineEmits<{
 
     <div v-if="isSaving && memoryMode === 'file'" class="panel-status">{{ t('common.saving') }}</div>
     <div v-if="graphStatus && memoryMode === 'graph'" class="panel-status">{{ graphStatus }}</div>
-    <button
-      v-if="closable"
-      class="panel-close"
-      type="button"
-      :aria-label="t('common.close')"
-      :title="t('common.close')"
-      @click="emit('close')"
-    >
-      ×
-    </button>
-  </div>
+  </ConversationHeader>
 </template>
 
 <style scoped>
-.panel-head {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-bottom: 1px solid var(--theme-panel-memory-panel-header-border, rgba(148, 163, 184, 0.12));
-  background: var(--theme-panel-memory-panel-header-background, rgba(2, 6, 23, 0.65));
-}
-
-.panel-left {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-right: auto;
-}
-
-.panel-title {
-  font-size: var(--theme-panel-memory-panel-font-title, 13px);
-  font-weight: 700;
-  color: var(--theme-panel-memory-panel-text-primary, rgba(248, 250, 252, 0.96));
-}
-
-.panel-meta {
-  font-size: var(--theme-panel-memory-panel-font-meta, 11px);
-  color: var(--theme-panel-memory-panel-text-muted, rgba(148, 163, 184, 0.92));
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .panel-status {
   font-size: var(--theme-panel-memory-panel-font-meta, 11px);
   color: rgba(56, 189, 248, 0.98);
-}
-
-.panel-close {
-  display: inline-grid;
-  flex: 0 0 auto;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  min-height: 30px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--theme-panel-memory-panel-button-border, rgba(148, 163, 184, 0.3));
-  border-radius: 9px;
-  background: var(--theme-panel-memory-panel-button-background, rgba(15, 23, 42, 0.7));
-  color: var(--theme-panel-memory-panel-text-secondary, rgba(226, 232, 240, 0.94));
-  font-size: 20px;
-  font-weight: 400;
-  line-height: 1;
-}
-
-.panel-close:hover {
-  border-color: var(--theme-panel-memory-panel-button-active-border, rgba(56, 189, 248, 0.65));
-  background: var(--theme-panel-memory-panel-button-active-background, rgba(14, 116, 144, 0.28));
 }
 
 .mode-tabs {
@@ -179,9 +109,4 @@ const emit = defineEmits<{
   opacity: 0.45;
 }
 
-@media (max-width: 1200px) {
-  .panel-head {
-    flex-wrap: wrap;
-  }
-}
 </style>

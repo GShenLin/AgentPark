@@ -3,6 +3,7 @@ import json
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.providers.tool_call_execution import parse_openai_tool_call_items
 from src.providers.tool_turn_protocol import prepare_chat_completions_messages
+from src.providers.tool_image_input import append_chat_tool_images
 from src.providers.mid_turn_user_inputs import append_mid_turn_user_messages
 from src.providers.zhipu_http_transport import ZhipuHttpTransport
 from src.providers.zhipu_tool_schema_adapter import adapt_zhipu_tool_declarations
@@ -138,7 +139,8 @@ class ZhipuChatRuntime(ZhipuHttpTransport):
                 tool_call_items=tool_call_items,
                 execute_tool_call_envelopes=self._execute_tool_call_envelopes_parallel,
             )
-            self._append_tool_execution_messages_then_warnings(executions)
+            images = self._append_tool_execution_messages_then_warnings(executions)
+            append_chat_tool_images(self, images)
             self._tool_context_compaction_gate_completed(executions)
             self._notify_companion_about_failed_tool_executions(executions)
             self._run_tool_context_compaction_gate_if_needed(executions)

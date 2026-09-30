@@ -10,7 +10,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import josepy
-import requests
 from acme import challenges, client, messages
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -19,6 +18,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from tls_workbench import INSTANCE, ensure_daemon, protect, remote, run
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+from src.providers.curl_transport import CurlHttpTransport
+
 STATE = ROOT / '.auth' / 'acme'
 RUNTIME = ROOT / '.runtime' / 'acme'
 IP = '203.0.113.10'
@@ -78,11 +80,9 @@ def issue(csr_pem: bytes, staging: bool) -> bytes:
             token = challenge.chall.encode('token')
             published.append(token)
             remote('publish', '--token', token, '--validation', validation)
-            with requests.Session() as session:
-                session.trust_env = False
-                proof = session.get(f'http://{IP}/.well-known/acme-challenge/{token}', timeout=15)
-            proof.raise_for_status()
-            if proof.text != validation:
+            proof = CurlHttpTransport().request(url=f'http://{IP}/.well-known/acme-challenge/{token}',
+                                                timeout_sec=15, trust_env=False).raise_for_status()
+            if proof.body != validation:
                 raise ValueError('Public HTTP-01 challenge content does not match.')
             acme.answer_challenge(challenge, response)
         result = acme.poll_and_finalize(order, deadline=datetime.now() + timedelta(minutes=2))

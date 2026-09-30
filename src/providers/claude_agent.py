@@ -6,6 +6,7 @@ from src.base_agent import BaseAgent
 from src.providers.claude_stream_runtime import ClaudeStreamRuntime
 from src.providers.claude_chat_runtime import ClaudeChatRuntime
 from src.providers.tool_feedback import ToolFeedbackMixin
+from src.providers.tool_image_input import append_chat_tool_images
 from src.service_host import ServiceHost
 from src.switch_utils import parse_switch_mode
 
@@ -137,7 +138,8 @@ class ClaudeAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
             self.Message("assistant", None, persist=False, **extra)
             if run_tools:
                 executions = self.execute_tool_calls_parallel(tool_calls)
-                self._append_tool_execution_messages_then_warnings(executions)
+                images = self._append_tool_execution_messages_then_warnings(executions)
+                append_chat_tool_images(self, images)
                 self._tool_context_compaction_gate_completed(executions)
                 self._notify_companion_about_failed_tool_executions(executions)
                 self._run_tool_context_compaction_gate_if_needed(executions)

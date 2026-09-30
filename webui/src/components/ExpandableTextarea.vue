@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useDialogLifecycle } from '../composables/useDialogLifecycle'
 import DialogCloseButton from './DialogCloseButton.vue'
 
 defineOptions({
@@ -40,6 +41,8 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(false)
+const dialog = ref<HTMLElement | null>(null)
+useDialogLifecycle(dialog, expanded, closeEditor)
 const inputTextarea = ref<HTMLTextAreaElement | null>(null)
 const expandedTextarea = ref<HTMLTextAreaElement | null>(null)
 let inputResizeObserver: ResizeObserver | null = null
@@ -145,6 +148,8 @@ onBeforeUnmount(() => {
       @click.self="closeEditor"
     >
       <section
+        ref="dialog"
+        tabindex="-1"
         class="expandable-textarea__dialog"
         role="dialog"
         aria-modal="true"
@@ -163,7 +168,6 @@ onBeforeUnmount(() => {
           :aria-label="ariaLabel"
           :readonly="readonly"
           @input="updateValue"
-          @keydown.esc.prevent.stop="closeEditor"
           @paste="emit('paste', $event)"
           @dragover="emit('dragover', $event)"
           @dragleave="emit('dragleave', $event)"

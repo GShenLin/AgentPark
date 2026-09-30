@@ -1,0 +1,60 @@
+/* Shared master/detail layout for settings pages. SelectionButton owns row
+   interaction; these tokens give every sidebar the Model Provider appearance. */
+.settings-split {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--theme-panel-settings-panel-editor-background, var(--bg-primary));
+}
+
+.settings-split__side {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-right: 10px;
+  overflow: auto;
+  border-right: 1px solid var(--border-light);
+  --ui-selection-stacked-height: 48px;
+  --ui-selection-border: var(--ui-button-border);
+  --ui-selection-background: var(--ui-button-background);
+  --ui-selection-text: var(--text-primary);
+  --ui-selection-detail-text: var(--text-secondary);
+  --ui-selection-hover-text: var(--text-primary);
+  --ui-selection-hover-background: var(--theme-panel-settings-panel-tabs-hover-background, var(--bg-hover));
+  --ui-selection-active-text: var(--theme-panel-settings-panel-tabs-active-text, var(--text-accent));
+  --ui-selection-active-border: var(--theme-panel-settings-panel-input-border, var(--border-medium));
+  --ui-selection-active-background: var(--theme-panel-settings-panel-tabs-active-background, var(--accent-blue-soft));
+}
+
+.settings-split__side > :not(.settings-split__items) { flex-shrink: 0; }
+
+.settings-split__items {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  overflow: auto;
+}
+
+.settings-split__detail { min-width: 0; min-height: 0; overflow: auto; }
+.settings-list-item { flex-shrink: 0; }
+.settings-list-item > :is(.selection-button__label, .selection-button__detail) { width: 100%; }
+.settings-list-item__lines { display: flex; flex-direction: column; gap: 3px; }
+.settings-list-item__lines > span { overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 1120px) {
+  .settings-split { grid-template-columns: minmax(132px, 38%) minmax(0, 1fr); }
+}
+
+@media (max-width: 720px) {
+  .settings-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 32vh) minmax(0, 1fr); }
+  .settings-split__side { padding: 0 0 10px; border-right: 0; border-bottom: 1px solid var(--border-light); }
+}

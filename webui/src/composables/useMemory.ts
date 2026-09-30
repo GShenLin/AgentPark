@@ -6,8 +6,6 @@ import {
   readFile,
   saveFile,
   sendNodeInteractiveInput,
-  type MessageEnvelope,
-  type MemoryHistoryMode,
 } from '../api'
 import { formatLiveActivity } from '../liveActivity'
 import {
@@ -35,20 +33,19 @@ let graphMemoryRefreshTimer: number | null = null
 let selectionLoadTimer: number | null = null
 let memorySelectionGeneration = 0
 let graphMemoryRefreshInFlightGeneration = -1
-let graphMemoryRefreshMode: 'latest_turn' | 'latest_turn_progress' | null = null
+let graphMemoryRefreshMode: 'completion' | 'progress' | null = null
 let baseMemoryAbortController: AbortController | null = null
-const sectionMemoryAbortControllers = new Map<string, AbortController>()
 const memoryRequests = new ConversationRequestCoordinator()
 type LiveRefreshState = { promise: Promise<void>; controller: AbortController }
 const liveRefreshStates = new Map<string, LiveRefreshState>()
 let pendingCommittedLiveText = ''
 let pendingCommittedLiveTraceId = ''
 
-const memoryRefreshHistoryModeByGraphEvent = new Map<string, 'latest_turn' | 'latest_turn_progress'>([
-  ['node_progress_updated', 'latest_turn_progress'],
-  [LIVE_STREAM_FINISHED_EVENT, 'latest_turn'],
-  [LIVE_OUTPUT_COMMITTED_EVENT, 'latest_turn'],
-  ['node_error', 'latest_turn'],
+const memoryRefreshHistoryModeByGraphEvent = new Map<string, 'completion' | 'progress'>([
+  ['node_progress_updated', 'progress'],
+  [LIVE_STREAM_FINISHED_EVENT, 'completion'],
+  [LIVE_OUTPUT_COMMITTED_EVENT, 'completion'],
+  ['node_error', 'completion'],
 ])
 
 function rememberCommittedLiveText(text: string, traceId: string) {
@@ -68,10 +65,6 @@ export function useMemory() {
     selectedNodeId,
     memoryText,
     memoryMessages,
-    memoryHistoryComplete,
-    memoryLatestTurnProgressLoaded,
-    memoryLatestTurnMetadataLoaded,
-    memoryLatestTurnProgressSummary,
     memoryLiveMessage,
     memoryThinkingMessage,
     memoryActivityMessage,
@@ -97,17 +90,9 @@ export function useMemory() {
     return `${graphId}:${nodeId}`
   }
 
-  function isLazyHistoryMode(historyMode: MemoryHistoryMode) {
-    return historyMode === 'latest_turn_progress' || historyMode === 'latest_turn_metadata'
-  }
-
   function clearMissingAgentSelection() {
     memoryText.value = ''
     memoryMessages.value = []
-    memoryHistoryComplete.value = true
-    memoryLatestTurnProgressLoaded.value = true
-    memoryLatestTurnMetadataLoaded.value = true
-    memoryLatestTurnProgressSummary.value = null
     memoryLiveMessage.value = ''
     memoryThinkingMessage.value = ''
     memoryActivityMessage.value = ''
@@ -120,7 +105,6 @@ export function useMemory() {
   }
 
   async function loadAgentMemoryOnce(
-    historyMode: MemoryHistoryMode,
     signal: AbortSignal,
     generation: number,
     requestScope: ConversationRequestScope,
@@ -134,40 +118,15 @@ export function useMemory() {
       return
     }
     try {
-      const res = await getNodeInstanceMemory(nodeId, 20000, graphId, historyMode, { signal })
+      const res = await getNodeInstanceMemory(nodeId, 20000, graphId, 'conversation', { signal })
       if (signal.aborted || generation !== memorySelectionGeneration) return
       if (!memoryRequests.isActiveScope(requestScope)) return
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
       const baseMessages = Array.isArray((res as any)?.messages) ? ([...(res as any).messages] as any[]) : []
-      const isLazySection = isLazyHistoryMode(historyMode)
-      if (isLazySection) {
-        const merged = new Map<string, MessageEnvelope>()
-        for (const message of [...memoryMessages.value, ...baseMessages]) {
-          const key = String(message?.id || `${message?.role || ''}-${message?.created_at || ''}`)
-          merged.set(key, message)
-        }
-        memoryMessages.value = [...merged.values()].sort((left, right) =>
-          String(left?.created_at || '').localeCompare(String(right?.created_at || '')),
-        )
-      } else {
-        memoryText.value = res.text || ''
-        memoryMessages.value = baseMessages
-      }
-      memoryHistoryComplete.value = res.history_complete !== false
-      memoryLatestTurnProgressSummary.value = res.latest_turn_progress_summary || null
-      if (historyMode === 'latest_turn') {
-        memoryLatestTurnProgressLoaded.value = false
-        memoryLatestTurnMetadataLoaded.value = false
-      } else if (historyMode === 'latest_turn_progress') {
-        memoryLatestTurnProgressLoaded.value = true
-      } else if (historyMode === 'latest_turn_metadata') {
-        memoryLatestTurnMetadataLoaded.value = true
-      } else if (historyMode === 'all') {
-        memoryLatestTurnProgressLoaded.value = true
-        memoryLatestTurnMetadataLoaded.value = true
-      }
+      memoryText.value = res.text || ''
+      memoryMessages.value = baseMessages
       const committedLive = resolveLiveCompletionHandoff(
         baseMessages,
         pendingCommittedLiveText,
@@ -196,16 +155,8 @@ export function useMemory() {
       if (memoryMode.value !== 'agent') return
       if (resolveSelectedTargetId() !== nodeId) return
       if ((currentGraphId.value || 'default') !== graphId) return
-      if (isLazyHistoryMode(historyMode)) {
-        lastError.value = String(e?.message || e)
-        return
-      }
       memoryText.value = ''
       memoryMessages.value = []
-      memoryHistoryComplete.value = true
-      memoryLatestTurnProgressLoaded.value = true
-      memoryLatestTurnMetadataLoaded.value = true
-      memoryLatestTurnProgressSummary.value = null
       memoryLiveMessage.value = ''
       memoryThinkingMessage.value = ''
       memoryActivityMessage.value = ''
@@ -218,7 +169,7 @@ export function useMemory() {
     }
   }
 
-  async function loadAgentMemory(options: { historyMode?: MemoryHistoryMode } = {}) {
+  async function loadAgentMemory() {
     if (memoryMode.value !== 'agent') return
     const nodeId = resolveSelectedTargetId()
     const graphId = currentGraphId.value || 'default'
@@ -229,37 +180,14 @@ export function useMemory() {
     }
     const generation = memorySelectionGeneration
     const selectionKey = conversationSelectionKey(graphId, nodeId)
-    const requestedHistoryMode = options.historyMode || (memoryHistoryComplete.value ? 'all' : 'latest_turn')
-    const lazySection = isLazyHistoryMode(requestedHistoryMode)
-    let requestScope: ConversationRequestScope
-    let historyMode: MemoryHistoryMode
-    if (lazySection) {
-      requestScope = memoryRequests.captureScope(selectionKey)
-      historyMode = requestedHistoryMode
-    } else {
-      const requestToken = memoryRequests.begin(selectionKey, requestedHistoryMode)
-      requestScope = requestToken
-      historyMode = requestToken.historyMode
-    }
-    const sectionKey = lazySection ? historyMode : ''
+    const requestScope = memoryRequests.begin(selectionKey, 'conversation')
     const controller = new AbortController()
-    if (sectionKey) {
-      sectionMemoryAbortControllers.get(sectionKey)?.abort()
-      sectionMemoryAbortControllers.set(sectionKey, controller)
-    } else {
-      baseMemoryAbortController?.abort()
-      baseMemoryAbortController = controller
-    }
+    baseMemoryAbortController?.abort()
+    baseMemoryAbortController = controller
     try {
-      await loadAgentMemoryOnce(historyMode, controller.signal, generation, requestScope)
+      await loadAgentMemoryOnce(controller.signal, generation, requestScope)
     } finally {
-      if (sectionKey) {
-        if (sectionMemoryAbortControllers.get(sectionKey) === controller) {
-          sectionMemoryAbortControllers.delete(sectionKey)
-        }
-      } else if (baseMemoryAbortController === controller) {
-        baseMemoryAbortController = null
-      }
+      if (baseMemoryAbortController === controller) baseMemoryAbortController = null
     }
   }
 
@@ -354,15 +282,15 @@ export function useMemory() {
     graphMemoryRefreshMode = null
   }
 
-  function scheduleGraphMemoryRefresh(mode: 'latest_turn' | 'latest_turn_progress') {
+  function scheduleGraphMemoryRefresh(mode: 'completion' | 'progress') {
     const generation = memorySelectionGeneration
-    if (graphMemoryRefreshMode !== 'latest_turn') graphMemoryRefreshMode = mode
-    if (mode === 'latest_turn' && graphMemoryRefreshTimer != null) {
+    if (graphMemoryRefreshMode !== 'completion') graphMemoryRefreshMode = mode
+    if (mode === 'completion' && graphMemoryRefreshTimer != null) {
       window.clearTimeout(graphMemoryRefreshTimer)
       graphMemoryRefreshTimer = null
     }
     if (graphMemoryRefreshTimer != null || graphMemoryRefreshInFlightGeneration === generation) return
-    const delay = graphMemoryRefreshMode === 'latest_turn' ? 75 : 500
+    const delay = graphMemoryRefreshMode === 'completion' ? 75 : 500
     graphMemoryRefreshTimer = window.setTimeout(async () => {
       graphMemoryRefreshTimer = null
       if (generation !== memorySelectionGeneration) return
@@ -373,7 +301,7 @@ export function useMemory() {
       if (!historyMode) return
       graphMemoryRefreshInFlightGeneration = generation
       try {
-        await loadAgentMemory({ historyMode })
+        await loadAgentMemory()
       } finally {
         if (graphMemoryRefreshInFlightGeneration === generation) {
           graphMemoryRefreshInFlightGeneration = -1
@@ -447,7 +375,7 @@ export function useMemory() {
         memoryInteractiveSessionId.value = ''
       }
     }
-    if (isLiveCompletionEvent(eventType)) scheduleGraphMemoryRefresh('latest_turn')
+    if (isLiveCompletionEvent(eventType)) scheduleGraphMemoryRefresh('completion')
   }
 
   function startAgentLiveStream() {
@@ -476,7 +404,7 @@ export function useMemory() {
       if ((currentGraphId.value || 'default') !== graphId) return
       if (String(payload.event || '').trim() === 'stream_gap') {
         void loadAgentLiveMessage()
-        scheduleGraphMemoryRefresh('latest_turn')
+        scheduleGraphMemoryRefresh('completion')
         return
       }
       if (String(payload.graph_id || '').trim() !== graphId || !graphEventTargetsNode(payload, nodeId)) return
@@ -540,8 +468,6 @@ export function useMemory() {
     }
     baseMemoryAbortController?.abort()
     baseMemoryAbortController = null
-    for (const controller of sectionMemoryAbortControllers.values()) controller.abort()
-    sectionMemoryAbortControllers.clear()
     memoryInteractiveSessionId.value = ''
     stopAgentLiveStream()
   }
@@ -555,10 +481,6 @@ export function useMemory() {
     if (nodeId) memoryRequests.activate(conversationSelectionKey(graphId, nodeId))
     memoryText.value = ''
     memoryMessages.value = []
-    memoryHistoryComplete.value = false
-    memoryLatestTurnProgressLoaded.value = false
-    memoryLatestTurnMetadataLoaded.value = false
-    memoryLatestTurnProgressSummary.value = null
     memoryLiveMessage.value = ''
     memoryThinkingMessage.value = ''
     memoryActivityMessage.value = ''
@@ -573,7 +495,7 @@ export function useMemory() {
       if (generation !== memorySelectionGeneration) return
       if (memoryMode.value !== 'agent' || !resolveSelectedTargetId()) return
       startAgentLiveStream()
-      void loadAgentMemory({ historyMode: 'latest_turn' })
+      void loadAgentMemory()
     }, SELECTION_REQUEST_SETTLE_MS)
   }
 

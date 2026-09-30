@@ -285,7 +285,8 @@ class NodeRuntimeEventSink:
             "depth": self.depth,
             "source": str(event.get("source") or "").strip() or None,
             "stage": str(event.get("stage") or "").strip() or None,
-            "message": _preview_text(str(event.get("message") or ""), 1000),
+            # User interaction notices carry JSON consumed by the UI, not a text preview.
+            "message": str(event.get("message") or "") if event.get("source") == "user_interaction" else message,
             "tool_name": str(event.get("name") or "").strip() or None,
             "call_id": str(event.get("call_id") or "").strip() or None,
             "provider": str(event.get("provider") or "").strip() or None,

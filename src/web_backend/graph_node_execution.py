@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from src.runtime_cancellation import CancellationRequested
 from src.long_term_memory.service import schedule_memory
+from nodes.agent_history_background import schedule_agent_history_compaction
 
 from .service_host import HostBoundService
 from .route_parser import NodeRouteParser
@@ -16,6 +17,7 @@ from .node_memory_store import NodeMemoryPersistenceError
 from .node_run_terminal import build_node_run_terminal_event
 from .node_request_tracking import record_node_request_completion_or_log
 from .node_state_machine import parse_node_state
+from .group_delivery import GroupNotificationRun
 from .shared import (
     _preview_text,
     _complete_node_config_work_with_held_output,
@@ -73,6 +75,8 @@ class GraphNodeExecution(HostBoundService):
             _set_node_config_inflight(config_path, None)
             _transition_node_config_to_idle(config_path)
             return
+
+        group_notification = None
 
         context: dict = {
             "task_id": trace_id,
@@ -172,9 +176,22 @@ class GraphNodeExecution(HostBoundService):
 
         work_completed = False
         restart_recovery_started = False
+        group_delivery_error = None
+        group_reply = None
         try:
             if stop_requested():
                 raise NodeStopRequested()
+            if source == "group_notice":
+                group_notification = GroupNotificationRun(config_path=config_path, node_id=entry, envelope=pending_message)
+                if not group_notification.events:
+                    _set_node_config_inflight(config_path, None)
+                    _transition_node_config_to_idle(config_path)
+                    return
+                pending_message = group_notification.message
+                context["access_role"] = group_notification.access_role
+                context["consume_group_followups"] = group_notification.consume_followups
+                pending_full = envelope_text(pending_message).strip()
+                _set_node_config_last_message(config_path, pending_full)
             runtime_event_sink.handle(
                 {
                     "type": "runtime_notice",
@@ -223,6 +240,7 @@ class GraphNodeExecution(HostBoundService):
                 return
             output_message = normalize_envelope((routed or {}).get("message"), default_role="assistant")
             output_message["trace_id"] = trace_id
+            group_reply = envelope_text(output_message).strip()
             routed_items = (routed or {}).get("routes") if isinstance(routed, dict) else []
             if not isinstance(routed_items, list):
                 routed_items = []
@@ -230,6 +248,7 @@ class GraphNodeExecution(HostBoundService):
             if not isinstance(memory_sidecars, list):
                 memory_sidecars = []
         except CancellationRequested:
+            group_delivery_error = "Node run cancelled before completing notification work."
             try:
                 runtime_event_sink.handle(
                     build_node_run_terminal_event(
@@ -246,6 +265,7 @@ class GraphNodeExecution(HostBoundService):
                 self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
         except Exception as e:
+            group_delivery_error = f"{type(e).__name__}: {e}"
             if finish_stop_requested():
                 self.core.node_live_outputs.clear(safe_graph_id, entry)
                 return
@@ -278,12 +298,13 @@ class GraphNodeExecution(HostBoundService):
             _transition_node_config_to_idle(config_path)
             _set_node_config_last_message(config_path, error_message)
             _touch_node_config_last_run_at(config_path)
+            error_output = {**build_text_envelope(error_message, role="system"), "trace_id": trace_id}
             try:
                 self._append_node_memory_entry(
                     safe_graph_id,
                     entry,
                     "system",
-                    {**build_text_envelope(error_message, role="system"), "trace_id": trace_id},
+                    error_output,
                 )
             except NodeMemoryPersistenceError as memory_error:
                 self._log_memory_persistence_error(
@@ -293,6 +314,11 @@ class GraphNodeExecution(HostBoundService):
                     trace_id,
                     depth,
                     memory_error,
+                )
+            else:
+                schedule_agent_history_compaction(
+                    context=context, config=cfg, input_message=pending_message,
+                    output_message=error_output, log_event=self._log_graph_event,
                 )
             self._log_graph_event(
                 safe_graph_id,
@@ -346,8 +372,12 @@ class GraphNodeExecution(HostBoundService):
                     )
             runtime_event_sink.close()
             self.core.node_cancellations.end(config_path, cancel_event)
+            if group_notification is not None and (group_delivery_error is not None or group_reply is None):
+                group_notification.complete(error=group_delivery_error or "Node run stopped before producing a reply.")
 
         if finish_stop_requested():
+            if group_notification is not None:
+                group_notification.complete(error="Node run cancelled before reply persistence.")
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             return
         output_full = envelope_text(output_message).strip()
@@ -382,8 +412,12 @@ class GraphNodeExecution(HostBoundService):
                 depth,
                 memory_error,
             )
+            if group_notification is not None:
+                group_notification.complete(error=f"Reply persistence failed: {memory_error}")
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             raise
+        if group_notification is not None:
+            group_notification.complete(reply=output_full)
         duration_ms = int((time.monotonic() - started) * 1000)
         output_chars = max(len(output_full), int(runtime_event_sink.stream_output_chars or 0))
         runtime_event_sink.handle(
@@ -441,6 +475,10 @@ class GraphNodeExecution(HostBoundService):
             "node_output",
             {"type": "node_output", "duration_ms": duration_ms, "text": final_message},
             trace_id=trace_id,
+        )
+        schedule_agent_history_compaction(
+            context=context, config=cfg, input_message=pending_message,
+            output_message=output_message, log_event=self._log_graph_event,
         )
         skip_propagation = self._should_skip_propagation(output_message)
         self._log_graph_event(

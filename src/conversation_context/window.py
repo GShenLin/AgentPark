@@ -15,23 +15,32 @@ def checkpoint_message(summary: str) -> list[dict]:
     return [{"role": "assistant", "content": CHECKPOINT_PREFIX + summary}] if summary else []
 
 
+def replay_history(directory: Path, records: list[dict], messages: list[dict]) -> list[dict]:
+    """Replay a valid checkpoint and its raw tail without running compaction."""
+    if len(records) != len(messages):
+        raise ValueError("conversation records and projected messages must have the same length")
+    covered, summary = load_checkpoint(directory, records)
+    return checkpoint_message(summary) + messages[covered:]
+
+
 class ConversationWindow:
     def __init__(self, directory: Path, settings: ConversationSettings, complete: Callable[[str], str]):
         self.directory, self.settings, self.complete = directory, settings, complete
 
-    def prepare(self, records: list[dict], messages: list[dict], *, reserved_tokens: int,
+    def restore(self, records: list[dict], messages: list[dict]) -> list[dict] | None:
+        """Restore without inference; None means this history still needs compaction."""
+        result = replay_history(self.directory, records, messages)
+        return result if estimate_tokens(result) <= self.settings.input_tokens else None
+
+    def prepare(self, records: list[dict], messages: list[dict], *,
                 publish: Callable[[list[dict], str], None]) -> list[dict]:
-        if len(records) != len(messages):
-            raise ValueError("conversation records and projected messages must have the same length")
+        """Compact historical messages independently of the current request size."""
+        restored = self.restore(records, messages)
+        if restored is not None:
+            return restored
         cfg = self.settings
-        available = cfg.input_tokens - reserved_tokens
-        if available <= cfg.summary_tokens + 128:
-            raise ValueError("current input, instructions and tools leave insufficient conversation budget; "
-                             "increase conversationContext.input_tokens or reduce the current input/tools")
+        available = cfg.input_tokens
         covered, summary = load_checkpoint(self.directory, records)
-        remaining = messages[covered:]
-        if estimate_tokens(checkpoint_message(summary) + remaining) <= available:
-            return checkpoint_message(summary) + remaining
         retain_budget = min(cfg.retain_tokens, available - cfg.summary_tokens - 128)
         boundary = len(messages)
         for index in range(len(messages) - 1, covered - 1, -1):

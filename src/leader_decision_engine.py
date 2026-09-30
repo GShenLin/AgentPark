@@ -1,5 +1,8 @@
 import json
 
+from src.providers.agent_config import AgentSendContext
+from src.providers.agent_invocation import send_agent
+
 
 class LeaderDecisionEngine:
     def __init__(self, agent, utils):
@@ -32,7 +35,7 @@ class LeaderDecisionEngine:
         try:
             self._agent.messages = []
             self._agent.Message("user", prompt)
-            raw = self._agent.Send(run_tools=False) if "run_tools" in self._agent.Send.__code__.co_varnames else self._agent.Send()
+            raw = send_agent(self._agent, AgentSendContext(run_tools=False))
         except Exception as e:
             decision = {"status": "wait", "error": f"{type(e).__name__}: {e}"}
             self._agent.messages = previous_messages
@@ -69,7 +72,7 @@ class LeaderDecisionEngine:
         try:
             self._agent.messages = []
             self._agent.Message("user", prompt)
-            raw = self._agent.Send(run_tools=False) if "run_tools" in self._agent.Send.__code__.co_varnames else self._agent.Send()
+            raw = send_agent(self._agent, AgentSendContext(run_tools=False))
         except Exception as e:
             decision = {"status": "wait", "error": f"{type(e).__name__}: {e}"}
             self._agent.messages = previous_messages

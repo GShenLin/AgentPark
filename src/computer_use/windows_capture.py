@@ -28,7 +28,13 @@ def capture_window(hwnd, cancel, timeout=8):
     def on_closed():
         done.set()
 
-    control = capture.start_free_threaded()
+    try:
+        control = capture.start_free_threaded()
+    except Exception as exc:
+        raise ComputerUseError(
+            f'WGC cannot capture window id={hwnd}: {exc}. '
+            'For a visible popup/tool window, request get_window_state with '
+            'capture_mode="visible_region" to inspect its on-screen rectangle.') from exc
     try:
         deadline = time.monotonic() + timeout
         while not done.wait(0.05):

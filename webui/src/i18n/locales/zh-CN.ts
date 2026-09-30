@@ -1,12 +1,14 @@
 import type { LocaleDefinition } from '../types'
 import { longMemoryZh } from './longTermMemory'
 import { conversationZh } from './conversationContext'
+import { graphBrowserZh } from './graphBrowser'
 
 const zhCN: LocaleDefinition = {
   code: 'zh-CN',
   label: '中文',
   shortLabel: '中',
   messages: {
+    ...graphBrowserZh,
     "settings.harness": "Harness",
     "harness.description": "管理 Agent 运行环境。每个 Harness 对应独立节点，共用设置中的 Provider 与 Model。",
     "harness.installNote": "多数 Harness 需要 Node.js 和 npm；Hermes Agent 需要 Git，安装时会创建独立 Python 环境。新安装由当前工作区托管；升级在原位置执行，保留会话和配置。卸载只移除 AgentPark 安装的副本。",
@@ -27,6 +29,7 @@ const zhCN: LocaleDefinition = {
     "harness.reinstall": "重装",
     "harness.upgrade": "升级",
     "harness.latestVersion": "可用版本",
+    "harness.package": "安装包",
     "harness.updateAvailable": "有新版本可升级",
     "harness.upToDate": "无可用更新",
     "harness.updateCheckFailed": "检查更新失败：",
@@ -208,6 +211,10 @@ const zhCN: LocaleDefinition = {
     'board.lastMessage': '最后消息',
     'board.resizeConfig': '拖动调整配置面板宽度',
     'defaults.boardLayout': '看板布局',
+    'defaults.agentPanel': 'Agent 弹窗',
+    'defaults.agentPanelWidth': '弹窗宽度（px）',
+    'defaults.agentPanelHeight': '弹窗高度（px）',
+    'defaults.agentPanelSizeHelp': '点击 Agent 打开的弹窗尺寸，保存后生效。留空使用默认值；超出可用区域时自动缩小。',
     'defaults.gridCellWidth': '网格单元宽度',
     'defaults.gridCellHeight': '网格单元高度',
     'defaults.nodeWidth': '默认节点宽度',

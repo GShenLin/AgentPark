@@ -303,7 +303,7 @@ def test_table_protocol_rejects_invalid_or_executable_arguments(office, argument
 
 def test_script_manifest_accepts_nested_table_contract_and_rejects_extra_fields():
     import jsonschema
-    manifest = json.loads((Path(__file__).parents[1] / "skills/knowledge/skill.json").read_text(encoding="utf-8"))
+    manifest = json.loads((Path(__file__).parents[1] / ".agents/skills/knowledge/skill.json").read_text(encoding="utf-8"))
     schema = next(item["argsSchema"] for item in manifest["scripts"] if item["id"] == "table")
     arguments = dict(library_id="x", document_id=1, sheet="Sheet", metrics=[dict(name="rows", op="count_rows")])
     jsonschema.validate(arguments, schema)
@@ -352,7 +352,7 @@ def test_table_tool_runs_through_real_skill_subprocess(office, monkeypatch):
     shutil.copyfile(root / "tests/fixtures/knowledge/legacy.xls", folder / "legacy.xls")
     document_id = ingest(office)[0]["id"]
     skill_dir = workspace / "skills/knowledge"
-    shutil.copytree(root / "skills/knowledge", skill_dir)
+    shutil.copytree(root / ".agents/skills/knowledge", skill_dir)
     monkeypatch.setenv("PYTHONPATH", str(root))
     definition = next(item for item in load_skill_script_manifest(str(skill_dir), skill_name="knowledge")
                       if item.id == "table")

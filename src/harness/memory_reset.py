@@ -13,7 +13,7 @@ import shutil
 from .file_lock import file_lease
 
 
-CLI_HARNESSES = ("hermes_agent", "openclaw", "deepseek_harness", "pi")
+CLI_HARNESSES = ("hermes_agent", "openclaw", "deepseek_harness", "pi", "minimax_code")
 
 
 def clear_harness_memory(node_directory: str, config: dict) -> tuple[str, ...]:

@@ -61,6 +61,10 @@ ICE 同时收集直连和 TURN 候选，按 WebRTC 的候选优先级和连通�
 
 云端 Board 顶部提供「更新并重启」，调用所选设备原有的 `/api/system/restart`，继续沿用该设备的 Git 更新和重启脚本。页面通过新建 P2P 连接检查后端进程编号，确认编号变化后恢复 Board，最多等待 5 分钟。重启请求仅发送一次，丢失回执时只检查结果，不重放重启命令。连接失败可用「重新连接」再次打开设备。
 
+短暂断线、手动重连或设备重启期间，已打开的 Board 保持挂载，显示重连提示并暂时禁止操作，保留当前 Agent、输入草稿、滚动位置和已展开的过程。恢复连接后先重新校验访问身份，再刷新当前页面的数据并重建事件订阅；旧连接的读取会取消，已发出的写操作不会因重连自动重放。节点不存在或不可访问时明确提示，用户可重试或返回 Board 列表。
+
+刷新网页后，手机端从 URL 的 `mobile_graph`、`mobile_node` 直接读取目标位置，目标数据准备好后一次显示聊天，不逐级显示电脑、Board、Node 列表。编辑器目录和图配置在打开编辑界面时加载。首次打开聊天定位到底部；保留页面的重连不重置阅读位置。浏览器关闭或回收整个页面后，内存中的输入草稿和滚动位置不属于 URL 恢复内容。
+
 退出登录关闭此登录会话中的 Board 信令连接并通知设备撤销通道。正常浏览器关闭也会清理该通道；浏览器连接丢失时页面明确报错。极端网络分区下，设备仍以票据到期时间作为授权上限。重新连接需要重新打开 Board。直连不可用时可选择 TURN 中继路径。
 
 公网入口必须使用 HTTPS，浏览器需要支持 WebRTC DataChannel、Service Worker 和 WebCrypto Ed25519。本机开发可用 `http://127.0.0.1`。手机打开云端 Board 入口也使用 Board 界面，不再跳进另一个后端地址目录。
@@ -85,6 +89,8 @@ ICE 同时收集直连和 TURN 候选，按 WebRTC 的候选优先级和连通�
 可使用同一台 ECS 部署协调服务和带鉴权的 STUN/TURN 服务。协调服务不加载 AgentPark 图、模型配置或用户对话，不需要安装 WebRTC/音视频依赖。
 
 最小 Python 服务目录包含仓库的 `src/__init__.py`（如存在）、`src/file_transaction.py` 和整个 `src/peer_network/`。云端页面还需要在 `webui` 下运行 `npm ci`、`npm run build`，把完整 `webui/dist/` 一并部署，其中必须包括 `portal-sw.js`。也可以用单独的代码检出目录，但不要复制本地 `.auth`、配置密钥或记忆数据。云端无需运行本地 AgentPark 业务后端。
+
+本地 Board 和云端 Board 分别使用各自服务器上的前端构建。顶部「更新并重启」只更新所连接的设备，不会发布云端前端；涉及手机页面或请求协议的前端修改，必须同步部署云端 `webui/dist/`。发布后核对公网首页引用的 JS/CSS 指纹及文件校验值，并重新加载手机浏览器页面。聊天首屏应请求 `history_mode=conversation`，点击某轮过程后才请求 `history_mode=turn_details&turn_id=...`；仅验证本地手机接口不能证明公网页面已经使用新协议。
 
 ```text
 python -m pip install -r deploy/peer-network/requirements.txt
@@ -130,20 +136,45 @@ python -m pytest tests/test_peer_enrollment.py tests/test_peer_network_security.
 这些本机检查不能证明跨运营商 NAT 打洞成功、ECS HTTPS 入口可用、Windows 防火墙已放行、发布包已重新构建，或真实 Agent 已完成跨设备任务。上线验收需要两台不同网络下的真实设备完成一次人工消息和一次 Agent 回复，并确认实际使用的直连或中继路径。可用强制只保留 relay 候选的协议探针验证中继数据确实可传输；这不代替用户手机 5G 网络的实际验收。
 
 
-## 自行部署私有 CA
+## 当前 ECS：私有 CA（2026-09-12 已切换）
 
-公开版以 `203.0.113.10` 作为文档示例地址，不提供可直接连接的公共鉴权服务。
-部署前将设备互联设置、`deploy/peer-network/` 中的 IP 配置及证书约束改为自己的服务器 IP。
-本仓库不提供预生成的根证书、证书指纹、用户批准记录或私钥。
+入口仍为 `https://203.0.113.10`，WSS 443、设备身份和批准记录保持不变。
+本机 Windows 当前用户已导入根证书；Python 默认 TLS 校验已通过，并已让正在运行的
+AgentPark 设备连接重新建立，确认 `coordinator_connected=true`、`enrollment_state=approved`。
 
-- `create_private_root.py` 在 Windows 创建离线根并签署服务器生成的下级 CSR。
-  根私钥保存在 `.auth/private-ca/root-key.dpapi`，依赖原 Windows 用户的 DPAPI 环境。
-- `private_ca.py` 定义单 IP 的签发约束；下级 CA 不允许签发其他 IP、DNS 名称或更下级 CA。
-- `private_ca_server.py` 签发 90 天的服务器叶证书；`tls_server.py` 校验证书后原子替换并重载 Nginx。
-- `agentpark-private-certificate.timer` 每天检查续期；状态和错误应通过 systemd journal 核对。
-- 通过可信渠道分发自己生成的公开根证书，按 `deploy/peer-network/client-trust/README.md`
-  安装客户端信任，并核对实际生成的有效期与指纹。
-- 公有 ACME 与私有 CA 是不同部署方式；不要同时启用两套续期任务。
+- 根 CA 有效至 2036-09-09（UTC）。签发私钥只在 Windows `.auth/private-ca/root-key.dpapi`
+  中，使用当前 Windows 用户 DPAPI 加密，不上传 ECS。该加密文件依赖原 Windows 用户环境，
+  单独复制到另一台电脑不能视为可恢复的离线备份；保留本机账户及系统备份。
+- ECS 下级 CA 有效至 2031-09-11（UTC），密钥在
+  `/var/lib/agentpark-tls/private-ca/issuer-key.pem`（root 0600，父目录 0700）。
+  证书包含关键 Name Constraints，仅允许 `203.0.113.10/32`，排除所有 DNS 名称；
+  path length 为 0，不能再签发下级 CA。更换公网 IP 需要用离线根重新签发下级 CA。
+- 服务器叶证书有效 90 天，SAN 仅包含服务器 IP，仅允许 TLS serverAuth。
+  TLS 私钥仍留在 ECS `/var/lib/agentpark-tls/server-key.pem`。
+- `agentpark-private-certificate.timer` 在 ECS 每天检查一次，随机延迟最多 30 分钟，
+  剩余有效期不超过 30 天时签发、验证并重新加载 Nginx。错过时间会补跑。
+  不依赖外部 CA、Workbench 或 Windows 电脑在线。
+- 下级 CA 到期前 120 天，续期检查明确报错，需要用离线根更新下级 CA。
+  日常状态见 `/var/lib/agentpark-tls/private-ca/renewal-status.json`；失败见 systemd journal，
+  本任务未配置外部消息通知。
+- 根证书和新设备安装说明位于 `deploy/peer-network/client-trust/`，目录不包含私钥。
+  Windows 脚本安装到当前用户 Root 存储。其他系统或使用独立证书库的程序需单独安装信任。
+  尚未配置的手机和其他电脑会拒绝新证书，必须先导入这份根证书。
+
+部署职责：`private_ca.py` 定义签发约束；`create_private_root.py` 在 Windows 创建根并签署
+ECS 生成的下级 CSR；`private_ca_server.py` 在 ECS 签发叶证书；`tls_server.py` 验证 IP、
+有效期、密钥匹配和完整证书链，再原子替换证书并 reload Nginx。
+
+### 原公网证书方案：已停用，仅用于短期恢复
+
+Windows 任务 `AgentPark-ECS-Certificate-Renew` 已禁用。原 ACME 脚本在检测到本地私有
+CA 状态后拒绝运行，以免误切回公网证书。原公开证书保留在 ECS
+`/var/lib/agentpark-tls/public-fullchain-backup.pem`，有效期至 2026-09-19 05:38:23 UTC；
+过期后不可作为恢复入口。原签发账户仍以 DPAPI 加密保存在 `.auth/acme/`。
+
+需要短期恢复时，先确认备份证书仍有效，将其复制到 `incoming.pem` 并通过原公有根安装
+验证，再停用私有续期 timer；恢复公有续期还需明确迁移本地私有 CA 状态并重新启用 Windows
+任务。正常运行不应混用两套续期任务。
 
 ## TURN 实际路径验证
 

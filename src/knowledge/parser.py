@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import uuid
+import sys
 
 from .contracts import LibraryConfig
 from .database import Database
@@ -37,6 +38,21 @@ def passages(path: Path, config: LibraryConfig, stop, warnings: list[str]):
     elif suffix in TABLE_EXTENSIONS:
         from .workbook_reader import spreadsheet_passages
         yield from spreadsheet_passages(path, config, stop, warnings)
+    elif suffix == ".pdf" and sys.platform == "android":
+        from pypdf import PdfReader
+        empty_pages = 0
+        with path.open("rb") as stream:
+            document = PdfReader(stream, strict=True)
+            for index, page in enumerate(document.pages):
+                check_stop(stop)
+                text = page.extract_text()
+                if len(text) > config.max_page_chars:
+                    raise DocumentError(f"第 {index + 1} 页超过字符上限，未发布不完整索引")
+                if not text.strip():
+                    empty_pages += 1
+                yield from split_text(text, config.chunk_size, config.chunk_overlap, page=index + 1)
+        if empty_pages:
+            warnings.append(f"{empty_pages} 页没有可提取文本（空白或扫描页）；首版未执行 OCR")
     elif suffix == ".pdf":
         import pypdfium2 as pdfium
         empty_pages = 0

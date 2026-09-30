@@ -25,16 +25,19 @@ def validate_workspace_patch_requirements(
         if item["kind"] == "addition":
             if item["text"] not in added_text:
                 raise WorkspacePatchRequirementError(
-                    f"patch requirement {requirement_id!r} is missing declared addition"
+                    f"patch requirement {requirement_id!r} is missing declared addition; "
+                    "copy text from the patch's + lines without the diff prefix"
                 )
             continue
         if item["old_text"] not in removed_text:
             raise WorkspacePatchRequirementError(
-                f"patch requirement {requirement_id!r} is missing declared old_text removal"
+                f"patch requirement {requirement_id!r} is missing declared old_text removal; "
+                "copy old_text from the patch's - lines without the diff prefix"
             )
         if item["new_text"] not in added_text:
             raise WorkspacePatchRequirementError(
-                f"patch requirement {requirement_id!r} is missing declared new_text addition"
+                f"patch requirement {requirement_id!r} is missing declared new_text addition; "
+                "copy new_text from the patch's + lines without the diff prefix"
             )
     return tuple(parsed)
 
@@ -111,7 +114,9 @@ def _changed_text(patch: str) -> tuple[str, str]:
             added_lines.append(line[1:])
         elif line.startswith("-"):
             removed_lines.append(line[1:])
-    return "\n".join(added_lines), "\n".join(removed_lines)
+    # Diff records are lines. Keep their terminating separator so a complete
+    # multiline requirement ending in a newline matches the final changed line.
+    return "".join(line + "\n" for line in added_lines), "".join(line + "\n" for line in removed_lines)
 
 
 def _identifier(value: object, label: str) -> str:

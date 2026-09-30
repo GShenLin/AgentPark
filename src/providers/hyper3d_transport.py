@@ -1,8 +1,7 @@
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import json
 import mimetypes
 import os
-import urllib.error
-import urllib.request
 import uuid
 
 
@@ -12,18 +11,13 @@ def guess_mime_type(path):
 
 
 def request_json(*, url, method="POST", headers=None, body=None, timeout_sec=60):
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers=headers or {},
-        method=method,
-    )
+    request = dict(url=url, body=body, headers=headers or {}, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=timeout_sec) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Hyper3D HTTP {exc.code}: {detail}") from exc
+        response = CurlHttpTransport().request(**request, timeout_sec=timeout_sec).raise_for_status()
+        raw = response.content
+    except CurlHttpError as exc:
+        detail = exc.content.decode("utf-8", errors="replace")
+        raise RuntimeError(f"Hyper3D HTTP {exc.status_code}: {detail}") from exc
     except Exception as exc:
         raise RuntimeError(f"Hyper3D request failed: {exc}") from exc
 
@@ -41,8 +35,8 @@ def request_json(*, url, method="POST", headers=None, body=None, timeout_sec=60)
 
 def download_bytes(url, *, timeout_sec=60):
     try:
-        with urllib.request.urlopen(str(url), timeout=timeout_sec) as response:
-            return response.read()
+        response = CurlHttpTransport().request(url=str(url), timeout_sec=timeout_sec).raise_for_status()
+        return response.content
     except Exception as exc:
         raise RuntimeError(f"Failed to download {url}: {exc}") from exc
 

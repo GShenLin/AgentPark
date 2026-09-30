@@ -116,6 +116,9 @@ def check(root: Path, *, include_updates: bool) -> dict:
             return result
         result.update(source="managed" if found.managed else "external", can_uninstall=found.managed,
                       executable_path=str(found.python))
+        if not found.python.is_file():
+            raise ValueError("Hermes installation is incomplete: its Python environment is missing. "
+                             "Reinstall Hermes in Settings → Harness and check the installation output.")
         probe = _probe(found.python, found.source)
         version = probe["version"]
         version_key(version)
@@ -127,13 +130,15 @@ def check(root: Path, *, include_updates: bool) -> dict:
             result["can_upgrade"] = True
         except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
             result["upgrade_error"] = str(exc)
-        if include_updates:
+        if include_updates and result["can_upgrade"]:
             try:
                 release = latest_release()
                 result.update(latest_version=release.version,
                               update_status="available" if version_key(release.version) > version_key(version) else "current")
             except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
                 result.update(update_status="error", update_error=str(exc))
+        elif include_updates:
+            result.update(update_status="error", update_error=result["upgrade_error"])
     except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
         result.update(status="error", error=str(exc))
     return result
@@ -169,7 +174,6 @@ def mutate(root: Path, action: str) -> str:
             function(path)
         shutil.rmtree(root, onexc=remove_readonly)
         return "Removed managed Hermes installation. Node sessions and Hermes homes were preserved."
-    release = latest_release()
     found = locate(root)
     if action == "upgrade" and found is None:
         raise ValueError("Hermes Agent is not installed.")
@@ -178,6 +182,8 @@ def mutate(root: Path, action: str) -> str:
     output: list[str] = []
     if found:
         current = validate_source(found.source)
+    release = latest_release()
+    if found:
         if action == "upgrade" and version_key(release.version) <= version_key(current):
             raise ValueError("No newer Hermes release is available.")
         if _git(found.source, "status", "--porcelain").strip():
@@ -197,13 +203,18 @@ def mutate(root: Path, action: str) -> str:
         found = HermesInstallation(python_path(root / ".venv"), root / "source", True)
     tooling_root = root if found.managed else root.parent / "hermes-tooling"
     tooling_root.mkdir(parents=True, exist_ok=True)
-    uv = _uv(tooling_root, output)
-    if not found.python.is_file():
-        output.append(run_process([*uv, "venv", "--python", "3.12", str(root / ".venv")], cwd=str(root), timeout=600))
     output.append(_git(found.source, "fetch", "--depth", "1", "origin", "tag", release.tag))
     output.append(_git(found.source, "checkout", "--detach", release.tag))
-    output.append(run_process([*uv, "pip", "install", "--python", str(found.python), "-e", str(found.source)],
-                              cwd=str(found.source), timeout=900))
+    from .hermes_python import is_android, install_android
+    if is_android():
+        install_android(found.python, found.source, output)
+    else:
+        uv = _uv(tooling_root, output)
+        if not found.python.is_file():
+            output.append(run_process([*uv, "venv", "--python", "3.12", str(found.python.parent.parent)],
+                                      cwd=str(tooling_root), timeout=600))
+        output.append(run_process([*uv, "pip", "install", "--python", str(found.python), "-e", str(found.source)],
+                                  cwd=str(found.source), timeout=900))
     probe = _probe(found.python, found.source)
     if probe["version"] != release.version:
         raise RuntimeError(f"Hermes version verification failed: expected {release.version}, got {probe['version']}.")

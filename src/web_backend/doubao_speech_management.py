@@ -1,9 +1,8 @@
 """Provider-side Doubao speech management API boundary."""
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import json
-import urllib.error
-import urllib.request
 import uuid
 from urllib.parse import urlsplit
 
@@ -83,26 +82,21 @@ class DoubaoSpeechManagementDomain(DomainBase):
             if parsed_url.scheme in {"http", "https"} and parsed_url.netloc
             else configured_url.rstrip("/")
         )
-        request = urllib.request.Request(
-            base + _SPEECH_ACTIONS[operation],
-            data=body,
-            method="POST",
-            headers={
+        request = dict(url=base + _SPEECH_ACTIONS[operation], body=body, method="POST", headers={
                 "Content-Type": "application/json",
                 "X-Api-Key": api_key,
                 "X-Api-Request-Id": str(uuid.uuid4()),
-            },
-        )
+            })
         timeout = max(1.0, float(config.get("timeoutMs", 60000)) / 1000)
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                raw = response.read()
-                status = int(getattr(response, "status", 200))
-        except urllib.error.HTTPError as exc:
-            raw = exc.read()
-            status = int(exc.code)
-        except urllib.error.URLError as exc:
-            raise ValueError(f"Doubao {operation} request failed: {exc.reason}") from exc
+            response = CurlHttpTransport().request(**request, timeout_sec=timeout).raise_for_status()
+            raw = response.content
+            status = int(response.status_code)
+        except CurlHttpError as exc:
+            raw = exc.content
+            status = int(exc.status_code)
+        except CurlTransportError as exc:
+            raise ValueError(f"Doubao {operation} request failed: {str(exc)}") from exc
         try:
             result = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:

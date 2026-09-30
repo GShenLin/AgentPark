@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import json
 import os
 import re
@@ -7,8 +8,6 @@ import subprocess
 import time
 import uuid
 from io import BytesIO
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from PIL import Image, UnidentifiedImageError
 
@@ -142,17 +141,17 @@ class AlphaMattingProvider:
             ) from exc
 
     def _read_health(self) -> dict:
-        request = Request(self.contract.health_url, method="GET")
+        request = dict(url=self.contract.health_url, method="GET")
         try:
-            with urlopen(request, timeout=min(self.contract.timeout_ms / 1000, 10)) as response:
-                status = int(response.status)
-                body = response.read(64 * 1024 + 1)
-        except HTTPError as exc:
-            body = exc.read(64 * 1024).decode("utf-8", errors="replace")
+            response = CurlHttpTransport().request(**request, timeout_sec=min(self.contract.timeout_ms / 1000, 10), max_response_bytes=64 * 1024 + 1).raise_for_status()
+            status = int(response.status_code)
+            body = response.content[:64 * 1024 + 1]
+        except CurlHttpError as exc:
+            body = exc.content[:64 * 1024].decode("utf-8", errors="replace")
             raise ProviderProtocolError(
-                f"Alpha-matting health check returned HTTP {exc.code}: {body}"
+                f"Alpha-matting health check returned HTTP {exc.status_code}: {body}"
             ) from exc
-        except (URLError, OSError, TimeoutError) as exc:
+        except (CurlTransportError, OSError, TimeoutError) as exc:
             raise ProviderTransportError(f"Alpha-matting health check failed: {exc}") from exc
         if status != 200:
             raise ProviderTransportError(f"Alpha-matting health check returned HTTP {status}.")
@@ -197,25 +196,20 @@ class AlphaMattingProvider:
             f"Content-Type: {mime_type}\r\n\r\n"
         ).encode("ascii")
         body = prefix + content + f"\r\n--{boundary}--\r\n".encode("ascii")
-        request = Request(
-            contract.matting_url,
-            data=body,
-            method="POST",
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-        )
+        request = dict(url=contract.matting_url, body=body, method="POST", headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
         try:
-            with urlopen(request, timeout=contract.timeout_ms / 1000) as response:
-                status = int(response.status)
-                response_bytes = response.read(_MAX_OUTPUT_BYTES + 1)
-                response_headers = {key.lower(): value for key, value in response.headers.items()}
-        except HTTPError as exc:
-            error_body = exc.read(64 * 1024).decode("utf-8", errors="replace")
+            response = CurlHttpTransport().request(**request, timeout_sec=contract.timeout_ms / 1000, max_response_bytes=_MAX_OUTPUT_BYTES + 1).raise_for_status()
+            status = int(response.status_code)
+            response_bytes = response.content[:_MAX_OUTPUT_BYTES + 1]
+            response_headers = {key.lower(): value for key, value in response.headers.items()}
+        except CurlHttpError as exc:
+            error_body = exc.content[:64 * 1024].decode("utf-8", errors="replace")
             raise ProviderHttpError(
-                exc.code,
+                exc.status_code,
                 error_body,
                 message_prefix="Alpha-matting endpoint HTTP",
             ) from exc
-        except (URLError, OSError, TimeoutError) as exc:
+        except (CurlTransportError, OSError, TimeoutError) as exc:
             raise ProviderTransportError(f"Alpha-matting request failed: {exc}") from exc
         if status != 200:
             raise ProviderHttpError(status, "", message_prefix="Alpha-matting endpoint HTTP")

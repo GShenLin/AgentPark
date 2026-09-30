@@ -12,7 +12,7 @@ from functions.console_completion_policy import classify_console_command
 from functions.console_output_policy import build_console_command_result
 from functions.console_output_policy import resolve_tool_submission_char_limit
 from functions.console_process_runtime import collect_process_output
-from functions.console_process_runtime import console_process_options
+from functions.console_shell import ConsoleLaunch
 from functions.console_process_runtime import start_process_pipe_readers
 from functions.console_process_runtime import terminate_process
 from functions.console_progress_watchdog import PytestProgressWatchdog
@@ -235,6 +235,7 @@ def execute_console_command(
                 ensure_ascii=False,
             )
 
+        launch = None
         try:
             cancel_source = cancel_source_from_agent(agent)
             command_timeout = _resolve_command_timeout_seconds(timeout_seconds, agent, profile=profile)
@@ -244,7 +245,9 @@ def execute_console_command(
                 command_timeout_seconds=command_timeout,
             )
             cwd = _resolve_command_cwd(agent)
-            argv, process_options = console_process_options(str(command))
+            raise_if_cancel_requested(cancel_source)
+            launch = ConsoleLaunch(str(command))
+            argv, process_options = launch.argv, launch.options
             proc = subprocess.Popen(
                 argv,
                 stdout=subprocess.PIPE,
@@ -373,6 +376,10 @@ def execute_console_command(
                 error=completion_error or f"Command execution timed out after {timeout_label}.",
                 extra=extra,
             )
+
+        finally:
+            if launch is not None:
+                launch.close()
 
     except Exception as e:
         return json.dumps(

@@ -1,0 +1,192 @@
+.agent-images {
+  padding: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.agent-image-item {
+  width: 94px;
+  height: 94px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.agent-image-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.editor-wrapper { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+.line-gutter {
+  width: 52px;
+  background: rgba(0, 0, 0, 0.2);
+  border-right: 1px solid rgba(148, 163, 184, 0.14);
+  color: rgba(148, 163, 184, 0.8);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
+  text-align: right;
+  padding: 10px 8px;
+  overflow: hidden;
+  user-select: none;
+  flex-shrink: 0;
+  line-height: 1.5;
+}
+
+.line-number {
+  line-height: 1.5;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 12px;
+  border: none;
+  background: transparent;
+  color: var(--theme-panel-memory-panel-text-secondary, #e2e8f0);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--theme-panel-memory-panel-font-body, 13px);
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  white-space: pre;
+  scrollbar-gutter: stable both-edges;
+}
+
+.message-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  white-space: normal;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.interactive-bar {
+  flex: 0 0 auto;
+  border-top: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(8, 47, 73, 0.32);
+  padding: 8px 10px;
+  --form-control-border: rgba(34, 211, 238, 0.32);
+  --form-control-background: rgba(15, 23, 42, 0.82);
+  --form-control-focus: rgba(34, 211, 238, 0.65);
+}
+
+.interactive-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.interactive-label {
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
+  font-weight: 700;
+  color: rgba(103, 232, 249, 0.96);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.interactive-hint {
+  font-size: var(--theme-panel-memory-panel-font-small, 11px);
+  color: rgba(148, 163, 184, 0.82);
+}
+
+.interactive-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.interactive-input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+.wrap-container {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 0;
+  position: relative;
+}
+
+.wrap-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 52px;
+  background: rgba(0, 0, 0, 0.2);
+  border-right: 1px solid rgba(148, 163, 184, 0.14);
+  pointer-events: none;
+}
+
+.wrap-container.no-gutter::before {
+  display: none;
+}
+
+.wrap-row {
+  display: flex;
+  position: relative;
+  z-index: 1;
+}
+
+.wrap-num {
+  width: 52px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 8px;
+  color: rgba(148, 163, 184, 0.78);
+  user-select: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
+  line-height: 1.5;
+}
+
+.wrap-content {
+  flex: 1;
+  padding: 0 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--theme-panel-memory-panel-font-body, 13px);
+  line-height: 1.5;
+  color: inherit;
+}
+
+.wrap-empty {
+  padding: 10px 60px;
+  opacity: 0.6;
+  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
+}
+
+@media (max-width: 760px) {
+  .interactive-bar-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .interactive-input-row {
+    flex-wrap: wrap;
+  }
+
+  .interactive-input {
+    min-width: 0;
+    width: 100%;
+  }
+}

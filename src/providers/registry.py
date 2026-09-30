@@ -6,6 +6,8 @@ from typing import Any
 
 from src.config_loader import ConfigLoader
 from src.provider_models import resolve_provider_model
+from src.providers.agent_config import AgentConfig
+from src.providers.agent_invocation import compile_agent_invocation
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,8 @@ def create_agent(
     system_prompt: str | None = None,
     internal_memory_enabled: bool = True,
     model_id: object = None,
+    *,
+    agent_config: AgentConfig | None = None,
 ) -> Any:
     normalized_provider_id = str(provider_id)
     config = ConfigLoader().get_provider_config(normalized_provider_id)
@@ -63,13 +67,15 @@ def create_agent(
             f"Provider '{normalized_provider_id}' has unsupported type: {provider_type or '<empty>'}"
         )
     provider_class = registration.load_class()
-    agent = provider_class(
-        provider_id=normalized_provider_id,
-        memory_file_path=memory_file_path,
-        system_prompt=system_prompt,
-        internal_memory_enabled=internal_memory_enabled,
-    )
     selected_model = resolve_provider_model({**config, "id": normalized_provider_id}, model_id)
+    invocation = compile_agent_invocation(
+        normalized_provider_id, {**config, "model": selected_model},
+        agent_config if agent_config is not None else AgentConfig(), provider_class,
+    )
+    creation = dict(provider_id=normalized_provider_id, memory_file_path=memory_file_path,
+                    system_prompt=system_prompt, internal_memory_enabled=internal_memory_enabled)
+    agent = provider_class(**{invocation.mapping.constructor[name]: value for name, value in creation.items()})
+    agent._agent_invocation = invocation
     agent.selected_model_id = selected_model
     if selected_model:
         agent.config = {**agent.config, "model": selected_model}

@@ -1,4 +1,4 @@
-﻿import json
+import json
 from functools import partial
 from typing import Any
 
@@ -25,6 +25,7 @@ from src.providers.responses_runtime_support import finish_responses_message
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.runtime_cancellation import CancellationRequested
 from src.tool.tool_call_protocol import to_openai_tool_call
+from src.tool.dynamic_registry import consume_registered_tool_change
 
 def send_via_responses(
     runtime,
@@ -224,7 +225,6 @@ def send_via_responses(
                 )
                 current_input = self._build_responses_input(self._get_messages_with_memory())
                 explicit_context_input = list(current_input)
-                empty_message_feedback.reset()
                 _emit_turn_debug(
                     response_id=response_id,
                     content="",
@@ -250,6 +250,7 @@ def send_via_responses(
                 _close_item_tool_runner()
                 return empty_message_action.error_text
             current_input = empty_message_action.next_input
+            explicit_context_input = list(current_input)
             _emit_turn_debug(
                 response_id=response_id,
                 content=empty_message_action.feedback_item["content"][0]["text"],
@@ -263,7 +264,6 @@ def send_via_responses(
             continue
 
         if function_calls:
-            empty_message_feedback.reset()
             display_tool_calls = [to_openai_tool_call(call) for call in function_calls]
             if self._has_visible_text(content):
                 self.AssistantProgress(content, tool_calls=display_tool_calls, **turn_structured_result)
@@ -309,6 +309,12 @@ def send_via_responses(
             session_compaction_completed = self._session_context_compaction_gate_completed(executions)
             compaction_completed = self._tool_context_compaction_gate_completed(executions)
             self._notify_companion_about_failed_tool_executions(executions)
+            refreshed_tools, registry_changed = consume_registered_tool_change(
+                self, regular_active_tools
+            )
+            if registry_changed:
+                regular_active_tools = refreshed_tools
+                active_tools = refreshed_tools
 
             if session_compaction_completed:
                 current_input = self._build_responses_input(self._get_messages_with_memory())
@@ -441,8 +447,6 @@ def send_via_responses(
             followup_item_count=0,
             stream=use_stream,
         )
-        if content or (use_stream and stream_text.text):
-            empty_message_feedback.reset()
         _close_item_tool_runner()
         finished = finish_responses_message(
             self,

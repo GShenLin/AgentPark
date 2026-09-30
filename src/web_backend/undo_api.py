@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
+from src.agent_groups.contracts import GroupError
+from src.agent_groups.deletion_restore import restore_deleted_member
 from src.file_transaction import atomic_write_text
 from src.workspace_settings import save_startup_graph_settings
 
@@ -51,24 +54,51 @@ class UndoApiDomain(DomainBase):
             raise HTTPException(status_code=409, detail="undo node snapshot is missing")
         if os.path.exists(target):
             raise HTTPException(status_code=409, detail=f"cannot undo node deletion because target exists: {node_id}")
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        os.replace(source, target)
+        group_snapshot_path = os.path.join(entry_dir, "group-membership.json")
+        group_snapshot = None
+        if os.path.isfile(group_snapshot_path):
+            with open(group_snapshot_path, encoding="utf-8") as handle:
+                group_snapshot = json.load(handle)
+        graph_path = os.path.join(self.graph_runtime._graph_dir(graph_id), "config.json")
+        graph_before = Path(graph_path).read_bytes() if os.path.isfile(graph_path) else None
+        rules_before = self.core.runtime_events.export_source_event_rules(graph_id, node_id)
+        moved = rules_restored = False
         try:
-            graph_config_snapshot = os.path.join(entry_dir, "graph-config.json")
-            if os.path.isfile(graph_config_snapshot):
-                with open(graph_config_snapshot, "r", encoding="utf-8") as handle:
-                    graph_config_text = handle.read()
-                atomic_write_text(
-                    os.path.join(self.graph_runtime._graph_dir(graph_id), "config.json"),
-                    graph_config_text,
-                )
-            self._restore_runtime_event_rules(entry_dir)
-            self.graph_runtime._refresh_scheduled_node(graph_id, node_id)
-            self.graph_runtime._log_graph_event(graph_id, "node_delete_undone", node_id=node_id)
-        except Exception:
-            if os.path.exists(target) and not os.path.exists(source):
-                os.replace(target, source)
+            with restore_deleted_member(self.graph_runtime._graph_dir(graph_id), group_snapshot):
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                os.replace(source, target)
+                moved = True
+                graph_config_snapshot = os.path.join(entry_dir, "graph-config.json")
+                if os.path.isfile(graph_config_snapshot):
+                    atomic_write_text(graph_path, Path(graph_config_snapshot).read_text(encoding="utf-8"))
+                rules_restored = True
+                self._restore_runtime_event_rules(entry_dir)
+                self.graph_runtime._refresh_scheduled_node(graph_id, node_id)
+        except Exception as exc:
+            errors = []
+            def attempt(label, operation):
+                try:
+                    operation()
+                except Exception as failure:
+                    errors.append(f"{label}: {type(failure).__name__}: {failure}")
+            if moved:
+                attempt("remove restored schedule", lambda: self.graph_runtime._unregister_scheduled_node(graph_id, node_id))
+                if rules_restored:
+                    attempt("restore event rules", lambda: self.core.runtime_events.replace_source_event_rules(
+                        graph_id, node_id, rules_before))
+                if graph_before is not None:
+                    attempt("restore graph", lambda: atomic_write_text(graph_path, graph_before.decode("utf-8")))
+                elif os.path.exists(graph_path):
+                    attempt("restore absent graph", lambda: os.unlink(graph_path))
+                if os.path.exists(target) and not os.path.exists(source):
+                    attempt("restore undo snapshot", lambda: os.replace(target, source))
+            if errors:
+                raise HTTPException(status_code=500, detail=f"failed to restore node: {exc}; rollback errors: "
+                                    + "; ".join(errors)) from exc
+            if isinstance(exc, GroupError):
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise
+        self.graph_runtime._log_graph_event(graph_id, "node_delete_undone", node_id=node_id)
         return {"graph_id": graph_id, "node_id": node_id}
 
     def _restore_graph(self, metadata: dict, entry_dir: str) -> dict:

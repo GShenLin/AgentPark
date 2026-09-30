@@ -66,7 +66,8 @@ class _Agent:
         self.config = {}
 
 
-def test_workspace_exec_sequences_direction_update_before_patch(tmp_path):
+@pytest.mark.parametrize("trailing", ["", "\n"])
+def test_workspace_exec_sequences_direction_update_before_patch(tmp_path, trailing):
     agent = _Agent(tmp_path / "node" / "memory.md")
     store = TaskDirectionStore.for_agent(agent)
     store.replace(expected_revision=0, state=_state())
@@ -106,8 +107,8 @@ def test_workspace_exec_sequences_direction_update_before_patch(tmp_path):
                                     {
                                         "id": "replace_value",
                                         "kind": "replacement",
-                                        "old_text": "before",
-                                        "new_text": "after",
+                                        "old_text": "before" + trailing,
+                                        "new_text": "after" + trailing,
                                     }
                                 ],
                             },

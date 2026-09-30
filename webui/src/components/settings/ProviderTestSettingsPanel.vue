@@ -11,6 +11,7 @@ import {
   type ProviderLimitTestJob,
 } from '../../settingsApi'
 import ActionButton from '../ActionButton.vue'
+import SelectionButton from '../SelectionButton.vue'
 
 const limits = ref<ProviderLimitDocument | null>(null)
 const selectedProviderId = ref('')
@@ -221,8 +222,8 @@ onUnmounted(clearPoll)
 </script>
 
 <template>
-  <div class="provider-test">
-    <aside class="provider-list">
+  <div class="provider-test settings-split">
+    <aside class="settings-split__side">
       <div class="test-actions">
         <ActionButton variant="primary" compact :disabled="jobRunning || loading" @click="startTesting">
           {{ testing ? 'Testing...' : 'Test all' }}
@@ -233,52 +234,53 @@ onUnmounted(clearPoll)
         <ActionButton compact :disabled="loading" @click="loadLimits">Reload</ActionButton>
       </div>
 
-      <div class="provider-items">
-        <button
+      <div class="settings-split__items">
+        <SelectionButton
           v-for="providerId in providerIds"
           :key="providerId"
-          type="button"
-          class="provider-item"
-          :class="[providerState(limits?.providers?.[providerId]), { active: selectedProviderId === providerId }]"
-          :aria-pressed="selectedProviderId === providerId"
+          stacked
+          class="settings-list-item"
+          :active="selectedProviderId === providerId"
           @click="selectedProviderId = providerId"
         >
           <span class="provider-item-head">
             <span class="provider-name" :title="providerId">{{ providerId }}</span>
-            <span class="provider-health">
+            <span class="provider-health" :class="providerState(limits?.providers?.[providerId])">
               <span class="provider-health-dot" aria-hidden="true"></span>
               {{ providerStatusLabel(limits?.providers?.[providerId]) }}
             </span>
           </span>
-          <span class="provider-meta">
-            <span
-              v-if="limits?.providers?.[providerId]?.type"
-              class="provider-type"
-              :title="limits?.providers?.[providerId]?.type"
-            >
-              {{ limits?.providers?.[providerId]?.type }}
+          <template #detail>
+            <span class="provider-meta">
+              <span
+                v-if="limits?.providers?.[providerId]?.type"
+                class="provider-type"
+                :title="limits?.providers?.[providerId]?.type"
+              >
+                {{ limits?.providers?.[providerId]?.type }}
+              </span>
+              <span
+                v-if="limits?.providers?.[providerId]?.model"
+                class="provider-model"
+                :title="limits?.providers?.[providerId]?.model"
+              >
+                {{ limits?.providers?.[providerId]?.model }}
+              </span>
+              <span
+                v-if="!limits?.providers?.[providerId]?.type && !limits?.providers?.[providerId]?.model"
+                class="provider-model"
+              >
+                No type or model information
+              </span>
             </span>
-            <span
-              v-if="limits?.providers?.[providerId]?.model"
-              class="provider-model"
-              :title="limits?.providers?.[providerId]?.model"
-            >
-              {{ limits?.providers?.[providerId]?.model }}
-            </span>
-            <span
-              v-if="!limits?.providers?.[providerId]?.type && !limits?.providers?.[providerId]?.model"
-              class="provider-model"
-            >
-              No type or model information
-            </span>
-          </span>
-        </button>
+          </template>
+        </SelectionButton>
 
         <div v-if="!providerIds.length && !loading" class="empty-list">No test results</div>
       </div>
     </aside>
 
-    <section class="provider-detail">
+    <section class="provider-detail settings-split__detail">
       <div class="detail-head">
         <div>
           <h2>{{ selectedProviderId || 'ProviderLimit' }}</h2>
@@ -349,6 +351,21 @@ onUnmounted(clearPoll)
               No unsupported or inconclusive tested attributes
             </div>
           </article>
+        </div>
+
+        <div v-if="selectedProvider.model_discovery" class="channel-summary">
+          <div>
+            <span>Model query</span>
+            <code>{{ selectedProvider.model_discovery.supported ? 'Succeeded' : 'Failed' }} · {{ selectedProvider.model_discovery.tested_at || '' }}</code>
+          </div>
+          <div v-if="selectedProvider.model_discovery.endpoint">
+            <span>Endpoint</span>
+            <code>{{ selectedProvider.model_discovery.endpoint }}</code>
+          </div>
+          <div v-if="selectedProvider.model_discovery.reason">
+            <span>Reason</span>
+            <code>{{ selectedProvider.model_discovery.reason }}</code>
+          </div>
         </div>
 
         <div v-if="selectedModelIds.length" class="model-list">

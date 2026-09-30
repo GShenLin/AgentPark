@@ -6,6 +6,7 @@ REMOTE_FILE_SYSTEM_TOOL_NAMES = frozenset(
         "apply_patch",
         "execute_console_command",
         "read_file",
+        "view_image",
         "rg_list_files",
         "rg_search_text",
         "write_file",

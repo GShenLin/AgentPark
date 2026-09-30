@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import json
 import os
-from urllib.error import HTTPError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
 
 from src.peer_network.contracts import PeerCall
 from src.providers.agent_runtime_context import get_agent_runtime_context
@@ -14,14 +13,13 @@ from src.tool.tool_json_response import tool_json_error, tool_json_payload
 def _request(path: str, payload: dict | None = None) -> dict:
     port = int(os.environ.get("AGENTPARK_WEB_SERVER_PORT", "8766"))
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = Request(f"http://127.0.0.1:{port}{path}", data=body,
-                      headers={"Content-Type": "application/json"}, method="GET" if body is None else "POST")
+    request = dict(url=f"http://127.0.0.1:{port}{path}", body=body, headers={"Content-Type": "application/json"}, method="GET" if body is None else "POST")
     try:
-        with urlopen(request, timeout=55) as response:
-            result = json.load(response)
-    except HTTPError as exc:
-        detail = exc.read(8000).decode("utf-8")
-        raise RuntimeError(f"Peer API HTTP {exc.code}: {detail}") from exc
+        response = CurlHttpTransport().request(**request, timeout_sec=55).raise_for_status()
+        result = response.json()
+    except CurlHttpError as exc:
+        detail = exc.content[:8000].decode("utf-8")
+        raise RuntimeError(f"Peer API HTTP {exc.status_code}: {detail}") from exc
     if not isinstance(result, dict):
         raise ValueError("Peer API returned a non-object response.")
     return result

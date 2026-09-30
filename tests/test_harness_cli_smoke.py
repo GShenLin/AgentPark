@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -13,14 +14,30 @@ from src.harness.contracts import HarnessContext
 from src.harness.registry import create_adapter
 
 
+@pytest.fixture
+def cli_workspace(harness_id, tmp_path):
+    if harness_id == "minimax_code":
+        # The published Windows SQLite backup does not support paths over MAX_PATH.
+        original_cwd = Path.cwd()
+        with TemporaryDirectory(prefix="ap-mc-") as directory:
+            try:
+                yield Path(directory)
+            finally:
+                os.chdir(original_cwd)
+    else:
+        yield tmp_path
+
+
 @pytest.mark.parametrize("explicit_workspace", [False, True])
 @pytest.mark.parametrize("harness_id,env_key", [
     ("pi", "AGENTPARK_TEST_PI_ENTRY"),
     ("deepseek_harness", "AGENTPARK_TEST_DSH_ENTRY"),
     ("openclaw", "AGENTPARK_TEST_OPENCLAW_ENTRY"),
     ("hermes_agent", "AGENTPARK_TEST_HERMES_PYTHON"),
+    ("minimax_code", "AGENTPARK_TEST_MCODE_ENTRY"),
 ])
-def test_real_cli_routes_selected_model_and_resumes(harness_id, env_key, explicit_workspace, tmp_path, monkeypatch):
+def test_real_cli_routes_selected_model_and_resumes(harness_id, env_key, explicit_workspace, cli_workspace, monkeypatch):
+    tmp_path = cli_workspace
     entry = os.environ.get(env_key)
     if not entry:
         pytest.skip(f"Set {env_key} to the installed CLI JS entry point.")

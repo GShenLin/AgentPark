@@ -30,6 +30,8 @@ def build_patch_requirements_schema() -> dict:
     }
     return {
         "type": "array",
+        "description": "Critical changed text copied from patch +/- lines without diff prefixes. "
+        "Preserve whitespace and blank lines; a trailing newline is accepted.",
         "minItems": 1,
         "maxItems": 20,
         "items": change_schema,

@@ -33,7 +33,7 @@ def test_codex_node_exposes_provider_dropdown_and_runtime_configuration(monkeypa
         {"value": "provider-b", "label": "provider-b"},
     ]
     assert captured == {
-        "supported_modes": {"chat", "imagechat"},
+        "supported_modes": {"chat"},
         "include_private": False,
     }
     assert schema["codex_command"]["type"] == "text"

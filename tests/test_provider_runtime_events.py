@@ -1,3 +1,4 @@
+from src.providers.curl_transport import CurlResponse
 import pytest
 import json
 from types import SimpleNamespace
@@ -202,9 +203,9 @@ def test_gemini_image_generation_retry_uses_runtime_notice(monkeypatch, tmp_path
         calls["count"] += 1
         if calls["count"] == 1:
             raise RuntimeError("temporary gemini failure")
-        return _Response()
+        return CurlResponse(_Response().read().decode("utf-8"), 200)
 
-    monkeypatch.setattr("src.providers.gemini_image_generation.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("src.providers.gemini_image_generation.CurlHttpTransport.request", fake_urlopen)
     monkeypatch.setattr("src.providers.gemini_image_generation.time.sleep", lambda _seconds: None)
     monkeypatch.setattr("src.providers.gemini_image_generation.random.uniform", lambda _a, _b: 0)
 

@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 
 export type WorkAlert = {
   id: string
-  kind: 'work_persisted' | 'user_interaction' | 'runtime_event'
+  kind: 'work_persisted' | 'user_interaction' | 'runtime_event' | 'tip'
   graphId: string
   nodeId: string
   nodeName: string
@@ -102,7 +102,7 @@ function parseInteractionNotice(payload: Record<string, unknown>) {
   if (
     String(payload.event || '').trim() !== 'runtime_notice' ||
     String(payload.source || '').trim() !== 'user_interaction' ||
-    String(payload.stage || '').trim() !== 'user_interaction_created'
+    !['user_interaction_created', 'user_tip'].includes(String(payload.stage || '').trim())
   ) {
     return null
   }
@@ -156,10 +156,25 @@ function normalizeAlert(payload: Record<string, unknown>): WorkAlert | null {
 
   const notice = parseInteractionNotice(payload)
   if (!notice) return null
-  const requestId = String(notice.request_id || '').trim()
-  if (!requestId) return null
   const nodeId = String(notice.node_id || payload.node_instance_id || payload.node_id || '').trim()
   const nodeName = String(notice.node_name || payload.node_name || '').trim() || nodeId || 'Agent'
+  if (payload.stage === 'user_tip') {
+    if (typeof notice.tip_id !== 'string' || !notice.tip_id.trim()
+      || typeof notice.title !== 'string' || !notice.title.trim()
+      || typeof notice.message !== 'string' || !notice.message.trim()) return null
+    return {
+      id: `user-tip:${notice.tip_id}`,
+      kind: 'tip',
+      graphId,
+      nodeId,
+      nodeName,
+      title: notice.title,
+      message: notice.message,
+      createdAt: String(payload.ts || '').trim(),
+    }
+  }
+  const requestId = String(notice.request_id || '').trim()
+  if (!requestId) return null
   const description = String(notice.description || '').trim()
   return {
     id: `user-interaction:${requestId}`,

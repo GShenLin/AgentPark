@@ -1,5 +1,8 @@
 import { createApp } from 'vue'
 import './style.css'
+import './styles/settingsSplit.css'
+import './styles/workspaceLight.css'
+import './styles/chatAppearance.css'
 import 'katex/dist/katex.min.css'
 import App from './App.vue'
 import PortalRoot from './portal/PortalRoot.vue'

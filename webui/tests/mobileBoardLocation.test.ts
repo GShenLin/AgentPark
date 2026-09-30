@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope, nextTick, ref } from 'vue'
+import { effectScope, nextTick, ref, watch } from 'vue'
 
 const hooks = vi.hoisted(() => ({ unmount: [] as (() => void)[] }))
 const api = vi.hoisted(() => ({
@@ -60,6 +60,71 @@ async function openNode() {
 }
 
 describe('cloud mobile Board location', () => {
+  it('retains the saved group while restoring its graph, and clears it when opening a node', async () => {
+    window.location.href = `${deviceUrl}?mobile_graph=${encodeURIComponent('graph / 中文')}&mobile_group=team`
+    const current = mount()
+    await current.location.initialize()
+    expect(current.workspace.view.value).toBe('nodes')
+    expect(new URL(window.location.href).searchParams.get('mobile_group')).toBe('team')
+    await current.workspace.selectNode(current.workspace.nodes.value[0]!)
+    await nextTick()
+    expect(new URL(window.location.href).searchParams.has('mobile_group')).toBe(false)
+  })
+
+  it('clears a saved group when returning to the graph list', async () => {
+    window.location.href = `${deviceUrl}?mobile_graph=${encodeURIComponent('graph / 中文')}&mobile_group=team`
+    const current = mount()
+    await current.location.initialize()
+    current.workspace.backToGraphs()
+    await nextTick()
+    expect(window.location.href).toBe(deviceUrl)
+  })
+
+  it('restores directly to chat without intermediate navigation or editor catalog requests', async () => {
+    window.location.href = `${deviceUrl}?mobile_graph=${encodeURIComponent('graph / 中文')}&mobile_node=${encodeURIComponent('node / 中文')}`
+    const next = mount()
+    const views: string[] = []
+    const stop = watch(next.workspace.view, value => views.push(value), { flush: 'sync' })
+    const restoring = next.location.initialize()
+    expect(next.location.restoring.value).toBe(true)
+    await restoring
+    expect(views).toEqual(['chat'])
+    expect(next.location.restoring.value).toBe(false)
+    for (const unnecessary of [api.listProviders, api.listTools, api.listNodes, api.listGraphProfiles, api.loadGraph]) {
+      expect(unnecessary).not.toHaveBeenCalled()
+    }
+    stop()
+  })
+
+  it('keeps the current selection and conversation visible while reconnecting', async () => {
+    const current = await openNode()
+    const previous = current.workspace.conversation.value
+    const views: string[] = []
+    const stop = watch(current.workspace.view, value => views.push(value), { flush: 'sync' })
+    let finish!: (value: unknown) => void
+    api.getMobileNodeConversation.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    current.workspace.suspendConnection()
+    const restore = current.workspace.resumeConnection()
+    for (let i = 0; i < 8; i++) await nextTick()
+    expect(current.workspace.view.value).toBe('chat')
+    expect(current.workspace.conversation.value).toBe(previous)
+    finish({ messages: [{ id: 'after-reconnect' }], live_version: 3 })
+    await restore
+    expect(current.workspace.conversation.value?.messages[0]?.id).toBe('after-reconnect')
+    expect(views).toEqual([])
+    stop()
+  })
+
+  it('rejects a missing reconnect destination without clearing the existing page', async () => {
+    const current = await openNode()
+    const previous = current.workspace.conversation.value
+    current.workspace.suspendConnection()
+    api.listMobileNodes.mockResolvedValue([])
+    await expect(current.workspace.resumeConnection()).rejects.toThrow('节点已不存在或不可访问')
+    expect(current.workspace.view.value).toBe('chat')
+    expect(current.workspace.conversation.value).toBe(previous)
+  })
+
   it('restores the exact graph and node with fresh messages after the Board is destroyed', async () => {
     await openNode()
     const saved = window.location.href

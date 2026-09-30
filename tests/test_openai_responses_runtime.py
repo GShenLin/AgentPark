@@ -1,4 +1,4 @@
-﻿import json
+import json
 
 import pytest
 
@@ -722,7 +722,7 @@ def test_stream_does_not_return_stale_tool_call_intro():
             func_name="rg_list_files",
             call_id="call-1",
             cleaned_result='{"status":"success","files":["README.md"]}',
-            image_data=None,
+            images=(),
         )
     ]
 
@@ -747,6 +747,94 @@ def test_stream_does_not_return_stale_tool_call_intro():
     assert payloads[1]["input"][-1]["type"] == "function_call_output"
     assert payloads[1]["input"][-1]["call_id"] == "call-1"
     assert "README.md" in payloads[1]["input"][-1]["output"]
+
+
+def test_responses_followup_exposes_tools_registered_by_skill_activation():
+    from src.providers.openai_agent import OpenAIAgent
+
+    agent = OpenAIAgent.__new__(OpenAIAgent)
+    agent.config = {
+        "apiKey": "test",
+        "baseUrl": "https://api.openai.test/v1",
+        "model": "gpt-test",
+        "responsesApi": True,
+        "maxRetries": 0,
+        "retryDelaySec": 0,
+        "responsesReplayReasoningItems": False,
+        "toolResultSubmissionMaxChars": 50000,
+        "toolContextCompactionEnabled": False,
+        "toolContextCompactionEveryToolCalls": 1,
+    }
+    agent.provider_name = "openai"
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.Message = lambda role, content, persist=True, **kwargs: agent.messages.append(
+        {"role": role, "content": content, **kwargs}
+    )
+    activate_declaration = {
+        "type": "function",
+        "function": {
+            "name": "activate_skill",
+            "description": "Activate skill",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    click_declaration = {
+        "type": "function",
+        "function": {
+            "name": "click",
+            "description": "Click",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    agent.tool_declarations = [activate_declaration]
+    payloads = []
+
+    def fake_post(**kwargs):
+        payloads.append(json.loads(kwargs["payload_json"]))
+        if len(payloads) == 1:
+            return {
+                "id": "resp-activate",
+                "output": [{
+                    "type": "function_call",
+                    "id": "fc-activate",
+                    "call_id": "call-activate",
+                    "name": "activate_skill",
+                    "arguments": '{"skill":"computer-use"}',
+                }],
+            }
+        return {
+            "id": "resp-after-activation",
+            "output": [{
+                "type": "message",
+                "content": [{"type": "output_text", "text": "Computer Use is active."}],
+            }],
+        }
+
+    def execute_activation(_calls):
+        agent.tool_declarations.append(click_declaration)
+        agent._agentpark_tool_registry_changed = True
+        return [ToolCallExecution(
+            func_name="activate_skill",
+            call_id="call-activate",
+            cleaned_result='{"status":"success","skill":"computer-use"}',
+            images=(),
+        )]
+
+    agent._post_json_with_retry = fake_post
+    agent._stream_responses_with_retry = fake_post
+    agent._execute_tool_call_envelopes_parallel = execute_activation
+
+    out = agent._send_via_responses(
+        messages=[{"role": "user", "content": "inspect the UI"}],
+        active_tools=[activate_declaration],
+        run_tools=True,
+        reasoning_effort="medium",
+    )
+
+    assert out == "Computer Use is active."
+    assert [tool["name"] for tool in payloads[0]["tools"]] == ["activate_skill"]
+    assert [tool["name"] for tool in payloads[1]["tools"]] == ["activate_skill", "click"]
 
 
 def test_openai_responses_empty_output_feeds_back_error_before_returning_final_message():
@@ -811,7 +899,7 @@ def test_openai_responses_empty_output_feeds_back_error_before_returning_final_m
     assert feedback_payload["item"]["count"] == 0
 
 
-def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_after_tool_output():
+def test_openai_responses_empty_output_feedback_preserves_bounded_tool_context():
     from src.providers.openai_agent import OpenAIAgent
 
     agent = OpenAIAgent.__new__(OpenAIAgent)
@@ -872,7 +960,7 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
             func_name="read_large_asset",
             call_id="call-1",
             cleaned_result=large_output,
-            image_data=None,
+            images=(),
         )
     ]
 
@@ -887,12 +975,17 @@ def test_openai_responses_empty_output_feedback_uses_compact_recovery_input_afte
     assert out == "Recovered from compact feedback."
     assert len(payloads) == 3
     feedback_input = payloads[2]["input"]
-    assert len(feedback_input) == 3
+    assert len(feedback_input) == 6
     assert feedback_input[0]["role"] == "developer"
     assert feedback_input[0]["content"][0]["text"].startswith("<permissions instructions>")
     assert feedback_input[1]["role"] == "user"
     assert feedback_input[1]["content"][0]["text"].startswith("<environment_context>")
-    feedback_text = feedback_input[2]["content"][0]["text"]
+    assert feedback_input[2]["content"][0]["text"] == "inspect DA_Action_Book"
+    assert feedback_input[3]["type"] == "function_call"
+    assert feedback_input[4]["type"] == "function_call_output"
+    assert feedback_input[3]["call_id"] == feedback_input[4]["call_id"] == "call-1"
+    assert "tool_result_submission_error" in feedback_input[4]["output"]
+    feedback_text = feedback_input[-1]["content"][0]["text"]
     assert len(json.dumps(feedback_input, ensure_ascii=False)) < 10000
     assert "inspect DA_Action_Book" in feedback_text
     assert "tool_result_submission_error" in feedback_text
@@ -1019,7 +1112,7 @@ def test_openai_responses_continuation_includes_tool_image_data():
             func_name="capture_screenshot",
             call_id="call-1",
             cleaned_result='{"status":"success","base64_image":"<base64_image_data_truncated>"}',
-            image_data={"base64": "YWJj", "path": "", "mime_type": "image/png"},
+            images=({"base64": "YWJj", "path": "", "mime_type": "image/png"},),
         )
     ]
 
@@ -1435,7 +1528,7 @@ def test_stream_continues_after_tool_call_without_response_id():
             func_name="rg_list_files",
             call_id="call-1",
             cleaned_result='{"status":"success","files":["README.md"]}',
-            image_data=None,
+            images=(),
         )
     ]
 
@@ -1756,7 +1849,7 @@ def test_responses_context_history_does_not_duplicate_tool_followup_context(tmp_
             func_name="echo_tool",
             call_id="call-1",
             cleaned_result='{"status":"success","text":"hello"}',
-            image_data=None,
+            images=(),
         )
     ]
     payloads = []
@@ -2281,7 +2374,7 @@ def test_responses_reuses_instructions_for_explicit_context_tool_followups(tmp_p
             func_name="echo_tool",
             call_id="call-1",
             cleaned_result='{"status":"success","text":"hello"}',
-            image_data=None,
+            images=(),
         )
     ]
     payloads = []
@@ -2611,7 +2704,7 @@ def test_responses_tool_followup_appends_mid_turn_user_input():
             func_name="echo_tool",
             call_id="call-1",
             cleaned_result='{"status":"success"}',
-            image_data=None,
+            images=(),
         )
     ]
 

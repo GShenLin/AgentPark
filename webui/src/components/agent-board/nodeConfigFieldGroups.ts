@@ -20,7 +20,6 @@ const SUPPORT_MODE_LABELS: Record<string, string> = {
   image_generation: 'Image Generation',
   video_generation: 'Video Generation',
   audio_generation: 'Audio Generation',
-  imagechat: 'Image Chat',
   vision_understand: 'Vision Understand',
 }
 

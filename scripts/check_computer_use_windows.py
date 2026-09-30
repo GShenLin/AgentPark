@@ -17,9 +17,26 @@ def fixture():
     import win32api
     import win32con
     import win32gui
+    popup = None
     def procedure(hwnd, message, wp, lp):
+        nonlocal popup
         if message == win32con.WM_DESTROY:
-            win32gui.PostQuitMessage(0)
+            if hwnd != popup:
+                win32gui.PostQuitMessage(0)
+            return 0
+        if message == win32con.WM_MOUSEACTIVATE and hwnd == popup:
+            return win32con.MA_NOACTIVATE
+        if message == win32con.WM_LBUTTONUP and hwnd == popup:
+            win32gui.SetWindowText(main, TITLE + ' - popup clicked')
+            win32gui.DestroyWindow(popup)
+            return 0
+        if message == win32con.WM_COMMAND and wp & 0xFFFF == 3:
+            popup = win32gui.CreateWindowEx(
+                win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE,
+                wc.lpszClassName, '', win32con.WS_POPUP | win32con.WS_BORDER,
+                400, 280, 240, 100, hwnd, 0, wc.hInstance, None)
+            win32gui.ShowWindow(popup, win32con.SW_SHOWNOACTIVATE)
+            win32gui.UpdateWindow(popup)
             return 0
         if message == win32con.WM_COMMAND and wp & 0xFFFF == 2:
             win32gui.SetWindowText(hwnd, TITLE + ' - clicked')
@@ -39,11 +56,14 @@ def fixture():
     win32gui.RegisterClass(wc)
     hwnd = win32gui.CreateWindow(wc.lpszClassName, TITLE, win32con.WS_OVERLAPPEDWINDOW,
                                  150, 150, 620, 360, 0, 0, wc.hInstance, None)
+    main = hwnd
     win32gui.CreateWindowEx(win32con.WS_EX_CLIENTEDGE, 'EDIT', '',
                            win32con.WS_CHILD | win32con.WS_VISIBLE | win32con.WS_TABSTOP | win32con.ES_AUTOHSCROLL,
                            30, 40, 500, 40, hwnd, 1, wc.hInstance, None)
     win32gui.CreateWindow('BUTTON', 'Test click', win32con.WS_CHILD | win32con.WS_VISIBLE,
                          30, 110, 130, 35, hwnd, 2, wc.hInstance, None)
+    win32gui.CreateWindow('BUTTON', 'Open popup', win32con.WS_CHILD | win32con.WS_VISIBLE,
+                         180, 110, 130, 35, hwnd, 3, wc.hInstance, None)
     win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
     win32gui.UpdateWindow(hwnd)
     win32gui.PumpMessages()
@@ -80,20 +100,20 @@ def run():
         state = observe()
         print(json.dumps({'capture': [state['width'], state['height']], 'elements': len(state['accessibility']['elements'])}))
         edit = next(e for e in state['accessibility']['elements'] if e['control_type'] == 'Edit')
-        call('click', window=window, observation_id=state['observation_id'], element_index=edit['index'])
-        state = observe()
+        state = call('click', window=window, observation_id=state['observation_id'], element_index=edit['index'])
         text = 'AgentPark \u4e2d\u6587 \U0001f600 {literal}'
-        call('type_text', window=window, observation_id=state['observation_id'], text=text)
-        time.sleep(0.15)
+        began = time.monotonic()
+        state = call('type_text', window=window, observation_id=state['observation_id'], text=text)
+        print(json.dumps({'typing_with_refresh_ms': round((time.monotonic() - began) * 1000),
+                          'settle_ms': state['settle_ms']}))
+        assert next(e['value'] for e in state['accessibility']['elements'] if e['control_type'] == 'Edit') == text
         def edit_value():
-            from src.computer_use.windows_uia import automation
-            with automation() as desktop:
-                return desktop.window(handle=hwnd).child_window(control_type='Edit').wrapper_object().iface_value.CurrentValue
+            return next(e['value'] for e in observe()['accessibility']['elements']
+                        if e['control_type'] == 'Edit')
         assert edit_value() == text, repr(edit_value())
         state = observe()
-        call('press_key', window=window, observation_id=state['observation_id'], key='Control_L+a')
-        state = observe()
-        call('type_text', window=window, observation_id=state['observation_id'], text='Keyboard verified')
+        state = call('press_key', window=window, observation_id=state['observation_id'], key='Control_L+a')
+        state = call('type_text', window=window, observation_id=state['observation_id'], text='Keyboard verified')
         time.sleep(0.1)
         assert edit_value() == 'Keyboard verified', repr(edit_value())
         state = observe()
@@ -125,7 +145,20 @@ def run():
         time.sleep(0.1)
         assert win32gui.GetWindowText(hwnd).endswith('clicked')
         assert any(a['id'] == window['app'] for a in call('list_apps')['apps'])
-        print('PASS: WGC, UIA, element/coordinate clicks, Unicode/emoji, key chord, set_value, scroll, drag, invoke, app listing')
+        state = observe()
+        button = next(e for e in state['accessibility']['elements'] if e['name'] == 'Open popup')
+        state = call('click', window=window, observation_id=state['observation_id'], element_index=button['index'])
+        assert len(state['screenshots']) == 2
+        popup_window = next(w for w in state['related_windows'] if w['title'] == '' and w['no_activate'])
+        assert win32gui.GetForegroundWindow() == hwnd
+        assert call('get_window', id=popup_window['id'])['window']['id'] == popup_window['id']
+        popup_state = next(s for s in state['related_states'] if s['window']['id'] == popup_window['id'])
+        assert popup_state['capture_scope'] == 'visible_screen_region'
+        assert (popup_state['width'], popup_state['height']) == (240, 100)
+        state = call('click', window=popup_window, observation_id=popup_state['observation_id'], x=30, y=30)
+        assert state['window']['id'] == hwnd and len(state['screenshots']) == 1
+        assert win32gui.GetWindowText(hwnd).endswith('popup clicked')
+        print('PASS: WGC, UIA, clicks, Unicode/emoji, focus, keys, set_value, scroll, drag, invoke, action+refresh, multi-image popup snapshot, popup click+close+parent refresh')
     finally:
         if hwnd and win32gui.IsWindow(hwnd):
             win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)

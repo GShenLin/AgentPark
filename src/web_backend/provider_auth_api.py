@@ -1,7 +1,10 @@
 from fastapi import HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 
 from src import workspace_settings
 from src.provider_auth.codex_oauth import CodexOAuthError, authorization_status, login_manager
+from src.provider_auth.codex_credential_sync import sync_local_codex_credentials
+from src.provider_auth.store import AuthStoreError
 from src.provider_auth.service import (
     ProviderAuthorizationError,
     activate_account,
@@ -21,7 +24,19 @@ from src.provider_api_key_store import (
 from .domain_base import DomainBase
 
 
+class CodexCredentialSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    accountId: str | None = Field(default=None, pattern=r"^[a-f0-9]{12}$")
+
+
 class ProviderAuthApiDomain(DomainBase):
+    def sync_codex_credentials(self, payload: CodexCredentialSyncRequest) -> dict:
+        try:
+            result = sync_local_codex_credentials(account_id=payload.accountId)
+            return {**result, "status": provider_status("openai")}
+        except (CodexOAuthError, AuthStoreError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     def get_api_key_aliases(self) -> dict:
         path = api_key_store_path(workspace_settings.get_workspace_root())
         try:

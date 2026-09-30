@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import base64
 import json
 import os
@@ -7,9 +8,7 @@ import platform
 import socket
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 
 from src.file_transaction import atomic_write_text
@@ -55,19 +54,14 @@ def _headers() -> dict[str, str]:
 
 
 def _post(path: str, data: dict[str, str], timeout: float = 30) -> dict:
-    request = urllib.request.Request(
-        f"{OAUTH_HOST}{path}",
-        data=urllib.parse.urlencode(data).encode("utf-8"),
-        headers=_headers(),
-        method="POST",
-    )
+    request = dict(url=f"{OAUTH_HOST}{path}", body=urllib.parse.urlencode(data).encode("utf-8"), headers=_headers(), method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
-        raise KimiOAuthError(f"Kimi authorization returned HTTP {exc.code}: {detail}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        response = CurlHttpTransport().request(**request, timeout_sec=timeout).raise_for_status()
+        payload = json.loads(response.content.decode("utf-8"))
+    except CurlHttpError as exc:
+        detail = exc.content.decode("utf-8", errors="replace")[:1000]
+        raise KimiOAuthError(f"Kimi authorization returned HTTP {exc.status_code}: {detail}") from exc
+    except (CurlTransportError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         raise KimiOAuthError(f"Kimi authorization request failed: {exc}") from exc
     if not isinstance(payload, dict):
         raise KimiOAuthError("Kimi authorization returned an invalid response.")

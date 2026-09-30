@@ -5,14 +5,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable
 
+import yaml
+
 from nodes.agent_skill_dependencies import SkillDependencyLoadError, collect_skill_dependencies, read_skill_agent_dependencies
 from src.capabilities.discovery_cache import cached_discovery_value
 from src.name_lists import NameListContract, path_reference_key
 from src.skills.resource_index import SkillResource, build_skill_resource_index, skill_resource_keys
 from src.skills.script_manifest import SkillScriptDefinition, SkillScriptManifestError, load_skill_script_manifest
+from src.skills.roots import configured_skill_roots
 
 
-SKILL_ROOT_DIRNAME = "skills"
+SKILL_ROOT_RELATIVE_PATH = os.path.join(".agents", "skills")
 SKILL_FILENAME = "SKILL.md"
 SKILL_OPEN_TAG = "<skills_instructions>"
 SKILL_CLOSE_TAG = "</skills_instructions>"
@@ -25,6 +28,7 @@ class SkillDefinition:
     path: str
     content: str
     version: str = ""
+    tools: tuple[str, ...] = ()
     mcp_servers: tuple[str, ...] = ()
     mcp_server_configs: dict[str, dict] = field(default_factory=dict)
     resource_root: str = ""
@@ -45,7 +49,19 @@ SKILL_NAME_LIST = NameListContract(
 
 
 def list_available_skill_options(skill_root: str | None = None) -> list[dict[str, str]]:
-    root = os.path.abspath(skill_root or default_skill_root())
+    if skill_root is not None:
+        return _list_available_skill_options_for_root(os.path.abspath(skill_root))
+
+    options_by_name: dict[str, dict[str, str]] = {}
+    for root in default_skill_roots():
+        for option in _list_available_skill_options_for_root(root):
+            options_by_name.setdefault(path_reference_key(option["value"]), option)
+    options = list(options_by_name.values())
+    options.sort(key=lambda item: (item["label"].casefold(), item["value"].casefold()))
+    return options
+
+
+def _list_available_skill_options_for_root(root: str) -> list[dict[str, str]]:
     if not os.path.isdir(root):
         return []
 
@@ -78,7 +94,18 @@ def _list_available_skill_options_uncached(root: str) -> list[dict[str, str]]:
 
 
 def default_skill_root() -> str:
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), SKILL_ROOT_DIRNAME)
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        SKILL_ROOT_RELATIVE_PATH,
+    )
+
+
+def user_skill_root() -> str:
+    return os.path.join(os.path.expanduser("~"), SKILL_ROOT_RELATIVE_PATH)
+
+
+def default_skill_roots() -> tuple[str, ...]:
+    return configured_skill_roots(default_skill_root(), user_skill_root())
 
 
 def load_node_skills(
@@ -91,11 +118,38 @@ def load_node_skills(
     if not names:
         return []
 
-    root = os.path.abspath(skill_root or default_skill_root())
-    if not os.path.isdir(root):
-        raise SkillLoadError(f"skill root does not exist: {root}")
+    if skill_root is not None:
+        root = os.path.abspath(skill_root)
+        if not os.path.isdir(root):
+            raise SkillLoadError(f"skill root does not exist: {root}")
+        return [_load_skill(name, root, node_id=node_id) for name in names]
 
-    return [_load_skill(name, root, node_id=node_id) for name in names]
+    roots = default_skill_roots()
+    return [_load_skill_from_roots(name, roots, node_id=node_id) for name in names]
+
+
+def _load_skill_from_roots(name: str, roots: Iterable[str], *, node_id: object = "") -> SkillDefinition:
+    searched_roots: list[str] = []
+    for root in roots:
+        resolved_root = os.path.abspath(root)
+        searched_roots.append(resolved_root)
+        if not os.path.isdir(resolved_root):
+            continue
+        skill_dir = _resolve_skill_dir(resolved_root, name, node_id=node_id)
+        if os.path.lexists(skill_dir):
+            return _load_skill(name, resolved_root, node_id=node_id)
+
+    first_root = searched_roots[0] if searched_roots else default_skill_root()
+    missing_path = os.path.join(first_root, *re.split(r"[\\/]+", name), SKILL_FILENAME)
+    locations = ", ".join(searched_roots)
+    raise SkillLoadError(
+        _format_skill_error(
+            node_id,
+            name,
+            missing_path,
+            f"SKILL.md does not exist in configured skill roots: {locations}",
+        )
+    )
 
 
 def render_skill_instructions(skills: Iterable[SkillDefinition]) -> str:
@@ -218,7 +272,7 @@ def _load_skill(name: str, root: str, *, node_id: object = "") -> SkillDefinitio
     metadata = _parse_frontmatter(content, node_id=node_id, requested_name=name, path=skill_path)
     declared_name = str(metadata.get("name") or "").strip()
     description = str(metadata.get("description") or "").strip()
-    version = str(metadata.get("version") or "").strip()
+    version = _skill_version(metadata)
     if not declared_name:
         raise SkillLoadError(_format_skill_error(node_id, name, skill_path, "missing frontmatter field `name`"))
     if not description:
@@ -239,6 +293,7 @@ def _load_skill(name: str, root: str, *, node_id: object = "") -> SkillDefinitio
         path=skill_path,
         content=_strip_frontmatter_body(content),
         version=version,
+        tools=dependencies.tools,
         mcp_servers=dependencies.mcp_servers,
         mcp_server_configs=dependencies.mcp_server_configs,
         resource_root=skill_dir,
@@ -282,7 +337,7 @@ def _parse_frontmatter(
     node_id: object,
     requested_name: str,
     path: str,
-) -> dict[str, str]:
+) -> dict[str, object]:
     normalized = content.replace("\r\n", "\n").replace("\r", "\n")
     if not normalized.startswith("---\n"):
         raise SkillLoadError(_format_skill_error(node_id, requested_name, path, "missing YAML frontmatter"))
@@ -291,21 +346,18 @@ def _parse_frontmatter(
     if end < 0:
         raise SkillLoadError(_format_skill_error(node_id, requested_name, path, "unterminated YAML frontmatter"))
 
-    metadata: dict[str, str] = {}
     frontmatter = normalized[4:end]
-    for line in frontmatter.split("\n"):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if ":" not in stripped:
-            raise SkillLoadError(_format_skill_error(node_id, requested_name, path, f"invalid frontmatter line: {line}"))
-        key, value = stripped.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key:
-            raise SkillLoadError(_format_skill_error(node_id, requested_name, path, f"invalid frontmatter line: {line}"))
-        metadata[key] = _unquote_yaml_scalar(value)
-    return metadata
+    try:
+        payload = yaml.safe_load(frontmatter)
+    except yaml.YAMLError as exc:
+        raise SkillLoadError(
+            _format_skill_error(node_id, requested_name, path, f"invalid YAML frontmatter: {exc}")
+        ) from exc
+    if not isinstance(payload, dict):
+        raise SkillLoadError(
+            _format_skill_error(node_id, requested_name, path, "YAML frontmatter must be a mapping")
+        )
+    return {str(key): value for key, value in payload.items()}
 
 
 def _strip_frontmatter_body(content: str) -> str:
@@ -318,6 +370,15 @@ def _strip_frontmatter_body(content: str) -> str:
     return normalized[end + len("\n---\n"):].lstrip("\n")
 
 
+def _skill_version(metadata: dict[str, object]) -> str:
+    version = metadata.get("version")
+    if version is None or version == "":
+        nested_metadata = metadata.get("metadata")
+        if isinstance(nested_metadata, dict):
+            version = nested_metadata.get("version")
+    return str(version or "").strip()
+
+
 def _read_skill_option_metadata(path: str, *, fallback: str) -> dict[str, str]:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -325,7 +386,7 @@ def _read_skill_option_metadata(path: str, *, fallback: str) -> dict[str, str]:
         metadata = _parse_frontmatter(content, node_id="", requested_name=fallback, path=path)
         name = str(metadata.get("name") or "").strip()
         description = str(metadata.get("description") or "").strip()
-        version = str(metadata.get("version") or "").strip()
+        version = _skill_version(metadata)
         if description:
             return {"label": f"{name or fallback} - {description}", "version": version}
         return {"label": name or fallback, "version": version}
@@ -344,12 +405,6 @@ def _is_valid_skill_reference(name: str) -> bool:
 
 def _is_valid_skill_path_part(value: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", str(value or "")))
-
-
-def _unquote_yaml_scalar(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-        return value[1:-1]
-    return value
 
 
 def _escape_tag_text(value: object) -> str:

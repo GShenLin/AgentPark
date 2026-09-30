@@ -116,11 +116,16 @@ def check_installation(harness_id: str, *, include_updates: bool = False) -> dic
             try:
                 installation = upgrade_installation(harness_id, update_root)
                 update_root = installation.package_base
+                result["package"] = installation.package
                 result["can_upgrade"] = True
             except (OSError, ValueError, RuntimeError) as exc:
                 result["upgrade_error"] = str(exc)
-            if include_updates:
+            if include_updates and result["can_upgrade"]:
                 result.update(check_updates(harness_id, update_root, result, cwd=get_workspace_root()))
+            elif include_updates:
+                # Without a verified distribution, an upstream release is not
+                # evidence of an update for this external executable.
+                result.update(update_status="error", update_error=result["upgrade_error"])
     except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
         result.update(status="error", error=str(exc))
     return result
@@ -163,15 +168,16 @@ def _mutate_installation(harness_id: str, action: str) -> str:
             from .hermes_installation import mutate
             return mutate(install_root(harness_id), action)
         root = install_root(harness_id)
-        installation = NpmInstallation(root, root, False)
+        installation = NpmInstallation(root, root, False, spec.package)
         target = "latest"
         if action == "upgrade":
             installation = upgrade_installation(harness_id, root)
             # Recheck under the exclusive lease: another client may have updated since the UI check.
             argv = command_argv(harness_id)
             version = run_process([*argv, "--version"], cwd=get_workspace_root(), timeout=20).strip()
-            current = installed_version(harness_id, installation.package_base, version)
-            target = latest_version(harness_id, str(installation.prefix))
+            current = installed_version(harness_id, installation.package_base, version,
+                                        package=installation.package)
+            target = latest_version(installation.package, str(installation.prefix))
             if version_key(target) <= version_key(current):
                 raise ValueError(f"No newer release is available (installed {current}, latest {target}).")
         # Persistent native clients must release executable handles before npm replaces files.
@@ -190,12 +196,12 @@ def _mutate_installation(harness_id: str, action: str) -> str:
         args = [*npm_argv(), "uninstall" if action == "uninstall" else "install",
                 *installation.scope_args(), "--no-audit", "--no-fund"]
         if action in {"install", "upgrade"}:
-            args += ["--save-exact", "--engine-strict", spec.package + "@" + target]
+            args += ["--save-exact", "--engine-strict", installation.package + "@" + target]
         else:
             args += [spec.package]
         output = run_process(args, cwd=str(installation.prefix), timeout=900)
         if action == "upgrade":
-            actual = installed_version(harness_id, installation.package_base, "")
+            actual = installed_version(harness_id, installation.package_base, "", package=installation.package)
             if actual != target:
                 raise RuntimeError(f"Upgrade verification failed: expected {target}, found {actual}.")
     finally:

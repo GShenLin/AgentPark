@@ -30,7 +30,7 @@ describe('reasoning effort options', () => {
   })
 
   it('filters generic Agent providers by declared Agent modes', () => {
-    expect(agentProviderModes({ type: 'openai', supportmode: ['chat', 'audio', 'imagechat'] })).toEqual(['chat', 'imagechat'])
+    expect(agentProviderModes({ type: 'openai', supportmode: ['chat', 'audio'] })).toEqual(['chat'])
   })
 
   it('uses the provider-owned thinking default without changing other providers', () => {

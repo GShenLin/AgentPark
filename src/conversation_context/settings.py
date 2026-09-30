@@ -6,7 +6,7 @@ class ConversationSettings:
     input_tokens: int = 24000
     retain_tokens: int = 6000
     summary_tokens: int = 2000
-    provider: str = ""
+    profile_id: str = "DouBao"
 
     @classmethod
     def from_config(cls, config: dict) -> "ConversationSettings":
@@ -23,6 +23,8 @@ class ConversationSettings:
             if isinstance(value, int) and value < 1:
                 raise ValueError(f"conversationContext.{key} must be positive")
         result = cls(**raw)
+        if not result.profile_id.strip():
+            raise ValueError("conversationContext.profile_id must be non-empty")
         if result.input_tokens < 4096:
             raise ValueError("conversationContext.input_tokens must be at least 4096")
         if result.retain_tokens + result.summary_tokens + 1024 >= result.input_tokens:

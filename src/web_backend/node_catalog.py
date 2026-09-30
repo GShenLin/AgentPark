@@ -79,11 +79,11 @@ class NodeCatalog(HostBoundService):
                 else []
             )
             if safe_type_id in HARNESS_NODE_TYPES and not any(
-                mode in {"chat", "imagechat"} for mode in support_modes
+                mode == "chat" for mode in support_modes
             ):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Provider {safe_provider_id!r} does not declare chat or imagechat support.",
+                    detail=f"Provider {safe_provider_id!r} does not declare chat support.",
                 )
             context_overrides["support_modes"] = support_modes
             context_overrides["provider_id"] = safe_provider_id

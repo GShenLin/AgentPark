@@ -71,6 +71,16 @@ class GraphRunnerRuntime(HostBoundService):
         for entry, config_path, cfg in self._iter_node_config_entries(safe_graph_id):
             if state.stop.is_set():
                 break
+            # Runtime config can clear inflight before persistence, goal evaluation,
+            # and routing finish. The executor owns the node until its future ends;
+            # never recover or dequeue that node during this completion window.
+            with state.active_lock:
+                node_is_running = any(
+                    task.node_id == entry and not task.future.done()
+                    for task in state.active_tasks.values()
+                )
+            if node_is_running:
+                continue
             cfg = self._ensure_node_runtime_ports(safe_graph_id, entry, config_path, cfg)
             if not isinstance(cfg, dict) or not cfg:
                 continue

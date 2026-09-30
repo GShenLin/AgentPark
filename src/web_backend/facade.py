@@ -20,6 +20,8 @@ from .private_network_cors import PrivateNetworkCORSMiddleware
 from .route_registry import ApiRouteRegistry
 from .peer_api import register_peer_routes
 from .knowledge_api import register_knowledge_routes
+from .group_api import register_group_routes
+from .node_sync.routes import register_node_sync_routes
 
 
 class WebBackendFacade:
@@ -44,6 +46,8 @@ class WebBackendFacade:
 
     def register_routes(self) -> None:
         ApiRouteRegistry.register(self.app, self.core)
+        register_group_routes(self.app, self.core)
+        self.node_sync_jobs = register_node_sync_routes(self.app, self.core)
         register_knowledge_routes(self.app, self.core.knowledge_service)
         register_peer_routes(self.app, self.core)
         register_public_gateway_routes(self.app, self.core.public_gateway_api.service)
@@ -86,6 +90,7 @@ class WebBackendFacade:
 
     def _startup_services(self) -> None:
         self.core.knowledge_service.start()
+        self.core.group_delivery.start()
         try:
             recovery = self.core.graph_runtime._recover_node_runtime_state_on_startup()
             if isinstance(recovery, dict):
@@ -129,6 +134,8 @@ class WebBackendFacade:
             print(f"[RestartRecovery] startup failed; checkpoint retained: {e}")
 
     def _shutdown_services(self) -> None:
+        self.node_sync_jobs.cloud.close()
+        self.core.group_delivery.close()
         self.core.knowledge_service.close()
         try:
             self.core.graph_runtime._stop_timer_trigger_scheduler()

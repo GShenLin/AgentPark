@@ -5,13 +5,14 @@ from typing import Any
 
 from src.long_term_memory.store import invalidate_node_memory
 from src.conversation_context.checkpoint import clear_checkpoint
-from src.file_transaction import KeyedTransactionQueue
 from src.file_transaction import append_text
 from src.file_transaction import atomic_write_text
-from src.file_transaction import run_with_interprocess_lock
 from src.file_transaction import touch_file
 
 from .node_memory_archive import enforce_active_memory_limit as _enforce_active_memory_limit_impl
+from .node_memory_conversation import read_conversation
+from .node_memory_transaction import run_memory_transaction as _run_node_memory_transaction
+from .node_memory_transaction import wait_for_memory_transaction
 from .node_memory_active_state import advance_active_memory_state
 from .node_memory_active_state import load_active_memory_state
 from .node_memory_active_state import load_committed_active_memory_state
@@ -36,8 +37,6 @@ from .node_memory_records import write_markdown_records as _write_markdown_recor
 from .node_tool_history import build_tool_call_history_envelope
 from .shared import envelope_text
 
-
-_NODE_MEMORY_QUEUE = KeyedTransactionQueue()
 
 __all__ = [
     "NodeMemoryPersistenceError",
@@ -230,6 +229,8 @@ def _clear_node_memory_unlocked(memory_path: str, messages_path: str) -> int:
         return 0
 
     clear_checkpoint(node_dir)
+    from src.skills.activation_state import clear_active_skills
+    clear_active_skills(node_dir)
 
     paths_to_clear: set[str] = set()
     for date_dir in _iter_archive_date_dirs(node_dir, reverse=False):
@@ -258,6 +259,9 @@ def _clear_node_memory_unlocked(memory_path: str, messages_path: str) -> int:
             )
     if not failures:
         try:
+            sync_index = os.path.join(node_dir, ".sync-index.json")
+            if os.path.exists(sync_index):
+                atomic_write_text(sync_index, "{}\n")
             save_active_memory_state(current["messages_path"], state_from_records([], current["messages_path"]))
         except Exception as exc:
             failures.append(
@@ -617,6 +621,13 @@ def node_memory_paths_for_record(memory_path: str, messages_path: str, record: d
     return current_node_memory_paths(memory_path, messages_path)
 
 
+def load_node_conversation(memory_path: str, messages_path: str, *, running: bool, turn_id: str = "") -> list[dict]:
+    return _run_node_memory_transaction(
+        memory_path, messages_path,
+        lambda: read_conversation(memory_path, messages_path, running=running, turn_id=turn_id),
+    )
+
+
 def read_node_memory_text(memory_path: str, messages_path: str, *, max_chars: int | None = 20000) -> str:
     return _run_node_memory_transaction(
         memory_path,
@@ -884,7 +895,7 @@ def _load_recent_node_memory_records_unlocked(
 def wait_for_node_memory_idle(memory_path: str, messages_path: str) -> None:
     node_dir = _node_memory_dir(memory_path, messages_path)
     if node_dir:
-        _NODE_MEMORY_QUEUE.wait_empty(node_dir)
+        wait_for_memory_transaction(node_dir)
 
 
 def _append_messages_record(
@@ -950,11 +961,3 @@ def _touch_file(path: str) -> None:
 def _read_text(path: str) -> str:
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
-
-
-def _run_node_memory_transaction(memory_path: str, messages_path: str, func):
-    node_dir = _node_memory_dir(memory_path, messages_path)
-    if not node_dir:
-        return func()
-    lock_path = os.path.join(node_dir, ".node-memory.lock")
-    return _NODE_MEMORY_QUEUE.run(node_dir, lambda: run_with_interprocess_lock(lock_path, func))

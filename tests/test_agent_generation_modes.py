@@ -220,56 +220,6 @@ def test_seedream_5_lite_real_model_id_exposes_all_documented_capabilities():
     assert "image_tools" in schema
 
 
-def test_additional_seedream_providers_clone_pro_settings_except_model_and_timeout():
-    import json
-
-    providers = json.loads(
-        (Path(__file__).parents[1] / "config" / "modelProvider.json").read_text(encoding="utf-8")
-    )["providers"]
-    base = providers["doubao-seedream-5"]
-    expected = {
-        "doubao-seedream-5-lite": {
-            "model": "doubao-seedream-5-0-260128",
-            "timeoutMs": 120000,
-        },
-        "doubao-seedream-4-0-250828": {
-            "model": "doubao-seedream-4-0-250828",
-            "timeoutMs": 120000,
-        },
-    }
-
-    for provider_id, expected_fields in expected.items():
-        provider = providers[provider_id]
-        assert provider["model"] == expected_fields["model"]
-        assert provider["timeoutMs"] == expected_fields["timeoutMs"]
-        assert {key: value for key, value in provider.items() if key not in {"model", "timeoutMs"}} == {
-            key: value for key, value in base.items() if key not in {"model", "timeoutMs"}
-        }
-
-
-def test_seedream_providers_resolve_plain_text_to_image_generation():
-    import json
-
-    from nodes.agent_node_modes import resolve_input_support_mode
-
-    providers = json.loads(
-        (Path(__file__).parents[1] / "config" / "modelProvider.json").read_text(encoding="utf-8")
-    )["providers"]
-    message = {"role": "user", "parts": [{"type": "text", "text": "draw a girl"}]}
-
-    for provider_id in (
-        "doubao-seedream-4-5-251128",
-        "doubao-seedream-5",
-        "doubao-seedream-5-lite",
-        "doubao-seedream-4-0-250828",
-    ):
-        support_modes = providers[provider_id]["supportmode"]
-        assert support_modes == ["image_generation"]
-        assert providers[provider_id]["imageGenerationTimeoutMs"] == 180000
-        assert providers[provider_id]["imageGenerationMaxRetries"] == 0
-        assert resolve_input_support_mode(support_modes, message) == "image_generation"
-
-
 def test_gemini_agent_forwards_image_mode_options_and_returns_resource_dict():
     from src.providers.gemini_agent import GeminiAgent
 
@@ -296,7 +246,7 @@ def test_gemini_agent_forwards_image_mode_options_and_returns_resource_dict():
     }
 
 
-def test_gemini_image_chat_requests_and_preserves_text_and_images(monkeypatch):
+def test_gemini_chat_inline_image_requests_and_preserves_text_and_images(monkeypatch):
     import json
 
     from src.providers.gemini_agent import GeminiAgent
@@ -324,10 +274,11 @@ def test_gemini_image_chat_requests_and_preserves_text_and_images(monkeypatch):
                 }]
             }).encode("utf-8")
 
-    def fake_urlopen(request, timeout):
-        captured["payload"] = json.loads(request.data.decode("utf-8"))
-        captured["timeout"] = timeout
-        return Response()
+    def curl_request(self, **request):
+        from src.providers.curl_transport import CurlResponse
+        captured["payload"] = json.loads(request["body"])
+        captured["timeout"] = request["timeout_sec"]
+        return CurlResponse(Response().read().decode("utf-8"), 200)
 
     class Fake:
         tool_declarations = []
@@ -360,16 +311,16 @@ def test_gemini_image_chat_requests_and_preserves_text_and_images(monkeypatch):
         def Message(self, *_args, **_kwargs):
             return None
 
-    monkeypatch.setattr("src.providers.gemini_agent.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("src.providers.gemini_agent.CurlHttpTransport.request", curl_request)
 
-    result = GeminiAgent.Send(Fake(), mode="imagechat")
+    result = GeminiAgent.Send(Fake(), mode="chat")
 
-    assert captured["payload"]["generationConfig"] == {"responseModalities": ["TEXT", "IMAGE"]}
+    assert "generationConfig" not in captured["payload"]
     assert captured["filename_prefix"] == "generated_image"
     assert result == {"response": "Here is the image.", "image_path": "chat-image.png"}
 
 
-def test_gemini_image_chat_stream_preserves_inline_images(monkeypatch):
+def test_gemini_chat_inline_image_stream_preserves_inline_images(monkeypatch):
     import json
 
     from src.providers.gemini_stream_runtime import GeminiStreamRuntime
@@ -405,7 +356,7 @@ def test_gemini_image_chat_stream_preserves_inline_images(monkeypatch):
         def _emit_stream_text(self, *_args):
             return None
 
-    monkeypatch.setattr("src.providers.gemini_stream_runtime.urllib.request.urlopen", lambda *_args, **_kwargs: Response())
+    monkeypatch.setattr("src.providers.gemini_stream_runtime.CurlHttpTransport.stream_sse_data", lambda *_args, **_kwargs: iter([event.decode("utf-8")]))
 
     result = GeminiStreamRuntime(Host())._stream_generate_content_once(
         url="https://example.test",

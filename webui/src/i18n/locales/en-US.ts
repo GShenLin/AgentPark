@@ -1,12 +1,14 @@
 import type { LocaleDefinition } from '../types'
 import { longMemoryEn } from './longTermMemory'
 import { conversationEn } from './conversationContext'
+import { graphBrowserEn } from './graphBrowser'
 
 const enUS: LocaleDefinition = {
   code: 'en-US',
   label: 'English',
   shortLabel: 'EN',
   messages: {
+    ...graphBrowserEn,
     "settings.harness": "Harness",
     "harness.description": "Manage agent runtimes. Each Harness has its own node and uses your shared Provider and Model configuration.",
     "harness.installNote": "Most Harnesses require Node.js and npm. Hermes Agent requires Git and installs into a dedicated Python environment. New installations are workspace managed. Upgrades run in place and preserve sessions and configuration. Uninstall removes only the AgentPark copy.",
@@ -27,6 +29,7 @@ const enUS: LocaleDefinition = {
     "harness.reinstall": "Reinstall",
     "harness.upgrade": "Upgrade",
     "harness.latestVersion": "Available version",
+    "harness.package": "Package",
     "harness.updateAvailable": "An update is available",
     "harness.upToDate": "No updates available",
     "harness.updateCheckFailed": "Update check failed:",
@@ -208,6 +211,10 @@ const enUS: LocaleDefinition = {
     'board.lastMessage': 'Last message',
     'board.resizeConfig': 'Drag to resize the Config panel',
     'defaults.boardLayout': 'Board Layout',
+    'defaults.agentPanel': 'Agent Popup',
+    'defaults.agentPanelWidth': 'Popup Width (px)',
+    'defaults.agentPanelHeight': 'Popup Height (px)',
+    'defaults.agentPanelSizeHelp': 'Size of the popup opened by clicking an Agent. Applied on save. Leave blank for defaults; limited to the available area.',
     'defaults.gridCellWidth': 'Grid Cell Width',
     'defaults.gridCellHeight': 'Grid Cell Height',
     'defaults.nodeWidth': 'Default Node Width',

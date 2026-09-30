@@ -20,7 +20,11 @@ class _GraphApi:
         return {"graphs": [{"id": "test", "name": "Test"}]}
 
 
-def test_workspace_bootstrap_uses_true_startup_graph_and_returns_mount_snapshot():
+def test_workspace_bootstrap_uses_true_startup_graph_and_returns_mount_snapshot(monkeypatch):
+    monkeypatch.setattr(
+        "src.workspace_settings.load_workspace_settings",
+        lambda: {"agentPanel": {"width": 1280, "height": 960}},
+    )
     graph_api = _GraphApi()
     request = object()
     core = SimpleNamespace(
@@ -70,4 +74,5 @@ def test_workspace_bootstrap_uses_true_startup_graph_and_returns_mount_snapshot(
         "nodeHeight": 250,
     }
     assert payload["mobile_pcs"] == [{"id": "phone"}]
+    assert payload["agent_panel"] == {"width": 1280, "height": 960}
     assert payload["user_interactions"] == [{"request_id": "ask-1"}]

@@ -313,7 +313,7 @@ def test_rename_node_instance_preserves_memory_runtime_state():
         merged = node_config_service.read_strict(source_config_path)
         merged.update(
             {
-                "state": "working",
+                "state": "stop",
                 "pending": [{"id": "queued"}],
                 "pending_count": 1,
                 "last_message": "runtime preview",
@@ -338,7 +338,7 @@ def test_rename_node_instance_preserves_memory_runtime_state():
             assert key not in raw_config
         assert raw_config["node_id"] == renamed_id
         assert raw_config["name"] == "Renamed"
-        assert runtime_state["state"] == "working"
+        assert runtime_state["state"] == "stop"
         assert runtime_state["pending_count"] == 1
         assert runtime_state["last_message"] == "runtime preview"
         assert merged_after["node_id"] == renamed_id
@@ -994,7 +994,7 @@ def test_delete_node_instance_reports_undo_initialization_failure(monkeypatch, t
     assert created.status_code == 200
     node_dir = tmp_path / "memories" / "ut_delete_init_fail" / "delete_init_fail"
 
-    def fail_begin(_kind, _metadata):
+    def fail_begin(_kind, _metadata, *, for_rollback=False):
         raise PermissionError("undo directory is locked")
 
     monkeypatch.setattr(deletion_undo_store, "begin", fail_begin)

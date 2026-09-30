@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ProviderInfo } from '../../api'
 import type { ConversationContextSettings } from '../../conversationContextSettings'
 import { t } from '../../i18n'
-import FormSelect from '../FormSelect.vue'
+import AgentInferenceProfileSelect from './AgentInferenceProfileSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 
-const props = defineProps<{ data: Record<string, unknown>; defaults?: ConversationContextSettings; providers: ProviderInfo[] }>()
+const props = defineProps<{ data: Record<string, unknown>; defaults?: ConversationContextSettings }>()
 const emit = defineEmits<{ 'update:data': [value: Record<string, unknown>] }>()
 const effective = computed(() => props.defaults ? { ...props.defaults, ...props.data } : null)
-const providers = computed(() => props.providers.filter(p => p.supportmode.includes('chat') || p.supportmode.includes('imagechat')).map(p => p.id))
 const fields = ['input_tokens', 'retain_tokens', 'summary_tokens'] as const
 function setNumber(key: keyof ConversationContextSettings, value: string) {
   const next = { ...props.data }
@@ -32,13 +30,10 @@ function setNumber(key: keyof ConversationContextSettings, value: string) {
         <small>{{ t(`conversation.${key}Help`) }}</small>
       </label>
       <label>
-        <span>{{ t('conversation.provider') }}</span>
-        <FormSelect :model-value="String(effective.provider)" @update:model-value="emit('update:data', { ...data, provider: $event })">
-          <option value="">{{ t('conversation.providerDefault') }}</option>
-          <option v-if="effective.provider && !providers.includes(String(effective.provider))" :value="String(effective.provider)">{{ effective.provider }} — {{ t('longMemory.providerUnavailable') }}</option>
-          <option v-for="id in providers" :key="id" :value="id">{{ id }}</option>
-        </FormSelect>
-        <small>{{ t('conversation.providerHelp') }}</small>
+        <span>{{ t('conversation.profile_id') }}</span>
+        <AgentInferenceProfileSelect :model-value="String(effective.profile_id)"
+          @update:model-value="emit('update:data', { ...data, profile_id: $event })" />
+        <small>{{ t('conversation.profileHelp') }}</small>
       </label>
     </div>
   </section>

@@ -8,7 +8,6 @@ import { t } from '../i18n'
 import FormCheckbox from './FormCheckbox.vue'
 import FormSelect from './FormSelect.vue'
 import FormTextInput from './FormTextInput.vue'
-import UserInteractionCustomFrame from './UserInteractionCustomFrame.vue'
 
 const props = defineProps<{
   request: UserInteractionRequest
@@ -24,7 +23,6 @@ const emit = defineEmits<{
 const values = reactive<Record<string, unknown>>({})
 const selectedFiles = reactive<Record<string, File[]>>({})
 const uploaded = reactive<Record<string, UploadedFileItem[]>>({})
-const customValues = reactive<Record<string, Record<string, unknown>>>({})
 const fields = computed(() => props.request.schema?.fields || [])
 const graphLabel = computed(() => String(props.request.agent?.graph_id || '').trim())
 const nodeLabel = computed(() => String(props.request.agent?.node_name || props.request.agent?.node_id || '').trim())
@@ -37,7 +35,6 @@ function defaultValue(field: UserInteractionField) {
   if (field.default !== undefined) return field.default
   if (field.type === 'checkbox') return false
   if (field.type === 'multiselect') return []
-  if (field.type === 'custom_html') return undefined
   return ''
 }
 
@@ -45,14 +42,12 @@ function resetForm() {
   for (const key of Object.keys(values)) delete values[key]
   for (const key of Object.keys(selectedFiles)) delete selectedFiles[key]
   for (const key of Object.keys(uploaded)) delete uploaded[key]
-  for (const key of Object.keys(customValues)) delete customValues[key]
   for (const field of fields.value) {
     const key = fieldKey(field)
     if (!key) continue
     values[key] = defaultValue(field)
     selectedFiles[key] = []
     uploaded[key] = []
-    customValues[key] = {}
   }
 }
 
@@ -83,19 +78,10 @@ function isMultiSelected(field: UserInteractionField, optionValue: string) {
   return Array.isArray(current) && current.includes(optionValue)
 }
 
-function mergeCustomValue(field: UserInteractionField, value: Record<string, unknown>) {
-  const key = fieldKey(field)
-  customValues[key] = { ...(customValues[key] || {}), ...value }
-}
-
 async function buildResponse() {
   const filesPayload: Record<string, UploadedFileItem[]> = {}
   const valuesPayload: Record<string, unknown> = { ...values }
-  for (const [key, value] of Object.entries(customValues)) {
-    if (Object.keys(value || {}).length > 0) valuesPayload[key] = value
-  }
   for (const field of fields.value) {
-    if (field.type === 'custom_html' && valuesPayload[fieldKey(field)] === undefined) delete valuesPayload[fieldKey(field)]
     if (field.type !== 'file') continue
     const key = fieldKey(field)
     const result = await uploadFiles(selectedFiles[key] || [], `interaction-${props.request.id}-${key}`)
@@ -104,7 +90,6 @@ async function buildResponse() {
   }
   return {
     values: valuesPayload,
-    custom_values: { ...customValues },
     files: filesPayload,
     submitted_at: new Date().toISOString(),
   }
@@ -117,11 +102,6 @@ async function submitForm() {
   } catch (error) {
     emit('error', error instanceof Error ? error.message : String(error))
   }
-}
-
-async function submitCustomValue(field: UserInteractionField, value: Record<string, unknown>) {
-  mergeCustomValue(field, value)
-  await submitForm()
 }
 
 watch(() => props.request.id, resetForm, { immediate: true })
@@ -149,7 +129,6 @@ watch(() => props.request.id, resetForm, { immediate: true })
       </div>
       <FormCheckbox v-else-if="field.type === 'checkbox'" :model-value="Boolean(values[field.id])" @update:model-value="values[field.id] = $event" />
       <input v-else-if="field.type === 'file'" type="file" :accept="field.accept || undefined" :multiple="field.multiple" :required="field.required" @change="setFiles(field, $event)" />
-      <UserInteractionCustomFrame v-else-if="field.type === 'custom_html'" :field="field" :request-id="request.id" @change="mergeCustomValue(field, $event)" @submit="submitCustomValue(field, $event)" @error="emit('error', $event)" />
     </label>
   </div>
 

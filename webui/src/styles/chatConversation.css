@@ -1,0 +1,111 @@
+/* Message structure and disclosure controls; no visibility or behavior changes. */
+#app .chat-appearance .turn-group,
+#app .chat-appearance .feed-item,
+#app .chat-appearance .mobile-memory-card {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#app .chat-appearance .turn-group .turn-head,
+#app .chat-appearance .turn-group.expanded .turn-head {
+  border-radius: 0;
+  border-bottom: 1px solid #ededed;
+  background: #fff;
+  box-shadow: none;
+  color: var(--chat-muted);
+}
+#app .chat-appearance .turn-toggle { padding: 10px 0; gap: 8px; }
+#app .chat-appearance .turn-label { color: #737373; font-size: 11px; font-weight: 500; }
+#app .chat-appearance .turn-summary { color: #737373; font-family: var(--chat-font); font-size: 12px; }
+#app .chat-appearance .turn-caret { color: #8a8a8a; }
+#app .chat-appearance .turn-time { color: #8a8a8a; font-family: var(--chat-font); font-size: 10px; }
+#app .chat-appearance .turn-actions { margin-right: 0; }
+#app .chat-appearance .turn-content,
+#app .chat-appearance .turn-group.compact .turn-content { padding: 20px 0 4px; gap: 20px; }
+#app .chat-appearance .turn-message {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#app .chat-appearance .turn-message.role-user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: 88%;
+  border: 0;
+  border-radius: 22px;
+  padding: 10px 18px;
+  background: #f3f3f3;
+}
+#app .chat-appearance .turn-message-head,
+#app .chat-appearance .feed-head,
+#app .chat-appearance .mobile-memory-card-head {
+  padding: 0 0 8px;
+  border: 0;
+  background: transparent;
+  color: #737373;
+  font-family: var(--chat-font);
+  font-size: 12px;
+  font-weight: 500;
+}
+#app .chat-appearance .turn-message-head span:last-child,
+#app .chat-appearance .feed-time,
+#app .chat-appearance .mobile-memory-card-head span:last-child { color: #8a8a8a; font-size: 10px; }
+#app .chat-appearance .feed-parts { min-width: 0; padding: 0; gap: 12px; }
+#app .chat-appearance .feed-actions { align-self: flex-start; margin-top: 0; }
+#app .chat-appearance .role-user .feed-actions { align-self: flex-end; }
+#app .chat-appearance .message-actions { gap: 2px; }
+#app .chat-appearance .message-actions button {
+  background: transparent;
+  border-color: transparent;
+  color: #858585;
+  border-radius: 8px;
+}
+#app .chat-appearance .message-actions button:hover { background: #eee; color: #333; }
+#app .chat-appearance .message-actions button.danger-button:hover { color: #ad3333; background: #fff0f0; }
+#app .chat-appearance .message-actions svg { width: 15px; height: 15px; }
+#app .chat-appearance .progress-group,
+#app .chat-appearance .metadata-disclosure {
+  min-width: 0;
+  border: 1px solid #e9e9e9;
+  border-radius: 12px;
+  background: #fafafa;
+}
+#app .chat-appearance .progress-group .progress-group-head,
+#app .chat-appearance .metadata-disclosure .metadata-disclosure-head {
+  background: #fafafa;
+  color: #666;
+  border-radius: 11px;
+  border-color: #e9e9e9;
+  box-shadow: none;
+  font-weight: 500;
+}
+#app .chat-appearance .progress-group-head:hover,
+#app .chat-appearance .metadata-disclosure-head:hover { background: #f2f2f2; }
+#app .chat-appearance .progress-group-role { font-weight: 500; }
+#app .chat-appearance .progress-group-count,
+#app .chat-appearance .progress-group-time,
+#app .chat-appearance .progress-group-caret,
+#app .chat-appearance .metadata-disclosure-caret,
+#app .chat-appearance .metadata-disclosure-head > span:last-child { color: #818181; }
+#app .chat-appearance .progress-message { background: #fff; border-color: #e5e5e5; border-left-width: 1px; }
+#app .chat-appearance .progress-message-head { color: #666; border-color: #eee; }
+#app .chat-appearance .metadata-disclosure-content { padding: 12px; }
+#app .chat-appearance .turn-pending { color: #737373; border-color: #ddd; background: #fafafa; }
+#app .chat-appearance .feed-structured,
+#app .chat-appearance .feed-tool-details pre,
+#app .chat-appearance .response-raw pre { background: #f3f3f3; color: #333; font-family: var(--chat-mono); }
+#app .chat-appearance .feed-tool-details summary,
+#app .chat-appearance .response-raw summary { color: #666; }
+#app .chat-appearance .feed-tool-details[open] > summary { background: #f0f0f0; box-shadow: none; }
+#app .chat-appearance .feed-resource-link,
+#app .chat-appearance .response-source { color: var(--chat-link); background: #f3f6fa; border-color: #dce5f0; }
+#app .chat-appearance .feed-resource-uri { color: #737373; }
+
+@media (max-width: 760px) {
+  #app .chat-appearance .turn-message.role-user { max-width: 94%; padding: 10px 14px; }
+  #app .chat-appearance .turn-group.compact .turn-toggle { padding: 8px 0; }
+  #app .chat-appearance .turn-group.compact .turn-time { padding-left: 19px; font-size: 10px; }
+  #app .chat-appearance .turn-group.compact .turn-message-head { font-size: 11px; }
+}

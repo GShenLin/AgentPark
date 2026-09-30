@@ -27,7 +27,9 @@ apply_patch_declaration = {
         "name": "apply_patch",
         "description": (
             "Apply a Codex-style patch after verifying every declared critical addition or replacement "
-            "against its +/- lines. required_changes is mandatory for both direct and workspace mutations."
+            "against its +/- lines. This checked entrypoint, also used by workspace_exec, requires "
+            "required_changes. The system_tools direct apply_patch entrypoint accepts patch only "
+            "plus optional encoding and return_mode."
         ),
         "parameters": {
             "type": "object",

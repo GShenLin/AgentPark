@@ -14,6 +14,8 @@ DESCRIPTORS = (
                       "https://docs.openclaw.ai/cli/agent", "persistent"),
     HarnessDescriptor("deepseek_harness", "DeepSeek Harness", "deepseek_harness_node", "@deepseek-ai/dsh", "dsh", "acp",
                       "https://github.com/deepseek-ai/deepseek-harness", "persistent"),
+    HarnessDescriptor("minimax_code", "MiniMax Code", "minimax_code_node", "@minimax-ai/code", "mcode", "acp",
+                      "https://github.com/MiniMax-AI/minimax-code", "persistent"),
     HarnessDescriptor("pi", "Pi", "pi_node", "@earendil-works/pi-coding-agent", "pi", "json-stream",
                       "https://github.com/earendil-works/pi", "persistent"),
     HarnessDescriptor("hermes_agent", "Hermes Agent", "hermes_agent_node", "hermes-agent", "hermes", "python-sdk",

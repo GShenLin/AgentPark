@@ -1,12 +1,11 @@
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import base64
 import json
 import mimetypes
 import os
 import random
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from datetime import datetime
 
 from src.providers.provider_pressure import acquire_provider_pressure
@@ -94,12 +93,7 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
             "Content-Type": "application/json",
             "x-goog-api-key": self.config["apiKey"],
         }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
+        req = dict(url=url, body=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
 
         max_retries = int(self.config.get("maxRetries", 2))
         retry_delay = float(self.config.get("retryDelaySec", 1))
@@ -109,11 +103,11 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
         for attempt in range(max_retries + 1):
             try:
                 with acquire_provider_pressure(self):
-                    with urllib.request.urlopen(req, timeout=timeout) as response:
-                        response_data = response.read().decode("utf-8")
-                        if response.status != 200:
-                            last_error = f"Error: {response.status} - {response_data}"
-                            break
+                    response = CurlHttpTransport().request(**req, timeout_sec=timeout).raise_for_status()
+                    response_data = response.content.decode("utf-8")
+                    if response.status_code != 200:
+                        last_error = f"Error: {response.status_code} - {response_data}"
+                        break
 
                 result = json.loads(response_data)
                 candidates = result.get("candidates") or []
@@ -147,9 +141,9 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
                     "action": "inspect_image",
                     "status": "success",
                 }
-            except urllib.error.HTTPError as e:
-                error_content = e.read().decode("utf-8")
-                last_error = f"HTTP Error: {e.code} - {error_content}"
+            except CurlHttpError as e:
+                error_content = e.content.decode("utf-8")
+                last_error = f"HTTP Error: {e.status_code} - {error_content}"
             except Exception as e:
                 last_error = str(e)
 
@@ -202,9 +196,9 @@ class GeminiImageGeneration(ProviderRuntimeEventMixin, HostBoundService):
     def _read_remote_image_part(self, url: str):
         timeout = self.config.get("timeoutMs", 60000) / 1000
         with acquire_provider_pressure(self):
-            with urllib.request.urlopen(url, timeout=max(1, float(timeout or 60))) as response:
-                raw = response.read()
-                mime_type = response.headers.get_content_type() or mimetypes.guess_type(url)[0] or "image/png"
+            response = CurlHttpTransport().request(url=url, timeout_sec=max(1, float(timeout or 60))).raise_for_status()
+            raw = response.content
+            mime_type = response.headers.get("content-type", "").split(";", 1)[0].strip() or mimetypes.guess_type(url)[0] or "image/png"
         if not raw:
             raise ValueError(f"reference image URL returned no data: {url}")
         data_b64 = base64.b64encode(raw).decode("utf-8")

@@ -53,7 +53,11 @@ def test_support_mode_is_resolved_from_provider_and_input_not_node_config():
     from nodes.agent_node_modes import resolve_input_support_mode
 
     assert resolve_input_support_mode(["audio_generation"], {"parts": []}) == "audio_generation"
-    assert resolve_input_support_mode(["imagechat", "chat"], {"parts": []}) == "imagechat"
+    assert resolve_input_support_mode(["chat"], {"parts": []}) == "chat"
+    assert resolve_input_support_mode(
+        ["chat", "image_generation"],
+        {"parts": [{"type": "resource", "resource": {"kind": "image", "uri": "file:///reference.png"}}]},
+    ) == "chat"
     assert resolve_input_support_mode(
         ["chat", "image_generation"],
         {"parts": [{"type": "meta", "meta": {"support_mode": "image_generation"}}]},

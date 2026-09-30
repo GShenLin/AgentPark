@@ -73,8 +73,8 @@ class OpenAIAgent(ToolFeedbackMixin, ServiceHost, BaseAgent):
         self.config = self._read_provider_config_from_file()
         if str(mode).strip().lower() == "image_generation":
             return OpenAIImageGeneration(self).send(mode_options)
-        if str(mode or "chat").strip().lower() not in {"chat", "imagechat"}:
-            raise ValueError("OpenAI agent supports chat, imagechat and image_generation modes.")
+        if str(mode or "chat").strip().lower() != "chat":
+            raise ValueError("OpenAI agent supports chat and image_generation modes.")
 
         self._inject_unknown_tool_outcomes()
         effort_source = reasoning_effort

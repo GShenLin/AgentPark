@@ -1,0 +1,45 @@
+/* Live output is independent of the collapsed, lazily loaded Process history. */
+#app .chat-appearance :is(.live-message, .mobile-live-message) {
+  min-width: 0;
+  background: #fff;
+  border-color: var(--chat-line);
+  color: var(--chat-ink);
+}
+
+#app .chat-appearance :is(.live-head, .mobile-live-head) {
+  background: var(--chat-soft);
+  border-color: var(--chat-line);
+  color: var(--chat-ink);
+}
+
+#app .chat-appearance :is(.live-role, .mobile-live-role, .live-body, .mobile-live-body, .live-activity-body) {
+  color: var(--chat-ink);
+}
+
+#app .chat-appearance :is(.live-status, .mobile-live-status, .live-section-label, .mobile-live-section-label, .live-activity-label, .live-activity-status, .live-activity-web-searching) {
+  color: var(--chat-muted);
+}
+
+#app .chat-appearance :is(.live-section, .mobile-live-section, .live-activity-block) {
+  background: #fff;
+  border-color: var(--chat-line);
+}
+
+#app .chat-appearance :is(.live-section.thinking, .mobile-live-section.thinking, .live-activity-arguments) {
+  background: var(--chat-soft);
+  border-color: var(--chat-line);
+  color: var(--chat-ink);
+}
+
+#app .chat-appearance :is(.live-markdown, .mobile-live-markdown) pre {
+  background: var(--chat-soft);
+  color: var(--chat-ink);
+}
+
+#app .chat-appearance :is(.live-markdown, .mobile-live-markdown, .live-activity-sources) a {
+  color: var(--chat-link);
+}
+
+#app .chat-appearance .live-activity-error {
+  color: #b42318;
+}

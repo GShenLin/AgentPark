@@ -369,7 +369,8 @@ apply_patch_declaration = {
         "name": "apply_patch",
         "description": (
             "Apply a Codex-style patch to local files. The patch string must use "
-            "*** Begin Patch / *** End Patch and Add File, Update File, Delete File sections."
+            "*** Begin Patch / *** End Patch and Add File, Update File, Delete File sections. "
+            "This standalone tool does not accept required_changes; that field belongs to workspace_exec patches."
         ),
         "parameters": {
             "type": "object",

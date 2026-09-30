@@ -1,0 +1,5 @@
+dependencies:
+  tools:
+    - type: tool
+      value: computer_use_tools
+      description: Windows observation and input tools loaded only with this skill

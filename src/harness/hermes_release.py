@@ -1,11 +1,11 @@
 """Official Hermes release identity (calendar tag and Python package version are distinct)."""
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 from dataclasses import dataclass
 import json
 import re
 import tomllib
-import urllib.request
 
 from .updates import version_key
 
@@ -19,9 +19,9 @@ class HermesRelease:
 
 
 def read_url(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "AgentPark-Harness", "Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        data = response.read(2 * 1024 * 1024 + 1)
+    request = dict(url=url, headers={"User-Agent": "AgentPark-Harness", "Accept": "application/json"})
+    response = CurlHttpTransport().request(**request, timeout_sec=20, max_response_bytes=2 * 1024 * 1024 + 1).raise_for_status()
+    data = response.content[:2 * 1024 * 1024 + 1]
     if len(data) > 2 * 1024 * 1024:
         raise ValueError("Hermes release metadata exceeds 2 MiB.")
     return data

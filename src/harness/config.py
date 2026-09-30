@@ -31,6 +31,7 @@ class CliRunRequest:
     state_dir: Path
     cancel_source: object
     reasoning_effort: str = ""
+    permission_mode: str = "auto"
 
 
 def load_cli_request(harness_id: str, context: HarnessContext) -> CliRunRequest:
@@ -41,13 +42,16 @@ def load_cli_request(harness_id: str, context: HarnessContext) -> CliRunRequest:
     if not isinstance(config, dict):
         raise ValueError("Harness node config must be a JSON object.")
     values = {**context.values, **config}
+    permission_mode = values.get("permission_mode", "auto") if harness_id == "minimax_code" else "auto"
+    if permission_mode not in ("default", "auto", "bypassPermissions"):
+        raise ValueError("MiniMax Code permission_mode must be default, auto, or bypassPermissions.")
     provider = values.get("provider_id", "")
     model = values.get("model", "")
     if not isinstance(provider, str) or not provider.strip() or not isinstance(model, str):
         raise ValueError("Harness provider_id and model must be strings; provider_id is required.")
     binding = ProviderBinding.resolve(provider.strip(), model.strip())
     reasoning_effort = ""
-    if harness_id in {"hermes_agent", "openclaw"}:
+    if harness_id in {"hermes_agent", "openclaw", "minimax_code"}:
         from .reasoning_config import validate_reasoning_effort
         reasoning_effort = validate_reasoning_effort(values.get("reasoning_effort", ""), binding.request_config())
     raw_cwd = values.get("working_path", "")
@@ -71,4 +75,5 @@ def load_cli_request(harness_id: str, context: HarnessContext) -> CliRunRequest:
     state_dir = resolve_state_directory(
         harness_dir, previous_binding=[binding.provider_id, binding.model_id, cwd, instruction])
     return CliRunRequest(binding, cwd, instruction, float(timeout), state_dir,
-                         context.values.get("cancel_event") or context.values.get("cancel_check"), reasoning_effort)
+                         context.values.get("cancel_event") or context.values.get("cancel_check"), reasoning_effort,
+                         permission_mode)

@@ -1,0 +1,31 @@
+{
+  "scripts": [
+    {
+      "id": "image_gen",
+      "name": "Image generation",
+      "description": "Generate or edit an image through the current AgentPark OpenAI provider and save it as a local image file.",
+      "entry": "scripts/agentpark_image_gen.py",
+      "cwd": ".",
+      "timeoutSeconds": 300,
+      "allowWrite": true,
+      "enabled": true,
+      "argsSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Detailed image generation or editing prompt."
+          },
+          "referenced_image_paths": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 5,
+            "description": "Optional local images to edit. Omit for new image generation."
+          }
+        },
+        "required": ["prompt"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -4,7 +4,6 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from src.runtime_environment import get_runtime_environment
 
 
 @dataclass
@@ -12,38 +11,6 @@ class PipeReader:
     thread: threading.Thread
     chunks: list[bytes]
     errors: list[BaseException]
-
-
-def console_process_options(command: str) -> tuple[list[str], dict]:
-    environment = get_runtime_environment()
-    child_env = os.environ.copy()
-    child_env.update(environment.variables())
-    if environment.is_windows:
-        return (
-            [environment.shell_executable, "-NoProfile", "-Command", powershell_utf8_script(command)],
-            {"env": child_env},
-        )
-    return (
-        [environment.shell_executable, "-c", command],
-        {"env": child_env, "start_new_session": True},
-    )
-
-
-def powershell_utf8_script(command: str) -> str:
-    return (
-        "$__AgentParkUtf8 = [System.Text.UTF8Encoding]::new($false); "
-        "[Console]::InputEncoding = $__AgentParkUtf8; "
-        "[Console]::OutputEncoding = $__AgentParkUtf8; "
-        "$OutputEncoding = $__AgentParkUtf8; "
-        "& {\n"
-        f"{str(command)}\n"
-        "if (-not $?) { "
-        "if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; "
-        "exit 1 "
-        "}\n"
-        "}\n"
-        "exit 0"
-    )
 
 
 def terminate_process(proc: subprocess.Popen | None) -> None:

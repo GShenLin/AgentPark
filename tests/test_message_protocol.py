@@ -1,9 +1,35 @@
+import pytest
+
+from src.message_protocol import build_resource_part
 from src.message_protocol import envelope_text
 from src.message_protocol import normalize_envelope
 from src.message_protocol import normalize_message_envelope
 from src.message_protocol import ResourcePart
 from src.message_protocol import TextPart
 from src.message_protocol import ToolCallPart
+
+
+@pytest.mark.parametrize("shape", ["typed", "nested", "flat", "typed-flat"])
+def test_resource_identity_survives_normalization_and_typed_roundtrip(shape):
+    resource = {"id": "attachment-1", "uri": "file://report.pdf", "kind": "doc",
+                "mime": "application/pdf", "name": "report.pdf", "source": "upload",
+                "metadata": {"size": 123}}
+    part = {"resource": resource} if shape in {"typed", "nested"} else dict(resource)
+    if shape in {"typed", "typed-flat"}:
+        part["type"] = "resource"
+    envelope = normalize_envelope({"id": "message-1", "role": "user", "parts": [part]})
+    assert envelope["parts"] == [{"type": "resource", "resource": resource}]
+    assert normalize_envelope(envelope) == envelope
+    assert normalize_message_envelope(envelope).to_dict() == envelope
+    assert resource["id"] == "attachment-1"
+
+
+def test_new_resources_get_distinct_ids_that_are_preserved_after_creation():
+    first = build_resource_part(uri="file://report.pdf")
+    second = build_resource_part(uri="file://report.pdf")
+    assert first["resource"]["id"] != second["resource"]["id"]
+    envelope = normalize_envelope({"parts": [first]})
+    assert envelope["parts"][0] == first
 
 
 def test_tool_call_part_preserves_lifecycle_fields():
@@ -113,7 +139,7 @@ def test_envelope_text_marks_empty_tool_call_parts_explicitly():
     assert "result_chars=0" in text
 
 
-def test_envelope_text_does_not_render_truncated_preview_as_tool_result():
+def test_envelope_text_renders_saved_head_and_tail_for_truncated_tool_result():
     text = envelope_text(
         {
             "role": "tool",
@@ -124,6 +150,7 @@ def test_envelope_text_does_not_render_truncated_preview_as_tool_result():
                     "name": "read_file",
                     "status": "completed",
                     "result_preview": '{"content": "partial',
+                    "result_tail_preview": 'tail content"}',
                     "result_chars": 4096,
                     "result_preview_truncated": True,
                 }
@@ -131,6 +158,7 @@ def test_envelope_text_does_not_render_truncated_preview_as_tool_result():
         }
     )
 
-    assert "partial" not in text
-    assert "result_preview omitted from markdown" in text
+    assert 'result_preview(partial)={"content": "partial' in text
+    assert 'result_tail_preview(partial)=tail content"}' in text
+    assert "result_preview omitted from markdown" not in text
     assert "result_preview_truncated=true" in text

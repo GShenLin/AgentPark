@@ -139,7 +139,7 @@ def test_tool_call_execution_serializes_only_at_explicit_boundary():
         func_name="echo_tool",
         call_id="call-1",
         cleaned_result="echo:hello",
-        image_data=None,
+        images=(),
         status="completed",
         error=None,
         diagnostics=("diag",),
@@ -149,7 +149,7 @@ def test_tool_call_execution_serializes_only_at_explicit_boundary():
         "func_name": "echo_tool",
         "call_id": "call-1",
         "cleaned_result": "echo:hello",
-        "image_data": None,
+        "images": [],
         "status": "completed",
         "error": None,
         "diagnostics": ["diag"],
@@ -926,7 +926,7 @@ def test_doubao_responses_continuation_includes_tool_image_data():
             func_name="capture_screenshot",
             call_id="call-1",
             cleaned_result='{"status":"success","base64_image":"<base64_image_data_truncated>"}',
-            image_data={"base64": "YWJj", "path": "", "mime_type": "image/png"},
+            images=({"base64": "YWJj", "path": "", "mime_type": "image/png"},),
         )
     ]
 

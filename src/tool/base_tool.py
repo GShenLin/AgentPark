@@ -198,7 +198,6 @@ class BaseTool:
                 tool_result = build_user_stopped_result(tool_name=call.name)
             processed = process_tool_result_outcome(tool_result.model_output())
             cleaned_result = processed.cleaned_result
-            image_data = processed.image_data
             status = tool_result.status
             error = tool_result.error
             finish_checkpoint = getattr(self.agent, "_record_tool_call_finished", None)
@@ -221,7 +220,7 @@ class BaseTool:
                 func_name=call.name,
                 call_id=call.call_id,
                 cleaned_result=model_output,
-                image_data=image_data,
+                images=processed.images,
                 status=status,
                 error=error,
                 diagnostics=processed.diagnostics,
@@ -271,12 +270,10 @@ class BaseTool:
             attempts += 1
 
     def _send_with_optional_kwargs(self, tools=None, run_tools=None):
-        kwargs = {}
-        if "tools" in self.agent.Send.__code__.co_varnames:
-            kwargs["tools"] = tools
-        if run_tools is not None and "run_tools" in self.agent.Send.__code__.co_varnames:
-            kwargs["run_tools"] = run_tools
-        return self.agent.Send(**kwargs) if kwargs else self.agent.Send()
+        from src.providers.agent_config import AgentSendContext
+        from src.providers.agent_invocation import send_agent
+
+        return send_agent(self.agent, AgentSendContext(tools=tools, run_tools=run_tools))
 
     def _has_tool_activity_since(self, start_index):
         for msg in self.agent.messages[start_index:]:

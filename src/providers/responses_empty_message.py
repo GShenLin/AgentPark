@@ -20,11 +20,14 @@ class EmptyMessageAction:
 
 
 class EmptyMessageFeedbackController:
+    """One recovery budget for an entire send, including intervening tool calls.
+
+    A tool call is not proof that empty replies have recovered: it may simply
+    repeat the read requested by recovery feedback. Only a final reply ends the
+    send; a new send constructs a fresh controller.
+    """
     def __init__(self, *, max_feedback_attempts: int = MAX_EMPTY_MESSAGE_FEEDBACK_ATTEMPTS):
         self._max_feedback_attempts = max(0, int(max_feedback_attempts))
-        self._feedback_count = 0
-
-    def reset(self) -> None:
         self._feedback_count = 0
 
     def inspect(
@@ -60,7 +63,7 @@ class EmptyMessageFeedbackController:
         self._feedback_count += 1
         return EmptyMessageAction(
             "feedback",
-            next_input=[feedback_item],
+            next_input=[*explicit_context_input, feedback_item],
             feedback_item=feedback_item,
         )
 
@@ -89,8 +92,10 @@ def build_empty_message_feedback_item(
         "error": "EmptyMessage",
         "message": (
             "The previous Responses turn returned no output_text and no function_call. "
-            "Use the input and item summaries below to continue with a normal assistant message "
-            "or a valid function_call."
+            "Continue from the preserved conversation with a normal assistant message "
+            "or a valid function_call when further work is actually needed. "
+            "If the work is complete or no action is required, return a brief nonempty final status. "
+            "Do not repeat completed tools merely to recover from this empty response."
         ),
         "response_id": str(response_id or "").strip(),
         "input": summarize_responses_items(current_input),

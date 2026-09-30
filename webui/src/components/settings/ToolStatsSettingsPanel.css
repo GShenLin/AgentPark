@@ -1,58 +1,8 @@
-.tool-stats {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  background: var(--bg-primary);
-}
-
-.tool-stats-side {
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border-right: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-}
-
-.tool-stats-action,
-.tool-provider-item {
-  width: 100%;
-  min-height: 36px;
-  border-radius: 6px;
-}
-
-.tool-provider-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  padding: 8px 10px;
-  color: var(--text-secondary);
-  text-align: left;
-}
-
-.tool-provider-item.active {
-  border-color: rgba(59, 130, 246, 0.28);
-  background: var(--accent-blue-soft);
-  color: var(--text-primary);
-}
-
-.tool-provider-item span,
 .recent-call-main strong,
 .tool-summary-row strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tool-provider-item small {
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
 }
 
 .tool-stats-main {
@@ -346,21 +296,6 @@
 }
 
 @media (max-width: 960px) {
-  .tool-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .tool-stats-side {
-    flex-direction: row;
-    border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .tool-stats-action,
-  .tool-provider-item {
-    width: auto;
-    flex: 0 0 auto;
-  }
 
   .metric-grid,
   .call-review-meta,

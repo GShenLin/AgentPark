@@ -61,8 +61,8 @@ class HarnessResponsesGateway:
             raise ValueError("provider_id is required")
         config = ConfigLoader().get_provider_config(safe_provider_id)
         modes = config.get("supportmode")
-        if not isinstance(modes, list) or not any(str(mode).strip() in {"chat", "imagechat"} for mode in modes):
-            raise ValueError(f"Provider {safe_provider_id!r} does not declare chat or imagechat support.")
+        if not isinstance(modes, list) or not any(str(mode).strip() == "chat" for mode in modes):
+            raise ValueError(f"Provider {safe_provider_id!r} does not declare chat support.")
         provider_protocol(config)
         selected_model = resolve_provider_model(config, model)
         from .reasoning_config import validate_reasoning_effort

@@ -62,9 +62,7 @@ def test_alias_key_resolution_and_request_protocol(tmp_path, monkeypatch):
             {"index": 1, "embedding": [2.0] * 8}, {"index": 0, "embedding": [1.0] * 8},
         ]})
 
-    client_type = httpx.Client
-    monkeypatch.setattr("src.knowledge.embedding.httpx.Client", lambda **kwargs: client_type(
-        transport=httpx.MockTransport(respond), **kwargs))
+    mock_curl(monkeypatch, respond)
     embedder = Embedder(config(api_key_alias="ark", embedding_url="https://ark.cn-beijing.volces.com/api/plan/v3"), workspace=tmp_path)
     assert embedder.embed(["one", "two"]) == [[1.0] * 8, [2.0] * 8]
     assert requests[0].headers["Authorization"] == "Bearer secret-value"
@@ -83,11 +81,9 @@ def test_missing_alias_is_not_sent_as_a_credential(tmp_path):
 
 
 def test_detect_dimensions_uses_actual_response_and_embed_enforces_bound_dimension(monkeypatch):
-    client_type = httpx.Client
-    monkeypatch.setattr("src.knowledge.embedding.httpx.Client", lambda **kwargs: client_type(
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={
+    mock_curl(monkeypatch, lambda request: httpx.Response(200, json={
             "data": [{"index": 0, "embedding": [1.0] * 2048}],
-        })), **kwargs))
+        }))
     embedder = Embedder(config(dimensions=1024))
     assert embedder.detect_dimensions() == 2048
     with pytest.raises(EmbeddingError, match="实际返回 2048 维，当前索引为 1024 维"):
@@ -97,9 +93,7 @@ def test_detect_dimensions_uses_actual_response_and_embed_enforces_bound_dimensi
 @pytest.mark.parametrize("status, hint", [(401, "API Key"), (403, "权限"), (404, "Base URL"), (429, "配额")])
 def test_upstream_error_is_actionable_without_echoing_secrets(monkeypatch, status, hint):
     monkeypatch.setattr("src.knowledge.embedding.time.sleep", lambda seconds: None)
-    client_type = httpx.Client
-    monkeypatch.setattr("src.knowledge.embedding.httpx.Client", lambda **kwargs: client_type(
-        transport=httpx.MockTransport(lambda request: httpx.Response(status, text="secret-value")), **kwargs))
+    mock_curl(monkeypatch, lambda request: httpx.Response(status, text="secret-value"))
     with pytest.raises(EmbeddingError, match=hint) as error:
         Embedder(config()).embed(["one"])
     assert "secret-value" not in str(error.value)
@@ -116,9 +110,7 @@ def test_429_waits_configured_interval_and_retries_same_request(monkeypatch, det
             return httpx.Response(429)
         return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0] * 8}]})
 
-    client_type = httpx.Client
-    monkeypatch.setattr("src.knowledge.embedding.httpx.Client", lambda **kwargs: client_type(
-        transport=httpx.MockTransport(respond), **kwargs))
+    mock_curl(monkeypatch, respond)
     monkeypatch.setattr("src.knowledge.embedding.time.sleep", waits.append)
     embedder = Embedder(config(retry_interval_seconds=interval))
     assert (embedder.detect_dimensions() if detect else embedder.embed(["test"])) == (8 if detect else [[1.0] * 8])
@@ -134,9 +126,7 @@ def test_retry_is_bounded_and_only_for_429(monkeypatch, status, attempts, delays
         requests.append(request)
         return httpx.Response(status)
 
-    client_type = httpx.Client
-    monkeypatch.setattr("src.knowledge.embedding.httpx.Client", lambda **kwargs: client_type(
-        transport=httpx.MockTransport(respond), **kwargs))
+    mock_curl(monkeypatch, respond)
     monkeypatch.setattr("src.knowledge.embedding.time.sleep", waits.append)
     with pytest.raises(EmbeddingError, match=f"HTTP {status}"):
         Embedder(config()).embed(["test"])
@@ -160,9 +150,7 @@ def test_pause_interrupts_429_wait_before_another_request(monkeypatch):
         requests.append(request)
         return httpx.Response(429)
 
-    client_type = httpx.Client
-    monkeypatch.setattr("src.knowledge.embedding.httpx.Client", lambda **kwargs: client_type(
-        transport=httpx.MockTransport(respond), **kwargs))
+    mock_curl(monkeypatch, respond)
     with pytest.raises(Interrupted):
         Embedder(config(retry_interval_seconds=12), stop=StopDuringWait()).embed(["test"])
     assert len(requests) == 1 and waits == [12]
@@ -172,3 +160,12 @@ def test_pause_interrupts_429_wait_before_another_request(monkeypatch):
 def test_retry_interval_rejects_invalid_values(interval):
     with pytest.raises(ValidationError):
         config(retry_interval_seconds=interval)
+
+
+def mock_curl(monkeypatch, handler):
+    from src.providers.curl_transport import CurlResponse
+    def request(self, **kwargs):
+        result = handler(httpx.Request(kwargs["method"], kwargs["url"],
+                         headers=kwargs.get("headers"), content=kwargs.get("body")))
+        return CurlResponse(result.text, result.status_code, dict(result.headers), result.content)
+    monkeypatch.setattr("src.knowledge.embedding.CurlHttpTransport.request", request)

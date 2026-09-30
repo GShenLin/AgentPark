@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import base64
 import hashlib
 import mimetypes
 import os
 import secrets
 import uuid
-from urllib import error as urlerror
-from urllib import parse, request
+from urllib import parse
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
@@ -195,12 +195,12 @@ def resolve_local_path(value: object) -> str:
 
 def _download_bytes(url: str, *, label: str) -> bytes:
     try:
-        with request.urlopen(url, timeout=60) as resp:
-            payload = resp.read()
-    except urlerror.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise ChannelRuntimeError(f"{label} CDN download HTTP {exc.code}: {body}") from exc
-    except urlerror.URLError as exc:
+        resp = CurlHttpTransport().request(url=url, timeout_sec=60).raise_for_status()
+        payload = resp.content
+    except CurlHttpError as exc:
+        body = exc.content.decode("utf-8", errors="replace")
+        raise ChannelRuntimeError(f"{label} CDN download HTTP {exc.status_code}: {body}") from exc
+    except CurlTransportError as exc:
         raise ChannelRuntimeError(f"{label} CDN download failed: {exc}") from exc
     if len(payload) > WEIXIN_MEDIA_MAX_BYTES:
         raise ChannelRuntimeError(f"{label} CDN download exceeded {WEIXIN_MEDIA_MAX_BYTES} bytes")
@@ -208,21 +208,16 @@ def _download_bytes(url: str, *, label: str) -> bytes:
 
 
 def _upload_encrypted_bytes(url: str, payload: bytes, *, label: str) -> str:
-    req = request.Request(
-        url,
-        data=payload,
-        headers={"Content-Type": "application/octet-stream"},
-        method="POST",
-    )
+    req = dict(url=url, body=payload, headers={"Content-Type": "application/octet-stream"}, method="POST")
     try:
-        with request.urlopen(req, timeout=60) as resp:
-            if resp.status != 200:
-                raise ChannelRuntimeError(f"{label} CDN upload returned HTTP {resp.status}")
-            download_param = resp.headers.get("x-encrypted-param")
-    except urlerror.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise ChannelRuntimeError(f"{label} CDN upload HTTP {exc.code}: {body}") from exc
-    except urlerror.URLError as exc:
+        resp = CurlHttpTransport().request(**req, timeout_sec=60).raise_for_status()
+        if resp.status_code != 200:
+            raise ChannelRuntimeError(f"{label} CDN upload returned HTTP {resp.status_code}")
+        download_param = resp.headers.get("x-encrypted-param")
+    except CurlHttpError as exc:
+        body = exc.content.decode("utf-8", errors="replace")
+        raise ChannelRuntimeError(f"{label} CDN upload HTTP {exc.status_code}: {body}") from exc
+    except CurlTransportError as exc:
         raise ChannelRuntimeError(f"{label} CDN upload failed: {exc}") from exc
     if not download_param:
         raise ChannelRuntimeError(f"{label} CDN upload missing x-encrypted-param")

@@ -86,6 +86,7 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
             <dt>{{ t('harness.latestVersion') }}</dt><dd>{{ item.latest_version }}</dd>
           </template>
           <dt>{{ t('harness.source') }}</dt><dd>{{ t(`harness.source.${item.source}`) }}</dd>
+          <dt>{{ t('harness.package') }}</dt><dd>{{ item.package }}</dd>
           <dt>{{ t('harness.node') }}</dt><dd>{{ item.name }}</dd>
         </dl>
         <p v-if="item.executable_path" class="harness-path">{{ item.executable_path }}</p>

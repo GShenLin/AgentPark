@@ -7,12 +7,14 @@ RAW_CONTEXT_COMPACTION_GATE_PROMPT = (
     "Use the latest user request as the primary task anchor. Prefer action=replace when the raw tool-call "
     "window can be replaced by a concise but actionable summary. Use action=patch when only specific "
     "messages should be deleted or rewritten.\n"
-    "Preserve inspected paths, changed state, failed attempts that affect next steps, important outputs, "
-    "pending decisions, and protocol-atomic tool exchanges. Remove raw logs, duplicate search results, "
-    "and large file contents after extracting decision-relevant facts.\n"
+    "Keep actionable facts, changed paths, verification, failed attempts, and pending decisions; "
+    "drop raw logs and repetition. Current runtime skill state overrides historical activation claims. "
+    "Include any missing activation "
+    "before the dependent step. Ordinary tools are temporarily hidden during this checkpoint.\n"
     "The summary is working memory for continuation, not a completion signal. Distinguish confirmed facts, "
     "changed state, verification, failed attempts, and ordered remaining steps. Set immediate_next_step to "
-    "exactly one remaining step and record already-sufficient evidence in avoid_repeating."
+    "exactly one remaining step and record already-sufficient evidence in avoid_repeating. "
+    "Then perform that step; finish with results or a concrete blocker, not a promise to continue."
 )
 
 RAW_CONTEXT_COMPACTION_RETRY_PROMPT = (

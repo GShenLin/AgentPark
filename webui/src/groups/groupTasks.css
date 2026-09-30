@@ -1,0 +1,23 @@
+h3 { margin: 0 0 14px; font-size: 16px; }
+h3 span, summary span { color: var(--text-secondary); font-size: 13px; margin-left: 6px; }
+button { cursor: pointer; min-height: 34px; padding: 6px 12px; }
+input, textarea, select { box-sizing: border-box; min-width: 0; width: 100%; padding: 9px 12px; border: 1px solid var(--border-medium); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+textarea { resize: vertical; min-height: 60px; }
+.group-task-create { display: flex; gap: 8px; }
+.group-task-create input { flex: 1; }
+.group-task-item { margin-top: 10px; min-width: 0; }
+.group-task { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; width: 100%; text-align: left; padding: 12px; }
+.group-task strong { overflow-wrap: anywhere; line-height: 1.5; }
+.group-task-status, .group-task-owner { font-size: 12px; line-height: 1.7; }
+.group-task-owner { overflow-wrap: anywhere; max-width: 110px; }
+.group-task-status[data-status='done'] { color: var(--accent-green); }
+.group-task-status[data-status='blocked'], .group-error { color: var(--accent-red); }
+.group-task-feedback { grid-column: 1 / -1; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.group-task-editor { margin-top: 8px; padding: 14px; border: 1px solid var(--border-medium); border-radius: 12px; }
+fieldset { display: grid; gap: 12px; min-width: 0; border: 0; padding: 0; margin: 0; }
+label { display: grid; gap: 6px; font-size: 13px; }
+.group-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.group-task-archive { margin-top: 20px; border-top: 1px solid var(--border-light); padding-top: 16px; }
+summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.group-muted, .group-task-save-feedback { color: var(--text-secondary); }

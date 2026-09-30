@@ -9,14 +9,18 @@ execute_console_command_declaration = {
     "function": {
         "name": "execute_console_command",
         "description": (
-            "Execute a shell command on the local machine. Prefer structured tools "
+            "Execute a short shell command and wait for completion. For long builds, tests or editor runs, "
+            "use start_console_session then read_console_session/wait_console_session to retain a process session ID. "
+            "Prefer structured tools "
             "(rg_search_text/rg_list_files) for file and text search. Use the shell reported in "
             "environment_context. Windows runs PowerShell with -NoProfile -Command; "
             "Termux, Linux and macOS run the detected POSIX shell with -c. "
             "On POSIX use pwd, ls, pipelines and POSIX quoting; commands are not translated between shells. "
             "On Windows use PowerShell syntax such as Get-ChildItem, "
             "Get-Location, pipelines, semicolon-separated statements, and & before quoted executable paths. "
-            "Native non-zero exit codes are propagated. If a native outcome such as rg exit 1 for no matches "
+            "Windows cmdlet errors terminate the script by default; object output is flushed before exit. "
+            "The last native non-zero exit code is propagated even if followed by a successful cmdlet. "
+            "If a native outcome such as rg exit 1 for no matches "
             "is an expected branch, inspect $LASTEXITCODE explicitly and end the script with exit 0 only after "
             "validating that outcome; do not rely on PowerShell to mask it. "
             "Large stdout/stderr values are hard-limited; successful commands retain tail content, while "

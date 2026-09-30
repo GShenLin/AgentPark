@@ -1,0 +1,22 @@
+/* Deferred tool/metadata content uses the same readable conversation palette. */
+#app .chat-appearance :is(.feed-tool-call, .response-metadata, .insight-card) {
+  background: #fff;
+  border-color: #e5e5e5;
+  color: #333;
+}
+#app .chat-appearance :is(.feed-tool-name, .response-metadata-head, .card-head) { color: #333; }
+#app .chat-appearance :is(.feed-tool-status, .feed-tool-meta, .feed-tool-preview, .response-usage, .response-metadata-head span, .card-meta, .card-head span, .file-snippet, .response-source small) { color: #737373; }
+#app .chat-appearance :is(.feed-tool-arguments, .inline-details pre) { background: #f5f5f5; border-color: #e5e5e5; color: #333; font-family: var(--chat-mono); }
+#app .chat-appearance :is(.response-category summary, .insight-section summary, .inline-details summary, .feed-tool-sources a) { color: #456483; }
+#app .chat-appearance :is(.response-category[open], .response-raw[open], .insight-section[open]) > summary { background: #f4f4f4; color: #525252; box-shadow: none; }
+#app .chat-appearance .feed-tool-diagnostic,
+#app .chat-appearance .inline-details.warning summary { color: #986315; }
+/* These badges deliberately retain dark surfaces for their existing light text. */
+#app .chat-appearance .operation { background: #4b356b; }
+#app .chat-appearance .operation-create_file { background: #225638; }
+#app .chat-appearance .operation-delete_file { background: #712e2e; }
+#app .chat-appearance :is(.cli-session-picker, .cli-session-current, .cli-session-menu, .cli-session-item) { background: #fff; color: #333; border-color: #e5e5e5; box-shadow: none; }
+#app .chat-appearance .cli-session-item:hover:not(:disabled),
+#app .chat-appearance .cli-session-item.active { background: #f3f3f3; border-color: #d4d4d4; }
+#app .chat-appearance :is(.cli-session-kicker, .cli-session-chevron, .cli-session-menu-head, .cli-session-item-preview, .cli-session-item-meta, .cli-session-empty) { color: #737373; }
+#app .chat-appearance .cli-session-badge { color: #456483; background: #ecf1f7; }

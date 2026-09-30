@@ -151,7 +151,7 @@ def test_provider_feature_matrix_ignores_current_configuration_values():
         "apiKey": "secret",
         "baseUrl": "https://example.invalid/v1",
         "model": "model-from-config",
-        "supportmode": ["chat", "imagechat"],
+        "supportmode": ["chat"],
         "streamEnabled": False,
         "timeoutMs": 12345,
         "concurrencyLimit": 2,

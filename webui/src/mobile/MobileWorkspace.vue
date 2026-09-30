@@ -3,26 +3,25 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } fr
 import type { AccessStatus, MessageEnvelope, MobileGraph, MobileNode, ResourceKind } from '../api'
 import { restartServer } from '../api'
 import { cloudBoardRestart } from '../portal/restartContext'
+import { cloudBoardSession } from '../portal/boardSession'
 const restartConnectedServer = inject(cloudBoardRestart, restartServer)
 import { uploadFiles, type UploadedFileItem } from '../uploadApi'
 import MemorySaveDialog from '../components/MemorySaveDialog.vue'
 import MemoryTurnGroup from '../components/MemoryTurnGroup.vue'
 import { useMemoryTurnEntries } from '../components/memoryFeedTools'
-import {
-  isLatestMemoryTurn,
-  shouldLoadPreviousTurnsOnCollapse,
-} from '../components/memoryTurnHistoryPolicy'
+
 import CliSessionPicker from '../components/CliSessionPicker.vue'
 import AppErrorToast from '../components/AppErrorToast.vue'
 import ActionButton from '../components/ActionButton.vue'
 import DangerButton from '../components/DangerButton.vue'
 import FormSelect from '../components/FormSelect.vue'
 import FormTextInput from '../components/FormTextInput.vue'
-import MobileLiveMessage from './MobileLiveMessage.vue'
 import MobileMemoryMessageCard from './MobileMemoryMessageCard.vue'
+import MobileLiveMessage from './MobileLiveMessage.vue'
 import MobileNodeCreateDialog from './MobileNodeCreateDialog.vue'
 import MobileNodeConfigDialog from './MobileNodeConfigDialog.vue'
 import MobileNodeListItem from './MobileNodeListItem.vue'
+import MobileGroups from './MobileGroups.vue'
 import SettingsPage from '../components/SettingsPage.vue'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { recordDeletionUndo } from '../composables/useDeletionUndo'
@@ -30,6 +29,7 @@ import { useAudioRecorder } from '../composables/useAudioRecorder'
 import { useWorkAlerts } from '../composables/useWorkAlerts'
 import { useMobileWorkspace } from './useMobileWorkspace'
 import { useMobileBoardLocation } from './useMobileBoardLocation'
+import { useMobileChatScroll } from './useMobileChatScroll'
 import { buildMessageSignature } from './mobileMessageRender'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { t } from '../i18n'
@@ -38,8 +38,21 @@ import { downloadMarkdown } from './downloadMarkdown'
 
 const props = defineProps<{ access: AccessStatus }>()
 const cloudBoard = isCloudBoard()
+const boardHomePath = cloudBoard ? window.location.pathname : ''
 const workspace = useMobileWorkspace({ initialPcId: cloudBoard ? 'local' : undefined })
 const boardLocation = useMobileBoardLocation(workspace, cloudBoard)
+const boardSession = inject(cloudBoardSession, null)
+const unregisterBoardSession = boardSession?.register({
+  suspend: workspace.suspendConnection,
+  async restore() {
+    if (boardLocation.initialized.value) await workspace.resumeConnection()
+    else {
+      await boardLocation.initialize()
+      if (!boardLocation.initialized.value) throw new Error(workspace.error.value || '无法恢复当前页面。')
+    }
+  },
+  activate: workspace.activateConnection,
+})
 const { navigationRequest, completeWorkAlertNavigation } = useWorkAlerts()
 const {
   saveDialogOpen,
@@ -71,7 +84,6 @@ const graphSaving = ref(false)
 const graphProfileCreating = ref(false)
 const goalArmedByNode = ref<Record<string, boolean>>({})
 const workspaceMounted = ref(false)
-const SCROLL_STICK_THRESHOLD = 48
 
 const headerTitle = computed(() => {
   if (settingsOpen.value) return t('common.settings')
@@ -89,59 +101,6 @@ function saveMessage(text: string) {
 
 const messages = computed(() => workspace.conversation.value?.messages || [])
 const feedEntries = useMemoryTurnEntries(messages)
-const historyComplete = computed(() => workspace.conversation.value?.history_complete !== false)
-const mobileSectionLoading = ref<'progress' | 'metadata' | null>(null)
-let activeMobileSectionRequest: { section: 'progress' | 'metadata'; promise: Promise<void> } | null = null
-
-function isLatestTurn(index: number) {
-  return isLatestMemoryTurn(feedEntries.value, index)
-}
-
-async function onMobileTurnToggle(index: number, expanded: boolean) {
-  if (!shouldLoadPreviousTurnsOnCollapse(
-    feedEntries.value,
-    index,
-    expanded,
-    historyComplete.value,
-  )) return
-  await workspace.loadConversationHistory()
-}
-
-async function loadMobileTurnSection(section: 'progress' | 'metadata') {
-  const conversation = workspace.conversation.value
-  if (section === 'progress' && conversation?.latest_turn_progress_loaded === true) return
-  if (section === 'metadata' && conversation?.latest_turn_metadata_loaded === true) return
-
-  if (activeMobileSectionRequest) {
-    const activeSection = activeMobileSectionRequest.section
-    await activeMobileSectionRequest.promise
-    const refreshed = workspace.conversation.value
-    if (section === 'progress' && refreshed?.latest_turn_progress_loaded === true) return
-    if (section === 'metadata' && refreshed?.latest_turn_metadata_loaded === true) return
-    if (activeSection === section) return
-  }
-
-  const promise = (async () => {
-    mobileSectionLoading.value = section
-    try {
-      await workspace.loadConversationSection(section)
-    } catch {
-      // The workspace exposes the request error; keep the collapsed section available for retry.
-    } finally {
-      mobileSectionLoading.value = null
-    }
-  })()
-  activeMobileSectionRequest = { section, promise }
-  try {
-    await promise
-  } finally {
-    if (activeMobileSectionRequest?.promise === promise) activeMobileSectionRequest = null
-  }
-}
-
-async function ensureMobileTurnMetadata() {
-  await loadMobileTurnSection('metadata')
-}
 const liveMessage = computed(() => String(workspace.conversation.value?.live_message || ''))
 const thinkingMessage = computed(() => String(workspace.conversation.value?.thinking_message || ''))
 const activityMessage = computed(() => String(workspace.conversation.value?.activity_message || ''))
@@ -396,6 +355,8 @@ async function openConfig() {
   if (!isDeveloper.value || workspace.view.value !== 'chat' || !workspace.selectedNode.value) return
   configOpen.value = true
   await Promise.all([
+    workspace.refreshEditorCatalog(),
+    workspace.refreshGraphConfig(),
     workspace.refreshSelectedNodeConfig(),
     workspace.refreshAgentProfiles(),
   ]).catch((e: any) => {
@@ -604,34 +565,13 @@ async function restartWorkspace() {
   }
 }
 
-function scrollFeedToBottom() {
-  const el = feedRef.value
-  if (!el) return
-  el.scrollTop = el.scrollHeight
-}
-
-function isFeedNearBottom() {
-  const el = feedRef.value
-  if (!el) return true
-  return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_STICK_THRESHOLD
-}
-
-let feedScrollFrame = 0
-
-function scheduleFeedScroll() {
-  if (!isFeedNearBottom() || feedScrollFrame) return
-  feedScrollFrame = window.requestAnimationFrame(() => {
-    feedScrollFrame = 0
-    void nextTick(() => {
-      if (isFeedNearBottom()) scrollFeedToBottom()
-    })
-  })
-}
-
-watch(
+const { scrollToBottom: scrollFeedToBottom } = useMobileChatScroll(
+  feedRef,
+  () => workspace.view.value === 'chat'
+    ? `${workspace.selectedPc.value?.id}:${workspace.selectedGraph.value?.id}:${workspace.selectedNode.value?.id}`
+    : '',
+  () => workspace.conversation.value !== null,
   [messageSignature, liveMessage, thinkingMessage, activityMessage, activityBlocks],
-  scheduleFeedScroll,
-  { deep: true },
 )
 
 function consumeWorkAlertNavigation(request: { graphId: string; nodeId: string; nonce: number }) {
@@ -653,8 +593,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  unregisterBoardSession?.()
   workspaceMounted.value = false
-  if (feedScrollFrame) window.cancelAnimationFrame(feedScrollFrame)
 })
 
 onMounted(async () => {
@@ -665,7 +605,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mobile-shell">
+  <div v-if="boardLocation.restoring.value" class="mobile-shell restoring-chat" role="status">正在恢复当前页面…</div>
+  <div v-else-if="!boardLocation.initialized.value && workspace.error.value" class="mobile-shell restoring-chat" role="alert">
+    <p>{{ workspace.error.value }}</p>
+    <button type="button" @click="boardLocation.initialize">重试</button>
+    <a v-if="cloudBoard" :href="boardHomePath">返回 Board 列表</a>
+  </div>
+  <div v-else class="mobile-shell" :class="{ 'chat-appearance': isNodeChatView && !settingsOpen }">
     <header class="mobile-header">
       <button v-if="settingsOpen" class="icon-btn" type="button" :aria-label="t('common.back')" @click="closeSettings">&lt;</button>
       <button v-else-if="!cloudBoard && workspace.view.value === 'graphs'" class="icon-btn" type="button" :aria-label="t('mobile.backToPc')" @click="workspace.backToPcs">&lt;</button>
@@ -722,6 +668,7 @@ onMounted(async () => {
               <span class="row-arrow">&gt;</span>
             </button>
             <DangerButton v-if="canDeleteGraph(graph)" @click="deleteMobileGraph(graph)">{{ t('common.delete') }}</DangerButton>
+            <MobileGroups :key="`${workspace.selectedPc.value?.id}:${graph.id}`" :graph-id="graph.id" :pc-id="workspace.selectedPc.value?.id || 'local'" />
           </div>
         </div>
         <form class="graph-save-panel" @submit.prevent="saveMobileGraph">
@@ -755,6 +702,7 @@ onMounted(async () => {
       </section>
 
       <section v-else-if="workspace.view.value === 'nodes'" class="mobile-list node-list">
+        <MobileGroups v-if="workspace.selectedGraph.value && workspace.selectedPc.value" :graph-id="workspace.selectedGraph.value.id" :pc-id="workspace.selectedPc.value.id" />
         <MobileNodeListItem
           v-for="node in workspace.nodes.value"
           :key="node.id"
@@ -780,7 +728,7 @@ onMounted(async () => {
         />
         <div ref="feedRef" class="chat-feed">
           <div v-if="messages.length === 0 && !liveMessage && !thinkingMessage && !activityMessage && activityBlocks.length === 0" class="empty-chat">{{ t('mobile.emptyChat') }}</div>
-          <template v-for="(entry, index) in feedEntries" :key="entry.key">
+          <template v-for="entry in feedEntries" :key="`${workspace.selectedPc.value?.id}:${workspace.selectedGraph.value?.id}:${workspace.selectedNode.value?.id}:${entry.key}`">
             <MobileMemoryMessageCard
               v-if="entry.type === 'message'"
               :message="entry.message"
@@ -791,29 +739,23 @@ onMounted(async () => {
             <MemoryTurnGroup
               v-else
               :entry="entry"
+              :load-turn-details="workspace.loadTurnDetails"
               :markdown-preview="true"
               compact
-              :default-expanded="isLatestTurn(index)"
-              :progress-deferred="isLatestTurn(index) && workspace.conversation.value?.latest_turn_progress_loaded !== true"
-              :metadata-deferred="isLatestTurn(index) && workspace.conversation.value?.latest_turn_metadata_loaded !== true"
-              :loading-section="isLatestTurn(index) ? mobileSectionLoading : null"
-              :progress-summary="isLatestTurn(index) ? workspace.conversation.value?.latest_turn_progress_summary : null"
-              :ensure-metadata="isLatestTurn(index) ? ensureMobileTurnMetadata : undefined"
               @save="saveMessage"
               @copy="copyMessageText"
               @delete="deleteMobileMessages"
-              @toggle="onMobileTurnToggle(index, $event)"
-              @request-section="loadMobileTurnSection"
             />
           </template>
           <MobileLiveMessage
             v-if="liveMessage || thinkingMessage || activityMessage || activityBlocks.length"
+            :key="`${workspace.selectedPc.value?.id}:${workspace.selectedGraph.value?.id}:${workspace.selectedNode.value?.id}:live`"
             :text="liveMessage"
             :thinking-text="thinkingMessage"
             :activity-text="activityMessage"
             :activity-blocks="activityBlocks"
             :node-id="workspace.selectedNode.value?.id"
-            :graph-id="workspace.selectedGraph.value?.id || 'default'"
+            :graph-id="workspace.selectedGraph.value?.id"
           />
         </div>
 
@@ -917,6 +859,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.restoring-chat { align-items: center; justify-content: center; gap: 16px; padding: 24px; color: #eaf1f4; }
 .mobile-shell {
   display: flex;
   flex-direction: column;
@@ -1063,6 +1006,7 @@ onMounted(async () => {
 }
 
 .graph-row-wrap {
+  flex-wrap: wrap;
   display: flex;
   align-items: stretch;
   gap: 8px;
@@ -1511,4 +1455,6 @@ onMounted(async () => {
   background: rgba(15, 23, 42, 0.92);
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.28);
 }
+
+.graph-row-wrap > :deep(.mobile-groups) { flex: 0 0 100%; min-width: 0; }
 </style>

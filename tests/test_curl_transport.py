@@ -75,6 +75,7 @@ def test_curl_executable_uses_curl_exe_on_windows(monkeypatch):
 
 def test_curl_post_command_uses_platform_executable(monkeypatch):
     monkeypatch.setattr(curl_transport.os, "name", "posix")
+    monkeypatch.setattr(CurlHttpTransport, "_curl_proxy_args", lambda url: ["--proxy", "http://localhost:8080"])
 
     command = CurlHttpTransport._build_curl_post_command(
         url="https://example.test/v1/responses",
@@ -83,10 +84,13 @@ def test_curl_post_command_uses_platform_executable(monkeypatch):
         timeout_val=60,
         connect_timeout=15,
         marker="__STATUS__",
-        no_buffer=False,
+        no_buffer=True,
     )
 
     assert command[0] == "curl"
+    assert command[1] == "--disable"
+    assert command[command.index("--proxy") + 1] == "http://localhost:8080"
+    assert "--no-buffer" in command
     assert "curl.exe" not in command
     assert command[command.index("--max-time") + 1] == "60"
 

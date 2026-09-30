@@ -1,6 +1,7 @@
 """Persistent vectors; bounded batches and disk ANN, never materialize a corpus in Python."""
 from pathlib import Path
 from datetime import timedelta
+import sys
 
 
 class VectorIndex:
@@ -58,3 +59,12 @@ class VectorIndex:
         if count >= 256 and not any("vector" in item.columns for item in indices):
             self.table.create_index(metric="cosine", index_type="IVF_FLAT", num_partitions=max(1, min(1024, count // 256)))
         self.table.optimize(cleanup_older_than=timedelta(days=1))
+
+    def count_rows(self):
+        return self.table.count_rows()
+
+
+# Android has no LanceDB/PyArrow distribution. Select its storage explicitly;
+# dependency errors on other platforms must still surface.
+if sys.platform == "android":
+    from .vectors_sqlite import SQLiteVectorIndex as VectorIndex

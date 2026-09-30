@@ -144,6 +144,80 @@ def test_rg_search_runs_globs_from_explicit_project_root(monkeypatch, tmp_path):
     assert payload["matches"][0]["file_path"] == str(target)
 
 
+def test_rg_subprocess_timeout_returns_matches_collected_before_deadline(monkeypatch, tmp_path):
+    target = tmp_path / "a.py"
+    target.write_text("needle\n", encoding="utf-8")
+
+    def fake_run(cmd, on_line, timeout_sec, cancel_source=None, *, cwd=None):
+        assert timeout_sec == rg_tools.RG_TIMEOUT_SEC
+        on_line("a.py:1:needle")
+        return {
+            "ok": True,
+            "timed_out": True,
+            "stopped_early": False,
+            "stderr": "",
+            "return_code": None,
+            "had_output": True,
+        }
+
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: "rg")
+    monkeypatch.setattr(rg_tools, "run_rg_stream_lines", fake_run)
+
+    payload = json.loads(rg_tools.rg_search_text(
+        query="needle",
+        project_root=str(tmp_path),
+        include_globs=["*.py"],
+    ))
+
+    assert payload["status"] == "success"
+    assert payload["timed_out"] is True
+    assert payload["truncated"] is True
+    assert payload["truncation_reason"] == "timeout"
+    assert payload["matches"][0]["match"] == "needle"
+
+
+def test_python_fallback_timeout_returns_matches_collected_before_deadline(monkeypatch, tmp_path):
+    target = tmp_path / "a.py"
+    target.write_text("needle\nsecond line\n", encoding="utf-8")
+    checks = iter([False, False, True])
+
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(rg_tools, "deadline_expired", lambda _deadline: next(checks, True))
+
+    payload = json.loads(rg_tools.rg_search_text(
+        query="needle",
+        project_root=str(tmp_path),
+        include_globs=["*.py"],
+    ))
+
+    assert payload["status"] == "success"
+    assert payload["engine"] == "python"
+    assert payload["timed_out"] is True
+    assert payload["truncated"] is True
+    assert payload["truncation_reason"] == "timeout"
+    assert payload["matches"][0]["match"] == "needle"
+
+
+def test_python_file_list_timeout_returns_files_collected_before_deadline(monkeypatch, tmp_path):
+    (tmp_path / "a.py").write_text("a\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("b\n", encoding="utf-8")
+    checks = iter([False, True])
+
+    monkeypatch.setattr(rg_tools.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(rg_tools, "deadline_expired", lambda _deadline: next(checks, True))
+
+    payload = json.loads(rg_tools.rg_list_files(
+        project_root=str(tmp_path),
+        include_globs=["*.py"],
+    ))
+
+    assert payload["status"] == "success"
+    assert payload["engine"] == "python"
+    assert payload["timed_out"] is True
+    assert payload["truncation_reason"] == "timeout"
+    assert [item["relative_path"] for item in payload["files"]] == ["a.py"]
+
+
 def test_rg_list_files_blocks_broad_inventory_scan(tmp_path):
     raw = rg_tools.rg_list_files(
         project_root=str(tmp_path),
@@ -292,3 +366,16 @@ def test_system_tools_exports_rg_tools():
     assert not hasattr(system_tools, "find_files_declaration")
     assert not hasattr(system_tools, "search_text_in_files_declaration")
     assert not hasattr(system_tools, "find_class_definition_declaration")
+
+
+def test_rg_tools_use_cooperative_timeout_longer_than_internal_scan_timeout():
+    for tool in (rg_tools.rg_search_text, rg_tools.rg_list_files):
+        assert tool.tool_cooperative_cancellation is True
+        assert tool.tool_timeout_seconds > rg_tools.RG_TIMEOUT_SEC
+
+
+def test_system_tools_do_not_export_skill_scoped_computer_use_tools():
+    assert "list_windows" not in system_tools.__all__
+    assert "get_window_state" not in system_tools.__all__
+    assert "click" not in system_tools.__all__
+    assert "type_text" not in system_tools.__all__

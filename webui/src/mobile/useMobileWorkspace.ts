@@ -52,10 +52,11 @@ import { classifyLiveStreamFrame, reconcileLiveStreamVersion } from '../eventStr
 import { useGlobalState } from '../composables/useGlobalState'
 import { resolveMobileGraphTarget } from './mobileGraphTarget'
 import { renameMobileNodeIdentity } from './mobileNodeIdentity'
-import { resolveTurnDeletionHistoryMode } from '../turnDeletionRefresh'
 import { useCliSessions } from '../composables/useCliSessions'
 import { formatLiveActivity } from '../liveActivity'
 import { loadMobileNodeEditorConfig } from './mobileNodeEditorConfig'
+import { loadMobileLocationSnapshot } from './mobileLocationSnapshot'
+import { BoardRequestInterruptedError } from '../portal/boardRequests'
 import {
   ConversationRequestCoordinator,
   type ConversationRequestToken,
@@ -348,7 +349,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       conversationRequests.activate(conversationSelectionKey(selection))
       clearConversationCommit()
       conversation.value = null
-      await refreshConversationForSelection(selection, 'latest_turn')
+      await refreshConversationForSelection(selection, 'conversation')
     },
     onError: (value) => {
       setError(value)
@@ -384,12 +385,69 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
   })
 
   let loadRequestId = 0
+  let connectionGeneration = 0
+  let transportSuspended = false
+
+  function suspendConnection() {
+    transportSuspended = true
+    connectionGeneration += 1
+    loadRequestId += 1
+    graphNodeNavigationVersion += 1
+    conversationRequests.deactivate()
+    conversationFullHistoryRequest = null
+    stopPolling()
+    resetCliSessions()
+  }
+
+  async function restoreLocation(pcId: string, graphId?: string, nodeId?: string) {
+    const requestId = ++loadRequestId
+    const generation = connectionGeneration
+    const retainedPage = !!selectedPc.value && transportSuspended
+    loading.value = true
+    try {
+      const snapshot = await loadMobileLocationSnapshot(pcId, graphId, nodeId,
+        () => requestId === loadRequestId && generation === connectionGeneration)
+      if (requestId !== loadRequestId || generation !== connectionGeneration) return
+      // Commit a validated destination together; never expose intermediate lists.
+      pcs.value = snapshot.pcs
+      selectedPc.value = snapshot.pc
+      graphInstances.value = snapshot.graphs
+      if (snapshot.profiles) graphProfiles.value = snapshot.profiles
+      selectedGraph.value = snapshot.graph
+      selectedNode.value = snapshot.node
+      nodes.value = snapshot.nodes
+      graphConfig.value = null
+      nodeConfigs.value = {}
+      if (snapshot.node && snapshot.graph) {
+        conversationRequests.activate(conversationSelectionKey({ pcId, graphId: snapshot.graph.id, nodeId: snapshot.node.id }))
+      }
+      conversation.value = snapshot.conversation ? normalizeConversationAfterRefresh(snapshot.conversation) : null
+      view.value = snapshot.node ? 'chat' : snapshot.graph ? 'nodes' : 'graphs'
+      // Keep operation-result warnings on an existing page after a disconnect.
+      if (!retainedPage) error.value = ''
+      transportSuspended = false
+    } finally {
+      if (requestId === loadRequestId) loading.value = false
+    }
+  }
+
+  function activateConnection() {
+    if (view.value === 'chat' || view.value === 'nodes') startGraphEventStream()
+    if (view.value === 'chat') { startChatStreams(); void refreshCliSessions() }
+  }
+
+  async function resumeConnection() {
+    const pcId = selectedPc.value?.id || options.initialPcId
+    if (!pcId) { transportSuspended = false; await loadPcs(); return }
+    await restoreLocation(pcId, selectedGraph.value?.id, selectedNode.value?.id)
+  }
 
   function errorText(value: unknown) {
     return String((value as { message?: unknown })?.message || value || '')
   }
 
   function setError(value: unknown) {
+    if (value instanceof BoardRequestInterruptedError && value.isRead) return
     error.value = errorText(value)
   }
 
@@ -487,8 +545,9 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
   }
 
   async function refreshNodesForSelection(selection: MobileGraphSelection) {
+    const generation = connectionGeneration
     const nextNodes = await listMobileNodes(selection.pcId, selection.graphId)
-    if (!isCurrentGraphSelection(selection)) return
+    if (generation !== connectionGeneration || !isCurrentGraphSelection(selection)) return
     applyNodes(nextNodes)
   }
 
@@ -561,7 +620,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     historyMode?: MemoryHistoryMode,
     refreshPolicy: ConversationRefreshPolicy = 'preserve_history_depth',
   ) {
-    const requestedMode = historyMode || (conversation.value?.history_complete === false ? 'latest_turn' : 'all')
+    const requestedMode = historyMode || 'conversation'
     const selectionKey = conversationSelectionKey(selection)
     let token: ConversationRequestToken
     if (refreshPolicy === 'replace_history_depth') {
@@ -570,7 +629,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       const resolvedMode = conversationRequests.resolveHistoryMode(selectionKey, requestedMode)
       const activeFullHistoryRequest = conversationFullHistoryRequest
       if (
-        resolvedMode === 'all'
+        resolvedMode === 'conversation'
         && activeFullHistoryRequest
         && conversationRequests.canCommit(activeFullHistoryRequest.token)
       ) {
@@ -595,7 +654,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       }
     })()
 
-    if (token.historyMode === 'all') {
+    if (token.historyMode === 'conversation') {
       conversationFullHistoryRequest = { token, promise: request }
     }
     try {
@@ -779,9 +838,11 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
   }
 
   async function refreshGraphConfig() {
+    const generation = connectionGeneration
     const graphId = String(selectedGraph.value?.id || '').trim()
     if (!graphId) throw new Error('Graph selection is required')
     const graph = await loadGraph(graphId)
+    if (generation !== connectionGeneration || selectedGraph.value?.id !== graphId) return
     graphConfig.value = normalizeGraphConfig(graph)
   }
 
@@ -1197,7 +1258,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       refreshSelectedNodeConfig(),
     ]
     if (view.value === 'chat') {
-      refreshes.push(refreshConversationForSelection(selection, 'latest_turn'))
+      refreshes.push(refreshConversationForSelection(selection, 'conversation'))
     }
     await Promise.all(refreshes)
     if (view.value === 'chat') void refreshCliSessions()
@@ -1229,43 +1290,12 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     await refreshConversationForSelection(requireChatSelection())
   }
 
-  async function loadConversationHistory() {
-    if (conversation.value?.history_complete !== false) return
-    await refreshConversationForSelection(requireChatSelection(), 'all')
-  }
-
-  async function loadConversationSection(section: 'progress' | 'metadata') {
-    const current = conversation.value
-    if (!current) return
-    if (section === 'progress' && current.latest_turn_progress_loaded === true) return
-    if (section === 'metadata' && current.latest_turn_metadata_loaded === true) return
+  async function loadTurnDetails(turnId: string): Promise<MessageEnvelope[]> {
     const selection = requireChatSelection()
-    const requestScope = conversationRequests.captureScope(conversationSelectionKey(selection))
-    const historyMode = section === 'progress' ? 'latest_turn_progress' : 'latest_turn_metadata'
-    try {
-      const response = await getMobileNodeConversation(selection.pcId, selection.graphId, selection.nodeId, historyMode)
-      if (!isCurrentChatSelection(selection) || !conversationRequests.isActiveScope(requestScope)) return
-      const latest = conversation.value
-      if (!latest) return
-      const merged = new Map<string, MessageEnvelope>()
-      for (const message of [...(latest.messages || []), ...(response.messages || [])]) {
-        const key = String(message?.id || `${message?.role || ''}-${message?.created_at || ''}`)
-        merged.set(key, message)
-      }
-      conversation.value = normalizeConversationAfterRefresh({
-        ...response,
-        ...latest,
-        messages: [...merged.values()].sort((left, right) =>
-          String(left?.created_at || '').localeCompare(String(right?.created_at || '')),
-        ),
-        latest_turn_progress_summary: response.latest_turn_progress_summary || latest.latest_turn_progress_summary,
-        latest_turn_progress_loaded: section === 'progress' ? true : latest.latest_turn_progress_loaded,
-        latest_turn_metadata_loaded: section === 'metadata' ? true : latest.latest_turn_metadata_loaded,
-      })
-    } catch (e) {
-      setError(e)
-      throw e
-    }
+    const response = await getMobileNodeConversation(
+      selection.pcId, selection.graphId, selection.nodeId, 'turn_details', turnId,
+    )
+    return response.messages
   }
 
   function setConversationLiveMessage(text: string) {
@@ -1311,7 +1341,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     clearConversationCommit()
     loading.value = true
     try {
-      await refreshConversationForSelection(selection, 'latest_turn')
+      await refreshConversationForSelection(selection, 'conversation')
       void refreshCliSessions()
       startChatStreams()
     } catch (e) {
@@ -1358,7 +1388,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     sending.value = true
     error.value = ''
     try {
-      const requestedMode = conversation.value?.history_complete === false ? 'latest_turn' : 'all'
+      const requestedMode = 'conversation'
       const token = conversationRequests.begin(selectionKey, requestedMode)
       const response = await sendMobileNodeMessage(
         selection.pcId,
@@ -1470,11 +1500,6 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     const nodeId = String(selectedNode.value?.id || '').trim()
     const safeUserMessageId = String(userMessageId || '').trim()
     if (!pcId || !graphId || !nodeId || !safeUserMessageId) throw new Error('PC, Graph, Node, and Turn selection are required')
-    const refreshHistoryMode = resolveTurnDeletionHistoryMode(
-      conversation.value?.messages || [],
-      safeUserMessageId,
-      conversation.value?.history_complete === true,
-    )
     error.value = ''
     try {
       const result = await deleteMobileNodeTurn(pcId, graphId, nodeId, safeUserMessageId)
@@ -1487,7 +1512,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       }
       await refreshConversationForSelection(
         requireChatSelection(),
-        refreshHistoryMode,
+        'conversation',
         'replace_history_depth',
       )
       return result
@@ -1617,6 +1642,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     conversation.value = null
     resetCliSessions()
     view.value = 'graphs'
+    void listGraphProfiles().then(profiles => { graphProfiles.value = profiles }).catch(setError)
   }
 
   function backToNodes() {
@@ -1701,6 +1727,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
   }
 
   function scheduleGraphRefresh(options: boolean | { includeConversation?: boolean; includeGraphConfig?: boolean }) {
+    if (transportSuspended) return
     const includeConversation = typeof options === 'boolean' ? options : !!options.includeConversation
     const includeGraphConfig = typeof options === 'boolean' ? true : options.includeGraphConfig !== false
     graphRefreshNeedsConversation = graphRefreshNeedsConversation || includeConversation
@@ -1717,6 +1744,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       }
       if (view.value !== 'nodes' && view.value !== 'chat') return
       graphRefreshInFlight = true
+      const generation = connectionGeneration
       const shouldRefreshConversation = graphRefreshNeedsConversation && view.value === 'chat'
       const shouldRefreshGraphConfig = graphRefreshNeedsGraphConfig
       graphRefreshNeedsConversation = false
@@ -1730,7 +1758,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       } catch (e) {
         setError(e)
       } finally {
-        graphRefreshInFlight = false
+        if (generation === connectionGeneration) graphRefreshInFlight = false
       }
     }, 75)
   }
@@ -1821,7 +1849,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
       if (String(selectedGraph.value?.id || '').trim() !== graphId) return
       if (String(payload.event || '').trim() === 'stream_gap') {
         chatLiveVersion = 0
-        scheduleGraphRefresh({ includeConversation: view.value === 'chat', includeGraphConfig: true })
+        scheduleGraphRefresh({ includeConversation: view.value === 'chat', includeGraphConfig: payload.reason !== 'connection_restored' })
         return
       }
       if (String(payload.graph_id || '').trim() !== graphId) return
@@ -1864,9 +1892,13 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     stopGraphEventStream()
   }
 
-  onBeforeUnmount(stopPolling)
+  onBeforeUnmount(suspendConnection)
 
   return {
+    restoreLocation,
+    suspendConnection,
+    resumeConnection,
+    activateConnection,
     view,
     pcs,
     graphInstances,
@@ -1920,8 +1952,7 @@ export function useMobileWorkspace(options: { initialPcId?: string } = {}) {
     triggerNode,
     copyNode,
     refreshCurrent,
-    loadConversationHistory,
-    loadConversationSection,
+    loadTurnDetails,
     refreshSelectedNodeConfig,
     refreshEditorCatalog,
     refreshAgentProfiles,

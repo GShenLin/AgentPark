@@ -69,6 +69,14 @@ Provider 认证密钥在 `.auth/api-keys/aliases.json` 中的引用名称。例�
 `none` 只允许用于 `type: "alpha_matting"`，且该 Provider 不得配置
 `apiKey`、`authProvider` 或 `authAccountId`。
 
+### `codexClientVersion`
+
+仅用于 `authMode: "codex"` 的 Models 查询。Codex 模型目录会根据请求中的
+`client_version` 返回模型。默认读取本机 `codex --version`；也可以用此字段或
+`CODEX_CLIENT_VERSION` 环境变量指定版本。无法确定版本时查询会报告错误，
+不会使用伪造的 `0.0.0` 版本继续请求。若服务进程找不到 Codex CLI，配置此字段；
+升级 Codex CLI 后需同步更新此字段。
+
 ### `xApiKey`
 
 豆包语音数据面接口使用的独立鉴权引用名称。真实值同样从
@@ -119,12 +127,13 @@ Provider 请求时使用的模型名。
 
 ### `supportmode`
 
+图片附件属于 `chat` 的多模态输入能力，不单独划分聊天模式。需要生成图片时使用 `image_generation`。
+
 Provider 支持的能力列表。WebUI 和专用节点用它筛选可选 Provider。
 
 当前常用取值：
 
 - `chat`: 普通文本对话。
-- `imagechat`: 多模态图片对话。
 - `image_generation`: 图片生成节点可选。
 - `image_matting`: 单图抠图节点可选。
 - `vision_understand`: 视觉理解节点可选。

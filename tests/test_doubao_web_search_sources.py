@@ -171,7 +171,7 @@ def test_doubao_responses_resets_stream_text_between_tool_turns():
             func_name="rg_list_files",
             call_id="call-1",
             cleaned_result='{"status":"success","files":["README.md"]}',
-            image_data=None,
+            images=(),
         )
     ]
 

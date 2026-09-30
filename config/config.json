@@ -52,16 +52,16 @@
     "input_tokens": 24000,
     "retain_tokens": 6000,
     "summary_tokens": 2000,
-    "provider": ""
+    "profile_id": "DouBao"
   },
   "longTermMemory": {
     "enabled": true,
-    "extract_provider": "",
-    "consolidation_provider": "",
     "min_idle_seconds": 3600,
     "max_age_days": 30,
     "max_unused_days": 30,
     "max_extractions": 8,
-    "max_selected": 64
+    "max_selected": 64,
+    "extract_profile_id": "DouBao",
+    "consolidation_profile_id": "DouBao"
   }
 }

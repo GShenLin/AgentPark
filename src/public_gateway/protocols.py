@@ -12,7 +12,7 @@ PROTOCOLS = (*CHAT_PROTOCOLS, *IMAGE_PROTOCOLS)
 def supported_protocols(config: dict[str, Any]) -> tuple[str, ...]:
     modes = config.get("supportmode", [])
     protocols: tuple[str, ...] = ()
-    if any(mode in modes for mode in ("chat", "imagechat")):
+    if "chat" in modes:
         provider_protocol(config)
         protocols = CHAT_PROTOCOLS
     # Other image providers have different wire contracts; do not advertise

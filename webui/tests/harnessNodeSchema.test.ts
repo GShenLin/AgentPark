@@ -21,7 +21,7 @@ describe('Harness node provider and model selection', () => {
       const fields = ref<Record<string, unknown>>({ provider_id: 'first', model: 'b' })
       const providers = ref<ProviderInfo[]>([
         { id: 'first', type: 'openai', supportmode: ['chat'], models: ['a', 'b'], model: 'a' },
-        { id: 'second', type: 'claude', supportmode: ['imagechat'], models: ['c'], model: 'c' },
+        { id: 'second', type: 'claude', supportmode: ['chat'], models: ['c'], model: 'c' },
         { id: 'image-only', type: 'openai', supportmode: ['image'], models: ['image'], model: 'image' },
       ] as ProviderInfo[])
       const schema = useAgentNodeCreateSchema({ selectedTypeId: ref(typeId), selectedNodeFields: fields,

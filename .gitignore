@@ -63,7 +63,6 @@ benchmarks/
 tmp/
 config/events.json
 .auth/
-.agents/
 
 # Local provider bindings and generated deployment trust data
 /config/modelProvider.json
@@ -71,3 +70,15 @@ config/events.json
 /config/remote.json
 /deploy/peer-network/client-trust/*.crt
 /deploy/peer-network/client-trust/certificate-info.json
+
+# Local data excluded from the public application snapshot
+/.agents/*
+!/.agents/skills/
+/.codex-remote-attachments/
+/artifacts/
+/data/
+/IDENTITY.md
+/SOUL.md
+/USER.md
+/codex/
+/openclaw/

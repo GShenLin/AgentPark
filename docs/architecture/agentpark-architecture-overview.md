@@ -25,7 +25,7 @@ AgentPark/
 ├─ src/             FastAPI 后端 + Provider + Tool + Runtime Event + CLI + Channels + MCP
 ├─ webui/           Vue 3 + Vite 前端(desktop + mobile + settings)
 ├─ memories/        图/节点持久化 memory(Companion 为默认保护图)
-├─ skills/, plugins/  节点级可插拔能力资源
+├─ .agents/skills/, plugins/  节点级可插拔能力资源
 ├─ tests/, docs/, scripts/, logs/, resource/, graph/, prompt/, agent//
 └─ *.bat            启动/重启/打包/卸载/同步脚本
 ```
@@ -249,7 +249,7 @@ matchMedia('(max-width: 760px)')  → <MobileWorkspace />
 │  节点实现 (nodes/base_node → nodes/agent_node → 20+ 子模块)                │
 │       │                                                                   │
 │       ▼                                                                   │
-│  资源: config/*, memories/<graph>/<node>/*, agent/*.json, skills, plugins │
+│  资源: config/*, memories/<graph>/<node>/*, agent/*.json, .agents/skills, plugins │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 

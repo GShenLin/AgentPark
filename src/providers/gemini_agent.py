@@ -1,8 +1,7 @@
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import json
 import random
 import time
-import urllib.error
-import urllib.request
 
 from src.base_agent import BaseAgent
 from src.providers.gemini_function_runtime import GeminiFunctionRuntime
@@ -67,6 +66,9 @@ class GeminiAgent(ServiceHost, BaseAgent):
         mode_options=None,
     ):
         self.config = self._read_provider_config_from_file()
+        mode = str(mode or "chat").strip().lower()
+        if mode not in {"chat", "image_generation"}:
+            raise ValueError("Gemini agent supports chat and image_generation modes.")
         _ = web_search
         _ = thinking
         if mode == "image_generation":
@@ -101,8 +103,6 @@ class GeminiAgent(ServiceHost, BaseAgent):
         payload = {"contents": gemini_contents}
         if system_instruction:
             payload["system_instruction"] = system_instruction
-        if str(mode or "chat").strip().lower() == "imagechat":
-            payload["generationConfig"] = {"responseModalities": ["TEXT", "IMAGE"]}
 
         active_tools = tools if tools else (self.tool_declarations if self.tool_declarations else None)
         compaction_tool_filter = getattr(self, "_tool_context_compaction_active_tools", None)
@@ -143,18 +143,13 @@ class GeminiAgent(ServiceHost, BaseAgent):
                         stream_handler=stream_handler if callable(stream_handler) else None,
                     )
                 else:
-                    req = urllib.request.Request(
-                        url,
-                        data=payload_json.encode("utf-8"),
-                        headers=headers,
-                        method="POST",
-                    )
+                    req = dict(url=url, body=payload_json.encode("utf-8"), headers=headers, method="POST")
                     with acquire_provider_pressure(self):
-                        with urllib.request.urlopen(req, timeout=timeout) as response:
-                            if response.status != 200:
-                                return f"Error: {response.status} - {response.read().decode('utf-8')}"
-                            response_data = response.read().decode("utf-8")
-                            result = json.loads(response_data)
+                        response = CurlHttpTransport().request(**req, timeout_sec=timeout).raise_for_status()
+                        if response.status_code != 200:
+                            return f"Error: {response.status_code} - {response.content.decode('utf-8')}"
+                        response_data = response.content.decode("utf-8")
+                        result = json.loads(response_data)
 
                 if "candidates" in result and len(result["candidates"]) > 0:
                     candidate, candidate_idx = self._pick_candidate_content(result.get("candidates"), run_tools)
@@ -188,7 +183,7 @@ class GeminiAgent(ServiceHost, BaseAgent):
                                                     "type": "image_data",
                                                     "data": image_data["base64"],
                                                     "mime_type": image_data.get("mime_type", "image/png"),
-                                                    "text": "Image captured by tool.",
+                                                    "text": image_data.get('label') or "Image captured by tool.",
                                                 },
                                             )
                                         elif image_data.get("path"):
@@ -251,9 +246,9 @@ class GeminiAgent(ServiceHost, BaseAgent):
                         return f"Error: No content in candidate. Finish reason: {candidate.get('finishReason')}"
                 else:
                     return f"Error: Unexpected response format: {json.dumps(result, ensure_ascii=False)}"
-            except urllib.error.HTTPError as e:
-                error_content = e.read().decode("utf-8")
-                error_msg = f"HTTP Error: {e.code} - {error_content}"
+            except CurlHttpError as e:
+                error_content = e.content.decode("utf-8")
+                error_msg = f"HTTP Error: {e.status_code} - {error_content}"
                 if attempt < max_retries:
                     time.sleep(retry_delay + random.uniform(0, 0.5))
                     retry_delay *= 2

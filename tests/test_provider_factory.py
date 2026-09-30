@@ -110,6 +110,9 @@ def test_create_agent_uses_explicit_provider_type(monkeypatch):
         "ZhipuAgent": DummyZhipu,
     }
 
+    for provider_class in provider_classes.values():
+        provider_class.Send = lambda self, **kwargs: kwargs
+
     monkeypatch.setattr(registry, "ConfigLoader", lambda: DummyLoader())
     monkeypatch.setattr(
         registry,

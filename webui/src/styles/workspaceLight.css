@@ -1,0 +1,103 @@
+@import './workspaceLightPanels.css';
+@import './workspaceLightMobile.css';
+
+/* Activated by the existing theme preset selector, including teleported menus. */
+html[data-theme-preset='chat-light'] {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  --bg-primary: #fff;
+  --bg-secondary: #f7f7f7;
+  --bg-tertiary: #ededed;
+  --bg-hover: #f0f0f0;
+  --bg-active: #e9e9e9;
+  --border-subtle: #eeeeee;
+  --border-light: #e5e5e5;
+  --border-medium: #d4d4d4;
+  --text-primary: #242424;
+  --text-secondary: #626262;
+  --text-tertiary: #797979;
+  --text-accent: #2563b9;
+  --accent-blue: #426a9a;
+  --accent-blue-soft: #eef3f9;
+  --accent-green: #26814c;
+  --accent-amber: #986315;
+  --accent-red: #b73b3b;
+  --ui-control-border: #dedede;
+  --ui-control-background: #fff;
+  --ui-control-text: #242424;
+  --ui-control-focus: #888;
+  --ui-control-radius: 9px;
+  --ui-panel-background: #fff;
+  --ui-muted-text: #737373;
+  --ui-selection-text: #454545;
+  --ui-selection-hover-text: #242424;
+  --ui-selection-hover-border: #dedede;
+  --ui-selection-hover-background: #f5f5f5;
+  --ui-selection-active-text: #242424;
+  --ui-selection-active-border: #d4d4d4;
+  --ui-selection-active-background: #ebebeb;
+  --border-color: #e5e5e5;
+  --panel-bg: #fff;
+  --text-muted: #737373;
+  --ui-button-border: #dedede;
+  --ui-button-background: #fff;
+  --ui-button-text: #454545;
+  --ui-button-hover-border: #ccc;
+  --ui-button-hover-background: #f1f1f1;
+  --ui-primary-border: #262626;
+  --ui-primary-background: #262626;
+  --ui-primary-text: #fff;
+  --ui-primary-hover-background: #444;
+  --ui-danger-border: #ebcaca;
+  --ui-danger-background: #fff6f6;
+  --ui-danger-text: #ad3333;
+  --ui-danger-hover-border: #d79d9d;
+  --ui-danger-hover-background: #ffebeb;
+  --ui-dialog-backdrop: #00000024;
+  --ui-dialog-border: #e1e1e1;
+  --ui-dialog-background: #fff;
+  --ui-dialog-text: #242424;
+  --ui-dialog-divider: #e9e9e9;
+  --ui-dialog-shadow: 0 12px 45px #0000001a;
+  --shadow-sm: 0 1px 3px #00000008;
+  --shadow-md: 0 3px 12px #0000000c;
+  --shadow-lg: 0 8px 24px #00000012;
+  --shadow-xl: 0 12px 40px #00000018;
+}
+html[data-theme-preset='chat-light'] body { background: var(--theme-panel-app-background-color, #f8f8f8); }
+html[data-theme-preset='chat-light'] ::-webkit-scrollbar-thumb { background: #cfcfcf; }
+html[data-theme-preset='chat-light'] ::selection { color: #171717; background: #dbeafe; }
+html[data-theme-preset='chat-light'] button { transition: color 120ms, background-color 120ms, border-color 120ms; }
+html[data-theme-preset='chat-light'] button:hover { transform: none; box-shadow: none; }
+html[data-theme-preset='chat-light'] :is(input, textarea, select) { font-family: inherit; }
+html[data-theme-preset='chat-light'] a { color: #2563b9; }
+html[data-theme-preset='chat-light'] :is(input, textarea)::placeholder { color: #8a8a8a; }
+
+html[data-theme-preset='chat-light'] #app .topbar { background: #fafafa; border-color: #e5e5e5; backdrop-filter: none; }
+html[data-theme-preset='chat-light'] #app .content { background: #eee; }
+html[data-theme-preset='chat-light'] #app .canvas-content {
+  background-image: linear-gradient(to right, #00000024 1px, transparent 1px), linear-gradient(to bottom, #00000024 1px, transparent 1px);
+}
+html[data-theme-preset='chat-light'] #app .node-card { box-shadow: 0 2px 8px #00000008; border-radius: 14px; }
+html[data-theme-preset='chat-light'] #app .node-card.agent-card:hover { background: #fff; border-color: #bfbfbf; box-shadow: 0 5px 16px #00000010; }
+html[data-theme-preset='chat-light'] #app .node-card.selected { border-color: #737373; box-shadow: 0 0 0 2px #0000000c; }
+html[data-theme-preset='chat-light'] #app .node-card.multi-selected:not(.selected) { border-color: #6483a6; box-shadow: 0 0 0 2px #6483a61c; }
+html[data-theme-preset='chat-light'] #app .node-add-output { box-shadow: none; }
+html[data-theme-preset='chat-light'] #app :is(.node-trigger, .node-start, .node-status-badge) { color: #267247; background: #edf7f0; border-color: #c9e4d3; }
+html[data-theme-preset='chat-light'] #app :is(.node-trigger, .node-start):hover { background: #dceee2; }
+html[data-theme-preset='chat-light'] #app .node-stop { color: #ad3333; background: #fff0f0; border-color: #ebcaca; }
+html[data-theme-preset='chat-light'] #app .node-card.stopped { background: #f7f7f7; border-color: #d4d4d4; }
+html[data-theme-preset='chat-light'] #app .agent-tag { background: #f2f2f2; color: #686868; }
+html[data-theme-preset='chat-light'] #app :is(.runtime-diagnostics, .tool-activity) { background: #fafafa; border-color: #e5e5e5; color: #525252; }
+html[data-theme-preset='chat-light'] #app :is(.runtime-row, .tool-label, .tool-name) { color: #525252; }
+html[data-theme-preset='chat-light'] #app .runtime-label { color: #858585; }
+html[data-theme-preset='chat-light'] #app :is(.tone-ok, .tone-done) .runtime-value { color: #26814c; }
+html[data-theme-preset='chat-light'] #app .tone-attention .runtime-value { color: #986315; }
+html[data-theme-preset='chat-light'] #app .tone-running .runtime-value { color: #2563b9; }
+html[data-theme-preset='chat-light'] #app .tone-muted .runtime-value { color: #737373; }
+html[data-theme-preset='chat-light'] #app .memory-overlay-backdrop { background: #00000024; backdrop-filter: none; }
+html[data-theme-preset='chat-light'] #app .right:not(.floating) { border-left: 1px solid #e5e5e5; }
+html[data-theme-preset='chat-light'] #app .right:not(.floating) .panel { border-radius: 0; border: 0; }
+html[data-theme-preset='chat-light'] #app .graph-panel :is(input, select) { color: #333; }
+html[data-theme-preset='chat-light'] #app :is(.graph-title, .graph-node-title, .graph-name) { color: #333; }
+html[data-theme-preset='chat-light'] #app :is(.graph-meta, .graph-node-meta) { color: #737373; }

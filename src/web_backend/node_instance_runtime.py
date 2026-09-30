@@ -30,6 +30,7 @@ from .node_memory_store import current_node_memory_paths
 from .node_memory_store import delete_node_memory_record
 from .node_memory_store import delete_node_memory_turn
 from .node_memory_store import load_latest_node_memory_turn
+from .node_memory_store import load_node_conversation
 from .node_memory_store import load_recent_node_memory_records
 from .node_memory_markdown import render_memory_markdown
 from .node_memory_store import read_node_memory_text
@@ -217,6 +218,7 @@ class NodeInstanceRuntime(HostBoundService):
         graph_id: str = "",
         messages_limit: int | None = 400,
         history_mode: str = "recent",
+        turn_id: str = "",
     ):
         checkpoint("memory_handler_enter")
         safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
@@ -234,6 +236,7 @@ class NodeInstanceRuntime(HostBoundService):
             max_chars=max_chars,
             messages_limit=messages_limit,
             history_mode=history_mode,
+            turn_id=turn_id,
         )
 
     def get_node_instance_memory_from_paths(
@@ -246,6 +249,7 @@ class NodeInstanceRuntime(HostBoundService):
         max_chars: int | None = 20000,
         messages_limit: int | None = 400,
         history_mode: str = "recent",
+        turn_id: str = "",
     ):
         cfg = _read_json_dict(config_path) if isinstance(config_path, str) and config_path and os.path.exists(config_path) else {}
         checkpoint("memory_config_read")
@@ -255,15 +259,30 @@ class NodeInstanceRuntime(HostBoundService):
             raise HTTPException(status_code=409, detail="node is being deleted")
         safe_history_mode = str(history_mode or "recent").strip().lower()
         lazy_turn_modes = {"latest_turn", "latest_turn_progress", "latest_turn_metadata"}
-        if safe_history_mode not in {"recent", "all", *lazy_turn_modes}:
+        if safe_history_mode not in {"recent", "all", "conversation", "turn_details", *lazy_turn_modes}:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     "history_mode must be 'recent', 'all', 'latest_turn', "
-                    "'latest_turn_progress', or 'latest_turn_metadata'"
+                    "'latest_turn_progress', 'latest_turn_metadata', 'conversation', or 'turn_details'"
                 ),
             )
-        if safe_history_mode in lazy_turn_modes:
+        if (safe_history_mode == "turn_details") != bool(turn_id):
+            raise HTTPException(status_code=400, detail="turn_id is required only for turn_details")
+        if safe_history_mode in {"conversation", "turn_details"}:
+            try:
+                records = load_node_conversation(
+                    memory_path, messages_path,
+                    running=parse_node_state(cfg.get("state")) == "working",
+                    turn_id=turn_id,
+                )
+            except KeyError:
+                raise HTTPException(status_code=404, detail="conversation turn not found")
+            history_complete = safe_history_mode == "conversation"
+            # Structured chat does not need a duplicate Markdown representation.
+            text = ""
+            checkpoint("memory_conversation_read", records=len(records))
+        elif safe_history_mode in lazy_turn_modes:
             common_roles = {"user", "human", "assistant", "agent", "system", "tool"}
             materialize_roles = set(common_roles)
             if safe_history_mode == "latest_turn_progress":
@@ -288,6 +307,9 @@ class NodeInstanceRuntime(HostBoundService):
             text = read_node_memory_text(memory_path, messages_path, max_chars=max_chars)
             checkpoint("memory_history_read", records=len(records), text_chars=len(text))
         messages = [normalize_envelope(item, default_role="assistant") for item in records]
+        for message, record in zip(messages, records):
+            if "turn_summary" in record:
+                message["turn_summary"] = record["turn_summary"]
         progress_summary = _latest_turn_progress_summary(
             latest_turn_records if safe_history_mode in lazy_turn_modes else records
         )

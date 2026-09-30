@@ -12,6 +12,7 @@ from nodes.agent_skill_loader import (
     collect_loaded_skill_dependencies,
     load_node_skills,
 )
+from nodes.agent_skill_activation import skill_requires_activation
 from nodes.agent_tool_loader import TOOL_NAME_LIST
 
 
@@ -42,11 +43,21 @@ def resolve_agent_capabilities(
     mcp_server_names = MCP_SERVER_NAME_LIST.parse(setting("mcp_servers", []))
     plugin_capabilities = resolve_plugins(plugin_names, node_id=node_id)
     plugin_skill_dependencies = collect_loaded_skill_dependencies(plugin_capabilities.skill_definitions)
-    skill_resource_roots = build_skill_resource_roots(
-        [*selected_skill_definitions, *plugin_capabilities.skill_definitions]
-    )
+    all_skill_definitions = [
+        *selected_skill_definitions,
+        *plugin_capabilities.skill_definitions,
+    ]
+    eager_skill_definitions = [
+        skill for skill in all_skill_definitions if not skill_requires_activation(skill)
+    ]
+    deferred_skill_definitions = [
+        skill for skill in all_skill_definitions if skill_requires_activation(skill)
+    ]
+    skill_resource_roots = build_skill_resource_roots(eager_skill_definitions)
 
     merged_tools = TOOL_NAME_LIST.parse([*tool_names, *plugin_capabilities.tools])
+    if deferred_skill_definitions:
+        merged_tools = TOOL_NAME_LIST.parse([*merged_tools, "skill_activation_tools"])
     if skill_resource_roots:
         merged_tools = TOOL_NAME_LIST.parse([*merged_tools, "skill_resource_tools"])
 
@@ -55,8 +66,6 @@ def resolve_agent_capabilities(
         [
             *mcp_server_names,
             *plugin_capabilities.mcp_servers,
-            *selected_skill_dependencies.mcp_servers,
-            *plugin_skill_dependencies.mcp_servers,
         ]
     )
     mcp_settings = merge_mcp_server_settings(plugin_capabilities.mcp_server_configs)

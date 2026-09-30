@@ -34,7 +34,7 @@ call :mirror_dir "functions" "dist\functions"
 if errorlevel 1 goto :fail
 call :mirror_dir "nodes" "dist\nodes"
 if errorlevel 1 goto :fail
-call :mirror_dir "skills" "dist\skills"
+call :mirror_dir ".agents\skills" "dist\.agents\skills"
 if errorlevel 1 goto :fail
 call :mirror_dir "plugins" "dist\plugins"
 if errorlevel 1 goto :fail

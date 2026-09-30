@@ -485,16 +485,17 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="provider-settings">
-    <aside class="provider-list">
+  <div class="provider-settings settings-split">
+    <aside class="settings-split__side">
       <div class="provider-add">
         <FormTextInput v-model="newProviderId" :placeholder="t('provider.newId')" @keydown.enter.prevent="addProvider" />
         <ActionButton compact @click="addProvider">{{ t('common.add') }}</ActionButton>
       </div>
-      <div class="provider-list-items">
+      <div class="settings-split__items">
         <SelectionButton
           v-for="providerId in providerIds"
           :key="providerId"
+          class="settings-list-item"
           stacked
           :active="selectedProviderId === providerId"
           @click="selectedProviderId = providerId"
@@ -505,7 +506,7 @@ onMounted(() => {
       </div>
     </aside>
 
-    <section v-if="selectedProvider" class="provider-form">
+    <section v-if="selectedProvider" class="provider-form settings-split__detail">
       <div class="form-head">
         <label class="provider-id-field">
           <span>{{ t('provider.id') }}</span>

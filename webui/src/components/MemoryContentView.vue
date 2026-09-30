@@ -1,18 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUpdate, onUpdated, ref } from 'vue'
 import { nodeOpenMarker } from '../nodeOpenDiagnostics'
-import { selectFolder, type GraphInfo, type GraphProfile, type LatestTurnProgressSummary, type LiveActivityBlock, type MessageEnvelope, type NodeInstanceConfig } from '../api'
+import { type GraphInfo, type GraphProfile, type LoadMemoryTurnDetails, type LiveActivityBlock, type MessageEnvelope } from '../api'
 import ActionButton from './ActionButton.vue'
-import DangerButton from './DangerButton.vue'
-import FormSelect from './FormSelect.vue'
 import FormTextInput from './FormTextInput.vue'
-import LiveActivityBlocks from './LiveActivityBlocks.vue'
-import VirtualLiveText from './VirtualLiveText.vue'
 import MemoryMessageFeed from './MemoryMessageFeed.vue'
+import MemoryLiveMessage from './MemoryLiveMessage.vue'
+import GraphBrowserPanel from './GraphBrowserPanel.vue'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
-import { renderMarkdownTextWithoutKatex } from './memoryMarkdown'
 import { t } from '../i18n'
-import { useGlobalState } from '../composables/useGlobalState'
 
 type MemoryMode = 'agent' | 'file' | 'graph'
 type InteractiveInputOptions = {
@@ -25,11 +21,6 @@ const props = defineProps<{
   mode: MemoryMode
   memoryText: string
   messages: MessageEnvelope[]
-  historyComplete: boolean
-  progressLoaded: boolean
-  metadataLoaded: boolean
-  progressSummary: LatestTurnProgressSummary | null
-  loadingSection: 'progress' | 'metadata' | null
   liveMessage: string
   thinkingMessage: string
   activityMessage: string
@@ -45,17 +36,14 @@ const props = defineProps<{
   graphWorkingPathInput: string
   graphLoading: boolean
   graphMemoryClearingId: string
-  graphNodesLoadingId: string
-  expandedGraphId: string
   graphs: GraphInfo[]
-  graphNodesById: Record<string, NodeInstanceConfig[]>
   graphProfiles: GraphProfile[]
   selectedGraphProfileId: string
   interactiveSessionId: string
   interactiveInputText: string
   interactiveInputDisabled: boolean
   interactiveSending: boolean
-  ensureLatestTurnMetadata: () => Promise<void>
+  loadTurnDetails: LoadMemoryTurnDetails
 }>()
 
 const emit = defineEmits<{
@@ -71,9 +59,9 @@ const emit = defineEmits<{
   (event: 'createGraphFromProfile'): void
   (event: 'deleteGraphProfile'): void
   (event: 'refreshGraphs'): void
-  (event: 'toggleGraphNodes', graph: GraphInfo): void
   (event: 'loadGraphConfig', graph: GraphInfo): void
   (event: 'navigateGraphNode', payload: { graph: GraphInfo; nodeId: string }): void
+  (event: 'navigateGraphGroup', payload: { graph: GraphInfo; groupId: string }): void
   (event: 'clearGraphMemory', graph: GraphInfo): void
   (event: 'deleteGraphConfig', graph: GraphInfo): void
   (event: 'toggleGraphVisibility', graph: GraphInfo): void
@@ -81,8 +69,6 @@ const emit = defineEmits<{
   (event: 'saveMessage', text: string): void
   (event: 'copyMessage', text: string): void
   (event: 'deleteMessage', target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }): void
-  (event: 'requestHistory'): void
-  (event: 'requestSection', section: 'progress' | 'metadata'): void
   (event: 'sendInteractiveInput', options: InteractiveInputOptions): void
   (event: 'interactiveSubmit'): void
   (event: 'interactiveCtrlC'): void
@@ -108,86 +94,14 @@ onUpdated(() => {
 })
 const gutterRef = ref<HTMLElement | null>(null)
 const interactiveInputRef = ref<InstanceType<typeof FormTextInput> | null>(null)
-const { nodeGraphDrag, nodeGraphDropTargetId, nodeGraphMoveInProgress } = useGlobalState()
 
 const lines = computed(() => (props.memoryText ? props.memoryText.split(/\r?\n/) : []))
 const lineCount = computed(() => (props.memoryText ? lines.value.length : 1))
-const renderedActivityMarkdown = computed(() => renderMarkdownTextWithoutKatex(props.activityMessage))
 const showInteractiveBar = computed(() => props.mode === 'agent' && !!props.interactiveSessionId)
 const hasLiveActivity = computed(() => !!props.liveMessage || !!props.thinkingMessage || !!props.activityMessage || props.activityBlocks.length > 0)
 
-function canDeleteGraph(graph: GraphInfo) {
-  if (typeof graph.deletable === 'boolean') return graph.deletable
-  return !graph.readonly
-}
-
-function graphNodeLabel(node: NodeInstanceConfig) {
-  return String(node.name || node.node_id || '').trim() || 'Unnamed node'
-}
-
-function graphNodeMeta(node: NodeInstanceConfig) {
-  const typeId = String(node.type_id || '').trim()
-  const nodeId = String(node.node_id || '').trim()
-  if (typeId && nodeId && typeId !== nodeId) return `${typeId} - ${nodeId}`
-  return typeId || nodeId
-}
-
-function graphNodes(graphId: string) {
-  return props.graphNodesById[String(graphId || '').trim()] || []
-}
-
-function onGraphInfoClick(graph: GraphInfo) {
-  emit('toggleGraphNodes', graph)
-}
-
-function onGraphInfoKeydown(graph: GraphInfo, event: KeyboardEvent) {
-  if (event.key !== 'Enter' && event.key !== ' ') return
-  event.preventDefault()
-  emit('toggleGraphNodes', graph)
-}
-
 function updateMemoryText(event: Event) {
   emit('update:memoryText', String((event.target as HTMLTextAreaElement | null)?.value || ''))
-}
-
-function updateGraphName(value: string) {
-  emit('update:graphNameInput', value)
-}
-
-function canReceiveDraggedNode(graph: GraphInfo) {
-  return !!nodeGraphDrag.value?.moved
-    && !nodeGraphMoveInProgress.value
-    && graph.id !== nodeGraphDrag.value.sourceGraphId
-}
-
-function onGraphDropPointerEnter(graph: GraphInfo) {
-  if (canReceiveDraggedNode(graph)) nodeGraphDropTargetId.value = graph.id
-}
-
-function onGraphDropPointerLeave(graph: GraphInfo) {
-  if (nodeGraphDropTargetId.value === graph.id) nodeGraphDropTargetId.value = ''
-}
-
-function updateGraphWorkingPath(value: string) {
-  emit('update:graphWorkingPathInput', value)
-}
-
-async function chooseGraphWorkingPath() {
-  try {
-    const res = await selectFolder(String(props.graphWorkingPathInput || ''))
-    const selectedPath = String(res?.path || '').trim()
-    if (selectedPath) {
-      emit('update:graphWorkingPathInput', selectedPath)
-      await nextTick()
-      emit('saveGraphConfig')
-    }
-  } catch (e: any) {
-    emit('graphPathError', String(e?.message || e))
-  }
-}
-
-function updateSelectedGraphProfile(value: string) {
-  emit('update:selectedGraphProfileId', value)
 }
 
 function updateInteractiveInput(value: string) {
@@ -243,128 +157,20 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   </div>
 
   <div class="editor-wrapper">
-    <div v-if="mode === 'graph'" class="graph-panel">
-      <div class="graph-actions">
-        <FormTextInput
-          class="graph-input"
-          :placeholder="t('memory.graphName')"
-          :model-value="graphNameInput"
-          @update:model-value="updateGraphName"
-        />
-        <ActionButton variant="primary" compact @click="emit('saveGraphConfig')">{{ t('common.save') }}</ActionButton>
-        <ActionButton compact @click="emit('saveGraphProfile')">{{ t('memory.saveProfile') }}</ActionButton>
-        <ActionButton compact @click="emit('refreshGraphs')">{{ t('common.refresh') }}</ActionButton>
-      </div>
-      <div class="graph-path-row">
-        <FormTextInput
-          class="graph-input graph-path-input"
-          :placeholder="t('memory.graphWorkingPath')"
-          :model-value="graphWorkingPathInput"
-          @update:model-value="updateGraphWorkingPath"
-          @blur="emit('saveGraphConfig')"
-        />
-        <ActionButton compact @click="chooseGraphWorkingPath">{{ t('memory.changeFolder') }}</ActionButton>
-      </div>
-      <div class="graph-actions">
-        <FormSelect
-          class="graph-input profile-input"
-          :model-value="selectedGraphProfileId"
-          @change="updateSelectedGraphProfile"
-        >
-          <option value="">{{ t('memory.profile') }}</option>
-          <option v-for="profile in graphProfiles" :key="profile.id" :value="profile.id">
-            {{ profile.name || profile.id }}
-          </option>
-        </FormSelect>
-        <ActionButton
-          variant="primary"
-          compact
-          :disabled="!selectedGraphProfileId"
-          @click="emit('createGraphFromProfile')"
-        >
-          CreateFromProfile
-        </ActionButton>
-        <DangerButton
-          compact
-          :disabled="!selectedGraphProfileId"
-          @click="emit('deleteGraphProfile')"
-        >
-          DeleteProfile
-        </DangerButton>
-      </div>
-
-      <div class="graph-list">
-        <div v-if="graphLoading" class="graph-empty">{{ t('memory.loadingGraphs') }}</div>
-        <div v-else-if="graphs.length === 0" class="graph-empty">{{ t('memory.noGraphs') }}</div>
-        <div v-else class="graph-items">
-          <div
-            v-for="graph in graphs"
-            :key="graph.id"
-            class="graph-item-shell"
-            :class="{
-              'node-drop-available': canReceiveDraggedNode(graph),
-              'node-drop-target': nodeGraphDropTargetId === graph.id,
-            }"
-            @pointerenter="onGraphDropPointerEnter(graph)"
-            @pointerleave="onGraphDropPointerLeave(graph)"
-          >
-            <div class="graph-item">
-              <div
-                class="graph-info graph-info-clickable"
-                tabindex="0"
-                role="button"
-                :aria-expanded="expandedGraphId === graph.id"
-                @click="onGraphInfoClick(graph)"
-                @keydown="onGraphInfoKeydown(graph, $event)"
-              >
-                <div class="graph-name-row">
-                  <span class="graph-expander">{{ expandedGraphId === graph.id ? '-' : '+' }}</span>
-                  <div class="graph-name">{{ graph.name }}</div>
-                </div>
-                <div class="graph-meta">{{ graph.updated_at || graph.id }}</div>
-                <div v-if="nodeGraphDropTargetId === graph.id" class="graph-node-drop-hint">
-                  {{ t('memory.dropNodeToMove') }}
-                </div>
-              </div>
-              <div class="graph-item-actions">
-                <ActionButton
-                  v-if="graph.visibility_editable"
-                  compact
-                  @click="emit('toggleGraphVisibility', graph)"
-                >
-                  {{ graph.private ? 'Public' : 'Private' }}
-                </ActionButton>
-                <ActionButton compact @click="emit('loadGraphConfig', graph)">{{ t('memory.load') }}</ActionButton>
-                <DangerButton
-                  compact
-                  :disabled="graphMemoryClearingId === graph.id"
-                  @click="emit('clearGraphMemory', graph)"
-                >
-                  {{ graphMemoryClearingId === graph.id ? 'Clearing...' : 'ClearMemory' }}
-                </DangerButton>
-                <DangerButton v-if="canDeleteGraph(graph)" compact @click="emit('deleteGraphConfig', graph)">{{ t('common.delete') }}</DangerButton>
-              </div>
-            </div>
-            <div v-if="expandedGraphId === graph.id" class="graph-node-list">
-              <div v-if="graphNodesLoadingId === graph.id" class="graph-node-empty">{{ t('memory.loadingNodes') }}</div>
-              <div v-else-if="graphNodes(graph.id).length === 0" class="graph-node-empty">{{ t('memory.noNodes') }}</div>
-              <template v-else>
-                <button
-                  v-for="node in graphNodes(graph.id)"
-                  :key="node.node_id"
-                  type="button"
-                  class="graph-node-item"
-                  @click="emit('navigateGraphNode', { graph, nodeId: node.node_id })"
-                >
-                  <span class="graph-node-name">{{ graphNodeLabel(node) }}</span>
-                  <span class="graph-node-meta">{{ graphNodeMeta(node) }}</span>
-                </button>
-              </template>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <GraphBrowserPanel v-if="mode === 'graph'" :graph-id="graphId"
+      :graph-name-input="graphNameInput" :graph-working-path-input="graphWorkingPathInput"
+      :graph-loading="graphLoading" :graph-memory-clearing-id="graphMemoryClearingId"
+      :graphs="graphs" :graph-profiles="graphProfiles" :selected-graph-profile-id="selectedGraphProfileId"
+      @update:graph-name-input="emit('update:graphNameInput', $event)"
+      @update:graph-working-path-input="emit('update:graphWorkingPathInput', $event)"
+      @update:selected-graph-profile-id="emit('update:selectedGraphProfileId', $event)"
+      @graph-path-error="emit('graphPathError', $event)"
+      @save-graph-config="emit('saveGraphConfig')" @save-graph-profile="emit('saveGraphProfile')"
+      @create-graph-from-profile="emit('createGraphFromProfile')" @delete-graph-profile="emit('deleteGraphProfile')"
+      @refresh-graphs="emit('refreshGraphs')" @load-graph-config="emit('loadGraphConfig', $event)"
+      @navigate-graph-node="emit('navigateGraphNode', $event)" @navigate-graph-group="emit('navigateGraphGroup', $event)"
+      @clear-graph-memory="emit('clearGraphMemory', $event)" @delete-graph-config="emit('deleteGraphConfig', $event)"
+      @toggle-graph-visibility="emit('toggleGraphVisibility', $event)" />
 
     <div
       v-else-if="mode === 'agent' && (messages.length > 0 || hasLiveActivity || showInteractiveBar)"
@@ -373,59 +179,27 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
       @scroll="syncScroll"
     >
       <MemoryMessageFeed
+        :key="`${graphId}:${nodeId}`"
         :messages="messages"
         :markdown-preview="markdownPreview"
-        :history-complete="historyComplete"
-        :progress-loaded="progressLoaded"
-        :metadata-loaded="metadataLoaded"
-        :progress-summary="progressSummary"
-        :loading-section="loadingSection"
-        :ensure-latest-turn-metadata="ensureLatestTurnMetadata"
+        :load-turn-details="loadTurnDetails"
         @save-message="emit('saveMessage', $event)"
         @copy-message="emit('copyMessage', $event)"
         @delete-message="emit('deleteMessage', $event)"
-        @request-history="emit('requestHistory')"
-        @request-section="emit('requestSection', $event)"
       />
-      <div v-if="hasLiveActivity" class="live-message">
-        <div class="live-head">
-          <span class="live-role">{{ t('memory.live') }}</span>
-          <span class="live-status">{{ t('memory.streaming') }}</span>
-        </div>
-        <section v-if="activityMessage" class="live-section activity">
-          <div class="live-section-label">{{ t('memory.activity') }}</div>
-          <div
-            v-if="markdownPreview"
-            class="live-body live-markdown"
-            v-html="renderedActivityMarkdown"
-            @click="handleMarkdownCodeCopyClick"
-          ></div>
-          <div v-else class="live-body">{{ activityMessage }}</div>
-        </section>
-        <LiveActivityBlocks :blocks="activityBlocks" :node-id="nodeId" :graph-id="graphId" />
-        <section v-if="thinkingMessage" class="live-section thinking">
-          <div class="live-section-label">{{ t('memory.thinking') }}</div>
-          <VirtualLiveText
-            :key="`${graphId}/${nodeId}/thinking`"
-            :text="thinkingMessage"
-            :word-wrap="wordWrap"
-            :label="t('memory.thinking')"
-            @copy="emit('copyMessage', $event)"
-            @save="emit('saveMessage', $event)"
-          />
-        </section>
-        <section v-if="liveMessage" class="live-section">
-          <div v-if="thinkingMessage || activityMessage" class="live-section-label">{{ t('memory.answer') }}</div>
-          <VirtualLiveText
-            :key="`${graphId}/${nodeId}/answer`"
-            :text="liveMessage"
-            :word-wrap="wordWrap"
-            :label="t('memory.answer')"
-            @copy="emit('copyMessage', $event)"
-            @save="emit('saveMessage', $event)"
-          />
-        </section>
-      </div>
+      <MemoryLiveMessage
+        :key="`${graphId}:${nodeId}:live`"
+        :live-message="liveMessage"
+        :thinking-message="thinkingMessage"
+        :activity-message="activityMessage"
+        :activity-blocks="activityBlocks"
+        :node-id="nodeId"
+        :graph-id="graphId"
+        :markdown-preview="markdownPreview"
+        :word-wrap="wordWrap"
+        @copy-message="emit('copyMessage', $event)"
+        @save-message="emit('saveMessage', $event)"
+      />
     </div>
 
     <div
@@ -515,556 +289,4 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
   </div>
 </template>
 
-<style scoped>
-.agent-images {
-  padding: 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.agent-image-item {
-  width: 94px;
-  height: 94px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-}
-
-.agent-image-item img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.editor-wrapper,
-.graph-panel,
-.graph-list,
-.graph-items {
-  display: flex;
-}
-
-.editor-wrapper {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.graph-panel,
-.graph-list,
-.graph-items {
-  flex-direction: column;
-}
-
-.graph-panel {
-  flex: 1;
-  gap: 10px;
-  padding: 10px;
-  overflow: auto;
-  --form-control-border: var(--theme-panel-graph-panel-input-border, rgba(148, 163, 184, 0.3));
-  --form-control-background: var(--theme-panel-graph-panel-input-background, rgba(15, 23, 42, 0.7));
-  --form-control-text: var(--theme-panel-graph-panel-input-text, rgba(226, 232, 240, 0.96));
-  --form-control-focus: var(--theme-panel-graph-panel-input-focus-border, rgba(56, 189, 248, 0.7));
-  --ui-button-border: var(--theme-panel-graph-panel-button-border, rgba(148, 163, 184, 0.3));
-  --ui-button-background: var(--theme-panel-graph-panel-button-background, rgba(15, 23, 42, 0.7));
-  --ui-button-text: var(--theme-panel-graph-panel-button-text, rgba(226, 232, 240, 0.94));
-  --ui-primary-border: var(--theme-panel-graph-panel-button-primary-border, rgba(56, 189, 248, 0.7));
-  --ui-primary-background: var(--theme-panel-graph-panel-button-primary-background, rgba(14, 116, 144, 0.34));
-  background-color: var(--theme-panel-graph-panel-background-color, transparent);
-  background-image: var(--theme-panel-graph-panel-background-image, none);
-  background-size: var(--theme-panel-graph-panel-background-size, cover);
-  background-position: var(--theme-panel-graph-panel-background-position, center);
-  background-repeat: var(--theme-panel-graph-panel-background-repeat, no-repeat);
-  background-blend-mode: var(--theme-panel-graph-panel-background-blend-mode, normal);
-}
-
-.graph-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.graph-path-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.graph-path-input {
-  min-width: 0;
-}
-
-.graph-input {
-  flex: 1;
-  font-size: 12px;
-}
-
-.profile-input {
-  min-width: 0;
-}
-
-.graph-item-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.graph-list,
-.graph-items {
-  gap: 8px;
-}
-
-.graph-item-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.graph-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid var(--theme-panel-graph-panel-item-border, rgba(148, 163, 184, 0.2));
-  border-radius: 10px;
-  background: var(--theme-panel-graph-panel-item-background, rgba(15, 23, 42, 0.45));
-  padding: 8px 9px;
-}
-
-.graph-info {
-  min-width: 0;
-}
-
-.graph-info-clickable {
-  flex: 1;
-  cursor: pointer;
-  border-radius: 6px;
-  padding: 2px 4px;
-  margin: -2px -4px;
-  outline: none;
-}
-
-.graph-info-clickable:hover,
-.graph-info-clickable:focus-visible {
-  background: rgba(56, 189, 248, 0.1);
-}
-
-.graph-name-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.graph-expander {
-  width: 14px;
-  flex: 0 0 14px;
-  color: var(--theme-panel-graph-panel-item-muted, rgba(148, 163, 184, 0.9));
-  text-align: center;
-  font-size: 12px;
-}
-
-.graph-name {
-  font-size: 13px;
-  color: var(--theme-panel-graph-panel-item-text, rgba(248, 250, 252, 0.95));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.graph-node-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-left: 16px;
-  padding-left: 10px;
-  border-left: 1px solid var(--theme-panel-graph-panel-item-border, rgba(148, 163, 184, 0.2));
-}
-
-.graph-node-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--theme-panel-graph-panel-item-text, rgba(248, 250, 252, 0.95));
-  border-radius: 7px;
-  padding: 6px 8px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.graph-node-item:hover,
-.graph-node-item:focus-visible {
-  border-color: var(--theme-panel-graph-panel-button-primary-border, rgba(56, 189, 248, 0.55));
-  background: rgba(14, 116, 144, 0.2);
-  outline: none;
-}
-
-.graph-node-name {
-  max-width: 100%;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.graph-node-meta,
-.graph-node-empty {
-  max-width: 100%;
-  font-size: 11px;
-  color: var(--theme-panel-graph-panel-item-muted, rgba(148, 163, 184, 0.9));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.graph-node-empty {
-  padding: 6px 8px;
-}
-
-.graph-meta,
-.graph-empty {
-  font-size: 11px;
-  color: var(--theme-panel-graph-panel-item-muted, rgba(148, 163, 184, 0.9));
-}
-
-.line-gutter {
-  width: 52px;
-  background: rgba(0, 0, 0, 0.2);
-  border-right: 1px solid rgba(148, 163, 184, 0.14);
-  color: rgba(148, 163, 184, 0.8);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
-  text-align: right;
-  padding: 10px 8px;
-  overflow: hidden;
-  user-select: none;
-  flex-shrink: 0;
-  line-height: 1.5;
-}
-
-.line-number {
-  line-height: 1.5;
-}
-
-.panel-body {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  padding: 12px;
-  border: none;
-  background: transparent;
-  color: var(--theme-panel-memory-panel-text-secondary, #e2e8f0);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: var(--theme-panel-memory-panel-font-body, 13px);
-  line-height: 1.5;
-  resize: none;
-  outline: none;
-  overflow: auto;
-  white-space: pre;
-  scrollbar-gutter: stable both-edges;
-}
-
-.message-feed {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  white-space: normal;
-  min-height: 0;
-  max-height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.live-message {
-  flex: 0 0 auto;
-  border: 1px solid rgba(56, 189, 248, 0.34);
-  border-left: 4px solid rgba(56, 189, 248, 0.75);
-  border-radius: 8px;
-  background: rgba(8, 47, 73, 0.28);
-  overflow: hidden;
-}
-
-.live-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(125, 211, 252, 0.18);
-  background: rgba(3, 105, 161, 0.16);
-}
-
-.live-role {
-  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
-  font-weight: 700;
-  color: rgba(186, 230, 253, 0.96);
-}
-
-.live-status {
-  font-size: var(--theme-panel-memory-panel-font-meta, 11px);
-  color: rgba(125, 211, 252, 0.86);
-}
-
-.live-section + .live-section {
-  border-top: 1px solid rgba(125, 211, 252, 0.16);
-}
-
-.live-section.thinking {
-  background: rgba(15, 23, 42, 0.24);
-}
-
-.live-section.activity {
-  background: rgba(6, 78, 59, 0.18);
-}
-
-.live-section.activity-block {
-  background: rgba(30, 41, 59, 0.24);
-}
-
-.live-section.activity-web_search {
-  background: rgba(6, 78, 59, 0.18);
-}
-
-.live-web-searching {
-  padding: 8px 10px;
-  color: rgba(125, 211, 252, 0.92);
-  font-size: var(--theme-panel-memory-panel-font-small, 11px);
-  font-weight: 700;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.live-section.activity-file_search {
-  background: rgba(49, 46, 129, 0.16);
-}
-
-.live-section.activity-image_generation {
-  background: rgba(88, 28, 135, 0.16);
-}
-
-.live-section.activity-refusal {
-  background: rgba(127, 29, 29, 0.18);
-}
-
-.live-section-label-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.live-block-status {
-  color: rgba(148, 163, 184, 0.92);
-  font-weight: 500;
-}
-
-.live-block-sources {
-  display: grid;
-  gap: 4px;
-  padding: 0 10px 10px;
-}
-
-.live-block-sources a {
-  color: rgba(125, 211, 252, 0.92);
-  overflow-wrap: anywhere;
-}
-
-.live-section-label {
-  padding: 8px 10px 0;
-  color: rgba(125, 211, 252, 0.88);
-  font-size: var(--theme-panel-memory-panel-font-small, 11px);
-  font-weight: 700;
-}
-
-.live-body {
-  padding: 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.55;
-  color: rgba(226, 232, 240, 0.96);
-}
-
-.live-markdown {
-  white-space: normal;
-}
-
-:deep(.live-markdown p) {
-  margin: 0 0 8px 0;
-}
-
-:deep(.live-markdown p:last-child) {
-  margin-bottom: 0;
-}
-
-:deep(.live-markdown pre) {
-  margin: 8px 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.28);
-  overflow: auto;
-}
-
-:deep(.live-markdown .markdown-code-block pre) {
-  margin: 0;
-  padding: 10px 48px 34px 10px;
-  background: transparent;
-}
-
-:deep(.live-markdown code) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-}
-
-:deep(.live-markdown ul),
-:deep(.live-markdown ol) {
-  margin: 6px 0 6px 18px;
-  padding: 0;
-}
-
-:deep(.live-markdown li) {
-  margin: 2px 0;
-}
-
-.interactive-bar {
-  flex: 0 0 auto;
-  border-top: 1px solid rgba(34, 211, 238, 0.22);
-  background: rgba(8, 47, 73, 0.32);
-  padding: 8px 10px;
-  --form-control-border: rgba(34, 211, 238, 0.32);
-  --form-control-background: rgba(15, 23, 42, 0.82);
-  --form-control-focus: rgba(34, 211, 238, 0.65);
-}
-
-.graph-item-shell.node-drop-available {
-  outline: 1px dashed rgba(56, 189, 248, 0.72);
-  outline-offset: 2px;
-}
-
-.graph-item-shell.node-drop-target {
-  background: rgba(14, 165, 233, 0.16);
-  box-shadow: inset 3px 0 0 rgba(56, 189, 248, 0.95);
-}
-
-.graph-node-drop-hint {
-  margin-top: 4px;
-  color: rgb(125, 211, 252);
-  font-size: 12px;
-}
-
-.interactive-bar-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.interactive-label {
-  font-size: var(--theme-panel-memory-panel-font-small, 11px);
-  font-weight: 700;
-  color: rgba(103, 232, 249, 0.96);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.interactive-hint {
-  font-size: var(--theme-panel-memory-panel-font-small, 11px);
-  color: rgba(148, 163, 184, 0.82);
-}
-
-.interactive-input-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.interactive-input {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-}
-
-.wrap-container {
-  flex: 1;
-  overflow: auto;
-  padding: 10px 0;
-  position: relative;
-}
-
-.wrap-container::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 52px;
-  background: rgba(0, 0, 0, 0.2);
-  border-right: 1px solid rgba(148, 163, 184, 0.14);
-  pointer-events: none;
-}
-
-.wrap-container.no-gutter::before {
-  display: none;
-}
-
-.wrap-row {
-  display: flex;
-  position: relative;
-  z-index: 1;
-}
-
-.wrap-num {
-  width: 52px;
-  flex-shrink: 0;
-  text-align: right;
-  padding-right: 8px;
-  color: rgba(148, 163, 184, 0.78);
-  user-select: none;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
-  line-height: 1.5;
-}
-
-.wrap-content {
-  flex: 1;
-  padding: 0 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: var(--theme-panel-memory-panel-font-body, 13px);
-  line-height: 1.5;
-  color: inherit;
-}
-
-.wrap-empty {
-  padding: 10px 60px;
-  opacity: 0.6;
-  font-size: var(--theme-panel-memory-panel-font-ui, 12px);
-}
-
-@media (max-width: 760px) {
-  .interactive-bar-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-
-  .interactive-input-row {
-    flex-wrap: wrap;
-  }
-
-  .interactive-input {
-    min-width: 0;
-    width: 100%;
-  }
-}
-</style>
+<style scoped src="./memoryContentView.css"></style>

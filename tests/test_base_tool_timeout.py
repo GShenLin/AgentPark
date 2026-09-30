@@ -29,7 +29,7 @@ def test_process_tool_result_attaches_final_image_path(tmp_path):
     image_path = tmp_path / "gui_feedback.png"
     image_path.write_bytes(b"png")
 
-    cleaned, image_data = tool.process_tool_result(
+    cleaned, images = tool.process_tool_result(
         {
             "status": "done",
             "tool": "long_running_task",
@@ -38,7 +38,8 @@ def test_process_tool_result_attaches_final_image_path(tmp_path):
     )
 
     assert isinstance(cleaned, dict)
-    assert isinstance(image_data, dict)
+    assert len(images) == 1
+    image_data = images[0]
     assert image_data.get("base64") is None
     assert image_data.get("path") == str(image_path)
 
@@ -54,7 +55,7 @@ def test_process_tool_result_reports_missing_final_image_path(tmp_path):
         }
     )
 
-    assert outcome.image_data is None
+    assert outcome.images == ()
     assert outcome.diagnostics == (f"final_image_path does not exist: {missing}",)
 
 

@@ -19,6 +19,7 @@ _CLI_FORMATS = {
     "claude": rf"(?P<version>{_SEMVER}) \(Claude Code\)",
     "openclaw": rf"OpenClaw (?P<version>{_SEMVER})(?: \([0-9a-f]+\))?",
     "deepseek_harness": rf"(?P<version>{_SEMVER})",
+    "minimax_code": rf"(?P<version>{_SEMVER})",
     "pi": rf"(?P<version>{_SEMVER})",
 }
 
@@ -42,12 +43,12 @@ def version_key(version: str) -> tuple:
     return (int(major), int(minor), int(patch), 0 if prerelease else 1, identifiers)
 
 
-def installed_version(harness_id: str, root: Path, cli_version: str) -> str:
+def installed_version(harness_id: str, root: Path, cli_version: str, *, package: str) -> str:
     spec = descriptor(harness_id)
-    manifest = root / "node_modules" / spec.package / "package.json"
+    manifest = root / "node_modules" / package / "package.json"
     if manifest.exists():
         data = json.loads(manifest.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or data.get("name") != spec.package:
+        if not isinstance(data, dict) or data.get("name") != package:
             raise ValueError(f"Unexpected Harness package manifest: {manifest}")
         version = data.get("version")
         version_key(version)
@@ -58,10 +59,9 @@ def installed_version(harness_id: str, root: Path, cli_version: str) -> str:
     return match.group("version")
 
 
-def latest_version(harness_id: str, cwd: str) -> str:
-    spec = descriptor(harness_id)
+def latest_version(package: str, cwd: str) -> str:
     output = run_process(
-        [*npm_argv(), "view", spec.package + "@latest", "version", "--json",
+        [*npm_argv(), "view", package + "@latest", "version", "--json",
          "--prefer-online", "--fetch-retries=0", "--fetch-timeout=15000"],
         cwd=cwd, timeout=20,
     )
@@ -73,8 +73,8 @@ def latest_version(harness_id: str, cwd: str) -> str:
 def check_updates(harness_id: str, root: Path, info: dict, *, cwd: str) -> dict:
     current = latest = ""
     try:
-        current = installed_version(harness_id, root, info["version"])
-        latest = latest_version(harness_id, str(root) if root.exists() else cwd)
+        current = installed_version(harness_id, root, info["version"], package=info["package"])
+        latest = latest_version(info["package"], str(root) if root.exists() else cwd)
         state = "available" if version_key(latest) > version_key(current) else "current"
         return asdict(HarnessUpdate(current, latest, state))
     except (OSError, ValueError, RuntimeError, TimeoutError) as exc:

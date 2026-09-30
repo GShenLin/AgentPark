@@ -8,15 +8,14 @@ import FormTextInput from '../FormTextInput.vue'
 import PasteAgentProfileSettingsGroup from './PasteAgentProfileSettingsGroup.vue'
 import StorageSettingsGroup from './StorageSettingsGroup.vue'
 import { t } from '../../i18n'
-import type { ProviderInfo } from '../../api'
 import type { LongTermMemorySettings } from '../../longTermMemorySettings'
 import LongTermMemorySettingsGroup from './LongTermMemorySettingsGroup.vue'
 import ConversationContextSettingsGroup from './ConversationContextSettingsGroup.vue'
 import type { ConversationContextSettings } from '../../conversationContextSettings'
+import { DEFAULT_AGENT_PANEL_SETTINGS } from '../../agentPanelSettings'
 
 const props = defineProps<{
   data: Record<string, unknown>
-  providers: ProviderInfo[]
   memoryDefaults?: LongTermMemorySettings
   conversationDefaults?: ConversationContextSettings
   runtime?: {
@@ -152,12 +151,31 @@ function deleteMcpServer() {
 
     <PasteAgentProfileSettingsGroup />
 
+    <section class="settings-group">
+      <h2>{{ t('defaults.agentPanel') }}</h2>
+      <div class="form-grid">
+        <label v-for="dimension in (['width', 'height'] as const)" :key="dimension">
+          <span>{{ t(dimension === 'width' ? 'defaults.agentPanelWidth' : 'defaults.agentPanelHeight') }}</span>
+          <FormTextInput
+            :model-value="fieldText('agentPanel', dimension)"
+            :placeholder="String(DEFAULT_AGENT_PANEL_SETTINGS[dimension])"
+            type="number"
+            :min="dimension === 'width' ? 360 : 320"
+            max="7680"
+            step="1"
+            @update:model-value="setNestedNumber('agentPanel', dimension, $event)"
+          />
+          <small>{{ t('defaults.agentPanelSizeHelp') }}</small>
+        </label>
+      </div>
+    </section>
+
     <ConversationContextSettingsGroup
-      :data="section('conversationContext')" :defaults="conversationDefaults" :providers="providers"
+      :data="section('conversationContext')" :defaults="conversationDefaults"
       @update:data="emit('update:data', { ...props.data, conversationContext: $event })"
     />
     <LongTermMemorySettingsGroup
-      :data="section('longTermMemory')" :defaults="memoryDefaults" :providers="providers"
+      :data="section('longTermMemory')" :defaults="memoryDefaults"
       @update:data="emit('update:data', { ...props.data, longTermMemory: $event })"
     />
 
@@ -337,107 +355,4 @@ function deleteMcpServer() {
   </div>
 </template>
 
-<style scoped>
-.defaults-form {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-right: 4px;
-}
-
-.settings-group {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  padding: 12px;
-  background: rgba(15, 23, 42, 0.28);
-}
-
-.settings-group h2,
-.form-head h3 {
-  margin: 0 0 10px;
-  font-size: 15px;
-}
-
-.group-head,
-.form-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  color: rgba(226, 232, 240, 0.94);
-  font-size: 12px;
-}
-
-label small {
-  color: rgba(148, 163, 184, 0.9);
-  line-height: 1.45;
-}
-
-label small.pending-path {
-  color: rgba(250, 204, 21, 0.92);
-}
-
-.mcp-add {
-  display: flex;
-  gap: 6px;
-}
-
-.mcp-layout {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 12px;
-}
-
-.mcp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-height: 0;
-  max-height: 360px;
-  overflow: auto;
-}
-
-.mcp-item {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-}
-
-.mcp-item.active {
-  border-color: rgba(56, 189, 248, 0.66);
-  background: rgba(14, 165, 233, 0.18);
-}
-
-.mcp-item small {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: rgba(148, 163, 184, 0.9);
-  font-size: 11px;
-}
-
-@media (max-width: 1120px) {
-  .form-grid,
-  .mcp-layout {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style scoped src="./DefaultSettingsForm.css"></style>

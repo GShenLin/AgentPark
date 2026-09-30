@@ -12,7 +12,6 @@ const emit = defineEmits<{
 
 const modeLabels: Record<string, string> = {
   chat: 'chat',
-  imagechat: 'imagechat',
   image_generation: 'image_generation',
   image_matting: 'image_matting',
   vision_understand: 'vision_understand',
@@ -26,7 +25,6 @@ const modeLabels: Record<string, string> = {
 const options = computed(() => {
   const defaults = [
     'chat',
-    'imagechat',
     'image_generation',
     'image_matting',
     'vision_understand',

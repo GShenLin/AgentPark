@@ -34,6 +34,7 @@ def test_invalid_release_cannot_be_used_as_git_ref(monkeypatch, payload):
 
 @pytest.fixture
 def installed(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.harness.hermes_python.is_android", lambda: False)
     root = tmp_path / "managed"
     source = root / "source"
     (source / ".git").mkdir(parents=True)
@@ -61,6 +62,29 @@ def test_check_separates_runtime_health_and_release_failure(installed, monkeypat
     assert info["update_error"] == "GitHub unavailable"
 
 
+def test_unknown_source_never_queries_official_release(installed, monkeypatch):
+    root, _, _, _ = installed
+    monkeypatch.setattr(installer, "_git", lambda *args: "https://example.com/fork.git")
+    monkeypatch.setattr(installer, "latest_release", lambda: pytest.fail("Unverified source must not query releases"))
+    info = installer.check(root, include_updates=True)
+    assert info["status"] == "ready"
+    assert info["can_upgrade"] is False
+    assert info["update_status"] == "error"
+    assert info["latest_version"] == ""
+    assert info["update_error"] == info["upgrade_error"]
+    with pytest.raises(ValueError, match="official NousResearch"):
+        installer.mutate(root, "upgrade")
+
+
+def test_incomplete_environment_reports_reinstall(installed):
+    root, _, python, _ = installed
+    python.unlink()
+    info = installer.check(root, include_updates=True)
+    assert info["status"] == "error"
+    assert "Reinstall" in info["error"]
+    assert info["can_uninstall"] is True
+
+
 def test_external_upgrade_targets_original_python_and_source(installed, monkeypatch):
     root, source, python, probe = installed
     managed = root.parent / "workspace-copy"
@@ -75,6 +99,18 @@ def test_external_upgrade_targets_original_python_and_source(installed, monkeypa
     install = calls[0]
     assert install == ["uv", "pip", "install", "--python", str(python), "-e", str(source)]
     assert not managed.exists()
+
+
+def test_android_upgrade_uses_native_installer_without_uv(installed, monkeypatch):
+    root, source, python, probe = installed
+    monkeypatch.setattr("src.harness.hermes_python.is_android", lambda: True)
+    calls = []
+    monkeypatch.setattr("src.harness.hermes_python.install_android",
+                        lambda python, source, output: calls.append((python, source)))
+    monkeypatch.setattr(installer, "_uv", lambda *args: pytest.fail("Android must not bootstrap uv"))
+    probe["version"] = "0.21.3"
+    installer.mutate(root, "upgrade")
+    assert calls == [(python, source)]
 
 
 def test_upgrade_refuses_dirty_source_before_checkout(installed, monkeypatch):

@@ -17,8 +17,8 @@ class ProviderBinding:
     def resolve(cls, provider_id: str, model_id: str = "") -> "ProviderBinding":
         config = ConfigLoader().get_provider_config(provider_id)
         modes = config.get("supportmode")
-        if not isinstance(modes, list) or not {"chat", "imagechat"}.intersection(modes):
-            raise ValueError(f"Provider {provider_id!r} does not declare chat or imagechat support.")
+        if not isinstance(modes, list) or "chat" not in modes:
+            raise ValueError(f"Provider {provider_id!r} does not declare chat support.")
         model = resolve_provider_model(config, model_id)
         if not model:
             raise ValueError(f"Provider {provider_id!r} has no model.")

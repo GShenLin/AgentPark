@@ -10,6 +10,7 @@ import pytest
 
 import functions.console_tools as console_tools
 import functions.console_process_runtime as console_process_runtime
+import functions.console_shell as console_shell
 from functions.console_tools import execute_console_command
 from src.runtime_environment import RuntimeEnvironment
 
@@ -148,7 +149,7 @@ def test_execute_console_command_blocks_interactive_npx_skills_find(monkeypatch)
 
 def test_execute_console_command_runs_commands_through_powershell_without_shell_true(monkeypatch):
     monkeypatch.setattr(
-        console_process_runtime, "get_runtime_environment",
+        console_shell, "get_runtime_environment",
         lambda: RuntimeEnvironment("windows", "powershell", "powershell"),
     )
     popen_args = []
@@ -164,12 +165,12 @@ def test_execute_console_command_runs_commands_through_powershell_without_shell_
     result = json.loads(execute_console_command("pwd"))
 
     assert result["status"] == "success"
-    assert popen_args[0][:3] == ["powershell", "-NoProfile", "-Command"]
-    powershell_script = popen_args[0][3]
+    assert popen_args[0][:4] == ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
+    powershell_script = popen_args[0][4]
     assert "[Console]::InputEncoding = $__AgentParkUtf8" in powershell_script
     assert "[Console]::OutputEncoding = $__AgentParkUtf8" in powershell_script
     assert "$OutputEncoding = $__AgentParkUtf8" in powershell_script
-    assert "& {\npwd\nif (-not $?)" in powershell_script
+    assert "| Out-Default" in powershell_script
     assert "exit $LASTEXITCODE" in powershell_script
     assert "shell" not in popen_kwargs
     assert "start_new_session" not in popen_kwargs
@@ -577,7 +578,7 @@ def test_execute_console_command_declaration_allows_explicit_null_watchdog():
 def test_execute_console_command_declaration_explains_expected_native_nonzero_exit():
     description = console_tools.execute_console_command_declaration["function"]["description"]
 
-    assert "Native non-zero exit codes are propagated" in description
+    assert "last native non-zero exit code is propagated" in description
     assert "rg exit 1 for no matches" in description
     assert "$LASTEXITCODE" in description
 

@@ -80,7 +80,7 @@ AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
 
 所有节点都继承这些通用配置字段：
 
-- `skills`：为当前节点加载 `skills/` 下的 Skill 文档和脚本。
+- `skills`：为当前节点加载 `.agents/skills/` 下的 Skill 文档和脚本。
 - `plugins`：为当前节点加载项目插件能力。
 - `working_path`：选中节点时文件浏览器打开的目录；Agent 和命令节点也会把它作为工作目录上下文。
 
@@ -144,7 +144,7 @@ AgentPark/
   memories/            # 图/节点记忆；当前记忆在根目录，溢出内容按日期归档
   nodes/               # 可视化工作流节点实现
   scripts/             # 辅助脚本
-  skills/              # Agent skill 文档
+  .agents/skills/      # Agent skill 文档
   src/                 # FastAPI 后端、服务商、协议、运行时
     remote_worker/     # 独立 AgentParkRemote worker
   tests/               # pytest 测试
@@ -422,4 +422,4 @@ dist\AgentPark.exe doctor --json
 dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
 ```
 
-`package.bat` 会把 `docs/`、`skills/` 和 `plugins/` 复制到 `dist/`，因此打包后的 doctor 检查和默认能力发现会使用与源码 checkout 相同的资源。
+`package.bat` 会把 `docs/`、`.agents/skills/` 和 `plugins/` 复制到 `dist/`，因此打包后的 doctor 检查和默认能力发现会使用与源码 checkout 相同的资源。

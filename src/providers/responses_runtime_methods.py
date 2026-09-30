@@ -79,6 +79,8 @@ class ResponsesRuntimeMethods:
 
     def _prepare_responses_request_input(self, current_input: Any) -> tuple[list[Any], str]:
         items = list(current_input) if isinstance(current_input, list) else []
+        from nodes.agent_skill_activation import refresh_skill_messages
+        items = refresh_skill_messages(self, items, responses=True)
         runtime_context = get_agent_runtime_context(self)
         return items, str(runtime_context.responses_instruction or "").strip()
 

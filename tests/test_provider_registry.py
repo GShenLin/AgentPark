@@ -21,6 +21,9 @@ def test_provider_registry_loads_only_selected_provider(monkeypatch):
         def __init__(self, **kwargs):
             captured.append(kwargs)
 
+    from src.providers.parameter_mapping import PROVIDER_PARAMETER_MAPPINGS
+    monkeypatch.setitem(PROVIDER_PARAMETER_MAPPINGS, "demo", PROVIDER_PARAMETER_MAPPINGS["openai"])
+    DemoAgent.Send = lambda self, **kwargs: kwargs
     registration = registry.ProviderRegistration("demo", "demo.provider", "DemoAgent")
     monkeypatch.setitem(registry.PROVIDER_REGISTRATIONS, "demo", registration)
     monkeypatch.setattr(registry.ConfigLoader, "get_provider_config", lambda _self, _id: {"type": "demo"})

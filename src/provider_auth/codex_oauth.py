@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import base64
 import hashlib
 import json
 import secrets
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -114,14 +113,14 @@ def _expires_at(access_token: str) -> int | None:
 def _request_json(url: str, *, data: dict, form: bool = False, timeout: float = 30) -> dict:
     body = urllib.parse.urlencode(data).encode("utf-8") if form else json.dumps(data).encode("utf-8")
     content_type = "application/x-www-form-urlencoded" if form else "application/json"
-    request = urllib.request.Request(url, data=body, headers={"Content-Type": content_type}, method="POST")
+    request = dict(url=url, body=body, headers={"Content-Type": content_type}, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:2000]
-        raise CodexOAuthError(f"OpenAI authorization endpoint returned HTTP {exc.code}: {detail}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        response = CurlHttpTransport().request(**request, timeout_sec=timeout).raise_for_status()
+        payload = json.loads(response.content.decode("utf-8"))
+    except CurlHttpError as exc:
+        detail = exc.content.decode("utf-8", errors="replace")[:2000]
+        raise CodexOAuthError(f"OpenAI authorization endpoint returned HTTP {exc.status_code}: {detail}") from exc
+    except (CurlTransportError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         raise CodexOAuthError(f"OpenAI authorization request failed: {exc}") from exc
     if not isinstance(payload, dict):
         raise CodexOAuthError("OpenAI authorization endpoint returned an invalid response.")

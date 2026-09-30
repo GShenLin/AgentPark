@@ -2,7 +2,6 @@ import type { NodeInfo, ProviderInfo } from '../../api'
 
 const SUPPORT_MODE_ORDER = [
   'chat',
-  'imagechat',
   'image_generation',
   'image_matting',
   'vision_understand',

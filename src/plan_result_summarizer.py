@@ -1,5 +1,8 @@
 import json
 
+from src.providers.agent_config import AgentSendContext
+from src.providers.agent_invocation import send_agent
+
 
 class PlanResultSummarizer:
     def __init__(self, agent):
@@ -17,7 +20,7 @@ class PlanResultSummarizer:
         try:
             self._agent.messages = []
             self._agent.Message("user", prompt)
-            final = self._agent.Send(run_tools=False) if "run_tools" in self._agent.Send.__code__.co_varnames else self._agent.Send()
+            final = send_agent(self._agent, AgentSendContext(run_tools=False))
         except Exception:
             final = None
         finally:

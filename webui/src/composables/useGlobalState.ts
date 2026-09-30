@@ -1,12 +1,7 @@
 import { ref } from 'vue'
-import type { ProviderInfo, GraphConfig, LatestTurnProgressSummary, LiveActivityBlock, MessageEnvelope } from '../api'
+import type { ProviderInfo, GraphConfig, LiveActivityBlock, MessageEnvelope } from '../api'
 
-export type NodeEditorAttachment = {
-  name: string
-  path: string
-  kind?: string
-  mime?: string
-}
+import type { MessageAttachment } from './messageAttachments'
 
 export type NodeGraphDragState = {
   sourceGraphId: string
@@ -30,10 +25,6 @@ const lastError = ref<string | null>(null)
 
 const memoryText = ref('')
 const memoryMessages = ref<MessageEnvelope[]>([])
-const memoryHistoryComplete = ref(true)
-const memoryLatestTurnProgressLoaded = ref(true)
-const memoryLatestTurnMetadataLoaded = ref(true)
-const memoryLatestTurnProgressSummary = ref<LatestTurnProgressSummary | null>(null)
 const memoryLiveMessage = ref('')
 const memoryThinkingMessage = ref('')
 const memoryActivityMessage = ref('')
@@ -54,8 +45,8 @@ const currentGraphName = ref<string | null>('default')
 const currentGraphWorkingPath = ref('')
 const nodeSettingsRequest = ref<{ id: string; nonce: number } | null>(null)
 const nodeEditorInputText = ref('')
-const nodeEditorAttachments = ref<NodeEditorAttachment[]>([])
-const nodeEditorAttachmentDrafts = ref<Record<string, NodeEditorAttachment[]>>({})
+const nodeEditorAttachments = ref<MessageAttachment[]>([])
+const nodeEditorAttachmentDrafts = ref<Record<string, MessageAttachment[]>>({})
 const nodeTriggerInputs = ref<Record<string, string>>({})
 const nodeConfigDockWidth = ref(360)
 const nodeGraphDrag = ref<NodeGraphDragState | null>(null)
@@ -71,10 +62,6 @@ export function useGlobalState() {
     lastError,
     memoryText,
     memoryMessages,
-    memoryHistoryComplete,
-    memoryLatestTurnProgressLoaded,
-    memoryLatestTurnMetadataLoaded,
-    memoryLatestTurnProgressSummary,
     memoryLiveMessage,
     memoryThinkingMessage,
     memoryActivityMessage,

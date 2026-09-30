@@ -3,7 +3,7 @@ import type { ProviderInfo } from '../api'
 
 type NodeFields = Record<string, any>
 
-export const AGENT_SUPPORT_MODE_ORDER = ['chat', 'image_generation', 'video_generation', 'audio_generation', 'imagechat', 'vision_understand'] as const
+export const AGENT_SUPPORT_MODE_ORDER = ['chat', 'image_generation', 'video_generation', 'audio_generation', 'vision_understand'] as const
 
 export const switchOptions = [
   { value: 'enabled', label: 'enabled' },
@@ -22,7 +22,7 @@ export const reasoningEffortOptions = [
 
 export const CODEX_NODE_TYPE = 'codex_node'
 export const CLAUDE_NODE_TYPE = 'claude_node'
-export const HARNESS_NODE_TYPES = [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE, 'openclaw_node', 'deepseek_harness_node', 'pi_node', 'hermes_agent_node']
+export const HARNESS_NODE_TYPES = [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE, 'openclaw_node', 'deepseek_harness_node', 'pi_node', 'hermes_agent_node', 'minimax_code_node']
 export const AUDIO_GENERATION_MODE = 'audio_generation'
 
 export function dedupeStrings(values: unknown[]): string[] {
@@ -94,7 +94,7 @@ export function agentProviderModes(provider: Pick<ProviderInfo, 'supportmode' | 
 }
 
 export function cliProviderModes(provider: Pick<ProviderInfo, 'supportmode'>): string[] {
-  return providerModes(provider).filter((mode) => mode === 'chat' || mode === 'imagechat')
+  return providerModes(provider).filter((mode) => mode === 'chat')
 }
 
 export function resolveAgentProviderSchemaContext(
@@ -201,7 +201,7 @@ export function useAgentNodeCreateSchema(options: {
       const selectedProvider = providers.value.find(item => item.id === providerId)
       const modelIds = providerModelIds(selectedProvider)
       if (!modelIds.includes(String(selectedNodeFields.value.model || ''))) selectedNodeFields.value.model = modelIds[0] || ''
-      if (['hermes_agent_node', 'openclaw_node'].includes(selectedTypeId.value)) {
+      if (['hermes_agent_node', 'openclaw_node', 'minimax_code_node'].includes(selectedTypeId.value)) {
         const feature = selectedProvider?.features?.reasoning_effort
         const efforts = feature?.supported ? feature.values || [] : []
         if (!efforts.includes(String(selectedNodeFields.value.reasoning_effort || ''))) {

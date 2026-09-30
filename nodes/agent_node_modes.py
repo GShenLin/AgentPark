@@ -13,7 +13,6 @@ MODE_CHAT = "chat"
 MODE_IMAGE_GENERATION = "image_generation"
 MODE_VIDEO_GENERATION = "video_generation"
 MODE_AUDIO_GENERATION = "audio_generation"
-MODE_IMAGE_CHAT = "imagechat"
 MODE_VISION_UNDERSTAND = "vision_understand"
 
 MODE_ORDER = (
@@ -21,7 +20,6 @@ MODE_ORDER = (
     MODE_IMAGE_GENERATION,
     MODE_VIDEO_GENERATION,
     MODE_AUDIO_GENERATION,
-    MODE_IMAGE_CHAT,
     MODE_VISION_UNDERSTAND,
 )
 
@@ -30,7 +28,6 @@ MODE_LABELS = {
     MODE_IMAGE_GENERATION: "Image Generation",
     MODE_VIDEO_GENERATION: "Video Generation",
     MODE_AUDIO_GENERATION: "Audio Generation",
-    MODE_IMAGE_CHAT: "Image Chat",
     MODE_VISION_UNDERSTAND: "Vision Understand",
 }
 
@@ -213,7 +210,6 @@ MODE_FIELDS = {
     MODE_IMAGE_GENERATION: COMMON_FIELDS | IMAGE_FIELDS,
     MODE_VIDEO_GENERATION: COMMON_FIELDS | VIDEO_FIELDS,
     MODE_AUDIO_GENERATION: COMMON_FIELDS | AUDIO_FIELDS,
-    MODE_IMAGE_CHAT: COMMON_FIELDS | CHAT_FIELDS,
     MODE_VISION_UNDERSTAND: COMMON_FIELDS,
 }
 
@@ -227,7 +223,7 @@ def modes_for_field(field_name: str) -> tuple[str, ...]:
 
 
 def capability_mode(mode: object) -> bool:
-    return str(mode or "").strip().lower() in {MODE_CHAT, MODE_IMAGE_CHAT}
+    return str(mode or "").strip().lower() == MODE_CHAT
 
 
 def resolve_input_support_mode(support_modes: object, message: object) -> str:
@@ -255,8 +251,6 @@ def resolve_input_support_mode(support_modes: object, message: object) -> str:
         return explicit
     if len(modes) == 1:
         return modes[0]
-    if MODE_IMAGE_CHAT in modes:
-        return MODE_IMAGE_CHAT
     if MODE_CHAT in modes:
         return MODE_CHAT
     raise ValueError(

@@ -4,8 +4,8 @@ from dataclasses import dataclass, fields
 @dataclass(frozen=True)
 class MemorySettings:
     enabled: bool = True
-    extract_provider: str = ""
-    consolidation_provider: str = ""
+    extract_profile_id: str = "DouBao"
+    consolidation_profile_id: str = "DouBao"
     min_idle_seconds: int = 3600
     max_age_days: int = 30
     max_unused_days: int = 30
@@ -32,4 +32,8 @@ class MemorySettings:
                 minimum = 0 if key == "min_idle_seconds" else 1
                 if value < minimum:
                     raise ValueError(f"longTermMemory.{key} must be >= {minimum}")
-        return cls(**raw)
+        result = cls(**raw)
+        for key in ("extract_profile_id", "consolidation_profile_id"):
+            if not getattr(result, key).strip():
+                raise ValueError(f"longTermMemory.{key} must be non-empty")
+        return result

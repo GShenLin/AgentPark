@@ -9,7 +9,7 @@ import FormTextInput from '../FormTextInput.vue'
 const props = defineProps<{ data: Record<string, unknown>; providers: ProviderInfo[] }>()
 const emit = defineEmits<{ 'update:data': [value: Record<string, unknown>] }>()
 const providerOptions = computed(() => props.providers
-  .filter(provider => provider.supportmode.includes('chat') || provider.supportmode.includes('imagechat'))
+  .filter(provider => provider.supportmode.includes('chat'))
   .map(provider => provider.id).sort((a, b) => a.localeCompare(b)))
 const selectedProvider = computed(() => props.providers.find(provider => provider.id === props.data.provider_id))
 const models = computed(() => providerModelIds(selectedProvider.value))
@@ -54,7 +54,7 @@ function setField(key: string, selected: string) {
     <label>
       <span>Mode</span>
       <FormSelect :model-value="value('mode') || 'chat'" @change="setField('mode', $event)">
-        <option v-for="mode in ['chat', 'imagechat', 'vision_understand']" :key="mode" :value="mode">{{ mode }}</option>
+        <option v-for="mode in ['chat', 'vision_understand']" :key="mode" :value="mode">{{ mode }}</option>
       </FormSelect>
     </label>
     <label v-for="field in [{ key: 'web_search', label: 'Web Search' }, { key: 'thinking', label: 'Thinking' }]" :key="field.key">

@@ -91,7 +91,7 @@ def build_tool_loop_blocked_execution(call: ToolCallEnvelope, decision: ToolLoop
         func_name=call.name,
         call_id=call.call_id,
         cleaned_result=ensure_json_text(payload),
-        image_data=None,
+        images=(),
         status="blocked",
         error=decision.reason,
         diagnostics=(decision.policy,),

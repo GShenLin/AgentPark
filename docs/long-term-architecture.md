@@ -25,7 +25,7 @@ Initial protocol shape:
   "method": "capability.index.refresh",
   "params": {
     "workspace": "C:/Project/AgentPark",
-    "roots": ["functions", "skills", "plugins", "config"]
+    "roots": ["functions", ".agents/skills", "plugins", "config"]
   }
 }
 ```
@@ -38,7 +38,7 @@ Tool, skill, and plugin option discovery now has a short-lived in-process cache 
 
 Required invalidation inputs before adding broader caches:
 
-- watched roots for `functions/`, `skills/`, `plugins/`, and `config/`
+- watched roots for `functions/`, `.agents/skills/`, `plugins/`, and `config/`
 - file mtime and size snapshots for manifest and declaration files
 - manual refresh command exposed through CLI and WebUI
 - diagnostic output showing cache age and invalidation reason

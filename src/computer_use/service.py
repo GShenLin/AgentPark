@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import base64
-import io
 import threading
 import time
-import uuid
+from dataclasses import asdict
 from collections import OrderedDict
 from contextlib import contextmanager, nullcontext
 
-from src.runtime_cancellation import raise_if_cancel_requested
-from .contracts import ComputerUseError, Observation, integer
+from src.runtime_cancellation import CancellationRequested, raise_if_cancel_requested
+from .contracts import ComputerUseError, integer
+from .observations import collect_observations, observation_options
 
 
 class ComputerUseService:
@@ -63,55 +62,49 @@ class ComputerUseService:
             if method == 'activate_window':
                 self._invalidate()
                 self.backend.activate(window)
-                return {'window': window, 'observation_invalidated': True, 'next': 'Call get_window_state.'}
+                return self._refresh_after_action(owner, window, window, method, {}, cancel)
             observation = self._observation(owner, window, args)
             if self.backend.rectangle(window) != observation.rect:
                 raise ComputerUseError('Window moved or resized; call get_window_state again.')
             # Invalidate before input: a failed/partially cancelled action is never replayable.
             self._invalidate()
-            self.backend.act(method, window, observation, args, cancel)
+            pointer_feedback = self.backend.act(method, window, observation, args, cancel)
             raise_if_cancel_requested(cancel)
-            return {'window': self.backend.resolve(window), 'action': method,
-                    'observation_invalidated': True, 'next': 'Call get_window_state to verify the result.'}
+            return self._refresh_after_action(owner, window, observation.refresh_window,
+                                              method, observation.options, cancel, pointer_feedback)
 
-    def _observe(self, owner, window, args, cancel):
+    def _refresh_after_action(self, owner, target, refresh_window, method, options, cancel, pointer_feedback=None):
+        receipt = {'input_window': target, 'action': method, 'input_dispatched': True,
+                   'result_verified': False, 'previous_observation_consumed': True}
+        if pointer_feedback is not None:
+            receipt['dispatched_pointer_points'] = [asdict(point) for point in pointer_feedback.points]
+        try:
+            window = self.backend.resolve(refresh_window)
+            state = self._observe(owner, window, options, cancel, pointer_feedback)
+        except CancellationRequested:
+            raise
+        except Exception as exc:
+            return {**receipt, 'status': 'error', 'phase': 'post_action_observation',
+                    'error': f'{type(exc).__name__}: {exc}', 'observation_available': False,
+                    'next': 'Input was already sent. Do not repeat it blindly. Reacquire the remaining window and observe to determine the outcome.'}
+        return {**state, **receipt, 'observation_available': True}
+
+    def _observe(self, owner, window, args, cancel, pointer_feedback=None):
         # A failed refresh must not leave a previous view usable for later input.
         for token, item in list(self.observations.items()):
             if item.owner == owner:
                 del self.observations[token]
-        include_text = args.get('include_text', False)
-        include_image = args.get('include_screenshot', True)
-        if not isinstance(include_text, bool) or not isinstance(include_image, bool):
-            raise ComputerUseError('include_text and include_screenshot must be booleans')
-        if not include_text and not include_image:
-            raise ComputerUseError('Request a screenshot, accessibility text, or both.')
-        limit = integer(args.get('max_elements', 200), 'max_elements', 1, 500)
-        rect = self.backend.rectangle(window)
-        state = self.backend.observe(window, include_text, limit, cancel)
-        result = {'window': window, 'accessibility': state.get('accessibility'),
-                  'coordinate_space': 'window_pixels', 'bounds': dict(zip(('left', 'top', 'right', 'bottom'), rect))}
-        image = self.backend.capture(window, cancel) if include_image else None
-        raise_if_cancel_requested(cancel)
-        if rect != self.backend.rectangle(window):
-            raise ComputerUseError('Window changed during observation; observe again.')
-        if image is not None:
-            # WGC includes the visible frame, whose origin is returned by rectangle().
-            if image.size != (rect[2] - rect[0], rect[3] - rect[1]):
-                raise ComputerUseError(f'Capture size {image.size} does not match window bounds; observe again.')
-            stream = io.BytesIO()
-            image.save(stream, format='PNG', compress_level=1)
-            result.update(base64_image=base64.b64encode(stream.getvalue()).decode('ascii'),
-                          mime_type='image/png', width=image.width, height=image.height)
+        options = observation_options(args)
+        result, observations = collect_observations(
+            self.backend, owner, window, options, cancel, clock=self.clock,
+            generation=self._generation(), ttl=self.ttl, pointer_feedback=pointer_feedback)
         now = self.clock()
         for token, item in list(self.observations.items()):
             if item.owner == owner or now - item.created > self.ttl:
                 del self.observations[token]
-        token = uuid.uuid4().hex
-        self.observations[token] = Observation(owner, window, rect, state.get('elements', []),
-                                                state.get('focus'), now, self._generation(), include_image)
+        self.observations.update(observations)
         while len(self.observations) > self.capacity:
             self.observations.popitem(last=False)
-        result.update(observation_id=token, screenshotId=token if include_image else None, expires_in_seconds=self.ttl)
         return result
 
     def _observation(self, owner, window, args):

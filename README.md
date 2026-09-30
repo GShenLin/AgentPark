@@ -83,7 +83,7 @@ Node implementations live in `nodes/`. The backend exposes node metadata through
 
 All nodes inherit these common configuration fields:
 
-- `skills`: load Skill documents and scripts from `skills/` for the current node.
+- `skills`: load Skill documents and scripts from `.agents/skills/` for the current node.
 - `plugins`: load project plugin capabilities for the current node.
 - `working_path`: the directory opened by the file browser when the node is selected; Agent and command nodes also use it as working-directory context.
 
@@ -147,7 +147,7 @@ AgentPark/
   memories/            # Graph/node memory; current memory at root, overflow archived by date
   nodes/               # Visual workflow node implementations
   scripts/             # Helper scripts
-  skills/              # Agent skill documents
+  .agents/skills/      # Agent skill documents
   src/                 # FastAPI backend, providers, protocols, runtime
     remote_worker/     # Standalone AgentParkRemote worker
   tests/               # pytest tests
@@ -425,4 +425,4 @@ dist\AgentPark.exe doctor --json
 dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
 ```
 
-`package.bat` copies `docs/`, `skills/`, and `plugins/` into `dist/` so packaged doctor checks and default capability discovery use the same bundled resources as source checkout runs.
+`package.bat` copies `docs/`, `.agents/skills/`, and `plugins/` into `dist/` so packaged doctor checks and default capability discovery use the same bundled resources as source checkout runs.

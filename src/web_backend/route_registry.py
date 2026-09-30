@@ -6,6 +6,10 @@ from .node_open_diagnostics import receive_browser_trace
 
 class ApiRouteRegistry:
     ROUTES = [
+        ("get", "/api/skills", lambda core: core.skills_api.list_skills),
+        ("get", "/api/skills/detail", lambda core: core.skills_api.detail),
+        ("post", "/api/skills/operations", lambda core: core.skills_api.operate),
+        ("post", "/api/skills/roots", lambda core: core.skills_api.configure_roots),
         ("get", "/api/harnesses", lambda core: core.harness_api.list_harnesses),
         ("get", "/api/harnesses/{harness_id}", lambda core: core.harness_api.check_harness),
         ("post", "/api/harnesses/{harness_id}/operations", lambda core: core.harness_api.operate_harness),
@@ -112,6 +116,7 @@ class ApiRouteRegistry:
         ("post", "/api/provider-auth/api-key-aliases", lambda core: core.provider_auth_api.add_api_key_alias),
         ("get", "/api/provider-auth/codex/status", lambda core: core.provider_auth_api.get_codex_status),
         ("post", "/api/provider-auth/codex/login", lambda core: core.provider_auth_api.start_codex_login),
+        ("post", "/api/provider-auth/codex/sync-local", lambda core: core.provider_auth_api.sync_codex_credentials),
         ("get", "/api/provider-auth/{provider_id}/status", lambda core: core.provider_auth_api.get_provider_status),
         ("post", "/api/provider-auth/{provider_id}/login", lambda core: core.provider_auth_api.start_provider_login),
         ("post", "/api/provider-auth/{provider_id}/login/code", lambda core: core.provider_auth_api.submit_provider_login_code),

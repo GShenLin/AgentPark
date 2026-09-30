@@ -1,39 +1,5 @@
-.provider-settings {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 12px;
-}
-
-.provider-list,
-.provider-form {
-  min-height: 0;
-}
-
-.provider-list {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding-right: 10px;
-  border-right: 1px solid rgba(148, 163, 184, 0.16);
-  --ui-selection-stacked-height: 48px;
-  --ui-selection-border: var(--ui-button-border);
-  --ui-selection-background: var(--ui-button-background);
-  --ui-selection-active-border: rgba(56, 189, 248, 0.66);
-  --ui-selection-active-background: rgba(14, 165, 233, 0.18);
-}
-
 .provider-form {
   overflow: auto;
-}
-
-.provider-list-items {
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
 }
 
 .provider-id-field > span,
@@ -250,14 +216,6 @@ label {
   .form-grid,
   .switch-grid {
     grid-template-columns: 1fr;
-  }
-
-  .provider-settings {
-    grid-template-columns: minmax(132px, 38vw) minmax(0, 1fr);
-  }
-
-  .provider-list {
-    padding-right: 8px;
   }
 
   .provider-add {

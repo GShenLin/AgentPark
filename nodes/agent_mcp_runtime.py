@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from datetime import timedelta
-from builtins import BaseExceptionGroup
 from typing import Any, Callable, Iterable
 
 import anyio
 
 from nodes.agent_mcp_loader import McpServerDefinition, McpServerLoadError
+from nodes.agent_mcp_results import compact_mcp_tool_result, exception_summary, normalize_mcp_call_result
 from src.mcp.lifecycle import mark_mcp_failed, mark_mcp_ready, mark_mcp_starting
 from src.mcp.tool_list_cache import DEFAULT_MCP_TOOL_LIST_TTL_SECONDS, cached_mcp_tool_list
 from src.runtime_cancellation import CancellationRequested, current_tool_call_cancel_source, is_cancel_requested
-from src.tool.tool_execution_result import build_error_result, build_success_result
+from src.tool.tool_execution_result import build_error_result
 from src.value_parsing import parse_optional_float_value
 
 
@@ -83,6 +82,8 @@ def materialize_mcp_server_tools(
                 )
                 materialized_count += 1
             mark_mcp_ready(server.name, transport=transport, tool_count=materialized_count)
+        except CancellationRequested:
+            raise
         except Exception as exc:
             load_error = _as_mcp_server_load_error(server, exc)
             mark_mcp_failed(server.name, f"{type(load_error).__name__}: {load_error}", transport=transport)
@@ -159,7 +160,7 @@ class McpServerClient:
             return await session.call_tool(tool_name, arguments or {})
 
         result = await self._with_session(op, read_timeout_override=read_timeout_override)
-        return _normalize_call_tool_result(result)
+        return normalize_mcp_call_result(result)
 
     async def _with_session(self, op: Callable[[Any], Any], *, read_timeout_override: timedelta | None = None) -> Any:
         try:
@@ -215,17 +216,9 @@ class McpServerClient:
 def _as_mcp_server_load_error(server: McpServerDefinition, exc: Exception) -> McpServerLoadError:
     if isinstance(exc, McpServerLoadError):
         return exc
-    summary = _exception_summary(exc)
+    summary = exception_summary(exc)
     detail = f": {summary}" if summary else ""
     return McpServerLoadError(f"MCP server {server.name} failed to load tools{detail}")
-
-
-def _exception_summary(exc: BaseException) -> str:
-    if isinstance(exc, BaseExceptionGroup):
-        parts = [_exception_summary(item) for item in exc.exceptions]
-        return "; ".join(part for part in parts if part) or str(exc).strip()
-    text = str(exc).strip()
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
 def _build_tool_callable(
@@ -235,8 +228,17 @@ def _build_tool_callable(
     function_name: str,
 ) -> Callable[..., Any]:
     def call_mcp_tool(agent=None, **arguments):
-        result = client.call_tool(remote_tool_name, dict(arguments or {}))
-        return _compact_mcp_tool_result_if_needed(
+        try:
+            result = client.call_tool(remote_tool_name, dict(arguments or {}))
+        except CancellationRequested:
+            raise
+        except Exception as exc:
+            return build_error_result(
+                "exception", tool_name=function_name, error=exception_summary(exc),
+                result={"source": "mcp", "phase": "call_tool", "server": server.name,
+                        "remote_tool": remote_tool_name},
+            )
+        return compact_mcp_tool_result(
             server=server,
             remote_tool_name=remote_tool_name,
             function_name=function_name,
@@ -269,133 +271,6 @@ def _build_tool_declaration(server: McpServerDefinition, remote_tool: Any, funct
             "parameters": parameters,
         },
     }
-
-
-def _normalize_call_tool_result(result: Any) -> Any:
-    payload = {
-        "content": [_content_to_json(item) for item in getattr(result, "content", []) or []],
-    }
-    structured = getattr(result, "structuredContent", None)
-    if structured is not None:
-        payload["structuredContent"] = structured
-    meta = getattr(result, "meta", None)
-    if meta:
-        payload["_meta"] = meta
-    if bool(getattr(result, "isError", False)):
-        return build_error_result("error", error=_first_content_text(payload) or "MCP tool returned isError=true", result=payload)
-    return build_success_result(json.dumps(payload, ensure_ascii=False))
-
-
-def _compact_mcp_tool_result_if_needed(
-    *,
-    server: McpServerDefinition,
-    remote_tool_name: str,
-    function_name: str,
-    result: Any,
-    agent: Any,
-) -> Any:
-    text = _tool_result_text(result)
-    limit = _mcp_tool_result_max_chars(server.config)
-    if len(text) <= limit:
-        return result
-
-    payload = {
-        "status": "mcp_tool_result_truncated",
-        "retryable": False,
-        "server": server.name,
-        "tool": remote_tool_name,
-        "function_name": function_name,
-        "original_result_chars": len(text),
-        "result_chars_limit": limit,
-        "instruction": (
-            "The MCP tool returned more data than this node can safely submit to the model. "
-            "Use a narrower MCP query, request fewer items, or ask for a specific record."
-        ),
-    }
-    _emit_mcp_result_compacted_notice(
-        agent=agent,
-        server=server.name,
-        remote_tool_name=remote_tool_name,
-        function_name=function_name,
-        original_result_chars=len(text),
-        limit=limit,
-    )
-    return build_success_result(json.dumps(payload, ensure_ascii=False))
-
-
-def _tool_result_text(result: Any) -> str:
-    if hasattr(result, "model_output") and callable(result.model_output):
-        try:
-            value = result.model_output()
-        except Exception:
-            value = result
-    else:
-        value = result
-    if isinstance(value, str):
-        return value
-    try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
-    except Exception:
-        return str(value or "")
-
-
-def _mcp_tool_result_max_chars(config: dict[str, Any]) -> int:
-    value = (config or {}).get("toolResultMaxChars", 50000)
-    if isinstance(value, bool):
-        raise McpServerLoadError("MCP field toolResultMaxChars must be a positive integer")
-    try:
-        parsed = int(value)
-    except Exception as exc:
-        raise McpServerLoadError("MCP field toolResultMaxChars must be a positive integer") from exc
-    if parsed <= 0:
-        raise McpServerLoadError("MCP field toolResultMaxChars must be a positive integer")
-    return parsed
-
-
-def _emit_mcp_result_compacted_notice(
-    *,
-    agent: Any,
-    server: str,
-    remote_tool_name: str,
-    function_name: str,
-    original_result_chars: int,
-    limit: int,
-) -> None:
-    emitter = getattr(agent, "_emit_provider_runtime_notice", None)
-    if not callable(emitter):
-        return
-    emitter(
-        message=json.dumps(
-            {
-                "policy": "mcp_tool_result_size_cap",
-                "server": server,
-                "tool": remote_tool_name,
-                "function_name": function_name,
-                "original_result_chars": int(original_result_chars),
-                "limit": int(limit),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        ),
-        stage="mcp_tool_result_compacted",
-    )
-
-
-def _content_to_json(item: Any) -> Any:
-    if hasattr(item, "model_dump"):
-        return item.model_dump(by_alias=True, exclude_none=True)
-    if isinstance(item, dict):
-        return dict(item)
-    return item
-
-
-def _first_content_text(payload: dict[str, Any]) -> str:
-    for item in payload.get("content") or []:
-        if isinstance(item, dict) and str(item.get("type") or "") == "text":
-            text = str(item.get("text") or "").strip()
-            if text:
-                return text
-    return ""
 
 
 def _tool_attr(tool: Any, name: str) -> Any:

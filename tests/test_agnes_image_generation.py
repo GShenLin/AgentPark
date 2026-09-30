@@ -60,7 +60,7 @@ def test_agnes_agent_accepts_chat_and_generation_modes(monkeypatch):
     agent._read_provider_config_from_file = lambda: {}
 
     assert agent.Send(mode="chat", reasoning_summary="auto") == ("chat", "auto")
-    assert agent.Send(mode="imagechat") == ("imagechat", None)
+    assert agent.Send(mode="chat") == ("chat", None)
 
 
 def test_agnes_image_generation_returns_paths_without_doubao_message_injection():

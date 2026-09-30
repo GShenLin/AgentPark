@@ -19,7 +19,7 @@ def test_one_skill_registers_four_tools_with_distinct_contracts():
     agent = Agent()
     agent.tools = BaseTool(agent)
     root = Path(__file__).resolve().parents[1]
-    skills = load_node_skills(["knowledge"], node_id="test", skill_root=str(root / "skills"))
+    skills = load_node_skills(["knowledge"], node_id="test", skill_root=str(root / ".agents" / "skills"))
     assert register_skill_script_tools(agent, skills) == [
         "skill__knowledge__list", "skill__knowledge__search", "skill__knowledge__read",
         "skill__knowledge__table",
@@ -48,7 +48,7 @@ def test_action_specific_arguments_are_validated_before_access(tmp_path, argumen
 
 
 def test_script_dispatches_tool_identity(tmp_path, monkeypatch, capsys):
-    script = Path(__file__).resolve().parents[1] / "skills" / "knowledge" / "scripts" / "query.py"
+    script = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "knowledge" / "scripts" / "query.py"
     namespace = runpy.run_path(str(script))
     namespace["main"].__globals__["WORKSPACE"] = tmp_path
     monkeypatch.setenv("AGENTPARK_SKILL_SCRIPT_ID", "list")
@@ -58,7 +58,7 @@ def test_script_dispatches_tool_identity(tmp_path, monkeypatch, capsys):
 
 
 def test_script_rejects_action_override(tmp_path, monkeypatch, capsys):
-    script = Path(__file__).resolve().parents[1] / "skills" / "knowledge" / "scripts" / "query.py"
+    script = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "knowledge" / "scripts" / "query.py"
     namespace = runpy.run_path(str(script))
     namespace["main"].__globals__["WORKSPACE"] = tmp_path
     monkeypatch.setenv("AGENTPARK_SKILL_SCRIPT_ID", "read")

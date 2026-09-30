@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import argparse
 import ctypes
 import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 from typing import Any
 
@@ -180,15 +179,15 @@ def _request_json(method: str, url: str, payload: dict[str, Any] | None = None, 
     headers = {"Content-Type": "application/json"}
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(url, data=data, headers=headers, method=method.upper())
+    request = dict(url=url, body=data, headers=headers, method=method.upper())
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace").strip()
-        raise AskHereError(f"HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise AskHereError(str(exc.reason)) from exc
+        response = CurlHttpTransport().request(**request, timeout_sec=timeout).raise_for_status()
+        body = response.content.decode("utf-8")
+    except CurlHttpError as exc:
+        detail = exc.content.decode("utf-8", errors="replace").strip()
+        raise AskHereError(f"HTTP {exc.status_code}: {detail}") from exc
+    except CurlTransportError as exc:
+        raise AskHereError(str(str(exc))) from exc
     if not body.strip():
         return {}
     parsed = json.loads(body)

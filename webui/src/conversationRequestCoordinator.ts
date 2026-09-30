@@ -1,6 +1,6 @@
 import type { MemoryHistoryMode } from './api'
 
-export type ConversationBaseHistoryMode = Extract<MemoryHistoryMode, 'latest_turn' | 'all'>
+export type ConversationBaseHistoryMode = Extract<MemoryHistoryMode, 'latest_turn' | 'all' | 'conversation'>
 
 export type ConversationRequestScope = {
   selectionKey: string
@@ -13,7 +13,7 @@ export type ConversationRequestToken = ConversationRequestScope & {
 }
 
 function requireBaseHistoryMode(historyMode: MemoryHistoryMode): ConversationBaseHistoryMode {
-  if (historyMode === 'latest_turn' || historyMode === 'all') return historyMode
+  if (historyMode === 'latest_turn' || historyMode === 'all' || historyMode === 'conversation') return historyMode
   throw new Error(`Unsupported base conversation history mode: ${historyMode}`)
 }
 
@@ -54,6 +54,8 @@ export class ConversationRequestCoordinator {
   ): ConversationBaseHistoryMode {
     this.requireActiveSelection(selectionKey)
     const requested = requireBaseHistoryMode(requestedHistoryMode)
+    if (requested === 'conversation') this.desiredHistoryMode = 'conversation'
+    if (this.desiredHistoryMode === 'conversation') return 'conversation'
     if (requested === 'all') this.desiredHistoryMode = 'all'
     return this.desiredHistoryMode === 'all' ? 'all' : requested
   }

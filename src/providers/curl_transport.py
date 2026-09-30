@@ -1,33 +1,145 @@
 import os
-import queue
 import subprocess
 import tempfile
 import threading
 import time
-from dataclasses import dataclass, field
 from contextlib import contextmanager
 from urllib.parse import urlparse
 from typing import Iterable
+import asyncio
+from pathlib import Path
+from .curl_types import CurlResponse, CurlTransportError, CurlHttpError
+from .curl_stream import CurlStreamMixin
 
-from src.providers.provider_pressure import acquire_provider_pressure
-from src.providers.provider_errors import ProviderTransportError
 from src.runtime_cancellation import CancellationRequested, raise_if_cancel_requested
 
 
-@dataclass(frozen=True)
-class CurlResponse:
-    body: str
-    status_code: int
-    headers: dict[str, str] = field(default_factory=dict)
-
-
-class CurlTransportError(ProviderTransportError):
-    pass
-
-
-class CurlHttpTransport:
+class CurlHttpTransport(CurlStreamMixin):
     _WINDOWS_PROXY_CACHE: str | None = None
     _GENERIC_HTTP_MARKER = "__AGENTPARK_HTTP_CODE__:"
+
+    @staticmethod
+    def cookie_header(cookie_file: str, url: str) -> str:
+        """Select curl's persisted cookies for the WebSocket upgrade at this URL."""
+        from http.cookiejar import MozillaCookieJar
+        jar = MozillaCookieJar(cookie_file)
+        if not os.path.exists(cookie_file):
+            return ""
+        # curl writes session cookies with expiry 0; CookieJar otherwise drops them.
+        jar.load(ignore_discard=True, ignore_expires=True)
+        target = urlparse(url)
+        host, path = target.hostname or "", target.path or "/"
+        selected = []
+        for cookie in jar:
+            if cookie.expires not in (None, 0) and cookie.expires <= time.time():
+                continue
+            domain = cookie.domain.lstrip(".")
+            if host != domain and not (cookie.domain_specified and host.endswith("." + domain)):
+                continue
+            if cookie.secure and target.scheme not in {"https", "wss"}:
+                continue
+            if path != cookie.path and not path.startswith(cookie.path.rstrip("/") + "/"):
+                continue
+            selected.append(cookie)
+        return "; ".join(f"{c.name}={c.value}" for c in sorted(selected, key=lambda c: -len(c.path)))
+
+    def request(self, *, url: str, method: str = "GET", headers: dict | None = None,
+                body: bytes | None = None, timeout_sec: float = 60,
+                connect_timeout: float = 15, follow_redirects: bool = True,
+                trust_env: bool = True, cookie_file: str | None = None,
+                max_response_bytes: int | None = None, cancel_event=None,
+                revocation_best_effort: bool = False) -> CurlResponse:
+        """One binary-safe HTTP exchange; HTTP status is returned, never retried."""
+        if urlparse(url).scheme not in {"http", "https"}:
+            raise ValueError("curl transport only accepts HTTP/HTTPS URLs")
+        if not method.isalpha():
+            raise ValueError("Invalid HTTP method")
+        if body is not None and not isinstance(body, bytes):
+            raise TypeError("HTTP body must be bytes")
+        timeout_sec = max(.001, float(timeout_sec))
+        with tempfile.TemporaryDirectory(prefix="agentpark-curl-") as folder:
+            root = Path(folder)
+            output, response_headers = root / "body", root / "headers"
+            header_lines = []
+            for name, value in (headers or {}).items():
+                if any(c in str(name) + str(value) for c in "\r\n\x00"):
+                    raise ValueError("Invalid HTTP header")
+                header_lines.append(f"{name}: {value}")
+            (root / "request-headers").write_text("\n".join(header_lines), encoding="utf-8")
+            cmd = [self._curl_executable(), "--disable", "--silent", "--show-error",
+                   "--globoff", "--proto", "=http,https", "--proto-redir", "=http,https",
+                   "--max-time", str(timeout_sec), "--connect-timeout", str(min(connect_timeout, timeout_sec)),
+                   "--output", str(output), "--dump-header", str(response_headers),
+                   "--write-out", "%{http_code}", "--header", "@" + str(root / "request-headers")]
+            if follow_redirects:
+                cmd += ["--location", "--max-redirs", "10"]
+            if revocation_best_effort and os.name == "nt":
+                # Private CAs may publish no CRL. Still verify chain, name and known revocations.
+                cmd += ["--ssl-revoke-best-effort"]
+            if not trust_env or self._url_is_loopback(url):
+                cmd += ["--noproxy", "*"]
+            else:
+                cmd += self._curl_proxy_args(url)
+            if cookie_file is not None:
+                cmd += ["--cookie", cookie_file, "--cookie-jar", cookie_file]
+            if max_response_bytes is not None:
+                cmd += ["--max-filesize", str(max_response_bytes)]
+            if body is not None:
+                (root / "request-body").write_bytes(body)
+                cmd += ["--data-binary", "@" + str(root / "request-body")]
+            if method.upper() == "HEAD":
+                cmd += ["--head"]
+            elif (method.upper() not in {"GET", "POST"}
+                  or (method.upper() == "POST" and body is None)
+                  or (method.upper() == "GET" and body is not None)):
+                cmd += ["--request", method.upper()]
+            cmd += ["--url", url]
+            proc = None
+            try:
+                with self._provider_pressure_slot():
+                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                    deadline = time.monotonic() + timeout_sec + 5
+                    while True:
+                        raise_if_cancel_requested(cancel_event)
+                        raise_if_cancel_requested(self._cancel_source())
+                        if time.monotonic() >= deadline:
+                            raise CurlTransportError("curl request timed out")
+                        try:
+                            stdout, stderr = proc.communicate(timeout=.05)
+                            break
+                        except subprocess.TimeoutExpired:
+                            continue
+                if proc.returncode:
+                    raise CurlTransportError(stderr.decode("utf-8", errors="replace").strip()
+                                             or f"curl exit code: {proc.returncode}")
+                data = output.read_bytes()
+                if max_response_bytes is not None and len(data) > max_response_bytes:
+                    raise CurlTransportError("HTTP response exceeds size limit")
+                return CurlResponse(data.decode("utf-8", errors="replace"),
+                                    self._parse_curl_status(stdout.decode("ascii")),
+                                    self._read_response_headers(str(response_headers)), data)
+            except OSError as exc:
+                raise CurlTransportError(str(exc)) from exc
+            finally:
+                if proc is not None:
+                    if proc.poll() is None:
+                        proc.kill()
+                    proc.communicate()
+
+    async def request_async(self, **kwargs) -> CurlResponse:
+        """Cancel and reap the curl process before releasing an async caller."""
+        cancelled = threading.Event()
+        task = asyncio.create_task(asyncio.to_thread(self.request, cancel_event=cancelled, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled.set()
+            try:
+                await task
+            except (CancellationRequested, CurlTransportError):
+                pass
+            raise
 
     def post_json_response(
         self,
@@ -68,7 +180,7 @@ class CurlHttpTransport:
     @classmethod
     def _curl_proxy_args(cls, url: str) -> list[str]:
         if cls._url_is_loopback(url):
-            return []
+            return ["--noproxy", "*"]
         proxy_url = cls._fallback_proxy_url()
         return ["--proxy", proxy_url] if proxy_url else []
 
@@ -137,92 +249,15 @@ class CurlHttpTransport:
 
     @contextmanager
     def _provider_pressure_slot(self):
+        from src.providers.provider_pressure import acquire_provider_pressure
         with acquire_provider_pressure(self, cancel_source=self._cancel_source()):
             yield
 
     def _curl_get_bytes_raw(self, *, url: str, timeout_sec: float) -> bytes:
-        timeout_val = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, timeout_val))
-        try:
-            with self._provider_pressure_slot():
-                cmd = [
-                    self._curl_executable(),
-                    "--silent",
-                    "--show-error",
-                    "--location",
-                    "--max-time",
-                    str(timeout_val),
-                    "--connect-timeout",
-                    str(connect_timeout),
-                    str(url),
-                ]
-                proxy_args = self._curl_proxy_args(str(url))
-                if proxy_args:
-                    cmd[1:1] = proxy_args
-                proc = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    timeout=timeout_val + 10,
-                )
-        except subprocess.TimeoutExpired as exc:
-            raise CurlTransportError(f"curl timeout: {exc}") from exc
-        except Exception as exc:
-            raise CurlTransportError(str(exc)) from exc
-
-        if proc.returncode != 0:
-            stderr_text = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
-            raise CurlTransportError(stderr_text or f"curl exit code: {proc.returncode}")
-        return proc.stdout or b""
+        return self.request(url=url, timeout_sec=timeout_sec).content
 
     def _curl_get_text_once_raw(self, *, url: str, headers: dict, timeout_sec: float, marker: str) -> CurlResponse:
-        timeout_val = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, timeout_val))
-        try:
-            cmd = [
-                self._curl_executable(),
-                "--silent",
-                "--show-error",
-                "--location",
-                "--max-time",
-                str(timeout_val),
-                "--connect-timeout",
-                str(connect_timeout),
-                str(url),
-            ]
-            proxy_args = self._curl_proxy_args(str(url))
-            if proxy_args:
-                cmd[1:1] = proxy_args
-            for key, value in (headers or {}).items():
-                cmd.extend(["-H", f"{key}: {value}"])
-            cmd.extend(["-w", f"\n{marker}%{{http_code}}"])
-            with self._provider_pressure_slot():
-                proc = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=timeout_val + 10,
-                )
-        except subprocess.TimeoutExpired as exc:
-            raise CurlTransportError(f"curl timeout: {exc}") from exc
-        except Exception as exc:
-            raise CurlTransportError(str(exc)) from exc
-
-        stdout = proc.stdout or ""
-        stderr = (proc.stderr or "").strip()
-        marker_pos = stdout.rfind(f"\n{marker}")
-        if marker_pos < 0:
-            detail = stderr or stdout[-400:]
-            raise CurlTransportError(f"invalid curl output: {detail}")
-
-        body = stdout[:marker_pos]
-        status_text = stdout[marker_pos + len(f"\n{marker}") :].strip().splitlines()[0]
-        status_code = self._parse_curl_status(status_text)
-        if proc.returncode != 0:
-            detail = stderr or body[-400:]
-            raise CurlTransportError(detail or f"curl exit code: {proc.returncode}")
-        return CurlResponse(body=body, status_code=status_code)
+        return self.request(url=url, headers=headers, timeout_sec=timeout_sec)
 
     def _curl_post_once_raw(
         self,
@@ -234,167 +269,8 @@ class CurlHttpTransport:
         marker: str,
         no_buffer: bool = False,
     ) -> CurlResponse:
-        timeout_val = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, timeout_val))
-        payload_path = ""
-        header_path = ""
-        response_headers: dict[str, str] = {}
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json", delete=False) as temp_file:
-                temp_file.write(payload_json)
-                payload_path = temp_file.name
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".headers", delete=False) as header_file:
-                header_path = header_file.name
+        return self.request(url=url, method="POST", headers=headers, body=payload_json.encode("utf-8"), timeout_sec=timeout_sec)
 
-            cmd = self._build_curl_post_command(
-                url=url,
-                headers=headers,
-                payload_path=payload_path,
-                timeout_val=timeout_val,
-                connect_timeout=connect_timeout,
-                marker=marker,
-                no_buffer=no_buffer,
-            )
-            cmd.extend(["--dump-header", header_path])
-            with self._provider_pressure_slot():
-                proc = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=timeout_val + 10,
-                )
-            response_headers = self._read_response_headers(header_path)
-        except subprocess.TimeoutExpired as exc:
-            raise CurlTransportError(f"curl timeout: {exc}") from exc
-        except Exception as exc:
-            raise CurlTransportError(str(exc)) from exc
-        finally:
-            self._remove_temp_payload(payload_path)
-            self._remove_temp_payload(header_path)
-
-        stdout = proc.stdout or ""
-        stderr = (proc.stderr or "").strip()
-        marker_pos = stdout.rfind(f"\n{marker}")
-        if marker_pos < 0:
-            detail = stderr or stdout[-400:]
-            raise CurlTransportError(f"invalid curl output: {detail}")
-
-        body = stdout[:marker_pos]
-        status_text = stdout[marker_pos + len(f"\n{marker}") :].strip().splitlines()[0]
-        status_code = self._parse_curl_status(status_text)
-        if proc.returncode != 0:
-            detail = stderr or body[-400:]
-            raise CurlTransportError(detail or f"curl exit code: {proc.returncode}")
-        return CurlResponse(body=body, status_code=status_code, headers=response_headers)
-
-    def _curl_post_sse_raw_lines(
-        self,
-        *,
-        url: str,
-        headers: dict,
-        payload_json: str,
-        timeout_sec: float,
-        marker: str,
-        yield_all_lines: bool = False,
-    ) -> Iterable[CurlResponse | str]:
-        idle_timeout = int(max(1, float(timeout_sec or 60)))
-        connect_timeout = max(1, min(15, idle_timeout))
-        payload_path = ""
-        proc = None
-        response_lines: list[str] = []
-        status_code = None
-        cancel_source = self._cancel_source()
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json", delete=False) as temp_file:
-                temp_file.write(payload_json)
-                payload_path = temp_file.name
-
-            cmd = self._build_curl_post_command(
-                url=url,
-                headers=headers,
-                payload_path=payload_path,
-                # Active SSE streams may legitimately outlive one timeout
-                # interval. The read loop below enforces an inactivity timeout.
-                timeout_val=None,
-                connect_timeout=connect_timeout,
-                marker=marker,
-                no_buffer=True,
-            )
-            with self._provider_pressure_slot():
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    bufsize=1,
-                )
-                if proc.stdout is None:
-                    raise CurlTransportError("curl stdout pipe is unavailable")
-
-                line_queue: queue.Queue[str | None] = queue.Queue()
-
-                def _read_stdout() -> None:
-                    try:
-                        for raw in proc.stdout:
-                            line_queue.put(raw)
-                    finally:
-                        line_queue.put(None)
-
-                threading.Thread(target=_read_stdout, daemon=True, name="curl-sse-reader").start()
-                last_activity = time.monotonic()
-                while True:
-                    raise_if_cancel_requested(cancel_source)
-                    if time.monotonic() - last_activity >= idle_timeout:
-                        raise CurlTransportError(f"curl idle timeout after {idle_timeout}s without stream data")
-                    try:
-                        raw_line = line_queue.get(timeout=0.05)
-                    except queue.Empty:
-                        continue
-                    if raw_line is None:
-                        break
-                    last_activity = time.monotonic()
-                    line = raw_line.rstrip("\r\n")
-                    if line.startswith(marker):
-                        status_code = self._parse_curl_status(line[len(marker) :].strip())
-                        continue
-                    response_lines.append(line)
-                    if line.startswith("data:"):
-                        yield line[5:].strip()
-                    elif yield_all_lines and line.strip():
-                        yield line.strip()
-
-                try:
-                    return_code = proc.wait(timeout=5)
-                except subprocess.TimeoutExpired as exc:
-                    proc.kill()
-                    raise CurlTransportError(f"curl timeout: {exc}") from exc
-
-                stderr = proc.stderr.read().strip() if proc.stderr is not None else ""
-                if return_code != 0:
-                    detail = stderr or "\n".join(response_lines[-20:])
-                    raise CurlTransportError(detail or f"curl exit code: {return_code}")
-                if status_code is None:
-                    detail = stderr or "\n".join(response_lines[-20:])
-                    raise CurlTransportError(f"missing HTTP status from curl: {detail}")
-                yield CurlResponse(body="\n".join(response_lines), status_code=status_code)
-        except CancellationRequested:
-            raise
-        except CurlTransportError:
-            raise
-        except Exception as exc:
-            raise CurlTransportError(str(exc)) from exc
-        finally:
-            if proc is not None and proc.poll() is None:
-                try:
-                    proc.kill()
-                    proc.wait(timeout=5)
-                except Exception:
-                    pass
-            self._remove_temp_payload(payload_path)
 
     @staticmethod
     def _parse_curl_status(status_text: str) -> int:
@@ -439,8 +315,12 @@ class CurlHttpTransport:
     def _build_curl_post_command(cls, *, url, headers, payload_path, timeout_val, connect_timeout, marker, no_buffer):
         cmd = [
             cls._curl_executable(),
+            "--disable",
             "--silent",
             "--show-error",
+            "--globoff",
+            "--proto", "=http,https",
+            "--proto-redir", "=http,https",
             "--location",
             "--connect-timeout",
             str(connect_timeout),
@@ -448,13 +328,11 @@ class CurlHttpTransport:
             "POST",
             str(url),
         ]
-        proxy_args = cls._curl_proxy_args(str(url))
-        if proxy_args:
-            cmd[1:1] = proxy_args
+        cmd.extend(cls._curl_proxy_args(str(url)))
         if no_buffer:
-            cmd.insert(3, "--no-buffer")
+            cmd.append("--no-buffer")
         if timeout_val is not None:
-            cmd[4:4] = ["--max-time", str(timeout_val)]
+            cmd.extend(["--max-time", str(timeout_val)])
         for key, value in (headers or {}).items():
             cmd.extend(["-H", f"{key}: {value}"])
         cmd.extend(["--data-binary", f"@{payload_path}", "-w", f"\n{marker}%{{http_code}}"])

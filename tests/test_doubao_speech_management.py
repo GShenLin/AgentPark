@@ -3,20 +3,11 @@ import json
 import pytest
 
 
-class _Response:
-    status = 200
+from src.providers.curl_transport import CurlResponse
 
-    def __init__(self, body):
-        self.body = json.dumps(body).encode("utf-8")
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
-
-    def read(self):
-        return self.body
+def _Response(body):
+    return CurlResponse(json.dumps(body), 200)
 
 
 def test_volcengine_openapi_signs_payload_and_parses_result(monkeypatch):
@@ -24,12 +15,12 @@ def test_volcengine_openapi_signs_payload_and_parses_result(monkeypatch):
 
     captured = {}
 
-    def urlopen(request, timeout=None):
+    def curl_request(self, **request):
         captured["request"] = request
-        captured["timeout"] = timeout
+        captured["timeout"] = request["timeout_sec"]
         return _Response({"ResponseMetadata": {}, "Result": {"Speakers": []}})
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport.request", curl_request)
     result = VolcengineOpenApi(
         access_key_id="ak-id",
         secret_access_key="secret",
@@ -37,9 +28,9 @@ def test_volcengine_openapi_signs_payload_and_parses_result(monkeypatch):
     ).post_json("ListSpeakers", "2025-05-20", {"ResourceIDs": ["seed-tts-2.0"]})
 
     request = captured["request"]
-    assert "Action=ListSpeakers" in request.full_url
-    assert request.get_header("Authorization").startswith("HMAC-SHA256 Credential=ak-id/")
-    assert request.get_header("X-content-sha256")
+    assert "Action=ListSpeakers" in request["url"]
+    assert request["headers"]["Authorization"].startswith("HMAC-SHA256 Credential=ak-id/")
+    assert request["headers"]["X-Content-Sha256"]
     assert result["Result"]["Speakers"] == []
 
 
@@ -129,19 +120,19 @@ def test_management_voice_clone_uses_api_key_and_validates_audio(monkeypatch):
     })
     captured = {}
 
-    def urlopen(request, timeout=None):
+    def curl_request(self, **request):
         captured["request"] = request
         return _Response({"code": 0, "message": "ok", "speaker_id": "speaker-1"})
 
-    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("src.providers.curl_transport.CurlHttpTransport.request", curl_request)
     result = DoubaoSpeechManagementDomain(object()).execute("doubao", {
         "operation": "clone_voice",
         "payload": {"speaker_id": "speaker-1", "audio": {"data": "YWJj", "format": "wav"}},
     })
 
     assert result["result"]["speaker_id"] == "speaker-1"
-    assert captured["request"].get_header("X-api-key") == "speech-key"
-    assert captured["request"].full_url.endswith("/api/v3/tts/voice_clone")
+    assert captured["request"]["headers"]["X-Api-Key"] == "speech-key"
+    assert captured["request"]["url"].endswith("/api/v3/tts/voice_clone")
 
     with pytest.raises(Exception, match="audio.data"):
         DoubaoSpeechManagementDomain(object()).execute("doubao", {

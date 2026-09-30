@@ -1,22 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ProviderInfo } from '../../api'
 import { t } from '../../i18n'
 import { memoryNumericFields, type LongTermMemorySettings } from '../../longTermMemorySettings'
 import FormSelect from '../FormSelect.vue'
+import AgentInferenceProfileSelect from './AgentInferenceProfileSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 
 const props = defineProps<{
   data: Record<string, unknown>
   defaults?: LongTermMemorySettings
-  providers: ProviderInfo[]
 }>()
 const emit = defineEmits<{ 'update:data': [value: Record<string, unknown>] }>()
 const effective = computed(() => props.defaults ? { ...props.defaults, ...props.data } : null)
-const providers = computed(() => props.providers
-  .filter(provider => provider.supportmode.includes('chat') || provider.supportmode.includes('imagechat'))
-  .map(provider => provider.id).sort((a, b) => a.localeCompare(b)))
-const providerKeys = ['extract_provider', 'consolidation_provider'] as const
+const profileKeys = ['extract_profile_id', 'consolidation_profile_id'] as const
 
 function setField(key: keyof LongTermMemorySettings, value: unknown) {
   emit('update:data', { ...props.data, [key]: value })
@@ -50,15 +46,9 @@ function setNumber(key: keyof LongTermMemorySettings, text: string) {
           </FormSelect>
           <small>{{ t('longMemory.enabledHelp') }}</small>
         </label>
-        <label v-for="key in providerKeys" :key="key">
+        <label v-for="key in profileKeys" :key="key">
           <span>{{ t(`longMemory.${key}`) }}</span>
-          <FormSelect :model-value="String(effective[key])" @update:model-value="setField(key, $event)">
-            <option value="">{{ t(`longMemory.${key}Default`) }}</option>
-            <option v-if="effective[key] && !providers.includes(String(effective[key]))" :value="String(effective[key])">
-              {{ String(effective[key]) }} — {{ t('longMemory.providerUnavailable') }}
-            </option>
-            <option v-for="id in providers" :key="id" :value="id">{{ id }}</option>
-          </FormSelect>
+          <AgentInferenceProfileSelect :model-value="String(effective[key])" @update:model-value="setField(key, $event)" />
           <small>{{ t(`longMemory.${key}Help`) }}</small>
         </label>
         <label v-for="field in memoryNumericFields.filter(field => !field.advanced)" :key="field.key">

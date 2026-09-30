@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import time
 import os
+import re
+import subprocess
 from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlencode
@@ -84,11 +86,13 @@ def discover_provider_models(provider: dict[str, Any], *, timeout_seconds: float
     validation_error = _validate_model_config(provider, provider_type)
     if validation_error:
         return _model_result(False, tested_at=tested_at, reason=validation_error)
-    endpoint = _models_endpoint(provider, provider_type)
-    if not endpoint:
-        return _model_result(False, tested_at=tested_at, reason=f"provider type '{provider_type}' has no model discovery endpoint")
-    headers = _model_headers(provider, provider_type)
+    endpoint = ""
+    headers: dict[str, str] = {}
     try:
+        endpoint = _models_endpoint(provider, provider_type)
+        if not endpoint:
+            return _model_result(False, tested_at=tested_at, reason=f"provider type '{provider_type}' has no model discovery endpoint")
+        headers = _model_headers(provider, provider_type)
         response = _CURL._curl_get_text_once_raw(
             url=endpoint,
             headers=headers,
@@ -263,8 +267,19 @@ def _is_codex_auth_provider(provider: dict[str, Any]) -> bool:
 
 
 def _codex_client_version(provider: dict[str, Any]) -> str:
-    value = str(provider.get("codexClientVersion") or os.environ.get("CODEX_CLIENT_VERSION") or "").strip()
-    return value or "0.0.0"
+    configured = str(provider.get("codexClientVersion") or os.environ.get("CODEX_CLIENT_VERSION") or "").strip()
+    if configured:
+        if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?", configured):
+            raise ValueError("codexClientVersion must be a Codex CLI version, such as 0.155.1")
+        return configured
+    try:
+        result = subprocess.run(["codex", "--version"], capture_output=True, text=True, timeout=5, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("Codex CLI version is unavailable; install Codex CLI or set codexClientVersion") from exc
+    match = re.fullmatch(r"codex-cli (\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)", result.stdout.strip())
+    if not match:
+        raise RuntimeError("Codex CLI returned an unrecognized version; set codexClientVersion")
+    return match.group(1)
 
 
 def _write_snapshot(path: str, output: dict[str, Any], *, started: float) -> None:

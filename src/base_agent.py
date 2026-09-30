@@ -5,6 +5,8 @@ import json
 import os
 import time
 from src.base_agent_manager import BaseAgentManager
+from src.providers.agent_config import AgentSendContext
+from src.providers.agent_invocation import send_agent
 from src.config_loader import ConfigLoader
 from src.provider_models import resolve_provider_model
 from src.base_memory import BaseMemory
@@ -124,8 +126,8 @@ class BaseAgent(
     def getMemoryPath(self):
         return self.memory.getMemoryPath()
 
-    def send(self, *args, **kwargs):
-        return self.Send(*args, **kwargs)
+    def send(self, context: AgentSendContext | None = None):
+        return send_agent(self, context)
 
     def passWork(self, agent, task):
         return self.manager.passWork(agent, task)
@@ -452,7 +454,7 @@ class BaseAgent(
         result = {
             "func_name": tool_name,
             "cleaned_result": json.dumps(payload, ensure_ascii=False),
-            "image_data": None,
+            "images": [],
         }
         if call_id is not None:
             result["call_id"] = call_id
@@ -500,9 +502,7 @@ class BaseAgent(
             )
             if non_retry_warn:
                 non_retry_warnings.append(non_retry_warn)
-            image_data = getattr(execution, "image_data", None)
-            if image_data:
-                image_messages.append(image_data)
+            image_messages.extend(execution.images)
 
         for non_retry_warn in non_retry_warnings:
             self.RuntimeInstruction(non_retry_warn)

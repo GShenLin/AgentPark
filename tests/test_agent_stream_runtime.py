@@ -1,3 +1,5 @@
+from tests.agent_invocation_helpers import configured_fake
+from src.providers.agent_config import AgentConfig, AgentSendContext
 import pytest
 
 from nodes.agent_stream_runtime import AgentStreamRuntime
@@ -123,11 +125,11 @@ def test_agent_stream_runtime_restores_tool_callback_after_send():
             return "ok"
 
     events = []
-    agent = Agent()
+    agent = configured_fake(Agent(), AgentConfig(run_tools=True, stream=True))
     previous_callback = agent.tool_event_callback
     runtime = AgentStreamRuntime(lambda payload: events.append(payload))
 
-    response = runtime.send(agent, {"stream_handler": runtime.on_stream_delta})
+    response = runtime.send(agent, AgentSendContext(stream_handler=runtime.on_stream_delta))
 
     assert response == "ok"
     assert agent.tool_event_callback is previous_callback
@@ -194,21 +196,21 @@ def test_agent_stream_runtime_attaches_runtime_tool_call_arguments_and_result():
     ]
 
 
-def test_agent_stream_runtime_filters_unsupported_kwargs_and_restores_tool_callback():
+def test_agent_stream_runtime_uses_configured_invocation_and_restores_tool_callback():
     class Agent:
         def __init__(self):
             self.tool_event_callback = lambda _payload: None
             self.kwargs = None
 
-        def Send(self, run_tools=False):
+        def Send(self, run_tools=False, **kwargs):
             self.kwargs = {"run_tools": run_tools}
             return "ok"
 
-    agent = Agent()
+    agent = configured_fake(Agent(), AgentConfig(run_tools=True, stream=True))
     previous_callback = agent.tool_event_callback
     runtime = AgentStreamRuntime(None)
 
-    response = runtime.send(agent, {"run_tools": True, "stream": True})
+    response = runtime.send(agent, AgentSendContext(run_tools=True))
 
     assert response == "ok"
     assert agent.kwargs == {"run_tools": True}
@@ -221,16 +223,16 @@ def test_agent_stream_runtime_does_not_retry_internal_type_error():
             self.tool_event_callback = lambda _payload: None
             self.calls = 0
 
-        def Send(self, run_tools=False):
+        def Send(self, run_tools=False, **kwargs):
             self.calls += 1
             raise TypeError("internal send failure")
 
-    agent = Agent()
+    agent = configured_fake(Agent(), AgentConfig(run_tools=True, stream=True))
     previous_callback = agent.tool_event_callback
     runtime = AgentStreamRuntime(None)
 
     with pytest.raises(TypeError, match="internal send failure"):
-        runtime.send(agent, {"run_tools": True, "stream": True})
+        runtime.send(agent, AgentSendContext(run_tools=True))
 
     assert agent.calls == 1
     assert agent.tool_event_callback is previous_callback

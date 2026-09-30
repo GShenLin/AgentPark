@@ -9,12 +9,11 @@ import argparse
 import asyncio
 import base64
 import getpass
-import http.cookiejar
+import tempfile
 import json
 from pathlib import Path
 import ssl
 import sys
-import urllib.request
 import uuid
 from contextlib import nullcontext
 from unittest.mock import patch
@@ -25,6 +24,7 @@ from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSession
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.asyncio.client import connect
 
+from src.providers.curl_transport import CurlHttpTransport
 from src.peer_network.channel import PeerChannel
 from src.peer_network.contracts import BoardHttpRequest, PeerCall, Signal
 from src.peer_network.ice import IceLease
@@ -34,22 +34,21 @@ from src.peer_network.identity import DeviceIdentity, verify_signal
 class PortalProbe:
     def __init__(self, origin: str, password: str):
         self.origin = origin.rstrip("/")
-        self.cookies = http.cookiejar.CookieJar()
-        self.opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-            urllib.request.HTTPCookieProcessor(self.cookies))
+        self.cookie_dir = tempfile.TemporaryDirectory(prefix="agentpark-probe-")
+        self.cookie_file = str(Path(self.cookie_dir.name) / "cookies")
         self.request("/portal/api/login", {"password": password})
 
     def request(self, path: str, body=None):
-        request = urllib.request.Request(self.origin + path, data=json.dumps(body).encode() if body is not None else None,
-                                         headers={"Origin": self.origin, "Content-Type": "application/json"})
-        with self.opener.open(request, timeout=20) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else None
+        response = CurlHttpTransport().request(url=self.origin + path,
+            method="POST" if body is not None else "GET",
+            body=json.dumps(body).encode() if body is not None else None,
+            headers={"Origin": self.origin, "Content-Type": "application/json"},
+            timeout_sec=20, cookie_file=self.cookie_file).raise_for_status()
+        return response.json() if response.content else None
 
     async def board(self, device: dict, transport: str | None = None) -> dict:
         identity = DeviceIdentity(Ed25519PrivateKey.generate())
-        cookie = "; ".join(f"{c.name}={c.value}" for c in self.cookies)
+        cookie = CurlHttpTransport.cookie_header(self.cookie_file, self.origin + "/portal/connect")
         async with connect(self.origin.replace("https://", "wss://") + "/portal/connect",
                            origin=self.origin, additional_headers={"Cookie": cookie}, max_size=100000) as ws:
             challenge = json.loads(await ws.recv())

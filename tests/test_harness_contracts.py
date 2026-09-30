@@ -92,12 +92,12 @@ def test_gateway_binds_model_per_lease_and_revokes_access(provider, monkeypatch,
 
 
 def test_all_registered_nodes_have_concrete_adapters():
-    assert len(DESCRIPTORS) == 6
+    assert len(DESCRIPTORS) == 7
     for item in DESCRIPTORS:
         assert callable(create_adapter(item.id).run)
 
 
-@pytest.mark.parametrize("module", ["pi_node", "hermes_agent_node"])
+@pytest.mark.parametrize("module", ["pi_node", "hermes_agent_node", "minimax_code_node"])
 def test_harness_node_schema_exposes_selected_provider_models(provider, module):
     from importlib import import_module
     Node = import_module("nodes." + module).Node
@@ -141,7 +141,20 @@ def test_cli_timeout_contract(provider, tmp_path):
             load_cli_request("pi", context)
 
 
-@pytest.mark.parametrize("harness_id", ["openclaw", "pi", "deepseek_harness"])
+def test_minimax_permission_mode_is_explicit_and_validated(provider, tmp_path):
+    values = {"provider_id": "p", "working_path": str(tmp_path)}
+    context = HarnessContext(str(tmp_path / "config.json"), str(tmp_path), values)
+    assert load_cli_request("minimax_code", context).permission_mode == "auto"
+    for mode in ("default", "auto", "bypassPermissions"):
+        values["permission_mode"] = mode
+        assert load_cli_request("minimax_code", context).permission_mode == mode
+    for invalid in (True, None, [], {}, "full-access"):
+        values["permission_mode"] = invalid
+        with pytest.raises(ValueError, match="permission_mode"):
+            load_cli_request("minimax_code", context)
+
+
+@pytest.mark.parametrize("harness_id", ["openclaw", "pi", "deepseek_harness", "minimax_code"])
 def test_empty_workspace_does_not_inherit_host_project(provider, tmp_path, monkeypatch, harness_id):
     host = tmp_path / "host"
     host.mkdir()

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from src.user_interaction_store import (
     create_interaction_request,
     list_interaction_requests,
@@ -8,6 +12,34 @@ from src.user_interaction_store import (
     wait_for_interaction_response,
 )
 from src.web_backend.core import BackendCore
+
+
+def test_user_interaction_skill_exposes_tools_only_while_active(tmp_path):
+    import json
+    from nodes.agent_skill_activation import bind_deferred_skills
+    from nodes.agent_support.capability_setup import resolve_agent_capabilities
+    from src.tool.base_tool import BaseTool
+
+    plan = resolve_agent_capabilities(
+        lambda key, default: {"tools": ["system_tools"], "skills": ["user-interaction"]}.get(key, default),
+        node_id="interaction-skill-test",
+    )
+    agent = type("Agent", (), {"config": {}, "_agentpark_node_directory": str(tmp_path)})()
+    agent.messages = []
+    agent.tools = BaseTool(agent)
+    agent.addTool = agent.tools.addTool
+    for name in plan.tool_names:
+        agent.addTool(name)
+    bind_deferred_skills(agent, plan.selected_skill_definitions, role="developer")
+    assert "ask_user" not in agent.tools.function_map
+    assert "tips" not in agent.tools.function_map
+    result = json.loads(agent.tools.execute_tool("activate_skill", {"skill": "user-interaction"}))
+    assert result["status"] == "success"
+    assert result["tools_added"] == ["ask_user", "tips"]
+    closed = json.loads(agent.tools.execute_tool("deactivate_skill", {"skill": "user-interaction"}))
+    assert closed["tools_removed"] == ["ask_user", "tips"]
+    assert "ask_user" not in agent.tools.function_map
+    assert "tips" not in agent.tools.function_map
 
 
 def test_interaction_store_submits_response(tmp_path, monkeypatch):
@@ -52,43 +84,84 @@ def test_interaction_schema_rejects_invalid_select_options(tmp_path, monkeypatch
         raise AssertionError("expected invalid schema to raise")
 
 
-def test_interaction_schema_accepts_custom_html(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
-
-    schema = normalize_interaction_schema(
-        title="custom",
-        fields=[
-            {
-                "id": "designer",
-                "type": "custom_html",
-                "label": "设计器",
-                "html": "<button>提交</button>",
-                "css": "button { color: red; }",
-                "js": "window.AGENTPARK_INTERACTION.submit({ ok: true })",
-                "height": 500,
-                "initial_data": {"mode": "demo"},
-            }
-        ],
-    )
-
-    field = schema["fields"][0]
-    assert field["type"] == "custom_html"
-    assert field["height"] == 500
-    assert field["initial_data"]["mode"] == "demo"
-
-
-def test_interaction_schema_rejects_custom_html_without_html(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
-
-    try:
+def test_interaction_schema_rejects_removed_custom_html():
+    with pytest.raises(ValueError, match="type must be one of"):
         normalize_interaction_schema(
             title="bad custom",
-            fields=[{"id": "designer", "type": "custom_html", "label": "设计器"}],
+            fields=[{"id": "designer", "type": "custom_html", "label": "设计器", "html": "<button>提交</button>"}],
         )
-    except ValueError as exc:
-        assert "html is required" in str(exc)
-    else:
-        raise AssertionError("expected invalid custom_html schema to raise")
+
+
+def test_ask_user_declaration_has_no_custom_form_fields():
+    from functions.user_interaction_tools import ask_user_declaration
+
+    fields = ask_user_declaration["function"]["parameters"]["properties"]["fields"]["items"]["properties"]
+    assert fields["type"]["enum"] == ["text", "textarea", "select", "multiselect", "checkbox", "file"]
+    assert not {"html", "css", "js", "height", "initial_data"}.intersection(fields)
+
+
+def test_tips_publishes_complete_notification_without_waiting(tmp_path, monkeypatch):
+    from functions.user_interaction_tools import tips
+    from src.web_backend.node_runtime_event_sink import NodeRuntimeEventSink
+
+    def unexpected_request(*args, **kwargs):
+        pytest.fail("Tips must not create or wait for an interaction request")
+
+    monkeypatch.setattr("functions.user_interaction_tools.create_interaction_request", unexpected_request)
+    monkeypatch.setattr("functions.user_interaction_tools.wait_for_interaction_response", unexpected_request)
+    events = []
+    sink = NodeRuntimeEventSink(
+        graph_id="graph-a", node_id="node-a", node_type_id="agent_node",
+        config_path=str(tmp_path / "config.json"), trace_id="trace-tips", depth=0,
+        stream_last_text="", append_tool_call_entry=lambda *_args: None,
+        log_graph_event=lambda graph_id, event, **fields: events.append(
+            {"graph_id": graph_id, "event": event, **fields}
+        ),
+    )
+    agent = type("Agent", (), {"tool_event_callback": staticmethod(sink.handle)})()
+    message = '任务进展 "成功"\n' * 200
+    try:
+        result = json.loads(tips(message, title="进度提示", agent=agent))
+        second = json.loads(tips("第二条提示", agent=agent))
+    finally:
+        sink.close()
+
+    assert result["status"] == second["status"] == "sent"
+    assert result["tip_id"] != second["tip_id"]
+    assert len(events) == 2
+    assert events[0]["event"] == "runtime_notice"
+    assert events[0]["stage"] == "user_tip"
+    assert events[0]["source"] == "user_interaction"
+    assert events[0]["graph_id"] == "graph-a"
+    assert events[0]["node_instance_id"] == "node-a"
+    assert json.loads(events[0]["message"]) == {
+        "tip_id": result["tip_id"], "title": "进度提示", "message": message.strip(),
+    }
+    assert json.loads(events[1]["message"])["title"] == "提示"
+
+
+@pytest.mark.parametrize("arguments", [{"message": " "}, {"message": None}, {"message": "hello", "title": ""}])
+def test_tips_rejects_invalid_input(arguments):
+    from functions.user_interaction_tools import tips
+
+    events = []
+    agent = type("Agent", (), {"tool_event_callback": staticmethod(events.append)})()
+    assert json.loads(tips(**arguments, agent=agent))["status"] == "error"
+    assert not events
+
+
+def test_tips_reports_unavailable_channel_and_delivery_errors():
+    from functions.user_interaction_tools import tips
+
+    assert json.loads(tips("hello"))["status"] == "error"
+
+    def fail(_event):
+        raise RuntimeError("delivery failed")
+
+    agent = type("Agent", (), {"tool_event_callback": staticmethod(fail)})()
+    result = json.loads(tips("hello", agent=agent))
+    assert result["status"] == "error"
+    assert "delivery failed" in result["error"]
 
 
 def test_ask_user_emits_created_and_submitted_runtime_notices(tmp_path, monkeypatch):

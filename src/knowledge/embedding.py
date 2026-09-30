@@ -4,7 +4,9 @@ import time
 import re
 from pathlib import Path
 
-import httpx
+import json
+from src.providers.curl_transport import CurlHttpTransport, CurlTransportError
+from src.runtime_cancellation import CancellationRequested
 
 from src.provider_api_key_store import api_key_store_path, load_api_key_store
 
@@ -61,30 +63,35 @@ class Embedder:
         api_key = self.resolve_key()
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         try:
-            with httpx.Client(timeout=self.config.request_timeout, follow_redirects=False) as client:
-                for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
-                    if self.stop is not None:
-                        check_stop(self.stop)
-                    response = client.post(self.config.embedding_url, headers=headers, json={
-                        "model": self.config.embedding_model, "input": texts, "encoding_format": "float",
-                    })
-                    if response.status_code == 429:
-                        logging.getLogger(__name__).warning(
-                            "Embedding rate limit: code=%s batch=%s characters=%s attempt=%s",
-                            rate_limit_code(response), len(texts), sum(map(len, texts)), attempt + 1,
-                        )
-                    if response.status_code != 429 or attempt == MAX_RATE_LIMIT_RETRIES:
-                        break
-                    response.close()
+            for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+                if self.stop is not None:
+                    check_stop(self.stop)
+                response = CurlHttpTransport().request(url=self.config.embedding_url, method="POST",
+                    headers={**headers, "Content-Type": "application/json"},
+                    timeout_sec=self.config.request_timeout, follow_redirects=False, cancel_event=self.stop,
+                    body=json.dumps({
+                    "model": self.config.embedding_model, "input": texts, "encoding_format": "float",
+                }).encode("utf-8"))
+                if response.status_code == 429:
                     logging.getLogger(__name__).warning(
-                        "Embedding HTTP 429; retry %s/%s in %s seconds",
-                        attempt + 1, MAX_RATE_LIMIT_RETRIES, self.config.retry_interval_seconds,
+                        "Embedding rate limit: code=%s batch=%s characters=%s attempt=%s",
+                        rate_limit_code(response), len(texts), sum(map(len, texts)), attempt + 1,
                     )
-                    if self.stop is None:
-                        time.sleep(self.config.retry_interval_seconds)
-                    elif self.stop.wait(self.config.retry_interval_seconds):
-                        raise Interrupted()
-        except httpx.HTTPError as exc:
+                if response.status_code != 429 or attempt == MAX_RATE_LIMIT_RETRIES:
+                    break
+                logging.getLogger(__name__).warning(
+                    "Embedding HTTP 429; retry %s/%s in %s seconds",
+                    attempt + 1, MAX_RATE_LIMIT_RETRIES, self.config.retry_interval_seconds,
+                )
+                if self.stop is None:
+                    time.sleep(self.config.retry_interval_seconds)
+                elif self.stop.wait(self.config.retry_interval_seconds):
+                    raise Interrupted()
+        except CancellationRequested:
+            if self.stop is not None:
+                check_stop(self.stop)
+            raise
+        except CurlTransportError as exc:
             raise EmbeddingError(f"Embedding 连接失败：{type(exc).__name__}，请检查地址与网络") from exc
         if response.status_code != 200:
             # Upstream bodies may echo credentials; expose status, never raw headers/body.

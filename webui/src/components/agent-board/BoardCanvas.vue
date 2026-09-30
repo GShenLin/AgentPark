@@ -6,6 +6,7 @@ import CanvasContextMenu from './CanvasContextMenu.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
 import NodeOutputRoutesPanel from './NodeOutputRoutesPanel.vue'
+import GroupFrames from '../../groups/GroupFrames.vue'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -25,17 +26,19 @@ const nodeContextMenuRef = ref<{
 } | null>(null)
 
 const items = computed(() => ctx.nodes.value)
+const frameWidth = computed(() => Math.max(ctx.canvasWidth.value, ...ctx.groups.groups.value.map(group => group.bounds.x + group.bounds.width + 40)))
+const frameHeight = computed(() => Math.max(ctx.canvasHeight.value, ...ctx.groups.groups.value.map(group => group.bounds.y + group.bounds.height + 40)))
 const canvasStyle = computed(() => ({
-  width: `${ctx.canvasWidth.value * ctx.canvasScale.value}px`,
-  height: `${ctx.canvasHeight.value * ctx.canvasScale.value}px`,
+  width: `${frameWidth.value * ctx.canvasScale.value}px`,
+  height: `${frameHeight.value * ctx.canvasScale.value}px`,
   paddingLeft: `${BOARD_CANVAS_PADDING_PX + ctx.canvasPaddingLeft.value}px`,
   paddingTop: `${BOARD_CANVAS_PADDING_PX + ctx.canvasPaddingTop.value}px`,
   paddingRight: `${BOARD_CANVAS_PADDING_PX}px`,
   paddingBottom: `${BOARD_CANVAS_PADDING_PX}px`,
 }))
 const contentStyle = computed(() => ({
-  width: `${ctx.canvasWidth.value}px`,
-  height: `${ctx.canvasHeight.value}px`,
+  width: `${frameWidth.value}px`,
+  height: `${frameHeight.value}px`,
   transform: `scale(${ctx.canvasScale.value})`,
   '--board-grid-cell-width': `${ctx.gridSettings.value.cellWidth}px`,
   '--board-grid-cell-height': `${ctx.gridSettings.value.cellHeight}px`,
@@ -95,6 +98,7 @@ watchEffect(() => {
       :style="canvasStyle"
     >
       <div class="canvas-content" :style="contentStyle">
+        <GroupFrames :state="ctx.groups" :grid="ctx.gridSettings.value" :point="getBoardPoint" />
         <div
           v-if="ctx.selectionRect.value"
           class="selection-rect"

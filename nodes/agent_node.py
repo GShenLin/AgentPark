@@ -11,6 +11,7 @@ from nodes.agent_node_contract import (
 )
 from nodes.agent_assistant_memory import persist_provider_turn_metadata
 from nodes.agent_history import load_agent_history_messages
+from nodes.agent_skill_activation import bind_deferred_skills, partition_deferred_skills
 from nodes.agent_gateway_usage import build_agent_gateway_usage_recorder
 from nodes.agent_message_adapter import (
     append_channel_meta,
@@ -20,21 +21,23 @@ from nodes.agent_message_adapter import (
     extract_channel_meta,
 )
 from nodes.agent_node_config import load_agent_node_run_request
-from nodes.agent_node_modes import MODE_ORDER, capability_mode, resolve_input_support_mode, settings_for_mode
+from nodes.agent_node_modes import MODE_ORDER, capability_mode, resolve_input_support_mode
+from nodes.agent_node_invocation import node_agent_config
 from nodes.agent_node_schema import build_agent_config_schema
 from nodes.agent_provider_runtime import effective_instruction
 from nodes.agent_provider_runtime import merge_structured_response
 from nodes.agent_provider_runtime import resolve_instruction_role
 from nodes.agent_provider_runtime import stream_callback
-from nodes.agent_provider_runtime import stream_enabled
 from nodes.agent_provider_runtime import uses_responses_api_context
 from nodes.agent_stream_runtime import AgentStreamRuntime
 from nodes.agent_support.capability_setup import AgentCapabilityPlan, resolve_agent_capabilities
 from nodes.agent_mcp_loader import (
+    McpServerLoadError,
     inject_mcp_server_context,
     register_mcp_server_tools,
     with_mcp_caller_context,
 )
+from nodes.agent_mcp_results import report_mcp_load_failure
 from nodes.agent_plugin_loader import resolve_plugin_capabilities
 from nodes.agent_plugin_tool_loader import register_plugin_tool_definitions
 from nodes.agent_skill_loader import (
@@ -45,20 +48,20 @@ from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
 from src.restart_recovery_context import render_restart_recovery_context
+from src.agent_groups.agent_tools import bind_group_tools
 from src.config_loader import ConfigLoader
-from src.conversation_context.checkpoint import estimate_tokens
 from src.conversation_context.settings import ConversationSettings
 from src.access_policy import nondeveloper_filtered_tools
 from src.media_resource_utils import resolve_public_base_url
 from src.message_protocol import envelope_text, normalize_envelope
 from src.long_term_memory.service import prepare_node_memory
 from src.providers import create_agent
+from src.providers.agent_config import AgentSendContext
 from src.provider_models import resolve_provider_model
 from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
 from src.providers.provider_request_usage import ProviderRequestTracker
 from src.runtime_events.context_injection import runtime_event_context_from_context
 from src.runtime_cancellation import raise_if_cancel_requested
-from src.switch_utils import parse_switch_mode
 from src.tool.tool_stats_store import ToolCallStatsRecorder
 from src.tool.access_filter import filter_configured_tool_modules
 from src.tool.access_filter import filter_registered_agent_tools
@@ -140,6 +143,7 @@ class Node(BaseNode):
             system_prompt=run_request.system_prompt if isinstance(run_request.system_prompt, str) else None,
             internal_memory_enabled=False,
             model_id=selected_model_id,
+            agent_config=node_agent_config(run_request, run_mode, provider_config, self.config_defaults),
         )
         resolved_public_base_url = resolve_public_base_url(run_request.public_base_url, run_request.provider_id)
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
@@ -171,7 +175,11 @@ class Node(BaseNode):
         provider_request_tracker = ProviderRequestTracker(on_completion=record_provider_usage)
         def consume_mid_turn_user_inputs() -> list[dict]:
             messages: list[dict] = []
-            for pending_item in _consume_node_mid_turn_user_inputs(config_path):
+            pending_inputs = _consume_node_mid_turn_user_inputs(config_path)
+            consume_group = ctx.get("consume_group_followups")
+            if callable(consume_group):
+                pending_inputs.extend({"payload": envelope} for envelope in consume_group())
+            for pending_item in pending_inputs:
                 if not isinstance(pending_item, dict):
                     continue
                 envelope = normalize_envelope(pending_item.get("payload"), default_role="user")
@@ -236,13 +244,13 @@ class Node(BaseNode):
             *capability_plan.selected_skill_definitions,
             *capability_plan.plugin_capabilities.skill_definitions,
         ]
-        register_skill_script_tools(agent, skill_definitions)
-        if capability_plan.mcp_server_names:
-            register_mcp_server_tools(
-                agent,
-                list(capability_plan.mcp_server_names),
-                settings=mcp_settings,
-            )
+        eager_skill_definitions, deferred_skill_definitions = partition_deferred_skills(skill_definitions)
+        register_skill_script_tools(agent, eager_skill_definitions)
+        for server_name in capability_plan.mcp_server_names:
+            try:
+                register_mcp_server_tools(agent, [server_name], settings=mcp_settings)
+            except McpServerLoadError as exc:
+                report_mcp_load_failure(agent, exc, phase="list_tools", server=server_name)
         if filtered_tool_names:
             filter_registered_agent_tools(agent, filtered_tool_names)
 
@@ -255,6 +263,9 @@ class Node(BaseNode):
             if resolved_instruction:
                 agent.Message(instruction_role, resolved_instruction, persist=False)
         if capability_mode(run_mode):
+            bind_group_tools(agent, node_directory=agent_dir,
+                             node_id=run_request.agent_id, role=instruction_role,
+                             access_role="nondeveloper" if is_nondeveloper_context(ctx) else "developer")
             prepare_node_memory(
                 agent, node_dir=agent_dir, graph_id=run_request.graph_id,
                 node_id=run_request.agent_id, provider_id=run_request.provider_id,
@@ -271,8 +282,14 @@ class Node(BaseNode):
             agent,
             {"skills": list(capability_plan.skill_names)},
             node_id=run_request.agent_id,
-            extra_skills=skill_definitions,
+            extra_skills=eager_skill_definitions,
             role=instruction_role,
+        )
+        bind_deferred_skills(
+            agent,
+            deferred_skill_definitions,
+            role=instruction_role,
+            mcp_settings=mcp_settings,
         )
         goal_context = node_goal_context(run_request.config_data or ctx)
         if goal_context:
@@ -285,17 +302,11 @@ class Node(BaseNode):
         user_content = build_agent_user_content(run_request.provider_id, run_mode, input_message, resolved_public_base_url)
         if capability_mode(run_mode):
             context_settings = ConversationSettings.from_config(_workspace_config())
-            compaction_provider_config = ConfigLoader().get_provider_config(context_settings.provider or run_request.provider_id)
-            compaction_tracker = ProviderRequestTracker(on_completion=build_agent_gateway_usage_recorder(
-                workspace_root=get_workspace_root(), client_ip=str(ctx.get("access_ip") or ""),
-                task_id=f"{task_id}:context", model_id=str(compaction_provider_config.get("model") or ""),
-            ))
-            reserved_tokens = estimate_tokens({
-                "messages": getattr(agent, "messages", []), "current_input": user_content,
-                "tools": getattr(agent, "tool_declarations", []),
-                "instructions": effective_instruction(agent, run_request.instruction),
-                "restart_context": restart_recovery_context,
-            }) + 256
+            def compaction_tracker_factory(model_id):
+                return ProviderRequestTracker(on_completion=build_agent_gateway_usage_recorder(
+                    workspace_root=get_workspace_root(), client_ip=str(ctx.get("access_ip") or ""),
+                    task_id=f"{task_id}:context", model_id=model_id,
+                ))
             # Persistent conversation history owns cross-input restoration. In-run provider compaction
             # may still operate, but must not reinject an unrelated previous task ledger checkpoint.
             agent._session_context_checkpoint_restored = True
@@ -305,23 +316,15 @@ class Node(BaseNode):
                 current_message=input_message,
                 provider_id=run_request.provider_id,
                 public_base_url=resolved_public_base_url,
-                settings=context_settings, reserved_tokens=reserved_tokens,
+                settings=context_settings, historical_evidence_role=instruction_role,
                 graph_id=run_request.graph_id, node_id=run_request.agent_id,
-                cancel_source=cancel_source, tracker=compaction_tracker,
+                cancel_source=cancel_source, tracker_factory=compaction_tracker_factory,
             ):
                 agent.Message(history_message["role"], history_message["content"], persist=False)
 
         if restart_recovery_context:
             agent.Message(instruction_role, restart_recovery_context, persist=False)
         agent.Message("user", user_content, persist=False)
-        web_search_mode = parse_switch_mode(run_request.web_search, default="disabled", allow_auto=False)
-        thinking_mode = parse_switch_mode(run_request.thinking, default="disabled", allow_auto=False)
-        reasoning_effort = run_request.reasoning_effort
-        if reasoning_effort is None:
-            reasoning_effort = self.config_defaults["reasoning_effort"]
-        reasoning_summary = run_request.reasoning_summary
-        if reasoning_summary is None:
-            reasoning_summary = self.config_defaults["reasoning_summary"]
         tool_stats_recorder = ToolCallStatsRecorder(
             provider_id=run_request.provider_id,
             graph_id=run_request.graph_id,
@@ -337,22 +340,8 @@ class Node(BaseNode):
         provider_request_tracker.reset()
         response = stream_runtime.send(
             agent,
-            {
-                "run_tools": True,
-                "mode": run_mode,
-                "web_search": web_search_mode,
-                "thinking": thinking_mode,
-                "reasoning_effort": reasoning_effort,
-                "reasoning_summary": reasoning_summary,
-                "mode_options": settings_for_mode(
-                    run_mode,
-                    run_request.config_data,
-                    run_request.context,
-                ),
-                "stream": stream_enabled(agent),
-                "stream_handler": stream_runtime.on_stream_delta,
-                "thinking_stream_handler": stream_runtime.on_thinking_delta,
-            },
+            AgentSendContext(stream_handler=stream_runtime.on_stream_delta,
+                             thinking_stream_handler=stream_runtime.on_thinking_delta),
         )
         min_delay_ms = _resolved_agent_node_settings().min_send_delay_ms
         if min_delay_ms > 0:

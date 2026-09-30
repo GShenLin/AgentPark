@@ -1,3 +1,4 @@
+from tests.agent_invocation_helpers import configured_fake
 import os
 
 from src.public_gateway.usage_stats import PublicGatewayUsageStore
@@ -38,7 +39,7 @@ def test_agent_node_mid_turn_input_uses_explicit_external_config_path(monkeypatc
 
     def fake_create_agent(*_args, **kwargs):
         captured["create_kwargs"] = kwargs
-        return DummyAgent()
+        return configured_fake(DummyAgent(), kwargs.get("agent_config"))
 
     def fake_bind_agent_runtime_context(_agent, runtime_context):
         captured["runtime_context"] = runtime_context
@@ -78,9 +79,11 @@ def test_agent_node_mid_turn_input_uses_explicit_external_config_path(monkeypatc
             "memory_path": str(memory_path),
             "messages_path": str(messages_path),
             "access_ip": "127.0.0.1",
+            "consume_group_followups": lambda: [{"role": "user", "parts": [{"type": "text", "text": "Group followup"}]}],
         },
     )
-    captured["runtime_context"].consume_mid_turn_user_inputs()
+    injected = captured["runtime_context"].consume_mid_turn_user_inputs()
+    assert len(injected) == 1 and "Group followup" in str(injected[0]["content"])
 
     assert str(result.get("display") or "") == "ok"
     assert captured["create_kwargs"]["memory_file_path"] == str(memory_path)

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import Request
+from src.agent_groups.membership import GroupMembership
+from src.agent_groups.repository import GroupRepository
 
 from .graph_output_routes import normalize_output_routes
 from .node_config_errors import NodeConfigReadError, NodeConfigWriteError
@@ -92,6 +95,10 @@ class NodeVisibilityService(HostBoundService):
 
         def mutate(next_cfg: dict[str, Any]) -> None:
             next_cfg["private"] = private
+
+        group_directory = Path(config_path).parent.parent
+        if private and (group_directory / "groups.sqlite3").is_file():
+            GroupMembership(GroupRepository(group_directory)).protect_member_history(safe_node_id)
 
         try:
             result = node_config_service.update(config_path, mutate, effective="immediate")

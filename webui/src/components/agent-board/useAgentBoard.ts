@@ -1,5 +1,6 @@
-﻿import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { beginNodeOpenTrace, nodeOpenMarker } from '../../nodeOpenDiagnostics'
+import { useBoardGroups } from '../../groups/useBoardGroups'
 import {
   cloneNodeInstance,
   controlNodeInstance,
@@ -724,6 +725,8 @@ export function useAgentBoard(options: {
   const links = ref<LinkItem[]>([])
   const nodeNotes = ref<Record<string, string>>({})
   const nodeConfigs = ref<Record<string, NodeInstanceConfig>>({})
+  const groups = useBoardGroups({ graphId: currentGraphId, nodes, selectedIds: selectedItemIds,
+    grid: gridSettings, ready: options.ready, lastError, board: boardRef })
   const linkSession = ref<LinkSession | null>(null)
   const dragSession = ref<DragSession>(null)
   const dragHoverTargetId = ref<string | null>(null)
@@ -1472,6 +1475,7 @@ export function useAgentBoard(options: {
       selectAndFocusNode(session.itemId).catch(() => null)
     }
     rememberPendingUiPositions(movingIds, 'end_drag')
+    if (releasedByPointer && changedGridPosition) void groups.afterNodeDrop(movingIds)
     void persistDraggedItemPositions(movingIds).catch((e: any) => {
       lastError.value = String(e?.message || e)
     })
@@ -1617,7 +1621,7 @@ export function useAgentBoard(options: {
 
     if (event.button === 0) {
       const target = event.target as HTMLElement | null
-      const overItem = !!target?.closest('.node-card, .node-side-editor, .node-output-routes-panel, .modal, .context-menu')
+      const overItem = !!target?.closest('.node-card, .node-side-editor, .node-output-routes-panel, .modal, .context-menu, .group-frame-label, .group-resize-handle')
       if (!overItem) {
         if (!(event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) {
           openEmptyBoardPanel()
@@ -1781,7 +1785,7 @@ export function useAgentBoard(options: {
     window.removeEventListener('blur', onSelectionPointerUp)
   }
 
-  function onSelectionPointerUp() {
+  function onSelectionPointerUp(event?: Event) {
     const rect = selectionRect.value
     const session = selectionSession
     if (rect && session && selectionRectExceedsThreshold(rect)) {
@@ -1795,6 +1799,8 @@ export function useAgentBoard(options: {
           if (nodes.value.some((n) => n.id === id)) selectNode(id)
         }
       }
+    } else if (rect && event?.type === 'pointerup') {
+      groups.openAt({ x: rect.x, y: rect.y })
     }
     clearSelectionSession()
   }
@@ -2205,6 +2211,7 @@ export function useAgentBoard(options: {
 
   return {
     selectedNodeId,
+    groups,
     renamingNodeId,
     lastError,
     memoryMode,

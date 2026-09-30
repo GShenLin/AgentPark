@@ -9,7 +9,6 @@ RESOURCE_DIR_TYPES = {
     "references": "reference",
     "scripts": "script",
     "assets": "asset",
-    "agents": "agent_config",
 }
 DEFAULT_MAX_CHARS = 20000
 HARD_MAX_CHARS = 100000

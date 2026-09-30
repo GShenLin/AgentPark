@@ -36,11 +36,13 @@ def test_invalid_registry_version_is_rejected(invalid):
     ("claude", "2.1.91 (Claude Code)", "2.1.91"),
     ("openclaw", "OpenClaw 2026.9.4 (3a9d69d)", "2026.9.4"),
     ("pi", "0.85.1", "0.85.1"), ("deepseek_harness", "0.1.5-rc.1", "0.1.5-rc.1"),
+    ("minimax_code", "0.4.12", "0.4.12"),
 ])
 def test_declared_external_version_formats(tmp_path, harness_id, output, expected):
-    assert updates.installed_version(harness_id, tmp_path, output) == expected
+    assert updates.installed_version(harness_id, tmp_path, output, package=descriptor(harness_id).package) == expected
     with pytest.raises(ValueError, match="Unrecognized"):
-        updates.installed_version(harness_id, tmp_path, "warning 1.0.0\n" + output)
+        updates.installed_version(harness_id, tmp_path, "warning 1.0.0\n" + output,
+                                  package=descriptor(harness_id).package)
 
 
 def write_package(root, version):
@@ -54,7 +56,7 @@ def write_package(root, version):
 
 def test_managed_package_version_is_authoritative(tmp_path):
     write_package(tmp_path, "1.0.0")
-    assert updates.installed_version("pi", tmp_path, "2.0.0") == "1.0.0"
+    assert updates.installed_version("pi", tmp_path, "2.0.0", package=descriptor("pi").package) == "1.0.0"
 
 
 def test_registry_query_is_bounded_and_validates_json(tmp_path, monkeypatch):
@@ -64,13 +66,13 @@ def test_registry_query_is_bounded_and_validates_json(tmp_path, monkeypatch):
         calls.append((argv, kwargs))
         return '"1.2.3"'
     monkeypatch.setattr(updates, "run_process", run)
-    assert updates.latest_version("pi", str(tmp_path)) == "1.2.3"
+    assert updates.latest_version(descriptor("pi").package, str(tmp_path)) == "1.2.3"
     argv, options = calls[0]
     assert argv[2:6] == ["view", descriptor("pi").package + "@latest", "version", "--json"]
     assert options == {"cwd": str(tmp_path), "timeout": 20}
     monkeypatch.setattr(updates, "run_process", lambda *args, **kwargs: '["1.2.3"]')
     with pytest.raises(ValueError, match="semantic version"):
-        updates.latest_version("pi", str(tmp_path))
+        updates.latest_version(descriptor("pi").package, str(tmp_path))
 
 
 @pytest.mark.parametrize(("current", "latest", "expected"), [
@@ -79,7 +81,8 @@ def test_registry_query_is_bounded_and_validates_json(tmp_path, monkeypatch):
 ])
 def test_update_states(tmp_path, monkeypatch, current, latest, expected):
     monkeypatch.setattr(updates, "latest_version", lambda *args: latest)
-    result = updates.check_updates("pi", tmp_path, {"version": current}, cwd=str(tmp_path))
+    result = updates.check_updates("pi", tmp_path, {"version": current, "package": descriptor("pi").package},
+                                   cwd=str(tmp_path))
     assert result == asdict(updates.HarnessUpdate(current, latest, expected))
 
 
@@ -111,7 +114,7 @@ def upgrade_setup(tmp_path, monkeypatch):
     def run(argv, **kwargs):
         calls.append(argv)
         if "--version" in argv:
-            return updates.installed_version("pi", root, "")
+            return updates.installed_version("pi", root, "", package=descriptor("pi").package)
         write_package(root, "1.1.0")
         return "upgraded"
     monkeypatch.setattr(manager, "run_process", run)
@@ -180,7 +183,7 @@ def test_external_upgrade_updates_original_without_managed_copy(tmp_path, monkey
     monkeypatch.setattr(manager, "latest_version", lambda *args: "1.1.0")
     def run(argv, **kwargs):
         if "--version" in argv:
-            return updates.installed_version("pi", external, "")
+            return updates.installed_version("pi", external, "", package=descriptor("pi").package)
         assert str(external) in argv
         assert "--global" in argv
         assert str(root) not in argv
@@ -191,7 +194,7 @@ def test_external_upgrade_updates_original_without_managed_copy(tmp_path, monkey
     assert result["harness"]["source"] == "external"
     assert result["harness"]["can_upgrade"] is True
     assert result["harness"]["can_uninstall"] is False
-    assert updates.installed_version("pi", external, "") == "1.1.0"
+    assert updates.installed_version("pi", external, "", package=descriptor("pi").package) == "1.1.0"
     assert not root.exists()
 
 

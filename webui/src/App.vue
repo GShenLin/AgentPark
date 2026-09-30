@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { cloudBoardSession } from './portal/boardSession'
 import { getAccessStatus, loadWorkspaceBootstrap, type AccessStatus, type WorkspaceBootstrap } from './api'
 import { setAccessUsername } from './accessIdentity'
 import AccessUsernameDialog from './components/AccessUsernameDialog.vue'
@@ -26,38 +27,63 @@ const bootstrapError = ref('')
 let mediaQuery: MediaQueryList | null = null
 let stopForegroundAlerts: (() => void) | null = null
 let stopAppEventStream: (() => void) | null = null
+let accessGeneration = 0
+const boardSession = inject(cloudBoardSession, null)
+const unregisterBoardSession = boardSession?.register({
+  suspend() { accessGeneration += 1; stopAppEventStream?.(); stopAppEventStream = null },
+  async restore() {
+    const generation = accessGeneration
+    const status = await getAccessStatus()
+    if (generation !== accessGeneration) throw new Error('访问校验已取消，请重新连接。')
+    if (status.username_required) throw new Error('访问身份已失效，请重新打开设备并验证身份。')
+    accessStatus.value = status
+    if (workspaceBootstrap.value) workspaceBootstrap.value = { ...workspaceBootstrap.value, access: status }
+    if (!accessReady.value) {
+      if (!await mountWorkspace(generation)) throw new Error('页面初始化已取消，请重新连接。')
+      accessReady.value = true
+      bootstrapError.value = ''
+      await nextTick()
+    }
+  },
+  activate() { stopAppEventStream = startAppEventStream({ resync: true }) },
+})
 
 function syncViewportMode() {
   if (!mediaQuery) return
   isMobile.value = mediaQuery.matches
 }
 
-async function mountWorkspace() {
+async function mountWorkspace(generation = accessGeneration) {
   // Bootstrap both layouts so changing viewport size can switch without reloading.
     const bootstrap = await loadWorkspaceBootstrap()
+    if (generation !== accessGeneration) return false
     workspaceBootstrap.value = bootstrap
     accessStatus.value = bootstrap.access
     primeUserInteractions(bootstrap.user_interactions)
     applyThemeConfig(bootstrap.theme.data, bootstrap.theme.active_preset_id)
     const name = String(bootstrap.mobile_pcs.find((pc) => pc.id === 'local')?.name || '').trim()
     document.title = name || 'AgentPark'
-  stopAppEventStream = startAppEventStream()
+  if (!boardSession || boardSession.phase.value === 'ready') stopAppEventStream = startAppEventStream()
+  return true
 }
 
 async function initializeAccess() {
+  const generation = accessGeneration
   accessBusy.value = true
   accessError.value = ''
   try {
     const status = await getAccessStatus()
+    if (generation !== accessGeneration) return
     accessStatus.value = status
     if (status.username_required) {
       accessPromptOpen.value = true
       return
     }
     accessPromptOpen.value = false
-    await mountWorkspace()
+    if (!await mountWorkspace(generation)) return
     accessReady.value = true
   } catch (error) {
+    if (generation !== accessGeneration) return
     accessError.value = error instanceof Error ? error.message : String(error)
     bootstrapError.value = accessError.value
   } finally {
@@ -79,6 +105,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  unregisterBoardSession?.()
   stopAppEventStream?.()
   stopAppEventStream = null
   stopForegroundAlerts?.()

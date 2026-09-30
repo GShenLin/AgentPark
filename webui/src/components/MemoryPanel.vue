@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
+  getNodeInstanceMemory,
   clearNodeInstanceMemory,
   createGraphFromProfile,
   deleteGraph,
@@ -21,20 +22,21 @@ import {
   type GraphInfo,
   type GraphProfile,
   type MessageEnvelope,
-  type NodeInstanceConfig,
 } from '../api'
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { useCliSessions } from '../composables/useCliSessions'
 import { recordDeletionUndo } from '../composables/useDeletionUndo'
-import { resolveTurnDeletionHistoryMode } from '../turnDeletionRefresh'
 import MemoryContentView from './MemoryContentView.vue'
 import MemoryPanelHeader from './MemoryPanelHeader.vue'
 import MemorySaveDialog from './MemorySaveDialog.vue'
 import CliSessionPicker from './CliSessionPicker.vue'
 import { renderMemoryMarkdown } from './memoryMarkdown'
 import { t } from '../i18n'
+import { AgentBoardKey } from './agent-board/context'
+
+const board = inject(AgentBoardKey, null)
 
 const props = defineProps<{
   initialGraphs: GraphInfo[]
@@ -49,10 +51,6 @@ const emit = defineEmits<{
 const {
   memoryText,
   memoryMessages,
-  memoryHistoryComplete,
-  memoryLatestTurnProgressLoaded,
-  memoryLatestTurnMetadataLoaded,
-  memoryLatestTurnProgressSummary,
   memoryLiveMessage,
   memoryThinkingMessage,
   memoryActivityMessage,
@@ -119,8 +117,6 @@ const showLineNumbers = ref(false)
 const isMarkdownPreview = ref(true)
 const contentViewRef = ref<InstanceType<typeof MemoryContentView> | null>(null)
 const interactiveInputText = ref('')
-const lazySectionLoading = ref<'progress' | 'metadata' | null>(null)
-let activeLazySectionRequest: { section: 'progress' | 'metadata'; promise: Promise<void> } | null = null
 
 const graphs = ref<GraphInfo[]>([...props.initialGraphs])
 const graphProfiles = ref<GraphProfile[]>([...props.initialGraphProfiles])
@@ -130,9 +126,6 @@ const graphWorkingPathInput = ref('')
 const graphStatus = ref<string | null>(null)
 const graphLoading = ref(false)
 const graphMemoryClearingId = ref('')
-const expandedGraphId = ref('')
-const graphNodesLoadingId = ref('')
-const graphNodesById = ref<Record<string, NodeInstanceConfig[]>>({})
 
 function hasSelectedNodeTarget() {
   return !!String(selectedNodeId.value || '').trim()
@@ -157,7 +150,7 @@ const {
     memoryActivityMessage.value = ''
     memoryActivityBlocks.value = []
     beginAgentSelection()
-    await loadAgentMemory({ historyMode: 'latest_turn' })
+    await loadAgentMemory()
   },
   onError: (error: any) => {
     lastError.value = String(error?.message || error)
@@ -238,11 +231,6 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] |
     if (!nodeId || !userMessageId) return
     const ok = window.confirm(t('mobile.deleteTurnConfirm'))
     if (!ok) return
-    const refreshHistoryMode = resolveTurnDeletionHistoryMode(
-      memoryMessages.value,
-      userMessageId,
-      memoryHistoryComplete.value,
-    )
     try {
       const result = await deleteNodeInstanceMemoryTurn(nodeId, userMessageId, currentGraphId.value || 'default')
       recordDeletionUndo(result.undo_token ? {
@@ -254,7 +242,7 @@ async function deleteMemoryMessage(target: MessageEnvelope | MessageEnvelope[] |
       memoryMessages.value = memoryMessages.value.filter(
         (item) => !deletedIds.has(String((item as any)?.id || '').trim()),
       )
-      await loadAgentMemory({ historyMode: refreshHistoryMode })
+      await loadAgentMemory()
     } catch (e: any) {
       lastError.value = String(e?.message || e)
     }
@@ -295,43 +283,13 @@ const renderedMarkdown = computed(() => {
   return renderMemoryMarkdown(memoryText.value)
 })
 
-async function loadPreviousTurns() {
-  if (memoryHistoryComplete.value) return
-  await loadAgentMemory({ historyMode: 'all' })
-}
-
-async function loadLatestTurnSection(section: 'progress' | 'metadata') {
-  if (section === 'progress' && memoryLatestTurnProgressLoaded.value) return
-  if (section === 'metadata' && memoryLatestTurnMetadataLoaded.value) return
-
-  if (activeLazySectionRequest) {
-    const activeSection = activeLazySectionRequest.section
-    await activeLazySectionRequest.promise
-    if (section === 'progress' && memoryLatestTurnProgressLoaded.value) return
-    if (section === 'metadata' && memoryLatestTurnMetadataLoaded.value) return
-    if (activeSection === section) return
-  }
-
-  const promise = (async () => {
-    lazySectionLoading.value = section
-    try {
-      await loadAgentMemory({
-        historyMode: section === 'progress' ? 'latest_turn_progress' : 'latest_turn_metadata',
-      })
-    } finally {
-      lazySectionLoading.value = null
-    }
-  })()
-  activeLazySectionRequest = { section, promise }
-  try {
-    await promise
-  } finally {
-    if (activeLazySectionRequest?.promise === promise) activeLazySectionRequest = null
-  }
-}
-
-async function ensureLatestTurnMetadata() {
-  await loadLatestTurnSection('metadata')
+async function loadTurnDetails(turnId: string): Promise<MessageEnvelope[]> {
+  const result = await getNodeInstanceMemory(
+    String(selectedNodeId.value || ''), 0, currentGraphId.value || 'default',
+    'turn_details', { turnId },
+  )
+  if (!result.messages) throw new Error('Process response is missing messages')
+  return result.messages
 }
 
 async function refreshGraphs() {
@@ -344,34 +302,6 @@ async function refreshGraphs() {
     graphStatus.value = String(e?.message || e)
   } finally {
     graphLoading.value = false
-  }
-}
-
-async function toggleGraphNodes(item: GraphInfo) {
-  const graphId = String(item.id || '').trim()
-  if (!graphId) return
-  if (expandedGraphId.value === graphId) {
-    expandedGraphId.value = ''
-    return
-  }
-
-  expandedGraphId.value = graphId
-  if (graphNodesById.value[graphId]) return
-
-  graphNodesLoadingId.value = graphId
-  graphStatus.value = null
-  try {
-    const result = await listNodeInstanceConfigs(graphId, 0, 'board')
-    graphNodesById.value = {
-      ...graphNodesById.value,
-      [graphId]: Array.isArray(result.nodes) ? result.nodes : [],
-    }
-  } catch (e: any) {
-    graphStatus.value = String(e?.message || e)
-  } finally {
-    if (graphNodesLoadingId.value === graphId) {
-      graphNodesLoadingId.value = ''
-    }
   }
 }
 
@@ -530,7 +460,7 @@ async function loadGraphConfig(item: GraphInfo, focusNodeId = '') {
         graphNodeFocusRequest.value = { graphId: item.id, nodeId: requestedFocusNodeId, nonce: Date.now() }
       }
       memoryMode.value = 'graph'
-      return
+      return true
     }
     currentGraphId.value = res.id
     currentGraphName.value = res.name
@@ -543,8 +473,10 @@ async function loadGraphConfig(item: GraphInfo, focusNodeId = '') {
       graphNodeFocusRequest.value = { graphId: res.id, nodeId: requestedFocusNodeId, nonce: Date.now() }
     }
     memoryMode.value = 'graph'
+    return true
   } catch (e: any) {
     graphStatus.value = String(e?.message || e)
+    return false
   }
 }
 
@@ -552,6 +484,22 @@ async function navigateToGraphNode(payload: { graph: GraphInfo; nodeId: string }
   const nodeId = String(payload.nodeId || '').trim()
   if (!nodeId) return
   await loadGraphConfig(payload.graph, nodeId)
+}
+
+async function navigateToGraphGroup(payload: { graph: GraphInfo; groupId: string }) {
+  if (!board) return
+  if (!await loadGraphConfig(payload.graph)) return
+  await nextTick()
+  try {
+    await board.groups.refresh()
+    if (currentGraphId.value !== payload.graph.id) return
+    if (!board.groups.groups.value.some(group => group.id === payload.groupId)) {
+      throw new Error(t('memory.groupUnavailable'))
+    }
+    board.groups.activeId.value = payload.groupId
+  } catch (cause) {
+    graphStatus.value = cause instanceof Error ? cause.message : String(cause)
+  }
 }
 
 let handledNodeGraphMoveNonce = 0
@@ -564,10 +512,6 @@ watch(
     graphStatus.value = null
     try {
       await moveNodeInstance(request.nodeId, request.sourceGraphId, request.targetGraphId)
-      const nextNodeCache = { ...graphNodesById.value }
-      delete nextNodeCache[request.sourceGraphId]
-      delete nextNodeCache[request.targetGraphId]
-      graphNodesById.value = nextNodeCache
       if ((currentGraphId.value || 'default') === request.sourceGraphId) {
         if (selectedNodeId.value === request.nodeId) selectedNodeId.value = null
         graphLoadRequest.value = await loadGraph(request.sourceGraphId)
@@ -683,7 +627,7 @@ watch(
     stopLoading()
 
     if (mode === 'graph') {
-      memoryTitle.value = currentGraphName.value || 'Graph'
+      memoryTitle.value = `Graph · ${currentGraphName.value || currentGraphId.value || ''}`
       graphWorkingPathInput.value = currentGraphWorkingPath.value
     }
   },
@@ -696,9 +640,7 @@ watch(
     if (memoryMode.value !== 'agent') return
     if (!hasSelectedNodeTarget()) return
     void refreshCliSessions()
-    await loadAgentMemory({
-      historyMode: memoryLatestTurnProgressLoaded.value ? 'latest_turn_progress' : 'latest_turn',
-    })
+    await loadAgentMemory()
   },
 )
 
@@ -790,11 +732,6 @@ onBeforeUnmount(() => {
       :graph-working-path-input="graphWorkingPathInput"
       :mode="memoryMode"
       :messages="structuredMessages"
-      :history-complete="memoryHistoryComplete"
-      :progress-loaded="memoryLatestTurnProgressLoaded"
-      :metadata-loaded="memoryLatestTurnMetadataLoaded"
-      :progress-summary="memoryLatestTurnProgressSummary"
-      :loading-section="lazySectionLoading"
       :live-message="memoryLiveMessage"
       :thinking-message="memoryThinkingMessage"
       :activity-message="memoryActivityMessage"
@@ -808,26 +745,23 @@ onBeforeUnmount(() => {
       :rendered-markdown="renderedMarkdown"
       :graph-loading="graphLoading"
       :graph-memory-clearing-id="graphMemoryClearingId"
-      :graph-nodes-loading-id="graphNodesLoadingId"
-      :expanded-graph-id="expandedGraphId"
       :graphs="graphs"
-      :graph-nodes-by-id="graphNodesById"
       :graph-profiles="graphProfiles"
       :selected-graph-profile-id="selectedGraphProfileId"
       :interactive-session-id="memoryInteractiveSessionId"
       :interactive-input-disabled="!canSendInteractiveInput"
       :interactive-sending="memoryInteractiveSending"
       :interactive-input-text="interactiveInputText"
-      :ensure-latest-turn-metadata="ensureLatestTurnMetadata"
+      :load-turn-details="loadTurnDetails"
       @save-current-file="saveCurrentFile"
       @save-graph-config="saveGraphConfig"
       @save-graph-profile="saveGraphProfile"
       @create-graph-from-profile="createGraphConfigFromProfile"
       @delete-graph-profile="deleteSelectedGraphProfile"
       @refresh-graphs="refreshGraphs"
-      @toggle-graph-nodes="toggleGraphNodes"
       @load-graph-config="loadGraphConfig"
       @navigate-graph-node="navigateToGraphNode"
+      @navigate-graph-group="navigateToGraphGroup"
       @clear-graph-memory="clearGraphMemory"
       @delete-graph-config="deleteGraphConfig"
       @toggle-graph-visibility="toggleGraphVisibility"
@@ -838,8 +772,6 @@ onBeforeUnmount(() => {
       @save-message="openSaveMessageDialog"
       @copy-message="copyMessageText"
       @delete-message="deleteMemoryMessage"
-      @request-history="loadPreviousTurns"
-      @request-section="loadLatestTurnSection"
       @update:interactive-input-text="interactiveInputText = $event"
       @send-interactive-input="handleSendInteractiveInput($event)"
       @interactive-submit="onInteractiveSubmit"

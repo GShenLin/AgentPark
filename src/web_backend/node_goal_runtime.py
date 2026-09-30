@@ -8,6 +8,7 @@ from typing import Any
 from nodes.agent_stream_runtime import AgentStreamRuntime
 from src.message_protocol import build_text_envelope, envelope_preview, envelope_text, normalize_envelope
 from src.providers import create_agent
+from src.providers.agent_config import AgentConfig
 
 from .node_config_service import node_config_service
 from .node_event_sequence import bump_node_event_seq
@@ -246,6 +247,9 @@ class NodeGoalRuntime(HostBoundService):
             memory_file_path=None,
             system_prompt=None,
             internal_memory_enabled=False,
+            agent_config=AgentConfig(run_tools=False, mode="chat", web_search="disabled",
+                                     thinking="disabled", reasoning_effort=config.get("reasoning_effort"),
+                                     stream=False),
         )
         agent.RuntimeInstruction(self._goal_evaluator_system_prompt(), persist=False)
         agent.Message(
@@ -259,17 +263,7 @@ class NodeGoalRuntime(HostBoundService):
             persist=False,
         )
         stream_runtime = AgentStreamRuntime(None)
-        response = stream_runtime.send(
-            agent,
-            {
-                "run_tools": False,
-                "mode": "chat",
-                "web_search": "disabled",
-                "thinking": "disabled",
-                "reasoning_effort": config.get("reasoning_effort"),
-                "stream": False,
-            },
-        )
+        response = stream_runtime.send(agent)
         return parse_goal_evaluation(response)
 
     @staticmethod

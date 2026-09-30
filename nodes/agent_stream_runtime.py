@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-import inspect
+from functions.console_session_registry import console_session_scope
+from src.providers.agent_config import AgentSendContext
+from src.providers.agent_invocation import send_agent
 
 from src.node_stream_protocol import build_node_message_delta
 from src.node_stream_protocol import build_node_message_done
@@ -72,14 +74,12 @@ class AgentStreamRuntime:
                 self.tool_event_callback(dict(event))
             self._emit(self._public_tool_event(event))
 
-    def send(self, agent: object, requested_kwargs: dict) -> object:
+    def send(self, agent: object, context: AgentSendContext | None = None) -> object:
         previous_tool_event_callback = getattr(agent, "tool_event_callback", None)
         agent.tool_event_callback = self.on_tool_event
         try:
-            kwargs = self._supported_send_kwargs(agent, requested_kwargs)
-            if kwargs:
-                return agent.Send(**kwargs)
-            return agent.Send()
+            with console_session_scope(agent):
+                return send_agent(agent, context)
         finally:
             agent.tool_event_callback = previous_tool_event_callback
 
@@ -123,29 +123,6 @@ class AgentStreamRuntime:
             if self.suppress_callback_errors:
                 return
             raise
-
-    @staticmethod
-    def _supported_send_kwargs(agent: object, requested_kwargs: dict) -> dict:
-        send = getattr(agent, "Send", None)
-        if not callable(send):
-            raise TypeError("agent must expose a callable Send method")
-        try:
-            signature = inspect.signature(send)
-        except (TypeError, ValueError) as exc:
-            raise TypeError("cannot inspect agent Send signature") from exc
-
-        params = signature.parameters
-        accepts_any_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
-        if accepts_any_kwargs:
-            return dict(requested_kwargs)
-
-        supported_names = {
-            name
-            for name, param in params.items()
-            if param.kind in {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY}
-        }
-        supported_names.discard("self")
-        return {key: value for key, value in requested_kwargs.items() if key in supported_names}
 
     @staticmethod
     def _public_tool_event(event: dict) -> dict:

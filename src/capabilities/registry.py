@@ -148,10 +148,18 @@ class CapabilityRegistry:
             try:
                 skills = load_node_skills([name])
                 dependencies = tuple(
-                    CapabilityRef("mcp", dep)
-                    for skill in skills
-                    for dep in skill.mcp_servers
-                    if isinstance(dep, str) and dep.strip()
+                    [
+                        CapabilityRef("tool", dep)
+                        for skill in skills
+                        for dep in skill.tools
+                        if isinstance(dep, str) and dep.strip()
+                    ]
+                    + [
+                        CapabilityRef("mcp", dep)
+                        for skill in skills
+                        for dep in skill.mcp_servers
+                        if isinstance(dep, str) and dep.strip()
+                    ]
                 )
                 current = by_id[name]
                 version = next((skill.version for skill in skills if skill.name == name and skill.version), current.version)

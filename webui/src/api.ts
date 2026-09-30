@@ -1,4 +1,5 @@
 import { isCloudBoard } from './portal/environment'
+import { captureBoardRequest } from './portal/boardRequests'
 import type {
   AccessStatus,
   FileListResponse,
@@ -43,6 +44,8 @@ import { waitForRestart } from './utils/serverRestart'
 import { setNodeOpenTraceTransport, traceNodeOpenRequest } from './nodeOpenDiagnostics'
 
 export type {
+  LoadMemoryTurnDetails,
+  MemoryTurnSummary,
   AccessStatus,
   FileItem,
   FileListResponse,
@@ -219,6 +222,8 @@ async function retryApiNetworkRequest<T>(request: () => Promise<T>) {
 }
 
 export async function requestApiJson(baseUrl: string, path: string, init?: RequestInit) {
+  const boardRequest = isCloudBoard() ? captureBoardRequest(init) : null
+  if (boardRequest) init = { ...init, signal: boardRequest.signal }
   const diagnostic = traceNodeOpenRequest(path)
   const headers = new Headers(init?.headers)
   if (diagnostic) {
@@ -238,14 +243,17 @@ export async function requestApiJson(baseUrl: string, path: string, init?: Reque
       headers,
     })
   } catch (error) {
+    boardRequest?.check()
     diagnostic?.mark('request_failed', { aborted: Number(!!init?.signal?.aborted) })
     if (init?.signal?.aborted) throw error
     throw createApiNetworkError(baseUrl, path, init, error)
   }
+  boardRequest?.check()
   diagnostic?.mark('response_headers', { status: res.status, content_bytes: Number(res.headers.get('content-length') || 0) })
   if (!res.ok) {
     diagnostic?.mark('request_failed', { status: res.status })
     const text = await res.text().catch(() => '')
+    boardRequest?.check()
     let detail = text.trim()
     if (detail) {
       try {
@@ -262,9 +270,11 @@ export async function requestApiJson(baseUrl: string, path: string, init?: Reque
   const jsonStarted = performance.now()
   try {
     const payload = await res.json()
+    boardRequest?.check()
     diagnostic?.mark('response_json', { body_and_json_ms: performance.now() - jsonStarted })
     return payload
   } catch (error) {
+    boardRequest?.check()
     diagnostic?.mark('request_failed', { body_and_json_ms: performance.now() - jsonStarted, aborted: Number(!!init?.signal?.aborted) })
     throw error
   }
@@ -1122,7 +1132,7 @@ export async function getNodeInstanceMemory(
   maxChars = 20000,
   graphId?: string,
   historyMode: MemoryHistoryMode = 'recent',
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; turnId?: string } = {},
 ): Promise<{
   memory_path: string | null
   messages_path?: string | null
@@ -1141,7 +1151,7 @@ export async function getNodeInstanceMemory(
 }> {
   const query = graphId ? `&graph_id=${encodeURIComponent(graphId)}` : ''
   return apiFetch(
-    `/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}&history_mode=${historyMode}${query}`,
+    `/api/nodes/instances/${encodeURIComponent(nodeId)}/memory?max_chars=${maxChars}&history_mode=${historyMode}${query}${options.turnId ? `&turn_id=${encodeURIComponent(options.turnId)}` : ''}`,
     { signal: options.signal },
   )
 }
@@ -1340,10 +1350,11 @@ export async function getMobileNodeConversation(
   pcId: string,
   graphId: string,
   nodeId: string,
-  historyMode: MemoryHistoryMode = 'latest_turn',
+  historyMode: MemoryHistoryMode = 'conversation',
+  turnId?: string,
 ): Promise<MobileNodeConversation> {
   return apiFetch(
-    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/conversation?history_mode=${historyMode}`,
+    `/api/mobile/pcs/${encodeURIComponent(pcId)}/graphs/${encodeURIComponent(graphId)}/nodes/${encodeURIComponent(nodeId)}/conversation?history_mode=${historyMode}${turnId ? `&turn_id=${encodeURIComponent(turnId)}` : ''}`,
   ) as Promise<MobileNodeConversation>
 }
 
@@ -1352,7 +1363,7 @@ export async function sendMobileNodeMessage(
   graphId: string,
   nodeId: string,
   message: string | MessageEnvelope,
-  historyMode: MemoryHistoryMode = 'latest_turn',
+  historyMode: MemoryHistoryMode = 'conversation',
 ): Promise<{
   ok: boolean
   queued: boolean

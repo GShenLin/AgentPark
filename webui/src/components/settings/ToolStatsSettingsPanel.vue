@@ -9,6 +9,7 @@ import {
   type ToolStatsProviderSummary,
 } from '../../settingsApi'
 import ActionButton from '../ActionButton.vue'
+import SelectionButton from '../SelectionButton.vue'
 import DangerButton from '../DangerButton.vue'
 import FormSelect from '../FormSelect.vue'
 import ToolFailurePatternsPanel from './ToolFailurePatternsPanel.vue'
@@ -167,8 +168,8 @@ onMounted(loadStats)
 </script>
 
 <template>
-  <div class="tool-stats">
-    <aside class="tool-stats-side">
+  <div class="tool-stats settings-split">
+    <aside class="settings-split__side">
       <ActionButton class="tool-stats-action" block :disabled="loading || clearing || clearingLongTermMemory" @click="loadStats">
         {{ loading ? 'Loading...' : 'Reload' }}
       </ActionButton>
@@ -183,25 +184,25 @@ onMounted(loadStats)
         {{ clearingLongTermMemory ? 'Clearing...' : 'Clear long-term memory' }}
       </DangerButton>
 
-      <button
+      <SelectionButton
         v-for="provider in providerOptions"
         :key="provider.provider_id"
-        type="button"
-        class="tool-provider-item"
-        :class="{ active: selectedProviderId === provider.provider_id }"
+        stacked
+        class="settings-list-item"
+        :active="selectedProviderId === provider.provider_id"
         @click="selectProvider(provider.provider_id)"
       >
         <span>{{ provider.provider_id }}</span>
-        <small>
+        <template #detail>
           {{ provider.success }} / {{ provider.total }} tools · {{ provider.model_turn_count }} model turns · {{ provider.turn_count }} runs
           <template v-if="provider.missing_usage_turn_count"> · {{ provider.missing_usage_turn_count }} missing usage</template>
-        </small>
-      </button>
+        </template>
+      </SelectionButton>
 
       <div v-if="!providerOptions.length && !loading" class="tool-stats-empty">No provider stats</div>
     </aside>
 
-    <section class="tool-stats-main">
+    <section class="tool-stats-main settings-split__detail">
       <div class="tool-stats-head">
         <div>
           <h2>{{ selectedProviderId || 'Tool Statistics' }}</h2>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import type { LatestTurnProgressSummary, MessageEnvelope } from '../api'
+import { computed, ref, toRef } from 'vue'
+import { useMemoryTurnDetails } from './useMemoryTurnDetails'
+import type { LoadMemoryTurnDetails, MessageEnvelope } from '../api'
 import MemoryMetadataMessage from './MemoryMetadataMessage.vue'
 import MemoryMessageActions from './MemoryMessageActions.vue'
 import MemoryMessageParts from './MemoryMessageParts.vue'
@@ -19,18 +20,10 @@ const props = withDefaults(defineProps<{
   markdownPreview: boolean
   compact?: boolean
   defaultExpanded?: boolean
-  progressDeferred?: boolean
-  metadataDeferred?: boolean
-  loadingSection?: 'progress' | 'metadata' | null
-  progressSummary?: LatestTurnProgressSummary | null
-  ensureMetadata?: () => Promise<void>
+  loadTurnDetails: LoadMemoryTurnDetails
 }>(), {
   compact: false,
   defaultExpanded: true,
-  progressDeferred: false,
-  metadataDeferred: false,
-  loadingSection: null,
-  progressSummary: null,
 })
 
 const emit = defineEmits<{
@@ -38,8 +31,16 @@ const emit = defineEmits<{
   (event: 'copy', text: string): void
   (event: 'delete', target: MessageEnvelope | MessageEnvelope[] | { kind: 'turn'; userMessage: MessageEnvelope }): void
   (event: 'toggle', expanded: boolean): void
-  (event: 'requestSection', section: 'progress' | 'metadata'): void
 }>()
+
+const details = useMemoryTurnDetails(toRef(props, 'entry'), () => props.loadTurnDetails)
+const displayEntry = details.displayEntry
+const progressDeferred = computed(() => !!details.summary.value && !details.loaded.value)
+const metadataDeferred = computed(() => !!details.summary.value?.has_metadata && !details.loaded.value)
+const progressSummary = details.summary
+const loading = details.loading
+const loadError = details.error
+const ensureMetadata = details.load
 
 const expanded = ref(props.defaultExpanded)
 
@@ -49,15 +50,15 @@ function toggleTurn() {
 }
 
 function userSummary() {
-  const text = extractMemoryMessageText(props.entry.userMessage).replace(/\s+/g, ' ').trim()
+  const text = extractMemoryMessageText(displayEntry.value.userMessage).replace(/\s+/g, ' ').trim()
   if (!text) return 'User turn'
   const limit = props.compact ? 52 : 96
   return text.length > limit ? `${text.slice(0, limit)}…` : text
 }
 
 function turnTime() {
-  const start = String((props.entry.userMessage as any)?.created_at || '')
-  const lastMessage = props.entry.finalMessages[props.entry.finalMessages.length - 1] || props.entry.finalResponse
+  const start = String((displayEntry.value.userMessage as any)?.created_at || '')
+  const lastMessage = displayEntry.value.finalMessages[displayEntry.value.finalMessages.length - 1] || displayEntry.value.finalResponse
   const end = String((lastMessage as any)?.created_at || '')
   if (!end || start === end) return start
   return `${start} - ${end}`
@@ -66,27 +67,20 @@ function turnTime() {
 function progressEntry(): FeedProgressGroupEntry {
   return {
     type: 'progress_group',
-    key: `${props.entry.key}-progress`,
-    messages: props.entry.progressMessages,
-    startIndex: props.entry.startIndex + 1,
+    key: `${displayEntry.value.key}-progress`,
+    messages: displayEntry.value.progressMessages,
+    startIndex: displayEntry.value.startIndex + 1,
   }
 }
 
 function regularFinalMessages() {
-  return props.entry.finalMessages.filter((message) => feedRoleClass(String((message as any)?.role || '')) !== 'metadata')
+  return displayEntry.value.finalMessages.filter((message) => feedRoleClass(String((message as any)?.role || '')) !== 'metadata')
 }
 
 function finalMetadataMessages() {
-  return props.entry.finalMessages.filter((message) => feedRoleClass(String((message as any)?.role || '')) === 'metadata')
+  return displayEntry.value.finalMessages.filter((message) => feedRoleClass(String((message as any)?.role || '')) === 'metadata')
 }
 
-function requestProgress() {
-  emit('requestSection', 'progress')
-}
-
-function requestDeferredMetadata() {
-  emit('requestSection', 'metadata')
-}
 </script>
 
 <template>
@@ -105,18 +99,19 @@ function requestDeferredMetadata() {
         :show-save="false"
         :show-copy="false"
         :delete-title="t('memory.deleteTurn')"
-        @delete="emit('delete', { kind: 'turn', userMessage: entry.userMessage })"
+        @delete="emit('delete', { kind: 'turn', userMessage: displayEntry.userMessage })"
       />
     </div>
 
     <div v-if="expanded" class="turn-content">
+      <p v-if="loadError" class="turn-load-error" role="alert">{{ loadError }}</p>
       <article class="turn-message role-user">
         <div class="turn-message-head">
           <span>{{ t('memory.user') }}</span>
-          <span>{{ String((entry.userMessage as any)?.created_at || '') }}</span>
+          <span>{{ String((displayEntry.userMessage as any)?.created_at || '') }}</span>
         </div>
         <MemoryMessageParts
-          :message="entry.userMessage"
+          :message="displayEntry.userMessage"
           :markdown-preview="markdownPreview"
           :metadata-deferred="metadataDeferred"
           :ensure-metadata="ensureMetadata"
@@ -127,30 +122,31 @@ function requestDeferredMetadata() {
       </article>
 
       <MemoryProgressGroup
-        v-if="entry.progressMessages.length > 0 || progressDeferred"
+        v-if="displayEntry.progressMessages.length > 0 || progressDeferred || progressSummary?.running"
         :entry="progressEntry()"
         :markdown-preview="markdownPreview"
         :compact="compact"
+        :processing="progressSummary?.running"
         :lazy-load="progressDeferred"
-        :loading="loadingSection === 'progress'"
+        :loading="loading"
         :summary="progressSummary"
         @save="emit('save', $event)"
         @copy="emit('copy', $event)"
         @delete="emit('delete', $event)"
-        @request-load="requestProgress"
+        @request-load="details.request"
       />
 
       <article
-        v-if="entry.finalResponse"
+        v-if="displayEntry.finalResponse"
         class="turn-message"
-        :class="`role-${feedRoleClass(String((entry.finalResponse as any)?.role || ''))}`"
+        :class="`role-${feedRoleClass(String((displayEntry.finalResponse as any)?.role || ''))}`"
       >
         <div class="turn-message-head">
-          <span>{{ memoryRoleLabel(feedRoleClass(String((entry.finalResponse as any)?.role || '')), String((entry.finalResponse as any)?.role || '')) }}</span>
-          <span>{{ String((entry.finalResponse as any)?.created_at || '') }}</span>
+          <span>{{ memoryRoleLabel(feedRoleClass(String((displayEntry.finalResponse as any)?.role || '')), String((displayEntry.finalResponse as any)?.role || '')) }}</span>
+          <span>{{ String((displayEntry.finalResponse as any)?.created_at || '') }}</span>
         </div>
         <MemoryMessageParts
-          :message="entry.finalResponse"
+          :message="displayEntry.finalResponse"
           :markdown-preview="markdownPreview"
           :metadata-deferred="metadataDeferred"
           :ensure-metadata="ensureMetadata"
@@ -160,7 +156,7 @@ function requestDeferredMetadata() {
         />
       </article>
 
-      <div v-else class="turn-pending">{{ t('memory.waitingFinal') }}</div>
+      <div v-else-if="!progressSummary?.running" class="turn-pending">{{ t('memory.waitingFinal') }}</div>
 
       <article
         v-for="(message, index) in regularFinalMessages()"
@@ -197,14 +193,15 @@ function requestDeferredMetadata() {
         :message="null"
         :markdown-preview="markdownPreview"
         deferred
-        :loading="loadingSection === 'metadata'"
-        @request-load="requestDeferredMetadata"
+        :loading="loading"
+        @request-load="details.request"
       />
     </div>
   </section>
 </template>
 
 <style scoped>
+.turn-load-error { color: #f87171; padding: 8px 10px; }
 .turn-group { flex: 0 0 auto; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; background: rgba(15, 23, 42, 0.34); overflow: visible; }
 .turn-head { position: sticky; top: 0; z-index: 10; width: 100%; border-radius: 9px; display: flex; align-items: center; color: inherit; background: rgba(15, 23, 42, 0.98); }
 .turn-group.expanded .turn-head { border-radius: 9px 9px 0 0; border-bottom: 1px solid rgba(148, 163, 184, 0.18); box-shadow: 0 5px 12px rgba(2, 6, 23, 0.28); }

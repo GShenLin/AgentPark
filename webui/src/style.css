@@ -146,7 +146,8 @@ button {
   color: var(--ui-button-text);
   cursor: pointer;
   transition: all var(--transition-normal);
-  backdrop-filter: blur(8px);
+  /* Per-button backdrop filters break chat painting when scrolling a large
+     Chrome window. Keep backdrop effects on the dedicated overlay surfaces. */
 }
 
 button:hover {
@@ -493,14 +494,6 @@ textarea::placeholder {
   border-color: var(--accent-blue);
   background: var(--accent-blue-soft);
   color: #93c5fd;
-}
-
-.interaction-custom-frame {
-  width: 100%;
-  min-height: 180px;
-  border: 1px solid var(--border-light);
-  border-radius: 10px;
-  background: var(--bg-primary);
 }
 
 .interaction-error {

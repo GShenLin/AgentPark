@@ -7,6 +7,7 @@
 
 ## Implementation Constraints
 
+- Project-owned HTTP/HTTPS requests must use the existing `src.providers.curl_transport.CurlHttpTransport`. Extend that transport instead of adding another client or wrapper. Do not use `urllib.request` for networking, `requests`, `httpx`, or `aiohttp` in production code. URL parsing/file-URI conversion, WebSocket/WebRTC, third-party SDK internals, and test clients are separate concerns. Run `tests/test_http_transport_boundary.py` when changing networking.
 - Do not introduce heuristic shortcuts for quick fallback behavior.
 - Do not relax type and protocol contracts just to accept unstructured returns.
 - Do not hide real issues through swallowed errors, silent degradation, or default-value masking.
@@ -19,7 +20,7 @@
 
 ## Workspace Operations
 
-- The primary shell environment is Windows. Do not use Bash-only command syntax such as heredocs (`python - <<'PY'`) with the default console; use `python -c`, a temporary script, or an explicit PowerShell-compatible form.
+- Use the shell reported in `environment_context`. Windows console tools use PowerShell; Termux/Linux/macOS use the detected POSIX shell. Do not send Bash-only syntax to PowerShell or PowerShell syntax to a POSIX shell. Use `python -c` or a temporary script for portable multiline work.
 - When passing multiple PowerShell paths that may contain spaces, build an explicit quoted array before calling commands such as `Get-ChildItem -Path`.
 - For very large or deeply nested JSON catalogs, prefer a quiet structured parser such as `node -e` with `JSON.parse` over PowerShell `ConvertFrom-Json`, which can fail noisily and dump large input to stderr.
 - Before running `git pull --rebase`, commit intended changes or stash work that should not be committed yet. Do not start a rebase from an unstaged working tree.

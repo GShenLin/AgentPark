@@ -1,0 +1,7 @@
+dependencies:
+  tools:
+    - type: mcp
+      value: ark-docs-mcp
+      description: Ark Docs MCP
+      transport: streamable-http
+      url: https://sd6j8o9hu8aldae0o6es0.apigateway-cn-beijing.volceapi.com/mcp

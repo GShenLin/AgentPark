@@ -13,6 +13,7 @@ export function applyThemeConfig(config: Record<string, unknown>, activePresetId
   if (!panels || typeof panels !== 'object' || Array.isArray(panels)) return
 
   const root = document.documentElement
+  root.dataset.themePreset = activePresetId
   for (const name of appliedVariables) {
     root.style.removeProperty(name)
   }

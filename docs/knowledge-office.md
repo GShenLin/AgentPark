@@ -35,7 +35,7 @@ Python 依赖随 `pip install -e .` 安装：python-docx、openpyxl、xlrd、def
 3. `read`：读取索引片段，或分页读取 Word/PDF/文本原文、列 Excel 工作表和读取行。
 4. `table`：对指定工作表与行范围执行显式过滤、分组、count/sum/mean/min/max。
 
-计算契约和示例见 [Skill 表格指南](../skills/knowledge/references/tables.md)。不以检索片段代替全表统计，不执行模型提供的代码。
+计算契约和示例见 [Skill 表格指南](../.agents/skills/knowledge/references/tables.md)。不以检索片段代替全表统计，不执行模型提供的代码。
 所有统计包含隐藏行/列，不自动填充合并单元格。公式不重算，只用文件保存值；XLSX 缺缓存参与统计时报错。
 XLS 只提供保存值，无法分辨公式和检查其缓存状态。缓存是否过期须由用户重算保存确认。
 

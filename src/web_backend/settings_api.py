@@ -8,10 +8,12 @@ from fastapi import File, Form, HTTPException, UploadFile
 
 from src import workspace_settings
 from src.board_layout_settings import normalize_board_layout_settings
+from src.agent_panel_settings import normalize_agent_panel_settings
 from src.companion_paths import companion_node_config_path
 from src.config_loader import ConfigLoader
 from src.long_term_memory.settings import MemorySettings
 from src.conversation_context.settings import ConversationSettings
+from src.agent_profile_inference import validate_default_agent_profiles
 from src.file_transaction import atomic_write_text
 from src.project_process_environment import DEFAULT_NO_PROXY, read_project_proxy_settings
 from src.provider_limit_schema import read_provider_limit_file
@@ -248,8 +250,10 @@ class SettingsApiDomain(DomainBase):
                 memory_local_config_from_defaults(payload)
                 read_project_proxy_settings(payload)
                 normalize_board_layout_settings(payload.get("boardLayout"))
+                normalize_agent_panel_settings(payload.get("agentPanel"))
                 MemorySettings.from_config(payload)
                 ConversationSettings.from_config(payload)
+                validate_default_agent_profiles(payload)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             undo = payload.get("undo")

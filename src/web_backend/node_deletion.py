@@ -66,7 +66,7 @@ def delete_node_directory(
 
     wait_for_node_memory_idle(memory_path, messages_path)
     if archive_directory is None:
-        _remove_tree_with_retry(dir_real)
+        remove_tree_with_retry(dir_real)
     else:
         archive_directory(dir_real)
 
@@ -128,7 +128,7 @@ def _stop_async_runs_for_node(core: object, config_path: str) -> int:
     return stopped
 
 
-def _remove_tree_with_retry(path: str) -> None:
+def remove_tree_with_retry(path: str) -> None:
     delays = (0.0, 0.05, 0.1, 0.2, 0.4)
     last_error: OSError | None = None
     for index, delay in enumerate(delays):

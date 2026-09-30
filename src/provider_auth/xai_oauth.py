@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import base64
 import hashlib
 import html
@@ -7,9 +8,7 @@ import json
 import secrets
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -29,19 +28,14 @@ class XaiOAuthError(RuntimeError):
 
 
 def _request_json(url: str, *, data: dict[str, str] | None = None) -> dict:
-    request = urllib.request.Request(
-        url,
-        data=urllib.parse.urlencode(data).encode("utf-8") if data is not None else None,
-        headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
-        method="POST" if data is not None else "GET",
-    )
+    request = dict(url=url, body=urllib.parse.urlencode(data).encode("utf-8") if data is not None else None, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, method="POST" if data is not None else "GET")
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
-        raise XaiOAuthError(f"xAI authorization returned HTTP {exc.code}: {detail}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        response = CurlHttpTransport().request(**request, timeout_sec=30).raise_for_status()
+        payload = json.loads(response.content.decode("utf-8"))
+    except CurlHttpError as exc:
+        detail = exc.content.decode("utf-8", errors="replace")[:1000]
+        raise XaiOAuthError(f"xAI authorization returned HTTP {exc.status_code}: {detail}") from exc
+    except (CurlTransportError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         raise XaiOAuthError(f"xAI authorization request failed: {exc}") from exc
     if not isinstance(payload, dict):
         raise XaiOAuthError("xAI authorization returned an invalid response.")

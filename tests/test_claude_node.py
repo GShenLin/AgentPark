@@ -28,7 +28,7 @@ def test_claude_node_exposes_provider_and_native_permission_contract(monkeypatch
     assert node.name == "Claude"
     assert schema["provider_id"]["options"][0]["value"] == "provider-a"
     assert captured == {
-        "supported_modes": {"chat", "imagechat"},
+        "supported_modes": {"chat"},
         "include_private": False,
     }
     assert [item["value"] for item in schema["permission_mode"]["options"]] == [

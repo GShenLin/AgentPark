@@ -2,16 +2,31 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import subprocess
 
 from src.runtime_cancellation import raise_if_cancel_requested
-from .contracts import ComputerUseError, integer
+from .contracts import ComputerUseError, PointerFeedback, PointerPoint, integer
 from . import windows_input as inputs
 from . import windows_uia as uia
+from . import windows_state as native
 from .windows_capture import capture_window
+
+
+def _process_started_instant(value, field):
+    if not isinstance(value, str):
+        raise ComputerUseError(f'{field} must be an ISO-8601 timestamp with a timezone.')
+    try:
+        instant = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ComputerUseError(
+            f'{field} must be an ISO-8601 timestamp with a timezone.') from exc
+    if instant.tzinfo is None or instant.utcoffset() is None:
+        raise ComputerUseError(f'{field} must be an ISO-8601 timestamp with a timezone.')
+    return instant.astimezone(timezone.utc)
 
 
 class WindowsBackend:
@@ -45,14 +60,15 @@ class WindowsBackend:
         finally:
             handle.Close()
         return {'id': hwnd, 'app': 'process:' + path, 'pid': pid,
-                'process_started': created, 'title': win32gui.GetWindowText(hwnd)}
+                'process_started': created, 'title': win32gui.GetWindowText(hwnd),
+                **native.window_details(hwnd)}
 
     def list_windows(self):
         import win32gui
         import pywintypes
         result = []
         def collect(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
+            if win32gui.IsWindowVisible(hwnd):
                 try:
                     result.append(self._window(hwnd))
                 except pywintypes.error as exc:
@@ -85,9 +101,19 @@ class WindowsBackend:
         if not isinstance(window, dict):
             raise ComputerUseError('window must be an object returned by list_windows/get_window')
         current = self._window(integer(window.get('id'), 'window.id', 1))
-        for field in ('app', 'pid', 'process_started'):
+        for field in ('app', 'pid'):
             if window.get(field) != current[field]:
-                raise ComputerUseError('Stale or incomplete window identity; call list_windows/get_window.')
+                raise ComputerUseError(
+                    f'Window identity field {field} does not match the current window; '
+                    'call list_windows/get_window.')
+        supplied_started = _process_started_instant(
+            window.get('process_started'), 'window.process_started')
+        current_started = _process_started_instant(
+            current['process_started'], 'current process_started')
+        if supplied_started != current_started:
+            raise ComputerUseError(
+                'Window identity field process_started does not match the current process; '
+                'call list_windows/get_window.')
         return current
 
     def rectangle(self, window):
@@ -111,22 +137,33 @@ class WindowsBackend:
 
     def observe(self, window, include_text, max_elements, cancel):
         self._desktop_available()
-        return uia.observe(window['id'], include_text, max_elements, cancel)
+        state = uia.observe(window['id'], include_text, max_elements, cancel)
+        state['native_focus'] = native.input_state(window['id'])
+        windows = self.list_windows()  # EnumWindows order is top to bottom.
+        state['z_order'] = {w['id']: len(windows) - index for index, w in enumerate(windows)}
+        state['related_windows'] = [w for w in windows
+                                   if w['pid'] == window['pid'] and w['id'] != window['id']]
+        state['transient_windows'] = [w for w in state['related_windows']
+                                      if w['owner_id'] == window['id'] or
+                                      (w['thread_id'] == window['thread_id'] and w['is_tool_window'])]
+        return state
 
-    def capture(self, window, cancel):
+    def capture(self, window, cancel, mode):
         import win32gui
         self._desktop_available()
+        if not win32gui.IsWindowVisible(window['id']):
+            raise ComputerUseError('Window is no longer visible; call list_windows and observe the current window.')
         if win32gui.IsIconic(window['id']):
             raise ComputerUseError('Window is minimized; activate it and observe again.')
+        if mode == 'visible_region':
+            from PIL import ImageGrab
+            raise_if_cancel_requested(cancel)
+            return ImageGrab.grab(bbox=self.rectangle(window), all_screens=True)
         return capture_window(window['id'], cancel)
 
     def activate(self, window):
-        import win32gui
         self._desktop_available()
-        with uia.automation() as desktop:
-            desktop.window(handle=window['id']).wrapper_object().set_focus()
-        if win32gui.GetForegroundWindow() != window['id']:
-            raise ComputerUseError('Windows did not activate the requested window; check for a modal dialog.')
+        native.activate(window['id'])
 
     def launch(self, app):
         self._desktop_available()
@@ -143,7 +180,9 @@ class WindowsBackend:
     def act(self, action, window, observation, args, cancel):
         import win32api
         import win32gui
-        self.activate(window)
+        foreground = win32gui.GetForegroundWindow()
+        if not native.accepts_pointer(window['id'], foreground):
+            self.activate(window)
         rect = self.rectangle(window)
         if rect != observation.rect:
             raise ComputerUseError('Activation changed window bounds; observe again.')
@@ -152,14 +191,16 @@ class WindowsBackend:
             raise_if_cancel_requested(cancel)
             self._desktop_available()
             self.resolve(window)
-            if self.rectangle(window) != rect or win32gui.GetForegroundWindow() != window['id']:
+            if self.rectangle(window) != rect or not native.accepts_pointer(window['id'], win32gui.GetForegroundWindow()):
                 raise ComputerUseError('Window or foreground changed during input; observe again.')
             if point is not None:
                 if not (rect[0] <= point[0] < rect[2] and rect[1] <= point[1] < rect[3]):
                     raise ComputerUseError('Input point is outside target window.')
                 hit = win32gui.WindowFromPoint(point)
                 if win32gui.GetAncestor(hit, 2) != window['id']:
-                    raise ComputerUseError('Input point is covered by another window; observe it before acting.')
+                    raise ComputerUseError(
+                        f'Input point is covered by window id={win32gui.GetAncestor(hit, 2)}; '
+                        'call list_windows/get_window and observe that window before acting.')
 
         def point(x_key='x', y_key='y'):
             x = integer(args.get(x_key), x_key, 0, rect[2] - rect[0] - 1)
@@ -172,36 +213,19 @@ class WindowsBackend:
             integer(index, 'element_index', 0, len(observation.elements) - 1)
             if args.get('x') is not None or args.get('y') is not None:
                 raise ComputerUseError('Choose element_index or coordinates, not both.')
-            with uia.automation() as desktop:
-                element = uia.resolve_element(desktop, window['id'], observation.elements[index], cancel)
-                guard()
-                if action == 'set_value':
-                    value = args.get('value')
-                    if not isinstance(value, str) or len(value) > 4000:
-                        raise ComputerUseError('value must be text of at most 4000 characters')
-                    element.iface_value.SetValue(value)
-                    if element.iface_value.CurrentValue != value:
-                        raise ComputerUseError('Control did not retain the requested value.')
-                    return
-                if action == 'perform_secondary_action':
-                    name = args.get('action')
-                    if name == 'invoke': element.iface_invoke.Invoke()
-                    elif name == 'expand': element.iface_expand_collapse.Expand()
-                    elif name == 'collapse': element.iface_expand_collapse.Collapse()
-                    elif name == 'select': element.iface_selection_item.Select()
-                    elif name == 'toggle': element.iface_toggle.Toggle()
-                    else: raise ComputerUseError('Unsupported secondary action')
-                    return
-                if action != 'click':
-                    raise ComputerUseError('element_index is supported by click, set_value and perform_secondary_action')
-                box = element.rectangle()
-                click_point = ((box.left + box.right) // 2, (box.top + box.bottom) // 2)
+            click_point = uia.element_action(
+                window['id'], observation.elements[index], action, args, cancel, guard)
+            if action in ('set_value', 'perform_secondary_action'):
+                return
         else:
             click_point = point() if action in ('click', 'scroll') else None
         if action == 'click':
             inputs.click(click_point, args.get('mouse_button', 'left'), args.get('click_count', 1), cancel, guard)
+            return PointerFeedback((PointerPoint('click', *click_point),))
         elif action == 'drag':
-            inputs.drag(point('from_x', 'from_y'), point('to_x', 'to_y'), args.get('duration_ms', 250), cancel, guard)
+            start, end = point('from_x', 'from_y'), point('to_x', 'to_y')
+            inputs.drag(start, end, args.get('duration_ms', 250), cancel, guard)
+            return PointerFeedback((PointerPoint('start', *start), PointerPoint('end', *end)))
         elif action == 'scroll':
             guard(click_point)
             win32api.SetCursorPos(click_point)
@@ -210,15 +234,17 @@ class WindowsBackend:
                 if value:
                     guard(click_point)
                     inputs.mouse_event(flag, value * sign)
+            return PointerFeedback((PointerPoint('scroll', *click_point),))
         elif action in ('type_text', 'press_key'):
-            with uia.automation():
+            native.verify_keyboard(window['id'], observation.native_focus)
+            uia.verify_focus(observation)
+            def keyboard_guard():
+                guard()
+                native.verify_keyboard(window['id'], observation.native_focus)
                 uia.verify_focus(observation)
-                def keyboard_guard():
-                    guard()
-                    uia.verify_focus(observation)
-                if action == 'type_text':
-                    inputs.literal_text(args.get('text'), cancel, keyboard_guard)
-                else:
-                    inputs.chord(args.get('key'), cancel, keyboard_guard)
+            if action == 'type_text':
+                inputs.literal_text(args.get('text'), cancel, keyboard_guard)
+            else:
+                inputs.chord(args.get('key'), cancel, keyboard_guard)
         else:
             raise ComputerUseError(f'Unsupported action or missing element_index: {action}')

@@ -1,5 +1,8 @@
 import json
 
+from src.providers.agent_config import AgentSendContext
+from src.providers.agent_invocation import send_agent
+
 
 class BaseAgentManager:
     def __init__(self, agent):
@@ -26,8 +29,5 @@ class BaseAgentManager:
         return output
 
     def _send_with_optional_kwargs(self, run_tools=None):
-        kwargs = {}
-        if run_tools is not None and "run_tools" in self.agent.Send.__code__.co_varnames:
-            kwargs["run_tools"] = run_tools
-        return self.agent.Send(**kwargs) if kwargs else self.agent.Send()
+        return send_agent(self.agent, AgentSendContext(run_tools=run_tools))
 

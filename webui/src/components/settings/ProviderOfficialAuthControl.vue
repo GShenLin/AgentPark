@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { syncLocalCodexCredentials } from '../../codexCredentialSyncApi'
 import type { CodexAuthStatus } from '../../settingsApi'
 import {
   activateProviderAccount,
@@ -38,6 +39,32 @@ const alias = ref('')
 const identity = ref('')
 const accountError = ref('')
 const accountBusy = ref(false)
+const syncMessage = ref('')
+let contextRevision = 0
+
+watch(() => [props.providerAuthId, props.selectedAccountId, props.oauthEnabled], () => {
+  contextRevision += 1
+  accountError.value = ''
+  syncMessage.value = ''
+}, { flush: 'sync' })
+
+async function syncCodex() {
+  if (accountBusy.value || props.busy) return
+  const revision = contextRevision
+  accountBusy.value = true
+  accountError.value = ''
+  syncMessage.value = ''
+  try {
+    const next = await syncLocalCodexCredentials(props.selectedAccountId || props.status?.activeAccountId)
+    if (revision !== contextRevision) return
+    emit('status', next.status)
+    syncMessage.value = `已读取 ${next.sourcePath} 的凭据。此次为单次同步；若之后再次失效，可重新同步或独立登录。`
+  } catch (error) {
+    if (revision === contextRevision) accountError.value = String((error as Error)?.message || error)
+  } finally {
+    accountBusy.value = false
+  }
+}
 
 async function select(accountId: string) {
   if (!props.providerAuthId) return
@@ -114,7 +141,7 @@ async function addApiKey() {
       <strong v-if="status?.authorized">已配置账号</strong>
       <strong v-else>尚无账号</strong>
       <small v-if="status?.planType">{{ status.planType }}</small>
-      <small v-if="error || status?.error || accountError">{{ error || status?.error || accountError }}</small>
+      <small v-if="accountError || error || status?.error">{{ accountError || error || status?.error }}</small>
       <ActionButton
         v-if="oauthEnabled && oauthSupported"
         type="button"
@@ -123,8 +150,21 @@ async function addApiKey() {
       >
         {{ status?.authorized ? '添加 OAuth 账号' : `登录 ${providerAuthId}` }}
       </ActionButton>
+      <ActionButton
+        v-if="oauthEnabled && providerAuthId === 'openai'"
+        type="button"
+        :disabled="busy || accountBusy || disabled"
+        title="读取运行 AgentPark 服务的设备上、同一系统用户的 Codex 登录凭据"
+        @click="syncCodex"
+      >
+        同步本机 Codex 凭据
+      </ActionButton>
       <small v-if="status?.accounts?.length">{{ status.accounts.length }} 个账号</small>
     </div>
+    <small v-if="oauthEnabled && providerAuthId === 'openai'">
+      从运行 AgentPark 服务的设备读取 Codex 登录文件，仅更新匹配账号。
+    </small>
+    <small v-if="syncMessage" role="status">{{ syncMessage }}</small>
 
     <div v-if="!oauthEnabled" class="api-key-account-form">
       <FormTextInput v-model="alias" placeholder="账号名称，例如：工作账号" autocomplete="off" />
@@ -183,6 +223,10 @@ async function addApiKey() {
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.5);
+}
+
+.oauth-status-card {
+  flex-wrap: wrap;
 }
 
 .oauth-status-card small,

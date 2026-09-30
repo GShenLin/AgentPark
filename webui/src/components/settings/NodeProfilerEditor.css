@@ -1,11 +1,3 @@
-.profiler-editor {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
-  background: var(--theme-panel-settings-panel-editor-background, var(--bg-primary));
-}
-
 .profiler-placeholder {
   padding: 24px 18px;
   color: var(--text-tertiary);
@@ -124,10 +116,6 @@
 }
 
 @media (max-width: 960px) {
-  .profiler-editor {
-    grid-template-columns: 1fr;
-    overflow-y: auto;
-  }
 
   .profiler-panels {
     overflow: visible;

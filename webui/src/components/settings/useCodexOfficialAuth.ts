@@ -73,6 +73,7 @@ export function useCodexOfficialAuth() {
 
   function setStatus(value: CodexAuthStatus) {
     status.value = value
+    error.value = ''
   }
 
   return { status, busy, error, loadStatus, beginLogin, setStatus }

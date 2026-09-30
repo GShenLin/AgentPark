@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import {
   applyRuntimeEventConfig,
@@ -30,8 +30,10 @@ import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySe
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
 import HarnessSettingsPanel from './settings/HarnessSettingsPanel.vue'
 import KnowledgeSettingsPanel from './settings/KnowledgeSettingsPanel.vue'
+import SkillsSettingsPanel from './settings/SkillsSettingsPanel.vue'
 import GatewaySettingsPanel from './settings/GatewaySettingsPanel.vue'
 import PeerNetworkPanel from './settings/PeerNetworkPanel.vue'
+import NodeSyncSettingsPanel from './settings/NodeSyncSettingsPanel.vue'
 import ModelProviderSettingsForm from './settings/ModelProviderSettingsForm.vue'
 import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
@@ -128,7 +130,9 @@ const displaySections = computed<SettingsSectionInfo[]>(() => {
   const base = sections.value.slice()
   base.push({ id: 'harness', label: 'Harness', path: '', filename: '' })
   base.push({ id: 'knowledge', label: 'Knowledge', path: '本地文件夹知识库', filename: '' })
+  base.push({ id: 'skills', label: 'Skill 管理', path: '项目 · 用户 · 自定义加载路径', filename: '' })
   base.push({ id: 'peer-network', label: '设备互联', path: '', filename: '' })
+  base.push({ id: 'node-sync', label: '节点同步', path: '', filename: '' })
   if (!base.some((item) => item.id === 'authorization')) {
     base.unshift({
       id: 'authorization',
@@ -202,13 +206,15 @@ const isProviderTest = computed(() => activeSection.value === 'provider-test')
 const isAuthorization = computed(() => activeSection.value === 'authorization')
 const isHarness = computed(() => activeSection.value === 'harness')
 const isKnowledge = computed(() => activeSection.value === 'knowledge')
+const isSkills = computed(() => activeSection.value === 'skills')
 const isGateway = computed(() => activeSection.value === 'gateway')
 const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
 const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profiler-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
 const isPeerNetwork = computed(() => activeSection.value === 'peer-network')
-const isVirtualSection = computed(() => isKnowledge.value || isHarness.value || isPeerNetwork.value || isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isNodeProfilerEditor.value || isExitSection.value)
+const isNodeSync = computed(() => activeSection.value === 'node-sync')
+const isVirtualSection = computed(() => isSkills.value || isNodeSync.value || isKnowledge.value || isHarness.value || isPeerNetwork.value || isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isNodeProfilerEditor.value || isExitSection.value)
 const dirty = computed(() => (
   !isVirtualSection.value
   && (
@@ -288,7 +294,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'knowledge' || sectionId === 'harness' || sectionId === 'peer-network' || sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
+  if (sectionId === 'skills' || sectionId === 'node-sync' || sectionId === 'knowledge' || sectionId === 'harness' || sectionId === 'peer-network' || sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -580,8 +586,10 @@ onMounted(async () => {
         <AccessSettingsPanel v-if="isAuthorization" />
         <HarnessSettingsPanel v-else-if="isHarness" />
         <KnowledgeSettingsPanel v-else-if="isKnowledge" />
+        <SkillsSettingsPanel v-else-if="isSkills" />
         <GatewaySettingsPanel v-else-if="isGateway" />
         <PeerNetworkPanel v-else-if="isPeerNetwork" />
+        <NodeSyncSettingsPanel v-else-if="isNodeSync" />
         <ProviderTestSettingsPanel v-else-if="isProviderTest" />
         <PressureSettingsPanel v-else-if="isPressure" />
         <StaticSettingsPanel v-else-if="isToolStats" />
@@ -618,7 +626,6 @@ onMounted(async () => {
           <DefaultSettingsForm
             v-else-if="activeSection === 'defaults' && formData"
             :data="formData"
-            :providers="providers"
             :memory-defaults="loadedDocument?.long_term_memory_defaults"
             :conversation-defaults="loadedDocument?.conversation_context_defaults"
             :runtime="loadedDocument?.runtime"

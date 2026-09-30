@@ -275,7 +275,7 @@ function setProvider(providerId: string) {
   const modelIds = providerModelIds(provider)
   setField('model', modelIds[0] || '')
   if (props.typeId === 'agent_node') setField('thinking', providerThinkingDefault(provider))
-  if (['hermes_agent_node', 'openclaw_node'].includes(props.typeId)) {
+  if (['hermes_agent_node', 'openclaw_node', 'minimax_code_node'].includes(props.typeId)) {
     const feature = provider?.features?.reasoning_effort
     const efforts = feature?.supported ? feature.values || [] : []
     const current = String(props.fields.reasoning_effort || '')

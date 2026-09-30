@@ -1,4 +1,6 @@
 
+import type { AgentPanelSettings } from './agentPanelSettings'
+
 export type RemoteEndpoint = {
   id: string
   name: string
@@ -39,6 +41,7 @@ export type WorkspaceBootstrap = {
     nodeHeight: number
   }
   mobile_pcs: MobilePc[]
+  agent_panel: AgentPanelSettings
   user_interactions: UserInteractionRequest[]
 }
 
@@ -336,7 +339,7 @@ export type UserInteractionOption = {
 
 export type UserInteractionField = {
   id: string
-  type: 'text' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'file' | 'custom_html'
+  type: 'text' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'file'
   label: string
   description?: string
   placeholder?: string
@@ -345,11 +348,6 @@ export type UserInteractionField = {
   options?: UserInteractionOption[]
   accept?: string
   multiple?: boolean
-  html?: string
-  css?: string
-  js?: string
-  height?: number
-  initial_data?: Record<string, unknown>
 }
 
 export type UserInteractionRequest = {
@@ -522,9 +520,21 @@ export type MessageEnvelope = {
   parts: MessagePart[]
   created_at?: string
   trace_id?: string
+  turn_summary?: MemoryTurnSummary
 }
 
+export type MemoryTurnSummary = LatestTurnProgressSummary & {
+  turn_id: string
+  revision: string
+  running: boolean
+  has_metadata: boolean
+}
+
+export type LoadMemoryTurnDetails = (turnId: string) => Promise<MessageEnvelope[]>
+
 export type MemoryHistoryMode =
+  | 'conversation'
+  | 'turn_details'
   | 'recent'
   | 'all'
   | 'latest_turn'

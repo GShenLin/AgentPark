@@ -156,6 +156,9 @@ def test_canonical_build_records_failure_and_preserves_exit_code(tmp_path):
     binaries = root / "bin"
     binaries.mkdir()
     (scripts / "sync_before_restart.ps1").write_text("exit 0\n", encoding="utf-8")
+    trust = root / "deploy" / "peer-network" / "client-trust"
+    trust.mkdir(parents=True)
+    (trust / "install-windows.ps1").write_text("exit 0\n", encoding="utf-8")
     (binaries / "rg.cmd").write_text("@exit /b 0\n", encoding="utf-8")
     (binaries / "npm.cmd").write_text(
         '@echo off\nif "%~1"=="install" exit /b 0\necho error TS2322: intentional fixture failure\nexit /b 42\n',

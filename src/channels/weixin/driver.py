@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import base64
 import json
 import random
@@ -7,8 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
-from urllib import error as urlerror
-from urllib import parse, request
+from urllib import parse
 
 from src.channels.errors import ChannelConfigError, ChannelRuntimeError
 from src.message_protocol import build_resource_part, build_text_part, normalize_envelope
@@ -323,21 +323,21 @@ class WeixinChannelDriver:
     ) -> str:
         url = self._join_url(base_url, endpoint)
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        req = request.Request(url, data=data, headers=self._headers(token, auth=auth), method="POST")
+        req = dict(url=url, body=data, headers=self._headers(token, auth=auth), method="POST")
         return self._open(req, timeout_seconds=timeout_seconds)
 
     def _get_raw(self, base_url: str, endpoint: str, *, timeout_seconds: int) -> str:
-        req = request.Request(self._join_url(base_url, endpoint), headers=self._headers("", auth=False), method="GET")
+        req = dict(url=self._join_url(base_url, endpoint), headers=self._headers("", auth=False), method="GET")
         return self._open(req, timeout_seconds=timeout_seconds)
 
-    def _open(self, req: request.Request, *, timeout_seconds: int) -> str:
+    def _open(self, req: dict, *, timeout_seconds: int) -> str:
         try:
-            with request.urlopen(req, timeout=timeout_seconds) as resp:
-                return resp.read().decode("utf-8", errors="replace")
-        except urlerror.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise ChannelRuntimeError(f"HTTP {exc.code} from Weixin API: {body}") from exc
-        except urlerror.URLError as exc:
+            resp = CurlHttpTransport().request(**req, timeout_sec=timeout_seconds).raise_for_status()
+            return resp.content.decode("utf-8", errors="replace")
+        except CurlHttpError as exc:
+            body = exc.content.decode("utf-8", errors="replace")
+            raise ChannelRuntimeError(f"HTTP {exc.status_code} from Weixin API: {body}") from exc
+        except CurlTransportError as exc:
             raise ChannelRuntimeError(f"Weixin API request failed: {exc}") from exc
 
     @staticmethod

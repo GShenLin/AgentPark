@@ -71,9 +71,9 @@ class ClaudeProviderGateway:
         config = ConfigLoader().get_provider_config(safe_provider_id)
         modes = config.get("supportmode")
         if not isinstance(modes, list) or not any(
-            str(mode).strip() in {"chat", "imagechat"} for mode in modes
+            str(mode).strip() == "chat" for mode in modes
         ):
-            raise ValueError(f"Provider {safe_provider_id!r} does not declare chat or imagechat support.")
+            raise ValueError(f"Provider {safe_provider_id!r} does not declare chat support.")
         provider_protocol(config)
         normalized_effort = str(reasoning_effort or "").strip()
         if normalized_effort not in {"", "low", "medium", "high", "xhigh", "max"}:

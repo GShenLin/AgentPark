@@ -7,11 +7,13 @@ from dataclasses import dataclass, field
 import yaml
 
 from nodes.agent_mcp_loader import MCP_SERVER_NAME_LIST, McpServerLoadError
+from nodes.agent_tool_loader import TOOL_NAME_LIST
 
 
 AGENTS_DIRNAME = "agents"
 AGENT_CONFIG_EXTENSIONS = (".yaml", ".yml")
 _MCP_DEPENDENCY_TYPE = "mcp"
+_TOOL_DEPENDENCY_TYPE = "tool"
 _MCP_CONFIG_FIELDS = {
     "transport",
     "url",
@@ -31,6 +33,7 @@ _MCP_META_FIELDS = {"type", "value", "description", "config"}
 
 @dataclass(frozen=True)
 class SkillDependencySet:
+    tools: tuple[str, ...] = ()
     mcp_servers: tuple[str, ...] = ()
     mcp_server_configs: dict[str, dict] = field(default_factory=dict)
 
@@ -44,7 +47,8 @@ def read_skill_agent_dependencies(skill_dir: str) -> SkillDependencySet:
     if not os.path.isdir(agents_dir):
         return SkillDependencySet()
 
-    refs: list[str] = []
+    tool_refs: list[str] = []
+    mcp_refs: list[str] = []
     configs: dict[str, dict] = {}
     for filename in sorted(os.listdir(agents_dir), key=str.casefold):
         if not filename.lower().endswith(AGENT_CONFIG_EXTENSIONS):
@@ -54,23 +58,28 @@ def read_skill_agent_dependencies(skill_dir: str) -> SkillDependencySet:
             raise SkillDependencyLoadError(f"skill agent dependency path escapes agents directory: {filename}")
         payload = _read_yaml_object(path)
         dependency_set = _read_dependency_object(payload, path)
-        refs.extend(dependency_set.mcp_servers)
+        tool_refs.extend(dependency_set.tools)
+        mcp_refs.extend(dependency_set.mcp_servers)
         _merge_mcp_configs(configs, dependency_set.mcp_server_configs, path)
 
     return SkillDependencySet(
-        mcp_servers=tuple(MCP_SERVER_NAME_LIST.parse(refs)),
+        tools=tuple(TOOL_NAME_LIST.parse(tool_refs)),
+        mcp_servers=tuple(MCP_SERVER_NAME_LIST.parse(mcp_refs)),
         mcp_server_configs=configs,
     )
 
 
 def collect_skill_dependencies(skills: list | tuple) -> SkillDependencySet:
-    refs: list[str] = []
+    tool_refs: list[str] = []
+    mcp_refs: list[str] = []
     configs: dict[str, dict] = {}
     for skill in skills or []:
-        refs.extend(getattr(skill, "mcp_servers", ()) or ())
+        tool_refs.extend(getattr(skill, "tools", ()) or ())
+        mcp_refs.extend(getattr(skill, "mcp_servers", ()) or ())
         _merge_mcp_configs(configs, getattr(skill, "mcp_server_configs", {}) or {}, getattr(skill, "path", "skill"))
     return SkillDependencySet(
-        mcp_servers=tuple(MCP_SERVER_NAME_LIST.parse(refs)),
+        tools=tuple(TOOL_NAME_LIST.parse(tool_refs)),
+        mcp_servers=tuple(MCP_SERVER_NAME_LIST.parse(mcp_refs)),
         mcp_server_configs=configs,
     )
 
@@ -98,27 +107,46 @@ def _read_dependency_object(payload: dict, path: str) -> SkillDependencySet:
     if not isinstance(tools, list):
         raise SkillDependencyLoadError(f"dependencies.tools must be a list: {path}")
 
-    refs: list[str] = []
+    tool_refs: list[str] = []
+    mcp_refs: list[str] = []
     configs: dict[str, dict] = {}
     for index, item in enumerate(tools):
         if not isinstance(item, dict):
             raise SkillDependencyLoadError(f"dependencies.tools[{index}] must be an object: {path}")
         dependency_type = str(item.get("type") or "").strip()
-        if dependency_type != _MCP_DEPENDENCY_TYPE:
+        if dependency_type not in {_MCP_DEPENDENCY_TYPE, _TOOL_DEPENDENCY_TYPE}:
             continue
         name = str(item.get("value") or "").strip()
         if not name:
-            raise SkillDependencyLoadError(f"dependencies.tools[{index}].value is required for MCP: {path}")
-        refs.append(name)
+            raise SkillDependencyLoadError(
+                f"dependencies.tools[{index}].value is required for {dependency_type}: {path}"
+            )
+        if dependency_type == _TOOL_DEPENDENCY_TYPE:
+            unsupported = set(item.keys()) - {"type", "value", "description"}
+            if unsupported:
+                fields = ", ".join(sorted(str(field) for field in unsupported))
+                raise SkillDependencyLoadError(
+                    f"unsupported local tool dependency fields at dependencies.tools[{index}]: {fields}"
+                )
+            tool_refs.append(name)
+            continue
+        mcp_refs.append(name)
         config = _read_mcp_dependency_config(item, path, index)
         if config:
             _merge_mcp_configs(configs, {name: config}, path)
 
     try:
-        normalized_refs = tuple(MCP_SERVER_NAME_LIST.parse(refs))
+        normalized_tool_refs = tuple(TOOL_NAME_LIST.parse(tool_refs))
+        normalized_mcp_refs = tuple(MCP_SERVER_NAME_LIST.parse(mcp_refs))
     except McpServerLoadError as exc:
         raise SkillDependencyLoadError(str(exc)) from exc
-    return SkillDependencySet(mcp_servers=normalized_refs, mcp_server_configs=configs)
+    except ValueError as exc:
+        raise SkillDependencyLoadError(str(exc)) from exc
+    return SkillDependencySet(
+        tools=normalized_tool_refs,
+        mcp_servers=normalized_mcp_refs,
+        mcp_server_configs=configs,
+    )
 
 
 def _read_mcp_dependency_config(item: dict, path: str, index: int) -> dict:

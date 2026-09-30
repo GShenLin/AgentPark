@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import ActionButton from '../ActionButton.vue'
+import SelectionButton from '../SelectionButton.vue'
 import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 import {
@@ -122,8 +123,8 @@ onMounted(loadTurns)
 </script>
 
 <template>
-  <div class="turn-audit">
-    <aside class="turn-audit-side">
+  <div class="turn-audit settings-split">
+    <aside class="settings-split__side">
       <div class="audit-filters">
         <label class="audit-date-filter">
           From
@@ -152,28 +153,32 @@ onMounted(loadTurns)
         </ActionButton>
       </div>
 
-      <div class="audit-turn-list">
-        <button
+      <div class="settings-split__items">
+        <SelectionButton
           v-for="turn in turns"
           :key="`${turn.graph_id}:${turn.node_id}:${turn.trace_id}`"
-          type="button"
-          class="audit-turn"
-          :class="{ active: selectedTraceId === turn.trace_id }"
+          stacked
+          class="audit-turn settings-list-item"
+          :active="selectedTraceId === turn.trace_id"
           @click="loadDetail(turn)"
         >
           <span class="audit-turn-top">
             <strong>{{ turn.node_id }}</strong>
             <small :class="turn.audit_completeness">{{ turn.audit_completeness }}</small>
           </span>
-          <span>{{ shortText(turn.question || turn.answer_preview) }}</span>
-          <small>{{ turn.started_at }} · {{ durationText(turn.duration_ms) }}</small>
-          <small>{{ turn.tool_call_count + turn.server_tool_call_count }} tools · {{ turn.provider_id }}</small>
-        </button>
+          <template #detail>
+            <span class="settings-list-item__lines">
+              <span>{{ shortText(turn.question || turn.answer_preview) }}</span>
+              <small>{{ turn.started_at }} · {{ durationText(turn.duration_ms) }}</small>
+              <small>{{ turn.tool_call_count + turn.server_tool_call_count }} tools · {{ turn.provider_id }}</small>
+            </span>
+          </template>
+        </SelectionButton>
         <div v-if="!turns.length && !loadingList" class="audit-empty">No runs for this date range.</div>
       </div>
     </aside>
 
-    <main class="turn-audit-main">
+    <main class="turn-audit-main settings-split__detail">
       <div v-if="loadingDetail" class="audit-empty">Loading audit...</div>
       <template v-else-if="detail && selectedTurn">
         <header class="audit-head">

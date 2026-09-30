@@ -1,0 +1,56 @@
+/* Prose typography shared by desktop and mobile conversation renderers. */
+#app .chat-appearance .feed-text {
+  color: var(--chat-ink);
+  font-family: var(--chat-font);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.75;
+  letter-spacing: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+#app .chat-appearance .feed-text.markdown-part p { margin: 0 0 1em; }
+#app .chat-appearance .feed-text.markdown-part p:last-child { margin-bottom: 0; }
+#app .chat-appearance .feed-text.markdown-part :is(h1, h2, h3, h4) {
+  color: #202020;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 1.4em 0 .65em;
+  letter-spacing: -.015em;
+}
+#app .chat-appearance .feed-text.markdown-part h1 { font-size: 1.65em; }
+#app .chat-appearance .feed-text.markdown-part h2 { font-size: 1.35em; }
+#app .chat-appearance .feed-text.markdown-part h3 { font-size: 1.16em; }
+#app .chat-appearance .feed-text.markdown-part h4 { font-size: 1em; }
+#app .chat-appearance .feed-text.markdown-part > :first-child { margin-top: 0; }
+#app .chat-appearance .feed-text.markdown-part strong { font-weight: 600; }
+#app .chat-appearance .feed-text.markdown-part :is(ul, ol) { margin: .6em 0 1em; padding-left: 1.6em; }
+#app .chat-appearance .feed-text.markdown-part li { margin: .4em 0; padding-left: .15em; }
+#app .chat-appearance .feed-text.markdown-part li p { margin: .4em 0; }
+#app .chat-appearance .feed-text.markdown-part a { color: var(--chat-link); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #b8cce7; }
+#app .chat-appearance .feed-text.markdown-part blockquote { margin: 1em 0; padding: 2px 0 2px 18px; border-left: 3px solid #d8d8d8; color: #666; }
+#app .chat-appearance .feed-text.markdown-part hr { border: 0; border-top: 1px solid var(--chat-line); margin: 24px 0; }
+#app .chat-appearance .feed-text.markdown-part table {
+  display: block;
+  max-width: 100%;
+  width: max-content;
+  min-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 20px 0 24px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+#app .chat-appearance .feed-text.markdown-part :is(th, td) { padding: 12px 16px; border-bottom: 1px solid #ededed; text-align: left; vertical-align: top; min-width: 110px; }
+#app .chat-appearance .feed-text.markdown-part th { color: #333; font-weight: 600; border-bottom-color: #dcdcdc; }
+#app .chat-appearance .feed-text.markdown-part :is(th, td):first-child { padding-left: 0; }
+#app .chat-appearance .feed-text.markdown-part :is(th, td):last-child { padding-right: 0; }
+#app .chat-appearance .feed-text.markdown-part code { font-family: var(--chat-mono); font-size: .88em; font-weight: 400; }
+#app .chat-appearance .feed-text.markdown-part :not(pre) > code { padding: 2px 5px; border-radius: 5px; background: #f0f0f0; color: #333; }
+#app .chat-appearance .feed-text.markdown-part pre { background: #f6f6f6; color: #303030; padding: 18px; border-radius: 14px; line-height: 1.6; }
+#app .chat-appearance .feed-text.markdown-part .markdown-code-block { margin: 18px 0; border: 1px solid #e8e8e8; border-radius: 16px; background: #f6f6f6; }
+#app .chat-appearance .feed-text.markdown-part .markdown-code-block pre { padding: 20px 46px 40px 20px; margin: 0; background: transparent; border-radius: 0; }
+#app .chat-appearance .markdown-code-copy { background: #fff; color: #666; border-color: #ddd; opacity: 1; transform: none; font-family: var(--chat-font); }
+#app .chat-appearance .markdown-code-copy.copied { background: #edf7f0; color: #237345; border-color: #bad8c4; }
+#app .chat-appearance .feed-text.markdown-part img { max-width: min(360px, 100%); max-height: 260px; border-radius: 12px; }
+#app .chat-appearance .feed-text .katex-display { overflow-x: auto; overflow-y: hidden; padding-block: 4px; }

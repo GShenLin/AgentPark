@@ -1,3 +1,4 @@
+from tests.agent_invocation_helpers import configured_fake
 import time
 import json
 import os
@@ -171,8 +172,10 @@ def test_agent_node_schema_includes_selected_provider_features(monkeypatch):
     assert schema["reasoning_summary"]["provider_feature"]["values"] == ["auto", "concise", "detailed", "disabled"]
 
 
-def test_agent_node_registers_selected_mcp_servers_before_send(monkeypatch):
+@pytest.mark.parametrize("failed_server", [None, "unreal-mcp"])
+def test_agent_node_registers_selected_mcp_servers_before_send(monkeypatch, failed_server):
     import nodes.agent_node as agent_node_module
+    from nodes.agent_mcp_loader import McpServerLoadError
 
     captured = {"registered": [], "send_tool_count": None}
 
@@ -197,11 +200,16 @@ def test_agent_node_registers_selected_mcp_servers_before_send(monkeypatch):
 
         def Send(self, **_kwargs):
             captured["send_tool_count"] = len(self.tools.tool_declarations)
+            captured["messages"] = list(self.messages)
             return "ok"
 
     def fake_register(agent, values, *, settings=None):
-        captured["registered"] = list(values)
+        captured["registered"].extend(values)
         captured["settings"] = settings
+        if values == [failed_server]:
+            raise McpServerLoadError(
+                f"MCP server {failed_server} failed to load tools: ConnectError: All connection attempts failed"
+            )
         agent.tools.register_external_tool(
             {
                 "type": "function",
@@ -215,7 +223,7 @@ def test_agent_node_registers_selected_mcp_servers_before_send(monkeypatch):
         )
         return []
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(agent_node_module, "register_mcp_server_tools", fake_register)
     monkeypatch.setattr(agent_node_module, "inject_mcp_server_context", lambda *_args, **_kwargs: [])
 
@@ -225,14 +233,23 @@ def test_agent_node_registers_selected_mcp_servers_before_send(monkeypatch):
             "graph_id": "g_mcp_unit",
             "node_instance_id": "n_mcp_unit",
             "provider_id": "provider-stream",
-            "mcp_servers": ["docs"],
+            "mcp_servers": [failed_server, "docs"] if failed_server else ["docs"],
         },
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert captured["registered"] == ["docs"]
+    assert captured["registered"] == ([failed_server, "docs"] if failed_server else ["docs"])
     assert captured["send_tool_count"] == 1
     assert isinstance(captured["settings"], dict)
+    if failed_server:
+        failures = [message for message in captured["messages"]
+                    if "All connection attempts failed" in str(message.get("content"))]
+        assert len(failures) == 1
+        payload = json.loads(failures[0]["content"])
+        assert payload["status"] == "error"
+        assert payload["server"] == failed_server
+        assert payload["phase"] == "list_tools"
+        assert failures[0]["persist"] is False
 
 
 def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
@@ -280,7 +297,7 @@ def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
         },
         callable=lambda agent=None: "ok",
     )
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(
         agent_node_module,
         "resolve_plugin_capabilities",
@@ -335,12 +352,12 @@ def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
     assert captured["skills"]["node_id"] == "n_plugin_unit"
 
 
-def test_agent_node_registers_selected_skill_mcp_dependencies_before_send(monkeypatch):
+def test_agent_node_defers_selected_skill_mcp_dependencies_until_activation(monkeypatch):
     import nodes.agent_node as agent_node_module
     from nodes.agent_plugin_loader import PluginCapabilitySet
     from nodes.agent_skill_loader import SkillDefinition
 
-    captured = {"mcp": [], "settings": None, "skills": None}
+    captured = {"mcp": [], "settings": None, "skills": None, "tools": [], "agent": None}
     selected_skill = SkillDefinition(
         name="openai-docs",
         description="OpenAI docs",
@@ -359,9 +376,12 @@ def test_agent_node_registers_selected_skill_mcp_dependencies_before_send(monkey
         def __init__(self):
             self.messages = []
             self.tools = self
+            self.function_map = {}
+            self.tool_declarations = []
+            captured["agent"] = self
 
-        def addTool(self, _name):
-            return None
+        def addTool(self, name):
+            captured["tools"].append(name)
 
         def register_external_tool(self, _declaration, _func):
             return None
@@ -372,7 +392,7 @@ def test_agent_node_registers_selected_skill_mcp_dependencies_before_send(monkey
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(agent_node_module, "resolve_plugin_capabilities", lambda *_args, **_kwargs: PluginCapabilitySet())
     monkeypatch.setattr(agent_node_module, "load_node_skills", lambda *_args, **_kwargs: [selected_skill])
 
@@ -405,14 +425,16 @@ def test_agent_node_registers_selected_skill_mcp_dependencies_before_send(monkey
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert captured["mcp"] == ["openaiDeveloperDocs"]
-    assert captured["settings"]["mcpServers"]["openaiDeveloperDocs"]["url"] == "https://developers.openai.com/mcp"
+    assert captured["mcp"] == []
+    assert captured["tools"] == ["skill_activation_tools"]
     assert captured["skills"]["values"] == []
-    assert captured["skills"]["extra"] == [selected_skill]
+    assert captured["skills"]["extra"] == []
     assert captured["skills"]["node_id"] == "n_skill_mcp"
+    assert captured["agent"]._agentpark_available_skills == {"openai-docs": selected_skill}
+    assert any("available_skill_activations" in item["content"] for item in captured["agent"].messages)
 
 
-def test_agent_node_auto_loads_skill_resource_tool_for_resource_skills(monkeypatch, tmp_path):
+def test_agent_node_defers_skill_resource_tools_until_activation(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
     from nodes.agent_plugin_loader import PluginCapabilitySet
     from nodes.agent_skill_loader import SkillDefinition
@@ -436,6 +458,8 @@ def test_agent_node_auto_loads_skill_resource_tool_for_resource_skills(monkeypat
         def __init__(self):
             self.messages = []
             self.tools = self
+            self.function_map = {}
+            self.tool_declarations = []
             captured["agent"] = self
 
         def addTool(self, name):
@@ -450,7 +474,7 @@ def test_agent_node_auto_loads_skill_resource_tool_for_resource_skills(monkeypat
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(agent_node_module, "load_node_skills", lambda *_args, **_kwargs: [selected_skill])
     monkeypatch.setattr(agent_node_module, "resolve_plugin_capabilities", lambda *_args, **_kwargs: PluginCapabilitySet())
     monkeypatch.setattr(agent_node_module, "register_mcp_server_tools", lambda *_args, **_kwargs: [])
@@ -468,11 +492,12 @@ def test_agent_node_auto_loads_skill_resource_tool_for_resource_skills(monkeypat
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert captured["tools"] == ["file_read_tools", "skill_resource_tools"]
-    assert captured["agent"]._agentpark_skill_resource_roots["demo"] == str(skill_dir)
+    assert captured["tools"] == ["file_read_tools", "skill_activation_tools"]
+    assert not hasattr(captured["agent"], "_agentpark_skill_resource_roots")
+    assert captured["agent"]._agentpark_available_skills == {"demo": selected_skill}
 
 
-def test_agent_node_registers_selected_skill_script_tools(monkeypatch, tmp_path):
+def test_agent_node_defers_selected_skill_script_tools_until_activation(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
     from nodes.agent_plugin_loader import PluginCapabilitySet
     from nodes.agent_skill_loader import SkillDefinition
@@ -485,7 +510,7 @@ def test_agent_node_registers_selected_skill_script_tools(monkeypatch, tmp_path)
     script_path.write_text("print('ok')\n", encoding="utf-8")
     skill_path = skill_dir / "SKILL.md"
     skill_path.write_text("---\nname: demo\ndescription: Demo\n---\n\nUse it.\n", encoding="utf-8")
-    captured = {"registered": [], "agent": None}
+    captured = {"registered": [], "loaded": [], "agent": None}
     selected_skill = SkillDefinition(
         name="demo",
         description="Demo",
@@ -513,10 +538,12 @@ def test_agent_node_registers_selected_skill_script_tools(monkeypatch, tmp_path)
         def __init__(self):
             self.messages = []
             self.tools = self
+            self.function_map = {}
+            self.tool_declarations = []
             captured["agent"] = self
 
-        def addTool(self, _name):
-            return None
+        def addTool(self, name):
+            captured["loaded"].append(name)
 
         def register_external_tool(self, declaration, func):
             captured["registered"].append((declaration["function"]["name"], func))
@@ -527,7 +554,7 @@ def test_agent_node_registers_selected_skill_script_tools(monkeypatch, tmp_path)
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(agent_node_module, "load_node_skills", lambda *_args, **_kwargs: [selected_skill])
     monkeypatch.setattr(agent_node_module, "resolve_plugin_capabilities", lambda *_args, **_kwargs: PluginCapabilitySet())
     monkeypatch.setattr(agent_node_module, "register_mcp_server_tools", lambda *_args, **_kwargs: [])
@@ -544,7 +571,9 @@ def test_agent_node_registers_selected_skill_script_tools(monkeypatch, tmp_path)
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert [name for name, _func in captured["registered"]] == ["skill__demo__echo"]
+    assert captured["loaded"] == ["skill_activation_tools"]
+    assert captured["registered"] == []
+    assert captured["agent"]._agentpark_available_skills == {"demo": selected_skill}
 
 
 def test_agent_node_stream_callback_and_done(monkeypatch):
@@ -567,7 +596,7 @@ def test_agent_node_stream_callback_and_done(monkeypatch):
                 handler("B", "AB")
             return "AB"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     node = agent_node_module.Node()
     streamed_events: list[dict] = []
@@ -618,7 +647,7 @@ def test_agent_node_sse_response_mode_separates_instruction_and_system_prompt(mo
                 handler("K", "OK")
             return "OK"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(provider_runtime, "resolve_agent_default_instructions", lambda *_args, **_kwargs: "")
 
     events: list[dict] = []
@@ -665,7 +694,7 @@ def test_agent_node_sse_chat_mode_keeps_instruction_and_system_prompt_as_message
                 handler("K", "OK")
             return "OK"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     events: list[dict] = []
     result = agent_node_module.Node().on_input(
@@ -709,7 +738,7 @@ def test_agent_node_forwards_reasoning_effort(monkeypatch):
             captured.update(kwargs)
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     result = agent_node_module.Node().on_input(
         "hello",
@@ -744,7 +773,7 @@ def test_agent_node_forwards_reasoning_summary(monkeypatch):
             captured.update(kwargs)
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     result = agent_node_module.Node().on_input(
         "hello",
@@ -763,6 +792,9 @@ def test_agent_node_forwards_reasoning_summary(monkeypatch):
 def test_agent_node_forwards_stream_enabled_false_from_provider_config(monkeypatch):
     import nodes.agent_node as agent_node_module
 
+    monkeypatch.setattr(agent_node_module.ConfigLoader, "get_provider_config",
+                        lambda *_args: {"supportmode": ["chat"], "streamEnabled": False})
+
     captured = {}
 
     class DummyAgent:
@@ -780,7 +812,7 @@ def test_agent_node_forwards_stream_enabled_false_from_provider_config(monkeypat
             captured.update(kwargs)
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     result = agent_node_module.Node().on_input(
         "hello",
@@ -814,7 +846,7 @@ def test_agent_node_defaults_stream_enabled_true_when_absent(monkeypatch):
             captured.update(kwargs)
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     result = agent_node_module.Node().on_input(
         "hello",
@@ -848,7 +880,7 @@ def test_agent_node_sets_collaboration_mode_runtime_attribute(monkeypatch):
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     result = agent_node_module.Node().on_input(
         "hello",
@@ -884,7 +916,7 @@ def test_agent_node_uses_developer_context_role_for_openai_responses(monkeypatch
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(
         agent_node_module,
         "prepare_node_memory",
@@ -933,7 +965,7 @@ def test_agent_node_injects_runtime_event_context_with_selected_roles_without_ma
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     result = agent_node_module.Node().on_input(
         "hello",
@@ -984,7 +1016,7 @@ def test_agent_node_uses_developer_context_role_for_doubao_responses(monkeypatch
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(
         agent_node_module,
         "prepare_node_memory",
@@ -1028,7 +1060,7 @@ def test_agent_node_injects_default_instructions_for_openai_responses(monkeypatc
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(
         provider_runtime,
         "resolve_agent_default_instructions",
@@ -1070,7 +1102,7 @@ def test_agent_node_injects_default_instructions_for_doubao_responses(monkeypatc
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(
         provider_runtime,
         "resolve_agent_default_instructions",
@@ -1133,7 +1165,7 @@ def test_agent_node_forwards_tool_lifecycle_events(monkeypatch, tmp_path):
             )
             return "done"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(tool_stats_store, "get_workspace_cache_dir", lambda: str(tmp_path / ".cache"))
 
     events: list[dict] = []
@@ -1185,7 +1217,7 @@ def test_agent_node_keeps_working_path_runtime_only(monkeypatch):
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     node = agent_node_module.Node()
     result = node.on_input(
@@ -1226,7 +1258,7 @@ def test_agent_node_surfaces_configured_tool_load_failure(monkeypatch):
         def Send(self, **_kwargs):
             raise AssertionError("Send should not run when configured tools fail to load")
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     node = agent_node_module.Node()
     with pytest.raises(RuntimeError) as exc:
@@ -1264,7 +1296,7 @@ def test_agent_node_injects_configured_skill_without_affecting_unconfigured_node
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     _write_agent_node_test_skill(tmp_path)
     monkeypatch.setattr(
         agent_node_module,
@@ -1327,7 +1359,7 @@ def test_agent_node_preserves_system_prompt_when_injecting_skill(monkeypatch, tm
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     _write_agent_node_test_skill(tmp_path)
     monkeypatch.setattr(
         agent_node_module,
@@ -1378,7 +1410,7 @@ def test_agent_node_disables_provider_internal_memory(monkeypatch):
     def fake_create_agent(*args, **kwargs):
         captured["args"] = args
         captured["kwargs"] = kwargs
-        return DummyAgent()
+        return configured_fake(DummyAgent(), kwargs.get("agent_config"))
 
     monkeypatch.setattr(agent_node_module, "create_agent", fake_create_agent)
 
@@ -1414,7 +1446,7 @@ def test_agent_node_loads_structured_node_history(monkeypatch):
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     graph_id = "g_history_unit"
     node_id = "n_history_unit"
@@ -1444,9 +1476,17 @@ def test_agent_node_loads_structured_node_history(monkeypatch):
     assert [item["content"] for item in user_assistant_messages] == [
         "old question",
         "old answer",
-        "[Historical tool evidence]\nTool tool call_id=call-1: result_preview=(empty)",
         "current question",
     ]
+    instruction_messages = [
+        item for item in created_agents[0].messages if item.get("role") not in {"user", "assistant"}
+    ]
+    assert any(
+        item["content"].startswith(
+            "[Historical tool evidence: context only; never return this block as an answer]"
+        )
+        for item in instruction_messages
+    )
 
 
 def test_agent_node_restores_full_conversation_within_budget(monkeypatch):
@@ -1475,7 +1515,7 @@ def test_agent_node_restores_full_conversation_within_budget(monkeypatch):
         def get_provider_config(self, _provider_id):
             return {"supportmode": ["chat"]}
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     monkeypatch.setattr(agent_node_module, "ConfigLoader", lambda: DummyLoader())
 
     graph_id = "g_history_limit_unit"
@@ -1540,7 +1580,7 @@ def test_agent_node_persists_assistant_progress_as_context_excluded_memory(monke
             self.Message("assistant", "Final answer.")
             return "Final answer."
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     memory_path = tmp_path / "memory.md"
     messages_path = tmp_path / "messages.jsonl"
@@ -1590,7 +1630,7 @@ def test_agent_node_injects_active_goal_context(monkeypatch):
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     node = agent_node_module.Node()
     node.on_input(
@@ -1633,7 +1673,7 @@ def test_agent_node_omits_history_image_payloads(monkeypatch, tmp_path):
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     graph_id = "g_history_image_unit"
     node_id = "n_history_image_unit"
@@ -1696,7 +1736,7 @@ def test_agent_node_surfaces_missing_configured_skill(monkeypatch):
         def Send(self, **_kwargs):
             raise AssertionError("Send should not run when skill loading fails")
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
 
     node = agent_node_module.Node()
     with pytest.raises(RuntimeError) as exc:
@@ -1736,7 +1776,7 @@ def test_agent_node_loads_skills_from_persisted_node_config(monkeypatch, tmp_pat
         def Send(self, **_kwargs):
             return "ok"
 
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: DummyAgent())
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(DummyAgent(), _kwargs.get("agent_config")))
     _write_agent_node_test_skill(tmp_path)
     monkeypatch.setattr(
         agent_node_module,
@@ -1842,8 +1882,8 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
     monkeypatch.setattr(runtime_paths_module, "_get_graphs_dir", lambda: os.path.join(runtime_root, "memories"))
     node_runtime_module._get_runtime_root = lambda: runtime_root
     node_runtime_module._get_resource_root = lambda: resource_root
-    monkeypatch.setattr(providers_module, "create_agent", lambda *_args, **_kwargs: SlowStreamingAgent())
-    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: SlowStreamingAgent())
+    monkeypatch.setattr(providers_module, "create_agent", lambda *_args, **_kwargs: configured_fake(SlowStreamingAgent(), _kwargs.get("agent_config")))
+    monkeypatch.setattr(agent_node_module, "create_agent", lambda *_args, **_kwargs: configured_fake(SlowStreamingAgent(), _kwargs.get("agent_config")))
 
     try:
         app = backend.create_app()

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
+from src.message_resources import RESOURCE_KINDS, build_resource_part, is_url
 
 
-RESOURCE_KINDS = {"image", "video", "audio", "doc", "file", "url"}
 PART_TYPES = {"text", "resource", "structured", "tool_call", "meta"}
 
 
@@ -97,69 +95,8 @@ def now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
-def is_url(value: object) -> bool:
-    text = str(value or "").strip()
-    if not text:
-        return False
-    try:
-        parsed = urlparse(text)
-    except Exception:
-        return False
-    if parsed.scheme not in {"http", "https", "ftp", "file"}:
-        return False
-    return bool(parsed.netloc or parsed.path)
-
-
-def _guess_kind_from_ext(path_or_url: str) -> str:
-    raw = str(path_or_url or "").strip().lower()
-    if not raw:
-        return "file"
-    ext = os.path.splitext(raw)[1].lower()
-    if ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}:
-        return "image"
-    if ext in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".flv"}:
-        return "video"
-    if ext in {".mp3", ".wav", ".ogg", ".flac", ".m4a"}:
-        return "audio"
-    if ext in {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".md"}:
-        return "doc"
-    return "url" if is_url(raw) else "file"
-
-
 def build_text_part(text: object) -> dict:
     return {"type": "text", "text": "" if text is None else str(text)}
-
-
-def build_resource_part(
-    *,
-    uri: object,
-    kind: object = "",
-    mime: object = "",
-    name: object = "",
-    source: object = "",
-    metadata: object = None,
-) -> dict:
-    uri_text = str(uri or "").strip()
-    kind_text = str(kind or "").strip().lower()
-    if kind_text not in RESOURCE_KINDS:
-        kind_text = _guess_kind_from_ext(uri_text)
-    payload = {
-        "id": uuid.uuid4().hex,
-        "uri": uri_text,
-        "kind": kind_text,
-    }
-    mime_text = str(mime or "").strip()
-    if mime_text:
-        payload["mime"] = mime_text
-    name_text = str(name or "").strip()
-    if name_text:
-        payload["name"] = name_text
-    source_text = str(source or "").strip()
-    if source_text:
-        payload["source"] = source_text
-    if isinstance(metadata, dict) and metadata:
-        payload["metadata"] = metadata
-    return {"type": "resource", "resource": payload}
 
 
 def _normalize_part(item: object) -> dict:
@@ -180,6 +117,7 @@ def _normalize_part(item: object) -> dict:
                 name=item.get("name"),
                 source=item.get("source"),
                 metadata=item.get("metadata"),
+                resource_id=item.get("id"),
             )
         if "resource" in item and isinstance(item.get("resource"), dict):
             raw_res = item.get("resource") or {}
@@ -190,6 +128,7 @@ def _normalize_part(item: object) -> dict:
                 name=raw_res.get("name"),
                 source=raw_res.get("source"),
                 metadata=raw_res.get("metadata"),
+                resource_id=raw_res.get("id"),
             )
         return {"type": "structured", "data": item}
 
@@ -210,6 +149,7 @@ def _normalize_part(item: object) -> dict:
                 name=raw_res.get("name"),
                 source=raw_res.get("source"),
                 metadata=raw_res.get("metadata"),
+                resource_id=raw_res.get("id"),
             )
         return build_resource_part(
             uri=item.get("uri"),
@@ -218,6 +158,7 @@ def _normalize_part(item: object) -> dict:
             name=item.get("name"),
             source=item.get("source"),
             metadata=item.get("metadata"),
+            resource_id=item.get("id"),
         )
 
     if part_type == "structured":
@@ -371,6 +312,7 @@ def _tool_call_part_text(part: dict) -> str:
     status = str(part.get("status") or "").strip()
     call_id = str(part.get("call_id") or "").strip()
     preview = str(part.get("result_preview") or "").strip()
+    tail_preview = str(part.get("result_tail_preview") or "").strip()
     error = str(part.get("error") or "").strip()
     result_chars = part.get("result_chars")
     preview_truncated = bool(part.get("result_preview_truncated"))
@@ -392,7 +334,12 @@ def _tool_call_part_text(part: dict) -> str:
     if error:
         body = f"error={error}"
     elif preview_truncated:
-        body = "result_preview omitted from markdown; structured history stores only a display preview"
+        preview_parts = []
+        if preview:
+            preview_parts.append(f"result_preview(partial)={preview}")
+        if tail_preview and tail_preview != preview:
+            preview_parts.append(f"result_tail_preview(partial)={tail_preview}")
+        body = "\n".join(preview_parts) or "result_preview=(unavailable)"
     elif preview:
         body = f"result_preview={preview}"
     else:

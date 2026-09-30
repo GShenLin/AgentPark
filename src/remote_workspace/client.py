@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import json
 import os
-import urllib.error
-import urllib.request
 import uuid
 from typing import Any
 
@@ -72,18 +71,13 @@ def _request_timeout_seconds(tool_name: str, args: Any, configured: float | None
 def _post_internal_request(path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     port = str(os.environ.get("AGENTPARK_SERVER_PORT") or "8766").strip() or "8766"
     url = f"http://127.0.0.1:{port}{path}"
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+    request = dict(url=url, body=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=max(2.0, float(timeout))) as response:
-            body = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"Remote workspace request failed with HTTP {exc.code}: {detail}") from exc
+        response = CurlHttpTransport().request(**request, timeout_sec=max(2.0, float(timeout))).raise_for_status()
+        body = response.content.decode("utf-8", errors="replace")
+    except CurlHttpError as exc:
+        detail = exc.content.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Remote workspace request failed with HTTP {exc.status_code}: {detail}") from exc
     except OSError as exc:
         raise RuntimeError(f"Remote workspace request failed: {type(exc).__name__}: {exc}") from exc
     try:

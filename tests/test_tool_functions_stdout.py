@@ -34,6 +34,40 @@ def test_file_tools_resolve_relative_paths_from_agent_working_path(tmp_path):
     assert read_result["content"] == "hello"
 
 
+def test_read_file_uses_bounded_output_and_returns_pagination_hint(tmp_path):
+    target = tmp_path / "large.txt"
+    target.write_text("".join(f"line-{index} {'x' * 100}\n" for index in range(300)), encoding="utf-8")
+
+    raw = read_file(str(target))
+    result = json.loads(raw)
+
+    assert result["status"] == "success"
+    assert result["output_truncated"] is True
+    assert result["output_char_limit"] == 20000
+    assert result["next_start_line"] > 1
+    assert len(raw) < 20000
+
+
+def test_read_file_missing_path_suggests_exact_basename_search(tmp_path):
+    result = json.loads(read_file(str(tmp_path / "DesktopWorkspace.vue")))
+
+    assert result["status"] == "error"
+    assert "**/DesktopWorkspace.vue" in result["next_action"]
+
+
+def test_read_file_respects_agent_tool_submission_budget(tmp_path):
+    target = tmp_path / "large.txt"
+    target.write_text(("quoted \\\" content\n" * 1000), encoding="utf-8")
+    agent = SimpleNamespace(config={"toolResultSubmissionMaxChars": 4000})
+
+    raw = read_file(str(target), agent=agent)
+    result = json.loads(raw)
+
+    assert result["output_truncated"] is True
+    assert result["output_char_limit"] == 3600
+    assert len(raw) <= 3600
+
+
 def test_curl_tool_does_not_emit_progress_to_stdout(monkeypatch, capsys):
     class _Completed:
         stdout = b"ok"

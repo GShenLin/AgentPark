@@ -7,7 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_agently_mail_skill_is_agentpark_discoverable_and_loadable():
-    options = list_available_skill_options(str(ROOT / "skills"))
+    skill_root = ROOT / ".agents" / "skills"
+    options = list_available_skill_options(str(skill_root))
     option = next(item for item in options if item["value"] == "agently-mail")
 
     assert option["version"] == "1.0.0"
@@ -15,7 +16,7 @@ def test_agently_mail_skill_is_agentpark_discoverable_and_loadable():
     skill = load_node_skills(
         ["agently-mail"],
         node_id="agent-mail-test",
-        skill_root=str(ROOT / "skills"),
+        skill_root=str(skill_root),
     )[0]
 
     assert skill.name == "agently-mail"
@@ -26,9 +27,9 @@ def test_agently_mail_skill_is_agentpark_discoverable_and_loadable():
 
 
 def test_agently_mail_skill_keeps_agentpark_installation_and_secrets_safe():
-    content = (ROOT / "skills" / "agently-mail" / "SKILL.md").read_text(encoding="utf-8")
+    content = (ROOT / ".agents" / "skills" / "agently-mail" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "skills/agently-mail/" in content
+    assert ".agents/skills/agently-mail/" in content
     assert "npx skills add https://agent.qq.com --skill -g -y" not in content
     assert "不得要求用户把 OAuth token" in content
     assert "拿到 confirmation token 后必须停止等待用户" in content

@@ -27,7 +27,7 @@ class Backend:
     def observe(self, window, include_text, limit, cancel):
         elements = [{'index': 0, 'runtime_id': [1], 'name': 'Edit'}] if include_text else []
         return {'elements': elements, 'focus': [1], 'accessibility': {'elements': elements} if include_text else None}
-    def capture(self, window, cancel): return Image.new('RGB', (800, 600))
+    def capture(self, window, cancel, mode): return Image.new('RGB', (800, 600))
     def activate(self, window): self.actions.append('activate')
     def launch(self, app): self.actions.append('launch')
     def act(self, method, window, observation, args, cancel):
@@ -42,7 +42,7 @@ def desktop():
 
 
 def observe(service, owner='one', **kwargs):
-    return service.call('get_window_state', owner, {'window': WINDOW, **kwargs})
+    return service.call('get_window_state', owner, {'window': WINDOW, 'settle_ms': 0, **kwargs})
 
 
 def click(service, state, owner='one'):
@@ -57,8 +57,58 @@ def test_observe_delivers_image_and_window_coordinate_origin(desktop):
     assert (state['width'], state['height'], state['mime_type']) == (800, 600, 'image/png')
     from src.tool.tool_result_processing import process_tool_result_outcome
     result = process_tool_result_outcome(json.dumps({'status': 'success', **state}))
-    assert result.image_data['base64'] == state['base64_image']
+    assert result.images[0]['base64'] == state['screenshots'][0]['base64_image']
     assert json.loads(result.cleaned_result)['observation_id'] == state['observation_id']
+
+
+def test_popup_context_and_native_focus_reach_the_model_and_observation(desktop, monkeypatch):
+    service, backend = desktop
+    focus = {'focus_id': 5, 'active_id': 5, 'foreground_id': 5}
+    popup = {**WINDOW, 'id': 6, 'title': ''}
+    monkeypatch.setattr(backend, 'observe', lambda *args: {
+        'native_focus': focus, 'related_windows': [popup], 'focus': [1], 'elements': []})
+    state = observe(service)
+    assert state['native_focus'] == focus
+    assert state['related_windows'] == [popup]
+    assert service.observations[state['observation_id']].native_focus == focus
+
+
+def test_visible_region_capture_is_explicit_and_never_an_error_fallback(desktop, monkeypatch):
+    service, backend = desktop
+    modes = []
+    def capture(window, cancel, mode):
+        modes.append(mode)
+        if mode == 'window':
+            raise ComputerUseError('WGC rejected tool window')
+        return Image.new('RGB', (800, 600))
+    monkeypatch.setattr(backend, 'capture', capture)
+    with pytest.raises(ComputerUseError, match='WGC rejected'):
+        observe(service)
+    assert modes == ['window']
+    assert not service.observations
+    state = observe(service, capture_mode='visible_region')
+    assert state['capture_scope'] == 'visible_screen_region'
+    assert modes == ['window', 'visible_region']
+    with pytest.raises(ComputerUseError, match='capture_mode'):
+        observe(service, capture_mode='automatic')
+
+
+def test_input_receipt_does_not_claim_task_result_verified(desktop):
+    service, _ = desktop
+    result = click(service, observe(service))
+    assert result['input_dispatched'] is True
+    assert result['result_verified'] is False
+
+
+def test_input_receipt_survives_popup_closing_during_click(desktop, monkeypatch):
+    service, backend = desktop
+    state = observe(service)
+    def closed(window):
+        raise ComputerUseError('Window no longer exists')
+    def act(*args):
+        monkeypatch.setattr(backend, 'resolve', closed)
+    monkeypatch.setattr(backend, 'act', act)
+    assert click(service, state)['input_dispatched'] is True
 
 
 @pytest.mark.parametrize('reason', ['used', 'expired', 'other_owner', 'moved', 'process_reused', 'new_observation', 'other_agent_input'])

@@ -30,7 +30,7 @@ CODEX_CONFIG_SCHEMA = {
         "type": "select",
         "label": "provider_id",
         "options": [],
-        "description": "Select a configured Provider that supports chat or imagechat.",
+        "description": "Select a configured Provider that supports chat.",
     },
     "instruction": {
         "type": "text",

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import base64
 import hashlib
 import json
 import secrets
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .store import get_account, save_account, update_account_credential
@@ -30,19 +29,14 @@ class AnthropicOAuthError(RuntimeError):
 
 
 def _post_token(payload: dict) -> dict:
-    request = urllib.request.Request(
-        TOKEN_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Accept": "application/json", "Content-Type": "application/json"},
-        method="POST",
-    )
+    request = dict(url=TOKEN_URL, body=json.dumps(payload).encode("utf-8"), headers={"Accept": "application/json", "Content-Type": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            value = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
-        raise AnthropicOAuthError(f"Anthropic OAuth returned HTTP {exc.code}: {detail}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        response = CurlHttpTransport().request(**request, timeout_sec=30).raise_for_status()
+        value = json.loads(response.content.decode("utf-8"))
+    except CurlHttpError as exc:
+        detail = exc.content.decode("utf-8", errors="replace")[:1000]
+        raise AnthropicOAuthError(f"Anthropic OAuth returned HTTP {exc.status_code}: {detail}") from exc
+    except (CurlTransportError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         raise AnthropicOAuthError(f"Anthropic OAuth request failed: {exc}") from exc
     if not isinstance(value, dict):
         raise AnthropicOAuthError("Anthropic OAuth returned an invalid response.")

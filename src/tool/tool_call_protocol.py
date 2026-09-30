@@ -21,7 +21,7 @@ class ToolCallExecution:
     func_name: str
     call_id: str
     cleaned_result: str
-    image_data: dict[str, Any] | None = None
+    images: tuple[dict[str, Any], ...] = ()
     status: str = "completed"
     error: str | None = None
     diagnostics: tuple[str, ...] = ()
@@ -31,7 +31,7 @@ class ToolCallExecution:
             "func_name": self.func_name,
             "call_id": self.call_id,
             "cleaned_result": self.cleaned_result,
-            "image_data": self.image_data,
+            "images": list(self.images),
             "status": self.status,
             "error": self.error,
             "diagnostics": list(self.diagnostics),
@@ -67,7 +67,7 @@ def build_tool_call_error_execution(
                 "error": error_text,
             }
         ),
-        image_data=None,
+        images=(),
         status=normalized_status,
         error=error_text,
     )
@@ -87,7 +87,7 @@ def build_tool_call_parse_error_execution(failure: ToolCallParseFailure) -> Tool
         func_name=tool_name,
         call_id=failure.call_id,
         cleaned_result=ensure_json_text(payload),
-        image_data=None,
+        images=(),
         status="error",
         error=error_text,
     )

@@ -35,6 +35,25 @@ def test_patch_requirements_accept_declared_replacement_and_addition():
     assert [item["id"] for item in parsed] == ["owner_label", "boundary_assertion"]
 
 
+@pytest.mark.parametrize("trailing", ["", "\n"])
+def test_multiline_requirements_match_final_changed_line_with_optional_newline(trailing):
+    patch = "*** Begin Patch\n*** Update File: note.md\n@@\n-## Pending\n-\n-- old\n+## Done\n+\n+- verified\n*** End Patch\n"
+    validate_workspace_patch_requirements(patch, [{
+        "id": "section", "kind": "replacement",
+        "old_text": "## Pending\n\n- old" + trailing,
+        "new_text": "## Done\n\n- verified" + trailing,
+    }])
+
+
+def test_trailing_newline_does_not_hide_a_missing_blank_line():
+    with pytest.raises(WorkspacePatchRequirementError, match="old_text removal"):
+        validate_workspace_patch_requirements(PATCH, [{
+            "id": "blank", "kind": "replacement",
+            "old_text": "legacy task.arguments\n\n",
+            "new_text": "canonical RemoteTaskEnvelope.arguments\n",
+        }])
+
+
 @pytest.mark.parametrize(
     ("requirements", "message"),
     [

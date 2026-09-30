@@ -343,7 +343,7 @@ onMounted(() => loadProfiles())
 </script>
 
 <template>
-  <div class="profiler-editor">
+  <div class="profiler-editor settings-split">
     <NodeProfilerProfileList
       :profiles="profiles"
       :selected-profile-id="selectedProfileId"
@@ -352,7 +352,7 @@ onMounted(() => loadProfiles())
       @select="selectProfile"
     />
 
-    <section class="profiler-workspace">
+    <section class="profiler-workspace settings-split__detail">
       <NodeProfilerToolbar
         :profile="selectedProfile"
         :dirty="dirty"

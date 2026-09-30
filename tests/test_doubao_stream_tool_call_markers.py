@@ -583,7 +583,7 @@ def test_send_stream_returns_timeout_tool_error_when_tool_messages_are_filtered(
                 "{\"status\":\"timeout\",\"tool\":\"execute_curl_command\","
                 "\"error\":\"Tool execution exceeded 5.00s.\",\"url\":\"https://gamma.app\"}"
             ),
-            image_data=None,
+            images=(),
             status="timeout",
             error="Tool execution exceeded 5.00s.",
         )
@@ -658,7 +658,7 @@ def test_send_stream_returns_completed_tool_result_when_tool_messages_are_filter
             func_name="execute_curl_command",
             call_id="call-1",
             cleaned_result=tool_result,
-            image_data=None,
+            images=(),
         )
     ]
 
@@ -734,7 +734,7 @@ def test_send_web_search_stream_after_function_call_still_streams_final_text():
             func_name="web_search",
             call_id="call-1",
             cleaned_result="{\"status\":\"ok\"}",
-            image_data=None,
+            images=(),
         )
     ]
 

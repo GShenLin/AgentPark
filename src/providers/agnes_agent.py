@@ -61,9 +61,9 @@ class AgnesAgent(OpenAIAgent):
             return self._send_image_generation(mode_options)
         if normalized_mode == "video_generation":
             return self._send_video_generation(mode_options, web_search=web_search)
-        if normalized_mode not in {"chat", "imagechat"}:
+        if normalized_mode != "chat":
             raise ValueError(
-                "Agnes agent supports chat, imagechat, image_generation, and video_generation modes."
+                "Agnes agent supports chat, image_generation, and video_generation modes."
             )
         return super().Send(
             tools=tools,

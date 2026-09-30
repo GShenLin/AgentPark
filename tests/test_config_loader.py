@@ -293,7 +293,7 @@ def test_get_config_returns_validated_payload_and_supports_explicit_config_path(
                     "demo": {
                         "type": "gemini",
                         "apiKey": "inline-secret",
-                        "supportmode": ["chat", "imagechat"],
+                        "supportmode": ["chat"],
                         "timeoutMs": 1500,
                     }
                 },
@@ -323,7 +323,7 @@ def test_get_config_returns_validated_payload_and_supports_explicit_config_path(
     assert payload["agentNode"]["historyMessageLimit"] == 12
     assert payload["server"]["port"] == 8788
     assert payload["providers"]["demo"]["type"] == "gemini"
-    assert payload["providers"]["demo"]["supportmode"] == ["chat", "imagechat"]
+    assert payload["providers"]["demo"]["supportmode"] == ["chat"]
     assert payload["providers"]["demo"]["timeoutMs"] == 1500
     assert payload["providers"]["demo"]["apiKey"] == "inline-secret"
     assert payload["providers"]["demo"]["private"] is False

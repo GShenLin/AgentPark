@@ -8,6 +8,7 @@ let source: EventSource | null = null
 let consumers = 0
 let lastGlobalVersion = 0
 let receivedStreamSnapshot = false
+let resyncOnSnapshot = false
 let lastStreamGapDispatchAt = 0
 const listeners = new Set<(payload: Record<string, unknown>) => void>()
 const STREAM_GAP_RESYNC_MIN_INTERVAL_MS = 2000
@@ -30,7 +31,9 @@ function processAppEvent(payload: Record<string, unknown>) {
   const globalVersion = Number(payload.global_version || 0)
   if (eventName === 'stream_snapshot') {
     const transition = resolveStreamSnapshotTransition(receivedStreamSnapshot, lastGlobalVersion, globalVersion)
-    if (transition.gap) dispatchStreamGap(transition.gap, transition.forceGap)
+    if (resyncOnSnapshot) dispatchStreamGap({ event: 'stream_gap', reason: 'connection_restored', global_version: globalVersion }, true)
+    else if (transition.gap) dispatchStreamGap(transition.gap, transition.forceGap)
+    resyncOnSnapshot = false
     receivedStreamSnapshot = true
     lastGlobalVersion = transition.nextGlobalVersion
     dispatchAppEvent(payload)
@@ -54,11 +57,14 @@ export function subscribeAppEvents(listener: (payload: Record<string, unknown>) 
   return () => listeners.delete(listener)
 }
 
-export function startAppEventStream() {
+export function startAppEventStream(options: { resync?: boolean } = {}) {
+  resyncOnSnapshot = resyncOnSnapshot || !!options.resync
   consumers += 1
   if (!source) {
     source = new EventSource(appEventsStreamUrl())
+    const activeSource = source
     source.onmessage = (event) => {
+      if (source !== activeSource) return
       try {
         const raw = String(event.data || '{}')
         const payload = measureNodeOpenWork('sse_parse', raw.length, () => JSON.parse(raw)) as Record<string, unknown>
@@ -78,6 +84,7 @@ export function startAppEventStream() {
     source = null
     lastGlobalVersion = 0
     receivedStreamSnapshot = false
+    resyncOnSnapshot = false
     lastStreamGapDispatchAt = 0
   }
 }

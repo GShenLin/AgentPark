@@ -46,9 +46,8 @@ def test_parser_progresses_during_real_429_retry_wait(tmp_path, monkeypatch):
         assert store.status()["documents"]["embedding"] == 6
         return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0] * 8}]})
 
-    client_type = httpx.Client
-    monkeypatch.setattr("src.knowledge.embedding.httpx.Client", lambda **kwargs: client_type(
-        transport=httpx.MockTransport(respond), **kwargs))
+    from tests.test_knowledge_embedding import mock_curl
+    mock_curl(monkeypatch, respond)
     with ParseAhead(store, config, stop) as parser:
         assert Embedder(config, stop=parser.stop).embed(["query"]) == [[1.0] * 8]
     assert len(requests) == 2 and requests[0] == requests[1]

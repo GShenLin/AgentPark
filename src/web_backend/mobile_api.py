@@ -124,13 +124,14 @@ class MobileApiDomain(DomainBase):
                 return item
         raise HTTPException(status_code=500, detail="sent node is missing from mobile node snapshot")
 
-    def _mobile_node_conversation_snapshot(self, graph_id: str, node_id: str, history_mode: str = "latest_turn"):
+    def _mobile_node_conversation_snapshot(self, graph_id: str, node_id: str, history_mode: str = "conversation", turn_id: str = ""):
         return self.core.node_ops.get_node_instance_memory(
             node_id,
             max_chars=None,
             graph_id=graph_id,
             messages_limit=None,
             history_mode=history_mode,
+            turn_id=turn_id,
         )
 
     def _require_graph(self, graph_id: str, request: Request = None) -> str:
@@ -182,7 +183,8 @@ class MobileApiDomain(DomainBase):
         graph_id: str,
         node_id: str,
         request: Request = None,
-        history_mode: str = "latest_turn",
+        history_mode: str = "conversation",
+        turn_id: str = "",
     ):
         self._require_local_pc(pc_id)
         safe_graph_id = self._require_graph(graph_id, request)
@@ -191,7 +193,7 @@ class MobileApiDomain(DomainBase):
             raise HTTPException(status_code=400, detail="invalid node id")
         safe_node_id = self.graph_runtime._resolve_existing_node_id(safe_graph_id, safe_node_id)
         self.core.node_ops.require_node_visible(safe_node_id, safe_graph_id, request)
-        return self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id, history_mode=history_mode)
+        return self._mobile_node_conversation_snapshot(safe_graph_id, safe_node_id, history_mode=history_mode, turn_id=turn_id)
 
     def delete_mobile_node_message(
         self,
@@ -263,7 +265,7 @@ class MobileApiDomain(DomainBase):
         node_id: str,
         payload: dict,
         request: Request = None,
-        history_mode: str = "latest_turn",
+        history_mode: str = "conversation",
     ):
         self._require_local_pc(pc_id)
         safe_graph_id = self._require_graph(graph_id, request)

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from src.providers.curl_transport import CurlHttpTransport, CurlHttpError, CurlTransportError
 import json
 import logging
 import platform
 import threading
 from dataclasses import dataclass
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
 
 from .identity import WorkerConfiguration, WorkerIdentity
 from .operations import StandaloneOperationRegistry
@@ -30,19 +29,14 @@ class RemoteHttpError(RuntimeError):
 
 class JsonHttpTransport:
     def post(self, url: str, payload: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-        request = Request(
-            url,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json; charset=utf-8"},
-            method="POST",
-        )
+        request = dict(url=url, body=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json; charset=utf-8"}, method="POST")
         try:
-            with urlopen(request, timeout=max(1.0, float(timeout))) as response:
-                data = response.read(MAX_HTTP_RESPONSE_BYTES + 1)
-        except HTTPError as exc:
-            detail = exc.read(64 * 1024).decode("utf-8", errors="replace").strip()
-            raise RemoteHttpError(exc.code, detail or f"HTTP {exc.code}") from exc
-        except (URLError, OSError, TimeoutError) as exc:
+            response = CurlHttpTransport().request(**request, timeout_sec=max(1.0, float(timeout)), max_response_bytes=MAX_HTTP_RESPONSE_BYTES + 1).raise_for_status()
+            data = response.content[:MAX_HTTP_RESPONSE_BYTES + 1]
+        except CurlHttpError as exc:
+            detail = exc.content[:64 * 1024].decode("utf-8", errors="replace").strip()
+            raise RemoteHttpError(exc.status_code, detail or f"HTTP {exc.status_code}") from exc
+        except (CurlTransportError, OSError, TimeoutError) as exc:
             raise RemoteHttpError(None, f"{type(exc).__name__}: {exc}") from exc
         if len(data) > MAX_HTTP_RESPONSE_BYTES:
             raise ProtocolError(f"HTTP response exceeds {MAX_HTTP_RESPONSE_BYTES} bytes")

@@ -32,7 +32,8 @@ class _FakeCancellations:
 
 
 class _FakeHost:
-    def __init__(self):
+    def __init__(self, tmp_path):
+        self.tmp_path = tmp_path
         self.order = []
         self.core = SimpleNamespace(
             node_live_outputs=_FakeLiveOutputs(self.order),
@@ -64,6 +65,9 @@ class _FakeHost:
     def _should_skip_propagation(self, _message):
         return False
 
+    def _node_dir(self, _graph_id, _node_id):
+        return str(self.tmp_path)
+
 
 def test_node_output_is_recorded_before_goal_evaluation(monkeypatch, tmp_path):
     import src.web_backend.graph_node_execution as graph_node_execution
@@ -89,7 +93,9 @@ def test_node_output_is_recorded_before_goal_evaluation(monkeypatch, tmp_path):
 
     monkeypatch.setattr(graph_node_execution, "_run_node_logic_with_routes", fake_run_node_logic)
 
-    host = _FakeHost()
+    host = _FakeHost(tmp_path)
+    monkeypatch.setattr(graph_node_execution, "schedule_agent_history_compaction",
+                        lambda **_: host.order.append("compaction_check"))
     GraphNodeExecution(host)._run_single_node_iteration(
         safe_graph_id="g1",
         entry="n1",
@@ -106,6 +112,8 @@ def test_node_output_is_recorded_before_goal_evaluation(monkeypatch, tmp_path):
     assert "log:node_output" in host.order
     assert "goal_eval" in host.order
     assert host.order.index("assistant_memory") < host.order.index("live:node_output")
+    assert host.order.index("live:node_output") < host.order.index("compaction_check")
+    assert host.order.index("compaction_check") < host.order.index("goal_eval")
     assert "live_clear" not in host.order
     assert host.order.index("live:node_output") < host.order.index("goal_eval")
     assert host.order.index("log:node_output") < host.order.index("goal_eval")

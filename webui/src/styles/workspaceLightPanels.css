@@ -1,0 +1,41 @@
+/* Configuration/forms whose original styles predate the shared theme tokens. */
+html[data-theme-preset='chat-light'] #app :is(.node-config-dock, .settings-page) { font-size: 13px; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-title { font-weight: 600; }
+html[data-theme-preset='chat-light'] #app :is(.config-field-group, .settings-group) { background: #fff; border-color: #e5e5e5; border-radius: 12px; }
+html[data-theme-preset='chat-light'] #app .config-field-group-summary:hover { background: #f2f2f2; }
+html[data-theme-preset='chat-light'] #app .config-head { background: #f8f8f8; }
+html[data-theme-preset='chat-light'] #app :is(.multi-select-status span:last-child, .multi-select-available summary span:last-child) { color: #737373; }
+html[data-theme-preset='chat-light'] #app .multi-select-available summary::after { color: #525252; }
+html[data-theme-preset='chat-light'] #app :is(.section-title, .channel-state-label, .login-title) { color: #333; }
+html[data-theme-preset='chat-light'] #app :is(.field-label, .settings-page label) { color: #525252; font-weight: 500; }
+html[data-theme-preset='chat-light'] #app :is(.field-hint, .field-drop-hint, .section-hint, .channel-hint, .qr-message, .empty-hint, .settings-page label small) { color: #737373; }
+html[data-theme-preset='chat-light'] #app :is(.field-prompt-message, .apply-summary) { color: #26814c; }
+html[data-theme-preset='chat-light'] #app :is(.settings-group h2, .form-head h3) { color: #333; font-weight: 600; }
+html[data-theme-preset='chat-light'] #app .settings-tabs { gap: 5px; }
+html[data-theme-preset='chat-light'] #app .settings-head { padding-block: 18px; }
+html[data-theme-preset='chat-light'] #app .settings-page :is(input:not([type='checkbox']):not([type='radio']):not([type='color']), textarea, select) { background: #fff; color: #242424; border-color: #dedede; }
+html[data-theme-preset='chat-light'] #app :is(.provider-card, .model-card, .mcp-card, .provider-form, .provider-row, .settings-card, .panel-card, .knowledge-card, .gateway-card) { color: #333; background: #fff; border-color: #e5e5e5; }
+html[data-theme-preset='chat-light'] #app :is(.settings-page .hint, .settings-page .muted, .settings-page .description, .settings-page small) { color: #737373; }
+html[data-theme-preset='chat-light'] #app .settings-page :is(h1, h2, h3, h4, th, td) { color: #333; }
+html[data-theme-preset='chat-light'] #app .settings-page :is(pre, .json-preview) { background: #f5f5f5; color: #333; border-color: #e5e5e5; }
+html[data-theme-preset='chat-light'] #app .panel-body { font-family: inherit; }
+html[data-theme-preset='chat-light'] #app :is(.raw-editor, .settings-textarea) { font-family: Consolas, monospace; }
+html[data-theme-preset='chat-light'] #app :is(.model-field, .oauth-status-field) { color: #525252; }
+html[data-theme-preset='chat-light'] #app :is(.oauth-status-card, .oauth-account-row, .model-add-form) { background: #f7f7f7; color: #454545; border-color: #e5e5e5; }
+html[data-theme-preset='chat-light'] #app :is(.oauth-button, .official-auth-button) { background: #eef3f9; color: #2563b9; border-color: #d2deee; }
+html[data-theme-preset='chat-light'] #app :is(.oauth-button.active, .official-auth-button.active) { background: #edf7f0; color: #267247; border-color: #c9e4d3; }
+html[data-theme-preset='chat-light'] #app :is(.restart, .limit-warning, .gateway-dirty) { color: #986315; }
+html[data-theme-preset='chat-light'] #app :is(.field-error, .model-id-error, .notice.error, .gateway-feedback.error) { color: #ad3333; }
+html[data-theme-preset='chat-light'] #app :is(.notice.success, .gateway-feedback.success) { color: #267247; }
+html[data-theme-preset='chat-light'] #app :is(.endpoint-row code, .created-key code) { color: #2563b9; }
+
+/* Menus and dialogs may be teleported outside #app. */
+html[data-theme-preset='chat-light'] :is(.interaction-dialog, .expandable-textarea__dialog, .work-alert-toast) { background: #fff; color: #333; border-color: #dedede; box-shadow: 0 8px 32px #00000012; }
+html[data-theme-preset='chat-light'] .expandable-textarea__editor { background: #fff; color: #333; border-color: #e5e5e5; }
+html[data-theme-preset='chat-light'] :is(.expandable-textarea__header, .interaction-header) { background: #fafafa; color: #333; border-color: #e5e5e5; }
+html[data-theme-preset='chat-light'] :is(.node-menu, .context-menu) { box-shadow: 0 8px 28px #00000018; }
+html[data-theme-preset='chat-light'] :is(.modal h3, .work-alert-title) { color: #242424; }
+html[data-theme-preset='chat-light'] .work-alert-kicker { color: #2563b9; }
+html[data-theme-preset='chat-light'] .work-alert-message { color: #525252; }
+html[data-theme-preset='chat-light'] .work-alert-count { color: #737373; }
+html[data-theme-preset='chat-light'] .work-alert-toast { backdrop-filter: none; }

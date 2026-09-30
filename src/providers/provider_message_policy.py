@@ -102,6 +102,8 @@ class ProviderMessagePolicyMixin:
             if str(message.get("role") or "").strip().lower() != "assistant_progress"
             and str(message.get("context_policy") or "").strip().lower() != "exclude"
         ]
+        from nodes.agent_skill_activation import refresh_skill_messages
+        current_messages = refresh_skill_messages(self, current_messages)
         if not self.internal_memory_enabled:
             return self._normalize_provider_messages(current_messages)
 

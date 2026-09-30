@@ -9,6 +9,7 @@ from .core_graph_runtime import GraphRuntimeDomain
 from .core_node_ops import NodeOpsDomain
 from .core_system_api import SystemApiDomain
 from .graph_event_stream import GraphEventStreamStore
+from .group_delivery import GroupDeliveryService
 from .mobile_api import MobileApiDomain
 from .node_cancellation import NodeCancellationRegistry
 from .node_live_event_publisher import NodeLiveEventPublisher
@@ -23,6 +24,7 @@ from .peer_api import PeerApiDomain
 from .remote_workspace_api import RemoteWorkspaceApiDomain
 from .restart_recovery import RestartRecoveryCoordinator
 from .settings_api import SettingsApiDomain
+from .skills_api import SkillsApi
 from .harness_api import HarnessApiDomain
 from .doubao_speech_management import DoubaoSpeechManagementDomain
 from .user_interaction_api import UserInteractionApiDomain
@@ -74,6 +76,7 @@ class BackendCore:
         self.channel_service = ChannelService(self)
         self.agent_domain = AgentDomain(self, self.graph_runtime)
         self.node_ops = NodeOpsDomain(self, self.graph_runtime)
+        self.group_delivery = GroupDeliveryService(self)
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
         self.provider_auth_api = ProviderAuthApiDomain(self)
@@ -83,6 +86,7 @@ class BackendCore:
         self.peer_api = PeerApiDomain(self)
         self.remote_workspace_api = RemoteWorkspaceApiDomain()
         self.settings_api = SettingsApiDomain(self)
+        self.skills_api = SkillsApi()
         self.harness_api = HarnessApiDomain(self)
         self.knowledge_service = KnowledgeService(Path(get_workspace_root()))
         self.doubao_speech_management = DoubaoSpeechManagementDomain(self)

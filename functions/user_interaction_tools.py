@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from src.tool.tool_json_response import tool_json_payload
@@ -10,6 +11,48 @@ from src.user_interaction_store import (
     normalize_interaction_schema,
     wait_for_interaction_response,
 )
+
+
+def tips(message: str, title: str = "提示", agent: object | None = None) -> str:
+    try:
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("message must be a non-empty string")
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("title must be a non-empty string")
+        callback = getattr(agent, "tool_event_callback", None)
+        if not callable(callback):
+            raise RuntimeError("Tips requires an active WebUI event channel")
+        tip_id = uuid.uuid4().hex
+        callback(RuntimeNoticeEvent(
+            message=json.dumps(
+                {"tip_id": tip_id, "title": title.strip(), "message": message.strip()},
+                ensure_ascii=False,
+            ),
+            source="user_interaction",
+            stage="user_tip",
+            name="tips",
+        ).to_payload())
+    except Exception as exc:
+        return tool_json_payload({"status": "error", "tool": "tips", "error": f"{type(exc).__name__}: {exc}"})
+    return tool_json_payload({"status": "sent", "tool": "tips", "tip_id": tip_id})
+
+
+tips_declaration = {
+    "type": "function",
+    "function": {
+        "name": "tips",
+        "description": "Show a brief WebUI notification using the work-persisted alert channel; returns immediately without requesting input.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "minLength": 1, "description": "Notification text."},
+                "title": {"type": "string", "minLength": 1, "default": "提示"},
+            },
+            "required": ["message"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def ask_user(
@@ -90,7 +133,7 @@ ask_user_declaration = {
         "name": "ask_user",
         "description": (
             "Ask the user for additional information through the WebUI. "
-            "Use this when you need text, choices, file attachments, or a custom sandboxed HTML interface from the user before continuing. "
+            "Use this when you need text, choices, or file attachments from the user before continuing. "
             "The call waits until the user confirms the dialog or the request times out."
         ),
         "parameters": {
@@ -106,14 +149,14 @@ ask_user_declaration = {
                 },
                 "fields": {
                     "type": "array",
-                    "description": "UI fields to render. Supported types: text, textarea, select, multiselect, checkbox, file, custom_html.",
+                    "description": "UI fields to render: text, textarea, select, multiselect, checkbox, file.",
                     "items": {
                         "type": "object",
                         "properties": {
                             "id": {"type": "string", "description": "Stable field id used as the response key."},
                             "type": {
                                 "type": "string",
-                                "enum": ["text", "textarea", "select", "multiselect", "checkbox", "file", "custom_html"],
+                                "enum": ["text", "textarea", "select", "multiselect", "checkbox", "file"],
                             },
                             "label": {"type": "string"},
                             "description": {"type": "string"},
@@ -135,14 +178,6 @@ ask_user_declaration = {
                             },
                             "accept": {"type": "string", "description": "Accepted file types for file fields, for example image/*,.pdf."},
                             "multiple": {"type": "boolean", "description": "Allow multiple files for file fields."},
-                            "html": {"type": "string", "description": "HTML body for a custom_html field. Rendered inside a sandboxed iframe."},
-                            "css": {"type": "string", "description": "Optional CSS for a custom_html field."},
-                            "js": {
-                                "type": "string",
-                                "description": "Optional JavaScript for a custom_html field. Use window.parent.postMessage({ type: 'agentpark-interaction-submit', values: {...} }, '*') to submit.",
-                            },
-                            "height": {"type": "integer", "description": "Iframe height in pixels for custom_html fields. Min 180, max 900."},
-                            "initial_data": {"type": "object", "description": "Initial data exposed to custom_html as window.AGENTPARK_INITIAL_DATA."},
                         },
                         "required": ["id", "type", "label"],
                     },

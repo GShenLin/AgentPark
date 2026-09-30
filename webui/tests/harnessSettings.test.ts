@@ -117,6 +117,15 @@ it('reports unsupported installers and disables in-place upgrade', async () => {
   expect(button(root, 'install')).toBeUndefined()
 })
 
+it('shows the detected Termux distribution and its own release status', async () => {
+  const root = await mount(info({ id: 'codex', name: 'Codex', source: 'external',
+    package: '@mmmbuto/codex-cli-termux', version: 'codex-cli 0.153.3',
+    installed_version: '0.153.3', latest_version: '0.153.3', update_status: 'current' }))
+  expect(content(root)).toContain('@mmmbuto/codex-cli-termux')
+  expect(content(root)).toContain('harness.upToDate')
+  expect(button(root, 'upgrade')).toBeUndefined()
+})
+
 it('shows registry errors without claiming the installed runtime failed', async () => {
   const root = await mount(info({ latest_version: '', update_status: 'error', update_error: 'registry offline' }))
   expect(button(root, 'upgrade')).toBeUndefined()

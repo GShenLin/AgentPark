@@ -5,6 +5,7 @@ import os
 from contextlib import ExitStack
 from typing import Any
 
+from src.agent_groups.node_lifecycle import node_departure
 from src.file_transaction import atomic_write_text
 from src.long_term_memory.lifecycle import require_memory_idle, rebind_memory
 
@@ -85,76 +86,77 @@ class NodeInstanceMove(HostBoundService):
         graph_references: dict[str, Any] = {}
         rollback_errors: list[str] = []
         try:
-            self._reserve_idle_node(source_config_path)
-            reservation_acquired = True
-            self._require_no_active_execution(source_config_path)
-            self.graph_runtime._unregister_scheduled_node(source_graph_id, safe_node_id)
-            schedule_unregistered = True
+            with node_departure(source_graph_dir, safe_node_id, reason="moved_to_graph:" + target_graph_id):
+                self._reserve_idle_node(source_config_path)
+                reservation_acquired = True
+                self._require_no_active_execution(source_config_path)
+                self.graph_runtime._unregister_scheduled_node(source_graph_id, safe_node_id)
+                schedule_unregistered = True
 
-            os.makedirs(target_graph_dir, exist_ok=True)
-            with self._lock_graph_layouts(source_graph_dir, target_graph_dir):
-                repair_missing_node_grid_positions(target_graph_dir, exclude_node_ids={safe_node_id})
-                target_ui = resolve_available_node_ui(
-                    target_graph_dir,
-                    source_node_config.get("ui") if isinstance(source_node_config.get("ui"), dict) else None,
-                    exclude_node_ids={safe_node_id},
+                os.makedirs(target_graph_dir, exist_ok=True)
+                with self._lock_graph_layouts(source_graph_dir, target_graph_dir):
+                    repair_missing_node_grid_positions(target_graph_dir, exclude_node_ids={safe_node_id})
+                    target_ui = resolve_available_node_ui(
+                        target_graph_dir,
+                        source_node_config.get("ui") if isinstance(source_node_config.get("ui"), dict) else None,
+                        exclude_node_ids={safe_node_id},
+                    )
+                    os.replace(source_node_dir, target_node_dir)
+                    moved_directory = True
+                    rebind_memory(target_node_dir, source_graph_id, target_graph_id, safe_node_id, safe_node_id)
+                    node_config_service.patch_persistent_fields(
+                        target_config_path,
+                        {"graph_id": target_graph_id, "ui": target_ui},
+                    )
+
+                runtime_state_memory_store.rename(source_config_path, target_config_path)
+                runtime_state_moved = True
+                graph_references = self._move_graph_references(
+                    source_graph_id,
+                    target_graph_id,
+                    safe_node_id,
+                    source_graph_config_path,
+                    target_graph_config_path,
                 )
-                os.replace(source_node_dir, target_node_dir)
-                moved_directory = True
-                rebind_memory(target_node_dir, source_graph_id, target_graph_id, safe_node_id, safe_node_id)
-                node_config_service.patch_persistent_fields(
-                    target_config_path,
-                    {"graph_id": target_graph_id, "ui": target_ui},
+
+                moved_event_handlers = 0
+                if source_event_rules:
+                    # The strict registry rewrite binds the rules to the moved node at
+                    # its new location and prunes the now-missing source binding.
+                    self.core.runtime_events.replace_source_event_rules(
+                        target_graph_id, safe_node_id, source_event_rules
+                    )
+                    target_events_written = True
+                    moved_event_handlers = sum(len(handlers) for handlers in source_event_rules.values())
+                    source_events_removed = True
+
+                self._release_reservation(target_config_path)
+                reservation_acquired = False
+                self.graph_runtime._refresh_scheduled_node(target_graph_id, safe_node_id)
+                self.core.node_live_outputs.clear(source_graph_id, safe_node_id)
+                self.graph_runtime._log_graph_event(
+                    source_graph_id,
+                    "node_moved_out",
+                    node_id=safe_node_id,
+                    target_graph_id=target_graph_id,
                 )
-
-            runtime_state_memory_store.rename(source_config_path, target_config_path)
-            runtime_state_moved = True
-            graph_references = self._move_graph_references(
-                source_graph_id,
-                target_graph_id,
-                safe_node_id,
-                source_graph_config_path,
-                target_graph_config_path,
-            )
-
-            moved_event_handlers = 0
-            if source_event_rules:
-                # The strict registry rewrite binds the rules to the moved node at
-                # its new location and prunes the now-missing source binding.
-                self.core.runtime_events.replace_source_event_rules(
-                    target_graph_id, safe_node_id, source_event_rules
+                self.graph_runtime._log_graph_event(
+                    target_graph_id,
+                    "node_moved_in",
+                    node_id=safe_node_id,
+                    source_graph_id=source_graph_id,
                 )
-                target_events_written = True
-                moved_event_handlers = sum(len(handlers) for handlers in source_event_rules.values())
-                source_events_removed = True
-
-            self._release_reservation(target_config_path)
-            reservation_acquired = False
-            self.graph_runtime._refresh_scheduled_node(target_graph_id, safe_node_id)
-            self.core.node_live_outputs.clear(source_graph_id, safe_node_id)
-            self.graph_runtime._log_graph_event(
-                source_graph_id,
-                "node_moved_out",
-                node_id=safe_node_id,
-                target_graph_id=target_graph_id,
-            )
-            self.graph_runtime._log_graph_event(
-                target_graph_id,
-                "node_moved_in",
-                node_id=safe_node_id,
-                source_graph_id=source_graph_id,
-            )
-            return {
-                "ok": True,
-                "node_id": safe_node_id,
-                "source_graph_id": source_graph_id,
-                "target_graph_id": target_graph_id,
-                "config_path": target_config_path,
-                "ui": target_ui,
-                "removed_output_routes": int(graph_references.get("removed_output_routes") or 0),
-                "moved_node_note": bool(graph_references.get("moved_node_note")),
-                "moved_event_handlers": moved_event_handlers,
-            }
+                return {
+                    "ok": True,
+                    "node_id": safe_node_id,
+                    "source_graph_id": source_graph_id,
+                    "target_graph_id": target_graph_id,
+                    "config_path": target_config_path,
+                    "ui": target_ui,
+                    "removed_output_routes": int(graph_references.get("removed_output_routes") or 0),
+                    "moved_node_note": bool(graph_references.get("moved_node_note")),
+                    "moved_event_handlers": moved_event_handlers,
+                }
         except HTTPException:
             self._rollback_move(
                 source_graph_id=source_graph_id,

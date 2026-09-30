@@ -90,7 +90,7 @@ class AcpClient:
                 elif "id" in message:
                     if message["method"] == "session/request_permission":
                         self._write({"id": message["id"], "result": {"outcome": {"outcome": "cancelled"}}})
-                        raise RuntimeError("DeepSeek Harness requested interactive permission; this node supports unattended execution only.")
+                        raise RuntimeError("ACP runtime requested interactive permission; this node supports unattended execution only.")
                     self._write({"id": message["id"], "error": {"code": -32601, "message": "Client method not supported"}})
                     raise RuntimeError(f"Unsupported ACP client request: {message['method']}")
                 continue

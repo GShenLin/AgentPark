@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { ConversationRequestCoordinator } from '../src/conversationRequestCoordinator'
 
 describe('conversation request coordination', () => {
+  it('preserves lightweight dialogue bodies when old refresh callers request full history', () => {
+    const coordinator = new ConversationRequestCoordinator()
+    coordinator.activate('pc/graph/node')
+    coordinator.begin('pc/graph/node', 'conversation')
+    expect(coordinator.begin('pc/graph/node', 'all').historyMode).toBe('conversation')
+    expect(coordinator.begin('pc/graph/node', 'latest_turn').historyMode).toBe('conversation')
+  })
   it('prevents an older latest-turn response from replacing a full-history request', () => {
     const coordinator = new ConversationRequestCoordinator()
     coordinator.activate('pc/graph/node')

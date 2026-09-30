@@ -13,6 +13,7 @@ import type {
 } from '../../api'
 import type { BoardGridSettings, NodeGridUi } from './boardGrid'
 import type { NodeNotes } from '../../nodeNotes'
+import type { BoardGroups } from '../../groups/useBoardGroups'
 
 export type LinkEndpoint = {
   node: string
@@ -95,6 +96,7 @@ export type NodeRunState = {
 }
 
 export type AgentBoardContext = {
+  groups: BoardGroups
   selectedNodeId: Ref<string | null>
   renamingNodeId: Ref<string | null>
   lastError: Ref<string | null>

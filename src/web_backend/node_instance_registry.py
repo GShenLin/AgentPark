@@ -5,15 +5,12 @@ from types import SimpleNamespace
 
 from fastapi import Request
 
-from src.long_term_memory.lifecycle import rebind_memory, require_memory_idle
 from src.provider_options import PROVIDER_VISIBILITY_CONTEXT_KEY
 from src.providers.agent_environment_context import resolve_agent_model_workspace_path
 
 from .node_config_errors import NodeConfigWriteError
 from .node_config_errors import NodeConfigReadError
 from .node_config_service import node_config_service
-from .node_instance_artifacts import rename_node_artifacts
-from .node_instance_artifacts import rename_node_references_in_graph
 from .node_metadata_reader import NodeMetadataError
 from .node_memory_store import NodeMemoryPersistenceError
 from .node_memory_reset import NodeMemoryResetBlocked, NodeMemoryResetError, reset_node_memory
@@ -23,7 +20,6 @@ from .graph_grid_layout import (
     graph_layout_lock,
     resolve_available_node_ui,
 )
-from .runtime_state_memory_store import runtime_state_memory_store
 from .request_access import has_owner_access
 from .node_instance_cloning import NodeInstanceCloning
 from .shared import (
@@ -31,7 +27,10 @@ from .shared import (
     _read_json_dict,
     _write_json_dict,
 )
-class NodeInstanceRegistry(NodeInstanceCloning):
+from .node_instance_rename import NodeInstanceRename
+
+
+class NodeInstanceRegistry(NodeInstanceCloning, NodeInstanceRename):
     def create_node_instance(self, payload: dict, request: Request = None):
         node_id = (payload or {}).get("node_id")
         type_id = (payload or {}).get("type_id")
@@ -104,92 +103,6 @@ class NodeInstanceRegistry(NodeInstanceCloning):
             "graph_id": graph_id,
             "config_path": config_path,
             "ui": resolved_ui,
-        }
-
-    def rename_node_instance(self, node_id: str, payload: dict, graph_id: str = ""):
-        safe_graph_id = self.graph_runtime._sanitize_graph_id(graph_id)
-        safe_node_id = self.graph_runtime._sanitize_node_id(node_id)
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="payload must be object")
-        new_node_id_raw = payload.get("new_node_id")
-        new_name_raw = payload.get("new_name")
-        if not isinstance(new_node_id_raw, str) or not new_node_id_raw.strip():
-            raise HTTPException(status_code=400, detail="new_node_id is required")
-        if new_name_raw is not None and not isinstance(new_name_raw, str):
-            raise HTTPException(status_code=400, detail="new_name must be string")
-
-        safe_new_node_id = self.graph_runtime._sanitize_node_id(new_node_id_raw)
-        old_dir = self.graph_runtime._node_dir(safe_graph_id, safe_node_id)
-        old_config_path = self.graph_runtime._node_config_path(safe_node_id, safe_graph_id)
-        if not safe_new_node_id:
-            raise HTTPException(status_code=400, detail="invalid new_node_id")
-        if not old_config_path or not os.path.exists(old_config_path) or not os.path.isdir(old_dir):
-            raise HTTPException(status_code=404, detail="node instance not found")
-
-        new_dir = self.graph_runtime._node_dir(safe_graph_id, safe_new_node_id)
-        if safe_new_node_id != safe_node_id and os.path.exists(new_dir):
-            raise HTTPException(status_code=409, detail="target node id already exists")
-
-        try:
-            cfg = node_config_service.read_strict(old_config_path)
-        except NodeConfigReadError as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
-        type_id = str(cfg.get("type_id") or "").strip()
-
-        if safe_new_node_id != safe_node_id:
-            try:
-                require_memory_idle(old_dir)
-            except ValueError as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-        self.graph_runtime._unregister_scheduled_node(safe_graph_id, safe_node_id)
-        try:
-            if safe_new_node_id != safe_node_id:
-                os.rename(old_dir, new_dir)
-                try:
-                    rebind_memory(new_dir, safe_graph_id, safe_graph_id, safe_node_id, safe_new_node_id)
-                except Exception:
-                    os.rename(new_dir, old_dir)
-                    raise
-        except Exception as e:
-            self.graph_runtime._refresh_scheduled_node(safe_graph_id, safe_node_id)
-            raise HTTPException(status_code=500, detail=f"failed to rename node directory: {str(e)}")
-
-        config_path = self.graph_runtime._node_config_path(safe_new_node_id, safe_graph_id)
-        runtime_state_memory_store.rename(old_config_path, config_path)
-        try:
-            next_cfg = node_config_service.read_strict(config_path)
-        except NodeConfigReadError as exc:
-            raise HTTPException(status_code=500, detail=str(exc))
-        next_cfg["node_id"] = safe_new_node_id
-        next_cfg["graph_id"] = safe_graph_id
-        next_cfg["name"] = (
-            new_name_raw.strip()
-            if isinstance(new_name_raw, str) and new_name_raw.strip()
-            else safe_new_node_id
-        )
-        if not _write_json_dict(config_path, next_cfg):
-            raise HTTPException(status_code=500, detail="failed to update node config")
-
-        if safe_new_node_id != safe_node_id and os.path.isdir(new_dir):
-            rename_node_artifacts(new_dir, safe_node_id, safe_new_node_id)
-
-        rename_node_references_in_graph(self.graph_runtime, safe_graph_id, safe_node_id, safe_new_node_id, new_name_raw)
-        self.graph_runtime._refresh_scheduled_node(safe_graph_id, safe_new_node_id)
-
-        self.graph_runtime._log_graph_event(
-            safe_graph_id,
-            "node_renamed",
-            old_node_id=safe_node_id,
-            new_node_id=safe_new_node_id,
-            node_type_id=type_id or None,
-        )
-        return {
-            "ok": True,
-            "old_node_id": safe_node_id,
-            "node_id": safe_new_node_id,
-            "graph_id": safe_graph_id,
-            "type_id": type_id,
-            "config_path": config_path,
         }
 
     def clear_node_instance_memory(self, node_id: str, graph_id: str = ""):

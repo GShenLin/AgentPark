@@ -42,7 +42,7 @@ def test_build_provider_support_list_preserves_settings_support_modes():
         {
             "configured": {
                 "description": "Configured provider description",
-                "supportmode": ["imagechat", "chat"],
+                "supportmode": ["chat"],
                 "features": {"thinking": {"supported": True}},
             },
             "unconfigured": {},
@@ -54,7 +54,7 @@ def test_build_provider_support_list_preserves_settings_support_modes():
             "id": "configured",
             "type": "",
             "description": "Configured provider description",
-            "supportmode": ["imagechat", "chat"],
+            "supportmode": ["chat"],
             "features": {"thinking": {"supported": True}},
         },
         {
@@ -143,7 +143,7 @@ def test_provider_and_node_template_apis_hide_private_providers_from_remote_clie
                         "apiKey": "multi-secret",
                         "baseUrl": "https://example.com/v1",
                         "model": "public-multi-model",
-                        "supportmode": ["imagechat", "chat", "image_generation"],
+                        "supportmode": ["chat", "image_generation"],
                     },
                     "unconfigured": {
                         "type": "doubao",
@@ -198,7 +198,7 @@ def test_provider_and_node_template_apis_hide_private_providers_from_remote_clie
             item["id"]: item["supportmode"]
             for item in remote_client.get("/api/providers").json()["providers"]
         }
-        assert remote_support["public-multi"] == ["imagechat", "chat", "image_generation"]
+        assert remote_support["public-multi"] == ["chat", "image_generation"]
         assert remote_support["unconfigured"] == []
 
         assert local_client.get("/api/nodes/templates/agent_node").status_code == 200
@@ -238,7 +238,6 @@ def test_provider_and_node_template_apis_hide_private_providers_from_remote_clie
         chat_payload = chat_template.json()
         chat_schema = chat_payload["schema"]
         assert chat_payload["support_modes"] == [
-            "imagechat",
             "chat",
             "image_generation",
         ]

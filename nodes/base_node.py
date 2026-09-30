@@ -40,7 +40,7 @@ class BaseNode:
         "skills": {
             "type": "multiselect",
             "label": "Skills",
-            "description": "List of node-scoped skill names loaded from the project skills folder.",
+            "description": "List of node-scoped skill names loaded from project and user .agents/skills folders.",
             "options": [],
         },
         "working_path": {

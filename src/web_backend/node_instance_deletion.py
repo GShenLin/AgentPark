@@ -1,5 +1,7 @@
 import os
 
+from src.agent_groups.node_lifecycle import node_departure
+
 from . import runtime_paths
 from .deletion_undo_store import deletion_undo_store
 from .node_deletion import NodeDeletionBlocked
@@ -23,6 +25,7 @@ class NodeInstanceDeletion(HostBoundService):
             undo_entry = deletion_undo_store.begin(
                 "delete_node",
                 {"graph_id": safe_graph_id, "node_id": safe_node_id},
+                for_rollback=True,
             )
         except Exception as exc:
             raise HTTPException(
@@ -116,29 +119,36 @@ class NodeInstanceDeletion(HostBoundService):
             ) from exc
         graph_config_path = os.path.join(self.graph_runtime._graph_dir(safe_graph_id), "config.json")
         graph_config_before = b""
-        if os.path.isfile(graph_config_path):
-            with open(graph_config_path, "rb") as handle:
-                graph_config_before = handle.read()
         try:
-            prune_node_references_in_graph(self.graph_runtime, safe_graph_id, safe_node_id)
-            if undo_entry is not None and graph_config_before:
-                deletion_undo_store.write_bytes(undo_entry, "graph-config.json", graph_config_before)
-            undo_token = deletion_undo_store.commit(undo_entry) if undo_entry is not None else ""
-        except Exception:
-            if undo_entry is not None:
-                archived_node = os.path.join(str(undo_entry["temp_dir"]), "node")
-                if os.path.exists(archived_node) and not os.path.exists(node_dir):
-                    os.makedirs(os.path.dirname(node_dir), exist_ok=True)
-                    os.replace(archived_node, node_dir)
-                deletion_undo_store.discard(undo_entry)
+            if os.path.isfile(graph_config_path):
+                with open(graph_config_path, "rb") as handle:
+                    graph_config_before = handle.read()
+            with node_departure(self.graph_runtime._graph_dir(safe_graph_id), safe_node_id,
+                                reason="deleted") as group_snapshot:
+                if group_snapshot is not None:
+                    deletion_undo_store.write_json(undo_entry, "group-membership.json", group_snapshot)
+                prune_node_references_in_graph(self.graph_runtime, safe_graph_id, safe_node_id)
+                if undo_entry is not None and graph_config_before:
+                    deletion_undo_store.write_bytes(undo_entry, "graph-config.json", graph_config_before)
+                undo_token = deletion_undo_store.commit(undo_entry) if undo_entry is not None else ""
+        except Exception as exc:
+            rollback_errors = []
             if graph_config_before:
                 from src.file_transaction import atomic_write_text
-
-                atomic_write_text(graph_config_path, graph_config_before.decode("utf-8"))
-            self.graph_runtime._refresh_scheduled_node(safe_graph_id, safe_node_id)
-            if removed_event_rules:
-                self.core.runtime_events.restore_source_rules(removed_event_rules)
-            raise
+                try:
+                    atomic_write_text(graph_config_path, graph_config_before.decode("utf-8"))
+                except Exception as failure:
+                    rollback_errors.append(f"restore graph: {type(failure).__name__}: {failure}")
+            rollback_errors.extend(self._rollback_delete_preparation(
+                safe_graph_id, safe_node_id, node_dir, undo_entry, removed_event_rules,
+                schedule_unregistered=schedule_unregistered))
+            raise HTTPException(status_code=500, detail=self._failure_detail(
+                "failed to commit node deletion", exc, rollback_errors)) from exc
+        if undo_entry is not None and not undo_entry.get("retained", True):
+            try:
+                deletion_undo_store.discard(undo_entry)
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"node deleted but temporary archive cleanup failed: {exc}") from exc
         runtime_state_memory_store.clear(self.graph_runtime._node_config_path(safe_node_id, safe_graph_id))
         self.graph_runtime._log_graph_event(
             safe_graph_id,
@@ -170,6 +180,12 @@ class NodeInstanceDeletion(HostBoundService):
     ) -> list[str]:
         errors: list[str] = []
         try:
+            if undo_entry is not None:
+                archived_node = os.path.join(str(undo_entry["temp_dir"]), "node")
+                if os.path.exists(archived_node):
+                    if os.path.exists(node_dir):
+                        raise RuntimeError("both archived and live node directories exist; rollback snapshot retained")
+                    os.replace(archived_node, node_dir)
             deletion_undo_store.discard(undo_entry)
         except Exception as exc:
             errors.append(f"discard undo entry: {type(exc).__name__}: {str(exc)}")
@@ -180,6 +196,9 @@ class NodeInstanceDeletion(HostBoundService):
                 errors.append(f"restore event rules: {type(exc).__name__}: {str(exc)}")
         if schedule_unregistered and os.path.exists(node_dir):
             try:
+                runtime_state_memory_store.update(
+                    self.graph_runtime._node_config_path(node_id, graph_id),
+                    lambda state: state.pop("_delete_requested", None))
                 self.graph_runtime._refresh_scheduled_node(graph_id, node_id)
             except Exception as exc:
                 errors.append(f"restore schedule: {type(exc).__name__}: {str(exc)}")

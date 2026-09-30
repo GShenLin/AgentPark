@@ -8,18 +8,19 @@ import subprocess
 import threading
 import time
 
+from functions.tool_output_limits import resolve_tool_result_char_limit
 from src.providers.agent_environment_context import resolve_agent_relative_path
 from src.providers.agent_environment_context import resolve_agent_working_directory
 from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 
 
 RG_LINE_RE = re.compile(r"^(.*?):(\d+):(.*)$")
-RG_TIMEOUT_SEC = 15
+RG_TIMEOUT_SEC = 25
+RG_TOOL_TIMEOUT_SEC = 30
 RG_STOP_WAIT_SEC = 0.5
-RG_SEARCH_OUTPUT_CHAR_LIMIT = 50000
-RG_LIST_FILES_OUTPUT_CHAR_LIMIT = 50000
+RG_SEARCH_OUTPUT_CHAR_LIMIT = 20000
+RG_LIST_FILES_OUTPUT_CHAR_LIMIT = 20000
 RG_JSON_BUDGET_OVERHEAD = 1200
-TOOL_SUBMISSION_RESERVE_CHARS = 512
 
 DEFAULT_SKIP_DIRS = {
     ".git",
@@ -50,7 +51,7 @@ rg_search_text_declaration = {
     "type": "function",
     "function": {
         "name": "rg_search_text",
-        "description": "Search text in project files with ripgrep semantics (rg). Use specific queries and narrow include_globs when possible.",
+        "description": "Search text in project files with ripgrep semantics (rg). Use specific queries and narrow include_globs when possible. If a remembered path is stale, search the filename or symbol across the working root instead of guessing a replacement path.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -97,7 +98,7 @@ rg_list_files_declaration = {
     "type": "function",
     "function": {
         "name": "rg_list_files",
-        "description": "List project files with ripgrep semantics (rg --files). Use only with a target directory or filename/type pattern, not for whole-project inventories.",
+        "description": "List project files with ripgrep semantics (rg --files). Use only with a target directory or filename/type pattern, not for whole-project inventories. To recover a stale path, use a basename glob such as ['**/DesktopWorkspace.vue'].",
         "parameters": {
             "type": "object",
             "properties": {
@@ -266,19 +267,6 @@ def resolve_limit(raw_value, default_value, hard_max):
     return max(1, min(value, hard_max))
 
 
-def resolve_tool_result_char_limit(agent, default_limit):
-    config = getattr(agent, "config", None)
-    if not isinstance(config, dict) or "toolResultSubmissionMaxChars" not in config:
-        return default_limit
-    submission_limit = config["toolResultSubmissionMaxChars"]
-    if isinstance(submission_limit, bool) or not isinstance(submission_limit, int):
-        raise ValueError("toolResultSubmissionMaxChars must be a positive integer")
-    if submission_limit <= 0:
-        raise ValueError("toolResultSubmissionMaxChars must be a positive integer")
-    reserve = min(TOOL_SUBMISSION_RESERVE_CHARS, submission_limit // 10)
-    return min(default_limit, max(1, submission_limit - reserve))
-
-
 def normalize_globs(raw_globs):
     if not isinstance(raw_globs, list):
         return []
@@ -422,6 +410,10 @@ def iter_files_fallback(root):
         dirs[:] = [d for d in dirs if d.lower() not in skip_dirs]
         for filename in files:
             yield os.path.join(current_root, filename)
+
+
+def deadline_expired(deadline):
+    return time.monotonic() >= deadline
 
 
 def append_rg_globs(cmd, include_globs, exclude_globs):
@@ -688,8 +680,23 @@ def _search_with_python(
     matches = []
     searched_files = 0
     stopped_by_char_limit = False
+    deadline = time.monotonic() + RG_TIMEOUT_SEC
     for file_path in iter_files_fallback(root):
         raise_if_cancel_requested(cancel_source)
+        if deadline_expired(deadline):
+            return _python_search_success(
+                root=root,
+                query=query,
+                fixed_strings=fixed_strings,
+                case_sensitive=case_sensitive,
+                searched_files=searched_files,
+                matches=matches,
+                truncated=True,
+                truncation_reason="timeout",
+                char_limit=char_limit,
+                total_matches=None,
+                timed_out=True,
+            )
         rel_path = safe_relpath(file_path, root)
         if not path_allowed(rel_path, include_globs, exclude_globs):
             continue
@@ -698,6 +705,20 @@ def _search_with_python(
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 for line_no, line in enumerate(f, start=1):
                     raise_if_cancel_requested(cancel_source)
+                    if deadline_expired(deadline):
+                        return _python_search_success(
+                            root=root,
+                            query=query,
+                            fixed_strings=fixed_strings,
+                            case_sensitive=case_sensitive,
+                            searched_files=searched_files,
+                            matches=matches,
+                            truncated=True,
+                            truncation_reason="timeout",
+                            char_limit=char_limit,
+                            total_matches=None,
+                            timed_out=True,
+                        )
                     if compiled.search(line):
                         match = {
                             "file_path": file_path,
@@ -762,6 +783,7 @@ def _python_search_success(
     truncation_reason,
     char_limit,
     total_matches,
+    timed_out=False,
 ):
     return bounded_json_dumps(
         {
@@ -777,6 +799,7 @@ def _python_search_success(
             "estimated_or_observed_total_matches": total_matches,
             "truncated": truncated,
             "truncation_reason": truncation_reason,
+            "timed_out": bool(timed_out),
             "output_char_limit": int(char_limit),
             "next_query_suggestions": narrow_query_suggestions() if truncated else [],
         },
@@ -869,8 +892,19 @@ def _list_files_with_rg(*, rg_path, root, include_globs, exclude_globs, limit, c
 def _list_files_with_python(*, root, include_globs, exclude_globs, limit, char_limit, cancel_source=None):
     matches = []
     scanned_files = 0
+    deadline = time.monotonic() + RG_TIMEOUT_SEC
     for file_path in iter_files_fallback(root):
         raise_if_cancel_requested(cancel_source)
+        if deadline_expired(deadline):
+            return _python_list_success(
+                root=root,
+                scanned_files=scanned_files,
+                matches=matches,
+                truncated=True,
+                truncation_reason="timeout",
+                char_limit=char_limit,
+                timed_out=True,
+            )
         rel_path = safe_relpath(file_path, root)
         if not path_allowed(rel_path, include_globs, exclude_globs):
             continue
@@ -909,7 +943,9 @@ def _list_files_with_python(*, root, include_globs, exclude_globs, limit, char_l
     )
 
 
-def _python_list_success(*, root, scanned_files, matches, truncated, truncation_reason, char_limit):
+def _python_list_success(
+    *, root, scanned_files, matches, truncated, truncation_reason, char_limit, timed_out=False,
+):
     return bounded_json_dumps(
         {
             "status": "success",
@@ -920,9 +956,18 @@ def _python_list_success(*, root, scanned_files, matches, truncated, truncation_
             "files_returned": len(matches),
             "truncated": truncated,
             "truncation_reason": truncation_reason,
+            "timed_out": bool(timed_out),
             "result_chars_limit": int(char_limit),
             "next_query_suggestions": narrow_query_suggestions() if truncated else [],
         },
         list_key="files",
         char_limit=char_limit,
     )
+
+
+# These scans already observe the Agent cancellation source and terminate their
+# subprocess/fallback traversal. Give them a realistic budget instead of the
+# generic five-second default, without leaving a detached worker behind.
+for _tool in (rg_search_text, rg_list_files):
+    _tool.tool_timeout_seconds = RG_TOOL_TIMEOUT_SEC
+    _tool.tool_cooperative_cancellation = True

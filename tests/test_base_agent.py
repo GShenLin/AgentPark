@@ -1,3 +1,4 @@
+from tests.agent_invocation_helpers import configured_fake
 import tempfile
 from pathlib import Path
 
@@ -6,7 +7,7 @@ import src.base_agent as base_agent_module
 
 
 class DummyAgent(BaseAgent):
-    def Send(self, tools=None, run_tools=None, mode=None):
+    def Send(self, tools=None, run_tools=None, mode=None, **kwargs):
         for msg in reversed(self.messages):
             if msg.get("role") == "user":
                 return msg.get("content")
@@ -17,6 +18,7 @@ def test_makeplan_forwards_user_task_directly():
     with tempfile.TemporaryDirectory() as d:
         memory_path = d + "/dummy.md"
         agent = DummyAgent("dummy", memory_file_path=memory_path)
+        configured_fake(agent)
         out = agent.makePlan("hello world")
         assert out == "hello world"
 

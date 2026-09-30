@@ -22,6 +22,7 @@ def test_capability_registry_reports_skill_mcp_dependencies(monkeypatch):
                 path="skills/docs/SKILL.md",
                 content="body",
                 version="1.2.3",
+                tools=("computer_use_tools",),
                 mcp_servers=("docs-mcp",),
             )
         ],
@@ -35,7 +36,10 @@ def test_capability_registry_reports_skill_mcp_dependencies(monkeypatch):
     assert descriptor["version"] == "1.2.3"
     assert descriptor["enabled"] is True
     assert descriptor["status"] == "selected"
-    assert descriptor["dependencies"] == [{"kind": "mcp", "id": "docs-mcp"}]
+    assert descriptor["dependencies"] == [
+        {"kind": "tool", "id": "computer_use_tools"},
+        {"kind": "mcp", "id": "docs-mcp"},
+    ]
 
 
 def test_capability_registry_reports_plugin_contributions(monkeypatch):

@@ -99,6 +99,25 @@ class RuntimeStateMemoryStore:
                 self._touch_version(key)
             return copy.deepcopy(self._with_defaults(payload))
 
+    def while_quiescent(self, config_paths: list[str], operation: Callable):
+        """Hold the same locks as execution claims for a short external import.
+
+        The callback may write persistent storage, but must not reenter runtime
+        APIs. A pending/inflight task is never modified by synchronization.
+        """
+        from contextlib import ExitStack
+        keys = sorted({self._key(path) for path in config_paths})
+        with ExitStack() as stack:
+            for key in keys:
+                stack.enter_context(self._lock_for(key))
+            for key in keys:
+                state = self._items.get(key, {})
+                if (state.get("state") == "working" or state.get("inflight")
+                        or state.get("pending") or state.get("pending_count")
+                        or state.get("_delete_requested")):
+                    raise ValueError("目标节点正在执行或有排队任务，请等待完成后重试同步。")
+            return operation()
+
     def update_fields(
         self,
         config_path: str,

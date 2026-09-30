@@ -17,6 +17,7 @@ DEFAULT_NONDEVELOPER_FILTERED_TOOLS = (
     "capability_management_tools",
     "code_edit_tools",
     "console_tools",
+    "console_session_tools",
     "file_write_tools",
     "shell_tools",
     "system_tools",

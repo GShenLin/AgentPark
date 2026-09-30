@@ -27,8 +27,9 @@ class DeletionUndoStore:
     def max_steps(self) -> int:
         return int(read_undo_settings()["max_steps"])
 
-    def begin(self, kind: str, metadata: dict[str, Any]) -> dict[str, Any] | None:
-        if self.max_steps() <= 0:
+    def begin(self, kind: str, metadata: dict[str, Any], *, for_rollback: bool = False) -> dict[str, Any] | None:
+        retained = self.max_steps() > 0
+        if not retained and not for_rollback:
             return None
         token = uuid.uuid4().hex
         root = self._root_dir()
@@ -43,6 +44,7 @@ class DeletionUndoStore:
             "metadata": dict(metadata or {}),
             "temp_dir": entry_dir,
             "entry_dir": entry_dir,
+            "retained": retained,
         }
 
     def archive_directory(self, entry: dict[str, Any], source_dir: str, name: str) -> str:
@@ -65,6 +67,10 @@ class DeletionUndoStore:
         return path
 
     def commit(self, entry: dict[str, Any]) -> str:
+        # Ephemeral rollback staging survives until the caller's whole operation
+        # commits, but never becomes a user-visible undo entry.
+        if not entry.get("retained", True):
+            return ""
         token = str(entry["token"])
         metadata = {
             "token": token,
@@ -87,7 +93,10 @@ class DeletionUndoStore:
     def discard(self, entry: dict[str, Any] | None) -> None:
         if not entry:
             return
-        shutil.rmtree(str(entry.get("temp_dir") or ""), ignore_errors=True)
+        from .node_deletion import remove_tree_with_retry
+        path = str(entry["temp_dir"])
+        if os.path.exists(path):
+            remove_tree_with_retry(path)
 
     def load(self, token: str) -> tuple[dict[str, Any], str]:
         safe_token = self._safe_token(token)

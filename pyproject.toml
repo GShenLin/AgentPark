@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "agentpark"
 version = "0.1.0"
 dependencies = [
+    "packaging>=24.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
     "python-multipart>=0.0.9",
@@ -24,10 +25,11 @@ dependencies = [
     "aiortc>=1.15.0,<2",
     "tickflow>=0.1.24,<0.2",
     "tzdata>=2025.2",
-    "lancedb>=0.29.2,<0.30",
-    "pyarrow>=16,<24",
+    "lancedb>=0.29.2,<0.30; sys_platform != 'android'",
+    "pyarrow>=16,<24; sys_platform != 'android'",
     "jieba>=0.42.1,<0.43",
-    "pypdfium2>=5.13,<6",
+    "pypdfium2>=5.13,<6; sys_platform != 'android'",
+    "pypdf>=6,<7; sys_platform == 'android'",
     "httpx>=0.27,<1",
     "python-docx>=1.2,<2",
     "openpyxl>=3.1.5,<4",

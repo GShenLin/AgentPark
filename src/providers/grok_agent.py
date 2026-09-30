@@ -38,8 +38,8 @@ class GrokAgent(OpenAIAgent):
         thinking_stream_handler=None,
     ):
         mode = str(mode or "chat").strip().lower()
-        if mode not in {"chat", "imagechat"}:
-            raise ValueError("Grok agent currently supports chat and imagechat modes.")
+        if mode != "chat":
+            raise ValueError("Grok agent currently supports chat mode.")
         if str(reasoning_summary or "").strip():
             raise ValueError("Grok does not support reasoning_summary.")
         return super().Send(

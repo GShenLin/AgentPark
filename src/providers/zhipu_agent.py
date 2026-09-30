@@ -43,8 +43,8 @@ class ZhipuAgent(ServiceHost, BaseAgent):
     ):
         self.config = self._read_provider_config_from_file()
         _ = web_search
-        if str(mode or "chat").strip().lower() not in {"chat", "imagechat"}:
-            raise ValueError("Zhipu agent currently supports chat and imagechat modes.")
+        if str(mode or "chat").strip().lower() != "chat":
+            raise ValueError("Zhipu agent currently supports chat mode.")
 
         messages = self._get_messages_with_memory()
         messages = self._ensure_runtime_instruction(messages, self.system_prompt)
