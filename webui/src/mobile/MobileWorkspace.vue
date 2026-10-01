@@ -25,7 +25,8 @@ import MobileGroups from './MobileGroups.vue'
 import SettingsPage from '../components/SettingsPage.vue'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { recordDeletionUndo } from '../composables/useDeletionUndo'
-import { useAudioRecorder } from '../composables/useAudioRecorder'
+import NodeVoiceCall from '../voice/NodeVoiceCall.vue'
+const voiceCall = ref<InstanceType<typeof NodeVoiceCall> | null>(null)
 import { useWorkAlerts } from '../composables/useWorkAlerts'
 import { useMobileWorkspace } from './useMobileWorkspace'
 import { useMobileBoardLocation } from './useMobileBoardLocation'
@@ -70,7 +71,6 @@ const feedRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<UploadedFileItem[]>([])
 const uploadingFiles = ref(false)
-const audioRecorder = useAudioRecorder()
 const submittingDraft = ref(false)
 const configOpen = ref(false)
 const createNodeOpen = ref(false)
@@ -214,26 +214,6 @@ async function onFileSelected(event: Event) {
       if (!attachments.value.some((existing) => existing.path === item.path)) {
         attachments.value.push(item)
       }
-    }
-  } catch (e: any) {
-    workspace.error.value = String(e?.message || e)
-  } finally {
-    uploadingFiles.value = false
-  }
-}
-
-async function toggleAudioRecording() {
-  workspace.error.value = ''
-  try {
-    if (!audioRecorder.recording.value) {
-      await audioRecorder.start()
-      return
-    }
-    const file = await audioRecorder.stop()
-    uploadingFiles.value = true
-    const uploaded = await uploadFiles([file], 'mobile-audio-recording')
-    for (const item of uploaded.files || []) {
-      if (!attachments.value.some((existing) => existing.path === item.path)) attachments.value.push(item)
     }
   } catch (e: any) {
     workspace.error.value = String(e?.message || e)
@@ -612,9 +592,8 @@ onMounted(async () => {
     <a v-if="cloudBoard" :href="boardHomePath">返回 Board 列表</a>
   </div>
   <div v-else class="mobile-shell" :class="{ 'chat-appearance': isNodeChatView && !settingsOpen }">
-    <header class="mobile-header">
-      <button v-if="settingsOpen" class="icon-btn" type="button" :aria-label="t('common.back')" @click="closeSettings">&lt;</button>
-      <button v-else-if="!cloudBoard && workspace.view.value === 'graphs'" class="icon-btn" type="button" :aria-label="t('mobile.backToPc')" @click="workspace.backToPcs">&lt;</button>
+    <header v-if="!settingsOpen" class="mobile-header">
+      <button v-if="!cloudBoard && workspace.view.value === 'graphs'" class="icon-btn" type="button" :aria-label="t('mobile.backToPc')" @click="workspace.backToPcs">&lt;</button>
       <button v-else-if="workspace.view.value === 'nodes'" class="icon-btn" type="button" :aria-label="t('mobile.backToGraph')" @click="workspace.backToGraphs">&lt;</button>
       <button v-else-if="workspace.view.value === 'chat'" class="icon-btn" type="button" :aria-label="t('mobile.backToNodes')" @click="workspace.backToNodes">&lt;</button>
       <div v-else class="header-spacer"></div>
@@ -630,7 +609,7 @@ onMounted(async () => {
       </div>
     </header>
 
-    <main class="mobile-main">
+    <main class="mobile-main" :class="{ 'mobile-settings-main': settingsOpen }">
       <SettingsPage
         v-if="settingsOpen"
         :back-label="t('common.back')"
@@ -759,22 +738,18 @@ onMounted(async () => {
           />
         </div>
 
+        <NodeVoiceCall v-if="audioInputEnabled" ref="voiceCall"
+          :key="`${workspace.selectedPc.value?.id}:${workspace.selectedGraph.value?.id}:${workspace.selectedNode.value?.id}`"
+          :node-id="workspace.selectedNode.value!.id" :graph-id="workspace.selectedGraph.value!.id"
+        />
         <form class="composer" @submit.prevent="sendDraft">
           <div class="composer-tools">
             <ActionButton class="attach-btn" compact :disabled="uploadingFiles || composerLocked" @click="openFilePicker">
               {{ uploadingFiles ? t('mobile.uploading') : t('mobile.addAttachment') }}
             </ActionButton>
             <DangerButton v-if="attachments.length > 0" class="clear-attachments-btn" compact :disabled="composerLocked" @click="clearAttachments">{{ t('mobile.clearAttachments') }}</DangerButton>
-            <button
-              v-if="audioInputEnabled"
-              class="audio-record-btn"
-              :class="{ active: audioRecorder.recording.value }"
-              type="button"
-              :disabled="!audioRecorder.supported.value || uploadingFiles || composerLocked"
-              @click="toggleAudioRecording"
-            >
-              {{ audioRecorder.recording.value ? t('mobile.stopRecording') : t('mobile.startRecording') }}
-            </button>
+            <ActionButton v-if="audioInputEnabled" compact :disabled="uploadingFiles || composerLocked || voiceCall?.active"
+              @click="voiceCall?.start()">{{ voiceCall?.active ? '通话中' : '语音通话' }}</ActionButton>
             <button
               v-if="!workspace.selectedNode.value?.readonly"
               class="goal-toggle-btn"
@@ -944,6 +919,8 @@ onMounted(async () => {
   padding: 12px;
   overflow: hidden;
 }
+
+.mobile-settings-main { padding: 0; }
 
 .mobile-list {
   flex: 1;

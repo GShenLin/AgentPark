@@ -14,6 +14,7 @@ from .mobile_api import MobileApiDomain
 from .node_cancellation import NodeCancellationRegistry
 from .node_live_event_publisher import NodeLiveEventPublisher
 from .node_live_output import NodeLiveOutputStore
+from .node_voice import NodeVoiceApi
 from .tool_call_cancellation import ToolCallCancellationRegistry
 from .node_config_service import RUNTIME_STATE_FIELDS
 from .profile_api import ProfileApi
@@ -76,6 +77,7 @@ class BackendCore:
         self.channel_service = ChannelService(self)
         self.agent_domain = AgentDomain(self, self.graph_runtime)
         self.node_ops = NodeOpsDomain(self, self.graph_runtime)
+        self.node_voice = NodeVoiceApi(self)
         self.group_delivery = GroupDeliveryService(self)
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
@@ -84,7 +86,7 @@ class BackendCore:
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
         self.remote_api = RemoteApiDomain(self)
         self.peer_api = PeerApiDomain(self)
-        self.remote_workspace_api = RemoteWorkspaceApiDomain()
+        self.remote_workspace_api = RemoteWorkspaceApiDomain(self.peer_api)
         self.settings_api = SettingsApiDomain(self)
         self.skills_api = SkillsApi()
         self.harness_api = HarnessApiDomain(self)

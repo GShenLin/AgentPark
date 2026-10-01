@@ -16,6 +16,8 @@ const props = withDefaults(defineProps<{
   audioInputEnabled?: boolean
   audioRecording?: boolean
   audioRecordingSupported?: boolean
+  audioButtonLabel?: string
+  audioButtonTitle?: string
   title?: string
   placeholder?: string
   sendLabel?: string
@@ -131,11 +133,12 @@ function onInputDrop(event: DragEvent) {
           :class="{ active: audioRecording }"
           type="button"
           :disabled="disabled || !audioRecordingSupported || isUploadingFiles"
-          :title="audioRecording ? 'Stop recording and attach audio' : 'Start microphone recording'"
+          :title="audioButtonTitle || (audioRecording ? 'Stop recording and attach audio' : 'Start microphone recording')"
           @click="emit('toggle-audio-recording')"
         >
-          {{ audioRecording ? 'Stop audio' : 'Record audio' }}
+          {{ audioButtonLabel || (audioRecording ? 'Stop audio' : 'Record audio') }}
         </button>
+        <slot name="actions" />
         <ActionButton variant="primary" :disabled="!canSend || isUploadingFiles || disabled" @click="emit('send')">
           {{ sendLabel }}
         </ActionButton>

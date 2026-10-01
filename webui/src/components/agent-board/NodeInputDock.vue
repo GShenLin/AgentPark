@@ -3,7 +3,7 @@ import { computed, inject, ref, watch } from 'vue'
 import { type MessageEnvelope } from '../../api'
 import { composeMessage } from '../../composables/messageAttachments'
 import { useMessageAttachments } from '../../composables/useMessageAttachments'
-import { useAudioRecorder } from '../../composables/useAudioRecorder'
+import NodeVoiceCall from '../../voice/NodeVoiceCall.vue'
 import { useGlobalState } from '../../composables/useGlobalState'
 import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey } from './context'
@@ -31,7 +31,7 @@ const attachments = useMessageAttachments({
 })
 const isUploadingFiles = attachments.isUploading
 const sending = ref(false)
-const audioRecorder = useAudioRecorder()
+const voiceCall = ref<InstanceType<typeof NodeVoiceCall> | null>(null)
 const goalArmedByNode = ref<Record<string, boolean>>({})
 
 const selectedNode = computed(() => {
@@ -102,20 +102,6 @@ function loadEditorInput(nodeId: string | null | undefined) {
     : []
 }
 
-async function toggleAudioRecording() {
-  lastError.value = null
-  try {
-    if (!audioRecorder.recording.value) {
-      await audioRecorder.start()
-      return
-    }
-    const file = await audioRecorder.stop()
-    await attachments.addFiles([file])
-  } catch (e: any) {
-    lastError.value = String(e?.message || e)
-  }
-}
-
 function composePayload() {
   return composeMessage(nodeEditorInputText.value, nodeEditorAttachments.value, 'node_editor')
 }
@@ -176,7 +162,7 @@ async function toggleGoal() {
 
 async function sendMessage() {
   const nodeId = selectedNode.value?.id
-  if (!nodeId || !canSend.value || sending.value || isUploadingFiles.value || audioRecorder.recording.value) return
+  if (!nodeId || !canSend.value || sending.value || isUploadingFiles.value) return
   sending.value = true
   const payload = composePayload()
   lastError.value = null
@@ -211,26 +197,32 @@ watch(
     @pointerdown.stop
     @click.stop
   >
+    <template #status>
+      <NodeVoiceCall v-if="audioInputEnabled" ref="voiceCall" :key="`${ctx.currentGraphId.value}:${selectedNode.id}:${ctx.memoryMode.value}`"
+        :node-id="selectedNode.id" :graph-id="ctx.currentGraphId.value || 'default'"
+      />
+    </template>
     <MessageComposer
       v-model:input-text="nodeEditorInputText"
       :attachments="nodeEditorAttachments"
-      :can-send="canSend && !audioRecorder.recording.value"
+      :can-send="canSend"
       :disabled="sending"
       :is-uploading-files="isUploadingFiles"
       :goal-active="goalActive"
       :goal-enabled="goalEnabled"
       :goal-title="goalTitle"
-      :audio-input-enabled="audioInputEnabled"
-      :audio-recording="audioRecorder.recording.value"
-      :audio-recording-supported="audioRecorder.supported.value"
       @drop-input="attachments.drop"
       @paste-input="attachments.paste"
       @remove-attachment="attachments.remove"
       @add-files="attachments.addFiles"
       @toggle-goal="toggleGoal"
-      @toggle-audio-recording="toggleAudioRecording"
       @send="sendMessage"
-    />
+    >
+      <template #actions>
+        <button v-if="audioInputEnabled" class="record-btn" type="button" :disabled="sending || isUploadingFiles || voiceCall?.active"
+          @click="voiceCall?.start()">{{ voiceCall?.active ? '通话中' : '语音通话' }}</button>
+      </template>
+    </MessageComposer>
     <DangerButton v-if="isNodeRunning" compact class="stop-btn" @click="ctx.stopNodeWork(selectedNode.id).catch(() => null)">
       {{ isStopRequested ? 'Stopping' : 'Stop' }}
     </DangerButton>

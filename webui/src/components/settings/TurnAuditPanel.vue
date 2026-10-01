@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SettingsDetailLayout from './SettingsDetailLayout.vue'
+import { useSettingsDetail } from './settingsNavigation'
 import { computed, onMounted, ref } from 'vue'
 import ActionButton from '../ActionButton.vue'
 import SelectionButton from '../SelectionButton.vue'
@@ -20,6 +22,8 @@ type AuditArtifact = {
   content?: string
   too_large?: boolean
 }
+
+const { detailOpen, openDetail, closeDetail } = useSettingsDetail()
 
 const startDate = ref(localDate())
 const endDate = ref(localDate())
@@ -123,60 +127,62 @@ onMounted(loadTurns)
 </script>
 
 <template>
-  <div class="turn-audit settings-split">
-    <aside class="settings-split__side">
-      <div class="audit-filters">
-        <label class="audit-date-filter">
-          From
-          <FormTextInput v-model="startDate" type="date" />
-        </label>
-        <label class="audit-date-filter">
-          To
-          <FormTextInput v-model="endDate" type="date" />
-        </label>
-        <label>
-          Graph
-          <FormSelect v-model="graphId" @change="changeScope">
-            <option value="">All graphs</option>
-            <option v-for="item in catalog?.available_graph_ids || []" :key="item" :value="item">{{ item }}</option>
-          </FormSelect>
-        </label>
-        <label>
-          Node
-          <FormSelect v-model="nodeId" @change="changeScope">
-            <option value="">All nodes</option>
-            <option v-for="item in catalog?.available_node_ids || []" :key="item" :value="item">{{ item }}</option>
-          </FormSelect>
-        </label>
-        <ActionButton class="audit-filter-action" compact block :disabled="loadingList" @click="loadTurns">
-          {{ loadingList ? 'Loading...' : 'Reload' }}
-        </ActionButton>
-      </div>
+  <SettingsDetailLayout class="turn-audit" :detail-open="detailOpen" @back="closeDetail">
+    <template #list>
+      <aside class="settings-split__side">
+        <div class="audit-filters">
+          <label class="audit-date-filter">
+            From
+            <FormTextInput v-model="startDate" type="date" />
+          </label>
+          <label class="audit-date-filter">
+            To
+            <FormTextInput v-model="endDate" type="date" />
+          </label>
+          <label>
+            Graph
+            <FormSelect v-model="graphId" @change="changeScope">
+              <option value="">All graphs</option>
+              <option v-for="item in catalog?.available_graph_ids || []" :key="item" :value="item">{{ item }}</option>
+            </FormSelect>
+          </label>
+          <label>
+            Node
+            <FormSelect v-model="nodeId" @change="changeScope">
+              <option value="">All nodes</option>
+              <option v-for="item in catalog?.available_node_ids || []" :key="item" :value="item">{{ item }}</option>
+            </FormSelect>
+          </label>
+          <ActionButton class="audit-filter-action" compact block :disabled="loadingList" @click="loadTurns">
+            {{ loadingList ? 'Loading...' : 'Reload' }}
+          </ActionButton>
+        </div>
 
-      <div class="settings-split__items">
-        <SelectionButton
-          v-for="turn in turns"
-          :key="`${turn.graph_id}:${turn.node_id}:${turn.trace_id}`"
-          stacked
-          class="audit-turn settings-list-item"
-          :active="selectedTraceId === turn.trace_id"
-          @click="loadDetail(turn)"
-        >
-          <span class="audit-turn-top">
-            <strong>{{ turn.node_id }}</strong>
-            <small :class="turn.audit_completeness">{{ turn.audit_completeness }}</small>
-          </span>
-          <template #detail>
-            <span class="settings-list-item__lines">
-              <span>{{ shortText(turn.question || turn.answer_preview) }}</span>
-              <small>{{ turn.started_at }} · {{ durationText(turn.duration_ms) }}</small>
-              <small>{{ turn.tool_call_count + turn.server_tool_call_count }} tools · {{ turn.provider_id }}</small>
+        <div class="settings-split__items">
+          <SelectionButton
+            v-for="turn in turns"
+            :key="`${turn.graph_id}:${turn.node_id}:${turn.trace_id}`"
+            stacked
+            class="audit-turn settings-list-item"
+            :active="selectedTraceId === turn.trace_id"
+            @click="loadDetail(turn); openDetail()"
+          >
+            <span class="audit-turn-top">
+              <strong>{{ turn.node_id }}</strong>
+              <small :class="turn.audit_completeness">{{ turn.audit_completeness }}</small>
             </span>
+            <template #detail>
+              <span class="settings-list-item__lines">
+                <span>{{ shortText(turn.question || turn.answer_preview) }}</span>
+                <small>{{ turn.started_at }} · {{ durationText(turn.duration_ms) }}</small>
+                <small>{{ turn.tool_call_count + turn.server_tool_call_count }} tools · {{ turn.provider_id }}</small>
+              </span>
           </template>
         </SelectionButton>
         <div v-if="!turns.length && !loadingList" class="audit-empty">No runs for this date range.</div>
       </div>
     </aside>
+    </template>
 
     <main class="turn-audit-main settings-split__detail">
       <div v-if="loadingDetail" class="audit-empty">Loading audit...</div>
@@ -242,7 +248,7 @@ onMounted(loadTurns)
       <div v-else-if="!error" class="audit-empty">Select a run to review its complete chain.</div>
       <div v-if="error" class="audit-error">{{ error }}</div>
     </main>
-  </div>
+  </SettingsDetailLayout>
 </template>
 
 <style scoped src="./TurnAuditPanel.css"></style>

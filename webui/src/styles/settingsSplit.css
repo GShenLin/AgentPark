@@ -53,8 +53,3 @@
 @media (max-width: 1120px) {
   .settings-split { grid-template-columns: minmax(132px, 38%) minmax(0, 1fr); }
 }
-
-@media (max-width: 720px) {
-  .settings-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 32vh) minmax(0, 1fr); }
-  .settings-split__side { padding: 0 0 10px; border-right: 0; border-bottom: 1px solid var(--border-light); }
-}

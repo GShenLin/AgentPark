@@ -4,6 +4,8 @@ import { saveAgentProfileFromNode } from '../../api'
 import ActionButton from '../ActionButton.vue'
 import { t } from '../../i18n'
 import { AgentBoardKey } from './context'
+import RemoteWorkerPicker from './RemoteWorkerPicker.vue'
+import type { RegisteredRemoteWorker } from '../../remoteWorkerApi'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -19,6 +21,33 @@ const targetNodeId = ref('')
 const duplicatingNode = ref(false)
 const openingFolder = ref<'node' | 'work' | null>(null)
 const changingPrivacy = ref(false)
+const remoteNodeId = ref('')
+const targetRunning = computed(() => ctx.nodeRuns.value[targetNodeId.value]?.status === 'running')
+const targetRemote = computed(() => ctx.nodeConfigs.value[targetNodeId.value]?.remote_enabled === true)
+
+function linkRemote() {
+  remoteNodeId.value = targetNodeId.value
+  closeMenu()
+}
+
+async function selectRemote(worker: RegisteredRemoteWorker, workingPath: string) {
+  try {
+    if (ctx.nodeRuns.value[remoteNodeId.value]?.status === 'running') throw new Error('请先停止节点，再更换远程设备。')
+    await ctx.setNodeFields(remoteNodeId.value, {
+      remote_enabled: true, remote_worker_id: worker.worker_id, working_path: workingPath,
+    })
+    remoteNodeId.value = ''
+  } catch (error: any) { ctx.lastError.value = String(error?.message || error) }
+}
+
+async function unlinkRemote(nodeId: string) {
+  try {
+    if (ctx.nodeRuns.value[nodeId]?.status === 'running') throw new Error('请先停止节点，再断开远程设备。')
+    await ctx.setNodeFields(nodeId, { remote_enabled: false, remote_worker_id: '', working_path: '' })
+    remoteNodeId.value = ''
+    closeMenu()
+  } catch (error: any) { ctx.lastError.value = String(error?.message || error) }
+}
 const targetIsPrivate = computed(() => {
   const nodeId = String(targetNodeId.value || '').trim()
   return nodeId ? ctx.nodeConfigs.value[nodeId]?.private === true : false
@@ -166,12 +195,18 @@ defineExpose({
           {{ openingFolder === 'work' ? 'OpeningWorkFolder...' : 'OpenWorkFolder' }}
         </ActionButton>
         <ActionButton variant="menu" :disabled="actionBusy" @click="saveToProfile">SaveToProfile</ActionButton>
+        <ActionButton variant="menu" :disabled="actionBusy || targetRunning" @click="linkRemote">LinkToRemote</ActionButton>
+        <ActionButton v-if="targetRemote" variant="menu" :disabled="actionBusy || targetRunning" @click="unlinkRemote(targetNodeId)">断开远程连接</ActionButton>
         <ActionButton variant="menu" :disabled="actionBusy" @click="togglePrivacy">
           {{ changingPrivacy ? 'ChangingVisibility...' : (targetIsPrivate ? 'SetPublic' : 'SetPrivate') }}
         </ActionButton>
       </section>
     </div>
   </Teleport>
+  <RemoteWorkerPicker v-if="remoteNodeId"
+    :worker-id="String(ctx.nodeConfigs.value[remoteNodeId]?.remote_worker_id || '')"
+    :working-path="String(ctx.nodeConfigs.value[remoteNodeId]?.working_path || '')"
+    @close="remoteNodeId = ''" @select="selectRemote" @disconnect="unlinkRemote(remoteNodeId)" />
 </template>
 
 <style scoped>

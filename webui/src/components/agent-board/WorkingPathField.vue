@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { selectRemoteWorkerFolder } from '../../api'
-import { pairLocalRemoteWorker } from '../../remoteWorkerConnection'
+import { listRemoteWorkerDirectories } from '../../api'
+import RemoteWorkerPicker from './RemoteWorkerPicker.vue'
+import type { RegisteredRemoteWorker } from '../../remoteWorkerApi'
 import ActionButton from '../ActionButton.vue'
-import FormCheckbox from '../FormCheckbox.vue'
 import FormTextInput from '../FormTextInput.vue'
 import WebFolderPickerDialog from '../WebFolderPickerDialog.vue'
 
-const pairingRemote = ref(false)
+const remotePickerOpen = ref(false)
 const localPickerOpen = ref(false)
 
 const props = withDefaults(defineProps<{
@@ -29,20 +29,12 @@ const emit = defineEmits<{
   error: [message: string]
 }>()
 
-async function chooseWorkingPath() {
-  if (!props.remoteEnabled) {
-    localPickerOpen.value = true
-    return
-  }
-  try {
-    const res = await selectRemoteWorkerFolder(String(props.remoteWorkerId || ''), String(props.value ?? ''))
-    const selectedPath = String(res?.path || '').trim()
-    if (selectedPath) {
-      emit('update-value', selectedPath)
-    }
-  } catch (e: any) {
-    emit('error', String(e?.message || e))
-  }
+function chooseWorkingPath() {
+  localPickerOpen.value = true
+}
+
+function loadRemoteDirectory(path: string) {
+  return listRemoteWorkerDirectories(props.remoteWorkerId, path)
 }
 
 function selectLocalWorkingPath(path: string) {
@@ -52,29 +44,18 @@ function selectLocalWorkingPath(path: string) {
   localPickerOpen.value = false
 }
 
-async function toggleRemote(checked: boolean) {
-  if (pairingRemote.value) return
-  if (!checked) {
-    emit('update-remote', false)
-    emit('update-worker', '')
-    return
-  }
-  try {
-    pairingRemote.value = true
-    const res = await pairLocalRemoteWorker()
-    const worker = res?.worker
-    const workerId = String(worker?.worker_id || '').trim()
-    if (!workerId) throw new Error('Remote worker pairing returned no worker_id.')
-    emit('update-worker', workerId)
-    emit('update-remote', true)
-    const workspacePath = String(worker?.workspace_path || '').trim()
-    if (workspacePath) emit('update-value', workspacePath)
-  } catch (e: any) {
-    emit('update-remote', false)
-    emit('error', String(e?.message || e))
-  } finally {
-    pairingRemote.value = false
-  }
+function selectRemote(worker: RegisteredRemoteWorker, path: string) {
+  emit('update-worker', worker.worker_id)
+  emit('update-remote', true)
+  emit('update-value', path)
+  remotePickerOpen.value = false
+}
+
+function disconnectRemote() {
+  emit('update-worker', '')
+  emit('update-remote', false)
+  emit('update-value', '')
+  remotePickerOpen.value = false
 }
 </script>
 
@@ -87,19 +68,19 @@ async function toggleRemote(checked: boolean) {
       @update:model-value="emit('update-value', $event)"
     />
     <ActionButton icon title="选择工作路径" aria-label="选择工作路径" @click="chooseWorkingPath">…</ActionButton>
-    <label class="remote-toggle" title="Pair with the single online AgentPark remote worker on this computer">
-      <FormCheckbox :model-value="remoteEnabled" :disabled="pairingRemote" @update:model-value="toggleRemote" />
-      <span>{{ pairingRemote ? 'Connecting…' : 'Remote' }}</span>
-    </label>
+    <button class="remote-toggle" :title="remoteWorkerId" @click="remotePickerOpen = true">{{ remoteEnabled ? 'Remote · 更换设备' : 'LinkToRemote' }}</button>
   </div>
   <WebFolderPickerDialog
     :open="localPickerOpen"
     :initial-path="String(value ?? '')"
-    title="选择节点工作路径"
+    :title="remoteEnabled ? '选择远程工作目录' : '选择节点工作路径'"
+    :directory-loader="remoteEnabled ? loadRemoteDirectory : undefined"
     @close="localPickerOpen = false"
     @select="selectLocalWorkingPath"
     @error="emit('error', $event)"
   />
+  <RemoteWorkerPicker v-if="remotePickerOpen" :worker-id="remoteWorkerId" :working-path="value"
+    @close="remotePickerOpen = false" @select="selectRemote" @disconnect="disconnectRemote" />
 </template>
 
 <style scoped>

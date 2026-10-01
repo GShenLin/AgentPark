@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SettingsDetailLayout from './SettingsDetailLayout.vue'
+import { useSettingsDetail } from './settingsNavigation'
 import { computed, onMounted, ref } from 'vue'
 import {
   clearToolStats,
@@ -23,6 +25,8 @@ import {
   shortText,
   statusLabel,
 } from './toolStatsFormatting'
+
+const { detailOpen, openDetail, closeDetail } = useSettingsDetail()
 
 const stats = ref<ToolStatsDocument | null>(null)
 const selectedProviderId = ref('')
@@ -168,39 +172,41 @@ onMounted(loadStats)
 </script>
 
 <template>
-  <div class="tool-stats settings-split">
-    <aside class="settings-split__side">
-      <ActionButton class="tool-stats-action" block :disabled="loading || clearing || clearingLongTermMemory" @click="loadStats">
-        {{ loading ? 'Loading...' : 'Reload' }}
-      </ActionButton>
-      <DangerButton class="tool-stats-action" :disabled="loading || clearing || clearingLongTermMemory" @click="clearStats">
-        {{ clearing ? 'Clearing...' : 'Clear' }}
-      </DangerButton>
-      <DangerButton
-        class="tool-stats-action"
-        :disabled="loading || clearing || clearingLongTermMemory"
-        @click="clearLongTermMemoryFiles"
-      >
-        {{ clearingLongTermMemory ? 'Clearing...' : 'Clear long-term memory' }}
-      </DangerButton>
+  <SettingsDetailLayout class="tool-stats" :detail-open="detailOpen" @back="closeDetail">
+    <template #list>
+      <aside class="settings-split__side">
+        <ActionButton class="tool-stats-action" block :disabled="loading || clearing || clearingLongTermMemory" @click="loadStats">
+          {{ loading ? 'Loading...' : 'Reload' }}
+        </ActionButton>
+        <DangerButton class="tool-stats-action" :disabled="loading || clearing || clearingLongTermMemory" @click="clearStats">
+          {{ clearing ? 'Clearing...' : 'Clear' }}
+        </DangerButton>
+        <DangerButton
+          class="tool-stats-action"
+          :disabled="loading || clearing || clearingLongTermMemory"
+          @click="clearLongTermMemoryFiles"
+        >
+          {{ clearingLongTermMemory ? 'Clearing...' : 'Clear long-term memory' }}
+        </DangerButton>
 
-      <SelectionButton
-        v-for="provider in providerOptions"
-        :key="provider.provider_id"
-        stacked
-        class="settings-list-item"
-        :active="selectedProviderId === provider.provider_id"
-        @click="selectProvider(provider.provider_id)"
-      >
-        <span>{{ provider.provider_id }}</span>
-        <template #detail>
-          {{ provider.success }} / {{ provider.total }} tools · {{ provider.model_turn_count }} model turns · {{ provider.turn_count }} runs
-          <template v-if="provider.missing_usage_turn_count"> · {{ provider.missing_usage_turn_count }} missing usage</template>
+        <SelectionButton
+          v-for="provider in providerOptions"
+          :key="provider.provider_id"
+          stacked
+          class="settings-list-item"
+          :active="selectedProviderId === provider.provider_id"
+          @click="selectProvider(provider.provider_id); openDetail()"
+        >
+          <span>{{ provider.provider_id }}</span>
+          <template #detail>
+            {{ provider.success }} / {{ provider.total }} tools · {{ provider.model_turn_count }} model turns · {{ provider.turn_count }} runs
+            <template v-if="provider.missing_usage_turn_count"> · {{ provider.missing_usage_turn_count }} missing usage</template>
         </template>
       </SelectionButton>
 
       <div v-if="!providerOptions.length && !loading" class="tool-stats-empty">No provider stats</div>
     </aside>
+    </template>
 
     <section class="tool-stats-main settings-split__detail">
       <div class="tool-stats-head">
@@ -352,7 +358,7 @@ onMounted(loadStats)
       <div v-if="operationStatus" class="tool-stats-status">{{ operationStatus }}</div>
       <div v-if="error" class="tool-stats-error">{{ error }}</div>
     </section>
-  </div>
+  </SettingsDetailLayout>
 </template>
 
 <style scoped src="./ToolStatsSettingsPanel.css"></style>

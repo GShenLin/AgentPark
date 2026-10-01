@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { listFiles, type FileItem } from '../api'
+import { listFiles, type FileItem, type FileListResponse } from '../api'
 import ActionButton from './ActionButton.vue'
 import DialogCloseButton from './DialogCloseButton.vue'
 
@@ -8,6 +8,7 @@ const props = withDefaults(defineProps<{
   open: boolean
   initialPath?: string
   title?: string
+  directoryLoader?: (path: string) => Promise<FileListResponse & { parent_path?: string | null; roots?: FileItem[] }>
 }>(), {
   initialPath: '',
   title: '选择工作路径',
@@ -23,9 +24,12 @@ const currentPath = ref('')
 const directories = ref<FileItem[]>([])
 const loading = ref(false)
 const loadError = ref('')
+const remoteParent = ref<string | null | undefined>(undefined)
+const roots = ref<FileItem[]>([])
+const enteredPath = ref('')
 let requestId = 0
 
-const parentPath = computed(() => getParentDirectory(currentPath.value))
+const parentPath = computed(() => remoteParent.value === undefined ? getParentDirectory(currentPath.value) : remoteParent.value)
 const canGoUp = computed(() => {
   const current = String(currentPath.value || '').trim()
   const parent = String(parentPath.value || '').trim()
@@ -63,9 +67,12 @@ async function loadDirectory(path: string) {
   loading.value = true
   loadError.value = ''
   try {
-    const response = await listFiles(String(path || '').trim())
+    const response = await (props.directoryLoader || listFiles)(String(path || '').trim())
     if (activeRequestId !== requestId) return
     currentPath.value = String(response.current_path || '').trim()
+    enteredPath.value = currentPath.value
+    remoteParent.value = 'parent_path' in response ? response.parent_path as string | null : undefined
+    roots.value = 'roots' in response ? response.roots as FileItem[] : []
     directories.value = (Array.isArray(response.files) ? response.files : [])
       .filter((item) => item.type === 'dir')
   } catch (error: any) {
@@ -97,8 +104,8 @@ function selectCurrentDirectory() {
 }
 
 watch(
-  () => props.open,
-  (open) => {
+  () => [props.open, props.directoryLoader] as const,
+  ([open]) => {
     if (!open) {
       requestId += 1
       return
@@ -130,6 +137,13 @@ watch(loadError, (message) => {
             ↑ 上一级
           </ActionButton>
           <ActionButton compact :disabled="loading" @click="refresh">刷新</ActionButton>
+        </div>
+        <form v-if="directoryLoader" class="folder-picker-toolbar" @submit.prevent="loadDirectory(enteredPath)">
+          <input v-model="enteredPath" aria-label="远程目录路径" placeholder="输入远端绝对目录" />
+          <ActionButton compact type="submit" :disabled="loading">前往</ActionButton>
+        </form>
+        <div v-if="roots.length" class="folder-picker-toolbar folder-picker-roots">
+          <ActionButton v-for="root in roots" :key="root.path" compact :disabled="loading" @click="enterDirectory(root.path)">{{ root.name }}</ActionButton>
         </div>
 
         <div class="folder-picker-body">
@@ -174,7 +188,7 @@ watch(loadError, (message) => {
 .folder-picker-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 12100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -249,6 +263,8 @@ watch(loadError, (message) => {
 .folder-picker-toolbar {
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
+.folder-picker-toolbar input { min-width: 0; flex: 1; padding: 8px; background: transparent; color: inherit; border: 1px solid #8898; border-radius: 6px; }
+.folder-picker-roots { flex-wrap: wrap; }
 
 .folder-picker-body {
   flex: 1 1 auto;

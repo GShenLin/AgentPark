@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   createGatewayKey,
   deleteGatewayKey,
@@ -19,6 +19,8 @@ import { useGatewaySettingsEditor } from './gatewaySettingsEditor'
 
 const editor = useGatewaySettingsEditor()
 const { settings, enabled, requireApiKey, models, dirty, loading, error, status, discard } = editor
+const emit = defineEmits<{ dirty: [value: boolean] }>()
+watch(dirty, value => emit('dirty', value), { immediate: true })
 const actionBusy = ref(false)
 const saving = computed(() => editor.saving.value || actionBusy.value)
 const createdKey = ref('')

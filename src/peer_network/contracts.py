@@ -6,6 +6,7 @@ import socket
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from .remote_contracts import RemoteRequest
 
 
 DeviceName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -100,7 +101,8 @@ class PortalTicket(Contract):
 
 
 class PeerCall(Contract):
-    operation: Literal["graphs", "nodes", "conversation", "message", "control", "agent_message", "board_http"]
+    operation: Literal["graphs", "nodes", "conversation", "message", "control", "agent_message", "board_http", "remote_workspace"]
+    remote: RemoteRequest | None = None
     http: BoardHttpRequest | None = None
     graph_id: str = Field(default="", max_length=150)
     node_id: str = Field(default="", max_length=150)

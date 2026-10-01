@@ -15,6 +15,8 @@ class DeviceConnection:
     stun_urls: list[str] = field(default_factory=list)
     connected_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    remote_workers: list[dict] = field(default_factory=list)
+    remote_directory_enabled: bool = False
 
 
 class CoordinatorRegistry:
@@ -42,3 +44,20 @@ class CoordinatorRegistry:
         return [{"peer_id": peer, "name": device.display_name, "connected_at": device.connected_at,
                  "portal_board": device.portal_board, "stun_urls": device.stun_urls, "state": "online"}
                 for peer, device in sorted(self.devices.items(), key=lambda item: item[1].connected_at)]
+
+    async def publish_remote_directory(self) -> None:
+        # Only authenticated, admitted devices receive the directory. Browser
+        # sessions continue to access it through their selected Board backend.
+        packet = {"kind": "remote_directory", "hosts": [
+            {"peer_id": peer, "remote_workers": device.remote_workers}
+            for peer, device in self.devices.items()
+            if device.remote_directory_enabled
+        ]}
+        for peer, device in list(self.devices.items()):
+            if device.remote_directory_enabled:
+                try:
+                    await self.send_device(peer, packet)
+                except (RuntimeError, ConnectionError):
+                    # The owning websocket handler removes disconnected devices.
+                    import logging
+                    logging.getLogger(__name__).warning("Remote directory delivery failed for %s", peer)

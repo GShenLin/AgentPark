@@ -1,0 +1,71 @@
+/* The page owns navigation and actions; the active panel owns vertical scrolling. */
+.settings-compact {
+  min-width: 0;
+  overflow: hidden;
+  --ui-control-height: 44px;
+  --ui-control-height-compact: 44px;
+  --ui-button-height: 44px;
+  --ui-button-compact-height: 44px;
+  --ui-selection-height: 48px;
+}
+.settings-compact .settings-head { flex-direction: row; align-items: center; padding: 8px 12px; gap: 10px; }
+.settings-compact .settings-head-actions { order: -1; }
+.settings-compact .settings-title-wrap h1 { font-size: 17px; overflow-wrap: anywhere; }
+.settings-compact .settings-path { display: none; }
+.settings-compact .settings-body { display: flex; flex-direction: column; overflow: hidden; }
+.settings-compact .settings-editor { flex: 1; overflow: hidden; }
+.settings-compact .editor-toolbar { padding: 8px 12px; gap: 6px; }
+.settings-compact .editor-title { font-size: 12px; flex-wrap: wrap; }
+.settings-compact .editor-title > span:first-child { display: none; }
+.settings-compact .editor-title:not(:has(.editor-state)) { display: none; }
+.settings-compact .editor-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-compact .editor-actions > :last-child { margin-left: auto; }
+.settings-compact .editor-state { padding: 2px 8px; }
+.settings-compact .settings-error,
+.settings-compact .settings-warning { margin: 8px 12px; max-height: 24dvh; overflow: auto; overflow-wrap: anywhere; }
+.settings-compact .json-editor { flex: 1; min-height: 0; padding: 12px; font-size: 16px; }
+.settings-compact :deep(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color'])),
+.settings-compact :deep(select),
+.settings-compact :deep(textarea) { max-width: 100%; min-width: 0; font-size: 16px; }
+.settings-compact :deep(button) { min-height: 44px; }
+.settings-compact :deep(label) { min-width: 0; }
+.settings-compact :deep(.settings-split__items) { overflow: visible; flex: 0 0 auto; }
+.settings-compact :deep(.settings-split__side) { overflow: auto; }
+.settings-compact :deep(.settings-split__detail) { overscroll-behavior-y: contain; scroll-padding-block: 16px; }
+.settings-compact .settings-editor > :deep(.knowledge-panel),
+.settings-compact .settings-editor > :deep(.node-sync-panel),
+.settings-compact .settings-editor > :deep(.peer-network),
+.settings-compact .settings-editor > :deep(.access-settings),
+.settings-compact .settings-editor > :deep(.harness-settings),
+.settings-compact .settings-editor > :deep(.defaults-form),
+.settings-compact .settings-editor > :deep(.companion-form),
+.settings-compact .settings-editor > :deep(.theme-form),
+.settings-compact .settings-editor > :deep(.runtime-events-form) { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.settings-compact :deep(.harness-grid),
+.settings-compact :deep(.knowledge-grid) { grid-template-columns: minmax(0, 1fr); }
+.settings-compact :deep(.provider-id-field) { flex: 0 0 auto; width: 100%; }
+.settings-compact :deep(.form-head) { flex-direction: column; }
+.settings-compact :deep(.form-head-actions) { flex-wrap: wrap; justify-content: flex-start; }
+.settings-compact :deep(.form-grid),
+.settings-compact :deep(.switch-grid) { grid-template-columns: minmax(0, 1fr); }
+.settings-compact :deep(.provider-add) { flex-direction: row; }
+.settings-compact :deep(.profiler-panels) { padding: 0; }
+.settings-compact :deep(.profiler-panel-head) { flex-wrap: wrap; }
+.settings-compact :deep(.static-settings-tabs) { flex-wrap: wrap; padding: 8px 12px; }
+.settings-compact :deep(.switch-field) { min-height: 44px; }
+.settings-compact :deep(.switch-field input) { width: 20px; height: 20px; }
+.settings-compact :deep(.gateway-toolbar) { padding: 8px 12px; }
+.settings-compact :deep(.gateway-toolbar-actions) { flex-wrap: wrap; }
+.settings-compact :deep(.gateway-panel) { padding: 12px; }
+.settings-compact :deep(.gateway-card) { padding: 12px; min-width: 0; }
+.settings-compact :deep(.test-form input),
+.settings-compact :deep(.key-form label) { min-width: 0; width: 100%; }
+.settings-compact :deep(.item-row),
+.settings-compact :deep(.card-head) { flex-wrap: wrap; }
+.settings-compact :deep(.palette-row) { grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); }
+.settings-compact :deep(.theme-layout),
+.settings-compact :deep(.mcp-layout) { grid-template-columns: minmax(0, 1fr); }
+.settings-compact :deep(.mcp-add),
+.settings-compact :deep(.group-head) { flex-wrap: wrap; min-width: 0; }
+.settings-compact :deep(.settings-split__detail) { padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+.settings-loading { flex: 0 0 auto; padding: 6px 12px; color: var(--text-secondary); font-size: 13px; }

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import SettingsFieldGroup from './SettingsFieldGroup.vue'
+import SettingsDetailLayout from './SettingsDetailLayout.vue'
+import { useSettingsDetail } from './settingsNavigation'
 import { computed, onMounted, ref, watch } from 'vue'
 import { getProviderLimits, type ProviderLimitDocument } from '../../settingsApi'
 import ActionButton from '../ActionButton.vue'
@@ -14,6 +17,8 @@ import { applyResponsesApiDefaults } from './providerConfigDefaults'
 import SupportModeMultiSelect from './SupportModeMultiSelect.vue'
 import { useCodexOfficialAuth } from './useCodexOfficialAuth'
 import { t } from '../../i18n'
+
+const { detailOpen, openDetail, closeDetail } = useSettingsDetail()
 
 const props = defineProps<{
   data: Record<string, unknown>
@@ -31,6 +36,8 @@ const selectedProviderId = ref('')
 const editableProviderId = ref('')
 const providerIdError = ref('')
 const newProviderId = ref('')
+const providerSearch = ref('')
+const filteredProviderIds = computed(() => providerIds.value.filter(id => `${id} ${providerModelSummary(id)}`.toLowerCase().includes(providerSearch.value.trim().toLowerCase())))
 const providerLimits = ref<ProviderLimitDocument | null>(null)
 const limitWarning = ref('')
 const addingModelId = ref(false)
@@ -306,6 +313,7 @@ function addProvider() {
   emit('update:data', next)
   selectedProviderId.value = id
   newProviderId.value = ''
+  openDetail()
 }
 
 function setProviderId(rawProviderId: string) {
@@ -485,26 +493,29 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="provider-settings settings-split">
-    <aside class="settings-split__side">
-      <div class="provider-add">
-        <FormTextInput v-model="newProviderId" :placeholder="t('provider.newId')" @keydown.enter.prevent="addProvider" />
-        <ActionButton compact @click="addProvider">{{ t('common.add') }}</ActionButton>
-      </div>
-      <div class="settings-split__items">
-        <SelectionButton
-          v-for="providerId in providerIds"
-          :key="providerId"
-          class="settings-list-item"
-          stacked
-          :active="selectedProviderId === providerId"
-          @click="selectedProviderId = providerId"
-        >
-          {{ providerId }}
-          <template #detail>{{ providerModelSummary(providerId) || providers[providerId]?.type || '' }}</template>
-        </SelectionButton>
-      </div>
-    </aside>
+  <SettingsDetailLayout class="provider-settings" :detail-open="detailOpen" @back="closeDetail">
+    <template #list>
+      <aside class="settings-split__side">
+        <FormTextInput v-model="providerSearch" type="search" :placeholder="t('settings.searchProviders')" :aria-label="t('settings.searchProviders')" />
+        <div class="provider-add">
+          <FormTextInput :aria-label="t('provider.newId')" v-model="newProviderId" :placeholder="t('provider.newId')" @keydown.enter.prevent="addProvider" />
+          <ActionButton compact @click="addProvider">{{ t('common.add') }}</ActionButton>
+        </div>
+        <div class="settings-split__items">
+          <SelectionButton
+            v-for="providerId in filteredProviderIds"
+            :key="providerId"
+            class="settings-list-item"
+            stacked
+            :active="selectedProviderId === providerId"
+            @click="selectedProviderId = providerId; openDetail()"
+          >
+            {{ providerId }}
+            <template #detail>{{ providerModelSummary(providerId) || providers[providerId]?.type || '' }}</template>
+          </SelectionButton>
+        </div>
+      </aside>
+    </template>
 
     <section v-if="selectedProvider" class="provider-form settings-split__detail">
       <div class="form-head">
@@ -541,6 +552,7 @@ onMounted(() => {
         <span>{{ limitWarning || activeLimitWarnings[0] }}</span>
       </div>
 
+      <SettingsFieldGroup :title="t('settings.providerConnection')" expanded>
       <div class="form-grid">
         <ProviderAuthFields
           :provider-type="stringValue('type')"
@@ -606,6 +618,10 @@ onMounted(() => {
             @update:model-value="setField('description', $event)"
           />
         </label>
+      </div>
+      </SettingsFieldGroup>
+      <SettingsFieldGroup :title="t('settings.providerLimits')">
+      <div class="form-grid">
         <label>
           <span>{{ t('provider.timeout') }}</span>
           <FormTextInput :model-value="numberValue('timeoutMs')" type="number" min="1" @update:model-value="setNumberField('timeoutMs', $event)" />
@@ -660,11 +676,14 @@ onMounted(() => {
         </label>
       </div>
 
+      </SettingsFieldGroup>
+
       <DoubaoSpeechManagementPanel
         v-if="isDoubaoAudioProvider"
         :provider-id="selectedProviderId"
       />
 
+      <SettingsFieldGroup :title="t('settings.providerProtocol')">
       <div class="switch-grid">
         <label class="switch-field" :title="t('provider.privateHelp')"><span>{{ t('provider.private') }}</span><FormCheckbox :model-value="booleanValue('private')" @update:model-value="setField('private', $event)" /></label>
         <label class="switch-field"><span>{{ t('provider.responsesApi') }}</span><FormCheckbox :model-value="booleanValue('responsesApi')" @update:model-value="setField('responsesApi', $event)" /></label>
@@ -675,6 +694,8 @@ onMounted(() => {
         <label class="switch-field"><span>{{ t('provider.itemStreaming') }}</span><FormCheckbox :model-value="booleanValue('responsesItemLevelStreaming')" @update:model-value="setField('responsesItemLevelStreaming', $event)" /></label>
       </div>
 
+      </SettingsFieldGroup>
+      <SettingsFieldGroup :title="t('settings.providerTools')">
       <div class="form-grid">
         <label class="dropdown-field">
           <span>{{ t('provider.supportModes') }}</span>
@@ -718,8 +739,9 @@ onMounted(() => {
           <FormTextInput :model-value="numberValue('toolResultSubmissionMaxChars')" type="number" min="1" @update:model-value="setNumberField('toolResultSubmissionMaxChars', $event)" />
         </label>
       </div>
+      </SettingsFieldGroup>
     </section>
-  </div>
+  </SettingsDetailLayout>
 </template>
 
 <style scoped src="./ModelProviderSettingsForm.css"></style>

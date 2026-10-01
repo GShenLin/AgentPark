@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .identity import WorkerConfiguration, WorkerIdentity
-from .operations import StandaloneOperationRegistry
+from src.remote_workspace.operations import WorkspaceOperationRegistry
 from .protocol import PROTOCOL_VERSION, ProtocolError, RemoteTask, decode_json_object, require_object
 
 
@@ -53,13 +53,14 @@ class RemoteWorkerClient:
     def __init__(
         self,
         configuration: WorkerConfiguration,
-        operations: StandaloneOperationRegistry,
+        operations: WorkspaceOperationRegistry,
         *,
         workspace_path: str,
         display_name: str,
         transport: JsonHttpTransport | None = None,
         logger: logging.Logger | None = None,
         retry_delay_seconds: float = RETRY_DELAY_SECONDS,
+        status_callback=None,
     ) -> None:
         self._configuration = configuration
         self._operations = operations
@@ -76,6 +77,7 @@ class RemoteWorkerClient:
         self._active_tasks_lock = threading.Lock()
         self._active_task_cancellations: dict[str, threading.Event] = {}
         self._early_cancellations: set[str] = set()
+        self._status_callback = status_callback
 
     def run_forever(self) -> None:
         self._heartbeat_thread = threading.Thread(
@@ -101,8 +103,10 @@ class RemoteWorkerClient:
                     continue
                 self._set_session(session)
                 self._poll_session(session)
-            except Exception:
+            except Exception as exc:
                 self._logger.exception("AgentPark Remote connection cycle failed for %s", identity.server_url)
+                if self._status_callback:
+                    self._status_callback(f"连接失败，正在重试：{exc}")
             finally:
                 self._clear_session(generation)
             self._stop_event.wait(self._retry_delay_seconds)
@@ -151,6 +155,8 @@ class RemoteWorkerClient:
         if current_generation != generation:
             return None
         self._logger.info("Connected to %s as %s", current.server_url, self._display_name)
+        if self._status_callback:
+            self._status_callback(f"已登记到 AgentPark：{current.server_url}")
         return RegisteredSession(identity=current, generation=generation)
 
     def _poll_session(self, session: RegisteredSession) -> None:

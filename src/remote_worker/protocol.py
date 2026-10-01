@@ -7,9 +7,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 
 PROTOCOL_VERSION = 2
-DISCOVERY_HOST = "127.0.0.1"
-DISCOVERY_PORT = 18766
-DISCOVERY_PATH = "/agentpark/discover"
 
 
 class ProtocolError(ValueError):
@@ -67,13 +64,6 @@ def normalize_server_origin(value: object) -> str:
     default_port = 80 if scheme == "http" else 443
     netloc = hostname if parsed.port in {None, default_port} else f"{hostname}:{parsed.port}"
     return urlunsplit((scheme, netloc, "", "", ""))
-
-
-def origins_equal(left: object, right: object) -> bool:
-    try:
-        return normalize_server_origin(left) == normalize_server_origin(right)
-    except ProtocolError:
-        return False
 
 
 def require_object(value: object, field_name: str) -> dict[str, Any]:

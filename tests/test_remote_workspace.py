@@ -27,29 +27,6 @@ def _register(broker: RemoteWorkspaceBroker, *, source_ip: str = "10.0.0.8", wor
     return credentials
 
 
-def test_pairing_selects_the_only_worker_from_the_browser_ip():
-    broker = RemoteWorkspaceBroker()
-    _register(broker)
-
-    paired = broker.pair_for_ip("10.0.0.8")
-
-    assert paired["worker_id"] == "worker-1"
-    assert paired["host_kind"] == "standalone"
-    assert paired["workspace_path"] == r"D:\Projects\Game"
-
-
-def test_pairing_rejects_zero_or_multiple_workers_from_the_browser_ip():
-    broker = RemoteWorkspaceBroker()
-
-    with pytest.raises(LookupError, match="No online AgentPark remote worker"):
-        broker.pair_for_ip("10.0.0.8")
-
-    _register(broker, worker_id="worker-1")
-    _register(broker, worker_id="worker-2")
-    with pytest.raises(RuntimeError, match="Multiple remote workers"):
-        broker.pair_for_ip("10.0.0.8")
-
-
 def test_remote_target_requires_absolute_worker_path():
     relative_agent = SimpleNamespace(
         config={

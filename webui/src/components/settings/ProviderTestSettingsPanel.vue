@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SettingsDetailLayout from './SettingsDetailLayout.vue'
+import { useSettingsDetail } from './settingsNavigation'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   getProviderLimitTestJob,
@@ -12,6 +14,8 @@ import {
 } from '../../settingsApi'
 import ActionButton from '../ActionButton.vue'
 import SelectionButton from '../SelectionButton.vue'
+
+const { detailOpen, openDetail, closeDetail } = useSettingsDetail()
 
 const limits = ref<ProviderLimitDocument | null>(null)
 const selectedProviderId = ref('')
@@ -222,63 +226,65 @@ onUnmounted(clearPoll)
 </script>
 
 <template>
-  <div class="provider-test settings-split">
-    <aside class="settings-split__side">
-      <div class="test-actions">
-        <ActionButton variant="primary" compact :disabled="jobRunning || loading" @click="startTesting">
-          {{ testing ? 'Testing...' : 'Test all' }}
-        </ActionButton>
-        <ActionButton compact :disabled="jobRunning || loading" @click="startModelDiscovery">
-          {{ modelRefreshing ? 'Getting...' : 'Models' }}
-        </ActionButton>
-        <ActionButton compact :disabled="loading" @click="loadLimits">Reload</ActionButton>
-      </div>
+  <SettingsDetailLayout class="provider-test" :detail-open="detailOpen" @back="closeDetail">
+    <template #list>
+      <aside class="settings-split__side">
+        <div class="test-actions">
+          <ActionButton variant="primary" compact :disabled="jobRunning || loading" @click="startTesting">
+            {{ testing ? 'Testing...' : 'Test all' }}
+          </ActionButton>
+          <ActionButton compact :disabled="jobRunning || loading" @click="startModelDiscovery">
+            {{ modelRefreshing ? 'Getting...' : 'Models' }}
+          </ActionButton>
+          <ActionButton compact :disabled="loading" @click="loadLimits">Reload</ActionButton>
+        </div>
 
-      <div class="settings-split__items">
-        <SelectionButton
-          v-for="providerId in providerIds"
-          :key="providerId"
-          stacked
-          class="settings-list-item"
-          :active="selectedProviderId === providerId"
-          @click="selectedProviderId = providerId"
-        >
-          <span class="provider-item-head">
-            <span class="provider-name" :title="providerId">{{ providerId }}</span>
-            <span class="provider-health" :class="providerState(limits?.providers?.[providerId])">
-              <span class="provider-health-dot" aria-hidden="true"></span>
-              {{ providerStatusLabel(limits?.providers?.[providerId]) }}
-            </span>
-          </span>
-          <template #detail>
-            <span class="provider-meta">
-              <span
-                v-if="limits?.providers?.[providerId]?.type"
-                class="provider-type"
-                :title="limits?.providers?.[providerId]?.type"
-              >
-                {{ limits?.providers?.[providerId]?.type }}
-              </span>
-              <span
-                v-if="limits?.providers?.[providerId]?.model"
-                class="provider-model"
-                :title="limits?.providers?.[providerId]?.model"
-              >
-                {{ limits?.providers?.[providerId]?.model }}
-              </span>
-              <span
-                v-if="!limits?.providers?.[providerId]?.type && !limits?.providers?.[providerId]?.model"
-                class="provider-model"
-              >
-                No type or model information
+        <div class="settings-split__items">
+          <SelectionButton
+            v-for="providerId in providerIds"
+            :key="providerId"
+            stacked
+            class="settings-list-item"
+            :active="selectedProviderId === providerId"
+            @click="selectedProviderId = providerId; openDetail()"
+          >
+            <span class="provider-item-head">
+              <span class="provider-name" :title="providerId">{{ providerId }}</span>
+              <span class="provider-health" :class="providerState(limits?.providers?.[providerId])">
+                <span class="provider-health-dot" aria-hidden="true"></span>
+                {{ providerStatusLabel(limits?.providers?.[providerId]) }}
               </span>
             </span>
+            <template #detail>
+              <span class="provider-meta">
+                <span
+                  v-if="limits?.providers?.[providerId]?.type"
+                  class="provider-type"
+                  :title="limits?.providers?.[providerId]?.type"
+                >
+                  {{ limits?.providers?.[providerId]?.type }}
+                </span>
+                <span
+                  v-if="limits?.providers?.[providerId]?.model"
+                  class="provider-model"
+                  :title="limits?.providers?.[providerId]?.model"
+                >
+                  {{ limits?.providers?.[providerId]?.model }}
+                </span>
+                <span
+                  v-if="!limits?.providers?.[providerId]?.type && !limits?.providers?.[providerId]?.model"
+                  class="provider-model"
+                >
+                  No type or model information
+                </span>
+              </span>
           </template>
         </SelectionButton>
 
         <div v-if="!providerIds.length && !loading" class="empty-list">No test results</div>
       </div>
     </aside>
+    </template>
 
     <section class="provider-detail settings-split__detail">
       <div class="detail-head">
@@ -385,7 +391,7 @@ onUnmounted(clearPoll)
 
       <div v-if="error" class="settings-error">{{ error }}</div>
     </section>
-  </div>
+  </SettingsDetailLayout>
 </template>
 
 <style scoped src="./ProviderTestSettingsPanel.css"></style>

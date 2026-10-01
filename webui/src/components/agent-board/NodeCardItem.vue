@@ -200,6 +200,7 @@ onBeforeUnmount(cleanupNodeCard)
           {{ props.node.name }}
         </div>
         <div v-if="isClockRunning" class="node-status-badge">{{ t('board.working') }}</div>
+        <div v-if="props.node.remoteEnabled" class="node-status-badge" :title="props.node.remoteWorkerId">Remote</div>
         <div class="node-actions">
           <button type="button" class="node-trigger" @pointerdown.stop @click.stop="ctx.triggerNode(endpointId).catch(() => null)">
             Trigger

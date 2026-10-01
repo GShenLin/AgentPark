@@ -1,5 +1,5 @@
-<script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+﻿<script setup lang="ts">
+import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, provide, ref } from 'vue'
 import {
   applyRuntimeEventConfig,
   getNodeTemplate,
@@ -22,6 +22,10 @@ import {
   type SettingsSectionInfo,
   type ThemePresetInfo,
 } from '../settingsApi'
+import { DEFAULT_SETTINGS_SECTIONS, SECTION_MESSAGE_KEYS, useSettingsSections } from './settings/settingsSections'
+import { createSettingsPageNavigation, settingsNavigationKey, useCompactSettings } from './settings/settingsNavigation'
+import SettingsMobileCatalog from './settings/SettingsMobileCatalog.vue'
+import LanguageSwitcher from './LanguageSwitcher.vue'
 import ActionButton from './ActionButton.vue'
 import SelectionButton from './SelectionButton.vue'
 import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
@@ -45,32 +49,6 @@ import { applyWorkspaceTheme } from '../theme'
 import { t } from '../i18n'
 
 const NodeProfilerEditor = defineAsyncComponent(() => import('./settings/NodeProfilerEditor.vue'))
-const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
-  {
-    id: 'model-provider',
-    label: 'modelProvider',
-    path: 'config/modelProvider.json',
-    filename: 'modelProvider.json',
-  },
-  {
-    id: 'defaults',
-    label: 'Default settings',
-    path: 'config/config.json',
-    filename: 'config.json',
-  },
-  {
-    id: 'companion',
-    label: 'Companion',
-    path: 'memories/companion/config.json',
-    filename: 'config.json',
-  },
-  {
-    id: 'events',
-    label: 'Runtime Events',
-    path: 'config/events.json',
-    filename: 'events.json',
-  },
-]
 
 const props = withDefaults(defineProps<{
   backLabel?: string
@@ -79,6 +57,8 @@ const props = withDefaults(defineProps<{
   backLabel: 'Back',
   showBackButton: true,
 })
+
+const compact = useCompactSettings()
 
 const emit = defineEmits<{
   back: []
@@ -101,6 +81,7 @@ const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[
 const themePresets = ref<ThemePresetInfo[]>([])
 const activeThemePresetId = ref('default')
 const nodeProfilerDirty = ref(false)
+const gatewayDirty = ref(false)
 const pendingProviderLimitCopies = ref<ProviderLimitCopyRequest[]>([])
 const pendingProviderModelAdditions = ref<ProviderModelAdditionRequest[]>([])
 const providerLimitSourceIds = ref<Record<string, string>>({})
@@ -110,87 +91,7 @@ const backButtonLabel = computed(() => {
   return props.backLabel
 })
 
-const SECTION_MESSAGE_KEYS: Record<string, string> = {
-  authorization: 'settings.authorization',
-  'model-provider': 'settings.modelProvider',
-  gateway: 'settings.gateway',
-  harness: 'settings.harness',
-  defaults: 'settings.defaults',
-  companion: 'settings.companion',
-  events: 'settings.runtimeEvents',
-  'provider-test': 'settings.providerTest',
-  pressure: 'settings.pressure',
-  'tool-stats': 'settings.statistics',
-  'node-profiler-editor': 'settings.nodeProfiler',
-  exit: 'settings.exit',
-  theme: 'settings.theme',
-}
-
-const displaySections = computed<SettingsSectionInfo[]>(() => {
-  const base = sections.value.slice()
-  base.push({ id: 'harness', label: 'Harness', path: '', filename: '' })
-  base.push({ id: 'knowledge', label: 'Knowledge', path: '本地文件夹知识库', filename: '' })
-  base.push({ id: 'skills', label: 'Skill 管理', path: '项目 · 用户 · 自定义加载路径', filename: '' })
-  base.push({ id: 'peer-network', label: '设备互联', path: '', filename: '' })
-  base.push({ id: 'node-sync', label: '节点同步', path: '', filename: '' })
-  if (!base.some((item) => item.id === 'authorization')) {
-    base.unshift({
-      id: 'authorization',
-      label: 'Authorization',
-      path: '.auth/access-control.json',
-      filename: 'access-control.json',
-    })
-  }
-  if (!base.some((item) => item.id === 'gateway')) {
-    base.splice(Math.min(1, base.length), 0, {
-      id: 'gateway',
-      label: 'Gateway',
-      path: 'config/publicGateway.json · .auth/gateway/keys.json',
-      filename: 'publicGateway.json',
-    })
-  }
-  if (!base.some((item) => item.id === 'provider-test')) {
-    base.push({
-      id: 'provider-test',
-      label: 'Test',
-      path: 'config/ProviderLimit.json',
-      filename: 'ProviderLimit.json',
-    })
-  }
-  if (!base.some((item) => item.id === 'pressure')) {
-    base.push({
-      id: 'pressure',
-      label: 'Pressure',
-      path: 'config/modelProvider.json',
-      filename: '',
-    })
-  }
-  if (!base.some((item) => item.id === 'tool-stats')) {
-    base.push({
-      id: 'tool-stats',
-      label: 'Static',
-      path: '.cache/tool_stats',
-      filename: 'summary.json',
-    })
-  }
-  if (!base.some((item) => item.id === 'node-profiler-editor')) {
-    base.push({
-      id: 'node-profiler-editor',
-      label: 'NodeProfilerEditor',
-      path: 'agent/*.json',
-      filename: '*.json',
-    })
-  }
-  if (!base.some((item) => item.id === 'exit')) {
-    base.push({
-      id: 'exit',
-      label: 'Exit',
-      path: 'AgentPark backend',
-      filename: '',
-    })
-  }
-  return base
-})
+const displaySections = useSettingsSections(sections)
 
 const currentSection = computed(() => {
   return displaySections.value.find((item) => item.id === activeSection.value) || null
@@ -301,14 +202,18 @@ async function loadSection(sectionId = activeSection.value) {
     advancedMode.value = false
     error.value = ''
     status.value = ''
+    nodeProfilerDirty.value = false
+    gatewayDirty.value = false
     return
   }
   loading.value = true
   error.value = ''
   status.value = ''
   try {
-    activeSection.value = sectionId
     const document = await getSettingsSection(sectionId)
+    activeSection.value = sectionId
+    nodeProfilerDirty.value = false
+    gatewayDirty.value = false
     loadedDocument.value = document
     editorContent.value = document.content
     if (sectionId === 'model-provider') {
@@ -327,20 +232,33 @@ async function loadSection(sectionId = activeSection.value) {
 }
 
 async function selectSection(sectionId: string) {
-  if (sectionId === activeSection.value) return
-  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm(t('settings.discardNodeProfiler'))) {
-    return
-  }
-  nodeProfilerDirty.value = false
+  if (loading.value || saving.value) return
+  if (sectionId === activeSection.value) { sectionOpen.value = true; return }
+  if (!confirmLeave()) return
+  sectionOpen.value = true
   await loadSection(sectionId)
 }
 
-function handleBack() {
-  if (isNodeProfilerEditor.value && nodeProfilerDirty.value && !window.confirm(t('settings.discardNodeProfiler'))) {
-    return
-  }
-  emit('back')
+const { sectionOpen, detailBack, confirmLeave, handleBack } = createSettingsPageNavigation({
+  compact,
+  busy: computed(() => loading.value || saving.value),
+  hasChanges: computed(() => dirty.value || nodeProfilerDirty.value || gatewayDirty.value),
+  confirmDiscard: () => window.confirm(t(nodeProfilerDirty.value ? 'settings.discardNodeProfiler' : 'settings.unsavedConfirm')),
+  exit: () => emit('back'),
+})
+provide(settingsNavigationKey, { compact, detailBack })
+
+async function reloadSection() {
+  if (confirmLeave()) await loadSection()
 }
+
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!dirty.value && !nodeProfilerDirty.value && !gatewayDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 
 function handleProviderDuplicated(sourceProviderId: string, targetProviderId: string) {
   const sourceId = providerLimitSourceIds.value[sourceProviderId] || sourceProviderId
@@ -535,39 +453,44 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="settings-page">
+  <section class="settings-page" :class="{ 'settings-compact': compact, 'section-open': sectionOpen }">
     <header class="settings-head">
       <div class="settings-title-wrap">
-        <h1>{{ t('common.settings') }}</h1>
+        <h1>{{ compact && sectionOpen ? activeLabel : t('common.settings') }}</h1>
         <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
-      <div v-if="props.showBackButton" class="settings-head-actions">
-        <ActionButton compact @click="handleBack">{{ backButtonLabel }}</ActionButton>
+      <div v-if="props.showBackButton || compact" class="settings-head-actions">
+        <ActionButton compact :disabled="loading || saving" @click="handleBack">‹ {{ backButtonLabel }}</ActionButton>
       </div>
+      <LanguageSwitcher v-if="compact" compact />
     </header>
 
+    <div v-if="loading" class="settings-loading" role="status">{{ t('common.loading') }}</div>
+    <div v-if="error && compact && !sectionOpen" class="settings-error" role="alert">{{ error }}</div>
     <div class="settings-body">
-      <nav class="settings-tabs" :aria-label="t('settings.sectionsAria')">
+      <SettingsMobileCatalog v-if="compact" v-show="!sectionOpen" :sections="displaySections" :active="activeSection" :disabled="loading || saving" @select="selectSection" />
+      <nav v-else class="settings-tabs" :aria-label="t('settings.sectionsAria')">
         <SelectionButton
           v-for="section in displaySections"
           :key="section.id"
           class="settings-tab"
           :active="activeSection === section.id"
+          :disabled="loading || saving"
           @click="selectSection(section.id)"
         >
           {{ labelFor(section) }}
         </SelectionButton>
       </nav>
 
-      <main class="settings-editor">
-        <div v-if="!isGateway" class="editor-toolbar">
+      <main v-show="!compact || sectionOpen" class="settings-editor" :inert="loading || saving" :aria-busy="loading || saving">
+        <div v-if="!isGateway && (!isVirtualSection || !compact)" class="editor-toolbar">
           <div class="editor-title">
             <span>{{ activeLabel }}</span>
             <span v-if="dirty" class="editor-state">{{ t('settings.unsaved') }}</span>
             <span v-else-if="status" class="editor-state saved">{{ status }}</span>
           </div>
           <div class="editor-actions">
-            <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="loadSection()">{{ t('settings.reload') }}</ActionButton>
+            <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="reloadSection">{{ t('settings.reload') }}</ActionButton>
             <ActionButton v-if="!isVirtualSection" compact :disabled="loading || saving" @click="advancedMode = !advancedMode">
               {{ advancedMode ? t('settings.form') : t('settings.advancedJson') }}
             </ActionButton>
@@ -587,7 +510,7 @@ onMounted(async () => {
         <HarnessSettingsPanel v-else-if="isHarness" />
         <KnowledgeSettingsPanel v-else-if="isKnowledge" />
         <SkillsSettingsPanel v-else-if="isSkills" />
-        <GatewaySettingsPanel v-else-if="isGateway" />
+        <GatewaySettingsPanel v-else-if="isGateway" @dirty="gatewayDirty = $event" />
         <PeerNetworkPanel v-else-if="isPeerNetwork" />
         <NodeSyncSettingsPanel v-else-if="isNodeSync" />
         <ProviderTestSettingsPanel v-else-if="isProviderTest" />
@@ -657,11 +580,12 @@ onMounted(async () => {
           <div v-else class="settings-error">{{ t('settings.invalidJsonHelp') }}</div>
         </template>
 
-        <div v-if="error" class="settings-error">{{ error }}</div>
+        <div v-if="error" class="settings-error" role="alert">{{ error }}</div>
       </main>
     </div>
   </section>
 </template>
 
 <style scoped src="./settings/SettingsPage.css"></style>
+<style scoped src="./settings/SettingsMobile.css"></style>
 

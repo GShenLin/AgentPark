@@ -1,115 +1,121 @@
 # AgentPark Remote Workspace Protocol v2
 
-The remote workspace protocol is host-neutral. Current worker implementations are:
+## Registration and device selection
 
-- the standalone Windows `AgentParkRemote.exe`;
-- the AgentPark Remote Unreal Editor plugin.
+AgentParkRemote starts from saved settings in `%LOCALAPPDATA%/AgentParkRemote/settings.json`.
+On Linux, settings and identity use `$XDG_CONFIG_HOME/AgentParkRemote`, defaulting to
+`~/.config/AgentParkRemote`. Native Linux packaging and startup instructions are in
+`deploy/remote-worker/README-linux.md`.
+The settings window allows editing the device name, server address and default workspace.
+`--headless` starts without the window. `--server` and `--workspace` override saved values.
 
-Only one worker should be online from a browser machine while the user enables a node's `Remote` checkbox. Enabling the checkbox pairs the node with that worker immediately. No second confirmation handshake is required.
-
-## Worker lifecycle
-
-1. Register with `POST /api/remote-workers/register`.
-2. Long-poll `POST /api/remote-workers/{worker_id}/poll`.
-3. Independently long-poll `POST /api/remote-workers/{worker_id}/cancellations/poll`.
-4. Submit results to `POST /api/remote-workers/{worker_id}/tasks/{task_id}/result`.
-5. Send heartbeats to `POST /api/remote-workers/{worker_id}/heartbeat`.
-
-Registration fields:
+For a host/IP, the worker probes `http://HOST:8788/api/remote-workers/service`.
+A complete URL explicitly selects the runtime origin/port. The response must be:
 
 ```json
-{
-  "protocol_version": 2,
-  "worker_id": "persistent-worker-id",
-  "token": "persistent-secret-token",
-  "display_name": "Alice-PC / ProjectName",
-  "host_kind": "unreal_editor",
-  "workspace_path": "D:\\Projects\\ProjectName",
-  "capabilities": [
-    "execute_console_command",
-    "read_file",
-    "write_file",
-    "rg_search_text",
-    "rg_list_files",
-    "apply_patch",
-    "select_folder"
-  ]
-}
+{"service":"agentpark-runtime","remote_protocol":2}
 ```
 
-`host_kind` is descriptive and must not affect protocol behavior. The Unreal plugin reports `unreal_editor`; the standalone process reports `standalone` while keeping the same task and result contracts. Only one protocol host should be open on a browser machine while pairing.
+A missing endpoint (404) or unavailable connection selects the same host's HTTPS
+coordinator. Its service response identifies `agentpark-coordinator`. Authentication
+errors, HTTP server errors, malformed responses and unsupported protocol versions
+are reported rather than silently selecting another endpoint.
 
-The standalone worker and Unreal plugin use the same browser discovery endpoint. They listen only on
-`127.0.0.1:18766` for `POST /agentpark/discover`. The request must contain the current AgentPark page
-origin as `server_url`, and its HTTP `Origin` header must match that value exactly. The worker persists
-the accepted server origin and its protocol identity, then registers through the lifecycle above.
+There is no browser-local discovery listener or browser-IP pairing. The browser
+lists registered workers from `GET /api/remote-workers`. Settings -> Device
+interconnection displays this catalog; a node's LinkToRemote action stores the
+selected worker ID and its own absolute WorkingPath. Offline bindings never switch
+to another worker or to server-local execution.
 
-`AgentParkRemote.exe` advertises only standalone workspace capabilities. Unreal-only tools such as
-`ue_remote_control` and `cancer_control` remain exclusive to workers that actually host those operations.
+## Runtime registration
 
-## Workspace semantics
+A directly registered worker uses these HTTP endpoints:
 
-When a node has `Remote` enabled, its `WorkingPath` is an absolute path on the paired worker. Every workspace tool is routed through the same central AgentPark tool dispatcher. Workers must reject missing, relative, or nonexistent WorkingPath values and must never silently execute on the AgentPark server.
+- POST `/api/remote-workers/register`
+- POST `/api/remote-workers/{worker_id}/poll`
+- POST `/api/remote-workers/{worker_id}/cancellations/poll`
+- POST `/api/remote-workers/{worker_id}/heartbeat`
+- POST `/api/remote-workers/{worker_id}/tasks/{task_id}/result`
 
-`workspace_exec` remains a server-side orchestration boundary because it may contain server-owned
-operations such as `update_task_direction`. Each file-system operation inside the program
-(`read_file`, `search_text`, `list_files`, `run_command`, and `apply_patch`) is dispatched separately
-through the same remote workspace router. This keeps task state local while ensuring that all path
-resolution and workspace I/O happens on the paired worker.
+Registration contains `protocol_version: 2`, persistent `worker_id` and `token`,
+`display_name`, `host_kind`, `workspace_path`, and `capabilities`. The response is
+`{ok, worker_id, token, protocol_version}`. Tokens are never returned in device lists.
+Same-identity reconnection updates connection metadata while preserving queued
+and active tasks and their synchronization owner. Conflicting credentials are rejected.
 
-## Task envelope
+## Authentication center and shared directory
+
+Cloud workers use the existing `/connect` WebSocket endpoint with persistent
+Ed25519 identity proof. First admission is confirmed in the authentication center,
+just like an AgentPark runtime. Only admitted devices can publish or receive a
+remote directory. Browser sessions access it through their selected AgentPark Board.
+
+After the existing ready acknowledgement, capable devices send:
 
 ```json
-{
-  "task_id": "task-id",
-  "tool_name": "read_file",
-  "arguments": {"file_path": "Source/App.cpp"},
-  "working_path": "D:\\Projects\\ProjectName",
-  "timeout_seconds": 3600
-}
+{"kind":"remote_publish","remote_workers":[
+  {"worker_id":"worker-id","display_name":"Workstation","host_kind":"standalone",
+   "workspace_path":"D:/Projects/Game","capabilities":["read_file"],"online":true}
+]}
 ```
 
-Successful result:
+A runtime publishes itself (`host_kind: runtime`) and its directly registered workers.
+A standalone cloud worker publishes itself. The coordinator binds each publication to the authenticated
+connection's identity and broadcasts:
 
 ```json
-{
-  "token": "persistent-secret-token",
-  "result": {
-    "ok": true,
-    "result": "{\"status\":\"success\"}"
-  }
-}
+{"kind":"remote_directory","hosts":[
+  {"peer_id":"64-hex-host-identity","remote_workers":[]}
+]}
 ```
 
-Failed result:
+Directory worker IDs exposed by a runtime are `peer:HOST_ID:WORKER_ID`, preserving
+host ownership even when two different hosts use the same local worker ID. All
+participating devices admitted by the same center may use the published remote
+execution capabilities. This does not grant ordinary Board access or Agent
+collaboration privileges; those still require their own per-call grants.
+
+Task traffic uses the existing authenticated WebRTC data channel with STUN/TURN.
+The coordinator only carries discovery and signaling, not workspace file content.
+A runtime's own endpoint executes through the same workspace executor as a standalone
+Remote. Requests for workers registered beneath that runtime dispatch into its local
+Remote broker. It must never redirect a peer request to an unrelated third host.
+
+The peer RPC operation is `remote_workspace`, with a strictly validated `remote`
+request containing `action` (`execute` or `cancel`), `worker_id`, `task_id`,
+`tool_name`, `arguments`, `working_path`, and `timeout_seconds`. The recipient binds
+task cancellation to the calling runtime identity. Disconnects and response
+uncertainty never automatically replay a command or file mutation.
+
+## Workspace operations
+
+Standalone capabilities: `read_file`, `write_file`, `view_image`, `rg_list_files`,
+`rg_search_text`, `apply_patch`, `execute_console_command`, and `list_directories`.
+Directory browsing returns `current_path`, `parent_path`, directory-only `files`,
+and filesystem `roots` from the execution host. The initiating browser renders the
+shared folder picker. No remote native dialog is opened. The browser requests
+`POST /api/remote-workers/directories` with `{worker_id, path}`; old workers without
+this capability receive an explicit update-required error.
+Application-hosted workers may advertise their own additional capabilities.
+Missing, relative or nonexistent WorkingPath values are explicit errors.
+
+`workspace_exec` orchestration remains in the AgentPark runtime. Each filesystem
+operation inside it goes through the remote router; server-owned task-state
+operations remain on the runtime.
+
+An HTTP task envelope is:
 
 ```json
-{
-  "token": "persistent-secret-token",
-  "result": {
-    "ok": false,
-    "error": "explicit failure message"
-  }
-}
+{"task_id":"task-id","tool_name":"read_file","arguments":{"file_path":"Source/App.cpp"},
+ "working_path":"D:/Projects/Game","timeout_seconds":3600}
 ```
 
-The cancellation poll response contains exact task IDs:
+The worker submits `{token, result: {ok: true, result: "tool-result-string"}}` or
+`{token, result: {ok: false, error: "explicit message"}}`. Cancellation polling stays
+active during tool execution. Child-process operations terminate their process tree
+before returning a stopped result. A queued task that times out is removed, while
+an active timed-out task receives a cancellation request.
 
-```json
-{
-  "ok": true,
-  "task_ids": ["task-id"]
-}
-```
-
-Workers must keep this control poll active while a tool is executing. Each task owns a cancellation
-signal; workspace loops must check it at bounded intervals, and child-process tools must terminate the
-full process tree before returning a `stopped` result.
-
-## Standalone process behavior
-
-The Windows executable is built with the GUI subsystem (`console=False`) and runs without a visible
-console window. Its default workspace is the directory containing the executable; `--workspace` can set
-a different initial workspace. Browser pairing may subsequently invoke `select_folder` to choose the
-node's remote WorkingPath. Identity and rotating diagnostic logs are stored under
-`%LOCALAPPDATA%\AgentParkRemote`.
+The packaged Windows worker has no console window. It opens its connection settings
+window unless `--headless` is used. Its default workspace is the executable directory.
+Identity files, settings and rotating `AgentParkRemote.log` live in the state directory.

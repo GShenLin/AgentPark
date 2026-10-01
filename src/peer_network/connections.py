@@ -24,6 +24,7 @@ class PeerConnections:
         self.service = service
         self.links: dict[str, Link] = {}
         self.seen: dict[tuple[str, str, str], float] = {}
+        self.changed = asyncio.Event()
 
     async def remove(self, peer: str) -> None:
         link = self.links.pop(peer, None)
@@ -31,6 +32,7 @@ class PeerConnections:
             if link.channel:
                 link.channel.close()
             await link.pc.close()
+        self.changed.set()
 
     async def close(self) -> None:
         for peer in list(self.links):
@@ -47,6 +49,7 @@ class PeerConnections:
         pc = RTCPeerConnection(RTCConfiguration(iceServers=servers))
         link = Link(session_id, pc, time.monotonic())
         self.links[peer] = link
+        self.changed.set()
 
         @pc.on("datachannel")
         def on_channel(channel):
@@ -57,6 +60,7 @@ class PeerConnections:
 
         @pc.on("connectionstatechange")
         def state_changed():
+            self.changed.set()
             if pc.connectionState == "failed":
                 self.service.errors[peer] = "设备连接失败，请检查网络及云端 STUN/TURN 服务是否可达。"
                 if link.channel:
@@ -68,15 +72,31 @@ class PeerConnections:
         async def dispatch(call):
             if link.portal:
                 return await self.service.dispatch_portal(peer, call)
+            if call.operation == "remote_workspace":
+                return await self.service.remote.accept(peer, call)
             # Resolve grants for every operation, including already established sessions.
             grant = self.service.store.grants.get(peer)
             if grant is None:
                 raise PermissionError("Peer authorization has been revoked.")
             return await self.service.dispatch(grant, call)
         link.channel = PeerChannel(channel, dispatch)
+        channel.on("open", self.changed.set)
+        channel.on("close", self.changed.set)
+        self.changed.set()
+
+    async def wait_connected(self, peer: str, timeout: float = 35) -> Link:
+        async with asyncio.timeout(timeout):
+            while True:
+                self.changed.clear()
+                link = self.links.get(peer)
+                if link and link.channel and link.channel.ready.is_set() and not link.channel.closed:
+                    return link
+                if link and link.pc.connectionState in {"failed", "closed"}:
+                    raise ConnectionError("Remote peer connection failed.")
+                await self.changed.wait()
 
     async def connect(self, peer: str) -> None:
-        if peer not in self.service.store.grants:
+        if peer not in self.service.store.grants and not self.service.remote.allows_connection(peer):
             raise PermissionError("Pair the device before connecting.")
         existing = self.links.get(peer)
         if existing and existing.pc.connectionState not in {"closed", "failed"}:
@@ -95,7 +115,7 @@ class PeerConnections:
         from aiortc import RTCSessionDescription
         signal = Signal.model_validate(raw)
         peer = verify_signal(signal, self.service.identity.peer_id)
-        if not portal and peer not in self.service.store.grants:
+        if not portal and peer not in self.service.store.grants and not self.service.remote.allows_connection(peer):
             raise PermissionError("Signal from unpaired device rejected.")
         now = time.time()
         self.seen = {key: expiry for key, expiry in self.seen.items() if expiry > now}
@@ -131,4 +151,5 @@ class PeerConnections:
             return "disconnected"
         if link.channel and link.channel.ready.is_set() and not link.channel.closed:
             return "connected"
-        return link.pc.connectionState
+        # ICE can become connected before SCTP opens the RPC data channel.
+        return "connecting" if link.pc.connectionState == "connected" else link.pc.connectionState

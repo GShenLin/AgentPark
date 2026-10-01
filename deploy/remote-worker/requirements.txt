@@ -1,0 +1,9 @@
+# Standalone Remote only; intentionally excludes provider SDKs and knowledge DBs.
+pydantic==2.13.4
+Pillow==12.2.0
+cryptography==50.0.1
+websockets==16.0
+aiortc==1.15.0
+PyYAML==6.0.3
+packaging==24.1
+pyinstaller==6.22.3

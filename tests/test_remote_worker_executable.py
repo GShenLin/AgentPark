@@ -21,6 +21,7 @@ class _ProtocolState:
                 {"query": "from packaged remote", "include_globs": ["*.txt"], "fixed_strings": True},
             ),
             ("list", "rg_list_files", {"include_globs": ["*.txt"]}),
+            ("directories", "list_directories", {"path": str(workspace)}),
             (
                 "patch",
                 "apply_patch",
@@ -35,7 +36,9 @@ class _ProtocolState:
                     )
                 },
             ),
-            ("command", "execute_console_command", {"command": "Write-Output 'remote-command-ok'"}),
+            ("command", "execute_console_command", {
+                "command": "Write-Output 'remote-command-ok'" if os.name == "nt" else "printf '%s\\n' remote-command-ok",
+            }),
         ]
         self.next_task = 0
         self.result_event = threading.Event()
@@ -43,6 +46,12 @@ class _ProtocolState:
 
 def _handler_type(state: _ProtocolState):
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/api/remote-workers/service":
+                self._respond({"service": "agentpark-runtime", "remote_protocol": 2})
+            else:
+                self._respond({"ok": False}, status=404)
+
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -110,6 +119,7 @@ def test_packaged_remote_worker_executes_protocol_task(tmp_path):
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    (workspace / "remote-subdirectory").mkdir()
     (workspace / "remote.txt").write_text("from packaged remote", encoding="utf-8")
     state = _ProtocolState(workspace)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler_type(state))
@@ -125,8 +135,7 @@ def test_packaged_remote_worker_executes_protocol_task(tmp_path):
             str(workspace),
             "--state-directory",
             str(tmp_path / "state"),
-            "--discovery-port",
-            "0",
+            "--headless",
         ],
     )
     try:
@@ -145,6 +154,8 @@ def test_packaged_remote_worker_executes_protocol_task(tmp_path):
         assert decoded["search"]["matches"]
         assert decoded["list"]["status"] == "success"
         assert decoded["list"]["files"]
+        assert decoded["directories"]["current_path"] == str(workspace)
+        assert [entry["name"] for entry in decoded["directories"]["files"]] == ["remote-subdirectory"]
         assert decoded["patch"]["status"] == "success"
         assert decoded["command"]["status"] == "success"
         assert "remote-command-ok" in decoded["command"]["stdout"]

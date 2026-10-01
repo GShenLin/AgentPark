@@ -3,6 +3,7 @@ import { captureBoardRequest } from './portal/boardRequests'
 import type {
   AccessStatus,
   FileListResponse,
+  FileItem,
   AgentProfile,
   AgentProfileEditorPayload,
   AgentProfileLoadResponse,
@@ -353,10 +354,6 @@ export async function deleteRemote(remoteId: string): Promise<{ ok: boolean; rem
   return remoteConfigFetch(`/api/remotes/${encodeURIComponent(remoteId)}`, { method: 'DELETE' })
 }
 
-export async function pairRemoteWorker(): Promise<{ ok: boolean; worker: RemoteWorker }> {
-  return apiFetch('/api/remote-workers/pair', { method: 'POST' })
-}
-
 export async function waitForRemoteWorker(
   workerId: string,
   timeoutSeconds = 5,
@@ -369,48 +366,13 @@ export async function waitForRemoteWorker(
   })
 }
 
-export async function discoverLocalRemoteWorker(): Promise<{ ok: boolean; server_url: string }> {
-  const configuredBase = String(readActiveApiBase() || '').trim()
-  const serverUrl = new URL(configuredBase || window.location.origin, window.location.origin).origin
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 4000)
-  try {
-    const response = await fetch('http://127.0.0.1:18766/agentpark/discover', {
-      method: 'POST',
-      mode: 'cors',
-      cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ server_url: serverUrl }),
-      signal: controller.signal,
-    })
-    const text = await response.text().catch(() => '')
-    if (!response.ok) {
-      let detail = text.trim()
-      try {
-        detail = String(JSON.parse(detail)?.error || detail)
-      } catch {
-        // Keep the response body when it is not JSON.
-      }
-      throw new Error(detail || `HTTP ${response.status}`)
-    }
-    return (text ? JSON.parse(text) : { ok: true, server_url: serverUrl }) as { ok: boolean; server_url: string }
-  } catch (error: any) {
-    const detail = error?.name === 'AbortError' ? 'local discovery timed out' : String(error?.message || error)
-    throw new Error(
-      `AgentParkRemote worker was not reachable on this computer. Start AgentParkRemote.exe or open the Unreal plugin: ${detail}`,
-    )
-  } finally {
-    window.clearTimeout(timeout)
-  }
-}
-
-export async function selectRemoteWorkerFolder(
+export async function listRemoteWorkerDirectories(
   workerId: string,
-  initialPath?: string,
-): Promise<{ ok: boolean; path: string }> {
-  return apiFetch('/api/remote-workers/select-folder', {
+  path = '',
+): Promise<FileListResponse & { parent_path: string | null; roots: FileItem[] }> {
+  return apiFetch('/api/remote-workers/directories', {
     method: 'POST',
-    body: JSON.stringify({ worker_id: workerId, initial_path: initialPath || '' }),
+    body: JSON.stringify({ worker_id: workerId, path }),
   })
 }
 

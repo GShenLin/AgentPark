@@ -18,7 +18,8 @@ from src.remote_workspace.capabilities import STANDALONE_REMOTE_CAPABILITIES
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import raise_if_cancel_requested
 
-from .protocol import ProtocolError, RemoteTask
+from src.remote_worker.protocol import ProtocolError, RemoteTask
+from .directories import list_directories
 
 
 @dataclass
@@ -28,14 +29,12 @@ class _WorkspaceAgent:
 
 
 ToolOperation = Callable[..., str]
-FolderPicker = Callable[[str], str]
 
 
-class StandaloneOperationRegistry:
+class WorkspaceOperationRegistry:
     """Executes the canonical AgentPark workspace functions for a remote task."""
 
-    def __init__(self, folder_picker: FolderPicker | None = None) -> None:
-        self._folder_picker = folder_picker or select_folder
+    def __init__(self) -> None:
         self._operations: dict[str, ToolOperation] = {
             "apply_patch": apply_patch,
             "execute_console_command": execute_console_command,
@@ -68,8 +67,8 @@ class StandaloneOperationRegistry:
 
     def _execute(self, task: RemoteTask, cancel_event: threading.Event) -> str:
         working_path = validate_working_path(task.working_path)
-        if task.tool_name == "select_folder":
-            return self._select_folder(task, working_path)
+        if task.tool_name == "list_directories":
+            return list_directories(task.arguments, working_path)
         operation = self._operations.get(task.tool_name)
         if operation is None:
             raise ProtocolError(f"unsupported standalone remote tool: {task.tool_name}")
@@ -87,20 +86,6 @@ class StandaloneOperationRegistry:
             raise ProtocolError(f"remote tool {task.tool_name} returned a non-string result")
         return result
 
-    def _select_folder(self, task: RemoteTask, working_path: str) -> str:
-        initial = task.arguments.get("initial_path", working_path)
-        if initial is not None and not isinstance(initial, str):
-            raise ProtocolError("select_folder initial_path must be a string")
-        initial_path = str(initial or "").strip()
-        if not initial_path or not os.path.isdir(initial_path):
-            initial_path = working_path
-        selected = str(self._folder_picker(initial_path) or "").strip()
-        if selected:
-            selected = os.path.normpath(os.path.abspath(selected))
-            if not os.path.isdir(selected):
-                raise ProtocolError(f"selected folder does not exist: {selected}")
-        return json.dumps({"path": selected}, ensure_ascii=False)
-
 
 def validate_working_path(value: object) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -111,24 +96,3 @@ def validate_working_path(value: object) -> str:
     if not os.path.isdir(path):
         raise ProtocolError(f"Remote WorkingPath directory does not exist: {path}")
     return path
-
-
-def select_folder(initial_path: str) -> str:
-    import tkinter as tk
-    from tkinter import filedialog
-
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    try:
-        return str(
-            filedialog.askdirectory(
-                parent=root,
-                title="Select remote WorkingPath",
-                initialdir=initial_path,
-                mustexist=True,
-            )
-            or ""
-        )
-    finally:
-        root.destroy()

@@ -368,6 +368,7 @@ function clamp(value: number, min: number, max: number) {
       </div>
 
       <div class="theme-layout">
+        <label class="settings-mobile-selector"><span>Theme Panel</span><FormSelect v-model="selectedPanelId"><option v-for="panelId in panelIds" :key="panelId" :value="panelId">{{ panelLabel(panelId) }}</option></FormSelect></label>
         <nav class="panel-list">
           <button
             v-for="panelId in panelIds"
@@ -472,6 +473,14 @@ function clamp(value: number, min: number, max: number) {
     </section>
   </div>
 </template>
+
+<style scoped>
+.settings-mobile-selector { display: none; }
+@media (max-width: 960px) {
+  .settings-mobile-selector { display: grid; gap: 6px; }
+  .panel-list { display: none; }
+}
+</style>
 
 <style scoped>
 .theme-form {

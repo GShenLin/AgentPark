@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import threading
 import uuid
@@ -115,6 +116,10 @@ class WorkerConfiguration:
 
 
 def default_state_directory() -> Path:
+    if sys.platform != "win32":
+        if sys.platform == "darwin":
+            return Path.home() / "Library" / "Application Support" / "AgentParkRemote"
+        return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "AgentParkRemote"
     root = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
     if not root:
         root = str(Path.home() / "AppData" / "Local")

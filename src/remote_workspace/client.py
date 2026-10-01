@@ -45,7 +45,7 @@ def dispatch_remote_workspace_tool(
         response = _post_internal_request(
             "/api/remote-workers/internal/execute",
             payload,
-            payload["timeout_seconds"] + 10.0,
+            payload["timeout_seconds"] + (50.0 if target.worker_id.startswith("peer:") else 10.0),
         )
         if not response.get("ok"):
             raise RuntimeError(str(response.get("error") or "Remote workspace execution failed."))

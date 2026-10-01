@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SettingsDetailLayout from './SettingsDetailLayout.vue'
+import { useSettingsDetail } from './settingsNavigation'
 import { computed, onMounted, ref, watch } from 'vue'
 import FormTextInput from '../FormTextInput.vue'
 import {
@@ -17,6 +19,8 @@ import NodeConfigFields from '../agent-board/NodeConfigFields.vue'
 import NodeProfilerMetadataPanel from './NodeProfilerMetadataPanel.vue'
 import NodeProfilerProfileList from './NodeProfilerProfileList.vue'
 import NodeProfilerToolbar from './NodeProfilerToolbar.vue'
+
+const { detailOpen, openDetail, closeDetail } = useSettingsDetail()
 
 const props = defineProps<{
   providers: ProviderInfo[]
@@ -191,8 +195,9 @@ async function loadProfiles(preferredId = selectedProfileId.value) {
 }
 
 async function selectProfile(profileId: string) {
-  if (profileId === selectedProfileId.value) return
+  if (profileId === selectedProfileId.value) { openDetail(); return }
   if (!confirmDiscard()) return
+  openDetail()
   selectedProfileId.value = profileId
   await loadProfileDraft(profiles.value.find((profile) => profile.id === profileId) || null)
 }
@@ -343,15 +348,17 @@ onMounted(() => loadProfiles())
 </script>
 
 <template>
-  <div class="profiler-editor settings-split">
-    <NodeProfilerProfileList
-      :profiles="profiles"
-      :selected-profile-id="selectedProfileId"
-      :loading="loading"
-      :disabled="templateLoading || saving || deleting"
-      @select="selectProfile"
-    />
+  <SettingsDetailLayout class="profiler-editor" :detail-open="detailOpen" @back="closeDetail">
+    <template #list>
+      <NodeProfilerProfileList
+        :profiles="profiles"
+        :selected-profile-id="selectedProfileId"
+        :loading="loading"
+        :disabled="templateLoading || saving || deleting"
+        @select="selectProfile"
+      />
 
+    </template>
     <section class="profiler-workspace settings-split__detail">
       <NodeProfilerToolbar
         :profile="selectedProfile"
@@ -415,7 +422,7 @@ onMounted(() => loadProfiles())
       <div v-else class="profiler-placeholder">Select an existing profile to preview and edit it.</div>
       <div v-if="localError" class="profiler-error">{{ localError }}</div>
     </section>
-  </div>
+  </SettingsDetailLayout>
 </template>
 
 <style scoped src="./NodeProfilerEditor.css"></style>

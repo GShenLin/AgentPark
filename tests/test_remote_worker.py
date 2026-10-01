@@ -1,4 +1,3 @@
-import http.client
 import json
 import threading
 from pathlib import Path
@@ -7,12 +6,23 @@ import pytest
 
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.remote_worker.client import JsonHttpTransport, RemoteWorkerClient
-from src.remote_worker.discovery import DiscoveryServer
 from src.remote_worker.identity import IdentityStore, WorkerConfiguration
-from src.remote_worker.operations import StandaloneOperationRegistry
+from src.remote_workspace.operations import WorkspaceOperationRegistry
 from src.remote_worker.protocol import ProtocolError, RemoteTask, normalize_server_origin
 from src.remote_workspace.capabilities import REMOTE_FILE_SYSTEM_TOOL_NAMES
 from src.remote_workspace.capabilities import STANDALONE_REMOTE_CAPABILITIES
+
+
+def test_linux_state_directory_uses_user_config(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from src.remote_worker import identity
+
+    monkeypatch.setattr(identity, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "windows-only"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    assert identity.default_state_directory() == tmp_path / "config" / "AgentParkRemote"
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    assert identity.default_state_directory() == Path.home() / ".config" / "AgentParkRemote"
 
 
 def _configuration(tmp_path: Path) -> WorkerConfiguration:
@@ -60,52 +70,10 @@ def test_server_origin_normalization_has_an_explicit_origin_contract():
         normalize_server_origin("http://example.com/agentpark")
 
 
-def test_discovery_accepts_only_the_matching_browser_origin():
-    configured = []
-    server = DiscoveryServer(configured.append, port=0)
-    server.start()
-    host, port = server.address
-    try:
-        connection = http.client.HTTPConnection(host, port, timeout=3)
-        body = json.dumps({"server_url": "http://10.0.0.5:8766"})
-        connection.request(
-            "POST",
-            "/agentpark/discover",
-            body=body,
-            headers={
-                "Content-Type": "application/json",
-                "Content-Length": str(len(body.encode("utf-8"))),
-                "Origin": "http://10.0.0.5:8766",
-            },
-        )
-        response = connection.getresponse()
-        payload = json.loads(response.read().decode("utf-8"))
-        assert response.status == 200
-        assert payload == {"ok": True, "server_url": "http://10.0.0.5:8766"}
-        assert configured == ["http://10.0.0.5:8766"]
-
-        connection.request(
-            "POST",
-            "/agentpark/discover",
-            body=body,
-            headers={
-                "Content-Type": "application/json",
-                "Content-Length": str(len(body.encode("utf-8"))),
-                "Origin": "http://malicious.example",
-            },
-        )
-        response = connection.getresponse()
-        response.read()
-        assert response.status == 403
-        assert configured == ["http://10.0.0.5:8766"]
-    finally:
-        server.stop()
-
-
 def test_standalone_operations_reuse_workspace_tool_contracts(tmp_path):
     target = tmp_path / "hello.txt"
     target.write_text("first\nsecond\n", encoding="utf-8")
-    operations = StandaloneOperationRegistry(folder_picker=lambda initial: initial)
+    operations = WorkspaceOperationRegistry()
     task = RemoteTask(
         task_id="task-read",
         tool_name="read_file",
@@ -120,18 +88,18 @@ def test_standalone_operations_reuse_workspace_tool_contracts(tmp_path):
     assert result["content"] == "second\n"
     assert "ue_remote_control" not in operations.capabilities
     assert "cancer_control" not in operations.capabilities
-    assert "select_folder" in operations.capabilities
+    assert "list_directories" in operations.capabilities
 
 
 def test_standalone_capabilities_share_the_remote_workspace_contract():
-    operations = StandaloneOperationRegistry()
+    operations = WorkspaceOperationRegistry()
 
     assert set(operations.capabilities) == set(STANDALONE_REMOTE_CAPABILITIES)
     assert REMOTE_FILE_SYSTEM_TOOL_NAMES <= set(operations.capabilities)
 
 
 def test_standalone_operation_receives_remote_task_cancellation(tmp_path):
-    operations = StandaloneOperationRegistry()
+    operations = WorkspaceOperationRegistry()
 
     def waiting_operation(agent=None):
         while True:
@@ -202,7 +170,7 @@ def test_client_registers_polls_executes_and_submits_result(tmp_path):
     transport.workspace = str(tmp_path)
     client = RemoteWorkerClient(
         configuration,
-        StandaloneOperationRegistry(folder_picker=lambda initial: initial),
+        WorkspaceOperationRegistry(),
         workspace_path=str(tmp_path),
         display_name="Test PC",
         transport=transport,

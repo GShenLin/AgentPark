@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { peerApi, type PeerGrant, type PeerSettings, type PeerStatus } from '../../peerNetworkApi'
 import PeerWorkspacePanel from './PeerWorkspacePanel.vue'
+import RemoteWorkersPanel from './RemoteWorkersPanel.vue'
 
 const status = ref<PeerStatus | null>(null)
 const settings = ref<PeerSettings>({ enabled: true, server_ip: '203.0.113.10', display_name: '' })
@@ -86,6 +87,7 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
       <details v-if="status"><summary>设备身份（供云端确认时核对）</summary><code>{{ status.peer_id }}</code></details>
     </fieldset>
     <p v-if="notice" role="status">{{ notice }}</p><p v-if="error" role="alert">{{ error }}</p>
+    <RemoteWorkersPanel />
     <details>
       <summary>设备之间的共享与 Agent 协作（可选）</summary>
     <fieldset :disabled="busy">

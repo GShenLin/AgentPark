@@ -123,7 +123,8 @@ class PeerChannel:
         self.pending[request_id] = future
         try:
             await self.send(WireRequest(request_id=request_id, call=call).model_dump())
-            response = await asyncio.wait_for(future, 45)
+            timeout = call.remote.timeout_seconds + 10 if call.operation == "remote_workspace" and call.remote else 45
+            response = await asyncio.wait_for(future, timeout)
             if not response.ok:
                 raise RuntimeError(response.error or "Peer rejected the operation.")
             if response.result is None:

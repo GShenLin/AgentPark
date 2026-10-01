@@ -1,28 +1,43 @@
 from __future__ import annotations
 
-import json
+import uuid
 
 from fastapi import HTTPException, Request
 
 from src.remote_workspace.broker import RemoteWorkspaceBroker
+from src.remote_workspace.peer_bridge import RemotePeerBridge
+from src.remote_workspace.directories import DirectoryListing, DirectoryQuery
 
 from .request_access import is_local_request
 
 
 class RemoteWorkspaceApiDomain:
-    def __init__(self) -> None:
+    def __init__(self, peer_api=None) -> None:
         self.broker = RemoteWorkspaceBroker()
+        self.peer_bridge = RemotePeerBridge(peer_api, self.broker) if peer_api is not None else None
+
+    def service_info(self):
+        return {"service": "agentpark-runtime", "remote_protocol": 2}
 
     def list_workers(self, request: Request = None):
-        return {"workers": self.broker.list_for_ip(_client_ip(request))}
+        workers = [{**item, "connection_kind": "direct"} for item in self.broker.list_workers()]
+        if self.peer_bridge is not None:
+            workers.extend(self.peer_bridge.workers())
+        return {"workers": workers}
 
-    def pair_worker(self, request: Request = None):
-        try:
-            return {"ok": True, "worker": self.broker.pair_for_ip(_client_ip(request))}
-        except LookupError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    def _wait_online(self, worker_id: str, timeout: float):
+        if worker_id.startswith("peer:"):
+            if self.peer_bridge is None:
+                raise LookupError("Device interconnection is unavailable.")
+            return self.peer_bridge.wait_online(worker_id, timeout)
+        return self.broker.wait_for_worker_online(worker_id, timeout)
+
+    def _execute(self, payload: dict):
+        if str(payload.get("worker_id", "")).startswith("peer:"):
+            if self.peer_bridge is None:
+                raise LookupError("Device interconnection is unavailable.")
+            return self.peer_bridge.execute(payload)
+        return self.broker.execute(payload)
 
     def register_worker(self, payload: dict, request: Request = None):
         try:
@@ -33,12 +48,12 @@ class RemoteWorkspaceApiDomain:
     def wait_worker_online(self, worker_id: str, payload: dict):
         body = payload if isinstance(payload, dict) else {}
         try:
-            worker = self.broker.wait_for_worker_online(
+            worker = self._wait_online(
                 worker_id,
                 float(body.get("timeout_seconds") or 5.0),
             )
             return {"ok": True, "worker": worker}
-        except LookupError as exc:
+        except (LookupError, ConnectionError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -90,25 +105,28 @@ class RemoteWorkspaceApiDomain:
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    def select_worker_folder(self, payload: dict, request: Request = None):
+    def list_worker_directories(self, payload: dict, request: Request = None):
         body = payload if isinstance(payload, dict) else {}
         worker_id = str(body.get("worker_id") or "").strip()
         if not worker_id:
             raise HTTPException(status_code=400, detail="worker_id is required")
         try:
-            self.broker.require_worker_for_ip(worker_id, _client_ip(request))
-            result = self.broker.execute(
+            worker = self._wait_online(worker_id, 5)
+            query = DirectoryQuery.model_validate({"path": body.get("path", "")})
+            if "list_directories" not in worker["capabilities"]:
+                raise ValueError("目标设备尚不支持目录浏览，请更新该设备的 AgentPark 或 Remote。")
+            result = self._execute(
                 {
+                    "task_id": uuid.uuid4().hex,
                     "worker_id": worker_id,
-                    "tool_name": "select_folder",
-                    "working_path": str(body.get("initial_path") or body.get("working_path") or ".").strip() or ".",
-                    "arguments": {"initial_path": str(body.get("initial_path") or "")},
-                    "timeout_seconds": 300,
+                    "tool_name": "list_directories",
+                    "working_path": worker["workspace_path"],
+                    "arguments": query.model_dump(),
+                    "timeout_seconds": 15,
                 }
             )
-            decoded = _decode_result_object(result)
-            return {"ok": True, "path": str(decoded.get("path") or "")}
-        except LookupError as exc:
+            return DirectoryListing.model_validate_json(result).model_dump()
+        except (LookupError, ConnectionError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -119,8 +137,8 @@ class RemoteWorkspaceApiDomain:
         if not is_local_request(request):
             raise HTTPException(status_code=403, detail="remote workspace internal execution is loopback-only")
         try:
-            return {"ok": True, "result": self.broker.execute(payload or {})}
-        except LookupError as exc:
+            return {"ok": True, "result": self._execute(payload or {})}
+        except (LookupError, ConnectionError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TimeoutError as exc:
             raise HTTPException(status_code=504, detail=str(exc)) from exc
@@ -132,7 +150,13 @@ class RemoteWorkspaceApiDomain:
             raise HTTPException(status_code=403, detail="remote workspace internal cancellation is loopback-only")
         body = payload if isinstance(payload, dict) else {}
         try:
-            state = self.broker.cancel(str(body.get("worker_id") or ""), task_id)
+            worker_id = str(body.get("worker_id") or "")
+            if worker_id.startswith("peer:"):
+                if self.peer_bridge is None:
+                    raise LookupError("Device interconnection is unavailable.")
+                state = self.peer_bridge.cancel(worker_id, task_id)
+            else:
+                state = self.broker.cancel(worker_id, task_id)
             return {"ok": True, "task_id": task_id, "state": state}
         except LookupError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -140,25 +164,14 @@ class RemoteWorkspaceApiDomain:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def close(self) -> None:
+        if self.peer_bridge is not None:
+            self.peer_bridge.executor.close()
         self.broker.close()
 
 
 def _client_ip(request: Request | None) -> str:
     client = getattr(request, "client", None)
     return str(getattr(client, "host", "") or "").strip()
-
-
-def _decode_result_object(result: object) -> dict:
-    if isinstance(result, dict):
-        return result
-    if isinstance(result, str) and result.strip():
-        try:
-            decoded = json.loads(result)
-        except json.JSONDecodeError as exc:
-            raise ValueError("remote worker returned invalid select_folder JSON") from exc
-        if isinstance(decoded, dict):
-            return decoded
-    raise ValueError("remote worker select_folder result must be an object")
 
 
 __all__ = ["RemoteWorkspaceApiDomain"]

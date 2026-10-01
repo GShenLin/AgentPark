@@ -26,6 +26,9 @@ class PeerApiDomain:
             root = Path(runtime_paths._get_runtime_root()) / ".auth" / "peer-network"
             self._service = PeerNetworkService(root, PeerOperations(self.core, DeliveryJournal(root / "deliveries.sqlite3")))
             self._service.board_dispatch = self.board_dispatch
+            remote_api = getattr(self.core, "remote_workspace_api", None)
+            if remote_api is not None and remote_api.peer_bridge is not None:
+                remote_api.peer_bridge.install(self._service, runtime_paths._get_runtime_root())
         return self._service
 
     async def start(self) -> None:

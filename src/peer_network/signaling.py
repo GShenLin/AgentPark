@@ -23,6 +23,7 @@ from .coordinator_registry import CoordinatorRegistry, DeviceConnection
 from .portal_routes import register_portal_routes
 from .enrollment import DeviceAdmissions, register_enrollment_routes
 from .ice import TurnIssuer
+from .remote_contracts import validate_descriptors
 
 
 def create_signaling_app(*, max_devices: int = 100, portal_password: str = "",
@@ -47,6 +48,10 @@ def create_signaling_app(*, max_devices: int = 100, portal_password: str = "",
     register_enrollment_routes(app, auth, admissions)
     send = registry.send_device
     handshakes = set()
+
+    @app.get("/api/remote-workers/service")
+    def remote_service():
+        return {"service": "agentpark-coordinator", "remote_protocol": 2}
 
     @app.websocket("/connect")
     async def connect(socket: WebSocket):
@@ -93,6 +98,13 @@ def create_signaling_app(*, max_devices: int = 100, portal_password: str = "",
                 if count > 120:
                     raise ValueError("Signaling rate limit exceeded.")
                 packet = json.loads(raw)
+                if packet.get("kind") == "remote_publish":
+                    if set(packet) != {"kind", "remote_workers"}:
+                        raise ValueError("Invalid remote publication.")
+                    devices[device].remote_workers = validate_descriptors(packet["remote_workers"])
+                    devices[device].remote_directory_enabled = True
+                    await registry.publish_remote_directory()
+                    continue
                 if packet == {"kind": "ice_refresh"}:
                     await send(device, {"kind": "ice", "ice": turn.issue(device).model_dump()})
                     continue
@@ -116,6 +128,7 @@ def create_signaling_app(*, max_devices: int = 100, portal_password: str = "",
             handshakes.discard(socket)
             if device is not None and device in devices and devices[device].socket is socket:
                 devices.pop(device)
+                await registry.publish_remote_directory()
 
     return app
 

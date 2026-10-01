@@ -8,11 +8,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from src.runtime_environment import initialize_runtime_environment
 
-from .client import RemoteWorkerClient, default_display_name
-from .discovery import DiscoveryServer
-from .identity import IdentityStore, WorkerConfiguration, default_state_directory
-from .operations import StandaloneOperationRegistry, validate_working_path
-from .protocol import DISCOVERY_PORT
+from .client import default_display_name
+from .identity import default_state_directory
+from .launcher import RemoteSettings, WorkerLauncher, load_settings, show_settings
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,34 +19,29 @@ def main(argv: list[str] | None = None) -> int:
     logger = _configure_logging(state_directory)
     try:
         initialize_runtime_environment()
-        workspace_path = validate_working_path(arguments.workspace)
-        store = IdentityStore(state_directory / "identity.json")
-        identity = store.load_or_create()
-        configuration = WorkerConfiguration(store, identity)
+        defaults = RemoteSettings(display_name=default_display_name(arguments.workspace), workspace=arguments.workspace)
+        settings = load_settings(state_directory / "settings.json", defaults)
+        updates = {}
         if arguments.server:
-            configuration.configure_server(arguments.server)
-
-        operations = StandaloneOperationRegistry()
-        client = RemoteWorkerClient(
-            configuration,
-            operations,
-            workspace_path=workspace_path,
-            display_name=default_display_name(workspace_path),
-            logger=logger,
-        )
-        discovery = DiscoveryServer(
-            configuration.configure_server,
-            port=arguments.discovery_port,
-            logger=logger,
-        )
-        discovery.start()
+            updates["server_address"] = arguments.server
+        if arguments.workspace != _default_workspace():
+            updates["workspace"] = arguments.workspace
+        settings = settings.model_copy(update=updates)
+        launcher = WorkerLauncher(state_directory, logger)
         try:
-            client.run_forever()
+            if arguments.headless:
+                launcher.start(settings)
+                launcher.thread.join()
+                if launcher.status.startswith("连接失败"):
+                    return 1
+            else:
+                show_settings(launcher, settings)
         except KeyboardInterrupt:
             logger.info("AgentPark Remote stopped by user")
         finally:
-            client.stop()
-            discovery.stop()
+            launcher.stop()
+            if launcher.thread:
+                launcher.thread.join(timeout=40)
         return 0
     except Exception:
         logger.exception("AgentPark Remote terminated because startup failed")
@@ -57,14 +50,14 @@ def main(argv: list[str] | None = None) -> int:
 
 def _parse_arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AgentPark standalone Remote workspace worker")
-    parser.add_argument("--server", default="", help="AgentPark server origin; normally supplied by browser discovery")
+    parser.add_argument("--server", default="", help="Target server IP/address: probe AgentPark first, then its authentication center")
     parser.add_argument("--workspace", default=_default_workspace(), help="Default remote WorkingPath")
     parser.add_argument(
         "--state-directory",
         default=str(default_state_directory()),
         help="Persistent identity and log directory",
     )
-    parser.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT)
+    parser.add_argument("--headless", action="store_true", help="Run using saved settings without opening the settings window")
     return parser.parse_args(argv)
 
 

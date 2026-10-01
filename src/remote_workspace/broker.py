@@ -8,6 +8,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
+from src.peer_network.remote_contracts import RemoteDescriptor
 
 
 PROTOCOL_VERSION = 2
@@ -53,9 +54,12 @@ class RemoteWorkspaceBroker:
         self._closed = False
 
     def register(self, payload: dict[str, Any], source_ip: str) -> dict[str, Any]:
-        protocol_version = int(payload.get("protocol_version") or 0)
-        if protocol_version != PROTOCOL_VERSION:
+        protocol_version = payload.get("protocol_version")
+        if type(protocol_version) is not int or protocol_version != PROTOCOL_VERSION:
             raise ValueError(f"unsupported remote worker protocol_version: {protocol_version}")
+        for field_name in ("worker_id", "token", "display_name", "host_kind", "workspace_path"):
+            if field_name in payload and not isinstance(payload[field_name], str):
+                raise ValueError(f"{field_name} must be a string")
         worker_id = str(payload.get("worker_id") or "").strip()
         if not worker_id:
             worker_id = uuid.uuid4().hex
@@ -63,15 +67,29 @@ class RemoteWorkspaceBroker:
         workspace_path = str(payload.get("workspace_path") or "").strip()
         if not workspace_path:
             raise ValueError("workspace_path is required")
-        capabilities = frozenset(
-            str(item or "").strip()
-            for item in (payload.get("capabilities") or [])
-            if str(item or "").strip()
-        )
+        descriptor = RemoteDescriptor.model_validate({
+            "worker_id": worker_id, "display_name": payload.get("display_name") or worker_id,
+            "host_kind": payload.get("host_kind") or "worker", "workspace_path": workspace_path,
+            "capabilities": payload.get("capabilities", []), "online": True,
+        })
+        capabilities = frozenset(descriptor.capabilities)
         with self._worker_state_changed:
             existing = self._workers.get(worker_id)
-            if existing is not None and existing.token != token and self._is_online(existing):
-                raise ValueError(f"worker_id is already online: {worker_id}")
+            if existing is not None:
+                if not secrets.compare_digest(existing.token, token):
+                    raise ValueError(f"worker_id credentials do not match: {worker_id}")
+                # A reconnect updates metadata without replacing queue ownership
+                # or the condition on which an in-flight caller is waiting.
+                with existing.condition:
+                    existing.source_ip = str(source_ip or "").strip()
+                    existing.display_name = str(payload.get("display_name") or worker_id).strip()
+                    existing.host_kind = str(payload.get("host_kind") or "worker").strip()
+                    existing.workspace_path = workspace_path
+                    existing.capabilities = capabilities
+                    existing.last_seen = time.monotonic()
+                    existing.condition.notify_all()
+                self._worker_state_changed.notify_all()
+                return {"worker_id": worker_id, "token": token, "protocol_version": PROTOCOL_VERSION}
             session = WorkerSession(
                 worker_id=worker_id,
                 token=token,
@@ -95,33 +113,9 @@ class RemoteWorkspaceBroker:
             raise ValueError("worker_id is required")
         return self._public_worker(self._wait_for_session(worker_key, timeout_seconds))
 
-    def list_for_ip(self, source_ip: str) -> list[dict[str, Any]]:
-        ip = str(source_ip or "").strip()
+    def list_workers(self) -> list[dict[str, Any]]:
         with self._lock:
-            return [self._public_worker(item) for item in self._workers.values() if item.source_ip == ip and self._is_online(item)]
-
-    def pair_for_ip(self, source_ip: str) -> dict[str, Any]:
-        workers = self.list_for_ip(source_ip)
-        if not workers:
-            raise LookupError(
-                "No online AgentPark remote worker was found for this browser IP. "
-                "Start AgentParkRemote or open an application plugin that provides the AgentPark remote worker protocol."
-            )
-        if len(workers) != 1:
-            names = ", ".join(str(item.get("display_name") or item.get("worker_id")) for item in workers)
-            raise RuntimeError(f"Multiple remote workers are online for this IP; keep only one open before pairing: {names}")
-        return workers[0]
-
-    def require_worker_for_ip(self, worker_id: str, source_ip: str) -> dict[str, Any]:
-        worker_key = str(worker_id or "").strip()
-        ip = str(source_ip or "").strip()
-        with self._lock:
-            session = self._workers.get(worker_key)
-        if session is None or not self._is_online(session):
-            raise LookupError(f"Remote worker is offline: {worker_key}")
-        if session.source_ip != ip:
-            raise PermissionError("Remote worker does not belong to this browser IP.")
-        return self._public_worker(session)
+            return [self._public_worker(item) for item in self._workers.values()]
 
     def poll(self, worker_id: str, token: str, timeout_seconds: float) -> dict[str, Any] | None:
         session = self._require_worker(worker_id, token)
@@ -257,12 +251,16 @@ class RemoteWorkspaceBroker:
         finally:
             with session.condition:
                 session.results.pop(task_id, None)
-                session.active_task_ids.discard(task_id)
+                # A timed-out queued task must never execute later. An active
+                # task receives cancellation instead of silently continuing.
+                for pending in tuple(session.pending):
+                    if pending.task_id == task_id:
+                        session.pending.remove(pending)
+                if task_id in session.active_task_ids:
+                    if task_id not in session.cancellation_requests:
+                        session.cancellation_requests.append(task_id)
+                    session.condition.notify_all()
                 session.pre_cancelled.pop(task_id, None)
-                if task_id in session.cancellation_requests:
-                    session.cancellation_requests = deque(
-                        item for item in session.cancellation_requests if item != task_id
-                    )
         raise RuntimeError("Remote workspace broker is shutting down.")
 
     def close(self) -> None:

@@ -11,6 +11,7 @@ from .contracts import NetworkSettings, PeerCall, PeerGrant, PortalTicket, Signa
 from .identity import DeviceIdentity, peer_id, verify, verify_signal
 from .store import PeerStore
 from .ice import CREDENTIAL_SECONDS, REFRESH_SECONDS, IceLease
+from .remote_peers import RemotePeers
 
 
 LOGGER = logging.getLogger(__name__)
@@ -33,8 +34,11 @@ class PeerNetworkService:
         self.portal_tickets: dict[str, PortalTicket] = {}
         self.board_dispatch = None
         self.ice_lease: IceLease | None = None
+        self.remote = RemotePeers(self)
+        self.event_loop = None
 
     async def start(self) -> None:
+        self.event_loop = asyncio.get_running_loop()
         if self.store.settings.enabled and self.task is None:
             import aiortc  # Fail explicitly when the installation is incomplete.
             self.task = asyncio.create_task(self.run(), name="agentpark-peer-network")
@@ -47,6 +51,7 @@ class PeerNetworkService:
         await self.connections.close()
         self.portal_tickets.clear()
         self.ice_lease = None
+        self.remote.reset()
 
     async def configure(self, settings: NetworkSettings) -> None:
         if settings.enabled:
@@ -155,6 +160,8 @@ class PeerNetworkService:
                     self.ice_lease = IceLease.model_validate(ready["ice"])
                     self.ice_lease.require_fresh()
                     self.socket = socket
+                    self.remote.reset()
+                    await self.remote.publish()
                     self.enrollment_state = "approved"
                     self.coordinator_error = ""
                     delay = 1
@@ -162,7 +169,9 @@ class PeerNetworkService:
                     try:
                         async for raw in socket:
                             packet = json.loads(raw)
-                            if packet.get("kind") == "ice":
+                            if packet.get("kind") == "remote_directory":
+                                self.remote.receive(packet)
+                            elif packet.get("kind") == "ice":
                                 if set(packet) != {"kind", "ice"}:
                                     raise ValueError("Invalid ICE credential response.")
                                 lease = IceLease.model_validate(packet["ice"])
@@ -198,12 +207,14 @@ class PeerNetworkService:
                 LOGGER.warning("Peer coordinator connection failed: %s", self.coordinator_error)
             finally:
                 self.socket = None
+                self.remote.reset()
             # Existing authenticated data channels survive coordinator interruptions.
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30)
 
     async def maintain_connections(self) -> None:
         while True:
+            await self.remote.publish()
             if self.ice_lease and self.ice_lease.expires_at - time.time() < CREDENTIAL_SECONDS - REFRESH_SECONDS:
                 async with self.send_lock:
                     await self.socket.send(json.dumps({"kind": "ice_refresh"}))
@@ -215,4 +226,4 @@ class PeerNetworkService:
                     except Exception as exc:
                         self.errors[peer] = f"{type(exc).__name__}: {exc}"
                         LOGGER.warning("Peer connection failed: %s", self.errors[peer])
-            await asyncio.sleep(45)
+            await asyncio.sleep(5)

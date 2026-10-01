@@ -97,22 +97,22 @@ onUnmounted(() => {
         </thead>
         <tbody>
           <tr v-for="provider in providers" :key="provider.provider_id" :class="pressureClass(provider)">
-            <td class="provider-id">{{ provider.provider_id }}</td>
-            <td>{{ provider.type || '-' }}</td>
-            <td class="model-cell">{{ provider.model || '-' }}</td>
-            <td>{{ provider.in_flight }} / {{ limitText(provider.concurrency_limit) }}</td>
-            <td>{{ currentPeakText(provider.queued, provider.peak_queued) }}</td>
-            <td>{{ limitText(provider.rpm_limit) }}</td>
-            <td>{{ secondsText(provider.rpm_interval_sec) }}</td>
-            <td>{{ secondsText(provider.rpm_next_available_in_sec) }}</td>
-            <td>
+            <td data-label="Provider" class="provider-id">{{ provider.provider_id }}</td>
+            <td data-label="Type">{{ provider.type || '-' }}</td>
+            <td data-label="Model" class="model-cell">{{ provider.model || '-' }}</td>
+            <td data-label="Concurrency">{{ provider.in_flight }} / {{ limitText(provider.concurrency_limit) }}</td>
+            <td data-label="Queue">{{ currentPeakText(provider.queued, provider.peak_queued) }}</td>
+            <td data-label="RPM Limit">{{ limitText(provider.rpm_limit) }}</td>
+            <td data-label="Interval">{{ secondsText(provider.rpm_interval_sec) }}</td>
+            <td data-label="Next">{{ secondsText(provider.rpm_next_available_in_sec) }}</td>
+            <td data-label="Total TPM">
               {{ tokenText(provider.tpm_used) }} / {{ tokenText(provider.tpm_limit) }}
               <small>left {{ tokenText(provider.tpm_remaining) }}</small>
             </td>
-            <td>{{ tokenText(provider.input_tpm_used) }}</td>
-            <td>{{ tokenText(provider.output_tpm_used) }}</td>
-            <td>{{ secondsText(provider.tpm_next_available_in_sec) }}</td>
-            <td class="peak-cell">
+            <td data-label="Input TPM">{{ tokenText(provider.input_tpm_used) }}</td>
+            <td data-label="Output TPM">{{ tokenText(provider.output_tpm_used) }}</td>
+            <td data-label="TPM Next">{{ secondsText(provider.tpm_next_available_in_sec) }}</td>
+            <td data-label="Peak" class="peak-cell">
               <span>C {{ provider.peak_in_flight }}</span>
               <span>Q {{ provider.peak_queued }}</span>
               <span>R {{ provider.peak_rpm_used }}</span>
@@ -238,5 +238,20 @@ onUnmounted(() => {
 .pressure-error {
   color: #b91c1c;
   font-size: 13px;
+}
+</style>
+
+<style scoped>
+@media (max-width: 960px) {
+  .pressure-panel { flex: 1; overflow: auto; padding: 12px; }
+  .pressure-toolbar, .pressure-title { flex-wrap: wrap; }
+  .pressure-table-wrap { overflow: visible; border: 0; }
+  .pressure-table { display: block; min-width: 0; }
+  .pressure-table thead { display: none; }
+  .pressure-table tbody { display: grid; gap: 12px; }
+  .pressure-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border-light); border-radius: 10px; padding: 8px; }
+  .pressure-table td { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: none; white-space: normal; overflow-wrap: anywhere; }
+  .pressure-table td::before { content: attr(data-label); font-size: 11px; color: var(--text-secondary); }
+  .pressure-table .provider-id, .pressure-table .model-cell, .pressure-table .peak-cell, .pressure-table .empty-cell { grid-column: 1 / -1; }
 }
 </style>

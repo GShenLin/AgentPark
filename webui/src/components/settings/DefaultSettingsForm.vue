@@ -308,6 +308,7 @@ function deleteMcpServer() {
       </div>
 
       <div class="mcp-layout">
+        <label class="settings-mobile-selector"><span>{{ t('defaults.mcpServers') }}</span><FormSelect v-model="selectedMcpName"><option v-for="name in mcpNames" :key="name" :value="name">{{ name }}</option></FormSelect></label>
         <nav class="mcp-list">
           <button
             v-for="name in mcpNames"
@@ -354,5 +355,13 @@ function deleteMcpServer() {
     </section>
   </div>
 </template>
+
+<style scoped>
+.settings-mobile-selector { display: none; }
+@media (max-width: 960px) {
+  .settings-mobile-selector { display: grid; gap: 6px; }
+  .mcp-list { display: none; }
+}
+</style>
 
 <style scoped src="./DefaultSettingsForm.css"></style>

@@ -106,7 +106,7 @@ def test_path_only_tool_image_is_encoded_instead_of_sent_as_windows_path(tmp_pat
 
 
 def test_remote_view_image_uses_worker_bytes_and_preserves_path(tmp_path, monkeypatch):
-    from src.remote_worker.operations import StandaloneOperationRegistry
+    from src.remote_workspace.operations import WorkspaceOperationRegistry
     from src.remote_worker.protocol import RemoteTask
     from src.remote_workspace.routing import remote_workspace_target
 
@@ -121,7 +121,7 @@ def test_remote_view_image_uses_worker_bytes_and_preserves_path(tmp_path, monkey
         calls.append(name)
         task = RemoteTask(task_id="task-image", tool_name=name, arguments=args,
                           working_path=str(tmp_path), timeout_seconds=10)
-        return True, StandaloneOperationRegistry().execute(task)
+        return True, WorkspaceOperationRegistry().execute(task)
 
     monkeypatch.setattr("src.tool.base_tool.dispatch_remote_workspace_tool", dispatch)
     execution = image_tools(agent).execute_tool_call(image_call("remote.png"))

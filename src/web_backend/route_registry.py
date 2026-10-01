@@ -6,6 +6,11 @@ from .node_open_diagnostics import receive_browser_trace
 
 class ApiRouteRegistry:
     ROUTES = [
+        ("post", "/api/nodes/instances/{node_id}/voice", lambda core: core.node_voice.start),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks", lambda core: core.node_voice.delegate),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/events", lambda core: core.node_voice.diagnostic),
+        ("get", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks/{request_id}", lambda core: core.node_voice.task),
+        ("delete", "/api/nodes/instances/{node_id}/voice/{session_id}", lambda core: core.node_voice.end),
         ("get", "/api/skills", lambda core: core.skills_api.list_skills),
         ("get", "/api/skills/detail", lambda core: core.skills_api.detail),
         ("post", "/api/skills/operations", lambda core: core.skills_api.operate),
@@ -156,8 +161,8 @@ class ApiRouteRegistry:
         ("post", "/api/system/restart", lambda core: core.system_api.restart_server),
         ("post", "/api/system/exit", lambda core: core.system_api.exit_server),
         ("get", "/api/remote-workers", lambda core: core.remote_workspace_api.list_workers),
-        ("post", "/api/remote-workers/pair", lambda core: core.remote_workspace_api.pair_worker),
-        ("post", "/api/remote-workers/select-folder", lambda core: core.remote_workspace_api.select_worker_folder),
+        ("get", "/api/remote-workers/service", lambda core: core.remote_workspace_api.service_info),
+        ("post", "/api/remote-workers/directories", lambda core: core.remote_workspace_api.list_worker_directories),
         ("post", "/api/remote-workers/register", lambda core: core.remote_workspace_api.register_worker),
         ("post", "/api/remote-workers/{worker_id}/wait-online", lambda core: core.remote_workspace_api.wait_worker_online),
         ("post", "/api/remote-workers/{worker_id}/poll", lambda core: core.remote_workspace_api.poll_worker),
