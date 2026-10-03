@@ -1,4 +1,5 @@
 from .domain_base import DomainBase
+from .agent_schedule_runtime import AgentScheduleRuntime
 from .graph_message_dispatch import GraphMessageDispatch
 from .graph_node_execution import GraphNodeExecution
 from .graph_node_store import GraphNodeStore
@@ -19,6 +20,7 @@ class GraphRuntimeDomain(DomainBase):
             cached = (
                 GraphRuntimeRegistry(self),
                 GraphTimerScheduler(self),
+                AgentScheduleRuntime(self),
                 GraphNodeStore(self),
                 GraphMessageDispatch(self),
                 GraphRunnerRuntime(self),

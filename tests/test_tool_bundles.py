@@ -54,6 +54,12 @@ def test_system_tools_excludes_curl():
         "replace_task_direction",
         "update_task_direction",
         "workspace_exec",
+        "view_image",
+        "start_console_session",
+        "read_console_session",
+        "wait_console_session",
+        "stop_console_session",
+        "manage_agent_schedule",
     }
     assert "run_analysis_verification" not in tool.function_map
     assert "finalize_analysis_report" not in tool.function_map

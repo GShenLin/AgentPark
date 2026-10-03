@@ -202,7 +202,7 @@ class GraphRunnerRuntime(HostBoundService):
                 return
 
             def run_node() -> None:
-                self._run_single_node_iteration(
+                self._run_node_with_agent_schedule(
                     safe_graph_id=safe_graph_id,
                     entry=entry,
                     cfg=cfg,

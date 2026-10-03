@@ -60,19 +60,23 @@ class ScheduledNodeRegistry:
         with self._condition:
             self._condition.notify_all()
 
-    def wait_for_due(self, stop_event: threading.Event) -> list[ScheduledNodeRegistration]:
+    def wait_for_due(self, stop_event: threading.Event, *, max_wait: float | None = None) -> list[ScheduledNodeRegistration]:
+        deadline = None if max_wait is None else time.monotonic() + max_wait
         with self._condition:
             while not stop_event.is_set():
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    return []
                 self._discard_stale_heap_heads_locked()
                 if not self._heap:
-                    self._condition.wait(timeout=1.0)
+                    self._condition.wait(timeout=1.0 if remaining is None else min(1.0, remaining))
                     continue
 
                 due_at = self._heap[0][0]
                 now_ts = time.time()
                 wait_seconds = max(0.0, due_at - now_ts)
                 if wait_seconds > 0:
-                    self._condition.wait(timeout=wait_seconds)
+                    self._condition.wait(timeout=wait_seconds if remaining is None else min(wait_seconds, remaining))
                     continue
 
                 due_entries: list[ScheduledNodeRegistration] = []

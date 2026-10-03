@@ -1,5 +1,6 @@
 from functions.apply_patch_tool import apply_patch
 from functions.apply_patch_tool import apply_patch_declaration
+from functions.agent_schedule_tools import manage_agent_schedule, manage_agent_schedule_declaration
 from functions.console_session_tools import (
     start_console_session, start_console_session_declaration,
     read_console_session, read_console_session_declaration,
@@ -32,6 +33,7 @@ from src.tool.workspace_exec_tools import workspace_exec_declaration
 
 
 __all__ = [
+    "manage_agent_schedule", "manage_agent_schedule_declaration",
     "view_image", "view_image_declaration",
     "start_console_session", "start_console_session_declaration",
     "read_console_session", "read_console_session_declaration",

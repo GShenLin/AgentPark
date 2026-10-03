@@ -109,6 +109,7 @@ class WebBackendFacade:
                     f"temporary_receivers_found={int(companion.get('temporary_receivers_found', 0))} "
                     f"temporary_receivers_cleaned={int(companion.get('temporary_receivers_cleaned', 0))}"
                 )
+            self.core.graph_runtime._agent_schedule_store().reset_running()
             self._recover_restart_checkpoints()
             self.core.graph_runtime._ensure_timer_trigger_scheduler()
             channels = self.core.channel_service.start_autostart_receivers()

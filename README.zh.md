@@ -414,6 +414,7 @@ companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存
 在 companion CLI 中，`/restart` 会在 Windows 启动 `Restart.bat`，在 Linux 启动 `Restart.sh`，然后退出当前 CLI 会话，确保重启行为仍走标准启动路径。
 
 节点配置读写见 `docs/config-contract.md`。运行时状态恢复见 `docs/runtime-state-machine.md`。服务商功能支持见 `docs/provider-feature-matrix.md`。能力描述符和依赖报告见 `docs/capability-system.md`。Skill/plugin 作者指南见 `docs/skill-plugin-authoring.md`。长期 sidecar、缓存和分发边界见 `docs/long-term-architecture.md`。恢复步骤见 `docs/troubleshooting.md`。
+Agent 自主唤醒工具、持久化与取消语义见 [docs/agent-self-scheduling.md](docs/agent-self-scheduling.md)。
 
 打包版本通过可执行文件暴露相同的离线恢复命令：
 

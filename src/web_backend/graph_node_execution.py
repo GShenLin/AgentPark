@@ -71,7 +71,7 @@ class GraphNodeExecution(HostBoundService):
             cfg = _read_json_dict(config_path)
 
         type_id = str(cfg.get("type_id") or "").strip()
-        if not type_id:
+        if not type_id or (source == "agent_schedule" and type_id != "agent_node"):
             _set_node_config_inflight(config_path, None)
             _transition_node_config_to_idle(config_path)
             return
@@ -79,7 +79,7 @@ class GraphNodeExecution(HostBoundService):
         group_notification = None
 
         context: dict = {
-            "task_id": trace_id,
+            "task_id": pending_item.get("_agent_schedule_task_id") if source == "agent_schedule" else trace_id,
             "graph_id": safe_graph_id,
             "node_instance_id": entry,
             "node_type_id": type_id,
@@ -93,6 +93,7 @@ class GraphNodeExecution(HostBoundService):
             "access_role": access_metadata.get("_access_role", ""),
             "access_ip": access_metadata.get("_access_ip", ""),
         }
+        context["manage_schedule"] = lambda action, **params: self._manage_agent_schedule(context, action, **params)
         self._inject_node_config_into_context(context, cfg)
         if isinstance(restart_recovery, dict):
             context["restart_recovery"] = restart_recovery
@@ -248,6 +249,7 @@ class GraphNodeExecution(HostBoundService):
             if not isinstance(memory_sidecars, list):
                 memory_sidecars = []
         except CancellationRequested:
+            pending_item["_agent_schedule_result"] = "cancelled"
             group_delivery_error = "Node run cancelled before completing notification work."
             try:
                 runtime_event_sink.handle(
@@ -416,6 +418,7 @@ class GraphNodeExecution(HostBoundService):
                 group_notification.complete(error=f"Reply persistence failed: {memory_error}")
             self.core.node_live_outputs.clear(safe_graph_id, entry)
             raise
+        pending_item["_agent_schedule_result"] = "completed"
         if group_notification is not None:
             group_notification.complete(reply=output_full)
         duration_ms = int((time.monotonic() - started) * 1000)

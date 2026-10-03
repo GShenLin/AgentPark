@@ -228,6 +228,7 @@ class Node(BaseNode):
                 end_tool_call_cancellation=ctx.get("end_tool_call_cancellation")
                 if callable(ctx.get("end_tool_call_cancellation"))
                 else None,
+                manage_schedule=ctx.get("manage_schedule") if callable(ctx.get("manage_schedule")) else None,
                 provider_request_tracker=provider_request_tracker,
             ),
         )
