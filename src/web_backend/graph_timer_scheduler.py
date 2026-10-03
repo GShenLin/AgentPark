@@ -293,7 +293,12 @@ class GraphTimerScheduler(ScheduleRegistrationMixin, HostBoundService):
                 error=f"{type(exc).__name__}: {exc}",
             )
         while not stop_event.is_set():
-            due_entries = self._scheduled_node_registry().wait_for_due(stop_event)
+            try:
+                self._poll_agent_schedules()
+            except Exception as exc:
+                self._log_graph_event(self.default_graph_id, "agent_schedule_poll_failed",
+                                      error=f"{type(exc).__name__}: {exc}")
+            due_entries = self._scheduled_node_registry().wait_for_due(stop_event, max_wait=1.0)
             handled = False
             for entry in due_entries:
                 if stop_event.is_set():

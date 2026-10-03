@@ -34,6 +34,7 @@ class AgentRuntimeContext:
     consume_mid_turn_user_inputs: Callable[[], list[dict[str, Any]]] | None = None
     begin_tool_call_cancellation: Callable[[str], Any] | None = None
     end_tool_call_cancellation: Callable[[str, Any], None] | None = None
+    manage_schedule: Callable[..., dict[str, Any]] | None = None
     provider_request_tracker: ProviderRequestTracker | None = None
 
     def with_defaults(self) -> "AgentRuntimeContext":
@@ -61,6 +62,7 @@ class AgentRuntimeContext:
             consume_mid_turn_user_inputs=self.consume_mid_turn_user_inputs,
             begin_tool_call_cancellation=self.begin_tool_call_cancellation,
             end_tool_call_cancellation=self.end_tool_call_cancellation,
+            manage_schedule=self.manage_schedule,
             provider_request_tracker=self.provider_request_tracker,
         )
 
@@ -139,6 +141,7 @@ def _context_from_agent_attributes(agent: object = None) -> AgentRuntimeContext:
         consume_mid_turn_user_inputs=_callable_attr(agent, "_agentpark_consume_mid_turn_user_inputs"),
         begin_tool_call_cancellation=_callable_attr(agent, "_agentpark_begin_tool_call_cancellation"),
         end_tool_call_cancellation=_callable_attr(agent, "_agentpark_end_tool_call_cancellation"),
+        manage_schedule=_callable_attr(agent, "_agentpark_manage_schedule"),
         provider_request_tracker=None,
     )
 
@@ -166,6 +169,8 @@ def _write_runtime_attributes(agent: object, context: AgentRuntimeContext) -> No
     for name, value in values.items():
         if value not in ("", None):
             setattr(agent, name, value)
+    if context.manage_schedule is not None:
+        setattr(agent, "_agentpark_manage_schedule", context.manage_schedule)
     if context.skill_resource_roots:
         setattr(agent, "_agentpark_skill_resource_roots", dict(context.skill_resource_roots))
     if context.persist_assistant_progress is not None:

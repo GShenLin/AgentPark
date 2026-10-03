@@ -12,6 +12,7 @@ from src.workspace_settings import get_workspace_root
 
 ACCESS_POLICY_RELATIVE_PATH = os.path.join(".auth", "access-control.json")
 DEFAULT_NONDEVELOPER_FILTERED_TOOLS = (
+    "agent_schedule_tools",
     "agent_patch_tools",
     "apply_patch_tool",
     "capability_management_tools",

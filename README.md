@@ -417,6 +417,7 @@ The companion CLI runs the same Agent turn path as normal nodes and stores state
 Inside the companion CLI, `/restart` launches `Restart.bat` on Windows or `Restart.sh` on Linux and exits the current CLI session so restart behavior stays on the canonical startup path.
 
 Node config reads and writes are documented in `docs/config-contract.md`. Runtime state recovery is documented in `docs/runtime-state-machine.md`. Provider feature support is documented in `docs/provider-feature-matrix.md`. Capability descriptors and dependency reporting are documented in `docs/capability-system.md`. Skill/plugin authoring is documented in `docs/skill-plugin-authoring.md`. Long-term sidecar, caching, and distribution boundaries are documented in `docs/long-term-architecture.md`. Recovery steps are documented in `docs/troubleshooting.md`.
+Agent-owned wakeup tools, persistence, and cancellation semantics are documented in [docs/agent-self-scheduling.md](docs/agent-self-scheduling.md).
 
 Packaged builds expose the same offline recovery commands through the executable:
 
