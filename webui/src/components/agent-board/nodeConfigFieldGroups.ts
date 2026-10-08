@@ -15,6 +15,8 @@ const COMMON_AGENT_FIELDS = new Set([
   'working_path',
 ])
 
+const VOICE_FIELDS = new Set(['voice_provider_id', 'voice_model', 'voice'])
+
 const SUPPORT_MODE_LABELS: Record<string, string> = {
   chat: 'Chat',
   image_generation: 'Image Generation',
@@ -51,8 +53,13 @@ export function createNodeConfigFieldSections(
 
   const visibleKeys = [...schemaKeys]
   const commonKeys: string[] = []
+  const voiceKeys: string[] = []
   const modeGroups = new Map<string, { modes: string[]; keys: string[] }>()
   for (const key of visibleKeys) {
+    if (VOICE_FIELDS.has(key)) {
+      voiceKeys.push(key)
+      continue
+    }
     const modes = fieldModes(schema, key)
     if (COMMON_AGENT_FIELDS.has(key) || modes.length === 0 || modes.includes('*')) {
       commonKeys.push(key)
@@ -86,6 +93,11 @@ export function createNodeConfigFieldSections(
       collapsible: true,
       defaultOpen: true,
       keys: group.keys,
+    })
+  }
+  if (voiceKeys.length) {
+    sections.push({
+      id: 'voice', label: '语音设置', collapsible: true, defaultOpen: false, keys: voiceKeys,
     })
   }
   return sections

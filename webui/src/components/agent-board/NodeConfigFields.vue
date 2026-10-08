@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { voiceFieldChanges, voiceFieldOptions, voiceProviderHint } from '../../voice/voiceSettingsFields'
 import { getPrompt, listPrompts, savePrompt, type PromptLibraryKind, type ProviderInfo } from '../../api'
 import { ASSET_FIELD_KEYS } from '../../composables/droppedPaths'
 import {
@@ -119,7 +120,9 @@ const explicitDirtyKeySet = computed(() => new Set(props.explicitDirtyKeys))
 
 function setField(key: string, value: any, applyMode: NodeConfigFieldApplyMode = 'immediate') {
   if (isPromptLibraryField(key)) promptActionMessage.value = ''
-  emit('update-field', key, value, applyMode)
+  const changes = props.typeId === 'agent_node' ? voiceFieldChanges(props.schema, props.fields, key, value) : { [key]: value }
+  // Synchronous changes are persisted together by the form's auto-apply queue.
+  for (const [field, next] of Object.entries(changes)) emit('update-field', field, next, applyMode)
 }
 
 function setExplicitField(key: string, value: any) {
@@ -381,6 +384,10 @@ function isSelectField(key: string) {
 }
 
 function getFieldOptions(key: string) {
+  if (props.typeId === 'agent_node') {
+    const options = voiceFieldOptions(props.schema, props.fields, key)
+    if (options) return options
+  }
   if (isToolSelectionField(key)) {
     const schemaOptions = getSchemaFieldOptions(props.schema, key)
     if (schemaOptions.length) return schemaOptions
@@ -764,6 +771,7 @@ watch(
       </div>
 
           <span v-if="getFieldHint(key)" class="field-hint">{{ getFieldHint(key) }}</span>
+          <span v-if="key === 'voice_provider_id'" class="field-hint">{{ voiceProviderHint(schema, fields) }}</span>
           <span v-if="isPromptLibraryField(key) && promptLibraryField === key && promptActionMessage" class="field-prompt-message">{{ promptActionMessage }}</span>
           <span v-if="enableAssetDrop && isAssetFieldKey(key)" class="field-drop-hint">{{ t('board.dropAssets') }}</span>
         </component>

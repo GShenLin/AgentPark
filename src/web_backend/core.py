@@ -10,6 +10,7 @@ from .core_node_ops import NodeOpsDomain
 from .core_system_api import SystemApiDomain
 from .graph_event_stream import GraphEventStreamStore
 from .group_delivery import GroupDeliveryService
+from .cron_service import CronService
 from .mobile_api import MobileApiDomain
 from .node_cancellation import NodeCancellationRegistry
 from .node_live_event_publisher import NodeLiveEventPublisher
@@ -79,6 +80,7 @@ class BackendCore:
         self.node_ops = NodeOpsDomain(self, self.graph_runtime)
         self.node_voice = NodeVoiceApi(self)
         self.group_delivery = GroupDeliveryService(self)
+        self.cron_service = CronService(self)
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
         self.provider_auth_api = ProviderAuthApiDomain(self)

@@ -50,7 +50,8 @@ class SpeechWsMessage:
 
     def to_bytes(self) -> bytes:
         output = io.BytesIO()
-        output.write(bytes([0x11, (self.message_type << 4) | self.flag, 0x10, 0x00]))
+        serialization = 0 if self.message_type in {AUDIO_ONLY_CLIENT, AUDIO_ONLY_SERVER} else 0x10
+        output.write(bytes([0x11, (self.message_type << 4) | self.flag, serialization, 0x00]))
         if self.flag == WITH_EVENT:
             output.write(struct.pack(">i", self.event))
             if self.event in {CONNECTION_STARTED, CONNECTION_FAILED, CONNECTION_FINISHED}:

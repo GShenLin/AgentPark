@@ -1,5 +1,6 @@
 """Public capability and configuration contract for the Codex node."""
 
+from src.provider_selection_schema import provider_selection_schema
 
 CODEX_INPUT_CAPABILITIES = [
     "text",
@@ -26,12 +27,7 @@ CODEX_CONFIG_DEFAULTS = {
 }
 
 CODEX_CONFIG_SCHEMA = {
-    "provider_id": {
-        "type": "select",
-        "label": "provider_id",
-        "options": [],
-        "description": "Select a configured Provider that supports chat.",
-    },
+    **provider_selection_schema(),
     "instruction": {
         "type": "text",
         "label": "instruction",

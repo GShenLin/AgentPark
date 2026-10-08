@@ -71,6 +71,7 @@ class WebBackendFacade:
                 yield
             finally:
                 runtime_supervisor.record("application_lifespan_stopping")
+                await self.core.node_voice.close()
                 await self.core.peer_api.close()
                 self._shutdown_services()
                 runtime_supervisor.record("application_lifespan_stopped")
@@ -84,6 +85,7 @@ class WebBackendFacade:
                 yield
             finally:
                 runtime_supervisor.record("application_lifespan_stopping")
+                await self.core.node_voice.close()
                 await self.core.peer_api.close()
                 self._shutdown_services()
                 runtime_supervisor.record("application_lifespan_stopped")
@@ -116,6 +118,7 @@ class WebBackendFacade:
                 print(f"[ChannelService] autostart receivers={int(channels.get('started', 0))}")
         except Exception as e:
             print(f"[GraphRuntime] startup failed: {e}")
+        self.core.cron_service.start()
 
     def _recover_restart_checkpoints(self) -> None:
         try:
@@ -134,6 +137,7 @@ class WebBackendFacade:
             print(f"[RestartRecovery] startup failed; checkpoint retained: {e}")
 
     def _shutdown_services(self) -> None:
+        self.core.cron_service.close()
         self.node_sync_jobs.cloud.close()
         self.core.group_delivery.close()
         self.core.knowledge_service.close()

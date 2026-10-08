@@ -6,6 +6,7 @@ from contextlib import ExitStack
 from typing import Any
 
 from src.agent_groups.node_lifecycle import node_departure
+from src.cron.node_lifecycle import cron_node_departure
 from src.file_transaction import atomic_write_text
 from src.long_term_memory.lifecycle import require_memory_idle, rebind_memory
 
@@ -86,7 +87,10 @@ class NodeInstanceMove(HostBoundService):
         graph_references: dict[str, Any] = {}
         rollback_errors: list[str] = []
         try:
-            with node_departure(source_graph_dir, safe_node_id, reason="moved_to_graph:" + target_graph_id):
+            with (
+                cron_node_departure(source_graph_dir, safe_node_id),
+                node_departure(source_graph_dir, safe_node_id, reason="moved_to_graph:" + target_graph_id),
+            ):
                 self._reserve_idle_node(source_config_path)
                 reservation_acquired = True
                 self._require_no_active_execution(source_config_path)

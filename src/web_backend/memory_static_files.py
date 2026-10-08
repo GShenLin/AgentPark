@@ -17,9 +17,11 @@ class VisibilityAwareMemoriesStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope) -> Response:
         normalized_path = str(path or "").replace("\\", "/").lstrip("/")
         parts = [part for part in PurePosixPath(normalized_path).parts if part not in {"", "."}]
-        # Collaboration stores contain private messages and delivery state. Serve
-        # their authorized HTTP projections only, never the SQLite files.
-        if any(part.lower() in {"groups.sqlite3", "groups.sqlite3-wal", "groups.sqlite3-shm"} for part in parts):
+        # Background work stores contain private messages and delivery state.
+        # Expose only authorized operations, never database files or journals.
+        private_stores = {name + suffix for name in ("groups.sqlite3", "cron.sqlite3")
+                          for suffix in ("", "-wal", "-shm", "-journal")}
+        if any(part.lower() in private_stores for part in parts):
             return PlainTextResponse("Not Found", status_code=404)
         if parts:
             request = Request(scope)

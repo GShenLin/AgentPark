@@ -108,12 +108,9 @@ def append_node_memory_entry_once(memory_path: str, messages_path: str, role: st
         paths = current_node_memory_paths(memory_path, messages_path)
         messages_file = paths.get("messages_path") or ""
         if messages_file and os.path.exists(messages_file):
-            try:
-                for existing in _read_jsonl_records(messages_file):
-                    if str(existing.get("id") or "").strip() == record_id:
-                        return False
-            except Exception:
-                pass
+            for existing in _read_jsonl_records(messages_file):
+                if str(existing.get("id") or "").strip() == record_id:
+                    return False
         _append_node_memory_record_unlocked(memory_path, messages_path, record)
         return True
 
@@ -478,6 +475,8 @@ def _delete_node_memory_turn_unlocked(
     deleted_ids: list[str] = []
     deleted_records: list[dict[str, Any]] = []
     for file_index, record_index, record in all_records[turn_start:turn_end]:
+        if record.get("role") == "voice":
+            continue
         delete_positions.setdefault(file_index, set()).add(record_index)
         record_id = str(record.get("id") or "").strip()
         if record_id:

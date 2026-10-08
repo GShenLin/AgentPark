@@ -3,6 +3,9 @@
 from nodes.agent_audio_schema import AUDIO_CONFIG_DEFAULTS, AUDIO_CONFIG_SCHEMA
 from nodes.agent_generation_schema import GENERATION_CONFIG_DEFAULTS, GENERATION_CONFIG_SCHEMA
 from nodes.agent_image_generation_schema import IMAGE_CONFIG_DEFAULTS, IMAGE_CONFIG_SCHEMA
+from nodes.agent_voice_schema import VOICE_CONFIG_SCHEMA
+from src.voice_settings import NODE_VOICE_DEFAULTS
+from src.provider_selection_schema import provider_selection_schema
 
 
 AGENT_INPUT_CAPABILITIES = [
@@ -31,21 +34,11 @@ AGENT_CONFIG_DEFAULTS = {
     **IMAGE_CONFIG_DEFAULTS,
     **GENERATION_CONFIG_DEFAULTS,
     **AUDIO_CONFIG_DEFAULTS,
+    **NODE_VOICE_DEFAULTS,
 }
 
 AGENT_CONFIG_SCHEMA = {
-    "provider_id": {
-        "type": "select",
-        "label": "provider_id",
-        "options": [],
-        "description": "Select a configured Provider supported by this Agent mode.",
-    },
-    "model": {
-        "type": "select",
-        "label": "model",
-        "options": [],
-        "description": "Select a model ID allowed by the selected Provider.",
-    },
+    **provider_selection_schema(),
     "instruction": {"type": "text", "label": "instruction"},
     "system_prompt": {"type": "text", "label": "system_prompt"},
     "collaboration_mode": {
@@ -78,4 +71,5 @@ AGENT_CONFIG_SCHEMA = {
     **IMAGE_CONFIG_SCHEMA,
     **GENERATION_CONFIG_SCHEMA,
     **AUDIO_CONFIG_SCHEMA,
+    **VOICE_CONFIG_SCHEMA,
 }

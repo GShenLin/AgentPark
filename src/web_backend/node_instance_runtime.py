@@ -283,7 +283,7 @@ class NodeInstanceRuntime(HostBoundService):
             text = ""
             checkpoint("memory_conversation_read", records=len(records))
         elif safe_history_mode in lazy_turn_modes:
-            common_roles = {"user", "human", "assistant", "agent", "system", "tool"}
+            common_roles = {"user", "human", "assistant", "agent", "system", "tool", "voice"}
             materialize_roles = set(common_roles)
             if safe_history_mode == "latest_turn_progress":
                 materialize_roles.add("assistant_progress")

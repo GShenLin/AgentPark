@@ -3,7 +3,7 @@ import { computed, inject, ref, watch } from 'vue'
 import { type MessageEnvelope } from '../../api'
 import { composeMessage } from '../../composables/messageAttachments'
 import { useMessageAttachments } from '../../composables/useMessageAttachments'
-import NodeVoiceCall from '../../voice/NodeVoiceCall.vue'
+import VoiceCallButton from '../../voice/VoiceCallButton.vue'
 import { useGlobalState } from '../../composables/useGlobalState'
 import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey } from './context'
@@ -31,7 +31,6 @@ const attachments = useMessageAttachments({
 })
 const isUploadingFiles = attachments.isUploading
 const sending = ref(false)
-const voiceCall = ref<InstanceType<typeof NodeVoiceCall> | null>(null)
 const goalArmedByNode = ref<Record<string, boolean>>({})
 
 const selectedNode = computed(() => {
@@ -197,11 +196,6 @@ watch(
     @pointerdown.stop
     @click.stop
   >
-    <template #status>
-      <NodeVoiceCall v-if="audioInputEnabled" ref="voiceCall" :key="`${ctx.currentGraphId.value}:${selectedNode.id}:${ctx.memoryMode.value}`"
-        :node-id="selectedNode.id" :graph-id="ctx.currentGraphId.value || 'default'"
-      />
-    </template>
     <MessageComposer
       v-model:input-text="nodeEditorInputText"
       :attachments="nodeEditorAttachments"
@@ -219,8 +213,8 @@ watch(
       @send="sendMessage"
     >
       <template #actions>
-        <button v-if="audioInputEnabled" class="record-btn" type="button" :disabled="sending || isUploadingFiles || voiceCall?.active"
-          @click="voiceCall?.start()">{{ voiceCall?.active ? '通话中' : '语音通话' }}</button>
+        <VoiceCallButton v-if="audioInputEnabled" :node-id="selectedNode.id" :graph-id="ctx.currentGraphId.value || 'default'"
+          :disabled="sending || isUploadingFiles" />
       </template>
     </MessageComposer>
     <DangerButton v-if="isNodeRunning" compact class="stop-btn" @click="ctx.stopNodeWork(selectedNode.id).catch(() => null)">

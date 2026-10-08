@@ -99,6 +99,7 @@ const enUS: LocaleDefinition = {
     'settings.nodeProfiler': 'Node Profiler',
     'settings.exit': 'Exit',
     'settings.theme': 'Theme',
+    'settings.voice': 'Voice',
     'settings.advancedJson': 'Advanced JSON',
     'settings.form': 'Form',
     'settings.sectionsAria': 'Settings sections',

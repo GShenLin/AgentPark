@@ -8,6 +8,8 @@ import MemoryMetadataDisclosure from '../components/MemoryMetadataDisclosure.vue
 import MemoryResourcePart from '../components/MemoryResourcePart.vue'
 import MemoryResponseMetadataPart from '../components/MemoryResponseMetadataPart.vue'
 import MemoryToolCallPart from '../components/MemoryToolCallPart.vue'
+import VoiceRecordPart from '../voice/VoiceRecordPart.vue'
+import { voiceRecordData } from '../voice/voiceRecord'
 import { handleMarkdownCodeCopyClick } from '../components/markdownCodeCopy'
 import {
   collectMessageFilePatches,
@@ -95,8 +97,9 @@ function closeFileDiff() {
         />
       </MemoryMetadataDisclosure>
       <template v-else>
+        <VoiceRecordPart v-if="voiceRecordData(entry.part)" :record="voiceRecordData(entry.part)!" />
         <div
-          v-if="isTextPart(entry.part as MessagePart) && partText(entry.part as MessagePart).trim().length > 0 && shouldRenderMarkdown(message)"
+          v-else-if="isTextPart(entry.part as MessagePart) && partText(entry.part as MessagePart).trim().length > 0 && shouldRenderMarkdown(message)"
           class="bubble-text bubble-markdown"
           v-html="renderMessageMarkdown({ ...message, parts: [entry.part as MessagePart] })"
           @click="handleMarkdownClick"

@@ -42,6 +42,7 @@ let pendingCommittedLiveText = ''
 let pendingCommittedLiveTraceId = ''
 
 const memoryRefreshHistoryModeByGraphEvent = new Map<string, 'completion' | 'progress'>([
+  ['node_voice_recorded', 'completion'],
   ['node_progress_updated', 'progress'],
   [LIVE_STREAM_FINISHED_EVENT, 'completion'],
   [LIVE_OUTPUT_COMMITTED_EVENT, 'completion'],

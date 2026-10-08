@@ -47,7 +47,7 @@ def _file_index(path: str, size: int, mtime_ns: int, ctime_ns: int) -> tuple[Rec
             records.append(RecordLocation(
                 path, offset, len(raw), role, record["id"], hashlib.sha256(raw).hexdigest(),
                 sum(1 for part in record["parts"] if part.get("type") == "tool_call"),
-                record if role in USER_ROLES | FINAL_ROLES else None,
+                record if role in USER_ROLES | FINAL_ROLES | {"voice"} else None,
             ))
     return tuple(records)
 
@@ -96,8 +96,11 @@ def read_conversation(
     locations = _locations(memory_path, messages_path)
     turns: list[list[RecordLocation]] = []
     preamble = []
+    voice_records = []
     for location in locations:
-        if location.role in USER_ROLES:
+        if location.role == "voice":
+            voice_records.append(location.body)
+        elif location.role in USER_ROLES:
             turns.append([location])
         elif turns:
             turns[-1].append(location)
@@ -129,4 +132,8 @@ def read_conversation(
         }
         messages[0] = {**messages[0], "turn_summary": summary}
         output.extend(messages)
-    return output
+    # Voice calls are standalone history entries, never a task's final response
+    # or hidden execution detail. Preserve their original chronological position.
+    output.extend(voice_records)
+    positions = {location.record_id: index for index, location in enumerate(locations)}
+    return sorted(output, key=lambda record: positions[record["id"]])

@@ -535,6 +535,7 @@ def test_provider_catalog_does_not_resolve_machine_local_api_key_names(monkeypat
 
     assert catalog == {
         "remote-only": {
+            "voice": None,
             "model": "remote-model",
             "supportmode": ["chat"],
             "type": "openai",

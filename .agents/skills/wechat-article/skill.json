@@ -1,0 +1,19 @@
+{
+  "scripts": [
+    {
+      "id": "read",
+      "name": "Read WeChat article",
+      "description": "读取微信公众号文章或图文帖的正文、标题、公众号与配图链接；图片不做 OCR，验证页和解析失败明确报错。",
+      "entry": "scripts/read.py",
+      "cwd": ".",
+      "timeoutSeconds": 60,
+      "allowWrite": false,
+      "argsSchema": {
+        "type": "object",
+        "properties": {"url": {"type": "string", "minLength": 1, "maxLength": 8192}},
+        "required": ["url"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

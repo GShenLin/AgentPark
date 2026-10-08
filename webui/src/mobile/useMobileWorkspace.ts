@@ -105,6 +105,7 @@ function conversationSelectionKey(selection: MobileChatSelection) {
 const chatConversationRefreshEvents = new Set([LIVE_STREAM_FINISHED_EVENT, LIVE_OUTPUT_COMMITTED_EVENT])
 
 const chatNodeRefreshGraphEvents = new Set([
+  'node_voice_recorded',
   'emit_enqueued',
   'pending_enqueue_api',
   'node_dequeue',
@@ -135,6 +136,7 @@ const chatNodeRefreshGraphEvents = new Set([
 ])
 
 const chatConversationGraphEvents = new Set([
+  'node_voice_recorded',
   'server_tool_activity',
   'tool_call_start',
   'tool_call_end',
@@ -146,6 +148,7 @@ const chatConversationGraphEvents = new Set([
 ])
 
 const chatLightweightGraphEvents = new Set([
+  'node_voice_recorded',
   'emit_enqueued',
   'pending_enqueue_api',
   'node_dequeue',

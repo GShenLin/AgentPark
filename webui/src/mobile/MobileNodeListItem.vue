@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { MobileNode } from '../api'
+import VoiceCallButton from '../voice/VoiceCallButton.vue'
 import DangerButton from '../components/DangerButton.vue'
 import { t } from '../i18n'
 
 defineProps<{
   node: MobileNode
+  graphId: string
 }>()
 
 const emit = defineEmits<{
@@ -68,6 +70,7 @@ function toggleOutput() {
       <span v-if="node.pending_count" class="pending-pill">{{ node.pending_count }}</span>
       <span class="row-arrow">›</span>
     </button>
+    <VoiceCallButton :node-id="node.id" :graph-id="graphId" status-only />
     <div v-if="node.last_message" class="node-output">
       <button
         class="output-toggle"

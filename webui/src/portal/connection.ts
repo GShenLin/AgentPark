@@ -1,6 +1,7 @@
 import { createIdentity, verifySignal, SIGNAL_TTL_SECONDS } from './crypto'
 import { BrowserPeerRpc } from './rpc'
 import { connectionLabel, parseIceLease } from './ice'
+import { BoardOffer } from './BoardOffer'
 
 export async function connectBoard(target: string, stunUrls: string[], onDisconnect: (error: string) => void, signal?: AbortSignal) {
   signal?.throwIfAborted()
@@ -20,15 +21,22 @@ export async function connectBoard(target: string, stunUrls: string[], onDisconn
     if (cleanupRequested) return
     cleanupRequested = true
     rejectReady(error); if (established) onDisconnect(error.message)
-    rpc.close(); pc.close(); ws.close()
+    offer.close(); rpc.close(); pc.close(); ws.close()
   }
+  const offer = new BoardOffer(pc, async packet => {
+    if (cleanupRequested) return
+    const body = { ...packet, target, session_id: session, public_key: identity.publicKey,
+      expires_at: Math.floor(Date.now() / 1000) + SIGNAL_TTL_SECONDS }
+    const signature = await identity.sign(body)
+    if (!cleanupRequested) ws.send(JSON.stringify({ ...body, signature }))
+  }, fail)
   const connected = new Promise<void>((resolve, reject) => {
     rejectReady = reject
     channel.onopen = () => { established = true; resolve() }
     channel.onclose = closed
     ws.onerror = () => fail(new Error('Unable to connect to the cloud portal. Check your login session.'))
     ws.onclose = () => { if (!cleanupRequested) fail(new Error('Cloud Board session ended. Sign in and reopen the Board.')) }
-    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') fail(new Error('设备连接失败，请检查网络及云端 STUN/TURN 服务是否可达。')) }
+    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') fail(new Error(`设备连接失败（${offer.diagnostic()}）。`)) }
   })
   ws.onmessage = event => {
     void (async () => {
@@ -37,19 +45,10 @@ export async function connectBoard(target: string, stunUrls: string[], onDisconn
         ws.send(JSON.stringify({ public_key: identity.publicKey, signature: await identity.sign({ challenge: packet.challenge }) }))
       } else if (packet.kind === 'ready') {
         if (packet.peer_id !== identity.peerId) throw new Error('Browser identity acknowledgement mismatch.')
+        if (packet.board_protocol !== 'trickle-ice-v1') throw new Error('云端连接服务版本过旧，请更新鉴权服务器。')
         const lease = parseIceLease(packet.ice)
         pc.setConfiguration({ iceServers: [...stunUrls.map(urls => ({ urls })), ...lease.ice_servers], iceTransportPolicy: 'all' })
-        await pc.setLocalDescription(await pc.createOffer())
-        if (pc.iceGatheringState !== 'complete') {
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('ICE discovery timed out.')), 20000)
-            const listener = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(timeout); pc.removeEventListener('icegatheringstatechange', listener); resolve() } }
-            pc.addEventListener('icegatheringstatechange', listener)
-          })
-        }
-        const body = { kind: 'offer', target, session_id: session, public_key: identity.publicKey,
-          expires_at: Math.floor(Date.now() / 1000) + SIGNAL_TTL_SECONDS, sdp: pc.localDescription!.sdp }
-        ws.send(JSON.stringify({ ...body, signature: await identity.sign(body) }))
+        await offer.start()
       } else if (packet.kind === 'signal') {
         await verifySignal(packet.signal, target, identity.peerId, session)
         await pc.setRemoteDescription({ type: 'answer', sdp: packet.signal.sdp })
@@ -62,9 +61,9 @@ export async function connectBoard(target: string, stunUrls: string[], onDisconn
   signal?.addEventListener('abort', abort, { once: true })
   if (signal?.aborted) abort()
   try {
-    await Promise.race([connected, new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('设备连接超时，请检查设备在线状态及云端中继服务。')), 40000) })])
-  } catch (error) { cleanupRequested = true; rpc.close(); pc.close(); ws.close(); throw error }
+    await Promise.race([connected, new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error(`设备连接超时（${offer.diagnostic()}）。`)), 40000) })])
+  } catch (error) { cleanupRequested = true; offer.close(); rpc.close(); pc.close(); ws.close(); throw error }
   finally { if (timeout) clearTimeout(timeout); signal?.removeEventListener('abort', abort) }
   return { rpc, async describeTransport() { return connectionLabel(await pc.getStats()) },
-    close() { cleanupRequested = true; rpc.close(); pc.close(); ws.close() } }
+    close() { cleanupRequested = true; offer.close(); rpc.close(); pc.close(); ws.close() } }
 }

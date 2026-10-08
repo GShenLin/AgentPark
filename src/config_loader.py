@@ -268,7 +268,7 @@ class ConfigLoader:
                     f"Provider '{provider_name}' has invalid xApiKey; expected a string."
                 )
             provider["xApiKey"] = provider["xApiKey"].strip()
-        for speech_key in ("speechAccessKeyId", "speechSecretAccessKey"):
+        for speech_key in ("speechAccessKeyId", "speechSecretAccessKey", "rtcAppId"):
             if speech_key not in provider:
                 continue
             if not isinstance(provider.get(speech_key), str):
@@ -468,6 +468,7 @@ class ConfigLoader:
 
     def get_provider_catalog(self):
         """Return validated Provider metadata without resolving local credentials."""
+        from src.providers.voice_registry import provider_voice_catalog
         _, _, providers = self._load_provider_document()
         catalog = {}
         for raw_provider_name, provider_payload in providers.items():
@@ -490,6 +491,7 @@ class ConfigLoader:
                 "responsesApi": provider.get("responsesApi") is True,
                 "private": provider.get("private") is True,
                 "features": copy.deepcopy(provider.get("features") or {}),
+                "voice": provider_voice_catalog(provider),
             }
             if declares_model_allowlist:
                 catalog_entry["models"] = provider_model_ids(provider)

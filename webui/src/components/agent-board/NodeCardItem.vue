@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { AgentBoardKey, type AgentBoardContext, type NodeCard } from './context'
 import { edgeResizeCursor, edgeResizeSize, type EdgeResizeHandle } from './edgeResize'
+import VoiceCallButton from '../../voice/VoiceCallButton.vue'
 import NodeAgentMeta from './NodeAgentMeta.vue'
 import NodeClockCountdown from './NodeClockCountdown.vue'
 import NodeFloatingNote from './NodeFloatingNote.vue'
@@ -199,6 +200,7 @@ onBeforeUnmount(cleanupNodeCard)
         >
           {{ props.node.name }}
         </div>
+        <VoiceCallButton :node-id="props.node.id" :graph-id="ctx.currentGraphId.value || 'default'" status-only />
         <div v-if="isClockRunning" class="node-status-badge">{{ t('board.working') }}</div>
         <div v-if="props.node.remoteEnabled" class="node-status-badge" :title="props.node.remoteWorkerId">Remote</div>
         <div class="node-actions">

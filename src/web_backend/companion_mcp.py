@@ -6,6 +6,7 @@ from typing import Any
 
 import anyio
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from src.mcp.caller_context_headers import decode_caller_header_value
 
@@ -69,6 +70,8 @@ def build_companion_mcp(core: object) -> FastMCP:
         instructions=COMPANION_MCP_INSTRUCTIONS,
         streamable_http_path="/",
         stateless_http=True,
+        # The embedded endpoint is reachable through the Web backend's LAN addresses.
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
     tools = CompanionMcpTools(core)
     link_tools = CompanionMcpLinkTools(core)

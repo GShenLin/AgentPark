@@ -27,6 +27,7 @@ class AgentRuntimeContext:
     network_access: str = ""
     approval_policy: str = ""
     client_ip: str = ""
+    access_role: str = ""
     responses_instruction: str = ""
     skill_resource_roots: Mapping[str, str] = field(default_factory=dict)
     persist_assistant_progress: Callable[[dict[str, Any]], None] | None = None
@@ -54,6 +55,7 @@ class AgentRuntimeContext:
             network_access=self.network_access,
             approval_policy=self.approval_policy,
             client_ip=self.client_ip,
+            access_role=self.access_role,
             responses_instruction=str(self.responses_instruction or "").strip(),
             skill_resource_roots=dict(self.skill_resource_roots or {}),
             persist_assistant_progress=self.persist_assistant_progress,
@@ -129,6 +131,7 @@ def _context_from_agent_attributes(agent: object = None) -> AgentRuntimeContext:
             getattr(agent, "_agentpark_client_ip", None),
             cfg.get("client_ip"),
         ),
+        access_role=_first_non_empty(getattr(agent, "_agentpark_access_role", None)),
         responses_instruction=_first_non_empty(
             getattr(agent, "_agentpark_responses_instruction", None),
             cfg.get("responses_instruction"),
@@ -161,6 +164,7 @@ def _write_runtime_attributes(agent: object, context: AgentRuntimeContext) -> No
         "_agentpark_network_access": context.network_access,
         "_agentpark_approval_policy": context.approval_policy,
         "_agentpark_client_ip": context.client_ip,
+        "_agentpark_access_role": context.access_role,
         "_agentpark_responses_instruction": context.responses_instruction,
     }
     for name, value in values.items():

@@ -2,6 +2,8 @@ import json
 import os
 from types import SimpleNamespace
 
+import pytest
+
 from nodes.codex_node import Node
 from nodes.codex_node.runtime.thread_state import THREAD_STATE_FILENAME
 from nodes.codex_node.runtime.thread_state import session_runtime_key
@@ -56,6 +58,7 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
             "node_id": "Codex",
             "type_id": "codex_node",
             "provider_id": "provider-a",
+            "model": "selected-model",
             "working_path": str(tmp_path),
             "sandbox": "danger-full-access",
         }),
@@ -73,6 +76,7 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
         "src.harness.provider_binding.ConfigLoader",
         lambda: SimpleNamespace(get_provider_config=lambda _provider_id: {
             "model": "test-model",
+            "models": ["test-model", "selected-model"],
             "type": "openai",
             "supportmode": ["chat"],
         }),
@@ -87,6 +91,8 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
         "messages_path": str(node_dir / "messages.jsonl"),
         "graph_id": "default",
         "node_instance_id": "Codex",
+        "provider_id": "stale-provider",
+        "model": "test-model",
     }
 
     result = Node().on_input("Start this session", context)
@@ -97,9 +103,19 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
     assert captured["spec"].state_path == state_path
     assert captured["spec"].session_key == session_runtime_key("default", "Codex", state_path)
     assert captured["spec"].sandbox == "danger-full-access"
+    assert captured["spec"].provider_id == "provider-a"
+    assert captured["spec"].model == "selected-model"
     assert captured["text"] == "Start this session"
     assert result["display"] == "done"
 
     context["access_role"] = "nondeveloper"
     Node().on_input("Restricted session", context)
     assert captured["spec"].sandbox == "read-only"
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["model"] = "unconfigured-model"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    captured.clear()
+    with pytest.raises(ValueError, match="not allowed"):
+        Node().on_input("Invalid model", context)
+    assert captured == {}

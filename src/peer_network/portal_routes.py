@@ -18,6 +18,7 @@ from .contracts import Signal
 from .identity import DeviceIdentity, peer_id, verify, verify_signal
 from .portal_auth import BOARD_CONNECTION_SECONDS, COOKIE, SESSION_SECONDS, PortalAuth
 from .ice import TurnIssuer
+from .portal_ice import PORTAL_SIGNAL, PortalIceOrder
 
 
 LOGGER = logging.getLogger(__name__)
@@ -97,20 +98,22 @@ def register_portal_routes(app, registry, signing_identity: DeviceIdentity, pass
             registry.browser_locks[browser] = asyncio.Lock()
             session.browser_ids.add(browser)
             connection_expires_at = min(session.expires_at, int(time.time()) + BOARD_CONNECTION_SECONDS)
-            await registry.send_browser(browser, {"kind": "ready", "peer_id": browser,
+            await registry.send_browser(browser, {"kind": "ready", "peer_id": browser, "board_protocol": "trickle-ice-v1",
                                                  "ice": turn.issue(browser, expires_at=connection_expires_at).model_dump()})
             count = 0
+            ice_order = PortalIceOrder()
             while True:
                 remaining = connection_expires_at - time.time()
                 if remaining <= 0:
                     break
                 raw = await asyncio.wait_for(socket.receive_text(), remaining)
                 count += 1
-                if len(raw.encode()) > 70000 or count > 20:
+                if len(raw.encode()) > 70000 or count > 130:
                     raise ValueError("Browser signaling limit exceeded.")
-                signal = Signal.model_validate_json(raw)
-                if verify_signal(signal, signal.target) != browser or signal.kind != "offer":
-                    raise ValueError("Browser must send its own signed offer.")
+                signal = PORTAL_SIGNAL.validate_json(raw)
+                if verify_signal(signal, signal.target) != browser:
+                    raise ValueError("Browser must send its own signed signal.")
+                ice_order.accept(signal)
                 target = registry.devices.get(signal.target)
                 if target is None or not target.portal_board:
                     await registry.send_browser(browser, {"kind": "error", "error": "Device is offline or cloud Board access is disabled."})

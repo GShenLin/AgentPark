@@ -10,7 +10,7 @@ import pytest
 from src.harness.config import load_cli_request
 from src.harness.contracts import HarnessContext
 from src.harness.provider_binding import ProviderBinding
-from src.harness.registry import DESCRIPTORS, create_adapter
+from src.harness.registry import DESCRIPTORS, HARNESS_NODE_TYPES, create_adapter
 from src.harness.responses_gateway import HarnessResponsesGateway
 from nodes.claude_node.runtime.provider_gateway import ClaudeProviderGateway
 from src.cli_provider_runtime.gateway_dispatch import GatewayDispatchResult
@@ -97,11 +97,12 @@ def test_all_registered_nodes_have_concrete_adapters():
         assert callable(create_adapter(item.id).run)
 
 
-@pytest.mark.parametrize("module", ["pi_node", "hermes_agent_node", "minimax_code_node"])
+@pytest.mark.parametrize("module", sorted(HARNESS_NODE_TYPES))
 def test_harness_node_schema_exposes_selected_provider_models(provider, module):
     from importlib import import_module
     Node = import_module("nodes." + module).Node
     schema = Node().get_config_schema({"provider_id": "p"})
+    assert list(schema)[:2] == ["provider_id", "model"]
     assert schema["model"]["options"] == [{"value": "first", "label": "first"}, {"value": "second", "label": "second"}]
 
 

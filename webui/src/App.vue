@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { inject, nextTick, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { cloudBoardSession } from './portal/boardSession'
 import { getAccessStatus, loadWorkspaceBootstrap, type AccessStatus, type WorkspaceBootstrap } from './api'
 import { setAccessUsername } from './accessIdentity'
@@ -14,6 +14,11 @@ import MobileWorkspace from './mobile/MobileWorkspace.vue'
 import MobileUserInteractionDrawer from './mobile/MobileUserInteractionDrawer.vue'
 import { applyThemeConfig } from './theme'
 import { t } from './i18n'
+import WorkspaceVoiceHost from './voice/WorkspaceVoiceHost.vue'
+import { createWorkspaceVoice, workspaceVoiceKey } from './voice/workspaceVoice'
+
+const voice = createWorkspaceVoice()
+provide(workspaceVoiceKey, voice)
 
 const MOBILE_QUERY = '(max-width: 760px)'
 const isMobile = ref(typeof window !== 'undefined' ? window.matchMedia(MOBILE_QUERY).matches : false)
@@ -105,6 +110,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  voice.stopAll()
   unregisterBoardSession?.()
   stopAppEventStream?.()
   stopAppEventStream = null
@@ -131,5 +137,6 @@ onBeforeUnmount(() => {
     <MobileUserInteractionDrawer v-if="isMobile" />
     <UserInteractionDialog v-else global />
     <WorkAlertToast />
+    <WorkspaceVoiceHost />
   </div>
 </template>

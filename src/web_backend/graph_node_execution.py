@@ -18,6 +18,7 @@ from .node_run_terminal import build_node_run_terminal_event
 from .node_request_tracking import record_node_request_completion_or_log
 from .node_state_machine import parse_node_state
 from .group_delivery import GroupNotificationRun
+from .cron_execution import acknowledge_cron_run
 from .shared import (
     _preview_text,
     _complete_node_config_work_with_held_output,
@@ -44,6 +45,7 @@ class NodeStopRequested(CancellationRequested):
 
 
 class GraphNodeExecution(HostBoundService):
+    @acknowledge_cron_run
     def _run_single_node_iteration(
         self,
         *,

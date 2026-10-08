@@ -3,30 +3,28 @@ from __future__ import annotations
 from src.capabilities.registry import CapabilityRegistry
 from src.audio_speaker_catalog import AudioSpeakerCatalog
 from src.config_loader import ConfigLoader
-from src.provider_models import provider_model_ids
+from src.provider_selection_schema import provider_selection_schema
 from nodes.agent_node_modes import MODE_ORDER, capability_mode, modes_for_field
 from nodes.agent_image_generation_schema import materialize_image_generation_schema
+from nodes.agent_voice_schema import materialize_voice_schema
 
 
 def build_agent_config_schema(base_schema: dict, context: dict | None) -> dict:
     schema = dict(base_schema)
     ctx = context if isinstance(context, dict) else {}
     provider_id = str(ctx.get("provider_id") or "").strip()
+    loader = ConfigLoader()
+    catalog = getattr(loader, "get_provider_catalog", None)
+    providers = catalog() if callable(catalog) else loader.get_all_providers()
+    schema = materialize_voice_schema(schema, providers)
     if provider_id:
-        loader = ConfigLoader()
-        catalog = getattr(loader, "get_provider_catalog", None)
-        providers = catalog() if callable(catalog) else loader.get_all_providers()
         provider_config = dict(providers.get(provider_id, {}) or {})
     else:
         provider_config = {}
     provider_features = dict(provider_config.get("features") or {})
-    model_schema = dict(schema.get("model") or {})
-    model_schema["type"] = "select"
-    model_schema["options"] = [
-        {"value": model_id, "label": model_id}
-        for model_id in provider_model_ids(provider_config)
-    ]
-    schema["model"] = model_schema
+    schema.update(provider_selection_schema(
+        provider_config, provider_options=schema["provider_id"].get("options", []),
+    ))
     configured_modes = provider_config.get("supportmode")
     provider_modes = (
         [str(mode).strip() for mode in configured_modes if str(mode).strip() in MODE_ORDER]

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tanstack/vue-virtual": "^3.13.36",
+    "@volcengine/rtc": "4.69.2",
     "katex": "^0.17.0",
     "marked": "^17.0.1",
     "marked-katex-extension": "^5.1.10",

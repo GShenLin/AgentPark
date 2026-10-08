@@ -1,9 +1,10 @@
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { ConferenceAudio } from './ConferenceAudio'
 
 export type VoiceParticipant = { id: number; node: string; active: boolean; connected: boolean }
 
-export function useVoiceRoom() {
+// Explicit lifetime: the workspace owns rooms, never a chat panel's lifecycle.
+export function createVoiceRoom() {
   const audio = shallowRef<ConferenceAudio | null>(null)
   const participants = ref<VoiceParticipant[]>([])
   const active = ref(false), opened = ref(false), muted = ref(false), error = ref('')
@@ -53,6 +54,10 @@ export function useVoiceRoom() {
     if (participants.value.every(p => !p.active)) stop()
   }
   function toggleMute() { muted.value = !muted.value; audio.value?.muteMicrophone(muted.value) }
-  onBeforeUnmount(stop)
-  return { audio, participants, active, opened, muted, error, connected, start, stop, add, stateChanged, toggleMute }
+  function leave(node: string) {
+    const participant = participants.value.find(p => p.node === node && p.active)
+    if (participant) stateChanged(participant.id, false, false)
+    else if (!opened.value) stop()
+  }
+  return { audio, participants, active, opened, muted, error, connected, start, stop, add, leave, stateChanged, toggleMute }
 }

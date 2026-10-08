@@ -99,6 +99,7 @@ const zhCN: LocaleDefinition = {
     'settings.nodeProfiler': '节点分析器',
     'settings.exit': '退出',
     'settings.theme': '主题',
+    'settings.voice': '语音',
     'settings.advancedJson': '高级 JSON',
     'settings.form': '表单',
     'settings.sectionsAria': '设置分类',

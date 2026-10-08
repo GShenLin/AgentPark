@@ -53,6 +53,7 @@ export function normalizeMemoryRole(role: string) {
 }
 
 export function memoryRoleLabel(roleKey: string, rawRole: string) {
+  if (rawRole === 'voice') return '语音通话'
   if (roleKey === 'user') return 'User'
   if (roleKey === 'assistant') return 'Assistant'
   if (roleKey === 'progress') return 'Progress'
@@ -361,6 +362,7 @@ export function useMemoryTurnEntries(messages: Ref<MessageEnvelope[]>) {
         if (bodyIndex === finalResponseIndex) continue
         const message = source[bodyIndex]
         if (!message) continue
+        if (message.role === 'voice') continue
         if (finalResponseIndex >= 0 && bodyIndex > finalResponseIndex) {
           finalMessages.push(message)
         } else {
@@ -376,6 +378,10 @@ export function useMemoryTurnEntries(messages: Ref<MessageEnvelope[]>) {
         finalMessages,
         startIndex: index,
       })
+      for (let bodyIndex = bodyStart; bodyIndex < bodyEnd; bodyIndex += 1) {
+        const message = source[bodyIndex]
+        if (message?.role === 'voice') pushMessage(message, bodyIndex)
+      }
       index = bodyEnd
     }
 

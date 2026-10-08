@@ -4,6 +4,7 @@ from pathlib import Path
 
 from src.agent_groups.contracts import GroupConflict
 from src.agent_groups.node_lifecycle import node_rename
+from src.cron.node_lifecycle import cron_node_rename
 from src.file_transaction import atomic_write_text
 from src.long_term_memory.lifecycle import rebind_memory, require_memory_idle
 from .node_config_errors import NodeConfigReadError
@@ -61,7 +62,10 @@ class NodeInstanceRename(HostBoundService):
             self._require_no_active_execution(old_config_path)
             self.graph_runtime._unregister_scheduled_node(safe_graph_id, safe_node_id)
             unregistered = True
-            with node_rename(str(graph_path.parent), safe_node_id, safe_new_node_id):
+            with (
+                cron_node_rename(str(graph_path.parent), safe_node_id, safe_new_node_id),
+                node_rename(str(graph_path.parent), safe_node_id, safe_new_node_id),
+            ):
                 if safe_new_node_id != safe_node_id:
                     os.rename(old_dir, new_dir)
                     moved = True

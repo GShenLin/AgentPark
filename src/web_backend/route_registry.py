@@ -6,10 +6,14 @@ from .node_open_diagnostics import receive_browser_trace
 
 class ApiRouteRegistry:
     ROUTES = [
+        ("get", "/api/nodes/instances/{node_id}/voice", lambda core: core.node_voice.describe),
         ("post", "/api/nodes/instances/{node_id}/voice", lambda core: core.node_voice.start),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/control", lambda core: core.node_voice.control),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/finish", lambda core: core.node_voice.finish),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks", lambda core: core.node_voice.delegate),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/events", lambda core: core.node_voice.diagnostic),
         ("get", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks/{request_id}", lambda core: core.node_voice.task),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks/{request_id}/updates", lambda core: core.node_voice.deliver_update),
         ("delete", "/api/nodes/instances/{node_id}/voice/{session_id}", lambda core: core.node_voice.end),
         ("get", "/api/skills", lambda core: core.skills_api.list_skills),
         ("get", "/api/skills/detail", lambda core: core.skills_api.detail),

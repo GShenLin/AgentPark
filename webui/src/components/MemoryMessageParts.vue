@@ -9,6 +9,8 @@ import ImageLightbox from './ImageLightbox.vue'
 import MemoryResourcePart from './MemoryResourcePart.vue'
 import MemoryResponseMetadataPart from './MemoryResponseMetadataPart.vue'
 import MemoryToolCallPart from './MemoryToolCallPart.vue'
+import VoiceRecordPart from '../voice/VoiceRecordPart.vue'
+import { voiceRecordData } from '../voice/voiceRecord'
 import { handleMarkdownCodeCopyClick } from './markdownCodeCopy'
 import {
   collectMessageFilePatches,
@@ -181,8 +183,9 @@ function closeFileDiff() {
         />
       </MemoryMetadataDisclosure>
       <template v-else>
+        <VoiceRecordPart v-if="voiceRecordData(entry.part)" :record="voiceRecordData(entry.part)!" />
         <div
-          v-if="String((entry.part as any)?.type || '') === 'text' && markdownPreview && shouldRenderMarkdown()"
+          v-else-if="String((entry.part as any)?.type || '') === 'text' && markdownPreview && shouldRenderMarkdown()"
           class="feed-text markdown-part"
           v-html="renderFeedMarkdown(String((entry.part as any)?.text || ''))"
           @click="handleMarkdownClick"

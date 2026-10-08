@@ -1,6 +1,7 @@
 import os
 
 from src.agent_groups.node_lifecycle import node_departure
+from src.cron.node_lifecycle import cron_node_departure
 
 from . import runtime_paths
 from .deletion_undo_store import deletion_undo_store
@@ -123,8 +124,11 @@ class NodeInstanceDeletion(HostBoundService):
             if os.path.isfile(graph_config_path):
                 with open(graph_config_path, "rb") as handle:
                     graph_config_before = handle.read()
-            with node_departure(self.graph_runtime._graph_dir(safe_graph_id), safe_node_id,
-                                reason="deleted") as group_snapshot:
+            with (
+                cron_node_departure(self.graph_runtime._graph_dir(safe_graph_id), safe_node_id),
+                node_departure(self.graph_runtime._graph_dir(safe_graph_id), safe_node_id,
+                               reason="deleted") as group_snapshot,
+            ):
                 if group_snapshot is not None:
                     deletion_undo_store.write_json(undo_entry, "group-membership.json", group_snapshot)
                 prune_node_references_in_graph(self.graph_runtime, safe_graph_id, safe_node_id)

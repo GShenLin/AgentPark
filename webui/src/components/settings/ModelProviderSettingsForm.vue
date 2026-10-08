@@ -565,6 +565,7 @@ onMounted(() => {
           :x-api-key="stringValue('xApiKey')"
           :speech-access-key-id="stringValue('speechAccessKeyId')"
           :speech-secret-access-key="stringValue('speechSecretAccessKey')"
+          :rtc-app-id="stringValue('rtcAppId')"
           :show-doubao-speech-auth="isDoubaoAudioProvider"
           :busy="codexAuthBusy"
           :status="codexAuthStatus"

@@ -12,6 +12,7 @@ from .identity import DeviceIdentity, peer_id, verify, verify_signal
 from .store import PeerStore
 from .ice import CREDENTIAL_SECONDS, REFRESH_SECONDS, IceLease
 from .remote_peers import RemotePeers
+from .portal_ice import PORTAL_SIGNAL
 
 
 LOGGER = logging.getLogger(__name__)
@@ -95,11 +96,11 @@ class PeerNetworkService:
             raise PermissionError("Cloud Board access is disabled on this device.")
         ticket = PortalTicket.model_validate(packet["ticket"])
         verify(self.coordinator_public_key, ticket.signature, ticket.model_dump(exclude={"signature"}))
-        signal = Signal.model_validate(packet["signal"])
+        signal = PORTAL_SIGNAL.validate_python(packet["signal"])
         browser = verify_signal(signal, self.identity.peer_id)
         if ticket.target != self.identity.peer_id or ticket.browser_id != browser or ticket.session_id != signal.session_id:
             raise ValueError("Portal ticket is not bound to this browser and device session.")
-        if not 0 < ticket.expires_at - time.time() <= 3600 or signal.kind != "offer":
+        if not 0 < ticket.expires_at - time.time() <= 3600 or signal.kind not in {"offer", "ice_candidate"}:
             raise ValueError("Portal access has expired.")
         self.portal_tickets[browser] = ticket
         await self.connections.accept(packet["signal"], portal=True)

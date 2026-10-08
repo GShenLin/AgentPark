@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .channel import PeerChannel
 from .contracts import Signal
 from .identity import verify_signal
+from .portal_ice import PORTAL_SIGNAL, PortalIceCandidate, PortalIceOrder, apply_candidate
 
 
 @dataclass
@@ -17,6 +18,7 @@ class Link:
     created_at: float
     channel: PeerChannel | None = None
     portal: bool = False
+    portal_ice: PortalIceOrder | None = None
 
 
 class PeerConnections:
@@ -113,8 +115,15 @@ class PeerConnections:
 
     async def accept(self, raw: dict, *, portal: bool = False) -> None:
         from aiortc import RTCSessionDescription
-        signal = Signal.model_validate(raw)
+        signal = PORTAL_SIGNAL.validate_python(raw) if portal else Signal.model_validate(raw)
         peer = verify_signal(signal, self.service.identity.peer_id)
+        if isinstance(signal, PortalIceCandidate):
+            link = self.links.get(peer)
+            if link is None or not link.portal or link.portal_ice is None:
+                raise ValueError("ICE candidate has no admitted Board connection.")
+            link.portal_ice.accept(signal)
+            await apply_candidate(link.pc, signal)
+            return
         if not portal and peer not in self.service.store.grants and not self.service.remote.allows_connection(peer):
             raise PermissionError("Signal from unpaired device rejected.")
         now = time.time()
@@ -135,6 +144,9 @@ class PeerConnections:
                 raise ValueError("Existing connection is still active.")
             link = await self.new(peer, signal.session_id)
             link.portal = portal
+            if portal:
+                link.portal_ice = PortalIceOrder()
+                link.portal_ice.accept(signal)
             async with asyncio.timeout(30):
                 await link.pc.setRemoteDescription(RTCSessionDescription(sdp=signal.sdp, type="offer"))
                 await link.pc.setLocalDescription(await link.pc.createAnswer())

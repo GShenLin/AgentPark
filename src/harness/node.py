@@ -11,7 +11,7 @@ from src.harness.install_manager import runtime_lease
 from src.harness.registry import create_adapter
 from src.harness.reasoning_config import reasoning_options
 from src.message_protocol import build_text_envelope, envelope_text, normalize_envelope
-from src.provider_models import provider_model_ids
+from src.provider_selection_schema import provider_selection_schema
 from src.provider_options import build_provider_options_for_support_modes, provider_options_include_private
 
 
@@ -30,18 +30,14 @@ class HarnessNode(BaseNode):
 
     def get_config_schema(self, context: dict | None = None) -> dict:
         schema = super().get_config_schema(context)
-        schema["provider_id"] = {
-            "type": "select", "label": "provider_id",
-            "options": build_provider_options_for_support_modes(
-                set(self.support_modes), include_private=provider_options_include_private(context)),
-        }
         provider_id = str((context or {}).get("provider_id") or "").strip()
-        models = provider_model_ids(ConfigLoader().get_provider_config(provider_id)) if provider_id else []
-        schema["model"] = {"type": "select", "label": "model",
-                           "description": "Model from the selected Provider; empty uses its first model.",
-                           "options": [{"value": model, "label": model} for model in models]}
+        config = ConfigLoader().get_provider_config(provider_id) if provider_id else {}
+        selection = provider_selection_schema(
+            config, provider_options=build_provider_options_for_support_modes(
+                set(self.support_modes), include_private=provider_options_include_private(context)),
+        )
+        schema = {**selection, **{key: value for key, value in schema.items() if key not in selection}}
         if self.provider_reasoning_options:
-            config = ConfigLoader().get_provider_config(provider_id) if provider_id else {}
             if (context or {}).get("model"):
                 config = {**config, "model": context["model"]}
             schema["reasoning_effort"] = {**self.config_schema["reasoning_effort"], "options": [

@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption,
 from src.file_transaction import atomic_write_text
 
 from .contracts import Signal
+from .portal_ice import PortalIceCandidate
 
 
 SIGNAL_TTL_SECONDS = 120
@@ -64,7 +65,7 @@ class DeviceIdentity:
         return Signal(**body, signature=self.sign(body)).model_dump()
 
 
-def verify_signal(signal: Signal, target: str) -> str:
+def verify_signal(signal: Signal | PortalIceCandidate, target: str) -> str:
     if signal.target != target or not 0 < signal.expires_at - time.time() <= SIGNAL_TTL_SECONDS + SIGNAL_CLOCK_SKEW_SECONDS:
         raise ValueError("Signal target or expiry is invalid.")
     verify(signal.public_key, signal.signature, signal.model_dump(exclude={"signature"}))

@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { CodexAuthStatus } from '../../settingsApi'
 import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 import ApiKeyAliasField from './ApiKeyAliasField.vue'
 import ProviderOfficialAuthControl from './ProviderOfficialAuthControl.vue'
 
-defineProps<{
+const props = defineProps<{
   providerType: string
   providerAuthId: string
   authMode: string
@@ -16,11 +17,18 @@ defineProps<{
   xApiKey: string
   speechAccessKeyId: string
   speechSecretAccessKey: string
+  rtcAppId: string
   showDoubaoSpeechAuth: boolean
   busy: boolean
   status: CodexAuthStatus | null
   error: string
 }>()
+
+const rtc = computed(() => {
+  if (props.providerType !== 'doubao') return false
+  try { return new URL(props.baseUrl).hostname === 'rtc.volcengineapi.com' }
+  catch { return false }
+})
 
 const emit = defineEmits<{
   field: [key: string, value: string]
@@ -64,12 +72,17 @@ const emit = defineEmits<{
     <FormTextInput :model-value="xApiKey" @update:model-value="emit('field', 'xApiKey', $event)" />
     <small>References the X-Api-Key value in .auth/api-keys/aliases.json for Doubao speech APIs.</small>
   </label>
-  <label v-if="!['codex', 'oauth'].includes(authMode) && showDoubaoSpeechAuth">
+  <label v-if="!['codex', 'oauth'].includes(authMode) && (showDoubaoSpeechAuth || rtc)">
     <span>Speech Access Key ID Name</span>
     <FormTextInput :model-value="speechAccessKeyId" @update:model-value="emit('field', 'speechAccessKeyId', $event)" />
     <small>References the Access Key ID in .auth/api-keys/aliases.json.</small>
   </label>
-  <label v-if="!['codex', 'oauth'].includes(authMode) && showDoubaoSpeechAuth">
+  <label v-if="rtc">
+    <span>AI 音视频应用 AppId</span>
+    <FormTextInput :model-value="rtcAppId" @update:model-value="emit('field', 'rtcAppId', $event)" />
+    <small>使用 AI 音视频互动应用；AppKey 由服务端通过已配置的 Access Key 查询，不发送到浏览器。</small>
+  </label>
+  <label v-if="!['codex', 'oauth'].includes(authMode) && (showDoubaoSpeechAuth || rtc)">
     <span>Speech Secret Access Key Name</span>
     <FormTextInput :model-value="speechSecretAccessKey" @update:model-value="emit('field', 'speechSecretAccessKey', $event)" />
     <small>References the Secret Access Key in .auth/api-keys/aliases.json.</small>

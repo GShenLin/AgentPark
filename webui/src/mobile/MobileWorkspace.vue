@@ -25,8 +25,7 @@ import MobileGroups from './MobileGroups.vue'
 import SettingsPage from '../components/SettingsPage.vue'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { recordDeletionUndo } from '../composables/useDeletionUndo'
-import NodeVoiceCall from '../voice/NodeVoiceCall.vue'
-const voiceCall = ref<InstanceType<typeof NodeVoiceCall> | null>(null)
+import VoiceCallButton from '../voice/VoiceCallButton.vue'
 import { useWorkAlerts } from '../composables/useWorkAlerts'
 import { useMobileWorkspace } from './useMobileWorkspace'
 import { useMobileBoardLocation } from './useMobileBoardLocation'
@@ -686,6 +685,7 @@ onMounted(async () => {
           v-for="node in workspace.nodes.value"
           :key="node.id"
           :node="node"
+          :graph-id="workspace.selectedGraph.value!.id"
           @select="workspace.selectNode"
           @delete="deleteMobileNode"
           @trigger="triggerMobileNode"
@@ -738,18 +738,14 @@ onMounted(async () => {
           />
         </div>
 
-        <NodeVoiceCall v-if="audioInputEnabled" ref="voiceCall"
-          :key="`${workspace.selectedPc.value?.id}:${workspace.selectedGraph.value?.id}:${workspace.selectedNode.value?.id}`"
-          :node-id="workspace.selectedNode.value!.id" :graph-id="workspace.selectedGraph.value!.id"
-        />
         <form class="composer" @submit.prevent="sendDraft">
           <div class="composer-tools">
             <ActionButton class="attach-btn" compact :disabled="uploadingFiles || composerLocked" @click="openFilePicker">
               {{ uploadingFiles ? t('mobile.uploading') : t('mobile.addAttachment') }}
             </ActionButton>
             <DangerButton v-if="attachments.length > 0" class="clear-attachments-btn" compact :disabled="composerLocked" @click="clearAttachments">{{ t('mobile.clearAttachments') }}</DangerButton>
-            <ActionButton v-if="audioInputEnabled" compact :disabled="uploadingFiles || composerLocked || voiceCall?.active"
-              @click="voiceCall?.start()">{{ voiceCall?.active ? '通话中' : '语音通话' }}</ActionButton>
+            <VoiceCallButton v-if="audioInputEnabled" :node-id="workspace.selectedNode.value!.id" :graph-id="workspace.selectedGraph.value!.id"
+              :disabled="uploadingFiles || composerLocked" />
             <button
               v-if="!workspace.selectedNode.value?.readonly"
               class="goal-toggle-btn"

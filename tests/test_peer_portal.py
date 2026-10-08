@@ -90,6 +90,13 @@ def test_portal_browser_offer_gets_a_device_and_session_bound_ticket(monkeypatch
                 assert ready["ice"]["expires_at"] == ticket.expires_at
                 ws.send_json(device.signal("answer", browser.peer_id, "a" * 32, "test-answer"))
                 assert visitor.receive_json()["signal"]["sdp"] == "test-answer"
+                update = dict(kind="ice_candidate", target=device.peer_id, session_id="a" * 32,
+                              public_key=browser.public_key, expires_at=int(time.time()) + 60,
+                              sequence=0, candidate=None, sdp_mid=None, sdp_mline_index=None)
+                visitor.send_json({**update, "signature": browser.sign(update)})
+                forwarded = ws.receive_json()
+                assert forwarded["signal"]["kind"] == "ice_candidate"
+                assert forwarded["ticket"] == packet["ticket"]
             assert ws.receive_json() == {"kind": "portal_close", "peer_id": browser.peer_id}
 
 

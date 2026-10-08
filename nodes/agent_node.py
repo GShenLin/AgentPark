@@ -214,6 +214,7 @@ class Node(BaseNode):
                 remote_worker_id=run_request.remote_worker_id,
                 collaboration_mode=run_request.collaboration_mode,
                 client_ip=str(ctx.get("access_ip") or ""),
+                access_role="nondeveloper" if is_nondeveloper_context(ctx) else "developer",
                 shell="powershell" if os.name == "nt" else "",
                 responses_instruction=effective_instruction(agent, run_request.instruction)
                 if uses_responses_api_context(agent)

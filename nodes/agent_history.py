@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from nodes.agent_message_adapter import history_envelope_to_agent_message
+from nodes.agent_voice_history import voice_history_envelopes
 from src.conversation_context.checkpoint import encode
 from src.conversation_context import jobs
 from src.conversation_context.model import ConversationModel
@@ -38,24 +39,26 @@ def load_agent_history_messages(
                 break
             if item.get("context_policy") == "exclude":
                 continue
-            envelope = normalize_envelope(item, default_role="assistant")
-            message = history_envelope_to_agent_message(envelope, provider_id, public_base_url)
-            if item.get("role") in {"tool", "function"}:
-                # Audit envelopes are projected as evidence, never as orphan provider tool results.
-                content = envelope_text(envelope).strip()
-                if content:
-                    message = {
-                        "role": historical_evidence_role,
-                        "content": (
-                            "[Historical tool evidence: context only; never return this block as an answer]\n"
-                            + content
-                        ),
-                    }
-            if message is not None:
-                records.append({"id": item["id"], "record": encode({
-                    "role": item["role"], "parts": item.get("parts", []), "trace_id": item.get("trace_id"),
-                })})
-                projected.append(message)
+            entries = voice_history_envelopes(item) if item.get("role") == "voice" else [item]
+            for entry in entries:
+                envelope = normalize_envelope(entry, default_role="assistant")
+                message = history_envelope_to_agent_message(envelope, provider_id, public_base_url)
+                if entry.get("role") in {"tool", "function"}:
+                    # Audit envelopes are projected as evidence, never as orphan provider tool results.
+                    content = envelope_text(envelope).strip()
+                    if content:
+                        message = {
+                            "role": historical_evidence_role,
+                            "content": (
+                                "[Historical tool evidence: context only; never return this block as an answer]\n"
+                                + content
+                            ),
+                        }
+                if message is not None:
+                    records.append({"id": entry["id"], "record": encode({
+                        "role": entry["role"], "parts": entry.get("parts", []), "trace_id": entry.get("trace_id"),
+                    })})
+                    projected.append(message)
             if item.get("id") == through_message_id:
                 boundary_found = True
                 break

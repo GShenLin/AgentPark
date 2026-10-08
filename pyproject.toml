@@ -25,6 +25,7 @@ dependencies = [
     "aiortc>=1.15.0,<2",
     "tickflow>=0.1.24,<0.2",
     "tzdata>=2025.2",
+    "croniter>=6.0,<7",
     "lancedb>=0.29.2,<0.30; sys_platform != 'android'",
     "pyarrow>=16,<24; sys_platform != 'android'",
     "jieba>=0.42.1,<0.43",
@@ -35,6 +36,8 @@ dependencies = [
     "openpyxl>=3.1.5,<4",
     "xlrd>=2.0.1,<3",
     "defusedxml>=0.7.1,<1",
+    "beautifulsoup4>=4.12,<5",
+    "markdownify>=1.2,<2",
 ]
 
 [tool.setuptools.packages.find]
