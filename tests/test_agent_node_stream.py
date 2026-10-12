@@ -7,9 +7,13 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _declare_synthetic_chat_providers(monkeypatch):
+def _declare_synthetic_chat_providers(monkeypatch, tmp_path):
     """Keep unit-only provider ids explicit under the Settings-owned contract."""
     import nodes.agent_node as agent_node_module
+
+    provider_path = tmp_path / "modelProvider.json"
+    provider_path.write_text(json.dumps({"providers": {}}), encoding="utf-8")
+    monkeypatch.setenv(agent_node_module.ConfigLoader.CONFIG_PATH_ENV, str(provider_path))
 
     original_get_provider_config = agent_node_module.ConfigLoader.get_provider_config
 
@@ -182,9 +186,11 @@ def test_agent_node_registers_selected_mcp_servers_before_send(monkeypatch, fail
     class ToolRegistry:
         def __init__(self):
             self.tool_declarations = []
+            self.function_map = {}
 
         def register_external_tool(self, declaration, func):
             self.tool_declarations.append(declaration)
+            self.function_map[declaration["function"]["name"]] = func
 
     class DummyAgent:
         def __init__(self):
@@ -258,12 +264,15 @@ def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
     from nodes.agent_plugin_tool_loader import PluginToolDefinition
     from nodes.agent_skill_loader import SkillDefinition
 
-    captured = {"tools": [], "plugin_tools": [], "skills": None, "mcp": [], "mcp_settings": None}
+    captured = {"tools": [], "plugin_tools": [], "agent": None, "mcp": [], "mcp_settings": None}
 
     class DummyAgent:
         def __init__(self):
             self.messages = []
             self.tools = self
+            self.function_map = {}
+            self.tool_declarations = []
+            captured["agent"] = self
 
         def addTool(self, name):
             captured["tools"].append(name)
@@ -283,6 +292,11 @@ def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
         path="plugin/SKILL.md",
         content="Use plugin skill.",
     )
+    referenced_skill = SkillDefinition(
+        name="control-in-app-browser", description="Browser skill", path="browser/SKILL.md",
+        content="Private browser instructions.",
+    )
+    monkeypatch.setattr(agent_node_module, "load_node_skills", lambda *_args, **_kwargs: [referenced_skill])
     plugin_tool = PluginToolDefinition(
         name="plugin__core-dev__local_echo",
         source_name="local_echo",
@@ -318,17 +332,6 @@ def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
     monkeypatch.setattr(agent_node_module, "register_mcp_server_tools", fake_register_mcp)
     monkeypatch.setattr(agent_node_module, "inject_mcp_server_context", lambda *_args, **_kwargs: [])
 
-    def fake_inject_skills(self, agent, values, *, node_id="", extra_skills=None, role="system"):
-        captured["skills"] = {
-            "values": list(values.get("skills") or []),
-            "extra": list(extra_skills or []),
-            "node_id": node_id,
-            "role": role,
-        }
-        return []
-
-    monkeypatch.setattr(agent_node_module.Node, "_inject_configured_skills", fake_inject_skills)
-
     result = agent_node_module.Node().on_input(
         "hello",
         {
@@ -343,13 +346,17 @@ def test_agent_node_expands_plugin_tools_skills_and_mcp(monkeypatch):
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert captured["tools"] == ["rg_tools", "file_read_tools"]
+    assert captured["tools"] == ["rg_tools", "file_read_tools", "skill_activation_tools", "skill_resource_tools"]
     assert captured["plugin_tools"] == ["plugin__core-dev__local_echo"]
     assert captured["mcp"] == ["docs"]
     assert captured["mcp_settings"]["mcpServers"]["docs"]["command"] == "docs-mcp"
-    assert captured["skills"]["values"] == ["control-in-app-browser"]
-    assert captured["skills"]["extra"] == [extra_skill]
-    assert captured["skills"]["node_id"] == "n_plugin_unit"
+    available = captured["agent"]._agentpark_available_skills
+    assert available["control-in-app-browser"] == referenced_skill
+    assert available["plugin-skill"] == extra_skill
+    assert "skill-management" not in available
+    messages = json.dumps(captured["agent"].messages)
+    assert "Private browser instructions." not in messages
+    assert "Use plugin skill." not in messages
 
 
 def test_agent_node_defers_selected_skill_mcp_dependencies_until_activation(monkeypatch):
@@ -426,11 +433,9 @@ def test_agent_node_defers_selected_skill_mcp_dependencies_until_activation(monk
 
     assert str(result.get("display") or "") == "ok"
     assert captured["mcp"] == []
-    assert captured["tools"] == ["skill_activation_tools"]
-    assert captured["skills"]["values"] == []
-    assert captured["skills"]["extra"] == []
-    assert captured["skills"]["node_id"] == "n_skill_mcp"
-    assert captured["agent"]._agentpark_available_skills == {"openai-docs": selected_skill}
+    assert captured["tools"] == ["skill_activation_tools", "skill_resource_tools"]
+    assert captured["skills"] is None
+    assert captured["agent"]._agentpark_available_skills["openai-docs"] == selected_skill
     assert any("available_skill_activations" in item["content"] for item in captured["agent"].messages)
 
 
@@ -492,9 +497,9 @@ def test_agent_node_defers_skill_resource_tools_until_activation(monkeypatch, tm
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert captured["tools"] == ["file_read_tools", "skill_activation_tools"]
+    assert captured["tools"] == ["file_read_tools", "skill_activation_tools", "skill_resource_tools"]
     assert not hasattr(captured["agent"], "_agentpark_skill_resource_roots")
-    assert captured["agent"]._agentpark_available_skills == {"demo": selected_skill}
+    assert captured["agent"]._agentpark_available_skills["demo"] == selected_skill
 
 
 def test_agent_node_defers_selected_skill_script_tools_until_activation(monkeypatch, tmp_path):
@@ -571,9 +576,9 @@ def test_agent_node_defers_selected_skill_script_tools_until_activation(monkeypa
     )
 
     assert str(result.get("display") or "") == "ok"
-    assert captured["loaded"] == ["skill_activation_tools"]
+    assert captured["loaded"] == ["skill_activation_tools", "skill_resource_tools"]
     assert captured["registered"] == []
-    assert captured["agent"]._agentpark_available_skills == {"demo": selected_skill}
+    assert captured["agent"]._agentpark_available_skills["demo"] == selected_skill
 
 
 def test_agent_node_stream_callback_and_done(monkeypatch):
@@ -712,7 +717,7 @@ def test_agent_node_sse_chat_mode_keeps_instruction_and_system_prompt_as_message
     assert str(result.get("display") or "") == "OK"
     assert any(str(item.get("type") or "") == "node_message_delta" for item in events)
     system_messages = [item for item in created_agents[0].messages if item.get("role") == "system"]
-    assert [item["content"] for item in system_messages[:2]] == [
+    assert [item["content"] for item in [msg for msg in system_messages if "<available_skill_activations>" not in msg["content"]][:2]] == [
         "Use the chat system prompt.",
         "Use the chat instruction context.",
     ]
@@ -1276,19 +1281,21 @@ def test_agent_node_surfaces_configured_tool_load_failure(monkeypatch):
     assert "bad tool: missing_tool" in str(exc.value)
 
 
-def test_agent_node_injects_configured_skill_without_affecting_unconfigured_nodes(monkeypatch, tmp_path):
+def test_agent_node_defers_configured_skill_without_affecting_unconfigured_nodes(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
     import nodes.agent_skill_loader as skill_loader
+    from src.tool.base_tool import BaseTool
 
     created_agents = []
 
     class DummyAgent:
         def __init__(self):
             self.messages = []
+            self.tools = BaseTool(self)
             created_agents.append(self)
 
-        def addTool(self, _name):
-            return None
+        def addTool(self, name):
+            self.tools.addTool(name)
 
         def Message(self, role, content, persist=True, **kwargs):
             self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
@@ -1331,27 +1338,32 @@ def test_agent_node_injects_configured_skill_without_affecting_unconfigured_node
     assert str(first.get("display") or "") == "ok"
     assert str(second.get("display") or "") == "ok"
     skill_system = next(
-        item for item in created_agents[0].messages if "<skills_instructions>" in str(item.get("content") or "")
+        item for item in created_agents[0].messages if "<available_skill_activations>" in str(item.get("content") or "")
     )
     assert skill_system["role"] == "system"
-    assert skill_system["persist"] is False
+    assert "<state>inactive</state>" in skill_system["content"]
+    assert "Use the test skill." not in skill_system["content"]
+    created_agents[0]._agentpark_skill_runtime.change("ue5-cpp-gameplay", active=True)
+    assert "Use the test skill." in created_agents[0].messages[0]["content"]
     assert "<name>ue5-cpp-gameplay</name>" in skill_system["content"]
-    assert not any("<skills_instructions>" in str(item.get("content") or "") for item in created_agents[1].messages)
+    assert not getattr(created_agents[1], "_agentpark_available_skills", {})
 
 
-def test_agent_node_preserves_system_prompt_when_injecting_skill(monkeypatch, tmp_path):
+def test_agent_node_preserves_system_prompt_with_skill_catalog(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
     import nodes.agent_skill_loader as skill_loader
+    from src.tool.base_tool import BaseTool
 
     created_agents = []
 
     class DummyAgent:
         def __init__(self):
             self.messages = []
+            self.tools = BaseTool(self)
             created_agents.append(self)
 
-        def addTool(self, _name):
-            return None
+        def addTool(self, name):
+            self.tools.addTool(name)
 
         def Message(self, role, content, persist=True, **kwargs):
             self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
@@ -1385,8 +1397,10 @@ def test_agent_node_preserves_system_prompt_when_injecting_skill(monkeypatch, tm
 
     assert str(result.get("display") or "") == "ok"
     system_messages = [msg for msg in created_agents[0].messages if msg.get("role") == "system"]
-    assert "You are the node system prompt." in str(system_messages[0].get("content") or "")
-    assert "<skills_instructions>" in str(system_messages[1].get("content") or "")
+    assert any("You are the node system prompt." in msg["content"] for msg in system_messages)
+    assert "<available_skill_activations>" in system_messages[0]["content"]
+    assert "<state>inactive</state>" in system_messages[0]["content"]
+    assert "Use the test skill." not in system_messages[0]["content"]
 
 
 def test_agent_node_disables_provider_internal_memory(monkeypatch):
@@ -1712,7 +1726,7 @@ def test_agent_node_omits_history_image_payloads(monkeypatch, tmp_path):
     result = node.on_input("current question", context)
 
     assert str(result.get("display") or "") == "ok"
-    history_user = created_agents[0].messages[0]
+    history_user = next(msg for msg in created_agents[0].messages if msg["role"] == "user")
     assert history_user["role"] == "user"
     assert isinstance(history_user["content"], str)
     assert "old image question" in history_user["content"]
@@ -1759,16 +1773,18 @@ def test_agent_node_surfaces_missing_configured_skill(monkeypatch):
 def test_agent_node_loads_skills_from_persisted_node_config(monkeypatch, tmp_path):
     import nodes.agent_node as agent_node_module
     import nodes.agent_skill_loader as skill_loader
+    from src.tool.base_tool import BaseTool
 
     created_agents = []
 
     class DummyAgent:
         def __init__(self):
             self.messages = []
+            self.tools = BaseTool(self)
             created_agents.append(self)
 
-        def addTool(self, _name):
-            return None
+        def addTool(self, name):
+            self.tools.addTool(name)
 
         def Message(self, role, content, persist=True, **kwargs):
             self.messages.append({"role": role, "content": content, "persist": persist, **kwargs})
@@ -1813,7 +1829,11 @@ def test_agent_node_loads_skills_from_persisted_node_config(monkeypatch, tmp_pat
             pass
 
     assert str(result.get("display") or "") == "ok"
-    assert any("<skills_instructions>" in str(item.get("content") or "") for item in created_agents[0].messages)
+    assert any("<available_skill_activations>" in str(item.get("content") or "") for item in created_agents[0].messages)
+
+    assert "<name>ue5-cpp-gameplay</name>" in created_agents[0].messages[0]["content"]
+    assert "<state>inactive</state>" in created_agents[0].messages[0]["content"]
+    assert "Use the test skill." not in created_agents[0].messages[0]["content"]
 
 
 def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):

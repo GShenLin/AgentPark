@@ -38,6 +38,7 @@ import SkillsSettingsPanel from './settings/SkillsSettingsPanel.vue'
 import GatewaySettingsPanel from './settings/GatewaySettingsPanel.vue'
 import PeerNetworkPanel from './settings/PeerNetworkPanel.vue'
 import NodeSyncSettingsPanel from './settings/NodeSyncSettingsPanel.vue'
+import LocalModelSettingsPanel from './settings/LocalModelSettingsPanel.vue'
 import ModelProviderSettingsForm from './settings/ModelProviderSettingsForm.vue'
 import PressureSettingsPanel from './settings/PressureSettingsPanel.vue'
 import ProviderTestSettingsPanel from './settings/ProviderTestSettingsPanel.vue'
@@ -45,7 +46,7 @@ import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
 import StaticSettingsPanel from './settings/StaticSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
 import ThemeSettingsForm from './settings/ThemeSettingsForm.vue'
-import { applyWorkspaceTheme } from '../theme'
+import { applyWorkspaceTheme, DEFAULT_THEME_PRESET_ID } from '../theme'
 import { t } from '../i18n'
 
 const NodeProfilerEditor = defineAsyncComponent(() => import('./settings/NodeProfilerEditor.vue'))
@@ -79,9 +80,10 @@ const providers = ref<ProviderInfo[]>([])
 const availableTools = ref<string[]>([])
 const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[]>>({})
 const themePresets = ref<ThemePresetInfo[]>([])
-const activeThemePresetId = ref('default')
+const activeThemePresetId = ref(DEFAULT_THEME_PRESET_ID)
 const nodeProfilerDirty = ref(false)
 const gatewayDirty = ref(false)
+const localModelDirty = ref(false)
 const pendingProviderLimitCopies = ref<ProviderLimitCopyRequest[]>([])
 const pendingProviderModelAdditions = ref<ProviderModelAdditionRequest[]>([])
 const providerLimitSourceIds = ref<Record<string, string>>({})
@@ -115,7 +117,8 @@ const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profil
 const isExitSection = computed(() => activeSection.value === 'exit')
 const isPeerNetwork = computed(() => activeSection.value === 'peer-network')
 const isNodeSync = computed(() => activeSection.value === 'node-sync')
-const isVirtualSection = computed(() => isSkills.value || isNodeSync.value || isKnowledge.value || isHarness.value || isPeerNetwork.value || isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isNodeProfilerEditor.value || isExitSection.value)
+const isLocalModel = computed(() => activeSection.value === 'local-model')
+const isVirtualSection = computed(() => isLocalModel.value || isSkills.value || isNodeSync.value || isKnowledge.value || isHarness.value || isPeerNetwork.value || isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isNodeProfilerEditor.value || isExitSection.value)
 const dirty = computed(() => (
   !isVirtualSection.value
   && (
@@ -162,7 +165,7 @@ async function loadCatalog() {
 
 function syncThemePresetState(document: SettingsDocument | null) {
   if (!document || document.section !== 'theme') return
-  activeThemePresetId.value = String(document.active_preset_id || activeThemePresetId.value || 'default')
+  activeThemePresetId.value = String(document.active_preset_id || activeThemePresetId.value || DEFAULT_THEME_PRESET_ID)
   themePresets.value = Array.isArray(document.presets) ? document.presets : themePresets.value
 }
 
@@ -195,7 +198,7 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'skills' || sectionId === 'node-sync' || sectionId === 'knowledge' || sectionId === 'harness' || sectionId === 'peer-network' || sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
+  if (sectionId === 'local-model' || sectionId === 'skills' || sectionId === 'node-sync' || sectionId === 'knowledge' || sectionId === 'harness' || sectionId === 'peer-network' || sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
@@ -242,7 +245,7 @@ async function selectSection(sectionId: string) {
 const { sectionOpen, detailBack, confirmLeave, handleBack } = createSettingsPageNavigation({
   compact,
   busy: computed(() => loading.value || saving.value),
-  hasChanges: computed(() => dirty.value || nodeProfilerDirty.value || gatewayDirty.value),
+  hasChanges: computed(() => dirty.value || localModelDirty.value || nodeProfilerDirty.value || gatewayDirty.value),
   confirmDiscard: () => window.confirm(t(nodeProfilerDirty.value ? 'settings.discardNodeProfiler' : 'settings.unsavedConfirm')),
   exit: () => emit('back'),
 })
@@ -394,7 +397,7 @@ async function saveSection() {
 
 async function refreshThemePresets() {
   const catalog = await listThemePresets()
-  activeThemePresetId.value = String(catalog.active_preset_id || 'default')
+  activeThemePresetId.value = String(catalog.active_preset_id || DEFAULT_THEME_PRESET_ID)
   themePresets.value = Array.isArray(catalog.presets) ? catalog.presets : []
 }
 
@@ -506,7 +509,8 @@ onMounted(async () => {
           <span v-for="warning in validationWarnings" :key="warning">{{ warning }}</span>
         </div>
 
-        <AccessSettingsPanel v-if="isAuthorization" />
+        <LocalModelSettingsPanel v-if="isLocalModel" @dirty="localModelDirty = $event" />
+        <AccessSettingsPanel v-else-if="isAuthorization" />
         <HarnessSettingsPanel v-else-if="isHarness" />
         <KnowledgeSettingsPanel v-else-if="isKnowledge" />
         <SkillsSettingsPanel v-else-if="isSkills" />

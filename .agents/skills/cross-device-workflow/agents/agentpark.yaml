@@ -1,0 +1,4 @@
+dependencies:
+  tools:
+    - type: tool
+      value: execution_device_tools

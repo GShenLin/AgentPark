@@ -13,25 +13,6 @@ from src.harness.events import HarnessEvents
 from src.harness.hermes_release import HermesRelease
 
 
-def test_release_calendar_tag_uses_package_version(monkeypatch):
-    responses = iter([
-        json.dumps({"tag_name": "v2026.9.14", "draft": False, "prerelease": False}).encode(),
-        b'[project]\nname="hermes-agent"\nversion="0.21.3"',
-    ])
-    monkeypatch.setattr(hermes_release, "read_url", lambda url: next(responses))
-    assert hermes_release.latest_release() == HermesRelease("v2026.9.14", "0.21.3")
-
-
-@pytest.mark.parametrize("payload", [
-    {}, {"tag_name": "../../bad", "draft": False, "prerelease": False},
-    {"tag_name": "v2026.9.14", "draft": True, "prerelease": False},
-])
-def test_invalid_release_cannot_be_used_as_git_ref(monkeypatch, payload):
-    monkeypatch.setattr(hermes_release, "read_url", lambda url: json.dumps(payload).encode())
-    with pytest.raises(ValueError):
-        hermes_release.latest_release()
-
-
 @pytest.fixture
 def installed(tmp_path, monkeypatch):
     monkeypatch.setattr("src.harness.hermes_python.is_android", lambda: False)
@@ -60,6 +41,23 @@ def test_check_separates_runtime_health_and_release_failure(installed, monkeypat
     info = installer.check(root, include_updates=True)
     assert info["status"] == "ready" and info["update_status"] == "error"
     assert info["update_error"] == "GitHub unavailable"
+
+
+def test_invalid_release_preserves_ready_runtime_and_stops_before_mutation(installed, monkeypatch):
+    root, _, _, _ = installed
+    def invalid():
+        raise ValueError("Invalid Hermes release manifest")
+    monkeypatch.setattr(installer, "latest_release", invalid)
+    info = installer.check(root, include_updates=True)
+    assert info["status"] == "ready" and info["version"] == "0.21.2"
+    assert info["update_status"] == "error" and info["latest_version"] == ""
+    assert "Invalid Hermes release manifest" in info["update_error"]
+    calls = []
+    monkeypatch.setattr(installer, "_git", lambda source, *args: calls.append(args) or hermes_release.REPOSITORY)
+    monkeypatch.setattr(installer, "run_process", lambda *args, **kwargs: pytest.fail("Must not install unsupported release"))
+    with pytest.raises(ValueError, match="Invalid Hermes release manifest"):
+        installer.mutate(root, "upgrade")
+    assert calls == [("remote", "get-url", "origin")]
 
 
 def test_unknown_source_never_queries_official_release(installed, monkeypatch):

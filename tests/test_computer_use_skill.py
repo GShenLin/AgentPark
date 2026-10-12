@@ -19,8 +19,8 @@ def test_computer_use_skill_loads_full_tool_loop_only_when_selected():
         node_id="with-computer-use",
     )
 
-    assert without_skill.tool_names == ("system_tools",)
-    assert with_skill.tool_names == ("system_tools", "skill_activation_tools")
+    assert without_skill.tool_names == ("system_tools", "skill_activation_tools", "skill_resource_tools")
+    assert with_skill.tool_names == ("system_tools", "skill_activation_tools", "skill_resource_tools")
 
     agent = type("Agent", (), {"config": {}})()
     tools = BaseTool(agent)
@@ -68,7 +68,7 @@ def test_computer_use_skill_is_discoverable_and_declares_local_tool_dependency()
     assert "observation_id" in skill.content
 
 
-def test_activation_persists_until_closed_across_agent_instances(tmp_path):
+def test_default_activation_resets_across_agent_instances(tmp_path):
     skill = load_node_skills(["computer-use"], node_id="computer-use-test")[0]
     agents = []
     for _ in range(2):
@@ -87,10 +87,10 @@ def test_activation_persists_until_closed_across_agent_instances(tmp_path):
     bind_deferred_skills(current, [skill], role="developer")
 
     assert "list_windows" in previous.tools.function_map
-    assert "list_windows" in current.tools.function_map
-    assert "<state>active</state>" in current.messages[0]["content"]
+    assert "list_windows" not in current.tools.function_map
+    assert "<state>inactive</state>" in current.messages[0]["content"]
     result = json.loads(current.tools.execute_tool("activate_skill", {"skill": "computer-use"}))
-    assert result["already_active"] is True
+    assert result["already_active"] is False
     closed = json.loads(current.tools.execute_tool("deactivate_skill", {"skill": "computer-use"}))
     assert "list_windows" in closed["tools_removed"]
     assert "list_windows" not in current.tools.function_map

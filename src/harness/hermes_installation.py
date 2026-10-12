@@ -27,7 +27,8 @@ def python_path(venv: Path) -> Path:
 
 
 def _probe(python: Path, cwd: Path) -> dict:
-    env = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME"}}
+    from .hermes_pm import environment
+    env = environment()
     data = json.loads(run_process([str(python), "-c", _PROBE], cwd=str(cwd), env=env, timeout=20))
     if not isinstance(data, dict) or not all(isinstance(data.get(key), str) and data[key] for key in ("source", "prefix", "version")):
         raise ValueError("Invalid Hermes environment probe.")
@@ -43,6 +44,11 @@ class HermesInstallation:
 
 
 def locate(root: Path) -> HermesInstallation | None:
+    from .hermes_pm import selected
+    active = selected(root)
+    if active is not None:
+        source, python = active
+        return HermesInstallation(python, source, True)
     if (root / "source").exists() or (root / ".venv").exists():
         return HermesInstallation(python_path(root / ".venv"), root / "source", True)
     executable = shutil.which("hermes")
@@ -104,6 +110,17 @@ def validate_source(source: Path) -> str:
     if not isinstance(data, dict) or data.get("name") != "hermes-agent":
         raise ValueError("Unexpected package in Hermes installation.")
     version_key(data.get("version"))
+    if data["version"] == "0.0.0":
+        stamp = json.loads((source / "install-stamp.json").read_text(encoding="utf-8"))
+        if not isinstance(stamp, dict) or stamp.get("schemaVersion") != 2:
+            raise ValueError("Invalid Hermes installation stamp.")
+        version = stamp.get("baseVersion")
+        version_key(version)
+        if stamp.get("commit") != _git(source, "rev-parse", "HEAD").strip():
+            raise ValueError("Hermes installation stamp does not match its checkout.")
+        if _git(source, "rev-parse", f"refs/tags/v{version}^{{commit}}").strip() != stamp["commit"]:
+            raise ValueError("Hermes installation stamp does not match its release tag.")
+        return version
     return data["version"]
 
 
@@ -193,7 +210,23 @@ def mutate(root: Path, action: str) -> str:
             branch = _git(found.source, "branch", "--show-current").strip()
             if branch and _git(found.source, "rev-list", "@{upstream}..HEAD").strip():
                 raise ValueError("Hermes has local commits; update it with its original workflow.")
-    else:
+    if release.layout == "pm":
+        if found and not found.managed:
+            raise ValueError("This external Hermes installation must migrate through its official installer; "
+                             "AgentPark only manages PM generation upgrades for its own installations.")
+        from .hermes_pm import prepare, publish
+        generation, source, python = prepare(root, release, output)
+        actual = validate_source(source)
+        probe = _probe(python, source)
+        if (actual != release.version or probe["version"] != release.version
+                or Path(probe["source"]).resolve() != source.resolve()
+                or Path(probe["prefix"]).resolve() != python.parent.parent.resolve()):
+            raise RuntimeError("Hermes generation failed version or environment verification.")
+        _verify_runtime(python, source, source.parent, output)
+        publish(root, generation, release.version)
+        output.append(f"Activated Hermes {release.version}; previous installation retained.")
+        return "\n".join(output)
+    if found is None:
         root.mkdir(parents=True, exist_ok=True)
         git = shutil.which("git")
         if not git:
@@ -218,8 +251,14 @@ def mutate(root: Path, action: str) -> str:
     probe = _probe(found.python, found.source)
     if probe["version"] != release.version:
         raise RuntimeError(f"Hermes version verification failed: expected {release.version}, got {probe['version']}.")
-    # Import the runtime, not just package metadata: catch missing/broken dependencies before reporting success.
-    output.append(run_process([str(found.python), "-c", "from run_agent import AIAgent; print('Hermes runtime verified')"],
-                              cwd=str(found.source), timeout=90,
-                              env={**os.environ, "HERMES_HOME": str(tooling_root / "verify-home"), "PYTHONUTF8": "1"}))
+    _verify_runtime(found.python, found.source, tooling_root, output)
     return "\n".join(output)
+
+
+def _verify_runtime(python: Path, source: Path, tooling_root: Path, output: list[str]) -> None:
+    # Import the runtime, not just package metadata: catch broken dependencies before activation.
+    from .hermes_pm import environment
+    env = environment()
+    env["HERMES_HOME"] = str(tooling_root / "verify-home")
+    output.append(run_process([str(python), "-c", "from run_agent import AIAgent; from hermes_state import SessionDB; print('Hermes runtime verified')"],
+                              cwd=str(source), timeout=90, env=env))

@@ -393,7 +393,7 @@ def test_tool_context_compaction_does_not_retrigger_on_unchanged_absolute_contex
     ) is True
 
 
-def test_tool_context_compaction_requires_provider_enabled(tmp_path):
+def test_tool_context_compaction_defaults_to_disabled(tmp_path):
     memory_path = tmp_path / "agent.md"
     memory_path.write_text("", encoding="utf-8")
     agent = DummyCompactionAgent(memory_path)
@@ -404,14 +404,22 @@ def test_tool_context_compaction_requires_provider_enabled(tmp_path):
         {"role": "tool", "content": "alpha raw file content", "tool_call_id": "call-1", "name": "read_file"},
     ]
 
-    try:
-        agent._run_tool_context_compaction_gate_if_needed(
-            [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
-        )
-    except ValueError as exc:
-        assert "provider.toolContextCompactionEnabled is required" in str(exc)
-    else:
-        raise AssertionError("missing provider.toolContextCompactionEnabled should fail")
+    original_messages = list(agent.messages)
+    assert agent._run_tool_context_compaction_gate_if_needed(
+        [ToolCallExecution("read_file", "call-1", "alpha raw file content")]
+    ) is False
+    assert agent._tool_context_compaction_gate_active_now() is False
+    assert agent.messages == original_messages
+
+
+@pytest.mark.parametrize("value", [None, "false", "true", 0, 1])
+def test_tool_context_compaction_rejects_invalid_enabled_type(tmp_path, value):
+    memory_path = tmp_path / "agent.md"
+    memory_path.write_text("", encoding="utf-8")
+    agent = DummyCompactionAgent(memory_path)
+    agent.config = {"toolContextCompactionEnabled": value}
+    with pytest.raises(ValueError, match="must be a boolean"):
+        agent._tool_context_compaction_enabled()
 
 
 def test_tool_context_compaction_with_no_thresholds_is_noop(tmp_path):

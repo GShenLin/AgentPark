@@ -58,7 +58,7 @@ def schedule_memory(node_dir: str, graph_id: str, node_id: str, provider_id: str
 
 
 def prepare_node_memory(agent, *, node_dir: str, graph_id: str, node_id: str, provider_id: str,
-                        role: str, active_trace: str = "", retrieval_tools: bool = True) -> None:
+                        role: str, active_trace: str = "", retrieval_tools: bool = False) -> None:
     if not node_dir or not graph_id or not node_id:
         return  # Non-node provider calls have no persistent memory scope.
     settings = configured_settings()
@@ -66,6 +66,7 @@ def prepare_node_memory(agent, *, node_dir: str, graph_id: str, node_id: str, pr
         return
     store = MemoryStore(Path(node_dir), graph_id, node_id)
     reader = MemoryReader(store, settings.max_unused_days)
+    agent._agentpark_memory_reader = reader
     summary = reader.summary()
     if retrieval_tools:
         install_tools(agent, reader)

@@ -13,6 +13,7 @@ from src.name_lists import NameListContract, path_reference_key
 from src.skills.resource_index import SkillResource, build_skill_resource_index, skill_resource_keys
 from src.skills.script_manifest import SkillScriptDefinition, SkillScriptManifestError, load_skill_script_manifest
 from src.skills.roots import configured_skill_roots
+from src.skills.activation_policy import read_activation_scope
 
 
 SKILL_ROOT_RELATIVE_PATH = os.path.join(".agents", "skills")
@@ -34,6 +35,7 @@ class SkillDefinition:
     resource_root: str = ""
     resources: tuple[SkillResource, ...] = ()
     script_tools: tuple[SkillScriptDefinition, ...] = ()
+    activation_scope: str = "turn"
 
 
 class SkillLoadError(RuntimeError):
@@ -273,6 +275,10 @@ def _load_skill(name: str, root: str, *, node_id: object = "") -> SkillDefinitio
     declared_name = str(metadata.get("name") or "").strip()
     description = str(metadata.get("description") or "").strip()
     version = _skill_version(metadata)
+    try:
+        activation_scope = read_activation_scope(metadata)
+    except ValueError as exc:
+        raise SkillLoadError(_format_skill_error(node_id, name, skill_path, str(exc))) from exc
     if not declared_name:
         raise SkillLoadError(_format_skill_error(node_id, name, skill_path, "missing frontmatter field `name`"))
     if not description:
@@ -299,6 +305,7 @@ def _load_skill(name: str, root: str, *, node_id: object = "") -> SkillDefinitio
         resource_root=skill_dir,
         resources=build_skill_resource_index(skill_dir),
         script_tools=script_tools,
+        activation_scope=activation_scope,
     )
 
 

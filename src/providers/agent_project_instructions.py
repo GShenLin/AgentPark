@@ -27,7 +27,8 @@ def build_agent_project_instructions_context(
     if not _project_instructions_enabled(agent):
         return {}
     if get_agent_runtime_context(agent).remote_enabled:
-        return {}
+        inspected = get_agent_runtime_context(agent).execution_workspace
+        return dict(inspected["project_instructions"]) if inspected else {}
     root = _resolve_context_cwd(agent, environment_context)
     if not root or not os.path.isdir(root):
         return {}

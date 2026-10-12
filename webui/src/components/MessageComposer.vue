@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { attachmentPreviewHref, isImageAttachment, type MessageAttachment } from '../composables/messageAttachments'
 import ActionButton from './ActionButton.vue'
 import DangerButton from './DangerButton.vue'
@@ -22,7 +22,9 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   sendLabel?: string
   disabled?: boolean
+  sending?: boolean
 }>(), { title: 'Node input', placeholder: 'Type input for this node, or drop files here.', sendLabel: 'Send' })
+const sendLocked = computed(() => props.disabled || props.sending)
 const fileInput = ref<HTMLInputElement | null>(null)
 function pickFiles(event: Event) {
   const input = event.target as HTMLInputElement
@@ -45,7 +47,7 @@ const emit = defineEmits<{
 function onInputKeyDown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return
   event.preventDefault()
-  if (props.canSend && !props.isUploadingFiles && !props.disabled) emit('send')
+  if (props.canSend && !props.isUploadingFiles && !sendLocked.value) emit('send')
 }
 
 function onInputDragOver(event: DragEvent) {
@@ -61,7 +63,7 @@ function onInputDrop(event: DragEvent) {
 </script>
 
 <template>
-  <section class="editor-section input-section" @dragover.prevent @drop.prevent.stop="!disabled && emit('drop-input', $event)">
+  <section class="editor-section input-section" :aria-busy="sending" @dragover.prevent @drop.prevent.stop="!disabled && emit('drop-input', $event)">
     <div v-if="attachments.length > 0" class="attachment-list">
       <div
         v-for="(file, index) in attachments"
@@ -106,7 +108,7 @@ function onInputDrop(event: DragEvent) {
       :placeholder="placeholder"
       @update:model-value="emit('update:inputText', $event)"
       @keydown="onInputKeyDown"
-      @paste="emit('paste-input', $event)"
+      @paste="!disabled && emit('paste-input', $event)"
       @dragover="onInputDragOver"
       @drop="onInputDrop"
     />
@@ -122,7 +124,7 @@ function onInputDrop(event: DragEvent) {
           :class="{ active: goalActive }"
           type="button"
           :title="goalTitle || (goalActive ? 'Disable goal mode' : 'Enable goal mode')"
-          :disabled="!goalEnabled"
+          :disabled="disabled || !goalEnabled"
           @click="emit('toggle-goal')"
         >
           Goal
@@ -139,7 +141,7 @@ function onInputDrop(event: DragEvent) {
           {{ audioButtonLabel || (audioRecording ? 'Stop audio' : 'Record audio') }}
         </button>
         <slot name="actions" />
-        <ActionButton variant="primary" :disabled="!canSend || isUploadingFiles || disabled" @click="emit('send')">
+        <ActionButton variant="primary" :disabled="!canSend || isUploadingFiles || sendLocked" @click="emit('send')">
           {{ sendLabel }}
         </ActionButton>
       </div>

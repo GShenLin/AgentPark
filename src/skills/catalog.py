@@ -104,6 +104,7 @@ class SkillCatalog:
         try:
             skill = load_node_skills([reference], skill_root=str(self.root))[0]
             detail.update(tools=list(skill.tools), mcp_servers=list(skill.mcp_servers),
+                          activation_scope=skill.activation_scope,
                           resources=[resource.to_payload() for resource in skill.resources])
         except (SkillLoadError, RuntimeError, OSError, UnicodeError) as exc:
             detail["error"] = str(exc)

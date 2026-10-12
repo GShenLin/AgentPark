@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-import os
 import re
-import subprocess
 from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlencode
@@ -89,7 +87,7 @@ def discover_provider_models(provider: dict[str, Any], *, timeout_seconds: float
     endpoint = ""
     headers: dict[str, str] = {}
     try:
-        endpoint = _models_endpoint(provider, provider_type)
+        endpoint = _models_endpoint(provider, provider_type, timeout_seconds=timeout_seconds)
         if not endpoint:
             return _model_result(False, tested_at=tested_at, reason=f"provider type '{provider_type}' has no model discovery endpoint")
         headers = _model_headers(provider, provider_type)
@@ -223,9 +221,9 @@ def _model_id_from_item(item: Any, provider_type: str) -> str:
     return value.strip()
 
 
-def _models_endpoint(provider: dict[str, Any], provider_type: str) -> str:
+def _models_endpoint(provider: dict[str, Any], provider_type: str, *, timeout_seconds: float = 30.0) -> str:
     if _is_codex_auth_provider(provider):
-        query = urlencode({"client_version": _codex_client_version(provider)})
+        query = urlencode({"client_version": _latest_codex_client_version(timeout_seconds=timeout_seconds)})
         return f"{_base_url(provider)}/models?{query}"
     if provider_type in {"openai", "deepseek", "kimi", "claude", "doubao", "grok", "zhipu", "gemini"}:
         return f"{_base_url(provider)}/models"
@@ -266,20 +264,27 @@ def _is_codex_auth_provider(provider: dict[str, Any]) -> bool:
     return str((provider or {}).get("authMode") or "api_key").strip().lower() == "codex"
 
 
-def _codex_client_version(provider: dict[str, Any]) -> str:
-    configured = str(provider.get("codexClientVersion") or os.environ.get("CODEX_CLIENT_VERSION") or "").strip()
-    if configured:
-        if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?", configured):
-            raise ValueError("codexClientVersion must be a Codex CLI version, such as 0.155.1")
-        return configured
+def _latest_codex_client_version(*, timeout_seconds: float) -> str:
+    """Read OpenAI's published npm latest tag for each model directory refresh."""
+    endpoint = "https://registry.npmjs.org/@openai/codex/latest"
     try:
-        result = subprocess.run(["codex", "--version"], capture_output=True, text=True, timeout=5, check=True)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise RuntimeError("Codex CLI version is unavailable; install Codex CLI or set codexClientVersion") from exc
-    match = re.fullmatch(r"codex-cli (\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)", result.stdout.strip())
-    if not match:
-        raise RuntimeError("Codex CLI returned an unrecognized version; set codexClientVersion")
-    return match.group(1)
+        response = _CURL.request(
+            url=endpoint,
+            headers={"Accept": "application/json", "Cache-Control": "no-cache"},
+            timeout_sec=timeout_seconds,
+            max_response_bytes=262144,
+        )
+        if not 200 <= response.status_code < 300:
+            raise ValueError(f"HTTP {response.status_code}")
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("name") != "@openai/codex":
+            raise ValueError("response must identify package @openai/codex")
+        version = payload.get("version")
+        if not isinstance(version, str) or not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
+            raise ValueError("latest tag must provide a stable Codex version")
+        return version
+    except (CurlTransportError, ValueError) as exc:
+        raise RuntimeError(f"Cannot fetch latest Codex version from {endpoint}: {exc}") from exc
 
 
 def _write_snapshot(path: str, output: dict[str, Any], *, started: float) -> None:

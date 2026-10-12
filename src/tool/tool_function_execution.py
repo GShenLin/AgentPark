@@ -67,6 +67,9 @@ def execute_local_tool_function(
             )
 
     result_queue: queue.Queue[tuple[str, ToolExecutionResult]] = queue.Queue(maxsize=1)
+    from src.remote_workspace.device_state import execution_operation
+    operation = execution_operation(agent, tool_name)
+    operation.__enter__()
 
     def run() -> None:
         try:
@@ -106,9 +109,15 @@ def execute_local_tool_function(
                     ),
                 )
             )
+        finally:
+            operation.__exit__(None, None, None)
 
     worker = threading.Thread(target=run, daemon=True, name=f"tool-{tool_name}")
-    worker.start()
+    try:
+        worker.start()
+    except BaseException:
+        operation.__exit__(None, None, None)
+        raise
     deadline = now_monotonic() + float(timeout_seconds)
     while worker.is_alive():
         try:

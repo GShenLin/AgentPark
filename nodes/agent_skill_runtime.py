@@ -43,7 +43,8 @@ class SkillRuntime:
 
     def restore(self):
         saved = load_active_skills(self.directory)
-        selected = saved.intersection(self.definitions)
+        selected = {name for name in saved.intersection(self.definitions)
+                    if self.definitions[name].activation_scope == "conversation"}
         if selected:
             restored = set()
             for name in sorted(selected):
@@ -93,8 +94,6 @@ class SkillRuntime:
             self._merge(target.tools, self.mcp_bundles[server])
         register_skill_script_tools(target, [definition])
         roots = build_skill_resource_roots([definition])
-        if roots:
-            target.addTool("skill_resource_tools")
         self.bundles[name] = (target.tools, roots)
         return self.bundles[name]
 
@@ -120,7 +119,9 @@ class SkillRuntime:
             self._merge(staged, tools)
             roots.update(skill_roots)
         if persist:
-            save_active_skills(self.directory, names)
+            save_active_skills(self.directory, {
+                name for name in names if self.definitions[name].activation_scope == "conversation"
+            })
         self.agent.tools.function_map.clear()
         self.agent.tools.function_map.update(staged.function_map)
         self.agent.tools.tool_declarations[:] = staged.tool_declarations

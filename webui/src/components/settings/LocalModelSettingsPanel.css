@@ -1,0 +1,31 @@
+.local-model-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.local-intro { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.local-intro h3, .local-intro h4, h4 { margin: 0; }
+.local-intro h3 span, h4 span { font-size: 12px; color: var(--text-secondary); font-weight: normal; margin-left: 8px; }
+.local-intro p { margin: 8px 0 0; color: var(--text-secondary); }
+.local-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.local-operation-actions { margin-top: 16px; }
+.local-note { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin: 0; }
+.local-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: start; }
+.local-services { display: flex; flex-direction: column; gap: 8px; }
+.local-services button { text-align: left; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; font: inherit; }
+.local-services button.active { border-color: var(--text-accent); background: var(--bg-tertiary); }
+.local-services small, .local-model-row small { display: block; color: var(--text-secondary); margin-top: 6px; }
+.local-content { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.local-card { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; background: var(--bg-secondary); }
+.local-card p { margin: 0; line-height: 1.6; }
+.local-card a { color: var(--text-accent); overflow-wrap: anywhere; }
+.local-path { color: var(--text-secondary); font: 12px/1.6 monospace; overflow-wrap: anywhere; }
+.local-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.local-badges span { font-size: 12px; border: 1px solid var(--border-subtle); padding: 4px 8px; border-radius: 5px; }
+.local-badges .good { color: var(--text-accent); }
+.local-form label, .local-card > label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.local-form select, .local-card select, .local-form textarea { min-height: 36px; width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary); background: var(--bg-primary); font: inherit; }
+.local-import { padding: 14px; border: 1px solid var(--border-subtle); border-radius: 6px; display: flex; flex-direction: column; gap: 12px; }
+.local-model-list { max-height: 480px; overflow: auto; }
+.local-model-row { padding: 12px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+.local-model-row:last-child { border-bottom: 0; }
+.local-error { color: var(--text-danger, #e66c6c); overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 760px) { .local-layout { grid-template-columns: 1fr; } .local-services { flex-direction: row; overflow-x: auto; } .local-services button { flex: 0 0 150px; } .local-card { padding: 14px; } }

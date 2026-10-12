@@ -260,6 +260,7 @@ def test_settings_api_rejects_invalid_responses_provider_contract(monkeypatch, t
                                 "apiKey": "test-key",
                                 "responsesApi": True,
                                 "toolResultSubmissionMaxChars": 50000,
+                                "toolContextCompactionEnabled": "false",
                             }
                         }
                     }

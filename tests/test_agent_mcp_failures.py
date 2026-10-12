@@ -61,8 +61,9 @@ def client(monkeypatch):
 def test_restore_mcp_failure_keeps_other_skills_and_can_retry(tmp_path, client):
     definitions = [
         SkillDefinition(name="unreal", description="Unreal", path="unreal/SKILL.md",
-                        content="Unreal instructions", mcp_servers=("unreal-mcp",)),
-        SkillDefinition(name="local", description="Local", path="local/SKILL.md", content="Local instructions"),
+                        content="Unreal instructions", mcp_servers=("unreal-mcp",), activation_scope="conversation"),
+        SkillDefinition(name="local", description="Local", path="local/SKILL.md", content="Local instructions",
+                        activation_scope="conversation"),
     ]
     save_active_skills(str(tmp_path), {"unreal", "local"})
     client.offline = True

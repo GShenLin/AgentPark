@@ -29,6 +29,29 @@ Use this skill when...
 Only `SKILL.md` is injected as instruction text. Resource directories are indexed and shown as metadata.
 `version` is optional, but when present it is exposed through the skill prompt metadata and `CapabilityRegistry` descriptor payloads.
 
+### Activation lifetime
+
+Agent node skills, including instruction-only skills and plugin-contributed skills, are discoverable by
+name, description and entrypoint path before `activate_skill` loads instructions and tools.
+Reading `SKILL.md` with `read_file` only reads the file; it does not activate a skill. By default activation
+lasts only for the current user request, including every provider/tool round trip. The next user message
+starts with the skill inactive again. For a skill that explicitly needs to stay active across messages,
+declare this in `SKILL.md` frontmatter:
+
+```yaml
+metadata:
+  activation_scope: conversation
+```
+
+`turn` is the default; `conversation` persists until deactivation. Old persisted activations of a default
+or explicitly turn-scoped skill are removed on the next node run. This affects tool exposure only;
+scheduled jobs and other durable results of tools remain intact. Invalid scope values fail skill loading.
+
+Agent nodes directly provide `activate_skill`, `deactivate_skill`, `list_skill_resources`, and
+`read_skill_resource`. These are base tools and do not require a management Skill.
+When node memory is enabled, `node-memory` is available in the catalog; activate it to expose its four
+node-bound memory tools. Memory summaries and background consolidation continue independently.
+
 ## Resource Directories
 
 Recognized resource directories:
@@ -42,7 +65,7 @@ The prompt receives each resource's type, path, title, size, and short summary. 
 
 ## Reading Resources
 
-When an Agent node selects a skill with resources, it automatically receives `skill_resource_tools`.
+Agent nodes provide `skill_resource_tools` directly. Activate a skill to register its resource roots.
 
 Use:
 

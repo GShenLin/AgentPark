@@ -9,6 +9,9 @@ from src.providers.parameter_mapping import PROVIDER_PARAMETER_MAPPINGS
 
 
 def configured_fake(agent, agent_config=None):
+    from src.tool.base_tool import BaseTool
+    if not hasattr(agent, "tools"):
+        agent.tools = BaseTool(agent)
     config = agent_config if agent_config is not None else AgentConfig()
     agent._agent_invocation = AgentInvocation(
         "test", "openai", PROVIDER_PARAMETER_MAPPINGS["openai"], config.values(), {},

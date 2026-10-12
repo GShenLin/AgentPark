@@ -39,7 +39,7 @@ def _lifecycle_declaration(name, description):
 activate_skill_declaration = _lifecycle_declaration(
     "activate_skill",
     "Activate an available skill: expose its instructions and Tool/MCP declarations on the next "
-    "model step. Remains active across messages until deactivated or conversation history is cleared. "
+    "model step. Defaults to the current user turn; explicit conversation scope persists. "
     "Reading SKILL.md does not activate it. Repeated calls are safe.",
 )
 deactivate_skill_declaration = _lifecycle_declaration(

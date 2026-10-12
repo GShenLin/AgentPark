@@ -1,0 +1,4 @@
+dependencies:
+  tools:
+    - type: tool
+      value: node_memory_tools

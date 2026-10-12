@@ -11,7 +11,7 @@ from nodes.agent_node_contract import (
 )
 from nodes.agent_assistant_memory import persist_provider_turn_metadata
 from nodes.agent_history import load_agent_history_messages
-from nodes.agent_skill_activation import bind_deferred_skills, partition_deferred_skills
+from nodes.agent_skill_activation import bind_deferred_skills
 from nodes.agent_gateway_usage import build_agent_gateway_usage_recorder
 from nodes.agent_message_adapter import (
     append_channel_meta,
@@ -43,7 +43,6 @@ from nodes.agent_plugin_tool_loader import register_plugin_tool_definitions
 from nodes.agent_skill_loader import (
     load_node_skills,
 )
-from nodes.agent_skill_scripts import register_skill_script_tools
 from nodes.agent_tool_loader import load_configured_tools
 from nodes.agent_node_settings import resolve_agent_node_settings
 from nodes.base_node import BaseNode
@@ -219,7 +218,6 @@ class Node(BaseNode):
                 responses_instruction=effective_instruction(agent, run_request.instruction)
                 if uses_responses_api_context(agent)
                 else "",
-                skill_resource_roots=capability_plan.skill_resource_roots,
                 persist_assistant_progress=persist_progress,
                 persist_provider_turn_metadata=persist_turn_metadata,
                 consume_mid_turn_user_inputs=consume_mid_turn_user_inputs,
@@ -245,8 +243,6 @@ class Node(BaseNode):
             *capability_plan.selected_skill_definitions,
             *capability_plan.plugin_capabilities.skill_definitions,
         ]
-        eager_skill_definitions, deferred_skill_definitions = partition_deferred_skills(skill_definitions)
-        register_skill_script_tools(agent, eager_skill_definitions)
         for server_name in capability_plan.mcp_server_names:
             try:
                 register_mcp_server_tools(agent, [server_name], settings=mcp_settings)
@@ -272,6 +268,8 @@ class Node(BaseNode):
                 node_id=run_request.agent_id, provider_id=run_request.provider_id,
                 role=instruction_role, active_trace=task_id,
             )
+            if getattr(agent, "_agentpark_memory_reader", None) is None:
+                skill_definitions = [skill for skill in skill_definitions if skill.name != "node-memory"]
         if capability_plan.mcp_server_names:
             inject_mcp_server_context(
                 agent,
@@ -279,16 +277,9 @@ class Node(BaseNode):
                 settings=mcp_settings,
                 role=instruction_role,
             )
-        self._inject_configured_skills(
-            agent,
-            {"skills": list(capability_plan.skill_names)},
-            node_id=run_request.agent_id,
-            extra_skills=eager_skill_definitions,
-            role=instruction_role,
-        )
         bind_deferred_skills(
             agent,
-            deferred_skill_definitions,
+            skill_definitions,
             role=instruction_role,
             mcp_settings=mcp_settings,
         )

@@ -151,7 +151,7 @@ AgentPark/
 - 中心函数 `build_provider_feature_matrix(provider_config)` → 每家 provider 返回带 `schema_version: 1` 的 features dict
 - 5 维特性:`responses_api` `web_search` `tools` `thinking` `reasoning_effort` — 每项含 `supported/values/requires/transport`
 - 表驱动(openai/doubao/zhipu/claude/gemini/其它),前端 `getNodeTemplate` / `get_provider_pressure` 走相同 shape
-- `ConfigLoader` 强制 `modelProvider.json` 不允许的字段(48 个白名单外),`responsesApi=true` 必填 `toolResultSubmissionMaxChars` + `toolContextCompactionEnabled` + `toolContextCompactionEveryToolCalls`,openai 额外要求 `responsesReplayReasoningItems`
+- `ConfigLoader` 校验 `modelProvider.json` 的字段契约；`responsesApi=true` 必填 `toolResultSubmissionMaxChars`，openai 额外要求 `responsesReplayReasoningItems`。`toolContextCompactionEnabled` 可省略，默认为 `false`；工具上下文压缩阈值可省略，默认为 0。
 
 ### 3.7 数据 / 资源
 - `config/config.json`(`server.port=8788`, `agentNode.minSendDelayMs=200 / historyMessageLimit=6`, `nodeMemory.maxEntries=20`, `mcpServers` 内置 4 个: ark-docs-mcp / unreal-engine-skills / asset-to-json / agentpark-companion, `consoleCommand.timeoutSec=300`)

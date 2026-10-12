@@ -12,7 +12,6 @@ RESPONSES_COMPACTION_LIMIT_KEYS = (
 )
 RESPONSES_REQUIRED_FIELDS = (
     "toolResultSubmissionMaxChars",
-    "toolContextCompactionEnabled",
 )
 
 
@@ -77,7 +76,7 @@ def _require_fields(provider_name: str, provider: dict[str, Any]) -> None:
             raise ValueError(
                 f"Provider '{provider_name}' has responsesApi=true but missing required field {key}."
             )
-    if not isinstance(provider.get("toolContextCompactionEnabled"), bool):
+    if not isinstance(provider.get("toolContextCompactionEnabled", False), bool):
         raise ValueError(
             f"Provider '{provider_name}' has invalid toolContextCompactionEnabled; "
             "expected a boolean."

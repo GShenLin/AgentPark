@@ -54,7 +54,16 @@ def test_hermes_executes_tool_and_projects_live_events(tmp_path, monkeypatch, pr
               "supportmode": ["chat"], "apiKey": "stub-secret", "authMode": "api_key",
               "baseUrl": f"http://127.0.0.1:{server.server_port}/v1"}
     monkeypatch.setattr("src.config_loader.ConfigLoader.get_provider_config", lambda self, key: dict(config))
-    monkeypatch.setattr(hermes_agent, "command_argv", lambda key: [os.environ["AGENTPARK_TEST_HERMES_PYTHON"]])
+    # Optional migration acceptance: create real history/SQLite with the previous
+    # installation, then resume that exact session on the candidate interpreter.
+    launches = 0
+    def command(key):
+        nonlocal launches
+        launches += 1
+        candidate = os.environ["AGENTPARK_TEST_HERMES_PYTHON"]
+        previous = os.environ.get("AGENTPARK_TEST_HERMES_PREVIOUS_PYTHON", candidate)
+        return [previous if launches == 1 else candidate]
+    monkeypatch.setattr(hermes_agent, "command_argv", command)
     captured = []
     monkeypatch.setattr("src.harness.adapters.cli_session.stream_callback", lambda values: captured.append)
     node = tmp_path / "node"

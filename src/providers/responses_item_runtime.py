@@ -19,6 +19,9 @@ class ResponsesItemLevelToolRunner:
         self._run_tools = bool(run_tools)
         gate_active = getattr(runtime, "_tool_context_compaction_gate_active_now", None)
         self._defer_tool_execution = bool(callable(gate_active) and gate_active())
+        # A device switch needs the complete batch before any side effects start.
+        if "switch_execution_device" in (getattr(runtime, "function_map", None) or {}):
+            self._defer_tool_execution = True
         self._executor: ThreadPoolExecutor | None = None
         self._items_by_call_id: dict[str, ToolCallItem] = {}
         self._futures_by_call_id: dict[str, Future[ToolCallExecution]] = {}

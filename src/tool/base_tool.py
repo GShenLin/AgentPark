@@ -71,6 +71,9 @@ class BaseTool:
                                     if existing_func is None:
                                         self.tool_declarations.append(declaration)
                                     self.function_map[func_name] = func
+                                    if func_name == "switch_execution_device":
+                                        from src.remote_workspace.device_state import device_state
+                                        device_state(self.agent)
                                 else:
                                     raise ToolLoadError(
                                         f"Tool declaration {tool_name}.{attr_name} points to non-callable "
@@ -126,6 +129,14 @@ class BaseTool:
         return self.execute_tool_result(name, args).model_output()
 
     def execute_tool_result(self, name, args):
+        from src.remote_workspace.device_state import execution_operation
+        try:
+            with execution_operation(self.agent, name):
+                return self._execute_tool_result(name, args)
+        except Exception as exc:
+            return build_error_result("exception", tool_name=name, error=f"{type(exc).__name__}: {exc}")
+
+    def _execute_tool_result(self, name, args):
         cancel_source = cancel_source_from_agent(self.agent)
         try:
             raise_if_cancel_requested(cancel_source)

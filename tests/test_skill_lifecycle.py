@@ -40,7 +40,7 @@ def test_shared_tools_survive_until_last_owner_closes(tmp_path):
     with ThreadPoolExecutor(2) as pool:
         results = list(pool.map(lambda name: change(agent, name), ["a", "b"]))
     assert all(r["status"] == "success" for r in results)
-    assert load_active_skills(str(tmp_path)) == {"a", "b"}
+    assert load_active_skills(str(tmp_path)) == set()
     assert change(agent, "a", False)["tools_removed"] == []
     assert "click" in agent.tools.function_map
     assert "click" in change(agent, "b", False)["tools_removed"]
@@ -68,7 +68,7 @@ def test_shared_mcp_restores_then_retracts_declarations(monkeypatch, tmp_path):
         }}, lambda: "ok")
 
     monkeypatch.setattr(agent_skill_runtime, "register_mcp_server_tools", register)
-    definitions = [skill(name, mcp_servers=("docs",)) for name in ("a", "b")]
+    definitions = [skill(name, mcp_servers=("docs",), activation_scope="conversation") for name in ("a", "b")]
     agent = make_agent(tmp_path, definitions)
     assert calls == []
     change(agent, "a")
@@ -84,7 +84,7 @@ def test_shared_mcp_restores_then_retracts_declarations(monkeypatch, tmp_path):
 
 def test_failed_state_save_preserves_current_tools_and_state(monkeypatch, tmp_path):
     from nodes import agent_skill_runtime
-    agent = make_agent(tmp_path, [skill("a", tools=("computer_use_tools",))])
+    agent = make_agent(tmp_path, [skill("a", tools=("computer_use_tools",), activation_scope="conversation")])
     change(agent, "a")
 
     def fail(*args):
@@ -111,17 +111,19 @@ def test_current_context_replaces_stale_provider_copy_after_closing(tmp_path):
 
 def test_clearing_conversation_resets_activation(tmp_path):
     from src.web_backend.node_memory_store import clear_node_memory
-    definitions = [skill("a", tools=("computer_use_tools",))]
+    definitions = [skill("a", tools=("computer_use_tools",), activation_scope="conversation")]
     agent = make_agent(tmp_path, definitions)
     change(agent, "a")
+    assert load_active_skills(str(tmp_path)) == {"a"}
     clear_node_memory(str(tmp_path / "memory.md"), str(tmp_path / "messages.jsonl"))
     assert load_active_skills(str(tmp_path)) == set()
     assert "click" not in make_agent(tmp_path, definitions).tools.function_map
 
 
 def test_removed_skill_is_not_restored_or_resurrected(tmp_path):
-    definitions = [skill("a", tools=("computer_use_tools",))]
+    definitions = [skill("a", tools=("computer_use_tools",), activation_scope="conversation")]
     change(make_agent(tmp_path, definitions), "a")
+    assert load_active_skills(str(tmp_path)) == {"a"}
     make_agent(tmp_path, [])
     assert load_active_skills(str(tmp_path)) == set()
     assert "click" not in make_agent(tmp_path, definitions).tools.function_map
@@ -133,7 +135,8 @@ def test_corrupt_activation_state_is_reported(tmp_path):
         make_agent(tmp_path, [skill("a")])
 
 
-def test_responses_requests_gain_and_lose_skill_tools_and_instructions(tmp_path):
+@pytest.mark.parametrize("activation_scope", ["conversation", "turn"])
+def test_responses_requests_gain_and_lose_skill_tools_and_instructions(tmp_path, activation_scope):
     from src.providers.openai_agent import OpenAIAgent
     from src.tool.tool_call_protocol import ToolCallExecution
 
@@ -150,7 +153,8 @@ def test_responses_requests_gain_and_lose_skill_tools_and_instructions(tmp_path)
     agent.tools = BaseTool(agent)
     agent.Message = lambda role, content, **kwargs: agent.messages.append({"role": role, "content": content, **kwargs})
     agent.addTool("skill_activation_tools")
-    bind_deferred_skills(agent, [skill("a", tools=("computer_use_tools",))], role="developer")
+    bind_deferred_skills(agent, [skill("a", tools=("computer_use_tools",),
+                                     activation_scope=activation_scope)], role="developer")
     payloads = []
 
     def send(**kwargs):
@@ -176,3 +180,35 @@ def test_responses_requests_gain_and_lose_skill_tools_and_instructions(tmp_path)
     assert result == "done"
     assert ["click" in {t["name"] for t in p["tools"]} for p in payloads] == [False, True, False]
     assert ["Private instructions for a" in json.dumps(p["input"]) for p in payloads] == [False, True, False]
+
+
+def test_turn_activation_preserves_other_persisted_skills(tmp_path):
+    definitions = [skill("persistent", tools=("computer_use_tools",), activation_scope="conversation"),
+                   skill("temporary", tools=("cron_tools",), activation_scope="turn")]
+    agent = make_agent(tmp_path, definitions)
+    change(agent, "persistent")
+    change(agent, "temporary")
+    assert {"click", "cron_list"}.issubset(agent.tools.function_map)
+    assert load_active_skills(str(tmp_path)) == {"persistent"}
+    restored = make_agent(tmp_path, definitions)
+    assert "click" in restored.tools.function_map
+    assert "cron_list" not in restored.tools.function_map
+
+
+@pytest.mark.parametrize("capabilities", [{}, {"tools": ("computer_use_tools",)}])
+def test_default_skill_starts_inactive_on_next_user_message(tmp_path, capabilities):
+    from src.skills.activation_state import save_active_skills
+    definitions = [skill("demo", **capabilities)]
+    save_active_skills(str(tmp_path), {"demo"})
+    first = make_agent(tmp_path, definitions)
+    assert first._agentpark_skill_runtime.active == set()
+    assert "Private instructions for demo" not in json.dumps(first.messages)
+    assert change(first, "demo")["active"] is True
+    assert "Private instructions for demo" in json.dumps(first.messages)
+    assert load_active_skills(str(tmp_path)) == set()
+    # Repeated provider calls in the same turn retain activation.
+    assert "Private instructions for demo" in json.dumps(refresh_skill_messages(first, first.messages))
+    second = make_agent(tmp_path, definitions)
+    assert "Private instructions for demo" not in json.dumps(second.messages)
+    assert "click" not in second.tools.function_map
+    assert change(second, "demo")["active"] is True

@@ -63,6 +63,10 @@ def execute_tool_call_envelopes_parallel(
         return []
     if not isinstance(tool_calls, list) or not all(isinstance(item, ToolCallEnvelope) for item in tool_calls):
         raise TypeError("execute_tool_call_envelopes_parallel requires a list of ToolCallEnvelope items")
+    if len(tool_calls) > 1 and any(call.name == "switch_execution_device" for call in tool_calls):
+        return [build_tool_call_error_execution(
+            call, status="error", error="switch_execution_device must be called alone; no tools in this batch were executed.",
+        ) for call in tool_calls]
 
     return execute_tasks_parallel_ordered(
         tasks=tool_calls,

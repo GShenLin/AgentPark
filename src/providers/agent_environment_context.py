@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone as fixed_timezone
 from functools import lru_cache
 from importlib import import_module
 from typing import Any
@@ -15,7 +15,7 @@ from src.runtime_environment import get_runtime_environment
 
 ENVIRONMENT_CONTEXT_TEXT_PREFIX = "<environment_context>"
 ENVIRONMENT_CONTEXT_TEXT_SUFFIX = "</environment_context>"
-MODEL_VISIBLE_ENVIRONMENT_CONTEXT_KEYS = {"current_date", "shell", "timezone", "workspace_path"}
+MODEL_VISIBLE_ENVIRONMENT_CONTEXT_KEYS = {"current_date", "shell", "timezone", "workspace_path", "execution_device", "platform"}
 WINDOWS_TIMEZONE_TO_IANA = {
     "China Standard Time": "Asia/Shanghai",
     "Taipei Standard Time": "Asia/Taipei",
@@ -48,6 +48,14 @@ def build_agent_environment_context(agent: object, *, current_input: object | No
     if timezone:
         context["timezone"] = timezone
     context["request_time"] = now.isoformat(timespec="seconds")
+    runtime = get_agent_runtime_context(agent)
+    if runtime.execution_workspace:
+        inspected = runtime.execution_workspace
+        context.update(shell=inspected["shell"], timezone=inspected["timezone"],
+                       platform=inspected["platform"],
+                       execution_device=runtime.remote_worker_id if runtime.remote_enabled else "local")
+        zone = fixed_timezone(timedelta(seconds=inspected["utc_offset_seconds"]))
+        context["current_date"] = datetime.now(zone).date().isoformat()
     return context
 
 

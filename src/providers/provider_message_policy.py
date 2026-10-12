@@ -79,6 +79,8 @@ class ProviderMessagePolicyMixin:
         return ProviderMessagePolicy.from_config(self.config)
 
     def _normalize_provider_messages(self, messages: object) -> list[dict[str, Any]]:
+        from src.remote_workspace.model_context import refresh_execution_messages
+        messages = refresh_execution_messages(self, messages if isinstance(messages, list) else [])
         return self._provider_message_policy().normalize_messages(messages)
 
     def _ensure_runtime_instruction(self, messages: object, content: object) -> list[dict[str, Any]]:

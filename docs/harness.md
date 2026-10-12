@@ -60,16 +60,28 @@ Permissions and file-lock failures are reported by the job. Session data is pres
 Nodes with an explicitly configured executable continue to use it; settings manages the detected default installation.
 
 Hermes Agent uses the official NousResearch GitHub **stable release** instead of an npm package or an unrelated
-PyPI name. Its calendar release tag and Python package version are checked separately. Install requires Git and creates
+PyPI name. Release discovery reads the redirect from GitHub's official `releases/latest` link, then validates
+`pyproject.toml` at that exact tag. It does not call the GitHub REST API or require a GitHub token. Unexpected redirects
+and network failures are reported explicitly. Release tags (calendar or semantic version) and Python package versions
+are checked separately. PM releases declare `0.0.0` in the package manifest; their runtime identity comes from
+the official semantic release tag and the upstream `scripts/write_install_stamp.py` tool. AgentPark records itself
+as the external update owner, checks the stamp against the exact Git commit/tag, and prepares dependencies with
+the release's official `pm.build_env` entry point and pinned toolchain/lock. Each candidate lives in
+`.runtime/harnesses/hermes_agent/versions/<generation>/`, with a private shared PM tool store under `tools/`.
+Only after source, version, interpreter and SDK-import verification does an atomic `current.json` selection activate it.
+Failed builds leave the current selection untouched; previous installations are retained. Existing managed Git/venv
+installations migrate through this same path. External installations must use their official installer for the PM migration.
+
+Older releases with explicit package versions use Git and create
 `.runtime/harnesses/hermes_agent/source` plus an isolated Python 3.12 `.venv` using uv. If uv is missing, a private
 bootstrap environment supplies it; AgentPark's interpreter and dependencies are not modified. The SDK runtime is
 imported to verify the installation. This path was tested against release `v2026.9.14` / Python package `0.21.3`.
-Upgrades retain the existing source directory and Python environment. External official Git/venv installations are
+For those older releases, upgrades retain the existing source directory and Python environment. External official Git/venv installations are
 located through their launcher and upgraded in place. Dirty source trees and local commits on a tracking branch
 are rejected; unfamiliar installers require their own update workflow. Managed uninstall removes only the installation,
 preserving node conversation snapshots and Hermes homes.
 
-Android/Termux uses native Python's `venv` and `pip`, with the selected Hermes release's
+For older releases, Android/Termux uses native Python's `venv` and `pip`, with the selected Hermes release's
 `constraints-termux.txt` and Android dependency preparation script, instead of uv's desktop Python downloads.
 The interpreter must satisfy that release's `requires-python`; incompatible versions fail explicitly before
 creating a virtual environment or installing dependencies. For example, Hermes `0.21.3` requires
@@ -79,6 +91,8 @@ backends' policy of checking releases for a verified installation identity.
 For a new Android environment, AgentPark also checks installed `python3.13`, `python3.12`, and `python3.11`
 commands against the release requirement. Termux users can install `tur-repo` and `python3.13` with `pkg`;
 the compatible interpreter coexists with the host Python. Existing Hermes environments retain their interpreter.
+New PM source releases require the official Termux APT package; AgentPark refuses a source migration on Android
+before changing the existing installation.
 
 Active turns and installation operations exclude each other through OS-backed shared/exclusive file locks, including
 spawned node workers. Concurrent node turns may hold shared locks. Idle native clients in the backend close before

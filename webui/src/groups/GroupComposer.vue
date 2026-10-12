@@ -32,6 +32,7 @@ async function record() {
 
 async function send() {
   if (!props.ready || !canSend.value || sending.value || attachments.isUploading.value) return
+  const submittedDraft = JSON.stringify([text.value, files.value])
   const content = { text: text.value.trim(), attachments: files.value.map(file => attachmentResource(file, 'group_composer')),
     intent: intent.value, recipient_id: intent.value === 'action' && recipient.value ? recipient.value : undefined }
   const previousContent = request && { text: request.text, attachments: request.attachments,
@@ -42,7 +43,10 @@ async function send() {
   sending.value = true; error.value = ''
   try {
     await groupApi.send(props.graphId, props.groupId, request)
-    text.value = ''; files.value = []; request = null
+    if (JSON.stringify([text.value, files.value]) === submittedDraft) {
+      text.value = ''; files.value = []
+    }
+    request = null
     emit('sent')
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { sending.value = false }
@@ -59,7 +63,7 @@ async function send() {
     </div>
     <p v-if="intent === 'action' && !validRecipient" role="alert">接收人已离组，请重新选择。</p>
     <MessageComposer v-model:input-text="text" :attachments="files" :can-send="canSend"
-      :disabled="sending || !ready" :is-uploading-files="attachments.isUploading.value"
+      :sending="sending" :disabled="!ready" :is-uploading-files="attachments.isUploading.value"
       title="组内消息" :placeholder="intent === 'update' ? '记录进展或补充资料，不需要成员回复…' : '向选定成员发布任务，也可添加或粘贴图片、文件…'"
       :send-label="sending ? '发送中…' : sendLabel"
       :audio-input-enabled="true" :audio-recording="audio.recording.value" :audio-recording-supported="audio.supported.value"

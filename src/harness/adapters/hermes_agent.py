@@ -44,7 +44,8 @@ class Adapter:
             home = request.state_dir / "home"
             home.mkdir(exist_ok=True)
             # Explicit home/config prevent personal profiles and credentials from selecting a different route.
-            for name in ("HERMES_PROFILE", "HERMES_CONFIG", "HERMES_ENV", "PYTHONPATH", "PYTHONHOME"):
+            for name in ("HERMES_PROFILE", "HERMES_CONFIG", "HERMES_ENV", "HERMES_INSTALL_ROOT",
+                         "HERMES_RUNTIME_DIR", "__HERMES_ACTIVATED", "PYTHONPATH", "PYTHONHOME"):
                 env.pop(name, None)
             env.update(HERMES_HOME=str(home), PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
             write_json(home / "config.yaml", {

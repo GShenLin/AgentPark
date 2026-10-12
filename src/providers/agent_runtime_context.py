@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
+from copy import deepcopy
 
 from src.providers.provider_request_usage import ProviderRequestTracker
 
@@ -20,6 +21,7 @@ class AgentRuntimeContext:
     working_path: str = ""
     remote_enabled: bool = False
     remote_worker_id: str = ""
+    execution_workspace: Mapping[str, Any] = field(default_factory=dict)
     graph_working_path: str = ""
     collaboration_mode: str = ""
     shell: str = ""
@@ -48,6 +50,7 @@ class AgentRuntimeContext:
             working_path=self.working_path,
             remote_enabled=bool(self.remote_enabled),
             remote_worker_id=self.remote_worker_id,
+            execution_workspace=deepcopy(dict(self.execution_workspace)),
             graph_working_path=self.graph_working_path,
             collaboration_mode=self.collaboration_mode,
             shell=self.shell,
@@ -68,6 +71,8 @@ class AgentRuntimeContext:
 
 
 def bind_agent_runtime_context(agent: object, context: AgentRuntimeContext) -> AgentRuntimeContext:
+    from src.remote_workspace.device_state import device_state
+    device_state(agent)
     resolved = context.with_defaults()
     setattr(agent, RUNTIME_CONTEXT_ATTR, resolved)
     _write_runtime_attributes(agent, resolved)

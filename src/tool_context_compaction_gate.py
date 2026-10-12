@@ -381,12 +381,7 @@ class ToolContextCompactionGateMixin(ToolContextCompactionActionsMixin, ToolCont
 
     def _tool_context_compaction_enabled(self) -> bool:
         provider_config = self.config
-        if "toolContextCompactionEnabled" not in provider_config:
-            raise ValueError(
-                "provider.toolContextCompactionEnabled is required. "
-                "Set it explicitly to true or false."
-            )
-        value = provider_config.get("toolContextCompactionEnabled")
+        value = provider_config.get("toolContextCompactionEnabled", False)
         if not isinstance(value, bool):
             raise ValueError("provider.toolContextCompactionEnabled must be a boolean.")
         return value

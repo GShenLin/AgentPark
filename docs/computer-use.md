@@ -1,12 +1,11 @@
 # Computer Use
 
 Select the `computer-use` skill and a provider that supports tools and image input.
-The model initially sees only the skill description, current state, and activation/closing tools.
-`activate_skill("computer-use")` exposes desktop tools and instructions across messages and restarts.
-`deactivate_skill("computer-use")` removes them when desktop work is done. Shared tools remain
-while another active skill or explicit node configuration needs them. Clearing conversation history
-resets activation. Reading this document does not activate tools. Skill-owned MCP tools follow
-the same lifecycle; current runtime state takes precedence over historical summaries.
+The model initially sees the skill description, current state, and entrypoint path.
+`activate_skill("computer-use")` activates desktop tools for the current user turn. The next user
+message starts inactive. `deactivate_skill` removes them early; shared tools remain while another
+active skill or explicit node configuration needs them. Reading files does not activate skills.
+Skill-owned MCP tools follow the same lifecycle; current runtime state takes precedence over history.
 
 ## Observe and act
 

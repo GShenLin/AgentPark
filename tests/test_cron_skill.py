@@ -10,6 +10,7 @@ from nodes.agent_skill_loader import load_skill_directory
 from src.providers.agent_runtime_context import AgentRuntimeContext, bind_agent_runtime_context
 from src.tool.base_tool import BaseTool
 from src.cron.tools import cron_list
+from src.skills.activation_state import load_active_skills, save_active_skills
 
 
 def agent_for(node, **overrides):
@@ -30,6 +31,7 @@ def test_real_skill_activation_exposes_and_retracts_tools(tmp_path):
     agent = agent_for(node)
     skill = load_skill_directory(str(Path(__file__).resolve().parents[1] / ".agents/skills/cron"))
     assert skill.tools == ("cron_tools",)
+    assert skill.activation_scope == "turn"
     agent.addTool("skill_activation_tools")
     bind_deferred_skills(agent, [skill], role="developer")
     assert "cron_create" not in agent.tools.function_map
@@ -43,6 +45,37 @@ def test_real_skill_activation_exposes_and_retracts_tools(tmp_path):
     agent.tools.execute_tool("deactivate_skill", {"skill": "cron"})
     assert "cron_create" not in agent.tools.function_map
     assert len(json.loads(cron_list(agent))["jobs"]) == 1
+
+
+def test_cron_activation_is_not_restored_but_jobs_survive(tmp_path):
+    node = tmp_path / "graph" / "agent"
+    node.mkdir(parents=True)
+    (node / "config.json").write_text('{"type_id":"agent_node"}', encoding="utf-8")
+    skill = load_skill_directory(str(Path(__file__).resolve().parents[1] / ".agents/skills/cron"))
+    # Migrate an activation left by an earlier conversation, without touching its jobs.
+    save_active_skills(str(node), {"cron"})
+    agent = agent_for(node)
+    agent.addTool("skill_activation_tools")
+    bind_deferred_skills(agent, [skill], role="developer")
+    assert "cron_create" not in agent.tools.function_map
+    assert load_active_skills(str(node)) == set()
+    assert "<name>cron</name>" in agent.messages[0]["content"]
+    assert "<state>inactive</state>" in agent.messages[0]["content"]
+    assert skill.content not in agent.messages[0]["content"]
+
+    agent.tools.execute_tool("activate_skill", {"skill": "cron"})
+    created = json.loads(agent.tools.execute_tool("cron_create", {
+        "name": "keep", "prompt": "Check status", "schedule": {"kind": "every", "seconds": 1800},
+    }))
+    assert load_active_skills(str(node)) == set()
+    assert json.loads(agent.tools.execute_tool("cron_list", {}))["jobs"][0]["id"] == created["job"]["id"]
+
+    next_agent = agent_for(node)
+    next_agent.addTool("skill_activation_tools")
+    bind_deferred_skills(next_agent, [skill], role="developer")
+    assert not any(name.startswith("cron_") for name in next_agent.tools.function_map)
+    next_agent.tools.execute_tool("activate_skill", {"skill": "cron"})
+    assert len(json.loads(next_agent.tools.execute_tool("cron_list", {}))["jobs"]) == 1
 
 
 def test_runtime_identity_and_role_are_required(tmp_path):

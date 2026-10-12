@@ -251,7 +251,7 @@ def test_serialized_history_clear_invalidates_publication_and_notes(tmp_path):
     assert MemoryReader(store).search("opaque-739")["matches"] == []
 
 
-def test_prepare_binds_tools_and_ephemeral_context_and_schedules(tmp_path, monkeypatch):
+def test_prepare_binds_reader_without_tools_and_schedules(tmp_path, monkeypatch):
     from src.long_term_memory import service
     folder, store, _, pipeline = setup_node(tmp_path)
     pipeline.run()
@@ -271,7 +271,8 @@ def test_prepare_binds_tools_and_ephemeral_context_and_schedules(tmp_path, monke
                                 provider_id="fixture", role="developer", active_trace="current")
     assert agent.messages[0][0] == "developer" and agent.messages[0][2] is False
     assert "memory:" in agent.messages[0][1]
-    assert set(agent.registered) == {"search_node_memory", "read_node_memory", "add_node_memory_note", "forget_node_memory"}
+    assert agent.registered == {}
+    assert isinstance(agent._agentpark_memory_reader, MemoryReader)
     assert scheduled[0][1]["active_trace"] == "current"
 
 

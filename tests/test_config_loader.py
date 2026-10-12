@@ -1132,7 +1132,6 @@ def test_stream_enabled_rejects_non_boolean(monkeypatch, tmp_path):
     "missing_key",
     [
         "toolResultSubmissionMaxChars",
-        "toolContextCompactionEnabled",
     ],
 )
 def test_responses_api_provider_requires_explicit_hardening_fields(

@@ -1,6 +1,8 @@
 import { getActiveApiBase } from './api'
 import { getSettingsSection } from './settingsApi'
 
+export const DEFAULT_THEME_PRESET_ID = 'chat-light'
+
 let appliedVariables = new Set<string>()
 
 export async function applyWorkspaceTheme() {

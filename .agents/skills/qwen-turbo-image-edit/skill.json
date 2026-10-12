@@ -1,0 +1,44 @@
+{
+  "scripts": [
+    {
+      "id": "submit",
+      "name": "Qwen Turbo 提交改图",
+      "description": "将一张本地原图和修改要求提交给本机 ComfyUI Qwen Turbo，返回 job_file；需继续调用 result 获取图片。",
+      "entry": "scripts/comfy_edit.py",
+      "cwd": ".",
+      "timeoutSeconds": 180,
+      "allowWrite": true,
+      "enabled": true,
+      "argsSchema": {
+        "type": "object",
+        "properties": {
+          "image_path": {"type": "string", "description": "执行机器上原图的绝对路径，PNG/JPEG/WebP。"},
+          "prompt": {"type": "string", "description": "具体修改要求以及应保留的内容。"},
+          "seed": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+          "resolution": {"type": "integer", "enum": [512, 768, 1024], "default": 1024}
+        },
+        "required": ["image_path", "prompt"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "result",
+      "name": "Qwen Turbo 获取改图结果",
+      "description": "查询同一个 job_file 的状态，成功时把图片保存到当前节点并返回绝对 image_path；不会重新提交生成。",
+      "entry": "scripts/comfy_edit.py",
+      "cwd": ".",
+      "timeoutSeconds": 120,
+      "allowWrite": true,
+      "enabled": true,
+      "argsSchema": {
+        "type": "object",
+        "properties": {
+          "job_file": {"type": "string", "description": "submit 返回的绝对任务文件路径。"},
+          "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 30, "default": 30}
+        },
+        "required": ["job_file"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -9,7 +9,7 @@ const props = defineProps<{ sections: SettingsSectionInfo[]; active: string; dis
 defineEmits<{ select: [id: string] }>()
 const query = ref('')
 const definitions = [
-  { key: 'models', ids: ['model-provider', 'node-profiler-editor', 'defaults', 'companion'] },
+  { key: 'models', ids: ['model-provider', 'local-model', 'node-profiler-editor', 'defaults', 'companion'] },
   { key: 'capabilities', ids: ['harness', 'skills', 'knowledge'] },
   { key: 'connections', ids: ['authorization', 'gateway', 'peer-network', 'node-sync'] },
   { key: 'diagnostics', ids: ['provider-test', 'pressure', 'tool-stats', 'events'] },

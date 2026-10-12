@@ -47,6 +47,8 @@ export const SECTION_MESSAGE_KEYS: Record<string, string> = {
 export function useSettingsSections(sections: Ref<SettingsSectionInfo[]>) {
   return computed<SettingsSectionInfo[]>(() => {
     const base = sections.value.slice()
+    base.splice(Math.max(0, base.findIndex(item => item.id === 'model-provider') + 1), 0,
+      { id: 'local-model', label: '本地模型', path: 'config/localModel.json', filename: 'localModel.json' })
     base.push({ id: 'harness', label: 'Harness', path: '', filename: '' })
     base.push({ id: 'knowledge', label: 'Knowledge', path: '本地文件夹知识库', filename: '' })
     base.push({ id: 'skills', label: 'Skill 管理', path: '项目 · 用户 · 自定义加载路径', filename: '' })

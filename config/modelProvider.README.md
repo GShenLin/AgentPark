@@ -69,13 +69,14 @@ Provider 认证密钥在 `.auth/api-keys/aliases.json` 中的引用名称。例�
 `none` 只允许用于 `type: "alpha_matting"`，且该 Provider 不得配置
 `apiKey`、`authProvider` 或 `authAccountId`。
 
-### `codexClientVersion`
+### Codex Models 查询版本
 
-仅用于 `authMode: "codex"` 的 Models 查询。Codex 模型目录会根据请求中的
-`client_version` 返回模型。默认读取本机 `codex --version`；也可以用此字段或
-`CODEX_CLIENT_VERSION` 环境变量指定版本。无法确定版本时查询会报告错误，
-不会使用伪造的 `0.0.0` 版本继续请求。若服务进程找不到 Codex CLI，配置此字段；
-升级 Codex CLI 后需同步更新此字段。
+`authMode: "codex"` 的 Models 查询会先通过现有 HTTP transport 读取
+`https://registry.npmjs.org/@openai/codex/latest`，使用 OpenAI 官方 npm 包的
+`latest` 稳定版本作为模型目录请求的 `client_version`。每次查询都会重新获取，
+不依赖本机 Codex CLI，也不安装或升级本机软件。
+版本查询失败、包名不符或版本格式不合法时，会明确报告错误，不使用旧版本继续查询。
+不再使用 `codexClientVersion` 配置或 `CODEX_CLIENT_VERSION` 环境变量。
 
 ### `xApiKey`
 
@@ -343,8 +344,7 @@ Rules:
 要求：
 
 - 必须是布尔值。
-- 必须写在每个 Provider 配置上。
-- 缺失会报错。
+- 可省略；未配置时默认为 `false`，不启用工具上下文压缩。
 
 ### `toolContextCompactionEveryToolCalls`
 

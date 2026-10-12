@@ -20,6 +20,7 @@ from .private_network_cors import PrivateNetworkCORSMiddleware
 from .route_registry import ApiRouteRegistry
 from .peer_api import register_peer_routes
 from .knowledge_api import register_knowledge_routes
+from .local_model_api import register_local_model_routes
 from .group_api import register_group_routes
 from .node_sync.routes import register_node_sync_routes
 
@@ -49,6 +50,7 @@ class WebBackendFacade:
         register_group_routes(self.app, self.core)
         self.node_sync_jobs = register_node_sync_routes(self.app, self.core)
         register_knowledge_routes(self.app, self.core.knowledge_service)
+        self.local_model_service = register_local_model_routes(self.app)
         register_peer_routes(self.app, self.core)
         register_public_gateway_routes(self.app, self.core.public_gateway_api.service)
         register_installed_plugin_apis(

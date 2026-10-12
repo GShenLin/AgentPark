@@ -8,20 +8,6 @@ from nodes.agent_skill_loader import SkillDefinition
 SKILL_ACTIVATION_CATALOG_TAG = "available_skill_activations"
 
 
-def skill_requires_activation(skill: SkillDefinition) -> bool:
-    return bool(skill.tools or skill.mcp_servers or skill.script_tools or skill.resources)
-
-
-def partition_deferred_skills(
-    skills: Iterable[SkillDefinition],
-) -> tuple[list[SkillDefinition], list[SkillDefinition]]:
-    eager: list[SkillDefinition] = []
-    lazy: list[SkillDefinition] = []
-    for skill in skills or []:
-        (lazy if skill_requires_activation(skill) else eager).append(skill)
-    return eager, lazy
-
-
 def bind_deferred_skills(
     agent: object,
     skills: Iterable[SkillDefinition],
@@ -60,14 +46,17 @@ def render_skill_context(agent: object) -> str:
         return ""
     lines = [
         f"<{SKILL_ACTIVATION_CATALOG_TAG}>",
-        "Activate skills on demand and deactivate when done; activation persists across messages, "
-        "and the current state below overrides history.",
+        "Use activate_skill to load a skill's instructions and tools, and deactivate_skill to close it; "
+        "activation lasts for this user turn unless scope is conversation. Reading files does not "
+        "activate skills. The current state below overrides history.",
     ]
     for skill in runtime.definitions.values():
         lines.extend([
             "<skill>",
             f"<name>{_escape(skill.name)}</name>",
             f"<description>{_escape(skill.description)}</description>",
+            f"<path>{_escape(skill.path)}</path>",
+            f"<activation_scope>{_escape(skill.activation_scope)}</activation_scope>",
             f"<state>{'active' if skill.name in runtime.active else 'inactive'}</state>",
         ])
         if skill.name in runtime.active:

@@ -20,6 +20,14 @@ def dispatch_remote_workspace_tool(
     timeout_seconds: float | None,
     cancel_source: Any = None,
 ) -> tuple[bool, Any]:
+    from .device_state import execution_operation
+    with execution_operation(agent, tool_name):
+        return _dispatch_remote_workspace_tool(
+            agent, tool_name, args, timeout_seconds=timeout_seconds, cancel_source=cancel_source,
+        )
+
+
+def _dispatch_remote_workspace_tool(agent, tool_name, args, *, timeout_seconds, cancel_source):
     target = remote_workspace_target(agent, tool_name)
     if target is None:
         return False, None

@@ -67,6 +67,11 @@ class WorkspaceOperationRegistry:
 
     def _execute(self, task: RemoteTask, cancel_event: threading.Event) -> str:
         working_path = validate_working_path(task.working_path)
+        if task.tool_name == "inspect_workspace":
+            from .inspection import inspect_workspace
+            if task.arguments:
+                raise ProtocolError("inspect_workspace accepts no arguments")
+            return inspect_workspace(working_path).model_dump_json()
         if task.tool_name == "list_directories":
             return list_directories(task.arguments, working_path)
         operation = self._operations.get(task.tool_name)

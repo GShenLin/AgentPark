@@ -7,8 +7,8 @@ metadata:
 
 # Computer Use
 
-Call `activate_skill("computer-use")` when inactive. Activation persists across messages.
-Use `deactivate_skill("computer-use")` when desktop work is done; reading this file does not activate it.
+Call `activate_skill("computer-use")` to activate desktop tools for the current user turn.
+Call `deactivate_skill("computer-use")` when desktop work is done. Reading this file does not activate it.
 
 1. `list_windows` → select an exact window → `get_window_state`.
 2. Use a fresh `observation_id` for one action. The action returns updated screenshots/state and new IDs in the same call; inspect them before deciding the next action. Do not request an identical screenshot just because an action finished.

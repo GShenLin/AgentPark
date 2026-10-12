@@ -55,8 +55,12 @@ def invoke_tool_function(func: Callable[..., Any], args: Any, *, agent: object) 
     parameters = signature.parameters
     if isinstance(args, dict):
         bound = _bind_keyword_arguments(signature, func, args, agent=agent)
-        return func(*bound.args, **bound.kwargs)
+        from src.remote_workspace.device_state import execution_operation
+        with execution_operation(agent, _function_name(func)):
+            return func(*bound.args, **bound.kwargs)
 
-    if "agent" in parameters:
-        return func(agent=agent)
-    return func()
+    from src.remote_workspace.device_state import execution_operation
+    with execution_operation(agent, _function_name(func)):
+        if "agent" in parameters:
+            return func(agent=agent)
+        return func()

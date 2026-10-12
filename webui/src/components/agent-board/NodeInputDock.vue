@@ -163,16 +163,22 @@ async function sendMessage() {
   const nodeId = selectedNode.value?.id
   if (!nodeId || !canSend.value || sending.value || isUploadingFiles.value) return
   sending.value = true
+  const submittedDraft = JSON.stringify([nodeEditorInputText.value, nodeEditorAttachments.value])
   const payload = composePayload()
   lastError.value = null
   try {
     await persistGoalForSend(nodeId, payload)
     await ctx.sendNodeMessage(nodeId, payload)
     if (String(ctx.selectedNodeId.value || '') === nodeId) {
-      resetEditorInput()
+      // Only clear the submitted draft; edits made while awaiting acceptance stay.
+      if (JSON.stringify([nodeEditorInputText.value, nodeEditorAttachments.value]) === submittedDraft) {
+        resetEditorInput()
+      }
+      rememberEditorInput(nodeId)
+    } else if (JSON.stringify([nodeTriggerInputs.value[nodeId] || '', nodeEditorAttachmentDrafts.value[nodeId] || []]) === submittedDraft) {
+      nodeTriggerInputs.value = { ...nodeTriggerInputs.value, [nodeId]: '' }
+      nodeEditorAttachmentDrafts.value = { ...nodeEditorAttachmentDrafts.value, [nodeId]: [] }
     }
-    nodeTriggerInputs.value = { ...nodeTriggerInputs.value, [nodeId]: '' }
-    nodeEditorAttachmentDrafts.value = { ...nodeEditorAttachmentDrafts.value, [nodeId]: [] }
   } catch (e: any) {
     lastError.value = String(e?.message || e)
   } finally { sending.value = false }
@@ -200,7 +206,7 @@ watch(
       v-model:input-text="nodeEditorInputText"
       :attachments="nodeEditorAttachments"
       :can-send="canSend"
-      :disabled="sending"
+      :sending="sending"
       :is-uploading-files="isUploadingFiles"
       :goal-active="goalActive"
       :goal-enabled="goalEnabled"

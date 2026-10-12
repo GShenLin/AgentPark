@@ -99,6 +99,33 @@ this capability receive an explicit update-required error.
 Application-hosted workers may advertise their own additional capabilities.
 Missing, relative or nonexistent WorkingPath values are explicit errors.
 
+### Agent-directed workspace switching
+
+Workers supporting run-scoped device switching advertise `inspect_workspace`.
+This read-only operation accepts an existing absolute `working_path` and empty
+`arguments`. Its strict JSON result contains `working_path`, `platform`, `shell`,
+`timezone`, `utc_offset_seconds`, and `project_instructions` (`directory`, `paths`, `text`), all obtained
+on the execution host. A worker without this capability must be updated before
+the Agent can use the switch tool; no OS/path inference or alternative execution
+target is substituted.
+
+The `cross-device-workflow` skill activates `list_execution_devices`,
+`inspect_execution_workspace`, and `switch_execution_device` in the initiating
+AgentPark runtime. Switching validates the selected device and workspace before
+atomically updating the current run's execution context and revision. The caller
+provides `expected_revision`; stale revisions, active tools and active console
+sessions reject the switch. A switch must occupy its own model tool batch.
+Streamed tool items are deferred until the batch is complete while the switch
+tool is available. Timed-out local operations retain ownership until their actual
+worker exits, so they cannot release the switch barrier prematurely.
+
+Subsequent workspace tools use the new context, including operations inside
+`workspace_exec`. The next model request replaces old workspace environment and
+project instructions. Node defaults, Agent memory and provider credentials stay
+on the initiating runtime. Browser, MCP and skill-script tools retain their own
+execution binding; files and running processes are not transferred. Selecting
+`device_id: local` and a local absolute path explicitly switches back.
+
 `workspace_exec` orchestration remains in the AgentPark runtime. Each filesystem
 operation inside it goes through the remote router; server-owned task-state
 operations remain on the runtime.
