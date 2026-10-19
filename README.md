@@ -2,439 +2,240 @@
 
 [English](./README.md) | [中文](./README.zh.md)
 
-<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
+AgentPark is a visual Agent workspace that runs on your own machine and is accessed through a browser. Start by chatting with one Agent, then organize multiple Agents, tools, and triggers into workflows or collaboration groups. Each Agent uses its own model, working directory, capabilities, and history to carry out tasks.
 
-> **Text your home PC from WeChat, and let it do the work.**
->
-> AgentPark is a local-first visual Agent platform: drag-and-drop nodes to build workflows, plug into WeChat in one step, with Doubao / Zhipu / Gemini / OpenAI working out of the box. It runs on your own machine, your data never leaves your network, and your Agents stay on duty 24/7.
+**The project's main strength is bringing different models and Agent runtimes onto one board where you can follow their work, coordinate them, and use them across devices.** Standard Agent, Codex, Claude Code, and other nodes can work on the same task. You can inspect progress, adjust responsibilities, review tool calls, and keep a separate conversation for each node.
 
-## October 2026 update
+This guide introduces the features available in the current code, from the basics to advanced use. If this is your first time, continue with **[GettingStart: installation, configuration, and your first conversation](docs/GettingStart.md)**. For a complete settings reference, see the **[Settings manual](docs/settings/README.md)**.
 
-The [updated Chinese guide](./README.zh.md) introduces the current workspace from
-first conversation through collaboration and multi-device execution. Start with
-[Getting started](docs/GettingStart.md), browse the [documentation index](docs/README.md),
-or consult the [Settings manual](docs/settings/README.md).
+<img width="1920" height="911" alt="AgentPark screenshot" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
 
-Recent additions include Windows node chat windows and persisted-result alerts,
-configurable toolsets, OpenCode and Antigravity harnesses, the WorkBuddy bridge,
-custom local services, and voice screenshot, annotation and draft-editing tools.
-See [the synchronization notes](docs/public-sync-20261019.md) for scope and validation.
+## Why Use AgentPark?
 
-## Why AgentPark?
+| Highlight | What you can do |
+| --- | --- |
+| Organize work visually | Create nodes, connections, and groups in Graph / Board, open node chats directly, and check runtime status |
+| Multiple Agent runtimes | Use AgentPark's own Agent or connect one of nine Harnesses; each runtime retains its own tools, sessions, and permission rules |
+| Clear responsibilities for each member | Collaboration groups share goals, tasks, dependencies, and handoff updates while members keep their own models and histories |
+| Lasting node context | Standard Agents support history compaction and node-level long-term memory; summaries include sources so you can retrieve the original evidence |
+| Verifiable local information | Folder knowledge bases support PDF, text, Word, and Excel, with checkable sources for search results and spreadsheet calculations |
+| Access beyond your computer | Dedicated entry points for the mobile browser workspace, Windows node windows, device center, remote execution, and node synchronization |
+| Traceable execution | End-to-end audits, tool success rates, failure details, Provider queues, and usage help you diagnose problems |
 
-| Pain point | How AgentPark solves it |
-|---|---|
-| You want an AI assistant inside WeChat, but WeChat offers no official Bot API | **Channel nodes**: WeChat messages reach your Agent directly, replies go back the same way |
-| Switching models means rewriting a pile of configs | **Agent Profile**: one config, swap between Doubao / Zhipu / Gemini / OpenAI freely — no rewiring |
-| Prompts pile up, Agent behavior becomes unreproducible | **RuntimePolicy**: versioned execution policies with SHA-256 manifests — auditable and reproducible |
-| Multi-step tasks require writing orchestration code | **Visual Graph**: drag nodes, connect ports; scheduled triggers, loops, and routing built in |
-| You don't trust cloud Agents with your data | **Local-first**: FastAPI + Vue running entirely on your machine, operable from your phone |
+<img width="1920" height="911" alt="AgentPark screenshot" src="https://github.com/user-attachments/assets/97dce8df-69a3-4531-af14-012d67884f1f" />
 
-## The core design in 30 seconds
+## Start the Project
 
-AgentPark splits an Agent into four layers, each swappable independently:
+Run AgentPark from the source directory. You will need Git, Python with pip (3.12 is recommended to start), and Node.js/npm. Use a supported LTS version of Node.js that meets the requirements: the WebUI and Windows node windows require Node.js 22.12 or later, and some Harnesses require a newer version. You must configure your own model-service accounts or API keys.
 
-| Layer | Owns | What can change independently |
-|---|---|---|
-| **Agent Profile** | Role, prompts, tools, skills, plugins | Who the Agent is and what it can do |
-| **RuntimePolicy** | Task direction, completion review, context compaction | How it works and what counts as done |
-| **Provider** | Model endpoints, auth, billing | Which model runs it (Doubao / Zhipu / Gemini / OpenAI-compatible) |
-| **Graph** | Nodes, triggers, routes, channel topology | How multiple Agents collaborate |
+On Windows, run this in PowerShell from the project root:
 
-Switch models without rebuilding workflows. Switch tasks without rewriting prompts. That's what sets AgentPark apart from thin wrappers.
-
-## What can you build with it?
-
-- 📱 **WeChat personal assistant**: send a WeChat message, the Agent checks your calendar, replies to emails, runs scripts — results come back to WeChat
-- 🎬 **Media pipelines**: image gen → video gen → face-swap video → 3D modeling, fully automated in one Graph
-- 🖥️ **Desktop automation**: the GUI Agent sees the screen and clicks the mouse — hand it your repetitive work
-- 🧪 **Model A/B testing**: same Profile, same task across Doubao / Zhipu / Gemini — see who's best at a glance
-- 🏠 **Multi-device mesh**: old phones, home PC, office computer — networked together, calling each other
-
----
-
-## Project Goal
-
-AgentPark aims to become a practical Agent creation and sharing platform:
-
-- Agents should be configurable runtime units with memory, provider settings, tools, skills, plugins, and clear execution history.
-- Tools should be structured capabilities that can be discovered, tested, reused, and shared across Agents and Graphs.
-- Graphs should describe complete workflows, including triggers, routing, generation nodes, external channels, and recoverable runtime state.
-- Local development should remain first-class, while the project moves toward cleaner packaging, portable assets, and shareable Agent/Tool/Graph libraries.
-- Platform boundaries should stay explicit: node contracts, provider capabilities, runtime state, tool-call protocols, and UI/API contracts should be visible instead of hidden behind fragile fallback behavior.
-
-## Outlook
-
-The long-term direction is an AgentPark-style ecosystem: users can design Agents visually, connect them into Graphs, attach reusable tools and skills, then publish or exchange those assets with other users. The current project already provides the local runtime, visual editor, provider integrations, mobile access, CLI recovery path, and node/tool/plugin foundations needed for that direction. Future work should continue to turn these foundations into stable sharing formats, stronger capability metadata, safer runtime recovery, and easier distribution.
-<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/97dce8df-69a3-4531-af14-012d67884f1f" />
-
-
-## Key Features
-
-- Agent Profile switching: save, create, load, inspect, and share complete Agent configurations without rewiring the Graph.
-- RuntimePolicy control: select or edit typed execution Policies independently from Provider configuration, with effective-policy previews and auditable manifests.
-- Visual Graph/Node workflows: create nodes, connect ports, save complete Graph workflows, and start the Graph Runner.
-- Agent execution: streaming output, tool calls, tool-call history, persistent node memory, and stop/cancel controls.
-- Provider integrations: Doubao, Gemini, OpenAI-compatible APIs, Zhipu, Hyper3D, and provider capability metadata.
-- Multimodal generation nodes: image generation, video generation, person-replacement video generation, 3D model generation, and 3D texture generation.
-- Local tool system: Python tools under `functions/` are loaded as structured, reusable capabilities for Agent nodes.
-- Sharing-oriented asset model: Agents, tools, skills, plugins, and Graphs are treated as project assets that can evolve toward portable exchange formats.
-- File and resource management: the WebUI can browse, read, write, upload, and expose generated resources through `/memories`.
-- Desktop settings entry: the top-right `Settings` button opens the settings UI directly, including providers, defaults, companion settings, and provider limit tests.
-- Mobile support: screens up to 760px automatically use the mobile workspace, with phone-friendly PC/graph/node navigation, chat, streaming responses, attachments, node config, restart, graph editing, and settings access.
-- Remote access: remote endpoint management and mobile APIs make it possible to operate workflows from another device on the same network.
-- Channel nodes: receiver/sender nodes for external channels such as OpenClaw Weixin.
-- Test All Provider key word and get all model.
-- Pet is editable by key frame in settings, I provide an anim editor for custom pet.
-  <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/30358f7b-1552-4b54-93b6-72854591d19d" />
-
-
-## Node Feature List
-
-Node implementations live in `nodes/`. The backend exposes node metadata through `GET /api/nodes` and node templates through `GET /api/nodes/{type_id}/template`, including schema, port counts, input/output capabilities, and runtime declarations. A node `type_id` is usually the node filename without `.py`; for example, `nodes/agent_node.py` is exposed as `agent_node`.
-
-All nodes inherit these common configuration fields:
-
-- `skills`: load Skill documents and scripts from `.agents/skills/` for the current node.
-- `plugins`: load project plugin capabilities for the current node.
-- `working_path`: the directory opened by the file browser when the node is selected; Agent and command nodes also use it as working-directory context.
-
-### Agent and Automation Nodes
-
-| Node      | `type_id`        | Features                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent     | `agent_node`     | General-purpose LLM Agent node. Accepts text, images, videos, audio, documents, files, URLs, structured data, and meta input. Provider SupportModes include chat, image generation, video generation, audio generation, and image chat; generated media is returned as resources. Supports `provider_id`, `system_prompt`, local `tools`, `mcp_servers`, `skills`, and `plugins`. Provider capabilities can enable `web_search`, `thinking`, and `reasoning_effort`. Runtime behavior includes persistent node memory, streaming messages, tool-call history, and stop control. |
-| GUI Agent | `gui_agent_node` | Single-node GUI automation loop. Captures screenshots, asks a visual/multimodal provider to plan actions, executes mouse/keyboard/scroll operations, and can verify completion. Supports `instruction`, planner/verify prompts, screenshot regions, dry run, mock actions, planner timeout, and verify timeout. Useful for local desktop or remote GUI operations.                                                                                                                                                        |
-
-### Generation Nodes
-
-| Node                        | `type_id`                       | Features                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Video Change Person         | `video_change_person_node`      | Uses Wan Animate Mix-style providers to replace the subject in a reference video with a portrait image. Requires one portrait image and one reference video. Supports `wan-std`/`wan-pro`, watermark, image checking, public base URL, and output filename prefix. Outputs the replaced-person video resource and task metadata.                                                                                         |
-| 3D Model Generation         | `model_generation_node`         | Uses Hyper3D/Rodin-style providers for text-to-3D or image-to-3D generation. Supports multiple reference images, Gen-2/Regular tier, alpha handling, seed, export format, material type, quality, face-count override, T/A pose, bounding-box dimensions, Raw/Quad mesh, HighPack, preview rendering, and high-definition textures. Outputs downloaded model file resources and task metadata.                           |
-| 3D Model Texture Generation | `model_texture_generation_node` | Generates or repaints textures for an existing 3D model. Accepts a model file or URL, reference images, and optional prompt. Supports seed, reference scale, export format, material, and resolution. Outputs a retextured model file resource and task metadata.                                                                                                                                                        |
-
-### Trigger, Control, and Routing Nodes
-
-| Node            | `type_id`            | Features                                                                                                                                                                                                                                  |
-| --------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| BasicTrigger    | `basic_trigger_node` | Manual trigger node. Emits the configured `OutputText` when triggered. Commonly used as a workflow start point or debugging entry.                                                                                                        |
-| TimerTrigger    | `timer_trigger_node` | Scheduled trigger node. Emits `OutputText` after the configured `ScheduleAt` time is reached.                                                                                                                                             |
-| Clock           | `clock_node`         | Periodic trigger node. Emits `OutputText` on a day/hour/minute/second interval. Supports repeated execution and `LoopCount`, while storing current run state, next trigger time, remaining time, and trigger count.                       |
-| Loop            | `loop_node`          | Loop-control node. After receiving input, output port 0 is used while the loop is still active, and output port 1 is used when the loop finishes. Supports fixed-count and infinite loops, with remaining count persisted in node config. |
-| Event           | `event_node`         | Event dispatch node. Forwards the input message and adds `EventKey`, allowing downstream routing or graph-runtime dispatch by event key.                                                                                                  |
-| MultiInput      | `multi_input_node`   | Multi-input aggregation node. Dynamically creates input ports from `InputCount`, caches messages from each port, waits until all ports have received input, then merges text in port order and emits it.                                  |
-| InputOutputTest | `input_output_test`  | Topology test node with 3 fixed inputs and 4 fixed outputs. Useful for validating connections, port indexes, and routing behavior.                                                                                                        |
-
-### Text, File, and Command Nodes
-
-| Node           | `type_id`              | Features                                                                                                                                                                                                                                                |
-| -------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Echo           | `echo_node`            | Echoes the input message. Optional `MyText` is used as a prefix, so output becomes `MyText + input text`.                                                                                                                                               |
-| Append         | `append_node`          | Appends `AppendText` to the input text. Useful for simple prompt composition or suffix formatting.                                                                                                                                                      |
-| Response       | `response_node`        | Returns a fixed response. If `MyText` is configured, it emits that value; otherwise it returns the input text. Useful as an endpoint, placeholder, or test node.                                                                                        |
-| SaveFile       | `save_file_node`       | Saves input text to a file. Uses `FilePath` and optional `FileName`; when no filename is provided, it derives one from the beginning of the content, and defaults to `.md` when no extension is present. Emits the original text after saving.          |
-| ConsoleCommand | `console_command_node` | Executes shell commands. If `Command` is empty, the input text is used as the command. Supports `TimeoutSeconds`, `Shell`, and node `working_path`. Has 3 output ports: stdout, stderr, and return code. Cancelling the node terminates the subprocess. |
-
-### External Channel Nodes
-
-| Node            | `type_id`               | Features                                                                                                                                                                                                                                                                                                                                  |
-| --------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChannelReceiver | `channel_receiver_node` | Receives messages from external channels and forwards them downstream. The built-in channel is OpenClaw Weixin. Supports command activation through `Name`, persistent `Active` state, `AutoStart`, and polling timeout. Can forward text, structured data, files, and image resources.                                                   |
-| ChannelSender   | `channel_sender_node`   | Sends upstream output back to an external channel. Currently supports OpenClaw Weixin. Configurable account, recipient, sender name, and timeout. If no explicit target is provided, it attempts to use the default target from the latest inbound message. Supports text and image resources, and emits structured send-result metadata. |
-
-## Desktop and Mobile UI
-
-- Desktop mode is used on wider screens and includes the full visual graph editor, topbar, remote switcher, file/memory panes, node controls, and direct `Settings` access in the top-right area.
-- Mobile mode is automatically selected when the viewport is 760px wide or smaller. It provides a phone-friendly flow for selecting a PC, selecting a graph, listing nodes, chatting with a node, uploading attachments, viewing live streaming output, saving/copying/deleting messages, clearing memory, opening node configuration, creating/deleting nodes, saving/deleting graphs, restarting the workspace, and opening Settings from the header.
-- Remote endpoints can be added from the desktop topbar and are stored in `config/remote.json`; mobile APIs use these endpoints to browse PCs, graphs, nodes, conversations, and messages.
-- For node-level remote tools, run `AgentParkRemote.exe` on the browser PC, open the AgentPark WebUI by its server IP, select a node, and enable `Remote` beside `WorkingPath`. Browser-local discovery pairs the silent worker through the same Remote Workspace v1 protocol used by the Unreal plugin. Use the folder button to choose a path on that PC. Only one standalone worker or Unreal worker should be running on the browser PC while pairing.
-
-## Project Layout
-
-```text
-AgentPark/
-  config/              # Service config, provider config, prompt text, remote endpoints
-  functions/           # Tools callable by Agent nodes
-  memories/            # Graph/node memory; current memory at root, overflow archived by date
-  nodes/               # Visual workflow node implementations
-  scripts/             # Helper scripts
-  .agents/skills/      # Agent skill documents
-  src/                 # FastAPI backend, providers, protocols, runtime
-    remote_worker/     # Standalone AgentParkRemote worker
-  tests/               # pytest tests
-  webui/               # Vue 3 + Vite frontend
+```powershell
+.\build_and_run.bat
 ```
 
-## Requirements
-
-- Windows is the primary target environment. Some features depend on `.bat`, PowerShell, desktop automation, or PyInstaller packaging paths.
-- `package.bat` builds both `dist/AgentPark.exe` and the windowless `dist/AgentParkRemote.exe`.
-- Linux is supported for the WebUI, CLI, provider runtime, and restart flow. Windows-only desktop and packaging features remain Windows-only.
-- Python 3.11+. Windows scripts prefer local Python 3.14/3.12/3.11; Linux scripts prefer `AgentPark_Linux_env`, `.venv`, `python3`, then `python`.
-- Node.js + npm for installing and building `webui`.
-- ripgrep `rg` is recommended; file search tools and some frontend search paths prefer it.
-
-## Installation
-
-Install backend dependencies from the repository root:
-
-```bat
-python -m pip install -e .
-```
-
-Install frontend dependencies:
-
-```bat
-cd webui
-npm install
-```
-
-## Configuration
-
-Main service configuration lives in `config/config.json`:
-
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8788
-  },
-  "agentNode": {
-    "minSendDelayMs": 200,
-    "historyMessageLimit": 6
-  },
-  "nodeMemory": {
-    "maxEntries": 20
-  }
-}
-```
-
-- `server.host` and `server.port` control the FastAPI listen address. If the port is occupied, the startup path searches for the next available port.
-- `nodeMemory.maxEntries` controls how many entries each node keeps in the current `memory.md` / `messages.jsonl`. Older entries are archived under `archive/YYYY-MM-DD/`.
-- The local memories directory is configured in Settings and stored as `memoriesPath` in `.cache/memoryLocalConfig.json`. It is intentionally kept out of the shared `config/config.json`.
-- The startup graph is stored in `.cache/startup_graph.json`; this directory is not committed to Git.
-
-Provider configuration lives in `config/modelProvider.json`. A typical provider entry looks like this:
-
-```json
-{
-  "providers": {
-    "example": {
-      "type": "openai",
-      "apiKey": "YOUR_API_KEY",
-      "baseUrl": "https://example.com/v1",
-      "model": "model-name",
-      "supportmode": ["chat", "imagechat"],
-      "timeoutMs": 60000
-    }
-  }
-}
-```
-
-Common `type` values include `doubao`, `gemini`, `openai`, `zhipu`, and `hyper3d`. Do not commit real API keys to a public repository.
-
-Provider-scoped audio speaker indexes live in `config/audio_speaker.json`. Running the Doubao `ListSpeakers` management operation replaces the selected provider's index; speaker lists are not embedded in `modelProvider.json`.
-
-## Startup
-
-### Build and Run
-
-On Windows, the recommended entry is:
-
-```bat
-build_and_run.bat
-```
-
-On Linux, use:
+On Linux / macOS, run this from the project root:
 
 ```sh
-./build_and_run.sh
+sh ./build_and_run.sh server
 ```
 
-Both platform scripts:
+Open the [local workspace](http://127.0.0.1:8766). The application listens on `0.0.0.0:8766` by default. Configuration or an occupied port may change the actual port; check the startup log. For initial configuration, access Settings through the local loopback address.
 
-- Checks Python and `rg`.
-- Installs missing frontend dependencies.
-- Builds `webui`.
-- Runs `python -m pip install -e .`.
-- Starts `python -m src.fast_api --workspace-root <repo root>`.
+The startup scripts install dependencies, build the WebUI, and start the backend. The Windows entry point also prepares node windows, checks for repository updates and private CA trust, and attempts to publish the cloud frontend. See [GettingStart](docs/GettingStart.md) for the details, manual startup steps, and the configuration sequence if you do not yet have an account. A successful startup means the service is available; model tasks still require a valid Provider, model, and authorization.
 
-After startup, the browser opens automatically. The default port comes from `config/config.json`; the current default is `8788`.
+The shortest path to your first run:
 
-### Production Mode
+1. Open **Settings → Model Providers** and configure the connection URL, key or official authorization, and model list.
+2. Right-click an empty area of the board to create an **Agent**, select a Provider and a specific model, and send a simple question first.
+3. Configure reusable models, instructions, and capabilities in **Node Presets**, then select the relevant presets under **Companion / Default Settings**.
+4. Add a knowledge base when you need to read source material. When you need a coding runtime, install its CLI under Harness.
 
-Build the frontend static files first:
+## Stage 1: Get Started with a Single Node
 
-```bat
-cd webui
-npm install
-npm run build
-```
+### 1. Boards and Node Management
 
-Then return to the repository root and start the backend:
+A Graph is a workspace containing nodes, connections, and groups; the Board is its visual interface. You can create and switch Graphs, drag nodes, adjust layouts, edit node names and annotations, and open node configuration and chat. Use separate Graphs to manage different tasks.
 
-```bat
-cd ..
-python -m src.fast_api --host 127.0.0.1 --port 8788
-```
+Each node has its own runtime state and task queue. Send messages through the input box and use node controls to trigger, pause, or stop work. When viewing a final response, you can also expand the process to inspect model output and tool execution. The meaning of pause and stop depends on the node's current state and the feedback from its controls.
 
-Open:
+### 2. Chat with a Standard Agent
 
-```text
-http://127.0.0.1:8788/
-```
+An `Agent` node uses AgentPark's runtime. Depending on the selected Provider's actual capabilities, it can chat, understand images, call tools, and work with resources. The input box accepts text and attachments, and chat and process records are persisted in the node directory.
 
-To prevent automatic browser launch, add `--no-browser`:
+Model selection has two parts: **Provider + Model**. The Provider determines the connection, authorization, and protocol; the Model specifies which model to request. Do not use a Provider ID as a model name. See [Models and Harnesses](docs/settings/models.md) for configuration details.
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
-```
+### 3. Files and Attachments
 
-### Development Mode
+Use the file panel to browse workspace resources. In a node or group input box, select, drag and drop, or paste attachments that the browser can read. Images can be previewed, and files can be passed to the model as resources. Whether a model can directly understand a particular format depends on the node and Provider. The browser file panel's workspace boundary and the Agent's file-tool permissions are separate boundaries.
 
-Start the backend:
+### 4. Reuse Node Presets
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
-```
+An Agent Profile / Preset saves the node type, model, instructions, capabilities, and event rules. Use presets to repeatedly create roles such as researcher, programmer, or reviewer. Once you have created and tested a node, save it as a preset and edit it in **Settings → Node Presets**.
 
-Start Vite:
+Standard nodes copy a preset's configuration when they are created. Companion and background reasoning configurations instead read presets by ID. Changing a preset has different effects in these cases; see [Node Presets and Companion](docs/settings/presets-companion.md).
 
-```bat
-cd webui
-npm run dev
-```
+### 5. Companion and the Command Line
 
-Open the Vite URL:
+Companion is the workspace's companion Agent. Select its preset and local working directory in Settings; the preset determines its model, instructions, and capabilities. Windows startup repair also uses this preset.
 
-```text
-http://localhost:5173/
-```
+The command line also supports chat and offline diagnostics:
 
-`webui/vite.config.ts` proxies frontend API requests to the backend.
-
-### Restart
-
-On Windows, run:
-
-```bat
-Restart.bat
-```
-
-On Linux, run:
-
-```sh
-./Restart.sh
-```
-
-The platform restart script attempts to stop the current AgentPark service, update a clean working tree, and restart through the matching build-and-run script.
-
-The WebUI can also call `/api/system/restart` to trigger the restart flow.
-
-## Packaging
-
-On Windows, run:
-
-```bat
-package.bat
-```
-
-The script builds the frontend and packages the backend entry `src/fast_api.py` with PyInstaller. Output:
-
-```text
-dist/AgentPark.exe
-```
-
-After packaging, `config/`, `functions/`, and `nodes/` are copied into `dist/` as runtime resources.
-
-## Common API Endpoints
-
-- `GET /api/providers`: list providers.
-- `GET /api/tools`: list tools under `functions/`.
-- `GET /api/nodes`: list available node types.
-- `GET /api/graphs`: list graphs.
-- `POST /api/graphs/{graph_id}/runner/start`: start the Graph Runner.
-- `POST /api/graphs/{graph_id}/emit`: send input to a graph node.
-- `GET /api/nodes/instances/{node_id}/memory`: read node memory.
-- `POST /api/nodes/instances/{node_id}/control`: control node runtime state.
-- `POST /api/files/upload`: upload files.
-- `POST /api/system/restart`: trigger service restart.
-- `GET /api/settings`: list settings sections.
-- `GET /api/settings/{section}`: read a settings document.
-- `POST /api/settings/{section}`: update a settings document.
-- `GET /api/remotes`: list remote endpoints.
-- `POST /api/remotes`: add a remote endpoint.
-- `DELETE /api/remotes/{remote_id}`: delete a remote endpoint.
-- `GET /api/mobile/pcs`: list mobile PC entries.
-- `GET /api/mobile/pcs/{pc_id}/graphs`: list graphs for mobile access.
-- `GET /api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes`: list graph nodes for mobile access.
-- `GET /api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/conversation`: read a node conversation on mobile.
-- `POST /api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/messages`: send a mobile message to a node.
-
-Full route registration lives in `src/web_backend/route_registry.py`.
-
-## Testing
-
-Run all tests with pytest:
-
-```bat
-python -m pytest
-```
-
-Run a single test file:
-
-```bat
-python -m pytest tests/test_node_stop_cancellation.py
-```
-
-## Development Conventions
-
-- Add new nodes under `nodes/`; keep metadata, schema, input/output capabilities, and port declarations clear.
-- Add new Agent tools under `functions/`; tool return values should stay structured and should not hide real errors.
-- Put provider logic under `src/providers/`; prefer existing transport, runtime event, and tool-call protocols.
-- Backend API routes are registered in `src/web_backend/route_registry.py`.
-- WebUI API calls are centralized in `webui/src/api.ts`, `webui/src/uploadApi.ts`, and `webui/src/settingsApi.ts`.
-- Prefer splitting files by responsibility when a single file grows beyond roughly 400 lines.
-
-## CLI and Recovery
-
-AgentPark also has an offline CLI for cases where FastAPI or WebUI is unavailable:
-
-```bat
+```powershell
 python -m src.cli chat
-python -m src.cli chat --message "hello"
-python -m src.cli chat --debug-terminal
-python -m src.cli doctor
-python -m src.cli capabilities list --graph <graph_id> --node <node_id>
-python -m src.cli capabilities enable --kind skill --name <skill_id> --graph <graph_id> --node <node_id>
-python -m src.cli config validate --graph <graph_id> --node <node_id>
+python -m src.cli doctor --json
 ```
 
-`chat` starts the dedicated Companion Agent. Companion is a normal protected graph with a normal Agent node under it, using the same config fields as other nodes:
+Both commands require a Python environment with the project's dependencies installed. `chat` also requires a working Companion configuration.
 
-```text
-memories/Companion/config.json
-memories/Companion/Companion/config.json
-memories/Companion/Companion/memory.md
-memories/Companion/Companion/messages.jsonl
-```
+## Stage 2: Give Agents Knowledge and Tools
 
-After the normal build/install flow, `build_and_run.bat` on Windows or `build_and_run.sh` on Linux starts the WebUI server in the background and then starts the interactive companion CLI in the current terminal. The `cli` and `chat` modes use the combined Web + CLI startup. Use `server` or `web` for WebUI only, and `cli-only` for CLI without WebUI.
+### 6. Multiple Providers and Account Management
 
-On Windows, the Companion CLI started by `build_and_run.bat` is hidden by default. Double-click `ToggleConsole.bat` in the workspace root to show or hide that same window, or run `/hidden` inside the CLI to hide it, without restarting the session. When no Pet is running, the AgentPark folder context-menu action updates the Companion working path and shows or starts the CLI; when a Pet exists, the existing Pet dispatch flow remains unchanged. Window control is intended for a standalone Windows console; when launched inside a shared Windows Terminal window, hiding may affect the entire Terminal window.
+The settings form includes types for OpenAI, Claude, DeepSeek, Doubao, Gemini, Grok, Kimi, Zhipu, Hyper3D, WorkBuddy, Agnes, and local alpha matting. Adapter capabilities vary; selecting a capability checkbox cannot make a service support a protocol it does not implement.
 
-The companion CLI runs the same Agent turn path as normal nodes and stores state in `memories/Companion/Companion/`. If the terminal does not accept input, run the platform build-and-run script with `cli --debug-terminal`; interactive input diagnostics fail loudly instead of silently downgrading.
+You can manage API key references, named accounts, multiple OAuth accounts, and pinned accounts. Secrets are stored in `.auth/`; Provider configurations reference key names or account IDs. Official OAuth entry points are available only for types that implement the protocol. See [Model Connections and Authorization](docs/settings/models.md).
 
-Inside the companion CLI, `/restart` launches `Restart.bat` on Windows or `Restart.sh` on Linux and exits the current CLI session so restart behavior stays on the canonical startup path.
+### 7. Tools, Skills, MCP, and Plugins
 
-Node config reads and writes are documented in `docs/config-contract.md`. Runtime state recovery is documented in `docs/runtime-state-machine.md`. Provider feature support is documented in `docs/provider-feature-matrix.md`. Capability descriptors and dependency reporting are documented in `docs/capability-system.md`. Skill/plugin authoring is documented in `docs/skill-plugin-authoring.md`. Long-term sidecar, caching, and distribution boundaries are documented in `docs/long-term-architecture.md`. Recovery steps are documented in `docs/troubleshooting.md`.
+| Capability | Purpose | How to enable it |
+| --- | --- | --- |
+| Tool | Callable functions for files, commands, node operations, and more | Select tools in the node configuration |
+| Skill | A task workflow with instructions, scripts, and resources | Select a Skill on the node; the runtime activates it as needed |
+| MCP | Connect a local subprocess or remote MCP service | Register the service in Default Settings, then select it on the node |
+| Plugin | Organize extensions through a plugin manifest | Install the corresponding resources and select the plugin on the node |
 
-Packaged builds expose the same offline recovery commands through the executable:
+Skill management brings together project, system-user, and custom sources. You can search, read instructions, inspect dependencies and references, organize folders, move items to the recycle area, and restore them. Capability changes are normally loaded on the next Agent execution; they do not automatically restart a running task. See [Skills and Extensions](docs/settings/skills.md).
 
-```bat
-dist\AgentPark.exe doctor --json
-dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
-```
+### 8. Local Folder Knowledge Bases
 
-`package.bat` copies `docs/`, `.agents/skills/`, and `plugins/` into `dist/` so packaged doctor checks and default capability discovery use the same bundled resources as source checkout runs.
+Knowledge bases recursively scan PDF, Markdown, TXT, DOCX/DOC, and XLSX/XLS files. They use an OpenAI-compatible text embedding service to build an on-disk index with keyword, semantic, and hybrid search. You can scan incrementally, pause, resume, retry failed files, and test search results on the management page.
+
+With the `knowledge` Skill selected, an Agent can list documents, search, read source text, and calculate statistics for specified Excel worksheets and row ranges within authorized knowledge bases. Results identify PDF pages, text lines, Word paragraphs, or Excel rows and columns. OCR is not currently performed; DOC files require LibreOffice, and formulas use the calculated values saved in the file. See the [Knowledge Base Guide](docs/settings/knowledge.md).
+
+### 9. Conversation Compaction and Node Long-Term Memory
+
+When a standard Agent's ongoing conversation exceeds its history budget, older content can be compacted in the background while recent messages are kept verbatim. Long-term memory extracts and synthesizes short summaries from the node's completed task history, injects them into later inputs, and retrieves sources as needed.
+
+The two features have separate reasoning presets, budgets, and processing thresholds. Each node maintains its own memory. Tools are also available to explicitly remember information, correct it, or forget it by source. See [Default Settings](docs/settings/defaults.md) for the differences between history compaction, long-term memory, and clearing chat.
+
+### 10. Commands and Process Sessions
+
+The built-in Agent's `system_tools` support short synchronous commands and starting, reading, waiting for, and stopping asynchronous process sessions. For builds or tests, you can read output incrementally and cancel execution. Commands use the platform and shell declared by the backend: PowerShell on Windows and the detected shell on POSIX systems. Sessions belong to the current Agent execution and cannot be resumed across turns or restarts. See [Command Sessions](docs/console-sessions.md).
+
+### 11. Browser and Windows Desktop Operations
+
+Browser automation is available through the corresponding Skills and dependencies. Windows `computer-use` supports window discovery, screenshots, UI Automation, and mouse and keyboard operations. Choose a model that supports image input and tool calls, and install the dependencies required by the Skill. Desktop capabilities require a Windows graphical session and cannot be used directly on a Linux backend. See [Computer Use](docs/computer-use.md).
+
+### 12. Local Service Management
+
+In **Settings → Local Services**, register any local service and configure its startup program, working directory, arguments, service URL, and health checks. You can start, stop, and check services manually. The Strata and ComfyUI management presets also provide model discovery and related operations.
+
+Registering a service does not connect it as a model Provider or automatically download or load model weights. See [Local Services](docs/settings/local-services.md) for ordinary services and the two management presets.
+
+## Stage 3: Workflows, Multiple Agents, and Multimodal Tasks
+
+### 13. Workflows with Connected Nodes
+
+Connect output ports to input ports to pass upstream results to downstream nodes. This lets you split input preparation, model processing, and file output into steps that can be inspected individually.
+
+| Node | Implemented behavior |
+| --- | --- |
+| BasicTrigger | Trigger manually and send configured text |
+| TimerTrigger / Clock | Trigger at a specified time / emit output at a fixed interval |
+| Append / Response / Echo | Append fixed text / return configured text / echo input |
+| MultiInput | Wait for all input ports, then merge in port order |
+| Loop | Run the loop branch a specified number of times, then take the exit |
+| Event | Dispatch input by EventKey |
+| ConsoleCommand / SaveFile | Execute a configured command / write input to a file |
+
+Validate a small workflow with a trigger, one Agent, and an output node before adding branches and loops. Scheduled triggers require the backend to be running; they are not equivalent to an operating-system service that runs continuously.
+
+### 14. Multi-Agent Collaboration Groups
+
+Box-select multiple Agents and press **G** to create a group, then edit its shared goal, member responsibilities, and tasks. Tasks can specify an assignee, prerequisite dependencies, status, and verification evidence. Members can hand off work to specific members, waking only those involved. Shared activity, task replies, and archived tasks help track progress.
+
+The group itself does not use a model. Each node retains its own model, tools, and history. Groups suit tasks with clear responsibilities, such as “research → implementation → verification.” See the [Collaboration Group Guide](docs/agent-groups-guide.md) for the full workflow.
+
+### 15. Nine Harnesses
+
+The currently registered Harnesses are **Codex, Claude Code, OpenClaw, DeepSeek Harness, MiniMax Code, OpenCode CLI, Antigravity CLI, Pi, and Hermes Agent**. Check, install, upgrade, or uninstall them in Settings, then create nodes of the corresponding type.
+
+OpenCode and Antigravity use their native model catalogs. Provider binding, login, tools, and permissions for the other nodes depend on their respective adapters. Harnesses do not automatically gain all the Skills and background memory capabilities of standard Agents, and not every native interactive approval can necessarily be handled during headless execution. See [Using Harnesses](docs/settings/models.md#harness).
+
+### 16. Images, Video, 3D, and Audio
+
+Available Agent fields are shown dynamically according to the Provider's `supportmode`, supporting image generation and editing, image understanding, video generation, and audio generation. Background removal, video subject replacement, 3D generation, and texturing use dedicated nodes. Image attachments can also serve as multimodal chat input.
+
+The voice-related code also includes service-configured capabilities for transcription, TTS, real-time interaction, and simultaneous interpretation. Doubao audio and RTC require the appropriate speech keys, AK/SK, or application configuration. Whether a feature runs depends on the service, model, account quota, and local dependencies. See the [Model Manual](docs/settings/models.md) for configuration and [OpenAI Images](docs/openai-image-provider.md) for image API details.
+
+### 17. Messaging Channels and Scheduled Wake-Ups
+
+Channel receiver/sender nodes can bring WeChat channel messages into a Graph and send replies from node output. You must sign in to the channel and configure its receiver node. Scheduled node wake-ups use the project's cron capabilities and are separate from TimerTrigger / Clock triggers within a Graph. The backend, channel account, and target node must all be available.
+
+## Stage 4: Across Interfaces and Devices
+
+### 18. Mobile Access and Standalone Node Windows
+
+The browser provides a mobile workspace based on screen size, with access to nodes, chats, attachments, and collaboration groups. On a local Windows machine, right-click a node and choose “Pop out node” to continue chatting in an always-on-top window. It can keep using the running backend after the main webpage is closed. Closing the window does not delete the node or stop its task. See [Standalone Node Windows](docs/node-windows.md).
+
+### 19. Device Connectivity and the Cloud Device Center
+
+Devices approved by the authentication center can connect through WebRTC, preferring direct connections and using TURN relays when needed. Application data is end-to-end encrypted. Administrators can open a device's Board from the cloud device center.
+
+Two backends can also explicitly grant viewing, control, and Agent collaboration permissions for public Graphs, and send targeted messages through `peer_network_tools`. Approval for a device to come online and granting application-level permissions between the two sides are separate steps. See [Devices and Synchronization](docs/settings/connectivity.md).
+
+### 20. Remote Execution and Cross-Device Workspaces
+
+A registered Remote or AgentPark instance can act as an execution device. Right-click a node and choose a device through **LinkToRemote** to perform supported file and command operations using the remote workspace protocol. The remote working directory, platform, shell, and tool capabilities determine the actual execution environment. This is different from opening a remote Board. For Linux worker deployment, see [Remote Worker](deploy/remote-worker/README-linux.md).
+
+### 21. Incremental Node and Whole-Graph Synchronization
+
+Select source and target nodes to synchronize user messages, final responses, attachments, and Archive content. If neither side has a node selected, synchronization covers the Graph structure and each node's conversation. The preview shows messages, attachments, structural changes, and conflicts; confirm it before applying the changes.
+
+Synchronization preserves extra content already present at the destination. It does not propagate deletions, transfer Process records, copy model accounts or plugin installations, or automatically execute tasks. See [Node Synchronization Steps](docs/settings/connectivity.md#node-sync).
+
+## Stage 5: Advanced Configuration and Maintenance
+
+### 22. Runtime Events
+
+Configure handling rules for input, tool failures, runtime prompts, network errors, persisted results, and task failures. Rules can generate context, append to files, write notifications, or hand work to an Agent. You can adjust context TTL, snippet length, and the deduplication window, and inspect compilation diagnostics. See [Runtime Events and Themes](docs/settings/events-theme.md).
+
+### 23. Public Model Gateway
+
+Expose selected models from local Providers through a gateway. Manage separate gateway keys, pinned accounts, and allowed protocols, with built-in request testing and usage statistics by date, IP, and model. Supported endpoints include Models, Responses, Chat Completions, Messages, and JSON-based image generation/editing. Both the upstream service and the gateway must allow the protocol. See [Permissions and Gateway](docs/settings/access-gateway.md).
+
+### 24. Permissions and Visibility
+
+Manage remote usernames, client/IP records, Developer identities, and tool filtering for non-Developers. Providers can be private; device sharing has its own authorization, and the cloud administrator Board has a separate owner identity. Identify which access entry point you are using before configuring permissions. See [Authorization](docs/settings/access-gateway.md#authorization).
+
+### 25. Provider Testing and Load Monitoring
+
+**Provider Testing** queries models and probes actual API capabilities, distinguishing unsupported features from inconclusive results. The **Pressure** page displays runtime concurrency, queues, RPM/TPM usage, and peaks. It is a monitoring page; opening it does not automatically start a load test. See the [Diagnostics Manual](docs/settings/diagnostics.md).
+
+### 26. End-to-End Auditing and Tool Statistics
+
+Select a run by date, Graph, and node to inspect its input, model turns, tool results, file changes, and timeline. View success rates, failure reasons, and token usage by Provider. When the server does not return usage data, it is shown as missing rather than counted as zero. See [Statistics and Auditing](docs/settings/diagnostics.md#statistics).
+
+### 27. Appearance, Storage, and Lifecycle
+
+Adjust theme presets, panel colors and background images, Agent popup and board sizes, undo depth, proxies, the service's listening address, and the memory directory. There are controls to clear logs, clear derived long-term memory, and shut down the backend. Startup and restart preserve logs and restore state as implemented; they do not guarantee recovery of every external process or native CLI session. See [Default Settings](docs/settings/defaults.md) and [Maintenance](docs/settings/diagnostics.md#maintenance).
+
+### 28. Execution Records and Whole-Session Checkpoints
+
+AgentPark's own Responses execution path can enable a node-level step ledger to record requests, tool starts/finishes, and responses. After a process interruption, tool results without a completion record are marked as unknown, prompting a check of external state first. It can also generate whole-session checkpoints in response to model context-window pressure, retaining recent conversation and original records so long tasks can continue.
+
+These features must be explicitly enabled in the Provider's advanced JSON. They operate separately from background history summaries and long-term memory. See [Advanced Model Settings](docs/settings/models.md#高级-json执行记录与整会话压缩) for fields, defaults, and recovery boundaries.
+
+## Documentation and Development
+
+| Your goal | Where to start |
+| --- | --- |
+| Install and complete your first conversation | [GettingStart](docs/GettingStart.md) |
+| Find fields and steps by Settings menu | [Settings Manual](docs/settings/README.md) |
+| Find topic guides and technical documentation | [Docs Index](docs/README.md) |
+| Extend Skills / plugins | [Capability System](docs/capability-system.md), [Authoring Guide](docs/skill-plugin-authoring.md) |
+| Understand code boundaries | [Architecture Overview](docs/architecture/agentpark-architecture-overview.md), [Configuration Contract](docs/config-contract.md) |
+| Diagnose startup and configuration issues | [Troubleshooting](docs/troubleshooting.md), [Startup Repair](docs/startup-repair.md) |
+
+The backend uses Python / FastAPI, and the frontend uses Vue 3 / TypeScript / Vite. See [AGENTS.md](AGENTS.md) for development constraints. The project is licensed under [MIT](LICENSE). Feature descriptions reflect the repository's current implementation; available models, quotas, and external software support depend on actual service queries and runtime results.
