@@ -8,14 +8,14 @@ from src.harness.contracts import HarnessContext, HarnessResult
 from src.harness.install_manager import command_argv
 from .cli_session import cli_session, string_field, write_json
 from .minimax_config import configure_home, model_selection, permission_selection
-from .minimax_events import MiniMaxEvents
+from src.harness.acp_events import AcpEvents
 
 
 class Adapter:
     def run(self, text: str, context: HarnessContext) -> HarnessResult:
         with cli_session("minimax_code", context) as (request, lease, env, events):
             configure_home(request, lease, env)
-            parser = MiniMaxEvents(events)
+            parser = AcpEvents(events)
             state_path = request.state_dir / "session.json"
             if state_path.exists():
                 state = json.loads(state_path.read_text(encoding="utf-8"))

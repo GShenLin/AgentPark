@@ -14,7 +14,7 @@ class HarnessDescriptor:
     transport: str
     homepage: str
     session_support: str
-    installation: Literal["npm", "hermes-python"] = "npm"
+    installation: Literal["npm", "hermes-python", "antigravity-native"] = "npm"
 
 
 @dataclass(frozen=True)

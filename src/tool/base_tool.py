@@ -2,7 +2,7 @@ import json
 import re
 import threading
 
-from .tool_module_loader import load_tool_module
+from .toolset_registry import resolve_toolset
 from .tool_load_errors import ToolLoadError
 from .tool_function_execution import execute_local_tool_function
 
@@ -46,44 +46,21 @@ class BaseTool:
 
     def addTool(self, tool_name):
         try:
-            module = load_tool_module(tool_name)
-
-            for attr_name in dir(module):
-                if attr_name.endswith("_declaration"):
-                    declaration = getattr(module, attr_name)
-                    if isinstance(declaration, dict):
-                        func_name = None
-                        if "function" in declaration and "name" in declaration["function"]:
-                            func_name = declaration["function"]["name"]
-                        elif "name" in declaration:
-                            func_name = declaration["name"]
-
-                        if func_name:
-                            self._validate_tool_function_name(func_name, tool_name, attr_name)
-                            if hasattr(module, func_name):
-                                func = getattr(module, func_name)
-                                if callable(func):
-                                    existing_func = self.function_map.get(func_name)
-                                    if existing_func is not None and existing_func is not func:
-                                        raise ValueError(
-                                            f"Tool function name {func_name!r} is declared by multiple callables."
-                                        )
-                                    if existing_func is None:
-                                        self.tool_declarations.append(declaration)
-                                    self.function_map[func_name] = func
-                                    if func_name == "switch_execution_device":
-                                        from src.remote_workspace.device_state import device_state
-                                        device_state(self.agent)
-                                else:
-                                    raise ToolLoadError(
-                                        f"Tool declaration {tool_name}.{attr_name} points to non-callable "
-                                        f"function {func_name!r}."
-                                    )
-                            else:
-                                raise ToolLoadError(
-                                    f"Tool declaration {tool_name}.{attr_name} references missing "
-                                    f"function {func_name!r}."
-                                )
+            entries = resolve_toolset(tool_name)
+            # Validate the complete selection before mutating this agent's registry.
+            staged = dict(self.function_map)
+            for declaration, func in entries:
+                name = self._extract_tool_function_name(declaration)
+                self._validate_tool_function_name(name, tool_name, "declaration")
+                existing = staged.get(name)
+                if existing is not None and existing is not func:
+                    raise ValueError(f"Tool function name {name!r} is declared by multiple callables.")
+                staged[name] = func
+            for declaration, func in entries:
+                self.register_external_tool(declaration, func)
+                if self._extract_tool_function_name(declaration) == "switch_execution_device":
+                    from src.remote_workspace.device_state import device_state
+                    device_state(self.agent)
 
         except ImportError as e:
             raise ToolLoadError(f"Error loading tool module {tool_name}: {e}") from e

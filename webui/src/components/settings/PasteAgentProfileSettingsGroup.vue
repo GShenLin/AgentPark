@@ -114,7 +114,7 @@ onBeforeUnmount(() => {
     </label>
 
     <p v-if="!loading && !agentProfiles.length" class="message error">
-      No agent_node Profiles are available. Add one in NodeProfilerEditor first.
+      No agent_node presets are available. Add one in Node Presets first.
     </p>
     <p v-else-if="selectedProfileId && !selectedProfileExists" class="message error">
       The configured Profile no longer exists. Select another Profile and save.

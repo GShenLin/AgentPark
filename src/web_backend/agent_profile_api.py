@@ -54,16 +54,16 @@ class AgentProfileApi:
         existing: dict[str, Any],
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        allowed_payload_keys = {"node_profiler", "instruction", "system_prompt"}
+        allowed_payload_keys = {"node_preset", "instruction", "system_prompt"}
         unknown_payload_keys = sorted(set(payload) - allowed_payload_keys)
         if unknown_payload_keys:
             raise ProfileValidationError(
                 f"unknown editor payload fields: {', '.join(unknown_payload_keys)}"
             )
 
-        node_profiler = payload.get("node_profiler")
-        if not isinstance(node_profiler, dict):
-            raise ProfileValidationError("node_profiler must be an object")
+        node_preset = payload.get("node_preset")
+        if not isinstance(node_preset, dict):
+            raise ProfileValidationError("node_preset must be an object")
         allowed_profile_keys = {
             "name",
             "description",
@@ -74,33 +74,33 @@ class AgentProfileApi:
             "fields",
             "event_rules",
         }
-        unknown_profile_keys = sorted(set(node_profiler) - allowed_profile_keys)
+        unknown_profile_keys = sorted(set(node_preset) - allowed_profile_keys)
         if unknown_profile_keys:
             raise ProfileValidationError(
-                f"unknown node_profiler fields: {', '.join(unknown_profile_keys)}"
+                f"unknown node_preset fields: {', '.join(unknown_profile_keys)}"
             )
 
-        name = str(node_profiler.get("name") or "").strip()
-        description = node_profiler.get("description")
-        node_type_id = str(node_profiler.get("node_type_id") or "").strip()
-        fields = node_profiler.get("fields")
-        event_rules = node_profiler.get("event_rules", {})
+        name = str(node_preset.get("name") or "").strip()
+        description = node_preset.get("description")
+        node_type_id = str(node_preset.get("node_type_id") or "").strip()
+        fields = node_preset.get("fields")
+        event_rules = node_preset.get("event_rules", {})
         instruction = payload.get("instruction")
         system_prompt = payload.get("system_prompt")
         if not name:
-            raise ProfileValidationError("node_profiler.name is required")
+            raise ProfileValidationError("node_preset.name is required")
         if description is not None and not isinstance(description, str):
-            raise ProfileValidationError("node_profiler.description must be a string")
+            raise ProfileValidationError("node_preset.description must be a string")
         if not node_type_id:
-            raise ProfileValidationError("node_profiler.node_type_id is required")
+            raise ProfileValidationError("node_preset.node_type_id is required")
         if not isinstance(fields, dict):
-            raise ProfileValidationError("node_profiler.fields must be an object")
+            raise ProfileValidationError("node_preset.fields must be an object")
         if "instruction" in fields or "system_prompt" in fields:
             raise ProfileValidationError(
                 "instruction and system_prompt must use their dedicated editor fields"
             )
         if not isinstance(event_rules, dict):
-            raise ProfileValidationError("node_profiler.event_rules must be an object")
+            raise ProfileValidationError("node_preset.event_rules must be an object")
         if not isinstance(instruction, str):
             raise ProfileValidationError("instruction must be a string")
         if not isinstance(system_prompt, str):
@@ -122,11 +122,11 @@ class AgentProfileApi:
         if "profile_metadata" in existing:
             next_profile["profile_metadata"] = copy.deepcopy(existing["profile_metadata"])
         for key in ("source_graph_id", "source_node_id", "node_name"):
-            value = node_profiler.get(key)
+            value = node_preset.get(key)
             if value is None:
                 continue
             if not isinstance(value, str):
-                raise ProfileValidationError(f"node_profiler.{key} must be a string")
+                raise ProfileValidationError(f"node_preset.{key} must be a string")
             next_profile[key] = value
         return next_profile
 

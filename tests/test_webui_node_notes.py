@@ -36,7 +36,7 @@ def test_mobile_node_selection_renders_note_above_node_row():
 
 
 def test_node_note_does_not_enter_profile_editor_fields():
-    profile_editor = _read("webui/src/components/settings/NodeProfilerEditor.vue")
+    profile_editor = _read("webui/src/components/settings/NodePresetEditor.vue")
     profile_api = _read("src/web_backend/profile_api.py")
 
     assert "node_notes" not in profile_editor

@@ -1,4 +1,4 @@
-"""The explicit Provider ID / Model ID binding used by Companion settings and recovery."""
+"""Validate the model binding supplied by a Companion Preset or repair snapshot."""
 from __future__ import annotations
 
 from src.provider_models import resolve_provider_model
@@ -13,7 +13,7 @@ def validate_companion_model(config: dict, providers: dict, *, required: bool = 
     if not required and not provider_id and not model_id:
         return
     if not provider_id or not model_id:
-        raise ValueError("Select both Provider ID and Model ID in Settings > Companion.")
+        raise ValueError("Set both Provider ID and Model ID in the selected Companion Preset.")
     provider = providers.get(provider_id)
     if not isinstance(provider, dict):
         raise ValueError(f"Companion provider is not configured: {provider_id}")

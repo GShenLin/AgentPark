@@ -49,7 +49,7 @@ function persistDockWidth() {
 function onResizeMove(event: PointerEvent) {
   const session = resizeStart.value
   if (!session) return
-  configDockWidth.value = clampDockWidth(session.width + event.clientX - session.clientX)
+  configDockWidth.value = clampDockWidth(session.width + session.clientX - event.clientX)
   event.preventDefault()
 }
 
@@ -99,7 +99,7 @@ function showEditorError(message: string) {
   <aside
     v-if="selectedNode"
     class="node-config-dock"
-    data-board-occlusion="left"
+    data-board-occlusion="right"
     :style="{ width: `${configDockWidth}px` }"
   >
     <div class="config-dock-head">
@@ -124,7 +124,7 @@ function showEditorError(message: string) {
 <style scoped>
 .node-config-dock {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0 0 0 auto;
   z-index: 80;
   min-width: 320px;
   box-sizing: border-box;
@@ -133,7 +133,7 @@ function showEditorError(message: string) {
   gap: 12px;
   overflow: hidden;
   padding: 14px;
-  border-right: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.24));
+  border-left: 1px solid var(--theme-panel-node-side-editor-border-color, rgba(148, 163, 184, 0.24));
   background-color: var(--theme-panel-node-side-editor-background-color, rgba(2, 6, 23, 0.96));
   background-image: var(--theme-panel-node-side-editor-background-image, none);
   background-size: var(--theme-panel-node-side-editor-background-size, cover);
@@ -146,7 +146,7 @@ function showEditorError(message: string) {
   position: absolute;
   z-index: 20;
   top: 0;
-  right: -6px;
+  left: -6px;
   bottom: 0;
   width: 12px;
   cursor: ew-resize;
@@ -156,7 +156,7 @@ function showEditorError(message: string) {
   content: '';
   position: absolute;
   top: 10px;
-  right: 5px;
+  left: 5px;
   bottom: 10px;
   width: 2px;
   background: transparent;

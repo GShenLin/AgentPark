@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from src.harness.adapters.minimax_config import configure_home, model_selection, permission_selection
-from src.harness.adapters.minimax_events import MiniMaxEvents
+from src.harness.acp_events import AcpEvents
 from src.harness.events import HarnessEvents
 
 
@@ -80,7 +80,7 @@ def test_windows_long_backup_path_fails_before_creating_native_state(tmp_path):
 
 def parser_fixture():
     emitted = []
-    parser = MiniMaxEvents(HarnessEvents("minimax_code", "provider", emitted.append))
+    parser = AcpEvents(HarnessEvents("minimax_code", "provider", emitted.append))
     parser.bind("s")
     return parser, emitted
 

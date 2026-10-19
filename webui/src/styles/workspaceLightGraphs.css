@@ -1,0 +1,60 @@
+/* The graph directory uses rows and an inset tree, with emphasis on selection. */
+html[data-theme-preset='chat-light'] #app .graph-panel {
+  padding: 20px;
+  gap: 14px;
+  background-color: #fff;
+  --form-control-border: #dce4ef;
+  --form-control-background: #f8fafd;
+  --form-control-text: #20314a;
+  --form-control-focus: #4269c7;
+  --ui-button-border: #dfe5ee;
+  --ui-button-background: #fff;
+  --ui-button-text: #53627a;
+  --ui-button-hover-background: #edf2ff;
+  --ui-button-hover-border: #c6d3ed;
+  --ui-primary-background: #345dbe;
+  --ui-primary-border: #345dbe;
+  --ui-primary-text: #fff;
+  --ui-primary-hover-background: #294eaa;
+  --ui-danger-background: #fff;
+  --ui-danger-border: #efdee0;
+  --ui-danger-text: #ae5560;
+}
+html[data-theme-preset='chat-light'] #app .graph-section-heading { color: #20314a; font-size: 14px; }
+html[data-theme-preset='chat-light'] #app .graph-section-heading span { color: #6b7d96; font-size: 12px; }
+html[data-theme-preset='chat-light'] #app .graph-hierarchy-hint { color: #718097; font-size: 12px; line-height: 1.7; }
+html[data-theme-preset='chat-light'] #app .graph-list { gap: 12px; padding-top: 18px; border-top: 1px solid #e6ecf4; }
+html[data-theme-preset='chat-light'] #app .graph-items { gap: 4px; }
+html[data-theme-preset='chat-light'] #app .graph-item-shell { gap: 0; border-radius: 8px; }
+html[data-theme-preset='chat-light'] #app .graph-item {
+  padding: 13px 10px;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-bottom-color: #e9edf4;
+  border-radius: 0;
+  background: transparent;
+}
+html[data-theme-preset='chat-light'] #app .graph-item:hover { background: #f7f9fd; }
+html[data-theme-preset='chat-light'] #app .graph-current { background: #f7f9fd; }
+html[data-theme-preset='chat-light'] #app .graph-current > .graph-item { background: #edf2ff; border-color: #d9e3f9; border-radius: 8px; }
+html[data-theme-preset='chat-light'] #app .graph-info { min-width: min(200px, 100%); }
+html[data-theme-preset='chat-light'] #app .graph-name { color: #344b6c; font-weight: 600; font-size: 13px; }
+html[data-theme-preset='chat-light'] #app .graph-meta { padding-left: 20px; margin-top: 5px; color: #718097; font-size: 11px; font-variant-numeric: tabular-nums; }
+html[data-theme-preset='chat-light'] #app .graph-kind { color: #718097; }
+html[data-theme-preset='chat-light'] #app .graph-current-label { color: #345dbe; background: #fff; border-color: #cddbf6; border-radius: 4px; padding-inline: 5px; }
+html[data-theme-preset='chat-light'] #app .graph-expander { color: #4269c7; font-weight: 600; }
+html[data-theme-preset='chat-light'] #app .graph-item-actions { gap: 6px; }
+html[data-theme-preset='chat-light'] #app .graph-item-actions button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
+html[data-theme-preset='chat-light'] #app .graph-contents { margin: 8px 12px 16px 20px; padding: 0 0 0 12px; border-color: #d8e2f3; gap: 5px; }
+html[data-theme-preset='chat-light'] #app .graph-contents header { color: #536781; font-size: 12px; margin-top: 10px; }
+html[data-theme-preset='chat-light'] #app .graph-contents p { color: #718097; }
+html[data-theme-preset='chat-light'] #app .graph-contents .node-entry { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 8px; border-radius: 5px; color: #344b6c; }
+html[data-theme-preset='chat-light'] #app .graph-contents .node-entry:hover { background: #eaf0fb; }
+html[data-theme-preset='chat-light'] #app .graph-contents .entry-title { flex: 1; min-width: 0; }
+html[data-theme-preset='chat-light'] #app .graph-contents .entry-title > span { font-size: 13px; font-weight: 500; }
+html[data-theme-preset='chat-light'] #app .graph-contents .node-entry > small { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #718097; }
+html[data-theme-preset='chat-light'] #app .graph-info-clickable:focus-visible { outline: 2px solid #4269c7; outline-offset: 3px; }
+
+@media (max-width: 1000px) {
+  html[data-theme-preset='chat-light'] #app .desktop-workspace .graph-panel { padding: 14px; }
+}

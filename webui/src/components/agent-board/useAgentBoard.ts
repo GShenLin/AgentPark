@@ -133,6 +133,8 @@ export function useAgentBoard(options: {
   ready?: Ref<boolean>
   initialNodes?: NodeInfo[]
   boardLayoutDefaults?: unknown
+  /** Only a canvas owns copy/paste-to-create-node shortcuts. */
+  clipboardShortcuts?: boolean
 } = {}): AgentBoardContext {
   const {
     selectedNodeId,
@@ -1828,6 +1830,7 @@ export function useAgentBoard(options: {
   }
 
   function onWindowCopy(event: ClipboardEvent) {
+    if (event.defaultPrevented) return
     if (isEditableEventTarget(event.target)) return
     const selection = window.getSelection()
     const hasSelectedText = !!selection && !selection.isCollapsed && String(selection.toString() || '').trim().length > 0
@@ -1849,6 +1852,7 @@ export function useAgentBoard(options: {
   }
 
   function onWindowPaste(event: ClipboardEvent) {
+    if (event.defaultPrevented) return
     if (isEditableEventTarget(event.target)) return
 
     let source
@@ -2116,8 +2120,10 @@ export function useAgentBoard(options: {
     boardInitialized = true
     ensurePositions()
     window.addEventListener('resize', onWindowResize)
-    window.addEventListener('copy', onWindowCopy)
-    window.addEventListener('paste', onWindowPaste)
+    if (options.clipboardShortcuts !== false) {
+      window.addEventListener('copy', onWindowCopy)
+      window.addEventListener('paste', onWindowPaste)
+    }
     if (options.initialNodes) {
       availableNodes.value = options.initialNodes
     } else {

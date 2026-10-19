@@ -181,7 +181,7 @@ def test_agent_profile_editor_updates_three_explicit_sections(tmp_path, monkeypa
     response = client.put(
         "/api/profiles/agents/editable-profile",
         json={
-            "node_profiler": {
+            "node_preset": {
                 "name": "Edited Profile",
                 "description": "Edited base description.",
                 "node_type_id": "agent_node",
@@ -217,7 +217,7 @@ def test_agent_profile_editor_updates_three_explicit_sections(tmp_path, monkeypa
     assert saved["created_at"] == "2026-01-01T00:00:00+08:00"
 
 
-def test_agent_profile_editor_rejects_prompt_fields_inside_node_profiler(tmp_path, monkeypatch):
+def test_agent_profile_editor_rejects_prompt_fields_inside_node_preset(tmp_path, monkeypatch):
     _patch_profile_root(monkeypatch, tmp_path)
 
     from fastapi.testclient import TestClient
@@ -240,7 +240,7 @@ def test_agent_profile_editor_rejects_prompt_fields_inside_node_profiler(tmp_pat
     response = client.put(
         "/api/profiles/agents/strict-profile",
         json={
-            "node_profiler": {
+            "node_preset": {
                 "name": "Strict Profile",
                 "node_type_id": "agent_node",
                 "fields": {"instruction": "wrong section"},

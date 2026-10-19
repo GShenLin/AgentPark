@@ -5,9 +5,9 @@ from typing import Any
 
 OPENAI_TEST_CHANNELS = ("chat_completions", "responses")
 PROVIDER_TEST_CHANNELS = ("configured", *OPENAI_TEST_CHANNELS)
-OPENAI_COMPATIBLE_PROVIDER_TYPES = frozenset({"openai", "doubao", "deepseek", "grok", "kimi"})
+OPENAI_COMPATIBLE_PROVIDER_TYPES = frozenset({"openai", "doubao", "deepseek", "grok", "kimi", "workbuddy"})
 OPENAI_DUAL_CHANNEL_PROVIDER_TYPES = frozenset({"openai", "doubao", "deepseek", "grok"})
-OPENAI_CHAT_ONLY_PROVIDER_TYPES = frozenset({"kimi"})
+OPENAI_CHAT_ONLY_PROVIDER_TYPES = frozenset({"kimi", "workbuddy"})
 
 
 def is_codex_auth_provider(config: dict[str, Any]) -> bool:

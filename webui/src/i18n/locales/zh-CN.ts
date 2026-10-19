@@ -1,3 +1,4 @@
+import { toolsetsZh } from './toolsets'
 import type { LocaleDefinition } from '../types'
 import { longMemoryZh } from './longTermMemory'
 import { conversationZh } from './conversationContext'
@@ -8,10 +9,18 @@ const zhCN: LocaleDefinition = {
   label: '中文',
   shortLabel: '中',
   messages: {
+    ...toolsetsZh,
     ...graphBrowserZh,
     "settings.harness": "Harness",
-    "harness.description": "管理 Agent 运行环境。每个 Harness 对应独立节点，共用设置中的 Provider 与 Model。",
-    "harness.installNote": "多数 Harness 需要 Node.js 和 npm；Hermes Agent 需要 Git，安装时会创建独立 Python 环境。新安装由当前工作区托管；升级在原位置执行，保留会话和配置。卸载只移除 AgentPark 安装的副本。",
+    "harness.description": "管理 Agent 运行环境。每个 Harness 对应独立节点；OpenCode 和 Antigravity 使用原生模型与登录状态，其他 Harness 使用设置中的 Provider 与 Model。",
+    "harness.opencode.run": "创建 OpenCode CLI 节点即可使用，运行时自动启动，无需另开终端。",
+    "harness.opencode.models": "节点使用 OpenCode 自己的模型和登录状态。默认选择 DeepSeek 免费模型；免费额度和可用时间由 OpenCode 决定。",
+    "harness.native.refresh": "查看 / 刷新原生模型",
+    "harness.native.loading": "正在读取模型…",
+    "harness.native.select": "将下方完整标识填入节点的原生模型字段：",
+    "harness.antigravity.run": "创建 Antigravity CLI 节点即可使用，运行时自动启动，无需另开服务。首次登录需在官方 agy 中完成，之后复用登录状态。",
+    "harness.antigravity.models": "读取当前账号的实际模型目录；Gemini 4 仅在目录包含时可选。后台无法弹出 CLI 工具授权窗口，需授权的操作会明确报错。可在节点选择原生执行模式。",
+    "harness.installNote": "多数 Harness 需要 Node.js 和 npm；Hermes Agent 使用独立 Python 环境。Antigravity 使用官方原生程序，Windows/macOS 可在此安装。新安装由工作区托管；升级保留会话和配置。卸载只移除 AgentPark 安装的副本。",
     "harness.checking": "正在检查安装状态…",
     "harness.running": "处理中…",
     "harness.status.missing": "未安装",
@@ -96,7 +105,7 @@ const zhCN: LocaleDefinition = {
     'settings.pressure': '压力测试',
     'settings.statistics': '统计',
     'settings.animationEditor': '动画编辑器',
-    'settings.nodeProfiler': '节点分析器',
+    'settings.nodePreset': '节点预设',
     'settings.exit': '退出',
     'settings.theme': '主题',
     'settings.voice': '语音',
@@ -124,7 +133,7 @@ const zhCN: LocaleDefinition = {
     'settings.applying': '正在应用…',
     'settings.configurationWarning': '配置警告',
     'settings.invalidJsonHelp': 'JSON 格式无效，请切换到高级 JSON 进行修复。',
-    'settings.discardNodeProfiler': '放弃节点分析器中未保存的修改？',
+    'settings.discardNodePreset': '放弃节点预设中未保存的修改？',
     'settings.applied': '已应用',
     'settings.restartRequired': '已保存 · 需要重启',
     'settings.loadedPreset': '已加载预设 {preset}',

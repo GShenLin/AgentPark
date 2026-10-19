@@ -35,6 +35,7 @@ import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { t } from '../i18n'
 import { isCloudBoard } from '../portal/environment'
 import { downloadMarkdown } from './downloadMarkdown'
+import { useVoiceComposer } from '../voice/voiceComposer'
 
 const props = defineProps<{ access: AccessStatus }>()
 const cloudBoard = isCloudBoard()
@@ -70,6 +71,10 @@ const feedRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const attachments = ref<UploadedFileItem[]>([])
 const uploadingFiles = ref(false)
+useVoiceComposer(() => workspace.view.value === 'chat' && workspace.selectedNode.value && workspace.selectedGraph.value ? {
+  node: workspace.selectedNode.value.id, graph: workspace.selectedGraph.value.id,
+  text: draft.value, attachments: attachments.value, uploading: uploadingFiles.value, locked: composerLocked.value,
+} : null, text => { draft.value = text })
 const submittingDraft = ref(false)
 const configOpen = ref(false)
 const createNodeOpen = ref(false)
@@ -614,6 +619,7 @@ onMounted(async () => {
         :back-label="t('common.back')"
         @back="closeSettings"
         @providers-updated="workspace.refreshEditorCatalog"
+        @tools-updated="workspace.availableTools.value = $event"
       />
       <template v-else>
         <AppErrorToast

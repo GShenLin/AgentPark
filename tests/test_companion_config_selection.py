@@ -148,7 +148,8 @@ def test_provider_switch_uses_nearest_supported_reasoning_without_default(monkey
     selected_effort = selection.update_companion_provider(target, "new")
 
     assert selected_effort == "high"
-    assert target.config == {"provider_id": "new", "reasoning_effort": "high"}
+    assert target.config["provider_id"] == "new"
+    assert target.config["reasoning_effort"] == "high"
 
 
 def test_provider_switch_removes_reasoning_for_provider_without_support(monkeypatch, tmp_path):

@@ -35,7 +35,7 @@ class Catalog:
             if key is not None:
                 self.get(key)
             item = {"id": key or uuid.uuid4().hex, **config.model_dump()}
-            if any(x["id"] != item["id"] and x["endpoint"] == item["endpoint"] for x in items):
+            if item["endpoint"] and any(x["id"] != item["id"] and x["endpoint"] == item["endpoint"] for x in items):
                 raise ValueError("该服务地址已经登记")
             items = [x for x in items if x["id"] != item["id"]] + [item]
             self._write(items)

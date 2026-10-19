@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyWorkAlertGraphEvent, useWorkAlerts } from '../src/composables/useWorkAlerts'
 
+const nativeDelivery = vi.hoisted(() => vi.fn())
+vi.mock('../src/workAlertNodeWindow', () => ({
+  usesNativeWorkAlerts: nativeDelivery,
+  initializeWorkAlertFocus: () => () => undefined,
+}))
+
 const state = useWorkAlerts()
 
 function tip(id: string) {
@@ -13,12 +19,38 @@ function tip(id: string) {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  nativeDelivery.mockReset().mockReturnValue(false)
   for (const alert of state.alerts.value) state.dismissWorkAlert(alert.id)
 })
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('Tips shared work alert channel', () => {
+  it('routes persisted work to native delivery without a second browser notification', async () => {
+    nativeDelivery.mockReturnValue(true)
+    const browserNotification = vi.fn()
+    vi.stubGlobal('Notification', Object.assign(browserNotification, { permission: 'granted' }))
+    vi.stubGlobal('window', {
+      matchMedia: () => ({ matches: false }), addEventListener: vi.fn(),
+      localStorage: { length: 0, setItem: vi.fn() },
+    })
+    notifyWorkAlertGraphEvent({ event: 'work_persisted_alert', alert_id: 'native-1', node_id: 'node-a' })
+    await vi.waitFor(() => expect(nativeDelivery).toHaveBeenCalledOnce())
+    expect(browserNotification).not.toHaveBeenCalled()
+    expect(state.latestAlert.value?.kind).toBe('work_persisted')
+  })
+
+  it('shows a backend launch failure and preserves the persisted-work alert', () => {
+    notifyWorkAlertGraphEvent({ event: 'work_persisted_alert', alert_id: 'native-failed', node_id: 'node-a' })
+    notifyWorkAlertGraphEvent({
+      event: 'node_window_alert_failed', alert_id: 'native-failed', node_instance_id: 'node-a',
+      message: '节点窗口运行环境尚未安装',
+    })
+    expect(state.latestAlert.value?.title).toBe('节点小窗口未能打开')
+    expect(state.latestAlert.value?.message).toBe('节点窗口运行环境尚未安装')
+    expect(state.alerts.value.some(alert => alert.id === 'native-failed')).toBe(true)
+  })
+
   it('queues Tips alongside persisted-work alerts without requiring a response', () => {
     notifyWorkAlertGraphEvent({ event: 'work_persisted_alert', alert_id: 'work-1', node_id: 'node-a' })
     notifyWorkAlertGraphEvent(tip('tip-1'))

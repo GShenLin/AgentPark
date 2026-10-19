@@ -1261,6 +1261,7 @@ def test_openai_stream_uses_response_call_id_not_function_item_id(monkeypatch):
             },
         },
     ]
+    events.append({"type": "response.completed", "response": {"id": "resp-1", "output": []}})
     monkeypatch.setattr(agent, "_curl_post_sse_data_lines", lambda **_kwargs: (json_module.dumps(event) for event in events))
 
     result = agent._stream_responses_once(
@@ -1426,7 +1427,10 @@ def test_openai_stream_does_not_retry_account_quota_exceeded(monkeypatch):
         )
 
     assert calls["count"] == 1
-    assert [event.get("stage") for event in agent.events] == ["openai_responses_sse_failure_debug"]
+    assert [event.get("stage") for event in agent.events] == [
+        "openai_responses_attempt_started", "openai_responses_sse_failure_debug",
+        "openai_responses_attempt_finished",
+    ]
 
 
 def test_openai_responses_continuation_replays_explicit_context():

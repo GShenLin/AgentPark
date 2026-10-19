@@ -6,11 +6,18 @@ from .node_open_diagnostics import receive_browser_trace
 
 class ApiRouteRegistry:
     ROUTES = [
+        ("get", "/api/workbuddy/service", lambda core: core.workbuddy_api.status),
+        ("post", "/api/workbuddy/service", lambda core: core.workbuddy_api.service),
+        ("post", "/api/providers/{provider_id}/workbuddy", lambda core: core.workbuddy_api.account),
         ("get", "/api/nodes/instances/{node_id}/voice", lambda core: core.node_voice.describe),
         ("post", "/api/nodes/instances/{node_id}/voice", lambda core: core.node_voice.start),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/control", lambda core: core.node_voice.control),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/finish", lambda core: core.node_voice.finish),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks", lambda core: core.node_voice.delegate),
+        ("get", "/api/nodes/instances/{node_id}/voice/{session_id}/context", lambda core: core.node_voice.context),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/annotations", lambda core: core.node_voice.annotations.apply),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/tools/{call_id}/result", lambda core: core.node_voice.tools.deliver),
+        ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/screenshot", lambda core: core.node_voice.screenshot.apply),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/events", lambda core: core.node_voice.diagnostic),
         ("get", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks/{request_id}", lambda core: core.node_voice.task),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/tasks/{request_id}/updates", lambda core: core.node_voice.deliver_update),
@@ -20,6 +27,8 @@ class ApiRouteRegistry:
         ("post", "/api/skills/operations", lambda core: core.skills_api.operate),
         ("post", "/api/skills/roots", lambda core: core.skills_api.configure_roots),
         ("get", "/api/harnesses", lambda core: core.harness_api.list_harnesses),
+        ("get", "/api/harnesses/{harness_id}/models", lambda core: core.harness_api.native_models),
+        ("post", "/api/harnesses/opencode/config-options", lambda core: core.harness_api.opencode_options),
         ("get", "/api/harnesses/{harness_id}", lambda core: core.harness_api.check_harness),
         ("post", "/api/harnesses/{harness_id}/operations", lambda core: core.harness_api.operate_harness),
         ("get", "/api/harness-jobs/{job_id}", lambda core: core.harness_api.get_job),
@@ -61,6 +70,7 @@ class ApiRouteRegistry:
         ("post", "/api/nodes/instances/{node_id}/memory/messages/delete", lambda core: core.node_ops.delete_node_instance_memory_messages),
         ("post", "/api/nodes/instances/{node_id}/memory/turns/delete", lambda core: core.node_ops.delete_node_instance_memory_turn),
         ("post", "/api/nodes/instances/{node_id}/open-node-folder", lambda core: core.node_ops.open_node_instance_node_folder),
+        ("post", "/api/nodes/instances/{node_id}/open-window", lambda core: core.node_windows.open),
         ("post", "/api/nodes/instances/{node_id}/open-work-folder", lambda core: core.node_ops.open_node_instance_work_folder),
         ("delete", "/api/nodes/instances/{node_id}", lambda core: core.node_ops.delete_node_instance),
         ("get", "/api/nodes/instances/configs", lambda core: core.node_ops.list_node_instance_configs),
@@ -188,6 +198,9 @@ class ApiRouteRegistry:
 
     @classmethod
     def register(cls, app: FastAPI, core: object) -> None:
+        app.websocket('/api/desktop/node-windows/focus')(core.node_windows.focus)
+        app.get('/api/desktop/node-windows/status')(core.node_windows.status)
+
         def require_node_visible(request: Request, node_id: str, graph_id: str = "") -> None:
             core.node_ops.require_node_visible(node_id, graph_id, request)
 

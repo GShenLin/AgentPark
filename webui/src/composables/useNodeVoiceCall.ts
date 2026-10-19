@@ -1,10 +1,14 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { getActiveApiBase } from '../api'
-import { createVoiceCall, describeVoiceCall, getVoiceTask, publishVoiceTaskUpdate, submitVoiceTask, voiceRequest, type VoiceTarget } from '../voiceApi'
+import { createVoiceCall, describeVoiceCall, voiceRequest, type VoiceTarget } from '../voiceApi'
 import type { VolcRtcConnection } from '../voice/VolcRtcConnection'
 import { voiceProtocol, type VoiceEvent, type VoiceProtocolAdapter } from '../voice/voiceProtocol'
-import { completeVoiceOffer } from '../voice/webrtcOffer'
 import { VoiceTranscript, type VoiceFinish } from '../voice/voiceTranscript'
+import { deliverVoiceToolResult } from '../voice/voiceToolFeedback'
+import { runVoiceTask } from '../voice/voiceTaskRunner'
+import { syncVoiceContext } from '../voice/voiceContextSync'
+import type { VoiceComposerEdit, VoiceComposerSnapshot } from '../voice/voiceComposer'
+import type { AnnotationDrawing } from '../voice/screenAnnotations'
 
 type Line = { role: 'user' | 'assistant'; text: string }
 export type VoiceMedia = {
@@ -19,16 +23,19 @@ type Call = {
   audio: HTMLAudioElement; stream?: MediaStream; dc?: RTCDataChannel; session?: string
   timer?: ReturnType<typeof setTimeout>; seen: Map<string, string>; partial: Partial<Record<Line['role'], string>>
   feedbackTimer?: ReturnType<typeof setInterval>
+  contextStarted?: boolean
 }
 
-export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
+export function useNodeVoiceCall(options: { media?: VoiceMedia; readComposer?: (target: VoiceTarget) => VoiceComposerSnapshot;
+  annotateScreen?: (drawing: AnnotationDrawing) => Promise<string>;
+  captureScreen?: (id: string, displayId: string) => Promise<string>;
+  editComposer?: (target: VoiceTarget, edit: VoiceComposerEdit) => VoiceComposerSnapshot } = {}) {
   const active = ref(false), connected = ref(false), muted = ref(false)
-  const screenSupported = ref(false)
-  const screenTransport = ref<'frames' | 'rtc'>('frames')
   const stage = ref(''), error = ref(''), taskStatus = ref('')
   const lines = ref<Line[]>([])
   const userCaption = ref(''), assistantCaption = ref('')
   const recordSaving = ref(false), recordError = ref('')
+  const contextStatus = ref(''), feedbackStatus = ref('')
   let pendingRecord: { target: VoiceTarget; session: string; payload: VoiceFinish } | undefined
   const supported = computed(() => typeof RTCPeerConnection !== 'undefined' && !!navigator.mediaDevices?.getUserMedia)
   let call: Call | undefined
@@ -57,7 +64,7 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
 
   function stop(diagnostic: 'ended' | 'error' = 'ended') {
     const previous = call
-    call = undefined; active.value = false; connected.value = false; muted.value = false; screenSupported.value = false
+    call = undefined; active.value = false; connected.value = false; muted.value = false
     taskStatus.value = ''
     if (!previous) return
     clearTimeout(previous.timer)
@@ -103,44 +110,35 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
     call.stream.getAudioTracks().forEach(track => { track.enabled = !muted.value })
   }
 
-  async function delegate(candidate: Call, event: Extract<VoiceEvent, { kind: 'delegation' }>) {
+  function operationFailed(candidate: Call, text: string) {
+    if (isCurrent(candidate)) error.value = text
+  }
+
+  async function delegate(candidate: Call, event: Extract<VoiceEvent, { kind: 'delegation' | 'composer' | 'composer-edit' | 'annotation' | 'screenshot' | 'tool-error' }>) {
+    const identity = JSON.stringify(event)
     const previous = candidate.seen.get(event.id)
     if (previous !== undefined) {
-      if (previous !== event.text) throw new Error('重复的语音任务编号包含不同内容。')
+      if (previous !== identity) throw new Error('重复的语音任务编号包含不同内容。')
       return
     }
-    candidate.seen.set(event.id, event.text)
+    candidate.seen.set(event.id, identity)
     if (!candidate.session) throw new Error('语音任务没有绑定节点会话。')
     taskStatus.value = '正在提交节点任务…'
     try {
-      const id = await submitVoiceTask(candidate.target, candidate.session, event.id, event.text, candidate.controller.signal)
-      const protocol = candidate.protocol!
-      let previousFeedback = ''
-      while (isCurrent(candidate)) {
-        const result = await (protocol.resultDelivery === 'server' ? publishVoiceTaskUpdate : getVoiceTask)(
-          candidate.target, candidate.session, id, candidate.controller.signal)
-        const feedback = JSON.stringify(result)
-        if (isCurrent(candidate) && protocol.resultDelivery === 'data-channel' && feedback !== previousFeedback) {
-          protocol.dialogue.taskUpdate(event.id, result)
-          previousFeedback = feedback
-        }
-        if (!isCurrent(candidate)) return
-        if (result.status === 'queued' || result.status === 'running') {
-          taskStatus.value = result.status === 'queued' ? '节点任务已排队，通话保持中' : '节点正在执行，通话保持中'
-          await new Promise(resolve => setTimeout(resolve, 800))
-          continue
-        }
-        taskStatus.value = result.status === 'completed' ? '节点任务已完成' : '节点任务未完成'
-        return
-      }
+      await runVoiceTask({ target: candidate.target, session: candidate.session, protocol: candidate.protocol!,
+        signal: candidate.controller.signal, event, readComposer: options.readComposer, editComposer: options.editComposer,
+        annotateScreen: options.annotateScreen, captureScreen: options.captureScreen,
+        status: text => { if (isCurrent(candidate)) taskStatus.value = text },
+        feedback: text => { if (isCurrent(candidate)) feedbackStatus.value = text },
+      })
     } catch (e) {
       if (!isCurrent(candidate)) return
       const message = e instanceof Error ? e.message : String(e)
-      error.value = `节点任务反馈失败：${message}`
+      error.value = `本次工具操作失败，通话继续：${message}`
+      taskStatus.value = error.value
       const protocol = candidate.protocol!
-      if (protocol.resultDelivery === 'data-channel') {
-        protocol.dialogue.taskUpdate(event.id, { status: 'failed', text: `节点任务反馈错误：${message}。未确认执行成功。` })
-      }
+      await deliverVoiceToolResult({ target: candidate.target, session: candidate.session, protocol, signal: candidate.controller.signal },
+        event.id, { status: 'failed', text: `工具执行失败：${message}。未确认执行成功。` })
     }
   }
 
@@ -149,13 +147,18 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
     try {
       if (!candidate.protocol?.parse) throw new Error('语音通话尚未协商数据通道协议。')
       receiveEvent(candidate, candidate.protocol.parse(raw))
-    } catch (e) { fail(candidate, e instanceof Error ? e.message : String(e)) }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      if (connected.value) operationFailed(candidate, `本次语音事件未处理，通话继续：${message}`)
+      else fail(candidate, message)
+    }
   }
 
   function receiveEvent(candidate: Call, event: VoiceEvent) {
     if (!isCurrent(candidate)) return
     try {
       if (event.kind === 'error') { fail(candidate, event.text); return }
+      if (event.kind === 'warning') { operationFailed(candidate, event.text); return }
       if (event.kind === 'closed') { hangup(); return }
       if (event.kind === 'task-status') { taskStatus.value = event.text; return }
       if (event.kind === 'interrupted') {
@@ -166,6 +169,12 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
       }
       if (event.kind === 'ready') {
         clearTimeout(candidate.timer); connected.value = true; stage.value = '通话中'
+        if (candidate.session && candidate.protocol?.resultDelivery === 'data-channel' && !candidate.contextStarted) {
+          candidate.contextStarted = true
+          void syncVoiceContext(candidate.target, candidate.session, candidate.protocol.dialogue, candidate.controller.signal,
+            text => { if (isCurrent(candidate)) contextStatus.value = text },
+          ).catch(cause => { if (isCurrent(candidate)) contextStatus.value = `聊天同步失败：${String(cause)}` })
+        }
         if (candidate.session) void voiceRequest(candidate.target, `/${encodeURIComponent(candidate.session)}/events`, {
           method: 'POST', body: JSON.stringify({ event: 'connected', stage: '通话中', detail: '' }),
         }).catch(cause => { if (isCurrent(candidate)) error.value = `保存连接状态失败：${String(cause)}` })
@@ -180,10 +189,10 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
           candidate.partial[event.role] = (event.replace ? '' : candidate.partial[event.role] || '') + event.text
           caption.value = candidate.partial[event.role] || ''
         }
-      } else if (event.kind === 'delegation') {
-        void delegate(candidate, event).catch(e => fail(candidate, e instanceof Error ? e.message : String(e)))
+      } else if (event.kind === 'delegation' || event.kind === 'composer' || event.kind === 'composer-edit' || event.kind === 'annotation' || event.kind === 'screenshot' || event.kind === 'tool-error') {
+        void delegate(candidate, event).catch(e => operationFailed(candidate, `工具反馈失败，通话继续：${e instanceof Error ? e.message : String(e)}`))
       }
-    } catch (e) { fail(candidate, e instanceof Error ? e.message : String(e)) }
+    } catch (e) { operationFailed(candidate, `本次语音事件处理失败，通话继续：${e instanceof Error ? e.message : String(e)}`) }
   }
 
   async function start(node: string, graph: string) {
@@ -193,6 +202,7 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
       if (pendingRecord) return
     }
     error.value = ''; stage.value = '正在请求麦克风权限…'; lines.value = []
+    contextStatus.value = ''; feedbackStatus.value = ''
     userCaption.value = ''; assistantCaption.value = ''; taskStatus.value = ''
     if (!supported.value) {
       error.value = '当前页面无法使用麦克风。请通过 localhost 或 HTTPS 打开，并允许浏览器访问麦克风。'
@@ -229,11 +239,11 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
         candidate.audio.srcObject = incoming
         void candidate.audio.play().catch(e => fail(candidate, `无法播放通话声音：${e.message}`))
       }
-      const transport = await describeVoiceCall(candidate.target, candidate.controller.signal)
+      const description = await describeVoiceCall(candidate.target, candidate.controller.signal)
       if (!isCurrent(candidate)) return
       stage.value = '正在建立语音连接…'
-      candidate.timer = setTimeout(() => fail(candidate, '等待语音会话启动超时。服务端尚未确认通话可用。'), 60_000)
-      if (transport === 'volcengine-rtc') {
+      if (description.transport === 'volcengine-rtc') {
+        candidate.timer = setTimeout(() => fail(candidate, 'RTC 语音连接超时，请重试。'), 60_000)
         const { VolcRtcConnection } = await import('../voice/VolcRtcConnection')
         if (!isCurrent(candidate)) return
         const answer = await createVoiceCall(candidate.target, undefined, candidate.controller.signal)
@@ -243,18 +253,17 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
         candidate.session = answer.session_id
         if (answer.transport !== 'volcengine-rtc') throw new Error('语音供应商已改变，请重新拨号。')
         candidate.protocol = voiceProtocol(answer.protocol)
-        screenTransport.value = 'rtc'; screenSupported.value = true
         candidate.rtc = new VolcRtcConnection(candidate.target, answer.session_id, answer, candidate.controller.signal, {
           event: event => receiveEvent(candidate, event), audio: receiveAudio, error: message => fail(candidate, message),
         })
         await candidate.rtc.connect(stream)
         return
       }
-      screenTransport.value = 'frames'
-      const pc = new RTCPeerConnection(); candidate.pc = pc
+      const pc = new RTCPeerConnection({ iceServers: description.iceServers, iceTransportPolicy: 'all' }); candidate.pc = pc
       stream.getAudioTracks().forEach(track => pc.addTrack(track, stream))
       pc.ontrack = event => receiveAudio(new MediaStream([event.track]))
       pc.onconnectionstatechange = () => {
+        if (candidate.protocol?.resultDelivery === 'data-channel') candidate.protocol.dialogue.transportAvailable(pc.connectionState === 'connected')
         if (pc.connectionState === 'failed') fail(candidate, 'WebRTC 音频连接失败，请检查网络连接。')
         else if (pc.connectionState === 'disconnected' && isCurrent(candidate)) stage.value = '音频连接暂时中断…'
         else if (pc.connectionState === 'connected' && connected.value && isCurrent(candidate)) stage.value = '通话中'
@@ -268,9 +277,13 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
       dc.onerror = () => fail(candidate, '语音数据通道发生错误。')
       dc.onclose = () => fail(candidate, '语音服务已关闭连接。')
       stage.value = '正在建立语音连接…'
-      const sdp = await completeVoiceOffer(pc, candidate.controller.signal)
+      const offer = await pc.createOffer()
       if (!isCurrent(candidate)) return
-      const answer = await createVoiceCall(candidate.target, sdp, candidate.controller.signal)
+      await pc.setLocalDescription(offer)
+      if (!isCurrent(candidate)) return
+      // Start signaling immediately. The browser gathers candidates and checks
+      // direct/relay connectivity while the provider prepares its SDP answer.
+      const answer = await createVoiceCall(candidate.target, offer.sdp, candidate.controller.signal)
       if (!isCurrent(candidate)) {
         await voiceRequest(candidate.target, `/${encodeURIComponent(answer.session_id)}`, { method: 'DELETE' })
         return
@@ -278,7 +291,6 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
       candidate.session = answer.session_id
       if (answer.transport !== 'webrtc') throw new Error('语音供应商已改变，请重新拨号。')
       candidate.protocol = voiceProtocol(answer.protocol, event => send(candidate, event))
-      screenSupported.value = candidate.protocol.resultDelivery === 'data-channel'
       if (candidate.protocol.resultDelivery === 'data-channel') {
         candidate.feedbackTimer = setInterval(() => {
           if (!isCurrent(candidate) || candidate.protocol?.resultDelivery !== 'data-channel') return
@@ -287,32 +299,20 @@ export function useNodeVoiceCall(options: { media?: VoiceMedia } = {}) {
         }, 250)
       }
       stage.value = '通话已创建，正在连接音频…'
+      // Session creation does not consume the media connection's time.
+      candidate.timer = setTimeout(() => fail(candidate,
+        `语音网络连接超时，请重试。连接状态：${pc.connectionState}；数据通道：${dc.readyState}。`), 60_000)
       await pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
     } catch (e) { fail(candidate, e instanceof Error ? e.message : String(e)) }
   }
 
   onBeforeUnmount(() => stop())
-  function screenFrame(url: string) {
-    if (!call || !connected.value || call.protocol?.resultDelivery !== 'data-channel') return false
-    if ((call.dc?.bufferedAmount || 0) > 256000) return false
-    return call.protocol.dialogue.screenFrame(url)
+  function desktopSession() {
+    if (!call?.session || !connected.value) throw new Error('请先接通语音。')
+    return { target: call.target, session: call.session }
   }
-  function screenStopped() {
-    if (call && connected.value && call.protocol?.resultDelivery === 'data-channel') call.protocol.dialogue.screenStopped()
-  }
-  function screenMessageLimit() {
-    const limit = call?.pc?.sctp?.maxMessageSize
-    return limit && Number.isFinite(limit) ? Math.min(limit, 512000) : 64000
-  }
-  async function screenStream(stream: MediaStream | null, fps: number) {
-    if (!call?.rtc || !connected.value) {
-      if (stream) throw new Error('火山语音尚未接通。')
-      return
-    }
-    await call.rtc.screen(stream, fps)
-  }
-  function screenFps() { return call?.rtc?.screenFps() || 0 }
   return { active, connected, muted, stage, error, taskStatus, lines, userCaption, assistantCaption,
+    contextStatus, feedbackStatus,
     supported, start, hangup, toggleMute, recordSaving, recordError, saveRecord,
-    screenSupported, screenFrame, screenStopped, screenMessageLimit, screenTransport, screenStream, screenFps }
+    desktopSession }
 }

@@ -6,7 +6,7 @@ import { ASSET_FIELD_KEYS } from '../../composables/droppedPaths'
 import {
   agentProviderModes,
   cliProviderModes,
-  HARNESS_NODE_TYPES,
+  PROVIDER_HARNESS_NODE_TYPES,
   dedupeStrings,
   normalizeSwitch,
   normalizeToolSelection,
@@ -44,6 +44,8 @@ import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 import ProviderSelect from '../ProviderSelect.vue'
 import WorkingPathField from './WorkingPathField.vue'
+import OpenCodeNativeSelect from './OpenCodeNativeSelect.vue'
+import { useOpenCodeOptions } from '../../composables/useOpenCodeOptions'
 import { t } from '../../i18n'
 
 type NodeFields = Record<string, any>
@@ -84,6 +86,7 @@ const emit = defineEmits<{
 }>()
 
 const multiSelectSearchQueries = ref<Record<string, string>>({})
+const nativeOpenCode = useOpenCodeOptions(props)
 const promptActionBusy = ref('')
 const promptActionMessage = ref('')
 const promptLibraryMode = ref<'' | 'save' | 'load'>('')
@@ -97,7 +100,7 @@ const providerOptions = computed(() => dedupeStrings(
   props.providers
     .filter((provider) => {
       if (props.typeId === 'agent_node') return agentProviderModes(provider).length > 0
-      if (HARNESS_NODE_TYPES.includes(props.typeId)) return cliProviderModes(provider).length > 0
+      if (PROVIDER_HARNESS_NODE_TYPES.includes(props.typeId)) return cliProviderModes(provider).length > 0
       return true
     })
     .map((provider) => String(provider.id || '').trim())
@@ -123,6 +126,9 @@ function setField(key: string, value: any, applyMode: NodeConfigFieldApplyMode =
   const changes = props.typeId === 'agent_node' ? voiceFieldChanges(props.schema, props.fields, key, value) : { [key]: value }
   // Synchronous changes are persisted together by the form's auto-apply queue.
   for (const [field, next] of Object.entries(changes)) emit('update-field', field, next, applyMode)
+  if (props.typeId === 'opencode_node' && ['native_model', 'native_agent'].includes(key)) {
+    emit('update-field', 'native_effort', '', applyMode)
+  }
 }
 
 function setExplicitField(key: string, value: any) {
@@ -266,14 +272,14 @@ function isProviderField(key: string) {
   if (key !== 'provider_id') return false
   return (
     props.typeId === 'agent_node' ||
-    HARNESS_NODE_TYPES.includes(props.typeId)
+    PROVIDER_HARNESS_NODE_TYPES.includes(props.typeId)
   )
 }
 
 function setProvider(providerId: string) {
   const normalizedProviderId = String(providerId || '').trim()
   setField('provider_id', String(providerId || '').trim())
-  if (props.typeId !== 'agent_node' && !HARNESS_NODE_TYPES.includes(props.typeId)) return
+  if (props.typeId !== 'agent_node' && !PROVIDER_HARNESS_NODE_TYPES.includes(props.typeId)) return
   const provider = props.providers.find((item) => String(item.id || '').trim() === normalizedProviderId)
   const modelIds = providerModelIds(provider)
   setField('model', modelIds[0] || '')
@@ -578,8 +584,17 @@ watch(
             />
           </span>
 
+      <OpenCodeNativeSelect
+        v-if="nativeOpenCode.isNativeField(key)"
+        :field-key="key"
+        :value="String(fields[key] ?? '')"
+        :catalog="nativeOpenCode.catalog"
+        @change="setField(key, $event)"
+        @refresh="nativeOpenCode.refresh"
+      />
+
       <FieldCombobox
-        v-if="isComboboxField(key)"
+        v-else-if="isComboboxField(key)"
         :id="`node-config-${typeId}-${key}`"
         :value="String(fields[key] ?? '')"
         :options="getFieldOptions(key)"

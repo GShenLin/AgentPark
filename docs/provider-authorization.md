@@ -1,7 +1,12 @@
 # Provider authorization
 
-AgentPark owns its authorization state. It does not read or write credentials in vendor CLI
-directories such as `~/.codex` or `~/.claude`.
+AgentPark owns its Provider authorization state and normally stores it under the workspace
+`.auth/` directory. Settings also provides an explicit **同步本机 Codex 凭据** action: it reads
+the backend user's Codex file credential store once and imports or updates the matching account
+in AgentPark. It does not write back to Codex or continuously synchronize its credentials.
+Native Harnesses such as OpenCode and Antigravity retain their own login storage.
+
+For the complete settings workflow, see [Model Provider and Harness](settings/models.md).
 
 ## Storage contract
 
@@ -71,3 +76,11 @@ For an API-key account stored under `.auth/<provider>`, use `authMode: "api_key"
 
 Status responses contain masked metadata only and never return access tokens, refresh tokens, or
 API keys.
+
+## Explicit local Codex import
+
+The source is the Codex home selected by `CODEX_HOME`, or the backend user's `~/.codex`.
+Import requires file-based credential storage, a valid ChatGPT OAuth login and an unexpired
+access token. Keyring-only storage, API-key logins, malformed or mismatched accounts and expired
+tokens fail explicitly. The browser's device or operating-system user is not the source.
+See `src/provider_auth/codex_credential_sync.py` for the import contract.

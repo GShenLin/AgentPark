@@ -242,7 +242,7 @@ export type AgentProfileLoadResponse = {
 }
 
 export type AgentProfileEditorPayload = {
-  node_profiler: {
+  node_preset: {
     name: string
     description?: string
     node_type_id: string

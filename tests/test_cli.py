@@ -2,9 +2,29 @@ import json
 import os
 
 from src.cli import main
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def companion_preset_workspace(monkeypatch, tmp_path):
+    from src.web_backend import profile_storage
+    from src.config_loader import ConfigLoader
+    monkeypatch.setattr(profile_storage, "get_workspace_root", lambda: str(tmp_path))
+    monkeypatch.setattr(ConfigLoader, "get_all_providers", lambda _: {
+        "unit-provider": {"models": ["unit-model"], "supportmode": ["chat"]},
+    })
 
 
 def _write_config(path, payload):
+    if path.parent.name == "Companion" and path.parent.parent.name == "Companion":
+        from src.companion_config import COMPANION_LOCAL_FIELDS
+        fields = {key: value for key, value in payload.items() if key not in COMPANION_LOCAL_FIELDS}
+        fields["model"] = "unit-model"
+        preset = path.parents[3] / "agent" / "Companion.json"
+        preset.parent.mkdir(parents=True, exist_ok=True)
+        preset.write_text(json.dumps({"id": "Companion", "node_type_id": "agent_node", "fields": fields}), encoding="utf-8")
+        payload = {key: value for key, value in payload.items() if key in COMPANION_LOCAL_FIELDS}
+        payload["profile_id"] = "Companion"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 

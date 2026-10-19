@@ -5,7 +5,7 @@ from typing import Any
 from src.config_loader import ConfigLoader
 from src.capabilities.registry import CapabilityRegistry, FIELD_BY_KIND
 from src.provider_options import build_provider_options_for_support_modes
-from src.web_backend.node_config_service import node_config_service
+from src.companion_config import update_companion_fields
 
 
 REASONING_EFFORT_ORDER = ("minimal", "low", "medium", "high", "xhigh", "max", "auto")
@@ -35,12 +35,9 @@ def update_companion_provider(target: Any, provider_id: str) -> str | None:
         else:
             config["reasoning_effort"] = next_effort
 
-    node_config_service.update(str(target.config_path), mutate)
-    target.config["provider_id"] = safe_provider_id
-    if next_effort is None:
-        target.config.pop("reasoning_effort", None)
-    else:
-        target.config["reasoning_effort"] = next_effort
+    latest = update_companion_fields(str(target.config_path), mutate)
+    target.config.clear()
+    target.config.update(latest)
     return next_effort
 
 
@@ -55,8 +52,9 @@ def update_companion_config(target: Any, field: str, value: str) -> None:
     def mutate(config: dict[str, Any]) -> None:
         config[safe_field] = safe_value
 
-    node_config_service.update(str(target.config_path), mutate)
-    target.config[safe_field] = safe_value
+    latest = update_companion_fields(str(target.config_path), mutate)
+    target.config.clear()
+    target.config.update(latest)
 
 
 def capability_choices(target: Any, kind: str) -> tuple[list[tuple[str, str]], set[str]]:
@@ -99,11 +97,9 @@ def toggle_companion_capability(target: Any, kind: str, capability_id: str) -> b
         elif safe_id not in selected:
             config[field] = [*selected, safe_id]
 
-    node_config_service.update(str(target.config_path), mutate)
-    if enabled:
-        target.config[field] = [value for value in current if value != safe_id]
-    else:
-        target.config[field] = [*current, safe_id]
+    latest = update_companion_fields(str(target.config_path), mutate)
+    target.config.clear()
+    target.config.update(latest)
     return not enabled
 
 

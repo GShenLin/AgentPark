@@ -22,7 +22,7 @@ export const reasoningEffortOptions = [
 
 export const CODEX_NODE_TYPE = 'codex_node'
 export const CLAUDE_NODE_TYPE = 'claude_node'
-export const HARNESS_NODE_TYPES = [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE, 'openclaw_node', 'deepseek_harness_node', 'pi_node', 'hermes_agent_node', 'minimax_code_node']
+export const PROVIDER_HARNESS_NODE_TYPES = [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE, 'openclaw_node', 'deepseek_harness_node', 'pi_node', 'hermes_agent_node', 'minimax_code_node']
 export const AUDIO_GENERATION_MODE = 'audio_generation'
 
 export function dedupeStrings(values: unknown[]): string[] {
@@ -133,7 +133,7 @@ export function useAgentNodeCreateSchema(options: {
   const createProviderOptions = computed(() => {
     const ids = providers.value
       .filter((provider) => (
-        HARNESS_NODE_TYPES.includes(selectedTypeId.value)
+        PROVIDER_HARNESS_NODE_TYPES.includes(selectedTypeId.value)
             ? cliProviderModes(provider).length > 0
             : agentProviderModes(provider).length > 0
       ))
@@ -157,7 +157,7 @@ export function useAgentNodeCreateSchema(options: {
     if (key !== 'provider_id') return false
     return (
       selectedTypeId.value === 'agent_node' ||
-      HARNESS_NODE_TYPES.includes(selectedTypeId.value)
+      PROVIDER_HARNESS_NODE_TYPES.includes(selectedTypeId.value)
     )
   }
 
@@ -180,7 +180,7 @@ export function useAgentNodeCreateSchema(options: {
   function ensureCreateAgentSelections() {
     if (
       selectedTypeId.value !== 'agent_node' &&
-      !HARNESS_NODE_TYPES.includes(selectedTypeId.value)
+      !PROVIDER_HARNESS_NODE_TYPES.includes(selectedTypeId.value)
     ) {
       lastAgentProviderId = ''
       return
@@ -197,7 +197,7 @@ export function useAgentNodeCreateSchema(options: {
       providerId = ''
     }
 
-    if (HARNESS_NODE_TYPES.includes(selectedTypeId.value)) {
+    if (PROVIDER_HARNESS_NODE_TYPES.includes(selectedTypeId.value)) {
       const selectedProvider = providers.value.find(item => item.id === providerId)
       const modelIds = providerModelIds(selectedProvider)
       if (!modelIds.includes(String(selectedNodeFields.value.model || ''))) selectedNodeFields.value.model = modelIds[0] || ''

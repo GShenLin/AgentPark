@@ -67,6 +67,16 @@ class WorkspaceOperationRegistry:
 
     def _execute(self, task: RemoteTask, cancel_event: threading.Event) -> str:
         working_path = validate_working_path(task.working_path)
+        if task.tool_name == "desktop_annotations":
+            from src.desktop_annotations.execution import ExecutionAnnotationCommand, execution_annotations
+            result = execution_annotations.execute(ExecutionAnnotationCommand.model_validate(task.arguments))
+            return result.model_dump_json()
+        if task.tool_name == "desktop_screen":
+            from src.desktop_capture.contracts import CaptureRequest
+            from src.desktop_capture.windows import execute_capture
+            result = execute_capture(CaptureRequest.model_validate(task.arguments))
+            raise_if_cancel_requested(cancel_event)
+            return result.model_dump_json()
         if task.tool_name == "inspect_workspace":
             from .inspection import inspect_workspace
             if task.arguments:

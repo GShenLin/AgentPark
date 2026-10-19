@@ -96,7 +96,7 @@ def test_real_webrtc_bridge_audio_captions_and_hangup(monkeypatch):
                 assert (await messages.get())["text"] == "测试"
                 await upstream.event("response.function_call_arguments.done", items=[{
                     "call_id": "call1", "name": "delegate_to_node", "arguments": '{"text":"读取文件"}'}])
-                assert (await messages.get())["type"] == "delegation"
+                assert (await messages.get())["type"] == "tool.call"
                 await call.session.deliver_update("call1", VoiceTaskUpdate(task_id="task1", status="completed", text="节点结果"))
                 await upstream.event("response.output_text.done", response_id="r1", text="节点结果")
                 assert (await messages.get())["text"] == "节点结果"

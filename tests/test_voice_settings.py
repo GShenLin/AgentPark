@@ -79,7 +79,7 @@ def test_saved_node_settings_reach_credentials_and_wire_request_independently(tm
     app.post("/voice/{node_id}")(service.start)
     client = TestClient(app)
     for node in configs:
-        response = client.post(f"/voice/{node}", json={"sdp": "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n", "protocols": ["openai-realtime-v1"]})
+        response = client.post(f"/voice/{node}", json={"sdp": "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n", "protocols": ["openai-realtime-v4"]})
         assert response.status_code == 200
         assert response.json()["model"] == configs[node]["voice_model"]
         body = {"session": json.loads(requests[-1]["body"].decode("utf-8").split('Content-Type: application/json\r\n\r\n', 1)[1].split("\r\n--", 1)[0])}

@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from .http import LocalHttp
+from .service_adapter import ModelServiceAdapter
 
 
 CATEGORIES = ("checkpoints", "diffusion_models", "unet", "text_encoders", "clip", "vae", "loras",
@@ -14,7 +15,7 @@ CATEGORIES = ("checkpoints", "diffusion_models", "unet", "text_encoders", "clip"
 EXTENSIONS = {".safetensors", ".gguf", ".ckpt", ".pt", ".pth", ".bin"}
 
 
-class ComfyAdapter:
+class ComfyAdapter(ModelServiceAdapter):
     def __init__(self, config: dict):
         self.config = config
         self.root = Path(config["install_path"])
@@ -86,6 +87,17 @@ class ComfyAdapter:
 
     def command(self, python: str, model_id: str, port: int):
         return [python, str(self.root / "main.py"), "--listen", "127.0.0.1", "--port", str(port)]
+
+    def probe_ready(self) -> tuple[bool, str]:
+        health, error = self.http.probe("/system_stats")
+        ready = (isinstance(health, dict) and isinstance(health.get("system"), dict)
+                 and "comfyui_version" in health["system"])
+        return ready, error or ("" if ready else "该地址响应的不是可识别的 ComfyUI 服务")
+
+    def prepare_stop(self) -> None:
+        health, _ = self.http.probe("/system_stats")
+        if health is not None:
+            self.idle()
 
     def idle(self):
         health = self.http.request("/system_stats")

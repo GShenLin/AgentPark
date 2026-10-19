@@ -4,28 +4,15 @@ import base64
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from .doubao_voice_notifications import DoubaoVoiceNotifications, TERMINAL
 from .voice_audio import PcmOutputTrack
 from .voice_provider import VoiceDelivery, VoiceTaskUpdate
 
 
-class NodeTaskArguments(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    text: str = Field(min_length=1, max_length=32_000)
-
-
-NODE_TOOL = {
-    "type": "function", "name": "delegate_to_node",
-    "description": "让当前原节点使用自己的主模型、完整历史、工具和权限执行任务，包括查资料、读写文件、写代码、查询或停止任务。此工具只提交后台任务，立即返回任务编号和排队或执行状态，进展和结果随后主动通知。不要为等待结果重复提交任务；普通聊天无需调用。",
-    "parameters": NodeTaskArguments.model_json_schema(),
-}
-
-
 @dataclass
 class NodeCall:
-    text: str
+    name: str
+    arguments: str
     batch: tuple[str, ...]
     update: VoiceTaskUpdate | None = None
     acknowledged: bool = False
@@ -111,28 +98,25 @@ class DoubaoNodeVoice:
         items = event.get("items")
         if not isinstance(items, list) or not items or len(items) > 200:
             raise ValueError("豆包工具调用缺少有效的 items。")
-        parsed: dict[str, str] = {}
+        parsed: dict[str, tuple[str, str]] = {}
         for item in items:
-            if not isinstance(item, dict) or item.get("name") != "delegate_to_node":
-                raise ValueError("豆包请求了未注册的工具。")
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                raise ValueError("豆包工具调用缺少工具名。")
             call_id = self._text(item, "call_id")
             if not call_id or len(call_id) > 200 or call_id in parsed:
                 raise ValueError("豆包工具调用编号无效或重复。")
-            args = NodeTaskArguments.model_validate_json(self._text(item, "arguments"))
-            if not args.text.strip():
-                raise ValueError("豆包工具任务不能为空。")
-            parsed[call_id] = args.text
+            parsed[call_id] = (item["name"], self._text(item, "arguments"))
         batch = tuple(parsed)
-        for call_id, text in parsed.items():
+        for call_id, (name, arguments) in parsed.items():
             old = self.calls.get(call_id)
-            if old is not None and (old.text != text or old.batch != batch):
+            if old is not None and ((old.name, old.arguments) != (name, arguments) or old.batch != batch):
                 raise ValueError("同一豆包工具调用收到了不同参数或批次。")
         if len(self.calls.keys() | parsed.keys()) > 200:
             raise ValueError("本次语音通话已达到 200 个工具调用，请重新拨号。")
-        for call_id, text in parsed.items():
+        for call_id, (name, arguments) in parsed.items():
             if call_id not in self.calls:
-                self.calls[call_id] = NodeCall(text, batch)
-                self.emit({"type": "delegation", "id": call_id, "text": text})
+                self.calls[call_id] = NodeCall(name, arguments, batch)
+                self.emit({"type": "tool.call", "id": call_id, "name": name, "arguments": arguments})
 
     async def deliver_update(self, delegation_id: str, update: VoiceTaskUpdate) -> VoiceDelivery:
         async with self.lock:
@@ -140,9 +124,9 @@ class DoubaoNodeVoice:
             if call is None:
                 raise ValueError("节点状态不属于已发出的豆包工具调用。")
             previous = call.update
-            if previous == update:
+            if previous == update and (call.acknowledged or any(self.calls[key].update is None for key in call.batch)):
                 return "duplicate"
-            if previous is not None:
+            if previous is not None and previous != update:
                 if previous.task_id != update.task_id:
                     raise ValueError("同一工具调用不能改绑后台任务。")
                 if previous.status in TERMINAL:

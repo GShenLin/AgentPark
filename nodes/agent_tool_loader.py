@@ -38,7 +38,14 @@ def list_available_tool_options(tool_root: str | None = None) -> list[dict[str, 
     if not os.path.isdir(root):
         return []
 
-    return cached_discovery_value("tools", root, lambda: _list_available_tool_options_uncached(root))
+    from src.tool.toolset_registry import load_toolset_config
+
+    options = cached_discovery_value("tools", root, lambda: _list_available_tool_options_uncached(root))
+    names = {item["value"] for item in options}
+    config = load_toolset_config()
+    options.extend({"value": name, "label": name} for name in config["toolsets"] if name not in names)
+    options = [item for item in options if item["value"] not in config["deleted_toolsets"]]
+    return sorted(options, key=lambda item: item["label"].casefold())
 
 
 def _list_available_tool_options_uncached(root: str) -> list[dict[str, str]]:

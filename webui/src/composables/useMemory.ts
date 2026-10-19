@@ -15,6 +15,7 @@ import {
   resolveLiveCompletionHandoff,
 } from '../liveCompletionHandoff'
 import { useGlobalState } from './useGlobalState'
+import { useNodeUnread } from './useNodeUnread'
 import { consumeAudioStreamEvents } from './streamingAudioPlayback'
 import { subscribeAppEvents } from './useAppEventStream'
 import { classifyLiveStreamFrame } from '../eventStreamProtocol'
@@ -62,9 +63,11 @@ function clearPendingCommittedLive() {
 }
 
 export function useMemory() {
+  const unread = useNodeUnread()
   const {
     selectedNodeId,
     memoryText,
+    memoryReadReceipt,
     memoryMessages,
     memoryLiveMessage,
     memoryThinkingMessage,
@@ -119,6 +122,7 @@ export function useMemory() {
       return
     }
     try {
+      const receipt = unread.receipt(graphId, nodeId)
       const res = await getNodeInstanceMemory(nodeId, 20000, graphId, 'conversation', { signal })
       if (signal.aborted || generation !== memorySelectionGeneration) return
       if (!memoryRequests.isActiveScope(requestScope)) return
@@ -145,6 +149,7 @@ export function useMemory() {
       memoryActivityBlocks.value = Array.isArray((res as any)?.activity_blocks) ? (res as any).activity_blocks : []
       memoryTitle.value = `Node ${nodeId}`
       memoryMeta.value = res.memory_path || null
+      memoryReadReceipt.value = { graphId, nodeId, receipt }
       agentImages.value = []
       nodeOpenMarker(graphId, nodeId)?.('memory_applied', {
         messages: baseMessages.length, text_chars: memoryText.value.length,

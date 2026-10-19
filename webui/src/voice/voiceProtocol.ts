@@ -1,13 +1,21 @@
+import { parseVoiceTool } from './voiceTools'
 import { RealtimeDialogue } from './RealtimeDialogue'
+import type { AnnotationDrawing } from './screenAnnotations'
 
-export const supportedVoiceProtocols = ['openai-realtime-v1', 'agentpark-voice-v4', 'volcengine-rtc-v1'] as const
+export const supportedVoiceProtocols = ['openai-realtime-v4', 'agentpark-voice-v4', 'volcengine-rtc-v1'] as const
 export type VoiceProtocol = typeof supportedVoiceProtocols[number]
 export type VoiceEvent =
   | { kind: 'ready' }
   | { kind: 'closed' }
   | { kind: 'error'; text: string }
+  | { kind: 'warning'; text: string }
+  | { kind: 'tool-error'; id: string; text: string }
   | { kind: 'transcript'; role: 'user' | 'assistant'; text: string; done: boolean; replace?: boolean }
   | { kind: 'delegation'; id: string; text: string }
+  | { kind: 'composer'; id: string; text: string }
+  | { kind: 'composer-edit'; id: string; text: string; expected_text: string }
+  | { kind: 'screenshot'; id: string; display_id: string }
+  | { kind: 'annotation'; id: string; drawing: AnnotationDrawing }
   | { kind: 'interrupted'; role?: 'user' | 'assistant' }
   | { kind: 'task-status'; text: string }
   | { kind: 'other' }
@@ -28,6 +36,12 @@ function parseBridgeEvent(raw: string): VoiceEvent {
     case 'interrupted': return { kind: 'interrupted' }
     case 'task.status':
       if (typeof event.text === 'string') return { kind: 'task-status', text: event.text }
+      break
+    case 'tool.call':
+      if (typeof event.id === 'string' && event.id && event.id.length <= 200) return parseVoiceTool(event.name, event.id, event.arguments)
+      break
+    case 'warning':
+      if (typeof event.text === 'string') return { kind: 'warning', text: event.text }
       break
     case 'delegation':
       if (typeof event.id === 'string' && event.id && typeof event.text === 'string' && event.text.trim()) {
@@ -50,7 +64,7 @@ function parseBridgeEvent(raw: string): VoiceEvent {
 export function voiceProtocol(protocol: VoiceProtocol, send: (event: object) => void = () => { throw new Error('Realtime 发送通道未绑定。') }): VoiceProtocolAdapter {
   switch (protocol) {
     case 'volcengine-rtc-v1': return { resultDelivery: 'server', parse: () => { throw new Error('火山 RTC 使用二进制 TLV 协议，不能读取文本数据通道。') } }
-    case 'openai-realtime-v1': {
+    case 'openai-realtime-v4': {
       const dialogue = new RealtimeDialogue(send)
       return { parse: raw => dialogue.parse(raw), resultDelivery: 'data-channel', dialogue }
     }

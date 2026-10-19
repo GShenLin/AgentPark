@@ -8,14 +8,55 @@ if not "%~1"=="" (
     echo [ERROR] build_and_run.bat does not accept arguments.
     exit /b 2
 )
-rem Capture only startup output. The interactive Companion must retain its console.
-if defined AGENTPARK_STARTUP_LOG (
-    call :prepare_startup > "%AGENTPARK_STARTUP_LOG%" 2>&1
-) else (
-    call :prepare_startup
-)
+rem This entry point owns recovery for both direct launches and Restart.bat.
+if not exist "%AGENTPARK_WORKSPACE_ROOT%\.runtime" mkdir "%AGENTPARK_WORKSPACE_ROOT%\.runtime"
+if not defined AGENTPARK_STARTUP_LOG set "AGENTPARK_STARTUP_LOG=%AGENTPARK_WORKSPACE_ROOT%\.runtime\startup-%RANDOM%-%RANDOM%.log"
+set "AGENTPARK_STARTING=1"
+set "AGENTPARK_REPAIR_COUNT=0"
+set "AGENTPARK_FRONTEND_DEPLOY_ATTEMPTED="
+> "%AGENTPARK_STARTUP_LOG%" echo ===== AgentPark startup %date% %time% =====
+echo [INFO] Startup transcript: %AGENTPARK_STARTUP_LOG%
+
+:startup_attempt
+cd /d "%AGENTPARK_WORKSPACE_ROOT%"
+set "AGENTPARK_SERVER_LAUNCHED="
+>> "%AGENTPARK_STARTUP_LOG%" echo [INFO] Starting build and readiness check; completed repairs: !AGENTPARK_REPAIR_COUNT!
+rem Only startup/repair output is captured; interactive Companion retains its console.
+call :prepare_startup >> "%AGENTPARK_STARTUP_LOG%" 2>&1
 set "AGENTPARK_START_EXIT=!errorlevel!"
-if not "!AGENTPARK_START_EXIT!"=="0" exit /b !AGENTPARK_START_EXIT!
+if "!AGENTPARK_START_EXIT!"=="0" goto startup_ready
+cd /d "%AGENTPARK_WORKSPACE_ROOT%"
+echo [ERROR] Startup failed with exit code !AGENTPARK_START_EXIT!. See %AGENTPARK_STARTUP_LOG%
+>> "%AGENTPARK_STARTUP_LOG%" echo [ERROR] Startup failed with exit code !AGENTPARK_START_EXIT!.
+if defined AGENTPARK_SERVER_LAUNCHED (
+    call :stop_existing_workspace_processes >> "%AGENTPARK_STARTUP_LOG%" 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Failed to stop the incomplete server; recovery stopped.
+        goto startup_failed
+    )
+)
+if !AGENTPARK_REPAIR_COUNT! GEQ 3 goto startup_failed
+set /a AGENTPARK_REPAIR_COUNT+=1
+echo [INFO] Starting standalone Companion repair !AGENTPARK_REPAIR_COUNT!/3. See %AGENTPARK_STARTUP_LOG%
+>> "%AGENTPARK_STARTUP_LOG%" echo [INFO] Starting standalone Companion diagnosis and repair !AGENTPARK_REPAIR_COUNT!/3.
+call "%AGENTPARK_WORKSPACE_ROOT%\scripts\repair_startup.bat" "%AGENTPARK_STARTUP_LOG%" >> "%AGENTPARK_STARTUP_LOG%" 2>&1
+set "AGENTPARK_REPAIR_EXIT=!errorlevel!"
+if not "!AGENTPARK_REPAIR_EXIT!"=="0" (
+    set "AGENTPARK_START_EXIT=!AGENTPARK_REPAIR_EXIT!"
+    >> "%AGENTPARK_STARTUP_LOG%" echo [ERROR] Companion repair failed with exit code !AGENTPARK_REPAIR_EXIT!.
+    goto startup_failed
+)
+>> "%AGENTPARK_STARTUP_LOG%" echo [INFO] Companion repair completed; rebuilding and checking readiness.
+goto startup_attempt
+
+:startup_failed
+set "AGENTPARK_STARTING="
+echo [ERROR] Startup recovery stopped. Inspect %AGENTPARK_STARTUP_LOG%
+call :maybe_pause
+exit /b !AGENTPARK_START_EXIT!
+
+:startup_ready
+set "AGENTPARK_STARTING="
 if defined AGENTPARK_STARTUP_READY_FILE >"%AGENTPARK_STARTUP_READY_FILE%" echo ready
 goto run_companion
 
@@ -53,6 +94,14 @@ if errorlevel 1 (
 )
 echo [INFO] Using Python: %PYTHON_EXE%
 
+echo [INFO] Checking node window runtime dependencies...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%AGENTPARK_WORKSPACE_ROOT%\scripts\ensure_node_window_runtime.ps1" -WorkspaceRoot "%AGENTPARK_WORKSPACE_ROOT%"
+if errorlevel 1 (
+    echo [ERROR] Failed to prepare node window runtime dependencies.
+    call :maybe_pause
+    exit /b 1
+)
+
 call :ensure_rg
 call :register_folder_context_menu
 
@@ -80,6 +129,16 @@ echo [INFO] WebUI build successful.
 
 rem Return to root directory
 cd ..
+
+if not defined AGENTPARK_FRONTEND_DEPLOY_ATTEMPTED (
+    set "AGENTPARK_FRONTEND_DEPLOY_ATTEMPTED=1"
+    echo [INFO] Attempting cloud frontend deployment once...
+    "%PYTHON_EXE%" "%AGENTPARK_WORKSPACE_ROOT%\deploy\peer-network\deploy_frontend.py"
+    if errorlevel 1 (
+        echo [WARN] Cloud frontend deployment failed. Continuing local startup.
+        echo [WARN] Deployment log: %AGENTPARK_WORKSPACE_ROOT%\.runtime\frontend-deploy\latest.log
+    )
+)
 
 echo [INFO] Installing/updating AgentPark Python dependencies...
 set "AGENTPARK_UPDATE_COMMAND="%PYTHON_EXE%" -m pip install -e ."
@@ -112,6 +171,7 @@ call :maybe_pause
 exit /b !AGENTPARK_CLI_EXIT!
 
 :maybe_pause
+if "%AGENTPARK_STARTING%"=="1" exit /b 0
 if /I "%AGENTPARK_NO_PAUSE%"=="1" exit /b 0
 pause
 exit /b 0
@@ -155,11 +215,14 @@ set "AGENTPARK_STARTED_PROCESS_FILE=%cd%\.runtime\startup-process.pid"
 echo [INFO] Starting AgentPark web server in background. Logs:
 echo [INFO]   %AGENTPARK_WEB_STDOUT%
 echo [INFO]   %AGENTPARK_WEB_STDERR%
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AGENTPARK_PYTHON_EXE; $root=$env:AGENTPARK_WORKSPACE_ROOT; $stdout=$env:AGENTPARK_WEB_STDOUT; $stderr=$env:AGENTPARK_WEB_STDERR; $launcher=(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId; $env:AGENTPARK_EXIT_WHEN_PID_EXITS=[string]$launcher; $arguments=@('-m','src.fast_api','--workspace-root',('\"' + $root + '\"')); $serverProcess=Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru; Set-Content -LiteralPath $env:AGENTPARK_STARTED_PROCESS_FILE -Value $serverProcess.Id -Encoding UTF8"
+rem The background server outlives this temporary build/restart launcher.
+rem Clear inherited parent ownership; explicit restart/checkpoint owns shutdown.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $python=$env:AGENTPARK_PYTHON_EXE; $root=$env:AGENTPARK_WORKSPACE_ROOT; $stdout=$env:AGENTPARK_WEB_STDOUT; $stderr=$env:AGENTPARK_WEB_STDERR; Remove-Item Env:AGENTPARK_EXIT_WHEN_PID_EXITS -ErrorAction SilentlyContinue; $arguments=@('-m','src.fast_api','--workspace-root',('\"' + $root + '\"')); $serverProcess=Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru; Set-Content -LiteralPath $env:AGENTPARK_STARTED_PROCESS_FILE -Value $serverProcess.Id -Encoding UTF8"
 if errorlevel 1 (
     echo [ERROR] Failed to start AgentPark web server in background.
     exit /b %errorlevel%
 )
+set "AGENTPARK_SERVER_LAUNCHED=1"
 echo [INFO] Waiting for the new web server to become ready...
 "%PYTHON_EXE%" -m src.startup_health --workspace-root "%cd%" --process-file "%AGENTPARK_STARTED_PROCESS_FILE%"
 exit /b %errorlevel%

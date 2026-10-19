@@ -20,6 +20,7 @@ _CLI_FORMATS = {
     "openclaw": rf"OpenClaw (?P<version>{_SEMVER})(?: \([0-9a-f]+\))?",
     "deepseek_harness": rf"(?P<version>{_SEMVER})",
     "minimax_code": rf"(?P<version>{_SEMVER})",
+    "opencode": rf"opencode v(?P<version>{_SEMVER})",
     "pi": rf"(?P<version>{_SEMVER})",
 }
 

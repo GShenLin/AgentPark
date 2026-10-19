@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from io import BytesIO
 
 import pytest
 
@@ -40,12 +41,12 @@ class _BlockingStdout:
     def __init__(self):
         self._released = curl_transport.threading.Event()
 
-    def __iter__(self):
-        return self
-
-    def __next__(self):
+    def read(self, size):
         self._released.wait()
-        raise StopIteration
+        return b""
+
+    def close(self):
+        self.release()
 
     def release(self):
         self._released.set()
@@ -101,14 +102,9 @@ def test_sse_stream_timeout_is_reset_by_each_received_line(monkeypatch):
 
     def fake_popen(command, **_kwargs):
         observed["command"] = command
+        _kwargs["stderr"].write(b'\n__CURL_STREAM_METRICS__:{"http_code":"200"}\n')
         return _FakeProcess(
-            iter(
-                [
-                    "data: first\n",
-                    "data: second\n",
-                    "__STATUS__200\n",
-                ]
-            )
+            BytesIO(b"data: first\ndata: second\n")
         )
 
     monkeypatch.setattr(curl_transport.subprocess, "Popen", fake_popen)
@@ -178,4 +174,4 @@ def test_sse_stream_remains_cancellable_without_total_timeout(monkeypatch):
             )
         )
 
-    assert process.poll() is not None
+    assert process.poll() is None

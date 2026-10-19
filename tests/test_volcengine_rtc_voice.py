@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from src.providers.voice_control import RtcAction, RtcScreen, VoiceControl
+from src.providers.voice_control import RtcAction, VoiceControl
 from src.providers.voice_provider import VoiceTaskUpdate
 from src.providers.voice_registry import provider_voice_catalog
 from src.providers.volcengine_rtc_session import VolcengineRtcSession
@@ -43,7 +43,7 @@ def test_control_never_accepts_identity_override_or_invalid_rate(body):
         TypeAdapter(VoiceControl).validate_python(body)
 
 
-def test_activate_vision_feedback_and_idempotent_teardown():
+def test_activate_audio_feedback_and_idempotent_teardown():
     async def run():
         api = Mock(); api.post_json.return_value = {"Result": "ok"}
         session = VolcengineRtcSession(api, "app", "room", "user", "bot", "原节点历史", SETTINGS)
@@ -54,13 +54,9 @@ def test_activate_vision_feedback_and_idempotent_teardown():
             assert api.post_json.call_count == 1
             start = api.post_json.call_args.args[2]
             assert "原节点历史" in start["Config"]["LLMConfig"]["SystemMessages"][0]
-            assert start["Config"]["LLMConfig"]["VisionConfig"]["Enable"] is False
+            assert start["Config"]["LLMConfig"]["VisionConfig"]["Enable"] is True
             assert start["Config"]["LLMConfig"]["VisionConfig"]["SnapshotConfig"]["Interval"] == 100
             assert start["AgentConfig"]["TargetUserId"] == ["user"]
-            for fps in [1, 30]:
-                await session.control(RtcScreen(action="screen", enabled=True, fps=fps))
-                vision = api.post_json.call_args.args[2]["Parameters"]["Config"]["LLMConfig"]["VisionConfig"]
-                assert vision == {"Enable": True, "SnapshotConfig": {"StreamType": 1}}
             first = VoiceTaskUpdate(status="queued", text="", task_id="node-task")
             assert await session.deliver_update("tool-call", first) == "accepted"
             ack = api.post_json.call_args.args[2]
@@ -73,7 +69,6 @@ def test_activate_vision_feedback_and_idempotent_teardown():
             update = api.post_json.call_args.args[2]
             assert update["InterruptMode"] == 2 and update["Command"] == "ExternalTextToLLM"
             assert "查到结果" in update["Message"]
-            await session.control(RtcScreen(action="screen", enabled=False, fps=30))
         finally:
             await session.aclose(); await session.aclose()
         assert [call.args[0] for call in api.post_json.call_args_list].count("StopVoiceChat") == 1

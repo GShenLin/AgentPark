@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 
@@ -16,6 +17,17 @@ class GraphEventStreamStore:
         self._history: dict[str, deque[dict[str, Any]]] = {}
         self._global_version = 0
         self._global_history: deque[dict[str, Any]] = deque(maxlen=self._history_limit)
+        self._listeners: set[Callable[[dict[str, Any]], None]] = set()
+
+    def subscribe(self, listener: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
+        """Subscribe to live publications without replay or bounded-history loss."""
+        with self._lock:
+            self._listeners.add(listener)
+
+        def unsubscribe() -> None:
+            with self._lock:
+                self._listeners.discard(listener)
+        return unsubscribe
 
     @staticmethod
     def _graph_id(value: object) -> str:
@@ -39,6 +51,9 @@ class GraphEventStreamStore:
             global_payload["global_version"] = self._global_version
             self._global_history.append(global_payload)
             self._condition.notify_all()
+            listeners = tuple(self._listeners)
+        for listener in listeners:
+            listener(dict(global_payload))
 
     def get(self, graph_id: str) -> dict[str, Any]:
         safe_graph_id = self._graph_id(graph_id)

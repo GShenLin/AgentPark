@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 WORKBENCH = Path(r'C:\Program Files\workbench\workbench.exe')
-INSTANCE = 'i-2vcftcvzh0qn016tsm2e'
+INSTANCE = 'i-your-instance-id'
 REMOTE_PYTHON = '/opt/agentpark-coordinator/.venv/bin/python'
 REMOTE_HELPER = '/opt/agentpark-coordinator/deploy/peer-network/tls_server.py'
 

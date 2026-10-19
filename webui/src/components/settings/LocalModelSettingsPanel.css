@@ -20,7 +20,9 @@
 .local-badges span { font-size: 12px; border: 1px solid var(--border-subtle); padding: 4px 8px; border-radius: 5px; }
 .local-badges .good { color: var(--text-accent); }
 .local-form label, .local-card > label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-.local-form select, .local-card select, .local-form textarea { min-height: 36px; width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary); background: var(--bg-primary); font: inherit; }
+.local-form select, .local-card select, .local-form textarea, .local-form input[type=number] { min-height: 36px; width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary); background: var(--bg-primary); font: inherit; }
+.local-preset summary { cursor: pointer; font-size: 13px; }
+.local-preset[open] > :not(summary) { margin-top: 12px; }
 .local-import { padding: 14px; border: 1px solid var(--border-subtle); border-radius: 6px; display: flex; flex-direction: column; gap: 12px; }
 .local-model-list { max-height: 480px; overflow: auto; }
 .local-model-row { padding: 12px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }

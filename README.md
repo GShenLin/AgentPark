@@ -8,6 +8,18 @@
 >
 > AgentPark is a local-first visual Agent platform: drag-and-drop nodes to build workflows, plug into WeChat in one step, with Doubao / Zhipu / Gemini / OpenAI working out of the box. It runs on your own machine, your data never leaves your network, and your Agents stay on duty 24/7.
 
+## October 2026 update
+
+The [updated Chinese guide](./README.zh.md) introduces the current workspace from
+first conversation through collaboration and multi-device execution. Start with
+[Getting started](docs/GettingStart.md), browse the [documentation index](docs/README.md),
+or consult the [Settings manual](docs/settings/README.md).
+
+Recent additions include Windows node chat windows and persisted-result alerts,
+configurable toolsets, OpenCode and Antigravity harnesses, the WorkBuddy bridge,
+custom local services, and voice screenshot, annotation and draft-editing tools.
+See [the synchronization notes](docs/public-sync-20261019.md) for scope and validation.
+
 ## Why AgentPark?
 
 | Pain point | How AgentPark solves it |

@@ -1,5 +1,5 @@
 import VERTC, { AudioSourceType, ConnectionState, MediaType, RoomProfileType, RTCAutoPlayPolicy,
-  StreamIndex, VideoSourceType, type IRTCEngine } from '@volcengine/rtc'
+  StreamIndex, type IRTCEngine } from '@volcengine/rtc'
 import { controlRtcCall, type RtcConnection, type VoiceTarget } from '../voiceApi'
 import type { VoiceEvent } from './voiceProtocol'
 import { VolcRtcEvents } from './VolcRtcEvents'
@@ -15,10 +15,6 @@ export class VolcRtcConnection {
   private callbacks: Callbacks
   private closed = false
   private pulse?: ReturnType<typeof setTimeout>
-  private screenTrack?: MediaStreamTrack
-  private screenQueue: Promise<void> = Promise.resolve()
-  private fps = 0
-  private statsAt = 0
   private activated = false
   private subscribed = false
   private announced = false
@@ -45,10 +41,7 @@ export class VolcRtcConnection {
     this.engine.on(VERTC.events.onRoomBinaryMessageReceived, event => {
       if (this.closed || event.userId !== info.bot_id) return
       try { for (const parsed of parser.parse(event.message)) callbacks.event(parsed) }
-      catch (cause) { this.report(String(cause)) }
-    })
-    this.engine.on(VERTC.events.onLocalStreamStats, stats => {
-      if (stats.isScreen) { this.fps = stats.videoStats.sentFrameRate; this.statsAt = performance.now() }
+      catch (cause) { callbacks.event({ kind: 'warning', text: `本次火山语音消息未处理，通话继续：${String(cause)}` }) }
     })
   }
 
@@ -96,52 +89,15 @@ export class VolcRtcConnection {
         .then(() => { if (!this.closed) this.heartbeat() }).catch(cause => this.report(`通话保活失败：${String(cause)}`))
     }, 15000)
   }
-  screen(stream: MediaStream | null, fps: number): Promise<void> {
-    const operation = this.screenQueue.then(() => this.setScreen(stream, fps))
-    // Preserve sequencing after a failed operation; its caller receives the rejection.
-    this.screenQueue = operation.catch(() => {})
-    return operation
-  }
-  private async setScreen(stream: MediaStream | null, fps: number) {
-    this.check()
-    if (!Number.isInteger(fps) || fps < 1 || fps > 30) throw new Error('共享帧率须为 1–30 之间的整数。')
-    if (stream) {
-      const source = stream.getVideoTracks()[0]
-      if (!source || source.readyState === 'ended') throw new Error('共享画面已结束。')
-      const index = StreamIndex.STREAM_INDEX_SCREEN
-      await this.engine.setScreenEncoderConfig({ width: 1920, height: 1080, frameRate: fps, maxKbps: 4000, contentHint: 'detail' })
-      this.check()
-      if (!this.screenTrack) {
-        // Each call owns a clone; leaving one participant cannot stop the shared capture.
-        this.screenTrack = source.clone()
-        await this.engine.setVideoSourceType(index, VideoSourceType.VIDEO_SOURCE_TYPE_EXTERNAL)
-        this.check()
-        await this.engine.setExternalVideoTrack(index, this.screenTrack)
-        this.check()
-        await this.engine.publishScreen(MediaType.VIDEO)
-      }
-      this.check()
-      await controlRtcCall(this.target, this.session, { action: 'screen', enabled: true, fps }, this.signal)
-    } else {
-      if (this.screenTrack) {
-        try { await this.engine.unpublishScreen(MediaType.VIDEO) }
-        finally { this.screenTrack.stop(); this.screenTrack = undefined; this.fps = 0 }
-      }
-      this.fps = 0
-      await controlRtcCall(this.target, this.session, { action: 'screen', enabled: false, fps }, this.signal)
-    }
-  }
-  screenFps() { return this.screenTrack && performance.now() - this.statsAt < 5000 ? this.fps : 0 }
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closed = true; clearTimeout(this.pulse)
-    this.screenTrack?.stop()
     this.closePromise = (async () => {
       // Callers observe connection/publish errors; teardown still waits for their
       // in-flight SDK operations so a late join cannot outlive destruction.
-      await Promise.allSettled([this.connecting, this.screenQueue])
+      await Promise.allSettled([this.connecting])
       try { await this.engine.leaveRoom() }
-      finally { this.screenTrack?.stop(); VERTC.destroyEngine(this.engine) }
+      finally { VERTC.destroyEngine(this.engine) }
     })()
     return this.closePromise
   }

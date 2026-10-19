@@ -6,7 +6,7 @@ import * as Vue from 'vue'
 import { createRenderer, h, nextTick, ref } from 'vue'
 import type { ProviderInfo } from '../src/api'
 import { AgentBoardKey, type AgentBoardContext } from '../src/components/agent-board/context'
-import { HARNESS_NODE_TYPES } from '../src/composables/useAgentNodeCreateSchema'
+import { PROVIDER_HARNESS_NODE_TYPES } from '../src/composables/useAgentNodeCreateSchema'
 
 const api = vi.hoisted(() => ({ getNodeTemplate: vi.fn() }))
 vi.mock('../src/api', () => api)
@@ -128,7 +128,7 @@ async function mount(typeId: string, mobile = false) {
 }
 
 describe('provider-dependent node editor models', () => {
-  it.each(['agent_node', ...HARNESS_NODE_TYPES])('%s refreshes model value and options after selecting a provider', async typeId => {
+  it.each(['agent_node', ...PROVIDER_HARNESS_NODE_TYPES])('%s refreshes model value and options after selecting a provider', async typeId => {
     const editor = await mount(typeId)
     expect(editor.model().props.value).toBe('first-2')
     expect(editor.modelOptions()).toEqual(['first-1', 'first-2'])
@@ -166,7 +166,7 @@ describe('mobile provider-dependent models', () => {
     await editor.save()
     expect(editor.persist).toHaveBeenCalledWith(expect.objectContaining({ reasoning_effort: 'high' }))
   })
-  it.each(['agent_node', ...HARNESS_NODE_TYPES])('%s changes the model and list before saving', async typeId => {
+  it.each(['agent_node', ...PROVIDER_HARNESS_NODE_TYPES])('%s changes the model and list before saving', async typeId => {
     const editor = await mount(typeId, true)
     expect(editor.model().props.value).toBe('first-2')
     await editor.choose('second')

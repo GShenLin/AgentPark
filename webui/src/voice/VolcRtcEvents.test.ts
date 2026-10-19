@@ -15,7 +15,7 @@ it('maps official tool calls exactly once upstream and rejects unrelated tools o
   const tool = { id: 'c1', type: 'function', function: { name: 'delegate_to_node', arguments: '{"text":"读取文件"}' } }
   expect(parser.parse(tlv('tool', { tool_calls: [tool] }))).toEqual([{ kind: 'delegation', id: 'c1', text: '读取文件' }])
   expect(parser.parse(tlv('info', { event_type: 'function_calling' }))).toEqual([])
-  expect(() => parser.parse(tlv('tool', { tool_calls: [{ ...tool, function: { ...tool.function, name: 'execute_arbitrary' } }] }))).toThrow('未声明')
+  expect(parser.parse(tlv('tool', { tool_calls: [{ ...tool, function: { ...tool.function, name: 'execute_arbitrary' } }] }))).toEqual([expect.objectContaining({ kind: 'tool-error', id: 'c1' })])
   const damaged = tlv('tool', { tool_calls: [] }); new DataView(damaged).setUint32(4, 999)
   expect(() => parser.parse(damaged)).toThrow('长度不匹配')
 })

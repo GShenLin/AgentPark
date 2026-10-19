@@ -18,7 +18,6 @@ from src.cli_commands.companion_prompt_live import PromptLiveTranscript
 from src.cli_commands.companion_prompt_turns import PromptTurnCoordinator
 from src.cli_commands.companion_restart import launch_restart_bat
 from src.cli_commands.companion_style import accent, error, field_line, muted, role_label
-from src.web_backend.node_config_service import node_config_service
 
 
 EXIT_COMMANDS = {"/exit", "/quit", "exit", "quit"}
@@ -318,14 +317,15 @@ class PromptCompanionTerminal:
         signature = self._target_config_signature()
         if signature == self.config_signature:
             return
-        latest_config = node_config_service.read_strict(self.target.config_path)
+        from src.companion_config import read_companion_config
+        latest_config = read_companion_config(self.target.config_path)
         self.target.config.clear()
         self.target.config.update(latest_config)
         self.config_signature = signature
 
-    def _target_config_signature(self) -> tuple[int, int, int]:
-        stat = os.stat(self.target.config_path)
-        return stat.st_mtime_ns, stat.st_size, stat.st_ino
+    def _target_config_signature(self) -> tuple[tuple[int, int, int], ...]:
+        from src.companion_config import companion_config_signature
+        return companion_config_signature(self.target.config_path)
 
     def _print_banner(self) -> None:
         provider = str(self.target.config.get("provider_id") or "provider-unset")

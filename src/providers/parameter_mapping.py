@@ -52,6 +52,7 @@ def _mapping(*excluded: str, supports_send: bool = True) -> ProviderParameterMap
 
 PROVIDER_PARAMETER_MAPPINGS = {
     "openai": _mapping(),
+    "workbuddy": _mapping("reasoning_summary", "mode_options"),
     "agnes": _mapping(),
     "deepseek": _mapping(),
     "kimi": _mapping("reasoning_summary"),

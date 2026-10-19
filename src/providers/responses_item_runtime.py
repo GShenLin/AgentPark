@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 
 from src.providers.responses_stream_events import ResponsesOutputItemDone
 from src.providers.responses_stream_events import ResponsesStreamEvent
+from src.providers.responses_stream_events import ResponsesResponseCreated
+from src.runtime_cancellation import raise_if_cancel_requested
 from src.providers.tool_call_execution import execute_tool_call_items_parallel
 from src.providers.tool_call_execution import ToolCallItem
 from src.tool.tool_call_protocol import build_tool_call_parse_error_execution
@@ -27,8 +30,14 @@ class ResponsesItemLevelToolRunner:
         self._futures_by_call_id: dict[str, Future[ToolCallExecution]] = {}
         self._executions_by_call_id: dict[str, ToolCallExecution] = {}
         self._aborted = False
+        self.completed_output: list[dict[str, Any]] = []
+        self.response_id = ""
 
-    def handle_event(self, event: ResponsesStreamEvent) -> None:
+    def __call__(self, event: ResponsesStreamEvent) -> None:
+        if isinstance(event, ResponsesResponseCreated):
+            self.response_id = event.response_id
+        if isinstance(event, ResponsesOutputItemDone):
+            self.completed_output.append(dict(event.item))
         if not isinstance(event, ResponsesOutputItemDone) or event.function_call is None:
             return
         tool_items = self._parse_output_item(event.item)
@@ -41,6 +50,22 @@ class ResponsesItemLevelToolRunner:
             self._items_by_call_id[call_id] = item
             if self._run_tools and not self._defer_tool_execution:
                 self._start_tool_item(item)
+
+    def has_started_tools(self) -> bool:
+        return bool(self._futures_by_call_id or self._executions_by_call_id)
+
+    def begin_attempt(self) -> None:
+        if self.has_started_tools():
+            raise RuntimeError("Cannot replay a Responses request after tool dispatch")
+        self.response_id = ""
+        self.completed_output.clear()
+        self._items_by_call_id.clear()
+
+    def collect_started_tools(self) -> tuple[list[ToolCallItem], list[ToolCallExecution]]:
+        """Wait for dispatched calls only; never start unexecuted/deferred calls."""
+        calls = [item for call_id, item in self._items_by_call_id.items()
+                 if call_id in self._futures_by_call_id or call_id in self._executions_by_call_id]
+        return calls, self.wait_for_executions(calls)
 
     def wait_for_executions(self, function_calls: list[ToolCallItem]) -> list[ToolCallExecution]:
         if self._aborted:
@@ -119,7 +144,14 @@ class ResponsesItemLevelToolRunner:
         future = self._futures_by_call_id.get(call_id)
         if future is None:
             return None
-        execution = future.result()
+        while True:
+            raise_if_cancel_requested(self._runtime._cancel_source())
+            try:
+                execution = future.result(timeout=0.05)
+                break
+            except FutureTimeoutError:
+                if future.done():
+                    raise
         self._executions_by_call_id[call_id] = execution
         return execution
 

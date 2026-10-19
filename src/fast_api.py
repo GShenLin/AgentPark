@@ -170,7 +170,7 @@ def main(argv=None):
     pid_path = install_server_pid_file(args.host, actual_port)
     print(f"[server] pid file: {pid_path}")
     _run_server(
-        create_app(),
+        create_app(server_port=actual_port),
         host=args.host,
         port=actual_port,
         log_config=_build_uvicorn_log_config(),

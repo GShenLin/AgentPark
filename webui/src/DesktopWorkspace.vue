@@ -25,6 +25,7 @@ import { useAgentBoard } from './components/agent-board/useAgentBoard'
 import { t } from './i18n'
 import { normalizeAgentPanelSettings } from './agentPanelSettings'
 import { resolveWorkspaceEscapeAction } from './workspaceKeyboard'
+import { readWorkspaceNodeLink } from './workspaceNodeLink'
 
 const props = defineProps<{ bootstrap: WorkspaceBootstrap }>()
 
@@ -99,7 +100,7 @@ const settingsPageRef = ref<{ requestBack: () => void } | null>(null)
 let graphNavigationVersion = 0
 
 const leftWidth = computed(() => (leftCollapsed.value ? 44 : leftSidebarWidth.value))
-const activeRightPanelWidth = computed({
+const activeDockedPanelWidth = computed({
   get() {
     return memoryMode.value === 'graph' ? graphPanelWidth.value : memoryPanelWidth.value
   },
@@ -111,12 +112,12 @@ const activeRightPanelWidth = computed({
     }
   },
 })
-const rightWidth = computed(() => (graphCollapsed.value ? 44 : activeRightPanelWidth.value))
+const dockedWidth = computed(() => (graphCollapsed.value ? 44 : activeDockedPanelWidth.value))
 const isMemoryFloating = computed(() => memoryOverlayOpen.value)
-const boardRightWidth = computed(() => (isMemoryFloating.value ? 0 : rightWidth.value))
+const boardGraphWidth = computed(() => (isMemoryFloating.value ? 0 : dockedWidth.value))
 const agentPanelSettings = ref(props.bootstrap.agent_panel)
 provide(conversationWindowSettings, agentPanelSettings)
-const rightPanelStyle = computed(() => isMemoryFloating.value ? {} : { width: `${rightWidth.value}px` })
+const graphPanelStyle = computed(() => isMemoryFloating.value ? {} : { width: `${dockedWidth.value}px` })
 
 function applyDefaultSettings(value: Record<string, unknown>) {
   agentPanelSettings.value = normalizeAgentPanelSettings(value.agentPanel)
@@ -184,12 +185,12 @@ function onWorkspaceKeyDown(event: KeyboardEvent) {
 
 function handleMemoryResize(event: MouseEvent) {
   if (!isResizingMemory.value) return
-  const content = document.querySelector('.content') as HTMLElement | null
+  const content = document.querySelector('.desktop-workspace .center') as HTMLElement | null
   if (!content) return
   const rect = content.getBoundingClientRect()
   const maxWidth = Math.max(360, rect.width - 320)
-  const nextWidth = rect.right - event.clientX
-  activeRightPanelWidth.value = Math.max(360, Math.min(maxWidth, nextWidth))
+  const nextWidth = event.clientX - rect.left
+  activeDockedPanelWidth.value = Math.max(360, Math.min(maxWidth, nextWidth))
 }
 
 function startLeftResize(event: MouseEvent) {
@@ -297,7 +298,8 @@ onMounted(async () => {
   if (graphNavigationVersion !== 0) return
   const startupNavigationVersion = graphNavigationVersion
   try {
-    const targetGraph = props.bootstrap.startup_graph
+    const linkedNode = readWorkspaceNodeLink(window.location.href)
+    const targetGraph = linkedNode ? await loadGraph(linkedNode.graphId) : props.bootstrap.startup_graph
     if (startupNavigationVersion !== graphNavigationVersion) return
 
     const resolvedId = String(targetGraph?.id || 'default')
@@ -306,6 +308,11 @@ onMounted(async () => {
     currentGraphWorkingPath.value = String((targetGraph as any)?.working_path || '').trim()
     graphLoadRequest.value = targetGraph
     workspaceReady.value = true
+    if (linkedNode) {
+      await nextTick()
+      if (startupNavigationVersion !== graphNavigationVersion) return
+      graphNodeFocusRequest.value = { ...linkedNode, graphId: resolvedId, nonce: Date.now() }
+    }
   } catch (e: any) {
     lastError.value = String(e?.message || e)
   }
@@ -406,10 +413,11 @@ watch(
       :show-back-button="false"
       @back="activeView = 'board'"
       @providers-updated="refreshProviders"
+      @tools-updated="availableTools = $event"
       @defaults-updated="applyDefaultSettings"
     />
 
-    <div v-else class="content" :style="{ '--right-panel-width': `${boardRightWidth}px` }">
+    <div v-else class="content" :style="{ '--graph-panel-width': `${boardGraphWidth}px` }">
       <aside v-if="canAccessLocalFiles" class="left-sidebar" :class="{ collapsed: leftCollapsed }" :style="{ width: `${leftWidth}px` }">
         <FileExplorer v-if="!leftCollapsed" :root-path="fileExplorerRootPath" @file-selected="onFileSelected" />
         <div v-else class="collapsed-mark">{{ t('common.files') }}</div>
@@ -426,34 +434,33 @@ watch(
             @dismiss="lastError = null"
           />
         </main>
+        <div
+          v-if="!isMemoryFloating"
+          class="memory-resizer"
+          data-board-occlusion="left"
+          @mousedown="startMemoryResize"
+        ></div>
+        <ConversationWindow
+          class="graph-dock" :floating="isMemoryFloating" :label="t('common.memory')"
+          :data-board-occlusion="isMemoryFloating ? undefined : 'left'"
+          :class="{ collapsed: graphCollapsed && !isMemoryFloating, floating: isMemoryFloating }"
+          :style="graphPanelStyle" :data-memory-overlay="isMemoryFloating ? 'true' : undefined"
+          @close="closeMemoryOverlay"
+        >
+          <template v-if="isMemoryFloating || !graphCollapsed">
+            <div class="memory-panel-content">
+              <MemoryPanel
+                :initial-graphs="props.bootstrap.graphs"
+                :initial-graph-profiles="props.bootstrap.graph_profiles"
+                :closable="isMemoryFloating"
+                @close="closeMemoryOverlay"
+              />
+            </div>
+            <NodeInputDock v-show="isMemoryFloating" />
+          </template>
+          <div v-else class="collapsed-mark">{{ t('common.memory') }}</div>
+        </ConversationWindow>
       </div>
-
-      <div
-        v-if="!isMemoryFloating"
-        class="memory-resizer"
-        data-board-occlusion="right"
-        @mousedown="startMemoryResize"
-      ></div>
-      <ConversationWindow
-        class="right" :floating="isMemoryFloating" :label="t('common.memory')"
-        :data-board-occlusion="isMemoryFloating ? undefined : 'right'"
-        :class="{ collapsed: graphCollapsed && !isMemoryFloating, floating: isMemoryFloating }"
-        :style="rightPanelStyle" :data-memory-overlay="isMemoryFloating ? 'true' : undefined"
-        @close="closeMemoryOverlay"
-      >
-        <template v-if="isMemoryFloating || !graphCollapsed">
-          <div class="memory-panel-content">
-            <MemoryPanel
-              :initial-graphs="props.bootstrap.graphs"
-              :initial-graph-profiles="props.bootstrap.graph_profiles"
-              :closable="isMemoryFloating"
-              @close="closeMemoryOverlay"
-            />
-          </div>
-          <NodeInputDock v-show="isMemoryFloating" />
-        </template>
-        <div v-else class="collapsed-mark">{{ t('common.memory') }}</div>
-      </ConversationWindow>
     </div>
   </div>
 </template>
@@ -467,6 +474,10 @@ watch(
 }
 
 .content {
+  position: relative;
+}
+
+.center {
   position: relative;
 }
 
@@ -530,7 +541,7 @@ watch(
   width: 3px;
   position: absolute;
   top: 0;
-  right: var(--right-panel-width);
+  left: var(--graph-panel-width);
   bottom: 0;
   cursor: col-resize;
   background: var(--theme-panel-app-border-subtle, var(--border-subtle));

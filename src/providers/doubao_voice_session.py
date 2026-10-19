@@ -10,10 +10,9 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
 from .doubao_speech_auth import require_doubao_x_api_key
-from .doubao_node_voice import DoubaoNodeVoice, NODE_TOOL
-from .voice_instructions import dialogue_instructions
+from .doubao_node_voice import DoubaoNodeVoice
 from .voice_audio import MicrophonePcm, PcmOutputTrack
-from .voice_provider import VoiceDelivery, VoiceSession, VoiceTaskUpdate
+from .voice_provider import VoiceDelivery, VoiceSession, VoiceTaskUpdate, VoiceProvider
 
 logger = logging.getLogger(__name__)
 ENDPOINT = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue"
@@ -123,10 +122,10 @@ class DoubaoVoiceSession(VoiceSession):
     async def start(self, sdp):
         payload = {"type": "session.create", "session": {
             "model": self.settings.model,
-            "instructions": dialogue_instructions(self.context, "delegate_to_node"),
+            "instructions": VoiceProvider.instructions(self.context),
             "audio": {"input": {"format": {"type": "pcm", "rate": 16000}},
                       "output": {"format": {"type": "pcm_s16le", "rate": 24000}, "voice": self.settings.voice}},
-            "tools": [NODE_TOOL]}, "extension": {"asr": {}, "tts": {}, "dialog": {}}}
+            "tools": VoiceProvider.tools()}, "extension": {"asr": {}, "tts": {}, "dialog": {}}}
         try:
             await self.pc.setRemoteDescription(RTCSessionDescription(sdp=sdp, type="offer"))
             self.ws = await connect(ENDPOINT, additional_headers={"X-Api-Key": self.key},
@@ -163,7 +162,12 @@ class DoubaoVoiceSession(VoiceSession):
                 self._emit({"type": "closed"})
                 self.close()
                 return
-            self.dialogue.receive(message)
+            try:
+                self.dialogue.receive(message)
+            except ValueError as exc:
+                if message["type"] != "response.function_call_arguments.done":
+                    raise
+                self._emit({"type": "warning", "text": "本次工具调用未处理，通话继续：" + self._safe_error(exc)})
 
     async def _notifications(self):
         while True:
@@ -180,7 +184,6 @@ class DoubaoVoiceSession(VoiceSession):
             return await self.dialogue.deliver_update(delegation_id, result)
         except Exception as exc:
             message = "回传节点工具结果失败：" + self._safe_error(exc)
-            self._fail(message)
             raise ValueError(message) from None
 
     def close(self):

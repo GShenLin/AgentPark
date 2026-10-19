@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue
 import { saveAgentProfileFromNode } from '../../api'
 import ActionButton from '../ActionButton.vue'
 import { t } from '../../i18n'
+import { openNodeWindow } from '../../nodeWindow'
 import { AgentBoardKey } from './context'
 import RemoteWorkerPicker from './RemoteWorkerPicker.vue'
 import type { RegisteredRemoteWorker } from '../../remoteWorkerApi'
@@ -22,6 +23,20 @@ const duplicatingNode = ref(false)
 const openingFolder = ref<'node' | 'work' | null>(null)
 const changingPrivacy = ref(false)
 const remoteNodeId = ref('')
+const openingWindow = ref(false)
+const isNodeWindow = !!window.agentParkNodeWindow
+
+async function popOutNode() {
+  const nodeId = targetNodeId.value
+  if (!nodeId || openingWindow.value) return
+  openingWindow.value = true
+  try {
+    await openNodeWindow(nodeId, ctx.currentGraphId.value || 'default')
+    closeMenu()
+  } catch (error) {
+    ctx.lastError.value = error instanceof Error ? error.message : String(error)
+  } finally { openingWindow.value = false }
+}
 const targetRunning = computed(() => ctx.nodeRuns.value[targetNodeId.value]?.status === 'running')
 const targetRemote = computed(() => ctx.nodeConfigs.value[targetNodeId.value]?.remote_enabled === true)
 
@@ -54,7 +69,7 @@ const targetIsPrivate = computed(() => {
 })
 
 const actionBusy = computed(
-  () => duplicatingNode.value || openingFolder.value !== null || changingPrivacy.value,
+  () => duplicatingNode.value || openingFolder.value !== null || changingPrivacy.value || openingWindow.value,
 )
 
 function closeMenu() {
@@ -182,6 +197,10 @@ defineExpose({
         @pointerdown.stop
         @contextmenu.prevent
       >
+        <slot :close-menu="closeMenu" />
+        <ActionButton v-if="!isNodeWindow" variant="menu" :disabled="actionBusy" @click="popOutNode">
+          {{ openingWindow ? '正在打开小 Agent…' : '弹出节点' }}
+        </ActionButton>
         <ActionButton variant="menu" :disabled="actionBusy" @click="renameNode">
           {{ t('board.renameNode') }}
         </ActionButton>

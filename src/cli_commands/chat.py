@@ -8,6 +8,7 @@ from typing import Any
 
 from nodes.agent_node import Node as AgentNode
 from src.companion_paths import COMPANION_GRAPH_ID, COMPANION_NODE_ID, companion_node_config_path
+from src.companion_config import read_companion_config
 from src.companion_cli_window import companion_cli_window_session
 from src.cli_commands.companion_live_events import CompanionLiveEventReducer
 from src.cli_commands.companion_markdown_render import render_markdown_lines
@@ -20,7 +21,6 @@ from src.cli_commands.companion_tui import CompanionTui
 from src.message_protocol import build_text_envelope
 from src.web_backend import runtime_paths
 from src.web_backend.node_config_errors import NodeConfigReadError
-from src.web_backend.node_config_service import node_config_service
 from src.web_backend.node_memory_store import append_node_memory_entry, append_node_tool_call_entry, ensure_node_memory_files
 
 
@@ -154,7 +154,7 @@ def resolve_chat_target(config_path: object = "") -> ChatTarget:
     if not os.path.isfile(config_path):
         raise ValueError(f"companion config does not exist: {config_path}")
     try:
-        cfg = node_config_service.read_strict(config_path)
+        cfg = read_companion_config(config_path)
     except NodeConfigReadError as exc:
         raise ValueError(str(exc)) from exc
     type_id = str(cfg.get("type_id") or "agent_node").strip() or "agent_node"
@@ -180,7 +180,7 @@ def _run_one_turn(
     print_stream: bool,
     stream_handler=None,
 ) -> dict[str, Any]:
-    latest_config = node_config_service.read_strict(target.config_path)
+    latest_config = read_companion_config(target.config_path)
     target.config.clear()
     target.config.update(latest_config)
     ensure_node_memory_files(target.memory_path, target.messages_path)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import ActionButton from '../ActionButton.vue'
+import NativeHarnessModelsPanel from './NativeHarnessModelsPanel.vue'
 import { t } from '../../i18n'
 import { checkHarness, getHarnessJob, listHarnesses, operateHarness, type HarnessInfo, type HarnessJob } from '../../harnessApi'
 
@@ -104,6 +105,7 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
           <ActionButton compact :disabled="busy(item.id) || !item.can_uninstall" @click="act(item.id, 'uninstall')">{{ t('harness.uninstall') }}</ActionButton>
         </div>
         <details v-if="jobs[item.id]?.output"><summary>{{ t('harness.output') }}</summary><pre>{{ jobs[item.id]?.output }}</pre></details>
+        <NativeHarnessModelsPanel v-if="item.id === 'opencode' || item.id === 'antigravity'" :harness-id="item.id" :disabled="busy(item.id) || item.status !== 'ready'" />
       </article>
     </div>
   </section>

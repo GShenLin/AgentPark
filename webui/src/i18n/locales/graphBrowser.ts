@@ -1,4 +1,5 @@
 export const graphBrowserZh = {
+  'memory.graphCreated': '已创建空白 Graph',
   'memory.currentGraph': '当前画板 Graph',
   'memory.graphs': '画板 Graphs',
   'memory.current': '当前',
@@ -20,6 +21,7 @@ export const graphBrowserZh = {
 }
 
 export const graphBrowserEn = {
+  'memory.graphCreated': 'Empty Graph created',
   'memory.currentGraph': 'Current Graph',
   'memory.graphs': 'Graphs',
   'memory.current': 'Current',

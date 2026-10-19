@@ -98,10 +98,17 @@ def test_repair_turn_runs_without_web_server_and_persists_its_selected_model(mon
     monkeypatch.setattr(workspace_settings, "get_workspace_root", lambda: str(tmp_path))
     monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(tmp_path / "memories"))
     monkeypatch.setattr(project_process_environment, "apply_project_process_environment", lambda: None)
-    monkeypatch.setattr(ConfigLoader, "get_all_providers", lambda self: {"p": {"models": ["a", "b"]}})
+    monkeypatch.setattr(ConfigLoader, "get_all_providers", lambda self: {"p": {"models": ["a", "b"], "supportmode": ["chat"]}})
     source = tmp_path / "memories" / "Companion" / "Companion" / "config.json"
     source.parent.mkdir(parents=True)
-    source.write_text('{"provider_id":"p","model":"b","remote_enabled":true}', encoding="utf-8")
+    from src.web_backend import profile_storage
+    monkeypatch.setattr(profile_storage, "get_workspace_root", lambda: str(tmp_path))
+    preset = tmp_path / "agent" / "Companion.json"
+    preset.parent.mkdir()
+    preset.write_text(json.dumps({"id": "Companion", "node_type_id": "agent_node", "fields": {
+        "provider_id": "p", "model": "b", "remote_enabled": True,
+    }}), encoding="utf-8")
+    source.write_text('{"profile_id":"Companion"}', encoding="utf-8")
     log = tmp_path / "failed.log"
     log.write_text("compiler error TS2322", encoding="utf-8")
     calls = []
@@ -116,7 +123,8 @@ def test_repair_turn_runs_without_web_server_and_persists_its_selected_model(mon
     startup_repair.run_repair(tmp_path, log)
     assert len(calls) == 1
     assert Path(calls[0][0].config_path).is_relative_to(tmp_path / ".runtime" / "startup-repair")
-    assert json.loads(source.read_text())["remote_enabled"] is True
+    assert json.loads(source.read_text()) == {"profile_id": "Companion"}
+    assert json.loads(preset.read_text())["fields"]["remote_enabled"] is True
     assert Path(calls[0][0].config_path).with_name("failure-context.txt").is_file()
 
 
@@ -147,7 +155,8 @@ def test_batch_server_launch_preserves_workspace_paths_with_spaces(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows canonical build failure integration")
-def test_canonical_build_records_failure_and_preserves_exit_code(tmp_path):
+@pytest.mark.parametrize('runtime_exit', [0, 9])
+def test_canonical_build_records_failure_and_preserves_exit_code(tmp_path, runtime_exit):
     import shutil
     root = tmp_path / "isolated build"
     scripts = root / "scripts"
@@ -156,6 +165,7 @@ def test_canonical_build_records_failure_and_preserves_exit_code(tmp_path):
     binaries = root / "bin"
     binaries.mkdir()
     (scripts / "sync_before_restart.ps1").write_text("exit 0\n", encoding="utf-8")
+    (scripts / "ensure_node_window_runtime.ps1").write_text(f"exit {runtime_exit}\n", encoding="utf-8")
     trust = root / "deploy" / "peer-network" / "client-trust"
     trust.mkdir(parents=True)
     (trust / "install-windows.ps1").write_text("exit 0\n", encoding="utf-8")
@@ -165,6 +175,7 @@ def test_canonical_build_records_failure_and_preserves_exit_code(tmp_path):
         encoding="utf-8")
     (scripts / "bootstrap_windows_toolchain.bat").write_text(
         f'@set "PYTHON_EXE={sys.executable}"\n@exit /b 0\n', encoding="utf-8")
+    (scripts / "repair_startup.bat").write_text('@exit /b 0\n', encoding="utf-8")
     canonical = Path(__file__).resolve().parents[1] / "build_and_run.bat"
     shutil.copyfile(canonical, root / "build_and_run.bat")
     log = root / "build.log"
@@ -172,43 +183,35 @@ def test_canonical_build_records_failure_and_preserves_exit_code(tmp_path):
            "AGENTPARK_NO_PAUSE": "1", "AGENTPARK_STARTUP_LOG": str(log)}
     result = subprocess.run(["cmd.exe", "/d", "/c", str(root / "build_and_run.bat")],
                             env=env, cwd=root, capture_output=True, timeout=15)
-    assert result.returncode == 42, result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")
+    assert result.returncode == (1 if runtime_exit else 42), result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")
     transcript = log.read_text(encoding="utf-8")
-    assert "error TS2322: intentional fixture failure" in transcript
+    if runtime_exit:
+        assert 'Failed to prepare node window runtime dependencies' in transcript
+        assert 'Compiling WebUI' not in transcript
+    else:
+        assert "error TS2322: intentional fixture failure" in transcript
     assert "Starting AgentPark CLI" not in transcript
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows restart worker integration")
-@pytest.mark.parametrize("scenario,expected_code,builds,repairs", [
-    ("success", 0, 1, 0), ("repaired", 0, 2, 1),
-    ("persistent", 1, 4, 3), ("repair_failed", 1, 1, 1),
-])
-def test_restart_worker_repairs_and_rebuilds_in_isolated_workspace(tmp_path, scenario, expected_code, builds, repairs):
+@pytest.mark.parametrize("build_exit,expected_code", [(0, 0), (42, 1)])
+def test_restart_worker_delegates_recovery_to_build_once(tmp_path, build_exit, expected_code):
     root = tmp_path / "workspace with spaces"
     scripts = root / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "restart_agentpark.ps1").write_text("exit 0\n", encoding="utf-8")
-    build_result = "exit /b 0" if scenario == "success" else (
-        'if exist "%~dp0repaired" exit /b 0\nexit /b 42' if scenario == "repaired" else "exit /b 42")
     (root / "build_and_run.bat").write_text(
-        '@echo off\necho build>>"%~dp0builds.txt"\necho simulated compiler error TS2322>"%AGENTPARK_STARTUP_LOG%"\n' + build_result + "\n",
-        encoding="utf-8")
-    repair_result = "exit /b 9" if scenario == "repair_failed" else "exit /b 0"
+        '@echo off\necho build>>"%~dp0builds.txt"\n'
+        'echo simulated build result>"%AGENTPARK_STARTUP_LOG%"\n'
+        f'exit /b {build_exit}\n', encoding="utf-8")
     (scripts / "repair_startup.bat").write_text(
-        '@echo off\nif not exist "%~1" exit /b 7\necho repair>>"%~dp0..\\repairs.txt"\n'
-        'echo done>"%~dp0..\\repaired"\n' + repair_result + "\n", encoding="utf-8")
+        '@echo forbidden>"%~dp0../repairs.txt"\n@exit /b 9\n', encoding="utf-8")
     worker = Path(__file__).resolve().parents[1] / "scripts" / "restart_agentpark_worker.ps1"
     result = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(worker),
                              "-WorkspaceRoot", str(root)], capture_output=True, timeout=30)
-    assert result.returncode == expected_code, result.stdout.decode("utf-8", errors="replace") + result.stderr.decode("utf-8", errors="replace")
-    assert len((root / "builds.txt").read_text().splitlines()) == builds
-    repair_file = root / "repairs.txt"
-    assert (len(repair_file.read_text().splitlines()) if repair_file.exists() else 0) == repairs
-    log = next((root / ".runtime").glob("restart-worker-*.log")).read_text(encoding="utf-8-sig")
-    assert "Build transcript:" in log
-    if repairs:
-        assert "simulated compiler error TS2322" in log
-        assert "standalone Companion" in log
+    assert result.returncode == expected_code, result.stderr.decode(errors="replace")
+    assert (root / "builds.txt").read_text().splitlines() == ["build"]
+    assert not (root / "repairs.txt").exists()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows restart concurrency integration")

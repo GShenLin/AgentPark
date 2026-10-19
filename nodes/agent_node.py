@@ -330,11 +330,13 @@ class Node(BaseNode):
         start_time = time.monotonic()
         raise_if_cancel_requested(cancel_source)
         provider_request_tracker.reset()
-        response = stream_runtime.send(
-            agent,
-            AgentSendContext(stream_handler=stream_runtime.on_stream_delta,
-                             thinking_stream_handler=stream_runtime.on_thinking_delta),
-        )
+        from src.remote_workspace.active_execution import active_node_execution
+        with active_node_execution(agent):
+            response = stream_runtime.send(
+                agent,
+                AgentSendContext(stream_handler=stream_runtime.on_stream_delta,
+                                 thinking_stream_handler=stream_runtime.on_thinking_delta),
+            )
         min_delay_ms = _resolved_agent_node_settings().min_send_delay_ms
         if min_delay_ms > 0:
             elapsed = time.monotonic() - start_time

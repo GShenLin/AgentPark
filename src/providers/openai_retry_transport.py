@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import time
+
 from src.providers.openai_retry_policy import OpenAIRetryPolicy
 from src.providers.openai_retry_policy import OpenAIRetryState
 from src.providers.openai_retry_policy import OpenAITransportTimeouts
@@ -8,6 +11,8 @@ from src.providers.openai_retry_policy import is_retryable_provider_code
 from src.providers.openai_transport_errors import OpenAIHttpError
 from src.providers.openai_transport_errors import OpenAITransportError
 from src.runtime_cancellation import sleep_with_cancel
+from src.runtime_cancellation import CancellationRequested
+from src.providers.responses_stream_recovery import ResponsesToolsInterrupted, ResponsesToolExecutionObserver, tools_were_started
 
 
 class OpenAIRetryTransportMixin:
@@ -143,9 +148,17 @@ class OpenAIRetryTransportMixin:
             scope="stream",
         )
         auth_recovery_stage = 0
+        attempt_index = 0
         while True:
             try:
-                return self._stream_responses_once(
+                attempt_index += 1
+                attempt_started = time.perf_counter()
+                if isinstance(item_event_handler, ResponsesToolExecutionObserver):
+                    item_event_handler.begin_attempt()
+                self._emit_provider_runtime_notice(stage="openai_responses_attempt_started", message=json.dumps({
+                    "attempt": attempt_index,
+                }))
+                response = self._stream_responses_once(
                     url=url,
                     headers=headers,
                     payload_json=payload_json,
@@ -154,9 +167,45 @@ class OpenAIRetryTransportMixin:
                     thinking_stream_handler=thinking_stream_handler,
                     item_event_handler=item_event_handler,
                 )
+                self._emit_provider_runtime_notice(stage="openai_responses_attempt_finished", message=json.dumps({
+                    "attempt": attempt_index, "status": "completed",
+                    "elapsed_ms": round((time.perf_counter() - attempt_started) * 1000, 3),
+                }))
+                return response
             except (OpenAIHttpError, OpenAITransportError) as exc:
+                self._emit_provider_runtime_notice(stage="openai_responses_attempt_finished", message=json.dumps({
+                    "attempt": attempt_index, "status": "failed", "error": str(exc),
+                    "elapsed_ms": round((time.perf_counter() - attempt_started) * 1000, 3),
+                    "tools_started": tools_were_started(item_event_handler),
+                }))
                 status_code = int(getattr(exc, "status_code", 0) or 0)
                 error_str = str(exc)
+                provider_code = (
+                    exc.provider_code
+                    if isinstance(exc, OpenAIHttpError)
+                    else ""
+                )
+                structured_failure = (
+                    isinstance(exc, OpenAIHttpError)
+                    and exc.response_event_type == "response.failed"
+                )
+                fatal_structured_failure = structured_failure and (
+                    is_fatal_responses_failure_code(provider_code)
+                    or self._quota_error_non_retryable(error_str)
+                )
+                if fatal_structured_failure:
+                    retryable = False
+                elif structured_failure:
+                    retryable = True
+                else:
+                    retryable = (
+                        isinstance(exc, OpenAITransportError)
+                        or self._http_error_retryable(status_code, error_str)
+                        or is_retryable_provider_code(provider_code)
+                    )
+                if tools_were_started(item_event_handler):
+                    self._reset_responses_websocket_for_retry()
+                    raise ResponsesToolsInterrupted(exc, retryable=retryable) from exc
                 if status_code == 401:
                     next_auth_stage = self._recover_responses_unauthorized(
                         headers,
@@ -182,29 +231,6 @@ class OpenAIRetryTransportMixin:
                         scope="stream",
                     )
                     continue
-                provider_code = (
-                    exc.provider_code
-                    if isinstance(exc, OpenAIHttpError)
-                    else ""
-                )
-                structured_failure = (
-                    isinstance(exc, OpenAIHttpError)
-                    and exc.response_event_type == "response.failed"
-                )
-                fatal_structured_failure = structured_failure and (
-                    is_fatal_responses_failure_code(provider_code)
-                    or self._quota_error_non_retryable(error_str)
-                )
-                if fatal_structured_failure:
-                    retryable = False
-                elif structured_failure:
-                    retryable = True
-                else:
-                    retryable = (
-                        isinstance(exc, OpenAITransportError)
-                        or self._http_error_retryable(status_code, error_str)
-                        or is_retryable_provider_code(provider_code)
-                    )
                 decision = None
                 retry_stage = "openai_responses_retry"
                 if retryable:
@@ -271,6 +297,14 @@ class OpenAIRetryTransportMixin:
                     error=exc,
                     message=f"{endpoint}: {error_str}",
                 ) from exc
+            except BaseException as exc:
+                self._emit_provider_runtime_notice(stage="openai_responses_attempt_finished", message=json.dumps({
+                    "attempt": attempt_index,
+                    "status": "cancelled" if isinstance(exc, CancellationRequested) else "failed",
+                    "error": str(exc), "elapsed_ms": round((time.perf_counter() - attempt_started) * 1000, 3),
+                    "tools_started": tools_were_started(item_event_handler),
+                }))
+                raise
 
     @staticmethod
     def _responses_terminal_error(*, endpoint: str, error: object, message: str) -> RuntimeError:

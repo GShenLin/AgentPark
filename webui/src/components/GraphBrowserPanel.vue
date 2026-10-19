@@ -11,7 +11,7 @@ import { t } from '../i18n'
 
 const props = defineProps<{
   graphId: string; graphNameInput: string; graphWorkingPathInput: string
-  graphLoading: boolean; graphMemoryClearingId: string
+  graphLoading: boolean; graphCreating: boolean; graphMemoryClearingId: string
   graphs: GraphInfo[]; graphProfiles: GraphProfile[]; selectedGraphProfileId: string
 }>()
 const emit = defineEmits<{
@@ -19,6 +19,7 @@ const emit = defineEmits<{
   'update:graphWorkingPathInput': [value: string]
   'update:selectedGraphProfileId': [value: string]
   graphPathError: [message: string]
+  newGraph: []
   saveGraphConfig: []; saveGraphProfile: []; createGraphFromProfile: []; deleteGraphProfile: []; refreshGraphs: []
   loadGraphConfig: [graph: GraphInfo]; clearGraphMemory: [graph: GraphInfo]
   deleteGraphConfig: [graph: GraphInfo]; toggleGraphVisibility: [graph: GraphInfo]
@@ -97,6 +98,7 @@ function updateSelectedGraphProfile(value: string) {
           @update:model-value="updateGraphName"
         />
         <ActionButton variant="primary" compact @click="emit('saveGraphConfig')">{{ t('common.save') }}</ActionButton>
+        <ActionButton compact :disabled="graphCreating" @click="emit('newGraph')">NewGraph</ActionButton>
         <ActionButton compact @click="emit('saveGraphProfile')">{{ t('memory.saveProfile') }}</ActionButton>
         <ActionButton compact @click="emit('refreshGraphs')">{{ t('common.refresh') }}</ActionButton>
       </div>

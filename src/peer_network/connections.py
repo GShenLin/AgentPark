@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from .channel import PeerChannel
@@ -97,6 +98,24 @@ class PeerConnections:
                     raise ConnectionError("Remote peer connection failed.")
                 await self.changed.wait()
 
+    @asynccontextmanager
+    async def _negotiation(self, peer: str, link: Link):
+        """Release failed negotiation resources without closing a newer session."""
+        try:
+            yield
+        except BaseException:
+            if self.links.get(peer) is link:
+                del self.links[peer]
+            try:
+                if link.channel:
+                    link.channel.close()
+            finally:
+                try:
+                    await link.pc.close()
+                finally:
+                    self.changed.set()
+            raise
+
     async def connect(self, peer: str) -> None:
         if peer not in self.service.store.grants and not self.service.remote.allows_connection(peer):
             raise PermissionError("Pair the device before connecting.")
@@ -108,10 +127,11 @@ class PeerConnections:
             await self.service.send_signal("connect", peer, uuid.uuid4().hex)
             return
         link = await self.new(peer, uuid.uuid4().hex)
-        self.bind(peer, link, link.pc.createDataChannel("agentpark.v1", ordered=True))
-        async with asyncio.timeout(30):
-            await link.pc.setLocalDescription(await link.pc.createOffer())
-        await self.service.send_signal("offer", peer, link.session_id, link.pc.localDescription.sdp)
+        async with self._negotiation(peer, link):
+            self.bind(peer, link, link.pc.createDataChannel("agentpark.v1", ordered=True))
+            async with asyncio.timeout(30):
+                await link.pc.setLocalDescription(await link.pc.createOffer())
+            await self.service.send_signal("offer", peer, link.session_id, link.pc.localDescription.sdp)
 
     async def accept(self, raw: dict, *, portal: bool = False) -> None:
         from aiortc import RTCSessionDescription
@@ -143,19 +163,21 @@ class PeerConnections:
             if old and old.pc.connectionState == "connected":
                 raise ValueError("Existing connection is still active.")
             link = await self.new(peer, signal.session_id)
-            link.portal = portal
-            if portal:
-                link.portal_ice = PortalIceOrder()
-                link.portal_ice.accept(signal)
-            async with asyncio.timeout(30):
-                await link.pc.setRemoteDescription(RTCSessionDescription(sdp=signal.sdp, type="offer"))
-                await link.pc.setLocalDescription(await link.pc.createAnswer())
-            await self.service.send_signal("answer", peer, signal.session_id, link.pc.localDescription.sdp)
+            async with self._negotiation(peer, link):
+                link.portal = portal
+                if portal:
+                    link.portal_ice = PortalIceOrder()
+                    link.portal_ice.accept(signal)
+                async with asyncio.timeout(30):
+                    await link.pc.setRemoteDescription(RTCSessionDescription(sdp=signal.sdp, type="offer"))
+                    await link.pc.setLocalDescription(await link.pc.createAnswer())
+                await self.service.send_signal("answer", peer, signal.session_id, link.pc.localDescription.sdp)
         else:
             link = self.links.get(peer)
             if link is None or link.session_id != signal.session_id or link.pc.signalingState != "have-local-offer":
                 raise ValueError("Answer does not match the pending connection.")
-            await link.pc.setRemoteDescription(RTCSessionDescription(sdp=signal.sdp, type="answer"))
+            async with self._negotiation(peer, link):
+                await link.pc.setRemoteDescription(RTCSessionDescription(sdp=signal.sdp, type="answer"))
 
     def status(self, peer: str) -> str:
         link = self.links.get(peer)

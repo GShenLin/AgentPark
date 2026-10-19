@@ -18,6 +18,7 @@ from src.provider_options import build_provider_options_for_support_modes, provi
 class HarnessNode(BaseNode):
     harness_id = ""
     provider_reasoning_options = False
+    uses_agentpark_provider = True
     support_modes = ("chat",)
     input_capabilities = ["text", "resource:image", "resource:video", "resource:audio",
                           "resource:doc", "resource:file", "resource:url", "structured", "meta"]
@@ -30,6 +31,8 @@ class HarnessNode(BaseNode):
 
     def get_config_schema(self, context: dict | None = None) -> dict:
         schema = super().get_config_schema(context)
+        if not self.uses_agentpark_provider:
+            return schema
         provider_id = str((context or {}).get("provider_id") or "").strip()
         config = ConfigLoader().get_provider_config(provider_id) if provider_id else {}
         selection = provider_selection_schema(

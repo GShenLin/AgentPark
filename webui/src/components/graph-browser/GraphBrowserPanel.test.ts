@@ -10,7 +10,7 @@ vi.mock('./GraphContents.vue', () => ({ default: {
 describe('Graph browser rendering', () => {
   it('renders only the current Graph’s contents beneath its own Graph row', async () => {
     const html = await renderToString(createSSRApp(GraphBrowserPanel, {
-      graphId: 'graph-b', graphNameInput: 'B', graphWorkingPathInput: '', graphLoading: false,
+      graphId: 'graph-b', graphNameInput: 'B', graphWorkingPathInput: '', graphLoading: false, graphCreating: false,
       graphMemoryClearingId: '', graphs: [{ id: 'graph-a', name: 'A' }, { id: 'graph-b', name: 'B' }],
       graphProfiles: [], selectedGraphProfileId: '',
     }))

@@ -1,5 +1,6 @@
 import { inject, ref, shallowReactive, type InjectionKey } from 'vue'
 import { createVoiceRoom } from './useVoiceRoom'
+import { createVoiceComposers } from './voiceComposer'
 
 export type WorkspaceVoiceSession = {
   id: number
@@ -12,6 +13,7 @@ export type WorkspaceVoiceSession = {
 export function createWorkspaceVoice() {
   const sessions = shallowReactive<WorkspaceVoiceSession[]>([])
   const expanded = ref(false)
+  const composers = createVoiceComposers()
   let sequence = 0
 
   function find(graphId: string, nodeId: string) {
@@ -38,7 +40,7 @@ export function createWorkspaceVoice() {
     sessions.splice(index, 1)
   }
   function stopAll() { for (const session of sessions) session.room.stop() }
-  return { sessions, expanded, status, start, hangup, dismiss, stopAll }
+  return { sessions, expanded, composers, status, start, hangup, dismiss, stopAll }
 }
 
 export type WorkspaceVoice = ReturnType<typeof createWorkspaceVoice>

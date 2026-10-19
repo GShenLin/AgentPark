@@ -42,7 +42,10 @@ export function createVoiceRoom() {
       opened.value = true; add([node])
     } catch (cause) {
       if (epoch !== generation) return
-      error.value = cause instanceof Error ? cause.message : String(cause); stop()
+      error.value = cause instanceof Error && cause.name === 'NotFoundError'
+        ? '未检测到可用的麦克风（音频输入设备）。请在打开网页的设备上连接或启用麦克风，然后重新发起通话。'
+        : cause instanceof Error ? cause.message : String(cause)
+      stop()
     }
   }
 

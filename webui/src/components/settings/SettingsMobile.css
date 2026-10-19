@@ -49,8 +49,8 @@
 .settings-compact :deep(.form-grid),
 .settings-compact :deep(.switch-grid) { grid-template-columns: minmax(0, 1fr); }
 .settings-compact :deep(.provider-add) { flex-direction: row; }
-.settings-compact :deep(.profiler-panels) { padding: 0; }
-.settings-compact :deep(.profiler-panel-head) { flex-wrap: wrap; }
+.settings-compact :deep(.preset-panels) { padding: 0; }
+.settings-compact :deep(.preset-panel-head) { flex-wrap: wrap; }
 .settings-compact :deep(.static-settings-tabs) { flex-wrap: wrap; padding: 8px 12px; }
 .settings-compact :deep(.switch-field) { min-height: 44px; }
 .settings-compact :deep(.switch-field input) { width: 20px; height: 20px; }

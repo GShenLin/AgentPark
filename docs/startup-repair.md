@@ -3,38 +3,41 @@
 `Restart.bat` delegates to an independent hidden PowerShell worker. The wrapper's
 successful exit means restart was accepted; it does not claim the new server is ready.
 
-The worker stops the previous workspace processes and runs the canonical
-`build_and_run.bat`. Startup output is captured separately from the interactive
-Companion console, so its terminal input/output handles remain intact. The launcher
-records the new server PID and waits up to 90 seconds for its PID file and
-`/api/system/status` to agree on that process. A listening port or a different
-AgentPark instance is not sufficient evidence of readiness.
+The worker stops the previous workspace processes and launches the canonical
+`build_and_run.bat` once. The build launcher owns startup, standalone Companion
+recovery and up to three repair attempts, so direct launches get the same recovery
+as restarts. The worker never runs a second recovery loop.
 
-When stopping/building/startup fails, the worker runs `scripts/repair_startup.bat`,
-which only requires the Python bootstrap, and starts `python -m src.startup_repair`.
-The repair Companion runs directly through the Agent node, without the web backend
-or Companion MCP. It receives restart/build/dependency/server log tails and can read
-the complete logs with local tools. Its working directory is the AgentPark project;
-its tools are local file reading/writing, search, patching and terminal execution.
-Remote bindings, MCP servers, skills and plugins from the interactive Companion are
-not included in this dedicated startup repair context.
+The launcher always retains a startup transcript under `.runtime/` (or the explicit
+`AGENTPARK_STARTUP_LOG` path). Startup and repair output are captured separately
+from the interactive Companion console, preserving terminal handles. A failed
+attempt invokes `scripts/repair_startup.bat`, which needs only the Python bootstrap,
+and starts `python -m src.startup_repair`. The repair Companion runs through the
+Agent node without the web backend. Startup errors do not pause before recovery.
 
-The repair process uses the explicit `provider_id` and `model` from the canonical
-Companion configuration in the configured memories directory. Settings > Companion
-offers Provider ID and Model ID separately and rejects missing/incompatible model
-bindings on save. Incomplete existing settings remain readable so they can be edited.
-Recovery does not silently choose another Provider or Model.
+After repair, the launcher rebuilds and waits up to 90 seconds for its new server's
+PID file and `/api/system/status` to agree on that process. A listening port or a
+different AgentPark instance is not sufficient evidence of readiness.
 
-After the repair turn exits, the worker reruns `build_and_run.bat` and verifies
-readiness again. The model does not launch another restart worker itself. Up to
+The canonical Companion configuration stores a `profile_id` referencing an Agent
+Preset in `agent/`. Settings > Companion selects that Preset; its provider, explicit
+model, instructions and capabilities are edited in Node Preset Editor. The bundled
+`Companion` Preset is shared by regular conversations and recovery. Identity, session
+state and the local working directory remain on the Companion node. Preset changes
+are loaded on the next turn; missing/invalid Presets or models fail explicitly.
+Recovery snapshots the resolved model settings and overrides the execution directory
+and capabilities for a standalone local repair. It does not alter the selected Preset.
+
+After the repair turn exits, the launcher reruns its build phase and verifies
+readiness again. The model does not launch another build or restart itself. Up to
 three repair turns are allowed; persistent startup failure or a failed repair
 process exits with an error and retains the evidence. A model response saying
 "fixed" is not treated as successful startup.
 
 Evidence is retained in UTF-8 under `.runtime/`:
 
-- `restart-worker-<pid>.log`: phases, failed build output and repair output.
-- `restart-build-<pid>-<attempt>.log`: each startup attempt's complete output.
+- `restart-worker-<pid>.log`: restart handoff, readiness and final failure evidence.
+- `startup-<run>.log` / `restart-build-<pid>.log`: all build attempts and repair output.
 - `agentpark-server.log` / `agentpark-server.err.log`: most recent server output.
 - `startup-repair/<session>/`: repair configuration (no Provider credentials),
   failure context and persisted conversation.

@@ -41,47 +41,9 @@ it('waits for all tools in a batch and never submits duplicate tool outputs', ()
   expect(send.mock.calls.filter(([e]) => e.item?.type === 'function_call_output')).toHaveLength(2)
 })
 
-it('streams during responses, bounds in-flight frames, retains temporal context and cleans up on stop', () => {
-  const { send, dialogue, event } = setup()
-  event({ type: 'response.created' }); event({ type: 'output_audio_buffer.started' })
-  const ids: string[] = []
-  for (let i = 0; i < 30; i++) {
-    expect(dialogue.screenFrame(`data:image/jpeg;base64,${i}`)).toBe(true)
-    ids.push(send.mock.calls[send.mock.calls.length - 1]![0].item.id)
-  }
-  expect(dialogue.screenFrame('data:image/jpeg;base64,blocked')).toBe(false)
-  for (const id of ids) event({ type: 'conversation.item.added', item: { id } })
-  for (let i = 30; i < 31; i++) {
-    expect(dialogue.screenFrame(`data:image/jpeg;base64,${i}`)).toBe(true)
-    const id = send.mock.calls[send.mock.calls.length - 1]![0].item.id; ids.push(id)
-    event({ type: 'conversation.item.added', item: { id } })
-    event({ type: 'conversation.item.created', item: { id } }) // Duplicate acknowledgement.
-  }
-  const deletes = () => send.mock.calls.filter(([e]) => e.type === 'conversation.item.delete').map(([e]) => e.item_id)
-  expect(deletes()).toEqual(ids.slice(0, -10))
-  expect(send.mock.calls[0]![0].item.content[0].text).toContain('1970-01-01T00:00:20.000Z')
-  // Stop also cleans up unacknowledged frames; late acknowledgements are harmless.
-  dialogue.screenFrame('data:image/jpeg;base64,pending')
-  const pending = send.mock.calls[send.mock.calls.length - 1]![0].item.id
-  dialogue.screenStopped()
-  expect(deletes()).toEqual([...ids, pending])
-  event({ type: 'conversation.item.added', item: { id: pending } })
-  expect(deletes()).toEqual([...ids, pending])
-  expect(send.mock.calls.filter(([e]) => e.type === 'response.create')).toHaveLength(0)
-})
-
-it('reports a missing frame acknowledgement instead of silently freezing the screen', () => {
-  let now = 0
-  const dialogue = new RealtimeDialogue(vi.fn(), () => now)
-  dialogue.screenFrame('data:image/jpeg;base64,one'); now = 10000
-  expect(() => dialogue.screenFrame('data:image/jpeg;base64,two')).toThrow('确认超时')
-  dialogue.screenStopped()
-  expect(dialogue.screenFrame('data:image/jpeg;base64,retry')).toBe(true)
-})
-
 it('rejects malformed tools and surfaces server failures', () => {
   const { event, dialogue } = setup()
-  expect(() => event({ type: 'response.function_call_arguments.done', name: 'bad' })).toThrow('未注册')
+  expect(event({ type: 'response.function_call_arguments.done', name: 'bad', call_id: 'bad', arguments: '{}' })).toMatchObject({ kind: 'tool-error', text: expect.stringContaining('未注册') })
   expect(() => dialogue.taskUpdate('unknown', { status: 'queued', text: '' })).toThrow('缺少')
-  expect(event({ type: 'response.done', response: { status: 'failed', status_details: { error: { message: 'quota' } } } })).toEqual({ kind: 'error', text: 'quota' })
+  expect(event({ type: 'response.done', response: { status: 'failed', status_details: { error: { message: 'quota' } } } })).toEqual({ kind: 'warning', text: expect.stringContaining('quota') })
 })

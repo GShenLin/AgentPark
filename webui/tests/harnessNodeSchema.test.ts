@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ref } from 'vue'
 import type { ProviderInfo } from '../src/api'
-import { HARNESS_NODE_TYPES, useAgentNodeCreateSchema } from '../src/composables/useAgentNodeCreateSchema'
+import { PROVIDER_HARNESS_NODE_TYPES, useAgentNodeCreateSchema } from '../src/composables/useAgentNodeCreateSchema'
 
 describe('Harness node provider and model selection', () => {
   it.each(['hermes_agent_node', 'openclaw_node'])('%s creates with provider reasoning choices', typeId => {
@@ -16,7 +16,17 @@ describe('Harness node provider and model selection', () => {
     schema.ensureCreateAgentSelections()
     expect(fields.value.reasoning_effort).toBe('max')
   })
-  for (const typeId of HARNESS_NODE_TYPES) {
+  it.each(['opencode_node', 'antigravity_node'])('keeps %s native selection independent of AgentPark providers', typeId => {
+    const original = { native_model: 'opencode/deepseek-v4.1-flash-free', native_agent: 'build', native_effort: '' }
+    const fields = ref<Record<string, unknown>>({ ...original })
+    const schema = useAgentNodeCreateSchema({ selectedTypeId: ref(typeId), selectedNodeFields: fields,
+      providers: ref([{ id: 'p', type: 'openai', supportmode: ['chat'], model: 'paid-model', models: ['paid-model'] }] as ProviderInfo[]),
+      availableTools: ref([]) })
+    schema.ensureCreateAgentSelections()
+    expect(fields.value).toEqual(original)
+    expect(schema.isCreateProviderField('provider_id')).toBe(false)
+  })
+  for (const typeId of PROVIDER_HARNESS_NODE_TYPES) {
     it(`${typeId} filters conversational providers and changes model with provider`, () => {
       const fields = ref<Record<string, unknown>>({ provider_id: 'first', model: 'b' })
       const providers = ref<ProviderInfo[]>([

@@ -631,6 +631,7 @@ def test_openai_transport_collects_normalized_events_from_mocked_sse(monkeypatch
             },
         },
     ]
+    raw_events.append({"type": "response.completed", "response": {"id": "resp-1", "output": []}})
     monkeypatch.setattr(agent, "_curl_post_sse_data_lines", lambda **_kwargs: (json.dumps(event) for event in raw_events))
     collected = []
 
@@ -647,6 +648,7 @@ def test_openai_transport_collects_normalized_events_from_mocked_sse(monkeypatch
         "output_item_added",
         "function_call_arguments_delta",
         "output_item_done",
+        "response_completed",
     ]
     assert all(not isinstance(event, dict) for event in collected)
     assert result["output"][0] == {
@@ -788,6 +790,7 @@ def test_openai_transport_forwards_reasoning_delta_to_thinking_stream(monkeypatc
         {"type": "response.reasoning_summary_text.delta", "delta": "plan"},
         {"type": "response.output_text.delta", "delta": "done"},
     ]
+    raw_events.append({"type": "response.completed", "response": {"id": "resp-1", "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]}})
     monkeypatch.setattr(agent, "_curl_post_sse_data_lines", lambda **_kwargs: (json.dumps(event) for event in raw_events))
     stream_events = []
     thinking_events = []

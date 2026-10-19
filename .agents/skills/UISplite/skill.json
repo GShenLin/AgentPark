@@ -1,0 +1,33 @@
+{
+  "scripts": [
+    {
+      "id": "inspect_images",
+      "name": "UISplite 图片透明与边距检查",
+      "description": "只读检查本地图片尺寸、Alpha 分布和主体边距，不生成或修改图片。需要 Pillow。",
+      "entry": "scripts/inspect_images.py",
+      "cwd": ".",
+      "timeoutSeconds": 60,
+      "allowWrite": false,
+      "enabled": true,
+      "argsSchema": {
+        "type": "object",
+        "properties": {
+          "image_paths": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "执行机器上待检查图片的绝对路径。"
+          },
+          "min_margin_fraction": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 0.5,
+            "description": "可选主体四边最小留白比例，如 0.15；按 Alpha 大于 127 的主体测量。"
+          }
+        },
+        "required": ["image_paths"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

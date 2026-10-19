@@ -45,7 +45,7 @@ def test_native_tool_results_are_correlated_and_returned_once(dialogue):
     router, events, sender, _ = dialogue
     delegate(router, tool())
     delegate(router, tool())
-    assert events == [{"type": "delegation", "id": "call1", "text": "请读取文件"}]
+    assert events == [{"type": "tool.call", "id": "call1", "name": "delegate_to_node", "arguments": tool()["arguments"]}]
     result = VoiceTaskUpdate(task_id="task1", status="completed", text="文件内容：蓝色风铃")
     assert asyncio.run(router.deliver_update("call1", result)) == "accepted"
     payload = sender.call_args.args[0]
@@ -88,8 +88,7 @@ def test_barge_in_stops_old_audio_but_preserves_late_tool_results(dialogue):
 
 
 @pytest.mark.parametrize("invalid", [
-    {**tool(), "name": "unregistered"}, {**tool(), "arguments": '{"text": 12}'},
-    {**tool(), "arguments": '{"text":" ","extra":true}'}, {**tool(), "call_id": ""},
+    {**tool(), "name": None}, {**tool(), "arguments": 12}, {**tool(), "call_id": ""},
 ])
 def test_invalid_batch_never_partially_executes(dialogue, invalid):
     router, events, _, _ = dialogue

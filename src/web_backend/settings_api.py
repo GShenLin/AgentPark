@@ -16,7 +16,7 @@ from src.conversation_context.settings import ConversationSettings
 from src.agent_profile_inference import validate_default_agent_profiles
 from src.file_transaction import atomic_write_text
 from src.project_process_environment import DEFAULT_NO_PROXY, read_project_proxy_settings
-from src.provider_limit_schema import read_provider_limit_file
+from src.provider_limit_view import read_current_provider_limits
 from src.providers.provider_pressure import get_provider_pressure_manager
 from src.runtime_events.event_config_store import event_config_path, load_or_create_event_config
 from src.web_backend.theme_settings import (
@@ -48,6 +48,7 @@ from .turn_audit_query import get_turn_audit, list_turn_audits
 
 
 SETTINGS_SECTIONS = {
+    "toolsets": {"label": "Toolset", "filename": "toolsets.json"},
     "model-provider": {
         "label": "modelProvider",
         "filename": "modelProvider.json",
@@ -94,6 +95,9 @@ class SettingsApiDomain(DomainBase):
         return {"id": safe_section, **meta}
 
     def _settings_path(self, section: str) -> str:
+        if section == "toolsets":
+            from src.tool.toolset_registry import toolsets_path
+            return toolsets_path()
         if section == "model-provider":
             explicit_path = str(os.environ.get(ConfigLoader.CONFIG_PATH_ENV) or "").strip()
             if explicit_path:
@@ -113,6 +117,9 @@ class SettingsApiDomain(DomainBase):
         raise HTTPException(status_code=404, detail=f"unknown settings section: {section}")
 
     def _settings_runtime_metadata(self, section: str, payload: dict) -> dict:
+        if section == "toolsets":
+            from .toolset_settings import toolset_metadata
+            return toolset_metadata()
         if section != "defaults":
             return {}
         try:
@@ -150,6 +157,10 @@ class SettingsApiDomain(DomainBase):
         }
 
     def _read_payload(self, path: str, section: str) -> tuple[str, dict, list[str]]:
+        if section == "toolsets":
+            from .toolset_settings import read_toolsets
+            payload = read_toolsets()
+            return json.dumps(payload, ensure_ascii=False, indent=2) + "\n", payload, []
         if not os.path.isfile(path):
             if section == "events":
                 payload = load_or_create_event_config()
@@ -210,6 +221,10 @@ class SettingsApiDomain(DomainBase):
         return payload
 
     def _validate_payload(self, section: str, payload: object) -> None:
+        if section == "toolsets":
+            from .toolset_settings import validate_toolset_settings
+            validate_toolset_settings(payload)
+            return
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail=f"{section} settings must be a top-level object")
         if section == "model-provider":
@@ -353,12 +368,11 @@ class SettingsApiDomain(DomainBase):
         path = self._settings_path(meta["id"])
         parsed = self._parse_content(meta["id"], (payload or {}).get("content"))
         if meta["id"] == "companion":
-            from src.companion_model import validate_companion_model
+            from src.companion_config import resolve_companion_config
 
             try:
-                providers = ConfigLoader().get_all_providers() if parsed.get("provider_id") else {}
-                validate_companion_model(parsed, providers)
-            except ValueError as exc:
+                resolve_companion_config(parsed)
+            except (ValueError, RuntimeError) as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         provider_limit_update_plan = None
         raw_provider_limit_copies = (payload or {}).get("provider_limit_copies")
@@ -482,9 +496,9 @@ class SettingsApiDomain(DomainBase):
 
     def get_provider_limits(self):
         try:
-            return read_provider_limit_file()
+            return read_current_provider_limits()
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"failed to read ProviderLimit.json: {exc}") from exc
+            raise HTTPException(status_code=500, detail=f"failed to read provider limits: {exc}") from exc
 
     def get_provider_pressure(self):
         try:

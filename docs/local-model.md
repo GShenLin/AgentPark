@@ -1,13 +1,31 @@
-# 本地模型（LocalModel）
+# 本地服务（LocalModel）
 
-设置 → 本地模型用于手动管理 AgentPark 后端所在电脑的 Strata、ComfyUI 实例。
+设置 → 本地服务用于登记和手动管理 AgentPark 后端所在电脑上的任意服务。
+添加服务默认不使用管理预设，不要求 Python 环境或模型类型。
 服务登记保存在 `config/localModel.json`。不自动加载、卸载、调度，不向 Agent 默认提供管理工具。
 
-## 配置与操作
+## 普通服务
+
+- 名称：用户自定义的显示名称。
+- 工作目录与启动程序：使用绝对路径。启动程序可以是任意可执行程序；配置启动程序时必须指定工作目录。
+- 启动参数：每行一个参数，带空格的路径不加引号。参数以数组传递，不自动拼接 shell 命令，不限制服务自身的参数名。
+- 脚本：启动程序填写实际解释器，脚本路径通过参数传入。例如 `python.exe` 加 `C:\Services\server.py`；PowerShell 脚本使用 `powershell.exe` 加 `-File` 和脚本路径。
+- 服务地址：可选的本机 HTTP/HTTPS 根地址，用于打开页面和检查端口占用。实际监听地址由启动程序和参数决定，不会自动注入参数。
+- 仅登记已启动服务：填写名称、服务地址即可，不要求本地安装路径或启动程序。
+- 就绪检测路径：可选，例如 `/health`；只对配置地址发起 GET，HTTP 2xx 表示通过，支持纯文本或 HTML 响应，不跟随重定向。请使用可安全重复访问的检测接口。
+- 未配置检测路径时，`online` 为 `null`，只报告进程状态，不声称服务已经就绪。
+- 启动等待时间：1–600 秒，默认 60 秒；检测超时会明确报错并保留进程供手动检查或停止。
+- 启动器须保持前台运行，不能启动服务后立即退出或将服务分离。停止时处理持有进程句柄的进程树；Windows 使用 `taskkill /T /F`，POSIX 使用独立进程组的 SIGTERM。停止前应完成服务中的任务。
+- 普通服务只提供启动、停止、检测和打开入口，不显示模型管理操作；直接请求不支持的模型操作也会被拒绝。
+
+## 可选管理预设
+
+展开“使用管理预设（可选）”后可选择 Strata 或 ComfyUI。预设提供专用启动方式、就绪检测以及模型管理能力。
+切换预设会重置服务地址、启动参数和专用设置；名称和目录保留。预设已有登记可直接读取，无需修改配置文件。
 
 - 安装目录：Strata 的 `serve/server.py` 所在根目录；ComfyUI 的 `main.py` 所在目录。
 - Python：可显式配置；留空使用安装目录的 `.venv`。便携 ComfyUI 应指定外部 `python_embeded/python.exe`。
-- 服务地址：带端口的本机 HTTP 根地址，不带 `/v1`。
+- 预设服务地址：带端口的本机 HTTP 根地址，不带 `/v1`。
 - 附加启动参数：每行一个参数；例如 ComfyUI 的 `--lowvram`。服务地址由独立字段管理。
 - 启动服务：Strata 使用 `--lazy`，启动 HTTP 服务时不加载权重；ComfyUI 等待工作流才加载模型。
 - 停止服务：仅停止当前 AgentPark 进程启动且仍持有进程句柄的服务。外部启动或 AgentPark 重启前启动的服务需在原入口停止。
@@ -27,9 +45,10 @@ ComfyUI 扫描模型目录、`extra_model_paths.yaml`；在线时同时读取服
 
 ## 实现与验证
 
-- `src/local_model/`：合同、登记、引擎适配、HTTP 和手动操作作业。
+- `src/local_model/`：配置合同、登记、服务生命周期接口、普通服务与模型适配、HTTP 和操作作业。
+- `ServiceAdapter` 定义启动、检测、停止前处理；`ModelServiceAdapter` 单独定义加载、卸载和导入。运行时根据适配器公开的操作能力执行，不按服务名称分支。
 - `src/web_backend/local_model_api.py`：所有者权限路由 `/api/local-model`。
 - HTTP 使用项目的 `CurlHttpTransport`；子进程使用参数数组，不使用 shell。
 - 同一实例同时只执行一个操作。操作期间不能修改或移除该实例；检测结果不触发动作。
 - 作业历史在内存中，AgentPark 重启后不保留；配置持久化。
-- 测试：`python -m pytest tests/test_local_model.py tests/test_http_transport_boundary.py -q`；前端 `npm run build`。
+- 测试：`python -m pytest tests/test_local_model.py tests/test_local_service.py tests/test_http_transport_boundary.py -q`；包含真实 HTTP 子进程的 API 生命周期、就绪失败、占用端口及进程树停止。前端 `npm run build`。

@@ -312,7 +312,8 @@ class CurlHttpTransport(CurlStreamMixin):
         return {}
 
     @classmethod
-    def _build_curl_post_command(cls, *, url, headers, payload_path, timeout_val, connect_timeout, marker, no_buffer):
+    def _build_curl_post_command(cls, *, url, headers, payload_path, timeout_val, connect_timeout,
+                                marker, no_buffer, write_out: str | None = None):
         cmd = [
             cls._curl_executable(),
             "--disable",
@@ -335,5 +336,6 @@ class CurlHttpTransport(CurlStreamMixin):
             cmd.extend(["--max-time", str(timeout_val)])
         for key, value in (headers or {}).items():
             cmd.extend(["-H", f"{key}: {value}"])
-        cmd.extend(["--data-binary", f"@{payload_path}", "-w", f"\n{marker}%{{http_code}}"])
+        cmd.extend(["--data-binary", f"@{payload_path}", "-w",
+                    write_out if write_out is not None else f"\n{marker}%{{http_code}}"])
         return cmd

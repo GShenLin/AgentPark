@@ -3,7 +3,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -167,7 +166,7 @@ def test_only_one_operation_and_failed_job_visible(tmp_path, monkeypatch):
     def load(_):
         gate.wait(2)
         raise RuntimeError("explicit failure")
-    monkeypatch.setattr(service, "adapter", lambda _: SimpleNamespace(load=load))
+    monkeypatch.setattr(StrataAdapter, "load", lambda self, model_id: load(model_id))
     job = service.operate(item["id"], Operation(action="load"))
     try:
         with pytest.raises(RuntimeError):

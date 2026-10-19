@@ -104,9 +104,12 @@ def test_persisted_session_checkpoint_is_restored_by_new_agent_instance(tmp_path
     assert restored.messages[1]["content"] == "new input"
 
 
-def test_responses_compaction_retries_strict_schema_then_continues_normal_request(tmp_path):
+def test_responses_compaction_retries_strict_schema_then_continues_normal_request(tmp_path, monkeypatch):
     from src.providers.deepseek_agent import DeepSeekAgent
 
+    # This protocol test supplies its own configuration; construction must not
+    # depend on a provider being installed in the developer's local catalog.
+    monkeypatch.setattr(DeepSeekAgent, "_read_provider_config_from_file", lambda self: _config())
     agent = DeepSeekAgent(
         provider_id="deepseek_v4_pro",
         memory_file_path=str(tmp_path / "memory.md"),

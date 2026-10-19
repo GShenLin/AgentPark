@@ -67,6 +67,9 @@ def resolve_command(harness_id: str, command: str = "") -> str:
 
 
 def command_argv(harness_id: str) -> list[str]:
+    if descriptor(harness_id).installation == "antigravity-native":
+        from .antigravity_installation import command
+        return command(install_root(harness_id))
     if descriptor(harness_id).installation == "hermes-python":
         from .hermes_installation import command
         return command(install_root(harness_id))
@@ -98,6 +101,9 @@ def check_installation(harness_id: str, *, include_updates: bool = False) -> dic
             return {**result, "status": "busy"}
     try:
         with runtime_lease(harness_id):
+            if spec.installation == "antigravity-native":
+                from .antigravity_installation import check
+                return {**asdict(spec), **check(install_root(harness_id), include_updates=include_updates)}
             if spec.installation == "hermes-python":
                 from .hermes_installation import check
                 return {**asdict(spec), **check(install_root(harness_id), include_updates=include_updates)}
@@ -164,6 +170,9 @@ def _mutate_installation(harness_id: str, action: str) -> str:
             raise RuntimeError(f"Harness {harness_id} is busy; stop its nodes before changing its installation.")
         _MUTATING.add(harness_id)
     try:
+        if spec.installation == "antigravity-native":
+            from .antigravity_installation import mutate
+            return mutate(install_root(harness_id), action)
         if spec.installation == "hermes-python":
             from .hermes_installation import mutate
             return mutate(install_root(harness_id), action)

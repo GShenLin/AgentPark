@@ -2,9 +2,10 @@ import json
 from pathlib import Path
 
 from .http import LocalHttp
+from .service_adapter import ModelServiceAdapter
 
 
-class StrataAdapter:
+class StrataAdapter(ModelServiceAdapter):
     def __init__(self, config: dict):
         self.config = config
         self.root = Path(config["install_path"])
@@ -74,6 +75,23 @@ class StrataAdapter:
         path = self.selected(model_id)
         return [python, str(self.root / "serve" / "server.py"), "--engine", "strata", "--config", str(path),
                 "--host", "127.0.0.1", "--port", str(port), "--lazy"]
+
+    def probe_ready(self) -> tuple[bool, str]:
+        health, error = self.http().probe("/health")
+        ready = isinstance(health, dict) and health.get("service") == "strata"
+        return ready, error or ("" if ready else "该地址响应的不是可识别的 Strata 服务")
+
+    def prepare_stop(self) -> None:
+        status, error = self.http().probe("/v1/status")
+        if status is None:
+            # An unavailable API must not prevent stopping our failed process.
+            return
+        if not isinstance(status, dict) or not isinstance(status.get("activity"), dict):
+            raise ValueError("Strata 状态响应格式不正确")
+        if status["activity"].get("in_flight", 0):
+            raise RuntimeError("Strata 有任务正在执行或排队，请完成后再停止")
+        if status.get("loaded"):
+            self.unload()
 
     def load(self, model_id: str):
         path = self.selected(model_id)

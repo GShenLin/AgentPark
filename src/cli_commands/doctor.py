@@ -73,8 +73,9 @@ def _check_provider_config() -> dict[str, Any]:
 def _check_companion_config() -> dict[str, Any]:
     path = companion_node_config_path(runtime_paths._get_graphs_dir())
     try:
-        payload = node_config_service.read_strict(path)
-    except NodeConfigReadError as exc:
+        from src.companion_config import read_companion_config
+        payload = read_companion_config(path)
+    except (NodeConfigReadError, ValueError, RuntimeError) as exc:
         return {"name": "companion_config", "status": "error", "detail": str(exc), "path": path}
     if str(payload.get("type_id") or "agent_node").strip() != "agent_node":
         return {"name": "companion_config", "status": "error", "detail": "type_id must be agent_node", "path": path}

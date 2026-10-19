@@ -1,6 +1,6 @@
 """Run a standalone Companion turn while the web application is unavailable.
 
-The restart worker owns rebuild/retry/readiness. This process owns diagnosis and
+The build launcher owns rebuild/retry/readiness. This process owns diagnosis and
 repair only, and exits before the next build can stop workspace CLI processes.
 """
 from __future__ import annotations
@@ -19,8 +19,8 @@ read AGENTS.md, and repair code, configuration or dependencies as needed. Preser
 work. Do not discard changes, bypass failed checks, swallow errors or claim success
 without evidence. Use the local file/search/patch/terminal tools; the web backend and
 Companion MCP may be unavailable. Do not ask the unavailable web UI for approval.
-Do not invoke Restart.bat or build_and_run.bat, launch a web server, or kill the restart
-worker yourself: after this turn exits, the independent restart worker WILL execute
+Do not invoke Restart.bat or build_and_run.bat, launch a web server, or kill the startup
+launcher yourself: after this turn exits, the build launcher WILL execute
 the canonical build_and_run.bat and check the new server's HTTP readiness. If it fails,
 you will receive the next attempt's logs. Run focused checks during this turn and
 report the cause, changes and checks. Report blockers explicitly. Runtime logs are

@@ -40,10 +40,33 @@ def _curated_profiles() -> list[dict]:
     return profiles
 
 
-def test_curated_profiles_form_ten_strict_ab_provider_pairs():
+@pytest.fixture
+def benchmark_workspace(tmp_path, monkeypatch):
+    from scripts import benchmark_harness_evidence
+
+    shutil.copytree(PROJECT_ROOT / "agent", tmp_path / "agent")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "scripts").mkdir()
+    shutil.copy2(PROJECT_ROOT / "scripts" / "benchmark_long_task.py", tmp_path / "scripts")
+    (tmp_path / "config" / "modelProvider.json").write_text(json.dumps({
+        "providers": {
+            "GPT_Official": {"type": "openai", "api_key": "test-only"},
+            "GPT_53Fast_Official": {"type": "openai", "api_key": "test-only"},
+            "Grok_krill": {"type": "openai", "api_key": "test-only"},
+            "doubao-pro": {"type": "openai", "api_key": "test-only"},
+            "krill_gpt_Newest": {"type": "openai", "api_key": "test-only"},
+            "Kimi_CodingPlan": {"type": "openai", "api_key": "test-only"},
+            "sonnet-5-krill": {"type": "claude", "api_key": "test-only"},
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(benchmark_harness_evidence, "PROJECT_ROOT", tmp_path)
+    return tmp_path
+
+
+def test_curated_profiles_form_ten_strict_ab_provider_pairs(benchmark_workspace):
     profiles = _curated_profiles()
     providers = json.loads(
-        (PROJECT_ROOT / "config" / "modelProvider.json").read_text(encoding="utf-8")
+        (benchmark_workspace / "config" / "modelProvider.json").read_text(encoding="utf-8")
     )["providers"]
     assert len(profiles) == 20
     assert {item["profile_metadata"]["task_family"] for item in profiles} == EXPECTED_FAMILIES
@@ -79,7 +102,7 @@ def test_curated_profiles_form_ten_strict_ab_provider_pairs():
             assert item["fields"]["tools"] == ["system_tools"]
 
 
-def test_benchmark_runner_records_curated_ab_comparison_contract():
+def test_benchmark_runner_records_curated_ab_comparison_contract(benchmark_workspace):
     runner = RunnerSpec(
         runner_id="code-reader-a",
         node_type="agent",
@@ -94,7 +117,7 @@ def test_benchmark_runner_records_curated_ab_comparison_contract():
     assert contract["profile_ab_comparison"]["excluded_variable"] == "fields.provider_id"
 
 
-def test_benchmark_runner_enforces_curated_ab_pair_contract():
+def test_benchmark_runner_enforces_curated_ab_pair_contract(benchmark_workspace):
     runners = [
         RunnerSpec(
             runner_id="code-reader-a",
@@ -182,14 +205,17 @@ def test_profile_metadata_contract_rejects_unknown_or_incomplete_shapes():
         )
 
 
-def test_all_profile_selection_surfaces_render_curated_choice_summary():
+def test_profile_creation_surfaces_render_curated_choice_summary():
     component = "AgentProfileChoiceSummary"
     sources = [
         PROJECT_ROOT / "webui" / "src" / "components" / "agent-board" / "AgentProfileDropdown.vue",
         PROJECT_ROOT / "webui" / "src" / "components" / "agent-board" / "NodeProfileLoadControl.vue",
-        PROJECT_ROOT / "webui" / "src" / "components" / "settings" / "NodeProfilerProfileList.vue",
         PROJECT_ROOT / "webui" / "src" / "mobile" / "MobileNodeProfilePickerSheet.vue",
     ]
 
     for path in sources:
         assert component in path.read_text(encoding="utf-8"), path
+
+    preset_list = (PROJECT_ROOT / "webui/src/components/settings/NodePresetList.vue").read_text(encoding="utf-8")
+    assert '{{ profile.name || profile.id }}' in preset_list
+    assert ':title="profile.name || profile.id"' in preset_list

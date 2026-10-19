@@ -41,21 +41,21 @@ def test_shared_control_primitives_use_one_semantic_token_system():
 def test_provider_select_reveals_configured_descriptions_on_hover_and_focus():
     selector = _read("webui/src/components/ProviderSelect.vue")
     node_fields = _read("webui/src/components/agent-board/NodeConfigFields.vue")
-    companion = _read("webui/src/components/settings/CompanionModelSettings.vue")
+    companion = _read("webui/src/components/settings/CompanionSettingsForm.vue")
     settings = _read("webui/src/components/settings/ModelProviderSettingsForm.vue")
 
     assert "provider.description" in selector
     assert ".provider-select__option:hover .provider-select__description" in selector
     assert ".provider-select__option:focus-visible .provider-select__description" in selector
     assert "<ProviderSelect" in node_fields
-    assert "<ProviderSelect" in companion
+    assert "<AgentInferenceProfileSelect" in companion
     assert "stringValue('description')" in settings
 
 
 def test_common_destructive_and_close_actions_are_reused_in_core_surfaces():
     destructive_surfaces = (
         "webui/src/components/FileExplorer.vue",
-        "webui/src/components/MemoryContentView.vue",
+        "webui/src/components/GraphBrowserPanel.vue",
         "webui/src/components/agent-board/NodeCardItem.vue",
         "webui/src/components/agent-board/NodeRuntimeEventsSection.vue",
         "webui/src/mobile/MobileWorkspace.vue",
@@ -75,7 +75,7 @@ def test_common_destructive_and_close_actions_are_reused_in_core_surfaces():
 
 
 def test_graph_panel_actions_use_one_compact_height():
-    source = _read("webui/src/components/MemoryContentView.vue")
+    source = _read("webui/src/components/GraphBrowserPanel.vue")
 
     assert '<DangerButton\n          compact\n          :disabled="!selectedGraphProfileId"' in source
     assert '<DangerButton\n                  compact\n                  :disabled="graphMemoryClearingId === graph.id"' in source
@@ -125,11 +125,13 @@ def test_node_rename_is_started_from_the_context_menu_not_title_double_click():
     assert "renamingNodeId: Ref<string | null>" in context
 
 
-def test_escape_closes_the_floating_memory_overlay_without_closing_a_child_dialog():
+def test_escape_navigates_settings_without_closing_a_child_dialog():
     workspace = _read("webui/src/DesktopWorkspace.vue")
 
     assert "event.key === 'Escape'" in workspace
-    assert "isMemoryFloating.value" in workspace
-    assert "!hasOpenDialogAboveMemory()" in workspace
-    assert "void closeMemoryOverlay()" in workspace
-    assert ':data-memory-overlay="isMemoryFloating ? \'true\' : undefined"' in workspace
+    assert "hasBlockingDialogForWorkspaceEscape()" in workspace
+    assert "resolveWorkspaceEscapeAction(event" in workspace
+    assert "escapeAction === 'settings-back'" in workspace
+    assert "settingsPageRef.value?.requestBack()" in workspace
+    policy = _read("webui/src/workspaceKeyboard.ts")
+    assert "event.defaultPrevented || state.hasBlockingDialog" in policy

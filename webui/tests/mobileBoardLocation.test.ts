@@ -18,12 +18,12 @@ import { useMobileBoardLocation } from '../src/mobile/useMobileBoardLocation'
 
 const scopes: ReturnType<typeof effectScope>[] = []
 const deviceUrl = `https://cloud.example/board/${'a'.repeat(64)}`
-function mount() {
+function mount(enabled = true) {
   const scope = effectScope()
   scopes.push(scope)
   return scope.run(() => {
     const workspace = useMobileWorkspace({ initialPcId: 'local' })
-    return { workspace, location: useMobileBoardLocation(workspace, true) }
+    return { workspace, location: useMobileBoardLocation(workspace, enabled) }
   })!
 }
 function unmount() {
@@ -60,6 +60,18 @@ async function openNode() {
 }
 
 describe('cloud mobile Board location', () => {
+  it('opens a node-window browser link in a narrow local browser', async () => {
+    const url = new URL('http://127.0.0.1:8788/')
+    url.searchParams.set('graph', 'graph / 中文')
+    url.searchParams.set('node', 'node / 中文')
+    window.location.href = url.href
+    const current = mount(false)
+    await current.location.initialize()
+    expect(current.workspace.error.value).toBe('')
+    expect(current.workspace.selectedGraph.value?.id).toBe('graph / 中文')
+    expect(current.workspace.selectedNode.value?.id).toBe('node / 中文')
+    expect(current.workspace.view.value).toBe('chat')
+  })
   it('retains the saved group while restoring its graph, and clears it when opening a node', async () => {
     window.location.href = `${deviceUrl}?mobile_graph=${encodeURIComponent('graph / 中文')}&mobile_group=team`
     const current = mount()

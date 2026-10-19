@@ -23,6 +23,7 @@ def voice(monkeypatch, tmp_path):
         node_ops=SimpleNamespace(require_node_visible=Mock(), enqueue_node_instance_pending=Mock()),
         graph_runtime=SimpleNamespace(_sanitize_graph_id=lambda value: value or "default",
                                       _node_config_path=lambda *_: "node-config",
+                                      _node_memory_path=lambda *_: str(tmp_path / "memory.md"),
                                       _node_messages_path=lambda *_: str(tmp_path / "messages.jsonl")),
         node_live_outputs=SimpleNamespace(get=lambda *_: {}),
     )
@@ -50,6 +51,21 @@ def test_delegation_is_exactly_once_and_owned_by_node(voice):
     assert exc.value.status_code == 409
 
 
+def test_immediate_tool_feedback_is_owned_and_cannot_forge_background_progress(voice):
+    from src.providers.voice_tools import VoiceToolResult
+    service, _, _ = voice
+    session = SimpleNamespace(deliver_tool_result=AsyncMock(return_value='accepted'))
+    service._leases['session'].call = VoiceCall('sdp', 'doubao', 'agentpark-voice-v4', session)
+    result = VoiceToolResult(status='completed', text='实际草稿内容')
+    assert asyncio.run(service.tools.deliver('node', 'session', 'draft', result, 'owner')) == {'delivery': 'accepted'}
+    session.deliver_tool_result.assert_awaited_once_with('draft', result)
+    with pytest.raises(HTTPException):
+        asyncio.run(service.tools.deliver('node', 'session', 'draft', result, 'other-owner'))
+    service.delegate('node', 'session', VoiceDelegation(delegation_id='background', text='读取文件'), 'owner')
+    with pytest.raises(HTTPException, match='后台任务状态'):
+        asyncio.run(service.tools.deliver('node', 'session', 'background', result, 'owner'))
+
+
 def test_rtc_control_is_typed_and_bound_to_original_node_and_owner(voice, monkeypatch):
     from src.providers.voice_provider import RtcVoiceCall
     service, _, _ = voice
@@ -59,7 +75,7 @@ def test_rtc_control_is_typed_and_bound_to_original_node_and_owner(voice, monkey
     app = FastAPI(); app.post("/voice/{node_id}/{session_id}/control")(service.control)
     with TestClient(app) as client:
         assert client.post("/voice/node/session/control", json={"action": "activate"}).status_code == 200
-        assert client.post("/voice/node/session/control", json={"action": "screen", "enabled": True, "fps": 30}).status_code == 200
+        assert client.post("/voice/node/session/control", json={"action": "heartbeat"}).status_code == 200
         assert client.post("/voice/node/session/control", json={"action": "screen", "enabled": True, "fps": 31}).status_code == 422
         assert client.post("/voice/other/session/control", json={"action": "activate"}).status_code == 404
         assert client.post("/voice/node/session/control", json={"action": "activate"}, headers={"x-test-owner": "stranger"}).status_code == 404
@@ -137,16 +153,30 @@ def test_offer_endpoint_has_typed_body_and_keeps_credentials_server_side(voice, 
     monkeypatch.setattr(service, "_context", lambda *_: ({}, "node context", VoiceSettings()))
     async def create(config, sdp, context, settings, **kwargs):
         assert sdp.startswith("v=0") and context == "node context"
-        return VoiceCall("v=0\r\nm=audio 9 test\r\n", "gpt-realtime-2.1", "openai-realtime-v1")
+        return VoiceCall("v=0\r\nm=audio 9 test\r\n", "gpt-realtime-2.1", "openai-realtime-v4")
     monkeypatch.setattr("src.web_backend.node_voice.voice_provider", lambda _: SimpleNamespace(
-        transport="webrtc", protocol="openai-realtime-v1", validate=lambda _: None, server_media=False, delegation=True, node_owned_dialogue=True, create_call=create))
+        transport="webrtc", protocol="openai-realtime-v4", validate=lambda _: None, server_media=False, delegation=True, node_owned_dialogue=True, create_call=create))
     app = FastAPI()
     app.post("/voice/{node_id}")(service.start)
     client = TestClient(app)
     assert client.post("/voice/node", json={"sdp": "invalid"}).status_code == 422
-    result = client.post("/voice/node", json={"sdp": "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n", "protocols": ["openai-realtime-v1"]})
+    result = client.post("/voice/node", json={"sdp": "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n", "protocols": ["openai-realtime-v4"]})
     assert result.status_code == 200
     assert set(result.json()) == {"transport", "sdp", "session_id", "model", "protocol"}
+
+
+def test_describe_supplies_browser_media_ice_separately_from_board(voice, monkeypatch):
+    service, core, _ = voice
+    ice = {'urls': ['turn:relay.test:3478?transport=tcp'], 'username': 'temporary', 'credential': 'scoped'}
+    core.peer_api = SimpleNamespace(service=SimpleNamespace(
+        store=SimpleNamespace(settings=SimpleNamespace(stun_urls=[])),
+        ice_lease=SimpleNamespace(require_fresh=Mock(), ice_servers=[SimpleNamespace(model_dump=lambda: ice)])))
+    monkeypatch.setattr(service, '_context', lambda *_: ({}, '', VoiceSettings()))
+    monkeypatch.setattr('src.web_backend.node_voice.voice_provider', lambda _: SimpleNamespace(
+        transport='webrtc', protocol='openai-realtime-v4', validate=lambda _: None))
+    assert asyncio.run(service.describe('node', 'owner')) == {
+        'transport': 'webrtc', 'protocol': 'openai-realtime-v4', 'ice_servers': [ice]}
+    core.peer_api.service.ice_lease.require_fresh.assert_called_once()
 
 
 def test_realtime_call_uses_existing_auth_and_ga_multipart_contract(monkeypatch):
@@ -167,12 +197,32 @@ def test_realtime_call_uses_existing_auth_and_ga_multipart_contract(monkeypatch)
     session = json.loads(req["body"].decode("utf-8").split('Content-Type: application/json\r\n\r\n', 1)[1].split("\r\n--", 1)[0])
     assert session["type"] == "realtime"
     assert session["tools"][0]["name"] == "delegate_to_node"
+    assert session["tools"][1]["name"] == "read_composer_input"
+    edit = session["tools"][2]
+    assert edit["name"] == "edit_composer_input"
+    assert edit["parameters"]["required"] == ["expected_text", "text"]
+    assert edit["parameters"]["additionalProperties"] is False
     assert session["audio"]["output"]["voice"] == "marin"
     assert session["audio"]["input"]["turn_detection"]["interrupt_response"] is True
     assert "private" not in repr(result)
 
 
-@pytest.mark.parametrize("protocols", [None, [], ["openai-realtime-v1"]])
+@pytest.mark.parametrize("old_protocol", ["openai-realtime-v1", "openai-realtime-v2", "openai-realtime-v3"])
+def test_old_realtime_page_is_rejected_before_new_composer_tool_is_exposed(voice, monkeypatch, old_protocol):
+    service, _, _ = voice
+    provider = SimpleNamespace(protocol="openai-realtime-v4", validate=Mock(), create_call=AsyncMock())
+    monkeypatch.setattr(service, "_owner", lambda _: "owner")
+    monkeypatch.setattr(service, "_context", lambda *_: ({}, "context", VoiceSettings()))
+    monkeypatch.setattr("src.web_backend.node_voice.voice_provider", lambda _: provider)
+    app = FastAPI(); app.post("/voice/{node_id}")(service.start)
+    result = TestClient(app).post("/voice/node", json={
+        "sdp": "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n", "protocols": [old_protocol],
+    })
+    assert result.status_code == 409
+    provider.create_call.assert_not_called()
+
+
+@pytest.mark.parametrize("protocols", [None, [], ["openai-realtime-v4"]])
 def test_stale_page_is_rejected_before_opening_media_or_charging_provider(voice, monkeypatch, protocols):
     service, _, _ = voice
     provider = SimpleNamespace(protocol="agentpark-voice-v4", validate=Mock(), create_call=AsyncMock())
@@ -197,17 +247,17 @@ def test_voice_passes_node_context_without_extra_conference_instructions(voice, 
     contexts = []
     async def create(config, sdp, context, settings, **kwargs):
         contexts.append(context)
-        return VoiceCall("v=0\r\nm=audio 9 test\r\n", "gpt-realtime-2.1", "openai-realtime-v1")
+        return VoiceCall("v=0\r\nm=audio 9 test\r\n", "gpt-realtime-2.1", "openai-realtime-v4")
     monkeypatch.setattr("src.web_backend.node_voice.voice_provider", lambda _: SimpleNamespace(
-        transport="webrtc", protocol="openai-realtime-v1", validate=lambda _: None, server_media=False, delegation=True, node_owned_dialogue=True, create_call=create))
+        transport="webrtc", protocol="openai-realtime-v4", validate=lambda _: None, server_media=False, delegation=True, node_owned_dialogue=True, create_call=create))
     app = FastAPI()
     app.post("/voice/{node_id}")(service.start)
     client = TestClient(app)
     sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
-    assert client.post("/voice/node", json={"sdp": sdp, "protocols": ["openai-realtime-v1"]}).status_code == 200
+    assert client.post("/voice/node", json={"sdp": sdp, "protocols": ["openai-realtime-v4"]}).status_code == 200
     assert contexts[0] == "节点：Alice"
     assert client.post("/voice/node", json={"sdp": sdp, "conference": "true"}).status_code == 422
-    assert client.post("/voice/node", json={"sdp": sdp, "protocols": ["openai-realtime-v1"]}).status_code == 200
+    assert client.post("/voice/node", json={"sdp": sdp, "protocols": ["openai-realtime-v4"]}).status_code == 200
     assert contexts[1] == "节点：Alice"
 
 

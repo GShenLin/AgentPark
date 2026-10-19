@@ -33,6 +33,7 @@ const memoryInteractiveSessionId = ref('')
 const memoryInteractiveSending = ref(false)
 const memoryTitle = ref('')
 const memoryMeta = ref<string | null>(null)
+const memoryReadReceipt = ref<{ graphId: string; nodeId: string; receipt: string } | null>(null)
 const memoryMode = ref<'agent' | 'file' | 'graph'>('graph')
 const memoryRefreshRequest = ref(0)
 const memoryLiveRefreshRequest = ref(0)
@@ -70,6 +71,7 @@ export function useGlobalState() {
     memoryInteractiveSending,
     memoryTitle,
     memoryMeta,
+    memoryReadReceipt,
     memoryMode,
     memoryRefreshRequest,
     memoryLiveRefreshRequest,

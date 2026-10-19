@@ -12,6 +12,15 @@ PROVIDER_FEATURE_SCHEMA_VERSION = 1
 def build_provider_feature_matrix(provider_config: dict[str, Any] | None) -> dict[str, Any]:
     config = provider_config if isinstance(provider_config, dict) else {}
     provider_type = str(config.get("type") or "").strip()
+    if provider_type == "workbuddy":
+        return _payload(
+            responses_api={"supported": False, "values": []},
+            web_search={"supported": False, "values": []},
+            tools={"supported": True, "values": ["enabled", "disabled"]},
+            thinking={"supported": True, "values": ["enabled", "disabled", "auto"]},
+            reasoning_effort={"supported": True, "values": ["minimal", "low", "medium", "high", "xhigh", "max"]},
+            reasoning_summary={"supported": False, "values": []},
+        )
     if provider_type == "openai":
         responses_api = config.get("responsesApi") is True
         return _payload(

@@ -3,13 +3,14 @@ import { computed } from 'vue'
 
 const props = defineProps<{
   note?: string
+  flow?: boolean
 }>()
 
 const text = computed(() => String(props.note || '').trim())
 </script>
 
 <template>
-  <div v-if="text" class="node-floating-note" :title="text">{{ text }}</div>
+  <div v-if="text" class="node-floating-note" :class="{ 'in-flow': flow }" :title="text">{{ text }}</div>
 </template>
 
 <style scoped>
@@ -33,5 +34,13 @@ const text = computed(() => String(props.note || '').trim())
   white-space: pre-wrap;
   pointer-events: none;
   box-sizing: border-box;
+}
+.node-floating-note.in-flow {
+  position: relative;
+  bottom: auto;
+  max-height: 240px;
+  overflow-y: auto;
+  pointer-events: auto;
+  user-select: text;
 }
 </style>

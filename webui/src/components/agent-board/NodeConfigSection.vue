@@ -12,7 +12,7 @@ import {
 } from '../../api'
 import { ASSET_FIELD_KEYS, mergeDroppedPaths, resolveDroppedPaths } from '../../composables/droppedPaths'
 import { getSchemaFieldType, normalizeSchemaFieldValue } from '../../composables/nodeSchemaFields'
-import { HARNESS_NODE_TYPES, resolveAgentProviderSchemaContext } from '../../composables/useAgentNodeCreateSchema'
+import { PROVIDER_HARNESS_NODE_TYPES, resolveAgentProviderSchemaContext } from '../../composables/useAgentNodeCreateSchema'
 import { waitForSelectionRequestWindow } from '../../selectionRequestPolicy'
 import ActionButton from '../ActionButton.vue'
 import DangerButton from '../DangerButton.vue'
@@ -480,7 +480,7 @@ watch(
   () => schemaContextKey(draftFields.value),
   (contextKey) => {
     const typeId = String(props.node?.typeId || '').trim()
-    if (typeId !== 'agent_node' && !HARNESS_NODE_TYPES.includes(typeId)) return
+    if (typeId !== 'agent_node' && !PROVIDER_HARNESS_NODE_TYPES.includes(typeId)) return
     if (loading.value || !contextKey || contextKey === loadedSchemaContextKey) return
     void loadTemplate(String(props.node?.typeId || '').trim(), draftFields.value, true)
   },

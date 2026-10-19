@@ -1,0 +1,72 @@
+/* Board presentation only: retain the persisted geometry and hit targets. */
+html[data-theme-preset='chat-light'] #app .agent-board {
+  background-color: #eef2f7;
+}
+
+html[data-theme-preset='chat-light'] #app .canvas-content {
+  background-image:
+    linear-gradient(to right, #c7d0dc 1px, transparent 1px),
+    linear-gradient(to bottom, #c7d0dc 1px, transparent 1px);
+}
+
+html[data-theme-preset='chat-light'] #app .node-card {
+  border-radius: 12px;
+  box-shadow: 0 3px 5px #243b5c06, 0 8px 22px #243b5c0a;
+}
+html[data-theme-preset='chat-light'] #app .node-card.agent-card { border-color: #d7e0ec; }
+/* Hover must not displace the canvas hit target or erase state styling. */
+html[data-theme-preset='chat-light'] #app .node-card:hover { transform: none; }
+html[data-theme-preset='chat-light'] #app .node-card.agent-card:where(:not(.selected):not(.multi-selected):not(.stopped):not(.drop-target):not(.running)):hover { background-color: #fff; border-color: #a4b7d8; box-shadow: 0 6px 24px #243b5c14; }
+html[data-theme-preset='chat-light'] #app .node-card.selected { border-color: #4269c7; box-shadow: 0 0 0 3px #4269c71c, 0 8px 24px #243b5c12; }
+html[data-theme-preset='chat-light'] #app .node-card.multi-selected:not(.selected) { border-color: #7195de; box-shadow: 0 0 0 2px #4269c71c; }
+html[data-theme-preset='chat-light'] #app .node-card.stopped { background-color: #f5f7fa; border-color: #cbd4e1; }
+html[data-theme-preset='chat-light'] #app .node-card.drop-target { border-color: #4269c7; box-shadow: 0 0 0 4px #4269c72e; }
+html[data-theme-preset='chat-light'] #app .node-card.running:where(:not(.selected):not(.multi-selected):not(.drop-target):not(.working):not(.dragging)) { border-color: #79b799; box-shadow: 0 0 0 2px #26814c1c; }
+
+html[data-theme-preset='chat-light'] #app .node-header {
+  padding: 11px 12px 9px;
+  align-items: center;
+  background: #f7f9fd;
+  border-radius: 11px 11px 0 0;
+  border-bottom: 1px solid #e9edf4;
+  margin-bottom: 8px;
+}
+html[data-theme-preset='chat-light'] #app .node-title { color: #20314a; font-size: 14px; font-weight: 650; }
+html[data-theme-preset='chat-light'] #app .node-actions { gap: 4px; }
+html[data-theme-preset='chat-light'] #app .node-actions button { min-height: 28px; font-size: 11px; white-space: nowrap; }
+html[data-theme-preset='chat-light'] #app :is(.node-trigger, .node-start) { color: #345dbe; background: #eaf0ff; border-color: #ccdaf8; border-radius: 6px; }
+html[data-theme-preset='chat-light'] #app :is(.node-trigger, .node-start):hover { background: #dce7ff; }
+html[data-theme-preset='chat-light'] #app .node-pause { background: #fff; border-color: #dce3ed; color: #596980; }
+html[data-theme-preset='chat-light'] #app .node-stop { color: #ad3333; background: #fff0f0; border-color: #ebcaca; }
+html[data-theme-preset='chat-light'] #app .node-status-badge { color: #247357; background: #e9f6ef; border-color: #c8e5d4; }
+html[data-theme-preset='chat-light'] #app .agent-meta { margin-bottom: 8px; }
+html[data-theme-preset='chat-light'] #app .agent-tag { background: #edf2f8; color: #596c86; border-radius: 4px; font-size: 10px; }
+html[data-theme-preset='chat-light'] #app .agent-tag:first-child { color: #345dbe; background: #edf2ff; }
+html[data-theme-preset='chat-light'] #app .node-label { color: #718097; font-size: 11px; }
+html[data-theme-preset='chat-light'] #app .node-message { color: #435773; line-height: 1.6; }
+html[data-theme-preset='chat-light'] #app .node-add-output { min-height: 28px; color: #4269c7; border-color: #d2dff4; background: #f0f5ff; box-shadow: none; }
+html[data-theme-preset='chat-light'] #app .node-add-output:hover { background: #e1ebff; }
+
+html[data-theme-preset='chat-light'] #app .tool-activity { background: #edf7f2; border-color: #d9ece1; color: #2c7156; }
+html[data-theme-preset='chat-light'] #app .tool-label { color: #2c7156; font-weight: 600; }
+html[data-theme-preset='chat-light'] #app .tool-name { color: #537568; font-family: inherit; font-variant-numeric: tabular-nums; }
+html[data-theme-preset='chat-light'] #app .tool-activity.tone-running { background: #edf2ff; border-color: #d0ddf8; }
+html[data-theme-preset='chat-light'] #app .tool-activity.tone-running :is(.tool-label, .tool-name) { color: #345dbe; }
+html[data-theme-preset='chat-light'] #app .tool-activity.tone-attention { background: #fff7e9; border-color: #f0ddba; }
+html[data-theme-preset='chat-light'] #app .tool-activity.tone-attention :is(.tool-label, .tool-name) { color: #8a651e; }
+html[data-theme-preset='chat-light'] #app .runtime-diagnostics { background: #f7f9fc; border-color: #e6ecf4; }
+html[data-theme-preset='chat-light'] #app .runtime-row { color: #4d617b; line-height: 1.5; font-variant-numeric: tabular-nums; }
+html[data-theme-preset='chat-light'] #app .runtime-label { color: #718097; }
+html[data-theme-preset='chat-light'] #app :is(.tone-ok, .tone-done) .runtime-value { color: #26814c; }
+html[data-theme-preset='chat-light'] #app .tone-attention .runtime-value { color: #986315; }
+html[data-theme-preset='chat-light'] #app .tone-running .runtime-value { color: #345dbe; }
+html[data-theme-preset='chat-light'] #app .tone-muted .runtime-value { color: #718097; }
+
+html[data-theme-preset='chat-light'] #app .node-floating-note {
+  background: #fffae9;
+  color: #84672b;
+  border: 1px solid #e9ddb9;
+  border-left: 3px solid #cda448;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px #64501f08;
+}

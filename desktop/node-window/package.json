@@ -1,0 +1,9 @@
+{
+  "name": "agentpark-node-window",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent windows for the existing AgentPark node UI",
+  "main": "main.cjs",
+  "scripts": { "postinstall": "node install-runtime.cjs", "start": "electron .", "test": "node --test *.test.cjs" },
+  "devDependencies": { "electron": "44.7.0" }
+}

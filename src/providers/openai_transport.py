@@ -186,13 +186,11 @@ class OpenAITransport(
                 else [],
             }
 
+        stream_lines = self._responses_stream_data_lines(
+            url=url, headers=headers, payload_json=payload_json, timeout_sec=timeout_sec,
+        )
         try:
-            for data_text in self._responses_stream_data_lines(
-                url=url,
-                headers=headers,
-                payload_json=payload_json,
-                timeout_sec=timeout_sec,
-            ):
+            for data_text in stream_lines:
                 parsed_debug_event = None
                 if data_text == "[DONE]":
                     debug_events.append({"index": len(debug_events), "raw": "[DONE]"})
@@ -379,6 +377,8 @@ class OpenAITransport(
         except Exception as exc:
             _write_unexpected_failure_debug(exc)
             raise
+        finally:
+            stream_lines.close()
 
         if isinstance(completed_response, dict):
             final_text, function_calls, _ = self._parse_responses_output_envelopes(completed_response)
@@ -390,12 +390,6 @@ class OpenAITransport(
                 _write_sse_debug(final_payload={"completed_response": _summarize_response_payload(completed_response)})
                 return completed_response
 
-        output_items: list[dict] = []
-        for item in function_call_items:
-            output_items.append(dict(item))
-        full_text = "".join(text_chunks)
-        if full_text:
-            output_items.append({"type": "message", "content": [{"type": "output_text", "text": full_text}]})
-        synthetic = {"output": output_items}
-        _write_sse_debug(final_payload={"synthetic_response": _summarize_response_payload(synthetic)})
-        return synthetic
+        if response_completed:
+            return completed_response
+        raise OpenAITransportError("Responses stream ended without a valid response.completed event")

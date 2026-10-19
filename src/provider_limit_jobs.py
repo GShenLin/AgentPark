@@ -8,7 +8,7 @@ from typing import Any
 
 from src.provider_limit_probe import run_provider_limit_tests
 from src.provider_model_discovery import run_provider_model_discovery
-from src.provider_limit_schema import read_provider_limit_file
+from src.provider_limit_view import read_current_provider_limits
 
 
 class ProviderLimitJobStore:
@@ -102,4 +102,4 @@ class ProviderLimitJobStore:
                 job["result"] = result
 
     def read_result(self) -> dict[str, Any]:
-        return read_provider_limit_file()
+        return read_current_provider_limits()

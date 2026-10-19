@@ -37,14 +37,12 @@ class OpenAICurlTransport(CurlHttpTransport):
 
     def _curl_post_sse_data_lines(self, *, url, headers, payload_json, timeout_sec):
         stream_started = False
+        lines = self._curl_post_sse_raw_lines(
+            url=url, headers=headers, payload_json=payload_json, timeout_sec=timeout_sec,
+            marker="__OPENAI_HTTP_CODE__:",
+        )
         try:
-            for item in self._curl_post_sse_raw_lines(
-                url=url,
-                headers=headers,
-                payload_json=payload_json,
-                timeout_sec=timeout_sec,
-                marker="__OPENAI_HTTP_CODE__:",
-            ):
+            for item in lines:
                 if isinstance(item, CurlResponse):
                     if item.status_code < 200 or item.status_code >= 300:
                         self._write_responses_http_debug(
@@ -66,3 +64,5 @@ class OpenAICurlTransport(CurlHttpTransport):
                 str(exc),
                 retry_scope="request" if not stream_started else "stream",
             ) from exc
+        finally:
+            lines.close()

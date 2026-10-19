@@ -4,9 +4,9 @@ import { useNodeVoiceCall } from './useNodeVoiceCall'
 vi.mock('vue', async importOriginal => ({ ...await importOriginal<typeof import('vue')>(), onBeforeUnmount: vi.fn() }))
 vi.mock('../api', () => ({ getActiveApiBase: () => 'http://localhost:8788' }))
 vi.mock('../voiceApi', () => ({
-  describeVoiceCall: vi.fn(async () => 'webrtc'),
-  createVoiceCall: vi.fn(async () => ({ transport: 'webrtc', session_id: 's1', model: 'voice', sdp: 'answer', protocol: 'openai-realtime-v1' })),
-  voiceRequest: vi.fn(async () => ({ ok: true, record_id: 'voice-s1' })),
+  describeVoiceCall: vi.fn(async () => ({ transport: 'webrtc', iceServers: [{ urls: 'turn:relay.test:3478?transport=tcp', username: 'lease', credential: 'scoped' }] })),
+  createVoiceCall: vi.fn(async () => ({ transport: 'webrtc', session_id: 's1', model: 'voice', sdp: 'answer', protocol: 'openai-realtime-v4' })),
+  voiceRequest: vi.fn(async (_target, path) => path.includes('/context') ? { cursor: '', messages: [] } : { ok: true, record_id: 'voice-s1' }),
   submitVoiceTask: vi.fn(async () => 'r1'),
   getVoiceTask: vi.fn(async () => ({ status: 'completed', text: '已读取文件' })),
   publishVoiceTaskUpdate: vi.fn(async () => ({ status: 'completed', text: '已读取文件' })),
@@ -21,7 +21,8 @@ class Peer {
   dc = { readyState: 'open', send: vi.fn(), close: vi.fn(), onmessage: null as null | ((e: { data: string }) => void) }
   close = vi.fn()
   ontrack?: (event: { track: unknown }) => void
-  constructor() { Peer.last = this }
+  configuration: RTCConfiguration
+  constructor(configuration: RTCConfiguration) { this.configuration = configuration; Peer.last = this }
   addTrack() {}
   createDataChannel() { return this.dc }
   async createOffer() { return { sdp: 'offer' } }
@@ -41,6 +42,7 @@ afterEach(() => vi.unstubAllGlobals())
 it('releases microphone and transport on server denial and preserves the actual error', async () => {
   const voice = useNodeVoiceCall()
   await voice.start('node1', 'graph1')
+  expect(Peer.last.configuration).toEqual({ iceServers: [{ urls: 'turn:relay.test:3478?transport=tcp', username: 'lease', credential: 'scoped' }], iceTransportPolicy: 'all' })
   expect(voice.active.value).toBe(true)
   expect(voice.connected.value).toBe(false)
   Peer.last.dc.onmessage!({ data: JSON.stringify({ type: 'error', error: { code: 'forbidden', message: 'Voice session access denied.' } }) })
@@ -108,6 +110,95 @@ it('still releases the microphone if the hangup notification races a closed chan
   expect(track.stop).toHaveBeenCalledOnce()
   expect(Peer.last.close).toHaveBeenCalledOnce()
   expect(voice.active.value).toBe(false)
+})
+
+it('applies duplicate edit calls once and does not submit or send a chat message', async () => {
+  const { submitVoiceTask } = await import('../voiceApi')
+  const editComposer = vi.fn((_target, edit) => ({ text: edit.text, resources: [] }))
+  const voice = useNodeVoiceCall({ editComposer })
+  await voice.start('node1', 'graph1')
+  const event = JSON.stringify({ type: 'response.function_call_arguments.done', name: 'edit_composer_input',
+    call_id: 'edit-1', arguments: JSON.stringify({ expected_text: '旧草稿', text: '新草稿' }) })
+  Peer.last.dc.onmessage!({ data: event }); Peer.last.dc.onmessage!({ data: event })
+  await vi.waitFor(() => expect(voice.taskStatus.value).toContain('已修改'))
+  expect(editComposer).toHaveBeenCalledExactlyOnceWith(
+    { base: 'http://localhost:8788', graph: 'graph1', node: 'node1' }, { expected_text: '旧草稿', text: '新草稿' })
+  expect(submitVoiceTask).not.toHaveBeenCalled()
+  expect(voice.active.value).toBe(true)
+  voice.hangup()
+})
+
+it('returns an edit conflict to the voice model and keeps the call alive', async () => {
+  const voice = useNodeVoiceCall({ editComposer: () => { throw new Error('输入框内容已变化，未做修改。') } })
+  await voice.start('node1', 'graph1')
+  Peer.last.dc.onmessage!({ data: JSON.stringify({ type: 'response.function_call_arguments.done', name: 'edit_composer_input',
+    call_id: 'edit-1', arguments: JSON.stringify({ expected_text: '旧草稿', text: '新草稿' }) }) })
+  await vi.waitFor(() => expect(voice.error.value).toContain('已变化'))
+  const output = JSON.parse(Peer.last.dc.send.mock.calls[0]![0]).item.output
+  expect(JSON.parse(output)).toMatchObject({ status: 'failed', text: expect.stringContaining('未做修改') })
+  expect(voice.active.value).toBe(true)
+  voice.hangup()
+})
+
+it('returns an invalid annotation to the model, then executes a corrected call without hanging up', async () => {
+  const annotateScreen = vi.fn(async () => '标注已显示')
+  const voice = useNodeVoiceCall({ annotateScreen })
+  await voice.start('node', 'graph')
+  const receive = (event: object) => Peer.last.dc.onmessage!({ data: JSON.stringify(event) })
+  receive({ type: 'session.created' })
+  const frame = 'exec_snapshot'
+  const drawing = { action: 'replace', frame_id: frame, duration_seconds: 10,
+    shapes: [{ kind: 'ellipse', x: .9, y: .1, width: -1, height: .3, color: 'red' }] }
+  const bad = { type: 'response.function_call_arguments.done', name: 'annotate_screen', call_id: 'bad', arguments: JSON.stringify(drawing) }
+  receive(bad); receive(bad)
+  await vi.waitFor(() => expect(voice.taskStatus.value).toContain('尺寸'))
+  const outputs = () => Peer.last.dc.send.mock.calls.map(([raw]) => JSON.parse(raw)).filter(event => event.item?.type === 'function_call_output')
+  expect(outputs()).toHaveLength(1)
+  expect(JSON.parse(outputs()[0].item.output)).toMatchObject({ status: 'failed', text: expect.stringContaining('尺寸') })
+  expect(annotateScreen).not.toHaveBeenCalled()
+  receive({ type: 'response.done', response: { status: 'completed' } })
+  drawing.shapes[0]!.width = .3
+  receive({ ...bad, call_id: 'fixed', arguments: JSON.stringify(drawing) })
+  await vi.waitFor(() => expect(annotateScreen).toHaveBeenCalledOnce())
+  receive({ type: 'response.output_audio_transcript.done', transcript: '改好了，我们继续。' })
+  expect(voice.assistantCaption.value).toBe('改好了，我们继续。')
+  expect(voice.connected.value).toBe(true)
+  expect(Peer.last.close).not.toHaveBeenCalled()
+  expect(track.stop).not.toHaveBeenCalled()
+  voice.hangup()
+})
+
+it.each([
+  ['annotate_screen', '{'],
+  ['edit_composer_input', '{"expected_text":2,"text":"bad"}'],
+  ['read_composer_input', '{"text":null}'],
+  ['delegate_to_node', '{"text":""}'],
+  ['unregistered_tool', '{}'],
+])('rejects invalid %s arguments only for that tool invocation', async (name, args) => {
+  const voice = useNodeVoiceCall()
+  await voice.start('node', 'graph')
+  Peer.last.dc.onmessage!({ data: '{"type":"session.created"}' })
+  Peer.last.dc.onmessage!({ data: JSON.stringify({ type: 'response.function_call_arguments.done', name, call_id: 'bad', arguments: args }) })
+  await vi.waitFor(() => expect(voice.taskStatus.value).toContain('本次工具未执行'))
+  expect(voice.connected.value).toBe(true)
+  expect(Peer.last.close).not.toHaveBeenCalled()
+  expect(track.stop).not.toHaveBeenCalled()
+  voice.hangup()
+})
+
+it.each([
+  { type: 'response.done', response: { status: 'failed', status_details: { error: { message: 'single response failed' } } } },
+  { type: 'conversation.item.input_audio_transcription.failed', error: { message: 'single transcription failed' } },
+])('continues audio after a single response/transcription failure: $type', async event => {
+  const voice = useNodeVoiceCall()
+  await voice.start('node', 'graph')
+  Peer.last.dc.onmessage!({ data: '{"type":"session.created"}' })
+  Peer.last.dc.onmessage!({ data: JSON.stringify(event) })
+  expect(voice.error.value).toContain('failed')
+  Peer.last.dc.onmessage!({ data: '{"type":"response.output_audio_transcript.done","transcript":"下一句正常"}' })
+  expect(voice.assistantCaption.value).toBe('下一句正常')
+  expect(voice.connected.value).toBe(true)
+  voice.hangup()
 })
 
 it('routes bridge utterances once through the original node and requests server-owned speech', async () => {

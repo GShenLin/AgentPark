@@ -3,18 +3,21 @@ import { computed, inject, ref, watch } from 'vue'
 import { type MessageEnvelope } from '../../api'
 import { composeMessage } from '../../composables/messageAttachments'
 import { useMessageAttachments } from '../../composables/useMessageAttachments'
+import { useComposerWindowPaste } from '../../composables/useComposerWindowPaste'
 import VoiceCallButton from '../../voice/VoiceCallButton.vue'
 import { useGlobalState } from '../../composables/useGlobalState'
 import DangerButton from '../DangerButton.vue'
 import { AgentBoardKey } from './context'
 import MessageComposer from '../MessageComposer.vue'
 import ConversationComposerDock from '../ConversationComposerDock.vue'
+import { useVoiceComposer } from '../../voice/voiceComposer'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
   throw new Error('AgentBoard context not found')
 }
 const ctx = injected
+const props = defineProps<{ windowPaste?: boolean }>()
 
 const {
   lastError,
@@ -30,6 +33,15 @@ const attachments = useMessageAttachments({
   onError: message => { lastError.value = message },
 })
 const isUploadingFiles = attachments.isUploading
+useComposerWindowPaste({
+  active: () => !!props.windowPaste && !!ctx.selectedNodeId.value,
+  text: nodeEditorInputText,
+  paste: attachments.paste,
+})
+useVoiceComposer(() => ctx.selectedNodeId.value && ctx.currentGraphId.value ? {
+  node: ctx.selectedNodeId.value, graph: ctx.currentGraphId.value,
+  text: nodeEditorInputText.value, attachments: nodeEditorAttachments.value, uploading: isUploadingFiles.value, locked: sending.value,
+} : null, text => { nodeEditorInputText.value = text })
 const sending = ref(false)
 const goalArmedByNode = ref<Record<string, boolean>>({})
 

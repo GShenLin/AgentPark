@@ -1,0 +1,110 @@
+/* Conversation presentation for the light workspace, including Teleport roots.
+   Keep the existing dialog lifecycle, reading width and scroll containers. */
+html[data-theme-preset='chat-light'] #app .chat-appearance {
+  --chat-font: var(--workspace-font);
+  --chat-ink: #20314a;
+  --chat-muted: #687b94;
+  --chat-line: #e2e9f2;
+  --chat-soft: #f3f6fb;
+  --chat-link: #345dbe;
+  --theme-panel-memory-panel-header-background: #f7f9fd;
+  --theme-panel-memory-panel-button-border: #dce4ef;
+  --theme-panel-memory-panel-button-active-background: #edf2ff;
+  --theme-panel-memory-panel-button-active-text: #345dbe;
+  --theme-panel-memory-panel-button-active-border: #cbdaf8;
+  --theme-panel-node-side-editor-input-focus-border: #4269c7;
+  --theme-panel-node-side-editor-button-border: #dce4ef;
+  --theme-panel-node-side-editor-button-text: #536781;
+  --ui-button-text: #536781;
+  --ui-button-border: #dce4ef;
+  --ui-button-hover-background: #edf2ff;
+  --ui-button-hover-border: #cbdaf8;
+  --ui-primary-background: #345dbe;
+  --ui-primary-border: #345dbe;
+  --ui-primary-hover-background: #294eaa;
+  --ui-control-focus: #4269c7;
+  --ui-control-border: #dce4ef;
+  --ui-control-radius: 7px;
+  --ui-danger-text: #ae5560;
+  --ui-danger-border: #efdee0;
+}
+
+html[data-theme-preset='chat-light'] #app .conversation-backdrop { background: #20314a24; backdrop-filter: blur(6px); }
+html[data-theme-preset='chat-light'] #app .conversation-window.is-floating {
+  background: #fff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel { position: relative; border: 0; border-radius: 0; background: transparent; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .editor-wrapper { background: #fff; border-radius: 0; }
+/* Controls float over the reading surface without reserving a header row. */
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel-head { position: absolute; top: 0; right: 0; max-width: 100%; z-index: 20; padding: 6px 8px; gap: 8px; background: transparent; border: 0; border-radius: 0 0 0 12px; backdrop-filter: blur(12px); pointer-events: none; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel-head :is(button, label) { pointer-events: auto; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel-head button,
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel-head button:hover { background: transparent; }
+/* Keep the name/path available to assistive technology without a title strip. */
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel-left { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel-title { color: var(--chat-ink); font-size: 16px; font-weight: 650; line-height: 1.35; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .panel-meta { color: var(--chat-muted); margin-top: 0; max-width: 480px; line-height: 1.35; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .conversation-header-actions { gap: 12px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .toggle-item { color: #61738c; }
+html[data-theme-preset='chat-light'] #app .chat-appearance input[type='checkbox'] { accent-color: #4269c7; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .dialog-close-button { color: #687b94; background: #fff; border-color: #dce4ef; border-radius: 7px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .dialog-close-button:hover { color: #ad3333; background: #fff0f0; border-color: #ebcaca; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .dialog-close-button:focus-visible { outline-color: #4269c7; }
+
+/* Quiet reading surface; color connects disclosures and messages to the board. */
+/* Keep top breathing room on content, not on the scrollport: otherwise sticky
+   turn headers leave a strip of scrolling prose visible above them. */
+html[data-theme-preset='chat-light'] #app .chat-appearance .message-feed { padding: 0 32px 36px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .message-feed > :first-child { margin-top: 0; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .turn-group .turn-head {
+  background: #f3f6fb;
+  border: 1px solid #e2e9f2;
+  border-radius: 8px;
+  padding-inline: 10px;
+}
+html[data-theme-preset='chat-light'] #app .chat-appearance :is(.turn-label, .turn-summary) { color: #61738c; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .turn-label { color: #345dbe; }
+html[data-theme-preset='chat-light'] #app .chat-appearance :is(.turn-time, .turn-caret) { color: #718097; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .turn-message.role-user { background: #edf2ff; color: #20314a; border-radius: 14px 14px 4px 14px; padding: 14px 18px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance :is(.turn-message-head, .feed-head) { color: #536781; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .feed-text { color: #2c3d55; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .feed-text.markdown-part :is(h1, h2, h3, h4) { color: #20314a; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .feed-text.markdown-part blockquote { border-color: #b9cbee; color: #5b6f8b; background: #f7f9fd; padding: 10px 16px; border-radius: 0 6px 6px 0; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .feed-text.markdown-part :not(pre) > code { color: #36547e; background: #edf2f8; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .feed-text.markdown-part :is(pre, .markdown-code-block) { background: #f5f7fb; color: #344b6c; border-color: #dfe7f2; border-radius: 10px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .feed-text.markdown-part .markdown-code-block pre { background: transparent; border-radius: 0; }
+html[data-theme-preset='chat-light'] #app .chat-appearance :is(.progress-group, .metadata-disclosure) { background: #f7f9fd; border-color: #e2e9f2; border-radius: 8px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance :is(.progress-group .progress-group-head, .metadata-disclosure .metadata-disclosure-head) { background: #f7f9fd; color: #536781; border-color: #e2e9f2; border-radius: 7px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance :is(.progress-group-head, .metadata-disclosure-head):hover { background: #edf2ff; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .message-actions button { color: #718097; border-radius: 6px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .message-actions button:hover { color: #345dbe; background: #edf2ff; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .message-actions button.danger-button:hover { color: #ad3333; background: #fff0f0; }
+
+/* Reading and composing share one continuous surface down to the viewport edge.
+   Button dimensions, order and appearance stay unchanged. */
+html[data-theme-preset='chat-light'] #app .chat-appearance .conversation-composer-dock { background: transparent; border: 0; padding: 8px max(0px, calc((100% - 800px) / 2)) 8px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .conversation-composer-dock .input-section { background: #fff; border: 1px solid #d5dfed; border-radius: 20px; padding: 8px 12px; box-shadow: 0 3px 12px #243b5c06; gap: 6px; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .conversation-composer-dock .input-section:focus-within { border-color: #7c9cdd; box-shadow: 0 0 0 3px #4269c712; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .input-section .expandable-textarea__input { font-family: var(--workspace-font); color: #20314a; background: #fff; font-size: 15px; min-height: 40px; padding: 4px 36px 4px 2px; line-height: 1.5; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .input-section .expandable-textarea__input::placeholder { color: #7a899e; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .input-section .expandable-textarea__input:focus { outline: none; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .send-actions { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+html[data-theme-preset='chat-light'] #app .chat-appearance .goal-btn:not(.active) { border-color: #dce4ef; color: #536781; border-radius: 7px; }
+
+/* Reading starts at the viewport edge; the toolbar no longer consumes height. */
+@media (min-width: 721px) {
+  html[data-theme-preset='chat-light'] #app .conversation-window.is-floating { top: 0; bottom: 0; height: 100dvh; }
+}
+@media (max-width: 720px) {
+  html[data-theme-preset='chat-light'] #app .conversation-window.is-floating { border-radius: 0; }
+  html[data-theme-preset='chat-light'] #app .chat-appearance .panel-head { padding: 6px 8px; gap: 10px; }
+  html[data-theme-preset='chat-light'] #app .chat-appearance .message-feed { padding: 0 14px 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-preset='chat-light'] #app .conversation-window *,
+  html[data-theme-preset='chat-light'] #app .conversation-window *::before,
+  html[data-theme-preset='chat-light'] #app .conversation-window *::after { animation: none !important; transition: none !important; }
+}

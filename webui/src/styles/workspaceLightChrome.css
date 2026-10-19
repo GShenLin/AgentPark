@@ -1,0 +1,96 @@
+/* Workspace chrome. Layout changes stay scoped to the desktop workspace. */
+html[data-theme-preset='chat-light'] #app .desktop-workspace .topbar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 490;
+  min-height: 0;
+  height: auto;
+  flex: 0 0 auto;
+  gap: 16px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  pointer-events: none;
+  backdrop-filter: none;
+  --ui-button-border: #dfe5ee;
+  --ui-button-background: transparent;
+  --ui-button-text: #53627a;
+  --ui-button-hover-background: transparent;
+  --ui-button-hover-border: #c6d3ed;
+  --form-control-background: transparent;
+  --form-control-border: #dfe5ee;
+  --form-control-text: #20314a;
+}
+
+html[data-theme-preset='chat-light'] #app .desktop-workspace .brand {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -.35px;
+  color: #20314a;
+}
+
+.brand-symbol { display: none; }
+html[data-theme-preset='chat-light'] #app .brand-symbol {
+  display: block;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border-radius: 9px;
+  color: #fff;
+  background: #345dbe;
+  flex-shrink: 0;
+}
+
+/* Empty toolbar space lets pointer input through to the full-height canvas. */
+html[data-theme-preset='chat-light'] #app .topbar :is(button, select, .remote-form) { pointer-events: auto; }
+html[data-theme-preset='chat-light'] #app .topbar button,
+html[data-theme-preset='chat-light'] #app .topbar button:hover { background: transparent; }
+html[data-theme-preset='chat-light'] #app .topbar :is(button, select) { backdrop-filter: blur(12px); }
+html[data-theme-preset='chat-light'] #app .topbar .remote-switcher { gap: 8px; }
+html[data-theme-preset='chat-light'] #app .topbar .remote-select option { background: #fff; }
+html[data-theme-preset='chat-light'] #app .topbar :is(.remote-label, .remote-address) { color: #6a7890; }
+html[data-theme-preset='chat-light'] #app .topbar .remote-select { max-width: 250px; }
+html[data-theme-preset='chat-light'] #app .topbar button { white-space: nowrap; }
+html[data-theme-preset='chat-light'] #app .topbar .topbar-actions { gap: 8px; flex-shrink: 0; }
+html[data-theme-preset='chat-light'] #app .topbar .remote-form { top: calc(100% + 8px); left: 24px; max-width: calc(100% - 48px); flex-wrap: wrap; background-color: #fff; }
+html[data-theme-preset='chat-light'] #app .topbar .settings.active { color: #345dbe; background: transparent; border-color: #c6d3ed; }
+html[data-theme-preset='chat-light'] #app .desktop-workspace .content { background: #eef2f7; }
+html[data-theme-preset='chat-light'] #app .desktop-workspace { --floating-controls-clearance: 52px; }
+html[data-theme-preset='chat-light'] #app .desktop-workspace > .settings-page,
+html[data-theme-preset='chat-light'] #app .desktop-workspace .left-sidebar:not(.collapsed),
+html[data-theme-preset='chat-light'] #app .desktop-workspace .graph-dock.is-docked:not(.collapsed) { padding-top: var(--floating-controls-clearance); }
+html[data-theme-preset='chat-light'] #app .desktop-workspace .left-sidebar { background-color: #f8faff; border-color: #dfe5ee; }
+html[data-theme-preset='chat-light'] #app .desktop-workspace .collapsed-mark { color: #63748e; font-size: 12px; }
+html[data-theme-preset='chat-light'] #app .desktop-workspace :is(.sidebar-resizer, .memory-resizer) { background: #e4eaf2; }
+html[data-theme-preset='chat-light'] #app .desktop-workspace :is(.sidebar-resizer, .memory-resizer):hover { background: #4269c7; }
+html[data-theme-preset='chat-light'] #app .graph-dock:not(.floating) { border-right: 1px solid #dfe5ee; }
+html[data-theme-preset='chat-light'] #app .graph-dock:not(.floating) .panel { border-radius: 0; border: 0; }
+html[data-theme-preset='chat-light'] #app .graph-dock:not(.floating) .panel-head { padding: 20px; background: #fff; border-bottom: 1px solid #e4eaf2; }
+html[data-theme-preset='chat-light'] #app .graph-dock:not(.floating) .panel-title { color: #20314a; font-size: 16px; font-weight: 650; }
+html[data-theme-preset='chat-light'] #app .graph-dock:not(.floating) .panel-meta { color: #718097; }
+
+@media (max-width: 780px) {
+  html[data-theme-preset='chat-light'] #app .desktop-workspace { --floating-controls-clearance: 88px; }
+  html[data-theme-preset='chat-light'] #app .desktop-workspace .topbar { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px; }
+  html[data-theme-preset='chat-light'] #app .topbar .remote-switcher { flex-wrap: wrap; }
+  html[data-theme-preset='chat-light'] #app .topbar .topbar-actions { flex-wrap: wrap; }
+  html[data-theme-preset='chat-light'] #app .topbar .remote-select { flex: 1; max-width: 250px; }
+}
+
+@media (max-width: 620px) {
+  html[data-theme-preset='chat-light'] #app .topbar .remote-address { display: none; }
+  html[data-theme-preset='chat-light'] #app .topbar .remote-switcher { justify-content: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-preset='chat-light'] #app .desktop-workspace *,
+  html[data-theme-preset='chat-light'] #app .desktop-workspace *::before,
+  html[data-theme-preset='chat-light'] #app .desktop-workspace *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

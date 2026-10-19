@@ -9,7 +9,7 @@ export type HarnessInfo = {
   transport: string
   homepage: string
   session_support: string
-  installation: 'npm' | 'hermes-python'
+  installation: 'npm' | 'hermes-python' | 'antigravity-native'
   status: 'missing' | 'ready' | 'busy' | 'error'
   source: 'managed' | 'external' | 'none'
   version: string
@@ -47,4 +47,19 @@ export function operateHarness(id: string, action: HarnessJob['action']): Promis
 }
 export function getHarnessJob(id: string): Promise<HarnessJob> {
   return requestApiJson(getActiveApiBase(), `/api/harness-jobs/${encodeURIComponent(id)}`)
+}
+
+export function listNativeHarnessModels(id: 'opencode' | 'antigravity'): Promise<{ models: string[] }> {
+  return requestApiJson(getActiveApiBase(), `/api/harnesses/${id}/models`)
+}
+
+export type OpenCodeField = 'native_model' | 'native_agent' | 'native_effort'
+export type NativeOption = { value: string; label: string }
+export type OpenCodeOptions = Record<OpenCodeField, NativeOption[]> & { selection_error: string }
+
+export function getOpenCodeOptions(model: string, agent: string, workingPath: string): Promise<OpenCodeOptions> {
+  return requestApiJson(getActiveApiBase(), '/api/harnesses/opencode/config-options', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, agent, working_path: workingPath }),
+  })
 }

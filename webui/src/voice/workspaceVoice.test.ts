@@ -4,8 +4,13 @@ import WorkspaceVoiceHost from './WorkspaceVoiceHost.vue'
 import VoiceCallButton from './VoiceCallButton.vue'
 import { createWorkspaceVoice, workspaceVoiceKey } from './workspaceVoice'
 import { ConferenceAudio } from './ConferenceAudio'
+import { voiceRequest } from '../voiceApi'
 
 const connections = vi.hoisted(() => [] as any[])
+vi.mock('../voiceApi', () => ({ voiceRequest: vi.fn(async (_target, _path, options) =>
+  JSON.parse(String(options?.body)).action === 'prepare'
+    ? { ok: true, annotation_id: 'a'.repeat(32), displays: [{ id: '1', label: 'Monitor', width: 1920, height: 1080, x: 0, y: 0 }] }
+    : { ok: true }) }))
 vi.mock('../api', () => ({ listMobileNodes: vi.fn(async () => []) }))
 vi.mock('./ConferenceAudio', () => ({ ConferenceAudio: vi.fn(class {
   open = vi.fn(async () => {})
@@ -18,8 +23,9 @@ vi.mock('../composables/useNodeVoiceCall', async () => {
     const active = ref(false), connected = ref(false)
     const hangup = vi.fn(() => { active.value = false; connected.value = false })
     const call = { active, connected, hangup, start: vi.fn(async () => { active.value = true; connected.value = true }),
-      screenSupported: ref(false), screenTransport: ref('frames'), stage: ref('通话中'), error: ref(''),
-      screenFrame: vi.fn(() => true), screenStopped: vi.fn(), screenMessageLimit: () => 64000,
+      stage: ref('通话中'), error: ref(''),
+      contextStatus: ref(''), feedbackStatus: ref(''),
+      desktopSession: () => ({ target: { base: '', node: 'Agent', graph: 'graph' }, session: 'voice' }),
       recordSaving: ref(false), recordError: ref(''), userCaption: ref(''), assistantCaption: ref(''), taskStatus: ref('') }
     onBeforeUnmount(hangup)
     connections.push(call)
@@ -65,6 +71,16 @@ function mountWorkspace() {
   app.mount(root); disposers.push(() => app.unmount())
   return { voice, selected, graph, panel, mobile, root }
 }
+
+it.each([false, true])('has no screen sharing or annotation enable controls on mobile=%s', async isMobile => {
+  const { voice, mobile, root } = mountWorkspace()
+  mobile.value = isMobile
+  voice.start('graph', 'Agent'); await flush()
+  const texts = (node: Element): string[] => [node.text, ...node.children.flatMap(texts)]
+  const content = texts(root).join(' ')
+  for (const label of ['开启桌面标注', '关闭标注', '确认并开启标注', '单独开启', '共享此浏览器屏幕', '共享执行端屏幕', '停止共享', '共享画面预览']) expect(content).not.toContain(label)
+  expect(voiceRequest).not.toHaveBeenCalled()
+})
 
 it('keeps the exact connection and microphone across desktop close, mobile back, node and graph navigation', async () => {
   const { voice, selected, graph, panel, mobile } = mountWorkspace()
@@ -136,31 +152,18 @@ it('clears failed call status and releases calls only when the workspace is unmo
   expect(voice.status('graph', 'Other')).toBeNull()
 })
 
-it('continues screen frames with the chat closed and the controls collapsed, then releases capture on hangup', async () => {
+it('never starts capture while idle, navigating or collapsing the call', async () => {
   vi.useFakeTimers()
-  const track = { stop: vi.fn(), label: 'Screen', applyConstraints: vi.fn(async () => {}) }
-  const stream = { getTracks: () => [track], getVideoTracks: () => [track] }
-  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(), getDisplayMedia: vi.fn(async () => stream) } })
-  vi.stubGlobal('document', { createElement: (kind: string) => kind === 'video'
-    ? { play: async () => {}, pause: vi.fn(), readyState: 2, videoWidth: 1920, videoHeight: 1080 }
-    : { getContext: () => ({ drawImage: vi.fn() }), toDataURL: () => 'data:image/jpeg;base64,frame' } })
+  const getDisplayMedia = vi.fn()
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(), getDisplayMedia } })
   try {
-    const { voice, panel, selected, root } = mountWorkspace()
+    const { voice, panel, selected } = mountWorkspace()
     voice.start('graph', 'Agent'); await flush()
-    connections[0].screenSupported.value = true; await flush()
-    function findShare(node: Element): Element | undefined {
-      if (node.type === 'button' && node.text === '共享屏幕') return node
-      for (const child of node.children) { const found = findShare(child); if (found) return found }
-    }
-    await findShare(root)!.props.onClick(); await flush()
-    expect(connections[0].screenFrame).toHaveBeenCalled()
     panel.value = false; selected.value = 'Other'; voice.expanded.value = false; await flush()
-    const before = connections[0].screenFrame.mock.calls.length
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(connections[0].screenFrame.mock.calls.length).toBeGreaterThan(before)
-    expect(track.stop).not.toHaveBeenCalled()
-    voice.hangup('graph', 'Agent'); await flush()
-    expect(track.stop).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(getDisplayMedia).not.toHaveBeenCalled()
+    expect(voiceRequest).not.toHaveBeenCalled()
+    expect(connections[0].hangup).not.toHaveBeenCalled()
   } finally { vi.useRealTimers() }
 })
 

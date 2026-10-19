@@ -30,6 +30,16 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 const mic = { getAudioTracks: () => [{ kind: 'audio' }] } as unknown as MediaStream
 
+it('reports malformed application messages without closing the RTC audio session', async () => {
+  const events = callbacks(), rtc = new VolcRtcConnection(target, 'lease', info, new AbortController().signal, events)
+  await rtc.connect(mic)
+  state.listeners.get('binary')!({ userId: 'bot', message: new ArrayBuffer(2) })
+  expect(events.event).toHaveBeenCalledWith({ kind: 'warning', text: expect.stringContaining('消息头不完整') })
+  expect(events.error).not.toHaveBeenCalled()
+  expect(state.engine.leaveRoom).not.toHaveBeenCalled()
+  await rtc.close()
+})
+
 it('joins before activating and requires AI audio subscription before reporting connected', async () => {
   const events = callbacks(), rtc = new VolcRtcConnection(target, 'lease', info, new AbortController().signal, events)
   await rtc.connect(mic)
@@ -42,25 +52,6 @@ it('joins before activating and requires AI audio subscription before reporting 
   await vi.waitFor(() => expect(events.event).toHaveBeenCalledWith({ kind: 'ready' }))
   expect(events.audio).toHaveBeenCalledOnce()
   await rtc.close()
-})
-
-it('publishes a screen clone, applies both rate limits and unpublishes without stopping the shared source', async () => {
-  const rtc = new VolcRtcConnection(target, 'lease', info, new AbortController().signal, callbacks())
-  await rtc.connect(mic)
-  const clone = { stop: vi.fn() }, source = { readyState: 'live', clone: vi.fn(() => clone), stop: vi.fn() }
-  const screen = { getVideoTracks: () => [source] } as unknown as MediaStream
-  for (const fps of [1, 30]) await rtc.screen(screen, fps)
-  expect(state.engine.publishScreen).toHaveBeenCalledOnce()
-  expect(state.engine.setScreenEncoderConfig.mock.calls.map((args: any[]) => args[0].frameRate)).toEqual([1, 30])
-  expect(state.engine.setExternalVideoTrack).toHaveBeenCalledWith(1, clone)
-  state.listeners.get('stats')!({ isScreen: true, videoStats: { sentFrameRate: 17 } })
-  expect(rtc.screenFps()).toBe(17)
-  await rtc.screen(null, 30)
-  expect(controlRtcCall).toHaveBeenLastCalledWith(target, 'lease', { action: 'screen', enabled: false, fps: 30 }, expect.any(AbortSignal))
-  expect(source.stop).not.toHaveBeenCalled(); expect(clone.stop).toHaveBeenCalledOnce()
-  await expect(rtc.screen(screen, 31)).rejects.toThrow('1–30')
-  await rtc.close(); await rtc.close()
-  expect(VERTC.destroyEngine).toHaveBeenCalledOnce()
 })
 
 it('waits for a late join on hangup without ever starting the cloud AI', async () => {

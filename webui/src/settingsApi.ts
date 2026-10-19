@@ -1,3 +1,4 @@
+import type { ToolDefinition } from './toolsetEditor'
 import { createApiNetworkError, getActiveApiBase, requestApiJson } from './api'
 import type { LongTermMemorySettings } from './longTermMemorySettings'
 import type { ConversationContextSettings } from './conversationContextSettings'
@@ -10,6 +11,8 @@ export type SettingsSectionInfo = {
 }
 
 export type SettingsDocument = {
+  tool_catalog?: ToolDefinition[]
+  builtin_toolsets?: string[]
   section: string
   label: string
   path: string

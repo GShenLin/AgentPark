@@ -10,19 +10,27 @@ def infer_node_can(payload: dict[str, Any]) -> dict[str, bool]:
     plugins = set(_string_list(payload.get("plugins")))
     exact_names = tools | mcp_servers | skills | plugins
 
-    has_system = "system_tools" in tools
-    has_rg = "rg_tools" in tools
-    has_file_read = "file_read_tools" in tools or has_system
-    has_file_write = "file_write_tools" in tools or has_system
-    has_shell = "console_tools" in tools or has_system
-    has_curl = "network_tools" in tools or "curl_tools" in tools
+    from pathlib import Path
+    from src.tool.tool_module_loader import get_functions_dir
+    from src.tool.toolset_registry import load_toolset_config, resolve_toolset
+
+    config = load_toolset_config()
+    known_sets = ({path.stem for path in Path(get_functions_dir()).glob("*.py")}
+                  | set(config["toolsets"])) - set(config["deleted_toolsets"])
+
+    functions = {
+        declaration.get("function", declaration)["name"]
+        for toolset in tools
+        if toolset in known_sets
+        for declaration, _ in resolve_toolset(toolset)
+    }
 
     return {
-        "read_local_files": bool(has_file_read or has_rg),
-        "write_local_files": bool(has_file_write),
-        "search_local_files": bool(has_rg),
-        "execute_shell": bool(has_shell),
-        "web_fetch": bool(has_curl),
+        "read_local_files": "read_file" in functions,
+        "write_local_files": bool({"write_file", "apply_patch"} & functions),
+        "search_local_files": bool({"rg_search_text", "rg_list_files"} & functions),
+        "execute_shell": bool({"execute_console_command", "start_console_session"} & functions),
+        "web_fetch": "execute_curl_command" in functions,
         "web_search": bool("web_search" in exact_names),
         "control_agentpark": bool("agentpark-companion" in mcp_servers),
         "spawn_sub_agents": False,

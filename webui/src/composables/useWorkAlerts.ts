@@ -1,4 +1,6 @@
 import { computed, ref } from 'vue'
+import { recordNodeUnread } from './useNodeUnread'
+import { usesNativeWorkAlerts, initializeWorkAlertFocus } from '../workAlertNodeWindow'
 
 export type WorkAlert = {
   id: string
@@ -118,6 +120,15 @@ function normalizeAlert(payload: Record<string, unknown>): WorkAlert | null {
   if (payload.stream_snapshot === true) return null
   const eventName = String(payload.event || '').trim()
   const graphId = String(payload.graph_id || '').trim() || 'default'
+  if (eventName === 'node_window_alert_failed') {
+    const nodeId = String(payload.node_instance_id || '').trim()
+    const alertId = String(payload.alert_id || '').trim()
+    if (!nodeId || !alertId) return null
+    return {
+      id: `node-window-error:${alertId}`, kind: 'tip', graphId, nodeId, nodeName: nodeId,
+      title: '节点小窗口未能打开', message: String(payload.message || ''), createdAt: String(payload.ts || ''),
+    }
+  }
   if (eventName === 'work_persisted_alert') {
     const nodeId = String(payload.node_instance_id || payload.node_id || '').trim()
     if (!nodeId) return null
@@ -192,9 +203,10 @@ export function notifyWorkAlertGraphEvent(payload: Record<string, unknown>) {
   const alert = normalizeAlert(payload)
   if (!alert || seenAlertIds.has(alert.id)) return
   seenAlertIds.add(alert.id)
+  if (alert.kind === 'work_persisted') recordNodeUnread(alert.graphId, alert.nodeId, alert.id)
   alerts.value = [...alerts.value, alert].slice(-MAX_VISIBLE_ALERTS)
   void playWorkAlertTone()
-  showDesktopNotification(alert)
+  if (alert.kind !== 'work_persisted' || !usesNativeWorkAlerts()) showDesktopNotification(alert)
 }
 
 export function dismissWorkAlert(alertId: string) {
@@ -221,12 +233,14 @@ export function completeWorkAlertNavigation(nonce: number) {
 
 export function initializeForegroundAlerts() {
   if (foregroundCleanup || typeof window === 'undefined') return foregroundCleanup || (() => undefined)
+  const stopFocus = initializeWorkAlertFocus()
   const prime = () => {
     void enableWorkAlertAudio()
   }
   window.addEventListener('pointerdown', prime, { once: true, passive: true })
   window.addEventListener('keydown', prime, { once: true })
   foregroundCleanup = () => {
+    stopFocus()
     window.removeEventListener('pointerdown', prime)
     window.removeEventListener('keydown', prime)
     foregroundCleanup = null

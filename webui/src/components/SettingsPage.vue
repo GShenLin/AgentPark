@@ -2,12 +2,10 @@
 import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, provide, ref } from 'vue'
 import {
   applyRuntimeEventConfig,
-  getNodeTemplate,
   listProviders,
   listTools,
   type ProviderInfo,
 } from '../api'
-import { getSchemaFieldOptions } from '../composables/nodeSchemaFields'
 import { formatRuntimeApplyErrors } from '../runtimeEventsConfig'
 import {
   getSettingsSection,
@@ -30,7 +28,6 @@ import ActionButton from './ActionButton.vue'
 import SelectionButton from './SelectionButton.vue'
 import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
 import AccessSettingsPanel from './settings/AccessSettingsPanel.vue'
-import type { CompanionCapabilityOption } from './settings/CompanionCapabilitySelect.vue'
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
 import HarnessSettingsPanel from './settings/HarnessSettingsPanel.vue'
 import KnowledgeSettingsPanel from './settings/KnowledgeSettingsPanel.vue'
@@ -46,10 +43,11 @@ import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
 import StaticSettingsPanel from './settings/StaticSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
 import ThemeSettingsForm from './settings/ThemeSettingsForm.vue'
+import ToolsetSettingsForm from './settings/ToolsetSettingsForm.vue'
 import { applyWorkspaceTheme, DEFAULT_THEME_PRESET_ID } from '../theme'
 import { t } from '../i18n'
 
-const NodeProfilerEditor = defineAsyncComponent(() => import('./settings/NodeProfilerEditor.vue'))
+const NodePresetEditor = defineAsyncComponent(() => import('./settings/NodePresetEditor.vue'))
 
 const props = withDefaults(defineProps<{
   backLabel?: string
@@ -64,6 +62,7 @@ const compact = useCompactSettings()
 const emit = defineEmits<{
   back: []
   providersUpdated: []
+  toolsUpdated: [tools: string[]]
   defaultsUpdated: [value: Record<string, unknown>]
 }>()
 
@@ -78,10 +77,9 @@ const error = ref('')
 const status = ref('')
 const providers = ref<ProviderInfo[]>([])
 const availableTools = ref<string[]>([])
-const companionCapabilityOptions = ref<Record<string, CompanionCapabilityOption[]>>({})
 const themePresets = ref<ThemePresetInfo[]>([])
 const activeThemePresetId = ref(DEFAULT_THEME_PRESET_ID)
-const nodeProfilerDirty = ref(false)
+const nodePresetDirty = ref(false)
 const gatewayDirty = ref(false)
 const localModelDirty = ref(false)
 const pendingProviderLimitCopies = ref<ProviderLimitCopyRequest[]>([])
@@ -113,12 +111,12 @@ const isSkills = computed(() => activeSection.value === 'skills')
 const isGateway = computed(() => activeSection.value === 'gateway')
 const isPressure = computed(() => activeSection.value === 'pressure')
 const isToolStats = computed(() => activeSection.value === 'tool-stats')
-const isNodeProfilerEditor = computed(() => activeSection.value === 'node-profiler-editor')
+const isNodePresetEditor = computed(() => activeSection.value === 'node-preset-editor')
 const isExitSection = computed(() => activeSection.value === 'exit')
 const isPeerNetwork = computed(() => activeSection.value === 'peer-network')
 const isNodeSync = computed(() => activeSection.value === 'node-sync')
 const isLocalModel = computed(() => activeSection.value === 'local-model')
-const isVirtualSection = computed(() => isLocalModel.value || isSkills.value || isNodeSync.value || isKnowledge.value || isHarness.value || isPeerNetwork.value || isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isNodeProfilerEditor.value || isExitSection.value)
+const isVirtualSection = computed(() => isLocalModel.value || isSkills.value || isNodeSync.value || isKnowledge.value || isHarness.value || isPeerNetwork.value || isAuthorization.value || isGateway.value || isProviderTest.value || isPressure.value || isToolStats.value || isNodePresetEditor.value || isExitSection.value)
 const dirty = computed(() => (
   !isVirtualSection.value
   && (
@@ -172,20 +170,8 @@ function syncThemePresetState(document: SettingsDocument | null) {
 async function loadCatalogForForms() {
   try {
     await loadCatalog()
-    await loadCompanionCapabilityOptions()
   } catch (e: any) {
     error.value = String(e?.message || e)
-  }
-}
-
-async function loadCompanionCapabilityOptions() {
-  const template = await getNodeTemplate('agent_node')
-  const schema = template.schema || {}
-  companionCapabilityOptions.value = {
-    tools: getSchemaFieldOptions(schema, 'tools'),
-    mcp_servers: getSchemaFieldOptions(schema, 'mcp_servers'),
-    skills: getSchemaFieldOptions(schema, 'skills'),
-    plugins: getSchemaFieldOptions(schema, 'plugins'),
   }
 }
 
@@ -198,14 +184,14 @@ async function loadSections() {
 }
 
 async function loadSection(sectionId = activeSection.value) {
-  if (sectionId === 'local-model' || sectionId === 'skills' || sectionId === 'node-sync' || sectionId === 'knowledge' || sectionId === 'harness' || sectionId === 'peer-network' || sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-profiler-editor' || sectionId === 'exit') {
+  if (sectionId === 'local-model' || sectionId === 'skills' || sectionId === 'node-sync' || sectionId === 'knowledge' || sectionId === 'harness' || sectionId === 'peer-network' || sectionId === 'authorization' || sectionId === 'gateway' || sectionId === 'provider-test' || sectionId === 'pressure' || sectionId === 'tool-stats' || sectionId === 'anim-editor' || sectionId === 'node-preset-editor' || sectionId === 'exit') {
     activeSection.value = sectionId
     loadedDocument.value = null
     editorContent.value = ''
     advancedMode.value = false
     error.value = ''
     status.value = ''
-    nodeProfilerDirty.value = false
+    nodePresetDirty.value = false
     gatewayDirty.value = false
     return
   }
@@ -215,7 +201,7 @@ async function loadSection(sectionId = activeSection.value) {
   try {
     const document = await getSettingsSection(sectionId)
     activeSection.value = sectionId
-    nodeProfilerDirty.value = false
+    nodePresetDirty.value = false
     gatewayDirty.value = false
     loadedDocument.value = document
     editorContent.value = document.content
@@ -245,8 +231,8 @@ async function selectSection(sectionId: string) {
 const { sectionOpen, detailBack, confirmLeave, handleBack } = createSettingsPageNavigation({
   compact,
   busy: computed(() => loading.value || saving.value),
-  hasChanges: computed(() => dirty.value || localModelDirty.value || nodeProfilerDirty.value || gatewayDirty.value),
-  confirmDiscard: () => window.confirm(t(nodeProfilerDirty.value ? 'settings.discardNodeProfiler' : 'settings.unsavedConfirm')),
+  hasChanges: computed(() => dirty.value || localModelDirty.value || nodePresetDirty.value || gatewayDirty.value),
+  confirmDiscard: () => window.confirm(t(nodePresetDirty.value ? 'settings.discardNodePreset' : 'settings.unsavedConfirm')),
   exit: () => emit('back'),
 })
 provide(settingsNavigationKey, { compact, detailBack })
@@ -256,7 +242,7 @@ async function reloadSection() {
 }
 
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value && !nodeProfilerDirty.value && !gatewayDirty.value) return
+  if (!dirty.value && !nodePresetDirty.value && !gatewayDirty.value) return
   event.preventDefault()
   event.returnValue = ''
 }
@@ -382,9 +368,11 @@ async function saveSection() {
     if (activeSection.value === 'model-provider') {
       emit('providersUpdated')
       await loadCatalogForForms()
+    } else if (activeSection.value === 'toolsets') {
+      await loadCatalog()
+      emit('toolsUpdated', availableTools.value)
     } else if (activeSection.value === 'defaults') {
       emit('defaultsUpdated', document.data)
-      await loadCompanionCapabilityOptions()
     } else if (activeSection.value === 'theme') {
       await applyWorkspaceTheme()
     }
@@ -460,7 +448,7 @@ onMounted(async () => {
     <header class="settings-head">
       <div class="settings-title-wrap">
         <h1>{{ compact && sectionOpen ? activeLabel : t('common.settings') }}</h1>
-        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isNodeProfilerEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
+        <div class="settings-path">{{ loadedDocument?.path || currentSection?.path || (isAuthorization ? '.auth/access-control.json' : isGateway ? 'config/publicGateway.json · .auth/gateway/keys.json' : isProviderTest ? 'config/ProviderLimit.json' : isPressure ? '/api/providers/pressure' : isToolStats ? 'memories/*/runtime_events.jsonl · messages.jsonl · .cache/tool_stats' : isNodePresetEditor ? 'agent/*.json' : isExitSection ? 'AgentPark backend' : '') }}</div>
       </div>
       <div v-if="props.showBackButton || compact" class="settings-head-actions">
         <ActionButton compact :disabled="loading || saving" @click="handleBack">‹ {{ backButtonLabel }}</ActionButton>
@@ -520,13 +508,13 @@ onMounted(async () => {
         <ProviderTestSettingsPanel v-else-if="isProviderTest" />
         <PressureSettingsPanel v-else-if="isPressure" />
         <StaticSettingsPanel v-else-if="isToolStats" />
-        <NodeProfilerEditor
-          v-else-if="isNodeProfilerEditor"
+        <NodePresetEditor
+          v-else-if="isNodePresetEditor"
           :providers="providers"
           :available-tools="availableTools"
           @error="error = $event"
           @status="status = $event"
-          @dirty="nodeProfilerDirty = $event"
+          @dirty="nodePresetDirty = $event"
         />
         <SystemExitPanel v-else-if="isExitSection" />
 
@@ -550,6 +538,12 @@ onMounted(async () => {
             @provider-deleted="handleProviderDeleted"
             @provider-model-added="handleProviderModelAdded"
           />
+          <ToolsetSettingsForm
+            v-else-if="activeSection === 'toolsets' && formData"
+            :data="formData"
+            :catalog="loadedDocument?.tool_catalog || []"
+            @update:data="replaceData"
+          />
           <DefaultSettingsForm
             v-else-if="activeSection === 'defaults' && formData"
             :data="formData"
@@ -561,9 +555,6 @@ onMounted(async () => {
           <CompanionSettingsForm
             v-else-if="activeSection === 'companion' && formData"
             :data="formData"
-            :providers="providers"
-            :available-tools="availableTools"
-            :capability-options="companionCapabilityOptions"
             @update:data="replaceData"
           />
           <RuntimeEventsSettingsForm

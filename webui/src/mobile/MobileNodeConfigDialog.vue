@@ -9,7 +9,7 @@ import {
   type ProviderInfo,
 } from '../api'
 import { normalizeSchemaFieldValue } from '../composables/nodeSchemaFields'
-import { HARNESS_NODE_TYPES } from '../composables/useAgentNodeCreateSchema'
+import { PROVIDER_HARNESS_NODE_TYPES } from '../composables/useAgentNodeCreateSchema'
 import ActionButton from '../components/ActionButton.vue'
 import NodeConfigFields from '../components/agent-board/NodeConfigFields.vue'
 import DangerButton from '../components/DangerButton.vue'
@@ -383,7 +383,7 @@ watch(
   () => schemaContextKey(draftFields.value),
   (contextKey) => {
     const typeId = String(props.node?.type_id || '').trim()
-    if (typeId !== 'agent_node' && !HARNESS_NODE_TYPES.includes(typeId)) return
+    if (typeId !== 'agent_node' && !PROVIDER_HARNESS_NODE_TYPES.includes(typeId)) return
     // A provider change during an in-flight template request must supersede it.
     // Initial draft hydration is the only loading state that should be ignored.
     if (!props.open || (loading.value && !dirtyKeys.value.provider_id)) return

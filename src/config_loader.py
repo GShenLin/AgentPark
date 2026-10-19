@@ -221,6 +221,9 @@ class ConfigLoader:
             self._validate_grok_reasoning_effort_fields(provider)
         if provider_type == "deepseek":
             validate_deepseek_provider_config(provider_name, provider)
+        if provider_type == "workbuddy":
+            from src.workbuddy.gateway import validate_config
+            validate_config(provider)
 
         auth_mode = str(provider.get("authMode") or "api_key").strip().lower()
         if auth_mode not in {"api_key", "codex", "oauth", "none"}:

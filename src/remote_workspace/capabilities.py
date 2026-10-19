@@ -24,7 +24,7 @@ REMOTE_WORKSPACE_TOOL_NAMES = (
     REMOTE_FILE_SYSTEM_TOOL_NAMES | REMOTE_APPLICATION_TOOL_NAMES
 )
 
-REMOTE_WORKER_CONTROL_CAPABILITIES = frozenset({"list_directories", "inspect_workspace"})
+REMOTE_WORKER_CONTROL_CAPABILITIES = frozenset({"list_directories", "inspect_workspace", "desktop_screen", "desktop_annotations"})
 
 STANDALONE_REMOTE_CAPABILITIES = (
     REMOTE_FILE_SYSTEM_TOOL_NAMES | REMOTE_WORKER_CONTROL_CAPABILITIES

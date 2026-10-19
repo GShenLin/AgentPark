@@ -13,7 +13,7 @@ def register_local_model_routes(app, service: LocalModelService | None = None):
 
     def owner(request: Request):
         if not has_owner_access(request):
-            raise HTTPException(403, "本地模型管理需要工作区所有者权限")
+            raise HTTPException(403, "本地服务管理需要工作区所有者权限")
 
     router = APIRouter(prefix="/api/local-model", dependencies=[Depends(owner)])
 

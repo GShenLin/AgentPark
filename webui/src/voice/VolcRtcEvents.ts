@@ -1,3 +1,4 @@
+import { parseVoiceTool } from './voiceTools'
 import type { VoiceEvent } from './voiceProtocol'
 
 type Segment = { sequence: number; text: string; definite: boolean }
@@ -21,11 +22,8 @@ export class VolcRtcEvents {
     if (magic === 'tool') {
       if (!Array.isArray(data.tool_calls)) throw new Error('火山工具调用缺少 tool_calls。')
       return data.tool_calls.map((item: { id: string; type: string; function: { name: string; arguments: string } }) => {
-        if (item.type !== 'function' || item.function?.name !== 'delegate_to_node'
-          || typeof item.id !== 'string' || !item.id || typeof item.function.arguments !== 'string') throw new Error('火山返回了未声明的节点工具调用。')
-        const args = JSON.parse(item.function.arguments)
-        if (typeof args?.text !== 'string' || !args.text.trim() || Object.keys(args).some(key => key !== 'text')) throw new Error('火山节点工具参数格式错误。')
-        return { kind: 'delegation', id: item.id, text: args.text }
+        if (item.type !== 'function' || typeof item.id !== 'string' || !item.id || item.id.length > 200) throw new Error('火山工具调用缺少有效编号。')
+        return parseVoiceTool(item.function?.name, item.id, item.function?.arguments)
       })
     }
     if (magic === 'conv') {

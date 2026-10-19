@@ -26,7 +26,8 @@ from .node_sync.routes import register_node_sync_routes
 
 
 class WebBackendFacade:
-    def __init__(self, tool_names: list[str] | None = None) -> None:
+    def __init__(self, tool_names: list[str] | None = None, *, server_port: int | None = None) -> None:
+        self.server_port = server_port
         self.core = BackendCore(tool_names=tool_names)
         self.companion_mcp = None
         self.companion_mcp_app = None
@@ -93,6 +94,9 @@ class WebBackendFacade:
                 runtime_supervisor.record("application_lifespan_stopped")
 
     def _startup_services(self) -> None:
+        if os.name == 'nt' and self.server_port is not None:
+            self.core.node_windows.alerts.start(self.server_port)
+        self.core.workbuddy_api.manager.startup()
         self.core.knowledge_service.start()
         self.core.group_delivery.start()
         try:
@@ -139,6 +143,8 @@ class WebBackendFacade:
             print(f"[RestartRecovery] startup failed; checkpoint retained: {e}")
 
     def _shutdown_services(self) -> None:
+        self.core.node_windows.alerts.close()
+        self.core.workbuddy_api.manager.close()
         self.core.cron_service.close()
         self.node_sync_jobs.cloud.close()
         self.core.group_delivery.close()

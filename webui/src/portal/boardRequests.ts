@@ -2,6 +2,10 @@ let generation = 0
 let available = false
 let reads = new AbortController()
 
+export class BoardUnavailableError extends Error {
+  constructor() { super('设备连接已断开，请等待重连。') }
+}
+
 export class BoardRequestInterruptedError extends Error {
   readonly isRead: boolean
   constructor(isRead: boolean) {
@@ -20,7 +24,7 @@ export function suspendBoardRequests() {
 export function resumeBoardRequests() { available = true }
 
 export function captureBoardRequest(init?: RequestInit) {
-  if (!available) throw new Error('设备连接已断开，请等待重连。')
+  if (!available) throw new BoardUnavailableError()
   const current = generation
   const isRead = ['GET', 'HEAD'].includes((init?.method || 'GET').toUpperCase())
   return {

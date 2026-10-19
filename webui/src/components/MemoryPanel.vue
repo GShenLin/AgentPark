@@ -25,6 +25,7 @@ import {
 } from '../api'
 import { useGlobalState } from '../composables/useGlobalState'
 import { useMemory } from '../composables/useMemory'
+import { useMemoryUnread } from '../composables/useMemoryUnread'
 import { useMemoryMessageExport } from '../composables/useMemoryMessageExport'
 import { useCliSessions } from '../composables/useCliSessions'
 import { recordDeletionUndo } from '../composables/useDeletionUndo'
@@ -35,6 +36,7 @@ import CliSessionPicker from './CliSessionPicker.vue'
 import { renderMemoryMarkdown } from './memoryMarkdown'
 import { t } from '../i18n'
 import { AgentBoardKey } from './agent-board/context'
+import { useNewGraph } from './graph-browser/useNewGraph'
 
 const board = inject(AgentBoardKey, null)
 
@@ -42,7 +44,10 @@ const props = defineProps<{
   initialGraphs: GraphInfo[]
   initialGraphProfiles: GraphProfile[]
   closable?: boolean
+  active?: boolean
+  hideHeader?: boolean
 }>()
+useMemoryUnread(computed(() => props.active !== false))
 
 const emit = defineEmits<{
   close: []
@@ -126,6 +131,9 @@ const graphWorkingPathInput = ref('')
 const graphStatus = ref<string | null>(null)
 const graphLoading = ref(false)
 const graphMemoryClearingId = ref('')
+const { creating: graphCreating, createNewGraph } = useNewGraph({
+  graphNameInput, graphWorkingPathInput, graphs, graphStatus,
+})
 
 function hasSelectedNodeTarget() {
   return !!String(selectedNodeId.value || '').trim()
@@ -699,6 +707,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="panel">
     <MemoryPanelHeader
+      v-if="!hideHeader"
       :memory-mode="memoryMode"
       v-model:is-markdown-preview="isMarkdownPreview"
       v-model:show-line-numbers="showLineNumbers"
@@ -744,6 +753,7 @@ onBeforeUnmount(() => {
       :agent-images="agentImages"
       :rendered-markdown="renderedMarkdown"
       :graph-loading="graphLoading"
+      :graph-creating="graphCreating"
       :graph-memory-clearing-id="graphMemoryClearingId"
       :graphs="graphs"
       :graph-profiles="graphProfiles"
@@ -755,6 +765,7 @@ onBeforeUnmount(() => {
       :load-turn-details="loadTurnDetails"
       @save-current-file="saveCurrentFile"
       @save-graph-config="saveGraphConfig"
+      @new-graph="createNewGraph"
       @save-graph-profile="saveGraphProfile"
       @create-graph-from-profile="createGraphConfigFromProfile"
       @delete-graph-profile="deleteSelectedGraphProfile"

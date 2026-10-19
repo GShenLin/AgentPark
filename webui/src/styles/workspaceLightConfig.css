@@ -1,0 +1,32 @@
+/* Node inspector uses the same controls and hierarchy as the graph directory. */
+html[data-theme-preset='chat-light'] #app .node-config-dock {
+  background-color: #f5f8fd;
+  border-color: #dfe5ee;
+  padding: calc(var(--floating-controls-clearance, 0px) + 18px) 16px 18px;
+  gap: 16px;
+  --form-control-border: #dce4ef;
+  --form-control-background: #fff;
+  --form-control-text: #20314a;
+  --form-control-focus: #4269c7;
+  --theme-panel-node-side-editor-input-border: #dce4ef;
+  --theme-panel-node-side-editor-input-background: #fff;
+  --theme-panel-node-side-editor-input-text: #20314a;
+  --theme-panel-node-side-editor-input-focus-border: #4269c7;
+  --theme-panel-node-side-editor-text-primary: #20314a;
+  --theme-panel-node-side-editor-text-secondary: #687b94;
+  --ui-button-border: #dce4ef;
+  --ui-button-text: #536781;
+  --ui-button-hover-background: #edf2ff;
+}
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-dock-head { padding-bottom: 14px; border-bottom: 1px solid #dfe7f2; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-title { color: #20314a; font-weight: 650; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-sub { color: #718097; font-size: 11px; margin-top: 4px; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-head { background: #f5f8fd; padding-bottom: 12px; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .section-title { color: #536781; letter-spacing: normal; text-transform: none; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-field-group { background: #fff; border-color: #dfe7f2; border-radius: 8px; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-field-group-summary { color: #344b6c; background: #f8faff; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .config-field-group-summary:hover { background: #edf2ff; }
+html[data-theme-preset='chat-light'] #app .node-config-dock .field-label { color: #435773; }
+html[data-theme-preset='chat-light'] #app .node-config-dock :is(.field-hint, .field-drop-hint) { color: #718097; line-height: 1.6; }
+html[data-theme-preset='chat-light'] #app .node-config-dock :is(.field-input, .expandable-textarea__input) { background: #fff; color: #20314a; border-color: #dce4ef; border-radius: 7px; }
+html[data-theme-preset='chat-light'] #app .node-config-dock :is(.field-input, .expandable-textarea__input):focus { border-color: #4269c7; }

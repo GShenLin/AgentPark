@@ -19,6 +19,13 @@ class HarnessOperation(BaseModel):
     action: Literal["install", "upgrade", "uninstall"]
 
 
+class OpenCodeOptionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str
+    agent: str
+    working_path: str = ""
+
+
 class HarnessApiDomain(DomainBase):
     def __init__(self, core):
         super().__init__(core)
@@ -58,3 +65,24 @@ class HarnessApiDomain(DomainBase):
             return self._jobs.get(job_id)
         except KeyError as exc:
             raise HTTPException(404, "Harness installation job not found.") from exc
+
+    def native_models(self, harness_id: str, request: Request):
+        self._require_owner(request)
+        if harness_id == "opencode":
+            from src.harness.opencode_catalog import list_models
+        elif harness_id == "antigravity":
+            from src.harness.antigravity_catalog import list_models
+        else:
+            raise HTTPException(404, "This Harness does not expose a native model catalog.")
+        try:
+            return {"models": list_models()}
+        except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+    def opencode_options(self, payload: OpenCodeOptionsRequest, request: Request):
+        self._require_owner(request)
+        from src.harness.opencode_options import configuration_options
+        try:
+            return configuration_options(**payload.model_dump())
+        except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
+            raise HTTPException(502, str(exc)) from exc

@@ -3,10 +3,10 @@ from fastapi import FastAPI
 from . import runtime_paths
 
 
-def create_app(tool_names: list[str] | None = None) -> FastAPI:
+def create_app(tool_names: list[str] | None = None, *, server_port: int | None = None) -> FastAPI:
     from .facade import WebBackendFacade
 
-    return WebBackendFacade(tool_names=tool_names).build()
+    return WebBackendFacade(tool_names=tool_names, server_port=server_port).build()
 
 _get_runtime_root = runtime_paths._get_runtime_root
 _get_resource_root = runtime_paths._get_resource_root

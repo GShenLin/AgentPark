@@ -2,6 +2,7 @@ import { computed, type Ref } from 'vue'
 import type { SettingsSectionInfo } from '../../settingsApi'
 
 export const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
+  { id: 'toolsets', label: 'Toolset', path: 'config/toolsets.json', filename: 'toolsets.json' },
   {
     id: 'model-provider',
     label: 'modelProvider',
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
 ]
 
 export const SECTION_MESSAGE_KEYS: Record<string, string> = {
+  toolsets: 'settings.toolsets',
   authorization: 'settings.authorization',
   'model-provider': 'settings.modelProvider',
   gateway: 'settings.gateway',
@@ -39,7 +41,7 @@ export const SECTION_MESSAGE_KEYS: Record<string, string> = {
   'provider-test': 'settings.providerTest',
   pressure: 'settings.pressure',
   'tool-stats': 'settings.statistics',
-  'node-profiler-editor': 'settings.nodeProfiler',
+  'node-preset-editor': 'settings.nodePreset',
   exit: 'settings.exit',
   theme: 'settings.theme',
 }
@@ -48,7 +50,7 @@ export function useSettingsSections(sections: Ref<SettingsSectionInfo[]>) {
   return computed<SettingsSectionInfo[]>(() => {
     const base = sections.value.slice()
     base.splice(Math.max(0, base.findIndex(item => item.id === 'model-provider') + 1), 0,
-      { id: 'local-model', label: '本地模型', path: 'config/localModel.json', filename: 'localModel.json' })
+      { id: 'local-model', label: '本地服务', path: 'config/localModel.json', filename: 'localModel.json' })
     base.push({ id: 'harness', label: 'Harness', path: '', filename: '' })
     base.push({ id: 'knowledge', label: 'Knowledge', path: '本地文件夹知识库', filename: '' })
     base.push({ id: 'skills', label: 'Skill 管理', path: '项目 · 用户 · 自定义加载路径', filename: '' })
@@ -94,10 +96,10 @@ export function useSettingsSections(sections: Ref<SettingsSectionInfo[]>) {
         filename: 'summary.json',
       })
     }
-    if (!base.some((item) => item.id === 'node-profiler-editor')) {
+    if (!base.some((item) => item.id === 'node-preset-editor')) {
       base.push({
-        id: 'node-profiler-editor',
-        label: 'NodeProfilerEditor',
+        id: 'node-preset-editor',
+        label: 'Node Presets',
         path: 'agent/*.json',
         filename: '*.json',
       })

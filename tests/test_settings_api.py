@@ -505,60 +505,6 @@ def test_settings_api_rejects_non_boolean_tool_failure_memory_switch(monkeypatch
     assert "reviseToolFailureMemoryWithCompanion" in str(exc.value.detail)
 
 
-def test_settings_api_reads_and_writes_companion_config(monkeypatch, tmp_path):
-    from src.web_backend import runtime_paths
-    from src.config_loader import ConfigLoader
-
-    monkeypatch.setattr(ConfigLoader, "get_all_providers", lambda self: {"next": {"models": ["model-a", "model-b"]}})
-
-    graphs_dir = tmp_path / "memories"
-    companion_dir = graphs_dir / "Companion" / "Companion"
-    companion_dir.mkdir(parents=True)
-    companion_path = companion_dir / "config.json"
-    companion_path.write_text(
-        json.dumps(
-            {
-                "node_id": "Companion",
-                "type_id": "agent_node",
-                "graph_id": "Companion",
-                "provider_id": "demo",
-                "tools": [],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(runtime_paths, "_get_graphs_dir", lambda: str(graphs_dir))
-
-    domain = SettingsApiDomain(SimpleNamespace())
-
-    loaded = domain.get_settings_section("companion")
-    assert loaded["path"] == str(companion_path)
-    assert loaded["data"]["provider_id"] == "demo"
-
-    result = domain.update_settings_section(
-        "companion",
-        {
-            "content": json.dumps(
-                {
-                    "node_id": "Companion",
-                    "type_id": "agent_node",
-                    "graph_id": "Companion",
-                    "provider_id": "next",
-                    "model": "model-b",
-                    "tools": ["file_read_tools"],
-                },
-                ensure_ascii=False,
-            )
-        },
-    )
-
-    assert result["ok"] is True
-    saved = json.loads(companion_path.read_text(encoding="utf-8"))
-    assert saved["provider_id"] == "next"
-    assert saved["model"] == "model-b"
-    assert saved["tools"] == ["file_read_tools"]
-
 
 def test_settings_api_rejects_invalid_companion_config(monkeypatch, tmp_path):
     from src.web_backend import runtime_paths

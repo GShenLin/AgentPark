@@ -7,8 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.voice_settings import VoiceSettings
 from .voice_control import VoiceControl
+from .voice_screen import VoiceScreenSink
+from .voice_tools import VoiceToolResult, voice_tools, voice_tool_instructions
 
-VoiceProtocol = Literal["openai-realtime-v1", "agentpark-voice-v4", "volcengine-rtc-v1"]
+VoiceProtocol = Literal["openai-realtime-v4", "agentpark-voice-v4", "volcengine-rtc-v1"]
 VoiceDelivery = Literal["accepted", "duplicate"]
 
 
@@ -38,6 +40,10 @@ class VoiceSession(ABC):
     async def control(self, command: VoiceControl) -> None:
         raise ValueError("此语音供应商不支持 RTC 控制。")
 
+    async def deliver_tool_result(self, call_id: str, result: VoiceToolResult) -> VoiceDelivery:
+        """All server transports return immediate tools through their correlated result channel."""
+        return await self.deliver_update(call_id, VoiceTaskUpdate(task_id=call_id, status=result.status, text=result.text))
+
     @abstractmethod
     async def deliver_update(self, delegation_id: str, result: VoiceTaskUpdate) -> VoiceDelivery:
         """Publish accepted, progress, or terminal state through the provider protocol."""
@@ -57,6 +63,7 @@ class VoiceCall:
     model: str
     protocol: VoiceProtocol
     session: VoiceSession | None = None
+    screen: VoiceScreenSink | None = None
 
     def connection(self) -> dict:
         return {"transport": "webrtc", "sdp": self.sdp}
@@ -72,6 +79,7 @@ class RtcVoiceCall:
     model: str
     session: VoiceSession
     protocol: VoiceProtocol = "volcengine-rtc-v1"
+    screen: VoiceScreenSink | None = None
 
     def connection(self) -> dict:
         return {"transport": "volcengine-rtc", "app_id": self.app_id,
@@ -88,6 +96,14 @@ class VoiceProvider(ABC):
     node_owned_dialogue: bool = False
     models: tuple[VoiceModel, ...]
     transport: Literal["webrtc", "volcengine-rtc"] = "webrtc"
+
+    @staticmethod
+    def tools() -> list[dict]:
+        return voice_tools()
+
+    @staticmethod
+    def instructions(context: str) -> str:
+        return voice_tool_instructions(context)
 
     @classmethod
     @abstractmethod

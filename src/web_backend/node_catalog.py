@@ -34,7 +34,9 @@ class NodeCatalog(HostBoundService):
                 for mod in pkgutil.iter_modules(getattr(functions_pkg, "__path__", [])):
                     if mod.name != "__init__":
                         tools.append(mod.name)
-            tools.sort()
+            from src.tool.toolset_registry import load_toolset_config
+            config = load_toolset_config()
+            tools = sorted((set(tools) | set(config["toolsets"])) - set(config["deleted_toolsets"]))
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to list tools: {type(exc).__name__}: {exc}")
         return {"tools": tools}

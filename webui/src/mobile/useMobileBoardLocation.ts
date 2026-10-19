@@ -1,5 +1,6 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { useMobileWorkspace } from './useMobileWorkspace'
+import { readWorkspaceNodeLink } from '../workspaceNodeLink'
 
 type Workspace = ReturnType<typeof useMobileWorkspace>
 const GRAPH_PARAM = 'mobile_graph'
@@ -21,6 +22,9 @@ export function useMobileBoardLocation(workspace: Workspace, enabled: boolean) {
     const selection = selectionKey()
     if (selection === savedSelection) return
     const url = new URL(window.location.href)
+    // Once navigation changes, replace an incoming node link with the live location.
+    url.searchParams.delete('graph')
+    url.searchParams.delete('node')
     const graphId = workspace.selectedGraph.value?.id
     const nodeId = workspace.selectedNode.value?.id
     if (!graphId || url.searchParams.get(GRAPH_PARAM) !== graphId || nodeId) url.searchParams.delete('mobile_group')
@@ -54,7 +58,9 @@ export function useMobileBoardLocation(workspace: Workspace, enabled: boolean) {
     const graphId = url?.searchParams.get(GRAPH_PARAM)
     const nodeId = url?.searchParams.get(NODE_PARAM)
     try {
-      if (enabled) await workspace.restoreLocation('local', graphId || undefined, nodeId || undefined)
+      const linkedNode = readWorkspaceNodeLink(window.location.href)
+      if (linkedNode) await workspace.restoreLocation('local', linkedNode.graphId, linkedNode.nodeId)
+      else if (enabled) await workspace.restoreLocation('local', graphId || undefined, nodeId || undefined)
       else await workspace.loadPcs()
       if (disposed || workspace.error.value) return
       initialized.value = true

@@ -1,3 +1,4 @@
+import { toolsetsEn } from './toolsets'
 import type { LocaleDefinition } from '../types'
 import { longMemoryEn } from './longTermMemory'
 import { conversationEn } from './conversationContext'
@@ -8,10 +9,18 @@ const enUS: LocaleDefinition = {
   label: 'English',
   shortLabel: 'EN',
   messages: {
+    ...toolsetsEn,
     ...graphBrowserEn,
     "settings.harness": "Harness",
-    "harness.description": "Manage agent runtimes. Each Harness has its own node and uses your shared Provider and Model configuration.",
-    "harness.installNote": "Most Harnesses require Node.js and npm. Hermes Agent requires Git and installs into a dedicated Python environment. New installations are workspace managed. Upgrades run in place and preserve sessions and configuration. Uninstall removes only the AgentPark copy.",
+    "harness.description": "Manage agent runtimes. Each Harness has its own node. OpenCode and Antigravity use their native models and login; other Harnesses use your shared Provider and Model configuration.",
+    "harness.opencode.run": "Create an OpenCode CLI node to begin. AgentPark starts the runtime automatically; no separate terminal is needed.",
+    "harness.opencode.models": "Nodes use OpenCode's own models and login. The default is the free DeepSeek model; OpenCode controls its free quota and availability.",
+    "harness.native.refresh": "View / refresh native models",
+    "harness.native.loading": "Reading models…",
+    "harness.native.select": "Enter a complete identifier below in the node's native model field:",
+    "harness.antigravity.run": "Create an Antigravity CLI node to begin. AgentPark starts it automatically; no separate service is needed. Complete initial login in the official agy CLI, then reuse that login here.",
+    "harness.antigravity.models": "Reads models available to your account; Gemini 4 is selectable when listed. Headless mode cannot show CLI permission prompts, so operations requiring approval report an error. Choose a native execution mode in the node.",
+    "harness.installNote": "Most Harnesses require Node.js and npm. Hermes Agent uses a dedicated Python environment. Antigravity uses its official native binary, with managed installation on Windows/macOS. New installations are workspace managed; upgrades preserve sessions and configuration. Uninstall removes only the AgentPark copy.",
     "harness.checking": "Checking installations…",
     "harness.running": "Working…",
     "harness.status.missing": "Not installed",
@@ -96,7 +105,7 @@ const enUS: LocaleDefinition = {
     'settings.pressure': 'Pressure',
     'settings.statistics': 'Statistics',
     'settings.animationEditor': 'Animation Editor',
-    'settings.nodeProfiler': 'Node Profiler',
+    'settings.nodePreset': 'Node Presets',
     'settings.exit': 'Exit',
     'settings.theme': 'Theme',
     'settings.voice': 'Voice',
@@ -124,7 +133,7 @@ const enUS: LocaleDefinition = {
     'settings.applying': 'Applying…',
     'settings.configurationWarning': 'Configuration warning',
     'settings.invalidJsonHelp': 'Invalid JSON. Switch to Advanced JSON to fix it.',
-    'settings.discardNodeProfiler': 'Discard unsaved Node Profiler changes?',
+    'settings.discardNodePreset': 'Discard unsaved node preset changes?',
     'settings.applied': 'Applied',
     'settings.restartRequired': 'Saved · Restart required',
     'settings.loadedPreset': 'Loaded {preset}',

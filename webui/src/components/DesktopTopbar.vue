@@ -123,7 +123,15 @@ async function restartWorkspace() {
 
 <template>
   <header class="topbar">
-    <div class="brand">{{ t('topbar.title') }}</div>
+    <div class="brand">
+      <svg class="brand-symbol" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M6 7h12M6 7l6 11 6-11" stroke="currentColor" stroke-width="1.6" />
+        <circle cx="6" cy="7" r="3" fill="currentColor" />
+        <circle cx="18" cy="7" r="3" fill="currentColor" />
+        <circle cx="12" cy="18" r="3" fill="currentColor" />
+      </svg>
+      <span>{{ t('topbar.title') }}</span>
+    </div>
     <div v-if="!cloudBoard" class="remote-switcher">
       <span class="remote-label">{{ t('topbar.remote') }}</span>
       <FormSelect v-model="selectedRemoteId" class="remote-select" compact @change="selectRemote">

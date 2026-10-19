@@ -10,6 +10,7 @@ import { startAppEventStream } from './composables/useAppEventStream'
 import { primeUserInteractions } from './composables/useUserInteractions'
 import { initializeForegroundAlerts } from './composables/useWorkAlerts'
 import DesktopWorkspace from './DesktopWorkspace.vue'
+import NodeWindowWorkspace from './NodeWindowWorkspace.vue'
 import MobileWorkspace from './mobile/MobileWorkspace.vue'
 import MobileUserInteractionDrawer from './mobile/MobileUserInteractionDrawer.vue'
 import { applyThemeConfig } from './theme'
@@ -21,7 +22,8 @@ const voice = createWorkspaceVoice()
 provide(workspaceVoiceKey, voice)
 
 const MOBILE_QUERY = '(max-width: 760px)'
-const isMobile = ref(typeof window !== 'undefined' ? window.matchMedia(MOBILE_QUERY).matches : false)
+const nodeWindow = window.agentParkNodeWindow
+const isMobile = ref(!nodeWindow && window.matchMedia(MOBILE_QUERY).matches)
 const workspaceBootstrap = ref<WorkspaceBootstrap | null>(null)
 const accessStatus = ref<AccessStatus | null>(null)
 const accessReady = ref(false)
@@ -54,6 +56,7 @@ const unregisterBoardSession = boardSession?.register({
 })
 
 function syncViewportMode() {
+  if (nodeWindow) return
   if (!mediaQuery) return
   isMobile.value = mediaQuery.matches
 }
@@ -88,6 +91,7 @@ async function initializeAccess() {
     if (!await mountWorkspace(generation)) return
     accessReady.value = true
   } catch (error) {
+    nodeWindow?.fail(error instanceof Error ? error.message : String(error))
     if (generation !== accessGeneration) return
     accessError.value = error instanceof Error ? error.message : String(error)
     bootstrapError.value = accessError.value
@@ -129,6 +133,7 @@ onBeforeUnmount(() => {
       :error="accessError"
       @submit="submitAccessUsername"
     />
+    <NodeWindowWorkspace v-else-if="workspaceBootstrap && nodeWindow" :bootstrap="workspaceBootstrap" />
     <MobileWorkspace v-else-if="accessReady && isMobile && accessStatus" :access="accessStatus" />
     <DesktopWorkspace v-else-if="workspaceBootstrap" :bootstrap="workspaceBootstrap" />
     <div v-else class="workspace-bootstrap-status">
@@ -136,7 +141,7 @@ onBeforeUnmount(() => {
     </div>
     <MobileUserInteractionDrawer v-if="isMobile" />
     <UserInteractionDialog v-else global />
-    <WorkAlertToast />
+    <WorkAlertToast v-if="!nodeWindow" />
     <WorkspaceVoiceHost />
   </div>
 </template>

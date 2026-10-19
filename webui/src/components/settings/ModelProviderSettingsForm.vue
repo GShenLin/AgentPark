@@ -12,6 +12,7 @@ import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 import SelectionButton from '../SelectionButton.vue'
 import ProviderAuthFields from './ProviderAuthFields.vue'
+import WorkBuddySettingsPanel from './WorkBuddySettingsPanel.vue'
 import DoubaoSpeechManagementPanel from './DoubaoSpeechManagementPanel.vue'
 import { applyResponsesApiDefaults } from './providerConfigDefaults'
 import SupportModeMultiSelect from './SupportModeMultiSelect.vue'
@@ -256,7 +257,18 @@ function setField(key: string, value: unknown) {
   if (key === 'responsesApi' && value === true) {
     applyResponsesApiDefaults(provider)
   }
+  if (key === 'type' && value === 'workbuddy') {
+    Object.assign(provider, { baseUrl: 'http://127.0.0.1:18788/v1', authMode: 'api_key', authProvider: 'workbuddy', responsesApi: false, supportmode: ['chat'] })
+    delete provider.apiKey
+    delete provider.authAccountId
+  }
   emitProvider(selectedProviderId.value, provider)
+}
+
+function addWorkBuddyModels(ids: string[]) {
+  if (!selectedProvider.value) return
+  const all = [...new Set([...providerModelIds.value, ...ids])]
+  emitProvider(selectedProviderId.value, { ...selectedProvider.value, model: currentModelValue() || all[0] || '', models: all })
 }
 
 function setOfficialAuthEnabled(enabled: boolean) {
@@ -575,6 +587,13 @@ onMounted(() => {
           @login="beginOfficialLogin(oauthProviderType || 'openai')"
           @status="setProviderAuthStatus"
           @account="setField('authAccountId', $event)"
+        />
+        <WorkBuddySettingsPanel
+          v-if="stringValue('type') === 'workbuddy'"
+          :key="selectedProviderId"
+          :provider-id="selectedProviderId"
+          @models="addWorkBuddyModels"
+          @connection="setField('baseUrl', $event)"
         />
         <div class="model-field">
           <span>{{ t('provider.models') }}</span>

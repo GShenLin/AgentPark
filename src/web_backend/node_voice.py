@@ -4,14 +4,14 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config_loader import ConfigLoader
 from src.providers.voice_registry import voice_provider
-from src.providers.voice_provider import VoiceCall, RtcVoiceCall, VoiceProtocol, VoiceTaskUpdate
+from src.providers.voice_provider import VoiceCall, RtcVoiceCall, VoiceTaskUpdate
 from src.providers.voice_control import VoiceControl
 from src.voice_settings import node_voice_settings
 from .node_memory_store import read_node_memory_text
@@ -20,6 +20,13 @@ from .node_voice_progress import voice_task_progress
 from .node_request_tracking import find_completed_request
 from .node_voice_records import VoiceFinish
 from .node_voice_receipts import VoiceReceiptStore
+from .node_voice_context import context_cursor, context_updates
+from .node_voice_draft import VoiceDraft
+from .node_voice_annotations import VoiceAnnotations
+from .execution_annotations import ExecutionAnnotationHost
+from .execution_capture import ExecutionCapture
+from .node_voice_screenshot import VoiceScreenshots, VoiceScreenshot
+from .node_voice_tools import VoiceToolFeedback
 from .shared import now_text
 
 
@@ -27,13 +34,16 @@ class VoiceOffer(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     sdp: str | None = Field(default=None, min_length=20, max_length=128_000)
     # Absence identifies an old page; it never selects a fallback protocol.
-    protocols: list[VoiceProtocol] | None = Field(default=None, max_length=8)
+    # Negotiation accepts versioned identifiers so stale pages receive the explicit
+    # refresh response; actual call protocols remain the closed VoiceProtocol union.
+    protocols: list[Annotated[str, Field(pattern=r"^(openai-realtime|agentpark-voice|volcengine-rtc)-v[1-9][0-9]*$", max_length=80)]] | None = Field(default=None, max_length=8)
 
 
 class VoiceDelegation(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     delegation_id: str = Field(min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=32_000)
+    composer: VoiceDraft | None = None
 
 
 class VoiceDiagnostic(BaseModel):
@@ -55,10 +65,24 @@ class VoiceLease:
     finished: VoiceFinish | None = None
     call: VoiceCall | RtcVoiceCall | None = None
     delegation: bool = True
+    context_cursor: str = ""
+    annotations: ExecutionAnnotationHost | None = None
+    screenshots: dict[str, VoiceScreenshot] = field(default_factory=dict)
+    screenshot_requests: dict[str, tuple] = field(default_factory=dict)
+    visual_lock: object = field(default_factory=threading.RLock)
+    visual_generation: int = 0
 
     def close(self):
+        self.screenshots.clear()
+        self.screenshot_requests.clear()
+        self.visual_generation += 1
+        if self.annotations is not None:
+            self.annotations.close()
+            self.annotations = None
         if self.call is not None and self.call.session is not None:
             self.call.session.close()
+        if self.call is not None and self.call.screen is not None:
+            self.call.screen.close()
 
 
 class NodeVoiceApi:
@@ -67,6 +91,10 @@ class NodeVoiceApi:
         self._lock = threading.RLock()
         self._leases: dict[str, VoiceLease] = {}
         self._receipts = VoiceReceiptStore(core.graph_runtime)
+        self.annotations = VoiceAnnotations(self)
+        self.capture = ExecutionCapture(self)
+        self.screenshot = VoiceScreenshots(self)
+        self.tools = VoiceToolFeedback(self)
 
     def _owner(self, request):
         return self.core.access_api.message_access_metadata(request)["_access_client_id"]
@@ -108,7 +136,11 @@ class NodeVoiceApi:
             config, _, settings = await asyncio.to_thread(self._context, node_id, graph_id, request)
             provider = voice_provider(config)
             provider.validate(settings)
-            return {"transport": provider.transport, "protocol": provider.protocol}
+            result = {"transport": provider.transport, "protocol": provider.protocol}
+            if provider.transport == 'webrtc':
+                # Browser media has its own ICE connection, separate from Board RPC.
+                result['ice_servers'] = list(self._ice_servers())
+            return result
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -117,6 +149,7 @@ class NodeVoiceApi:
         self.core.node_ops.require_node_visible(node_id, graph_id, request)
         owner = self._owner(request)
         try:
+            cursor = await asyncio.to_thread(context_cursor, self.core.graph_runtime, node_id, graph_id)
             config, context, settings = await asyncio.to_thread(self._context, node_id, graph_id, request)
             provider = voice_provider(config)
             provider.validate(settings)
@@ -139,7 +172,7 @@ class NodeVoiceApi:
                     if self._leases[key].expires <= now:
                         self._leases.pop(key).close()
                 lease = VoiceLease(node_id, graph_id, owner, now + 3600,
-                                   call=answer, delegation=provider.delegation)
+                                   call=answer, delegation=provider.delegation, context_cursor=cursor)
                 self._receipts.register(node_id, graph_id, session_id, owner, lease.started_at,
                                         node_owned_dialogue=provider.node_owned_dialogue)
                 self._leases[session_id] = lease
@@ -175,8 +208,16 @@ class NodeVoiceApi:
     async def close(self):
         with self._lock:
             calls = [lease.call for lease in self._leases.values() if lease.call is not None]
+            for lease in self._leases.values():
+                lease.visual_generation += 1
+                lease.screenshots.clear()
+                lease.screenshot_requests.clear()
+                if lease.annotations:
+                    lease.annotations.close()
             self._leases.clear()
         await asyncio.gather(*(call.session.aclose() for call in calls if call.session is not None))
+        await asyncio.gather(*(asyncio.to_thread(call.screen.close) for call in calls
+                               if call is not None and call.screen is not None))
 
     def delegate(self, node_id: str, session_id: str, payload: VoiceDelegation,
                  request: Request, graph_id: str = "default"):
@@ -187,9 +228,10 @@ class NodeVoiceApi:
                 raise HTTPException(409, "语音通话已结束。")
             if not lease.delegation:
                 raise HTTPException(400, "此语音供应商不支持节点任务委派。")
+            identity = payload.model_dump_json()
             previous = lease.tasks.get(payload.delegation_id)
             if previous:
-                if previous[1] != payload.text:
+                if previous[1] != identity:
                     raise HTTPException(409, "同一个语音任务编号不能重复提交不同内容。")
                 return {"request_id": previous[0], "duplicate": True}
             if len(lease.tasks) >= 200:
@@ -198,11 +240,21 @@ class NodeVoiceApi:
                 raise HTTPException(400, "语音任务内容不能为空。")
             request_id = uuid.uuid4().hex
             self.core.node_ops.enqueue_node_instance_pending(node_id, {
-                "payload": payload.text, "trace_id": request_id,
+                "payload": payload.composer.message(payload.text) if payload.composer else payload.text, "trace_id": request_id,
                 "source": "voice_call", "idempotency_key": f"voice:{session_id}:{payload.delegation_id}",
             }, graph_id, request)
-            lease.tasks[payload.delegation_id] = (request_id, payload.text)
+            lease.tasks[payload.delegation_id] = (request_id, identity)
             return {"request_id": request_id, "duplicate": False}
+
+    def context(self, node_id: str, session_id: str, request: Request,
+                graph_id: str = "default", after: str | None = None):
+        graph_id = self.core.graph_runtime._sanitize_graph_id(graph_id)
+        with self._lock:
+            lease = self._lease(session_id, node_id, graph_id, request)
+            if lease.finished is not None:
+                raise HTTPException(409, "语音通话已结束。")
+            cursor = lease.context_cursor if after is None else after
+        return context_updates(self.core.graph_runtime, node_id, graph_id, cursor)
 
     def task(self, node_id: str, session_id: str, request_id: str,
              request: Request, graph_id: str = "default"):

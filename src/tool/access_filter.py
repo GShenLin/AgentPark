@@ -30,6 +30,15 @@ def filter_registered_agent_tools(agent: object, filtered_names: Iterable[str]) 
     tools = getattr(agent, "tools", None)
     declarations = list(getattr(tools, "tool_declarations", None) or [])
     function_map = getattr(tools, "function_map", None)
+    # Preserve module-level policy for the actual implementation, even when a
+    # custom toolset exposes it under another set name. Do not globally block
+    # every member of an aggregate such as system_tools: file_read_tools may
+    # still be explicitly allowed by the same policy.
+    if isinstance(function_map, dict):
+        for name, callback in function_map.items():
+            module = getattr(callback, "__module__", "")
+            if module.startswith("functions.") and module.removeprefix("functions.").casefold() in blocked:
+                blocked.add(name.casefold())
     removed: list[str] = []
     kept: list[dict] = []
     for declaration in declarations:

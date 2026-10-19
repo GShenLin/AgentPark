@@ -8,6 +8,7 @@ from .voice_provider import RtcVoiceCall, VoiceModel, VoiceOption, VoiceProvider
 from .volcengine_openapi import VolcengineOpenApi
 from .volcengine_rtc_token import rtc_token
 from .volcengine_rtc_session import VolcengineRtcSession
+from .volcengine_rtc_screen import VolcengineRtcScreen
 
 
 class VolcengineRtcVoiceProvider(VoiceProvider):
@@ -48,4 +49,4 @@ class VolcengineRtcVoiceProvider(VoiceProvider):
         room, user, bot = "ap_" + uuid.uuid4().hex, "user_" + uuid.uuid4().hex, "bot_" + uuid.uuid4().hex
         session = VolcengineRtcSession(api, app_id, room, user, bot, context, settings)
         return RtcVoiceCall(app_id, room, user, bot, rtc_token(app_id, app["AppKey"], room, user),
-                            settings.model, session)
+                            settings.model, session, screen=VolcengineRtcScreen(session))

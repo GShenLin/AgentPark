@@ -92,12 +92,12 @@ def test_gateway_binds_model_per_lease_and_revokes_access(provider, monkeypatch,
 
 
 def test_all_registered_nodes_have_concrete_adapters():
-    assert len(DESCRIPTORS) == 7
+    assert len(DESCRIPTORS) == 9
     for item in DESCRIPTORS:
         assert callable(create_adapter(item.id).run)
 
 
-@pytest.mark.parametrize("module", sorted(HARNESS_NODE_TYPES))
+@pytest.mark.parametrize("module", sorted(HARNESS_NODE_TYPES - {"opencode_node", "antigravity_node"}))
 def test_harness_node_schema_exposes_selected_provider_models(provider, module):
     from importlib import import_module
     Node = import_module("nodes." + module).Node

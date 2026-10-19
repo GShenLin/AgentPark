@@ -162,6 +162,9 @@ async function pollJob() {
     const response = await getProviderLimitTestJob(jobId)
     activeJob.value = response.job
     limits.value = response.result
+    if (!response.result.providers[selectedProviderId.value]) {
+      selectedProviderId.value = Object.keys(response.result.providers)[0] || ''
+    }
     updateRunningFlags(response.job)
     if (response.job.status === 'running') {
       schedulePoll()
@@ -281,7 +284,7 @@ onUnmounted(clearPoll)
           </template>
         </SelectionButton>
 
-        <div v-if="!providerIds.length && !loading" class="empty-list">No test results</div>
+        <div v-if="!providerIds.length && !loading" class="empty-list">No configured providers</div>
       </div>
     </aside>
     </template>

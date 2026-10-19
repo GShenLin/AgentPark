@@ -2,424 +2,236 @@
 
 [English](./README.md) | [中文](./README.zh.md)
 
-<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/1f93e6e6-5b29-4001-9364-2e8e54395b36" />
+AgentPark 是一个可在本机运行、通过浏览器使用的可视化 Agent 工作台。你可以先和一个 Agent 对话，再把多个 Agent、工具和触发器组织成工作流或协作组，让它们使用各自的模型、工作目录、能力和历史完成任务。
 
-> **在微信里发句话，让家里的电脑替你干活。**
->
-> AgentPark 是一个本地优先的可视化 Agent 平台：拖拽节点编排工作流，一键接入微信，豆包 / 智谱 / Gemini / OpenAI 开箱即用。跑在你自己的机器上，数据不出内网，Agent 7×24 待命。
+**项目最大的亮点：把不同模型和不同 Agent 运行时，放进同一张可观察、可协作、可跨设备使用的画板。** 普通 Agent、Codex、Claude Code 等节点可以共同参与任务；你可以查看过程、调整分工、检查工具调用，并保留每个节点的独立对话。
 
-## 为什么选 AgentPark？
+本文按入门到高级介绍现有代码提供的功能。首次使用请继续阅读 **[GettingStart：安装、配置和第一次对话](docs/GettingStart.md)**；全部设置说明见 **[Settings 使用手册](docs/settings/README.md)**。
 
-| 痛点 | AgentPark 的解法 |
-|---|---|
-| 想在微信里使唤 AI，微信又没有官方 Bot API | **Channel 节点**：微信消息直达你的 Agent，回复原路返回 |
-| 换个模型就要重写一堆配置 | **Agent Profile**：一套配置，豆包 / 智谱 / Gemini / OpenAI 随便换，不用重连工作流 |
-| prompt 越堆越乱，Agent 行为不可复现 | **RuntimePolicy**：执行策略版本化，带 SHA-256 摘要，可审计、可复现 |
-| 多步骤任务只能写代码编排 | **可视化 Graph**：拖节点、连线，定时触发、循环、路由开箱即用 |
-| 嫌云端 Agent 不放心，数据要出境 | **本地优先**：FastAPI + Vue 全跑在你自己机器上，手机也能远程操作 |
+## 为什么使用 AgentPark
 
-## 30 秒看懂核心设计
+| 亮点 | 实际用法 |
+| --- | --- |
+| 可视化组织工作 | 在 Graph / Board 中创建节点、连线、分组，直接打开节点聊天和查看运行状态 |
+| 多种 Agent 运行时 | 使用项目自有 Agent，或接入九种 Harness；不同运行时保留自身的工具、会话和权限规则 |
+| 真正的成员分工 | 协作组共享目标、任务、依赖和交接动态，成员继续使用自己的模型与历史 |
+| 可持续的节点上下文 | 普通 Agent 支持历史压缩和节点长期记忆；摘要附带来源，能进一步检索原始依据 |
+| 本地资料可查证 | 文件夹知识库支持 PDF、文本、Word 和 Excel，检索与表格计算返回可核对的出处 |
+| 从电脑延伸到其他设备 | 浏览器移动视图、Windows 节点小窗、设备中心、远程执行和节点同步各有明确入口 |
+| 过程可追溯 | 全链路审计、工具成功率、失败详情、Provider 队列与用量帮助定位问题 |
 
-AgentPark 把 Agent 拆成四层，每层独立可换：
+## 启动项目
 
-| 层级 | 管什么 | 能独立换什么 |
-|---|---|---|
-| **Agent Profile** | 角色、提示词、工具、Skills、插件 | 这个 Agent 是谁、会什么 |
-| **RuntimePolicy** | 任务推进、完成检查、上下文压缩 | 它怎么做事、做到什么程度算完 |
-| **Provider** | 模型接口、认证、计费 | 用哪家模型跑（豆包 / 智谱 / Gemini / OpenAI 兼容） |
-| **Graph** | 节点、触发器、路由、通道拓扑 | 多个 Agent 如何协作 |
+从源码目录启动。准备 Git、带 pip 的 Python（建议先使用 3.12）以及 Node.js/npm（建议使用满足要求的 LTS，WebUI 与 Windows 小窗使用 Node.js 22.12 或更高版本；部分 Harness 要求更高版本）。模型服务的账号或 API Key 需要自行配置。
 
-换模型不用重搭工作流，换任务不用重写 prompt——这是 AgentPark 和简单套壳工具的根本区别。
+Windows，在项目根目录的 PowerShell 执行：
 
-## 能用来干什么？
-
-- 📱 **微信个人助理**：微信发句话，Agent 查日程、回邮件、跑脚本，结果发回微信
-- 🎬 **多媒体流水线**：图片生成 → 视频生成 → 换人视频 → 3D 建模，一条 Graph 全自动
-- 🖥️ **桌面自动化**：GUI Agent 看屏幕、点鼠标，重复操作交给它
-- 🧪 **模型 AB 测试**：同一套 Profile，豆包 / 智谱 / Gemini 同题对比，一眼看出谁更强
-- 🏠 **多设备协同**：旧手机、家里的 PC、办公室电脑，组网后互相调用
-
----
-
-## 项目目标
-
-AgentPark 的目标是成为一个实用的 Agent 创建与分享平台：
-
-- Agent 应该是可配置的运行单元，包含记忆、服务商设置、工具、技能、插件和清晰的执行历史。
-- 工具应该是结构化能力，可以被发现、测试、复用，并在 Agent 和 Graph 之间共享。
-- Graph 应该描述完整工作流，包括触发、路由、生成节点、外部通道和可恢复的运行时状态。
-- 本地开发仍然是一等能力，同时项目会逐步走向更清晰的打包方式、可迁移资产和可分享的 Agent/Tool/Graph 资源库。
-- 平台边界应该保持显式：节点契约、服务商能力、运行时状态、工具调用协议和 UI/API 契约都应该清楚可见，而不是被脆弱的兜底逻辑隐藏。
-
-## 项目前景
-
-长期方向是形成 AgentPark 式生态：用户可以可视化设计 Agent，把它们连接成 Graph，挂载可复用工具和技能，然后发布或交换这些资产。当前项目已经具备本地运行时、可视化编辑器、服务商集成、移动端访问、CLI 恢复路径，以及节点、工具、插件等基础。后续工作应继续把这些基础沉淀为稳定的分享格式、更强的能力元数据、更可靠的运行时恢复和更简单的分发方式。
-<img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/97dce8df-69a3-4531-af14-012d67884f1f" />
-
-## 主要功能
-
-- Agent Profile 切换：保存、创建、加载、查看并分享完整 Agent 配置，无需重新连接 Graph。
-- RuntimePolicy 控制：把类型严格的执行策略与 Provider 配置分离，支持选择、编辑、生效预览和可审计摘要。
-- 可视化 Graph/Node 工作流：创建节点、连接端口、保存完整 Graph 工作流，并启动 Graph Runner。
-- Agent 执行：流式输出、工具调用、工具调用历史、持久化节点记忆，以及停止/取消控制。
-- 服务商集成：豆包、Gemini、OpenAI 兼容接口、智谱、Hyper3D，以及服务商能力元数据。
-- 多模态生成节点：图片生成、视频生成、换人视频生成、3D 模型生成、3D 贴图生成。
-- 本地工具系统：`functions/` 下的 Python 工具会加载为 Agent 节点可调用的结构化、可复用能力。
-- 面向分享的资产模型：Agent、工具、技能、插件和 Graph 都被视为项目资产，可逐步演进为可迁移、可交换的格式。
-- 文件和资源管理：WebUI 可以浏览、读取、写入、上传文件，并通过 `/memories` 暴露生成资源。
-- 桌面端设置入口：右上角 `Settings` 按钮可以直接打开设置界面，包括 providers、defaults、companion settings 和 provider limit tests。
-- 手机端支持：宽度不超过 760px 时自动使用移动端工作区，支持适合手机的 PC/graph/node 导航、聊天、流式回复、附件、节点配置、重启、图编辑和设置入口。
-- 远程访问：远程端点管理和移动端 API 支持在同一网络的其他设备上操作工作流。
-- Channel 节点：用于 OpenClaw Weixin 等外部通道的 receiver/sender 节点。
-- 可以很方便的对各种模型的MCP Skill Tool 做AB测试.
-- 宠物是可以在设置里进行自定义的, 并且提供了关键帧的K帧工具，也可以用gif来直接驱动.
-  <img width="1920" height="911" alt="image" src="https://github.com/user-attachments/assets/30358f7b-1552-4b54-93b6-72854591d19d" />
-## 节点功能列表
-
-节点实现位于 `nodes/`。后端通过 `GET /api/nodes` 暴露节点元数据，并通过 `GET /api/nodes/{type_id}/template` 暴露节点模板，内容包括 schema、端口数量、输入/输出能力和运行时声明。节点的 `type_id` 通常是去掉 `.py` 后缀的节点文件名；例如 `nodes/agent_node.py` 会暴露为 `agent_node`。
-
-所有节点都继承这些通用配置字段：
-
-- `skills`：为当前节点加载 `.agents/skills/` 下的 Skill 文档和脚本。
-- `plugins`：为当前节点加载项目插件能力。
-- `working_path`：选中节点时文件浏览器打开的目录；Agent 和命令节点也会把它作为工作目录上下文。
-
-### Agent 和自动化节点
-
-| 节点        | `type_id`        | 功能                                                                                                                                                                                                                                                                 |
-| --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Agent     | `agent_node`     | 通用 LLM Agent 节点。接收文本、图片、视频、音频、文档、文件、URL、结构化数据和 meta 输入。Provider SupportMode 覆盖聊天、图片生成、视频生成、音频生成和图片聊天，生成的媒体统一作为资源输出。支持 `provider_id`、`system_prompt`、本地 `tools`、`mcp_servers`、`skills` 和 `plugins`。服务商能力可启用 `web_search`、`thinking` 和 `reasoning_effort`。运行时支持持久化节点记忆、流式消息、工具调用历史和停止控制。 |
-| GUI Agent | `gui_agent_node` | 单节点 GUI 自动化循环。捕获屏幕截图，调用视觉/多模态服务商规划操作，执行鼠标、键盘、滚动动作，并可验证任务是否完成。支持 `instruction`、planner/verify prompt、截图区域、dry run、mock actions、planner timeout 和 verify timeout。适合本地桌面或远程 GUI 操作。                                                                                   |
-
-### 生成类节点
-
-| 节点                          | `type_id`                       | 功能                                                                                                                                                                     |
-| --------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Video Change Person         | `video_change_person_node`      | 使用 Wan Animate Mix 风格服务商，把参考视频中的主体替换为肖像图片。需要一张肖像图片和一个参考视频。支持 `wan-std`/`wan-pro`、水印、图片检查、public base URL 和输出文件名前缀。输出换人后的视频资源和任务元数据。                                    |
-| 3D Model Generation         | `model_generation_node`         | 使用 Hyper3D/Rodin 风格服务商进行文生 3D 或图生 3D。支持多张参考图、Gen-2/Regular 档位、alpha 处理、seed、导出格式、材质类型、质量、面数覆盖、T/A pose、包围盒尺寸、Raw/Quad mesh、HighPack、预览渲染和高清纹理。输出下载后的模型文件资源和任务元数据。      |
-| 3D Model Texture Generation | `model_texture_generation_node` | 为已有 3D 模型生成或重绘贴图。接收模型文件或 URL、参考图和可选 prompt。支持 seed、reference scale、导出格式、材质和分辨率。输出重绘贴图后的模型文件资源和任务元数据。                                                                   |
-
-### 触发、控制和路由节点
-
-| 节点              | `type_id`            | 功能                                                                                 |
-| --------------- | -------------------- | ---------------------------------------------------------------------------------- |
-| BasicTrigger    | `basic_trigger_node` | 手动触发节点。触发时输出配置的 `OutputText`。常用于工作流起点或调试入口。                                        |
-| TimerTrigger    | `timer_trigger_node` | 定时触发节点。在达到配置的 `ScheduleAt` 时间后输出 `OutputText`。                                     |
-| Clock           | `clock_node`         | 周期触发节点。按天/小时/分钟/秒间隔输出 `OutputText`。支持重复执行和 `LoopCount`，并保存当前运行状态、下次触发时间、剩余时间和触发次数。 |
-| Loop            | `loop_node`          | 循环控制节点。收到输入后，循环仍在进行时使用输出端口 0，循环结束时使用输出端口 1。支持固定次数循环和无限循环，剩余次数会持久化到节点配置中。           |
-| Event           | `event_node`         | 事件分发节点。转发输入消息并附加 `EventKey`，便于下游路由或图运行时按事件 key 分发。                                 |
-| MultiInput      | `multi_input_node`   | 多输入聚合节点。根据 `InputCount` 动态创建输入端口，缓存每个端口的消息，等所有端口都有输入后，按端口顺序合并文本并输出。                |
-| InputOutputTest | `input_output_test`  | 拓扑测试节点，包含 3 个固定输入和 4 个固定输出。适合验证连接、端口索引和路由行为。                                       |
-
-### 文本、文件和命令节点
-
-| 节点             | `type_id`              | 功能                                                                                                                              |
-| -------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Echo           | `echo_node`            | 回显输入消息。可选 `MyText` 会作为前缀，因此输出为 `MyText + input text`。                                                                           |
-| Append         | `append_node`          | 将 `AppendText` 追加到输入文本后。适合简单 prompt 拼接或后缀格式化。                                                                                   |
-| Response       | `response_node`        | 返回固定响应。如果配置了 `MyText`，则输出该值；否则返回输入文本。适合作为终点、占位或测试节点。                                                                            |
-| SaveFile       | `save_file_node`       | 将输入文本保存到文件。使用 `FilePath` 和可选 `FileName`；未提供文件名时，会从内容开头推导文件名；无扩展名时默认使用 `.md`。保存后输出原文本。                                           |
-| ConsoleCommand | `console_command_node` | 执行 shell 命令。如果 `Command` 为空，则使用输入文本作为命令。支持 `TimeoutSeconds`、`Shell` 和节点 `working_path`。有 3 个输出端口：stdout、stderr 和返回码。取消节点会终止子进程。 |
-
-### 外部通道节点
-
-| 节点              | `type_id`               | 功能                                                                                                              |
-| --------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| ChannelReceiver | `channel_receiver_node` | 从外部通道接收消息并向下游转发。内置通道为 OpenClaw Weixin。支持通过 `Name` 进行命令激活、持久化 `Active` 状态、`AutoStart` 和轮询超时。可转发文本、结构化数据、文件和图片资源。 |
-| ChannelSender   | `channel_sender_node`   | 将上游输出发送回外部通道。目前支持 OpenClaw Weixin。可配置账号、接收者、发送者名称和超时。如果没有显式目标，会尝试使用最近一条入站消息中的默认目标。支持文本和图片资源，并输出结构化发送结果。         |
-
-## 桌面端和手机端 UI
-
-- 桌面端用于较宽屏幕，包含完整可视化图编辑器、顶部栏、远程切换器、文件/记忆面板、节点控制，以及右上角直接进入 `Settings` 的入口。
-- 手机端在视口宽度不超过 760px 时自动启用。它提供适合手机的流程：选择 PC、选择图、列出节点、与节点聊天、上传附件、查看实时流式输出、保存/复制/删除消息、清空 memory、打开节点配置、创建/删除节点、保存/删除图、重启工作区，以及从 header 打开 Settings。
-- 远程端点可从桌面端顶部栏添加，并存储在 `config/remote.json`；移动端 API 使用这些端点浏览 PC、图、节点、会话和消息。
-- 节点级远程工具的使用方式：在浏览器所在的 Windows 电脑运行 `AgentParkRemote.exe`，通过服务端 IP 打开 AgentPark 网页，选中节点并勾选 `WorkingPath` 旁的 `Remote`。网页会通过浏览器本机发现端点配对静默 worker；该 worker 与虚幻插件复用同一套 Remote Workspace v1 协议。可点击文件夹按钮选择该电脑上的工作目录。配对时同一台浏览器电脑只能运行一个独立 worker 或虚幻 worker。
-
-## 项目结构
-
-```text
-AgentPark/
-  config/              # 服务配置、服务商配置、prompt 文本、远程端点
-  functions/           # Agent 节点可调用的工具
-  memories/            # 图/节点记忆；当前记忆在根目录，溢出内容按日期归档
-  nodes/               # 可视化工作流节点实现
-  scripts/             # 辅助脚本
-  .agents/skills/      # Agent skill 文档
-  src/                 # FastAPI 后端、服务商、协议、运行时
-    remote_worker/     # 独立 AgentParkRemote worker
-  tests/               # pytest 测试
-  webui/               # Vue 3 + Vite 前端
+```powershell
+.\build_and_run.bat
 ```
 
-## 环境要求
-
-- Windows 是主要目标环境。部分功能依赖 `.bat`、PowerShell、桌面自动化或 PyInstaller 打包路径。
-- `package.bat` 会同时构建 `dist/AgentPark.exe` 与无窗口运行的 `dist/AgentParkRemote.exe`。
-- Linux 支持 WebUI、CLI、provider runtime 和重启流程；Windows 桌面与打包功能仍仅支持 Windows。
-- Python 3.11+。Windows 脚本优先使用本地 Python 3.14/3.12/3.11；Linux 脚本依次尝试 `AgentPark_Linux_env`、`.venv`、`python3` 和 `python`。
-- Node.js + npm，用于安装和构建 `webui`。
-- 推荐安装 ripgrep `rg`；文件搜索工具和部分前端搜索路径会优先使用它。
-
-## 安装
-
-在仓库根目录安装后端依赖：
-
-```bat
-python -m pip install -e .
-```
-
-安装前端依赖：
-
-```bat
-cd webui
-npm install
-```
-
-## 配置
-
-主服务配置位于 `config/config.json`：
-
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8788
-  },
-  "agentNode": {
-    "minSendDelayMs": 200,
-    "historyMessageLimit": 6
-  },
-  "nodeMemory": {
-    "maxEntries": 20
-  }
-}
-```
-
-- `server.host` 和 `server.port` 控制 FastAPI 监听地址。如果端口被占用，启动流程会寻找下一个可用端口。
-- `nodeMemory.maxEntries` 控制每个节点在当前 `memory.md` / `messages.jsonl` 中保留多少条记录。更早的记录会归档到 `archive/YYYY-MM-DD/`。
-- 本地 memories 目录在 Settings 中配置，并以 `memoriesPath` 字段存储到 `.cache/memoryLocalConfig.json`，不再写入共享的 `config/config.json`。
-- 启动图存储在 `.cache/startup_graph.json`；该目录不会提交到 Git。
-
-服务商配置位于 `config/modelProvider.json`。典型配置如下：
-
-```json
-{
-  "providers": {
-    "example": {
-      "type": "openai",
-      "apiKey": "YOUR_API_KEY",
-      "baseUrl": "https://example.com/v1",
-      "model": "model-name",
-      "supportmode": ["chat", "imagechat"],
-      "timeoutMs": 60000
-    }
-  }
-}
-```
-
-常见 `type` 包括 `doubao`、`gemini`、`openai`、`zhipu` 和 `hyper3d`。不要把真实 API key 提交到公开仓库。
-
-按 Provider 划分的音色索引位于 `config/audio_speaker.json`。执行豆包语音管理中的 `ListSpeakers` 后，会替换所选 Provider 的索引；音色列表不再写入 `modelProvider.json`。
-
-## 启动
-
-### 构建并运行
-
-Windows 下推荐入口：
-
-```bat
-build_and_run.bat
-```
-
-Linux 下使用：
+Linux / macOS，在项目根目录执行：
 
 ```sh
-./build_and_run.sh
+sh ./build_and_run.sh server
 ```
 
-两个平台脚本都会：
+打开 [本机工作台](http://127.0.0.1:8766)。程序默认监听 `0.0.0.0:8766`；配置或端口占用可能改变实际端口，以启动日志为准。首次配置建议从本机回环地址访问 Settings。
 
-- 检查 Python 和 `rg`。
-- 安装缺失的前端依赖。
-- 构建 `webui`。
-- 运行 `python -m pip install -e .`。
-- 启动 `python -m src.fast_api --workspace-root <repo root>`。
+启动脚本会安装依赖、构建 WebUI 并启动后端。Windows 入口还会准备节点小窗、检查仓库更新和私有 CA 信任，并尝试发布云端前端；具体行为、手动分步启动及无账号时的配置顺序见 [GettingStart](docs/GettingStart.md)。启动成功只代表服务可用，发起模型任务还需要有效的 Provider、模型和授权。
 
-启动后会自动打开浏览器。默认端口来自 `config/config.json`，当前默认值为 `8788`。
+首次运行的最短路线：
 
-### 生产模式
+1. 打开 **Settings → 模型提供商**，配置连接地址、密钥或官方授权，以及模型列表。
+2. 在画板空白处右键创建 **Agent**，选择 Provider 和明确的模型，先发送一个简单问题。
+3. 在 **节点预设** 中配置需要复用的模型、指令和能力，再到 **伴侣 / 默认设置** 选择相关预设。
+4. 需要读取资料时添加知识库；需要编程运行时再到 Harness 安装对应 CLI。
 
-先构建前端静态文件：
+## 第一阶段：单节点入门
 
-```bat
-cd webui
-npm install
-npm run build
-```
+### 1. 画板与节点管理
 
-然后回到仓库根目录并启动后端：
+Graph 是一组节点、连线和分组的工作空间，Board 是它的可视化界面。可创建与切换 Graph、拖动节点、调整布局、编辑节点名称和注释，打开节点配置与聊天。不同任务可放在不同 Graph 中管理。
 
-```bat
-cd ..
-python -m src.fast_api --host 127.0.0.1 --port 8788
-```
+节点有自己的运行状态和任务队列。通过输入框发送消息，通过节点控件触发、暂停或停止工作；查看最终答复时也可以展开过程，检查模型输出与工具执行。暂停与停止的含义以节点当前状态和控件反馈为准。
 
-打开：
+### 2. 普通 Agent 对话
 
-```text
-http://127.0.0.1:8788/
-```
+`Agent` 节点使用 AgentPark 的运行时，可按所选 Provider 的实际能力进行文本对话、图片理解、调用工具和处理资源。输入框支持文字及附件，聊天与过程记录持久化在节点目录中。
 
-如需禁止自动打开浏览器，添加 `--no-browser`：
+模型选择是 **Provider + Model** 两部分：前者决定连接、授权及协议，后者决定具体请求模型。不要把 Provider ID 当成模型名。配置说明见 [模型与 Harness](docs/settings/models.md)。
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
-```
+### 3. 文件与附件
 
-### 开发模式
+支持通过文件面板查看工作区资源，在节点或组的输入框选择、拖放或粘贴浏览器可读取的附件。图片可以预览，文件可以作为资源交给模型；模型能否直接理解具体格式，取决于节点和 Provider。浏览器文件面板的工作区边界，与 Agent 获得的文件工具权限是两套不同边界。
 
-启动后端：
+### 4. 复用节点预设
 
-```bat
-python -m src.fast_api --host 127.0.0.1 --port 8788 --no-browser
-```
+Agent Profile / Preset 保存节点类型、模型、指令、能力和事件规则，适合重复创建研究、编程、审查等角色。创建并调试一个节点后可保存为预设，再在 **Settings → 节点预设** 中编辑。
 
-启动 Vite：
+普通节点从预设创建时复制配置；Companion 和后台推理配置则通过预设 ID 读取。修改预设对这些场景的影响不同，见 [节点预设与 Companion](docs/settings/presets-companion.md)。
 
-```bat
-cd webui
-npm run dev
-```
+### 5. Companion 与命令行
 
-打开 Vite 地址：
+Companion 是工作台的伴侣 Agent。设置页选择它使用的预设和本地工作目录；预设决定模型、指令与能力。Windows 启动修复也使用该预设。
 
-```text
-http://localhost:5173/
-```
+命令行还可用于对话和离线诊断：
 
-`webui/vite.config.ts` 会把前端 API 请求代理到后端。
-
-### 重启
-
-Windows 下运行：
-
-```bat
-Restart.bat
-```
-
-Linux 下运行：
-
-```sh
-./Restart.sh
-```
-
-对应平台的重启脚本会尝试停止当前 AgentPark 服务，在工作区干净时更新代码，并通过对应的构建启动脚本重启。
-
-WebUI 也可以调用 `/api/system/restart` 触发重启流程。
-
-## 打包
-
-Windows 下运行：
-
-```bat
-package.bat
-```
-
-脚本会构建前端，并使用 PyInstaller 打包后端入口 `src/fast_api.py`。输出文件：
-
-```text
-dist/AgentPark.exe
-```
-
-打包后，`config/`、`functions/` 和 `nodes/` 会复制到 `dist/` 作为运行时资源。
-
-## 常用 API 端点
-
-- `GET /api/providers`：列出服务商。
-- `GET /api/tools`：列出 `functions/` 下的工具。
-- `GET /api/nodes`：列出可用节点类型。
-- `GET /api/graphs`：列出图。
-- `POST /api/graphs/{graph_id}/runner/start`：启动 Graph Runner。
-- `POST /api/graphs/{graph_id}/emit`：向图节点发送输入。
-- `GET /api/nodes/instances/{node_id}/memory`：读取节点记忆。
-- `POST /api/nodes/instances/{node_id}/control`：控制节点运行时状态。
-- `POST /api/files/upload`：上传文件。
-- `POST /api/system/restart`：触发服务重启。
-- `GET /api/settings`：列出设置分区。
-- `GET /api/settings/{section}`：读取设置文档。
-- `POST /api/settings/{section}`：更新设置文档。
-- `GET /api/remotes`：列出远程端点。
-- `POST /api/remotes`：添加远程端点。
-- `DELETE /api/remotes/{remote_id}`：删除远程端点。
-- `GET /api/mobile/pcs`：列出移动端 PC 条目。
-- `GET /api/mobile/pcs/{pc_id}/graphs`：列出移动端可访问的图。
-- `GET /api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes`：列出移动端可访问的图节点。
-- `GET /api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/conversation`：在移动端读取节点会话。
-- `POST /api/mobile/pcs/{pc_id}/graphs/{graph_id}/nodes/{node_id}/messages`：在移动端向节点发送消息。
-
-完整路由注册位于 `src/web_backend/route_registry.py`。
-
-## 测试
-
-使用 pytest 运行全部测试：
-
-```bat
-python -m pytest
-```
-
-运行单个测试文件：
-
-```bat
-python -m pytest tests/test_node_stop_cancellation.py
-```
-
-## 开发约定
-
-- 新节点添加到 `nodes/`；保持 metadata、schema、输入/输出能力和端口声明清晰。
-- 新 Agent 工具添加到 `functions/`；工具返回值应保持结构化，不要隐藏真实错误。
-- 服务商逻辑放在 `src/providers/`；优先使用现有 transport、runtime event 和 tool-call 协议。
-- 后端 API 路由注册在 `src/web_backend/route_registry.py`。
-- WebUI API 调用集中在 `webui/src/api.ts`、`webui/src/uploadApi.ts` 和 `webui/src/settingsApi.ts`。
-- 单个文件超过约 400 行时，优先按职责拆分。
-
-## CLI 和恢复
-
-AgentPark 也提供离线 CLI，用于 FastAPI 或 WebUI 不可用的情况：
-
-```bat
+```powershell
 python -m src.cli chat
-python -m src.cli chat --message "hello"
-python -m src.cli chat --debug-terminal
-python -m src.cli doctor
-python -m src.cli capabilities list --graph <graph_id> --node <node_id>
-python -m src.cli capabilities enable --kind skill --name <skill_id> --graph <graph_id> --node <node_id>
-python -m src.cli config validate --graph <graph_id> --node <node_id>
+python -m src.cli doctor --json
 ```
 
-`chat` 会启动专用 Companion Agent。Companion 是一个受保护的普通 graph，里面有一个普通 Agent 节点，使用与其他节点相同的配置字段：
+这两条命令需使用已经安装项目依赖的 Python；`chat` 还需要可用的 Companion 配置。
 
-```text
-memories/Companion/config.json
-memories/Companion/Companion/config.json
-memories/Companion/Companion/memory.md
-memories/Companion/Companion/messages.jsonl
-```
+## 第二阶段：让 Agent 具备知识与工具
 
-正常构建/安装流程完成后，Windows 使用 `build_and_run.bat`，Linux 使用 `build_and_run.sh`；脚本会在后台启动 WebUI 服务，然后在当前终端启动交互式 companion CLI。`cli` 和 `chat` 使用 Web + CLI 组合模式；`server` 或 `web` 只运行 WebUI；`cli-only` 只运行 CLI。
+### 6. 多提供商与账号管理
 
-Windows 下通过 `build_and_run.bat` 启动的 Companion CLI 默认隐藏。双击项目根目录的 `ToggleConsole.bat` 可随时显示或再次隐藏同一个控制台窗口，CLI 中也可以执行 `/hidden` 隐藏窗口，操作都不会重启 CLI 会话。文件夹右键菜单的 AgentPark 入口在没有运行中的 Pet 时，会把 Companion 的工作路径切换到目标文件夹，并按需显示或启动 CLI；存在 Pet 时仍沿用 Pet 分发流程。该窗口控制功能适用于独立的 Windows 控制台；若在 Windows Terminal 的共享窗口中启动，隐藏操作可能影响整个 Terminal 窗口。
+设置表单提供 OpenAI、Claude、DeepSeek、Doubao、Gemini、Grok、Kimi、智谱、Hyper3D、WorkBuddy、Agnes 和本地 alpha matting 等类型入口。不同适配器的能力不同，不能仅靠勾选能力就让服务支持某种协议。
 
-companion CLI 使用与普通节点相同的 Agent turn 流程，并把状态存储在 `memories/Companion/Companion/`。如果终端不接受输入，使用对应平台的构建启动脚本运行 `cli --debug-terminal`；交互式输入诊断会明确失败，而不是静默降级。
+可管理 API Key 引用、命名账号、多 OAuth 账号及固定账号。密钥存放在 `.auth/`；Provider 配置引用密钥名或账号 ID。官方 OAuth 入口只对已经实现该协议的类型开放。详见 [模型连接与授权](docs/settings/models.md)。
 
-在 companion CLI 中，`/restart` 会在 Windows 启动 `Restart.bat`，在 Linux 启动 `Restart.sh`，然后退出当前 CLI 会话，确保重启行为仍走标准启动路径。
+### 7. Tools、Skills、MCP 与插件
 
-节点配置读写见 `docs/config-contract.md`。运行时状态恢复见 `docs/runtime-state-machine.md`。服务商功能支持见 `docs/provider-feature-matrix.md`。能力描述符和依赖报告见 `docs/capability-system.md`。Skill/plugin 作者指南见 `docs/skill-plugin-authoring.md`。长期 sidecar、缓存和分发边界见 `docs/long-term-architecture.md`。恢复步骤见 `docs/troubleshooting.md`。
+| 能力 | 用途 | 如何启用 |
+| --- | --- | --- |
+| Tool | 文件、命令、节点操作等可调用功能 | 在节点配置中选择工具 |
+| Skill | 带使用说明、脚本和资源的任务流程 | 在节点选择 Skill，运行时按需激活 |
+| MCP | 接入本地子进程或远程 MCP 服务 | 默认设置登记服务，再在节点选择 |
+| Plugin | 以插件清单组织扩展能力 | 安装对应资源并在节点选择插件 |
 
-打包版本通过可执行文件暴露相同的离线恢复命令：
+Skill 管理汇总项目、系统用户和自定义来源，可搜索、阅读说明、查看依赖和引用，整理文件夹、移入回收区及恢复。能力变更通常在下一次 Agent 执行时装载，已经运行的任务不会因此自动重启。见 [Skills 与扩展](docs/settings/skills.md)。
 
-```bat
-dist\AgentPark.exe doctor --json
-dist\AgentPark.exe capabilities list --graph <graph_id> --node <node_id> --json
-```
+### 8. 本地文件夹知识库
 
-`package.bat` 会把 `docs/`、`.agents/skills/` 和 `plugins/` 复制到 `dist/`，因此打包后的 doctor 检查和默认能力发现会使用与源码 checkout 相同的资源。
+支持递归扫描 PDF、Markdown、TXT、DOCX/DOC、XLSX/XLS，使用 OpenAI 兼容文本 Embedding 服务建立磁盘索引，提供关键词、语义和混合检索。可增量扫描、暂停、继续、重试失败文件，并在管理页检验检索结果。
+
+Agent 选择 `knowledge` Skill 后，可以在获准的库中列文档、检索、读取原文并对 Excel 指定工作表和行范围进行统计。结果标注 PDF 页码、文本行、Word 段落或 Excel 行列。当前不执行 OCR；DOC 需要 LibreOffice；公式使用文件中保存的计算结果。见 [知识库使用指南](docs/settings/knowledge.md)。
+
+### 9. 对话压缩与节点长期记忆
+
+普通 Agent 的连续对话超过历史预算后，可在后台压缩较早内容，并保留近期原文。长期记忆则从节点完成的任务历史提取与合成小摘要，在后续输入中注入，再按需检索来源。
+
+两者分别配置推理预设、预算和处理门槛；节点之间保持独立记忆。显式记住、更正和按来源遗忘也有对应工具。历史压缩、长期记忆、清空聊天的区别见 [默认设置](docs/settings/defaults.md)。
+
+### 10. 命令与进程会话
+
+自有 Agent 的 `system_tools` 支持同步短命令，以及启动、读取、等待、停止异步进程会话。构建或测试可以逐步读取输出并取消。命令使用后端所声明的平台与 shell；Windows 使用 PowerShell，POSIX 使用检测到的 shell。会话属于当前 Agent 执行，不提供跨轮次或重启恢复。见 [命令会话](docs/console-sessions.md)。
+
+### 11. 浏览器与 Windows 桌面操作
+
+通过对应 Skill 和依赖接入浏览器自动化；Windows `computer-use` 支持窗口发现、截图、UI Automation、鼠标和键盘操作。需选择支持图片输入和工具调用的模型，并按 Skill 要求完成依赖准备。桌面能力依赖 Windows 图形会话，不能在 Linux 后端上直接使用。见 [Computer Use](docs/computer-use.md)。
+
+### 12. 本地服务管理
+
+**Settings → 本地服务** 可登记任意本地服务，配置启动程序、工作目录、参数、服务地址和健康检查，并手动启动、停止和检测。Strata、ComfyUI 管理预设额外提供模型发现及相应操作。
+
+登记服务不等于将其接入模型 Provider，也不会自动下载或加载权重。普通服务与两种管理预设的具体用法见 [本地服务](docs/settings/local-services.md)。
+
+## 第三阶段：工作流、多 Agent 与多模态
+
+### 13. 节点连线工作流
+
+连接输出端口和输入端口，让上游结果进入下游节点。适合把输入整理、模型处理和文件输出拆成可单独检查的步骤。
+
+| 节点 | 代码提供的行为 |
+| --- | --- |
+| BasicTrigger | 手动触发并发送配置的文本 |
+| TimerTrigger / Clock | 到指定时间触发 / 按固定间隔输出 |
+| Append / Response / Echo | 追加固定文本 / 返回配置文本 / 回显输入 |
+| MultiInput | 等待所有输入端口到齐，按端口顺序合并 |
+| Loop | 执行指定次数的循环分支，再进入出口 |
+| Event | 按 EventKey 分发输入 |
+| ConsoleCommand / SaveFile | 执行配置命令 / 将输入写入文件 |
+
+先用触发器、一个 Agent 和输出节点验证小流程，再增加分支与循环。定时触发依赖后端运行；它不等同于操作系统级常驻服务。
+
+### 14. 多 Agent 协作组
+
+框选多个 Agent 按 **G** 建组，编辑共同目标、成员职责和任务。任务可以指定负责人、前置依赖、状态和验证证据；成员可定向交接，只有相关成员被唤醒。共享动态、任务回复和归档任务用于追踪进展。
+
+组本身不占用一个模型，各节点保留自己的模型、工具和历史。适合“研究 → 实现 → 验证”等可明确分工的任务。完整操作见 [协作组指南](docs/agent-groups-guide.md)。
+
+### 15. 九种 Harness
+
+当前注册了 **Codex、Claude Code、OpenClaw、DeepSeek Harness、MiniMax Code、OpenCode CLI、Antigravity CLI、Pi、Hermes Agent**。在设置中检查、安装、升级或卸载，再创建对应类型的节点。
+
+其中 OpenCode 与 Antigravity 使用原生模型目录；其他节点的 Provider 绑定、登录、工具与权限依各自适配器实现。Harness 不会自动获得普通 Agent 的全部技能和后台记忆能力，也不保证每种原生交互式审批都能在无界面执行时处理。见 [Harness 使用步骤](docs/settings/models.md#harness)。
+
+### 16. 图片、视频、3D 与音频
+
+Agent 的可用字段按 Provider 的 `supportmode` 动态显示，支持图片生成与编辑、视觉理解、视频生成和音频生成；抠图、视频换人、3D 生成与贴图使用对应专用节点。图片附件也可作为聊天的多模态输入。
+
+语音相关代码还包含转写、TTS、实时交互和同传等按服务配置的能力；豆包音频与 RTC 需要对应的语音密钥、AK/SK 或应用配置。是否能运行取决于具体服务、模型、账号额度及本地依赖。配置入口见 [模型手册](docs/settings/models.md)，图片接口细节见 [OpenAI Images](docs/openai-image-provider.md)。
+
+### 17. 消息通道与定时唤醒
+
+通道接收/发送节点支持将微信通道消息接入 Graph，并从节点输出回复；需完成所用通道登录与接收节点配置。节点定时唤醒通过项目 cron 能力管理，和 TimerTrigger / Clock 的图内触发分开。后端、通道账号和目标节点均需可用。
+
+## 第四阶段：跨端与跨设备
+
+### 18. 手机与独立节点小窗
+
+浏览器根据屏幕尺寸提供移动工作区，可浏览节点、聊天、附件和协作组。Windows 本机可右键节点选择“弹出节点”，用置顶小窗继续聊天，关闭主网页后仍能使用运行中的后端；关闭小窗不删除节点或停止任务。见 [独立节点小窗](docs/node-windows.md)。
+
+### 19. 设备互联与云端设备中心
+
+经鉴权中心批准的设备可通过 WebRTC 连接，优先直连，必要时使用 TURN 中继，业务数据端到端加密。管理员可从云端设备中心打开某台设备的 Board。
+
+两台后端之间还可明确授予公开 Graph 的查看、控制与 Agent 协作权限，并通过 `peer_network_tools` 定向发消息。设备获准上线，与双方授予业务权限是不同步骤。见 [设备与同步](docs/settings/connectivity.md)。
+
+### 20. 远程执行与跨设备工作区
+
+已登记的 Remote 或 AgentPark 可作为执行设备。节点右键 **LinkToRemote** 选择设备后，按远程工作区协议执行支持的文件和命令操作。远端的工作目录、平台、shell 和工具能力决定实际执行环境；它不同于打开远程 Board。Linux 工作机部署见 [Remote Worker](deploy/remote-worker/README-linux.md)。
+
+### 21. 节点及整图增量同步
+
+选择来源和目标节点可同步用户消息、最终回答、附件及 Archive；两边都不选节点则同步 Graph 结构与各节点对话。预览会展示消息、附件、结构变更和冲突，确认后提交。
+
+同步保留目标已有额外内容，不同步删除，不传输 Process、不复制模型账号和插件安装，也不自动执行任务。见 [节点同步步骤](docs/settings/connectivity.md#node-sync)。
+
+## 第五阶段：高级配置与维护
+
+### 22. 运行事件
+
+对输入、工具失败、运行提示、网络错误、结果落盘和工作失败配置处理规则：生成上下文、追加文件、写通知或交给 Agent。可调整上下文 TTL、片段长度和去重窗口，查看编译诊断。见 [运行事件与主题](docs/settings/events-theme.md)。
+
+### 23. 公共模型网关
+
+将本机 Provider 中选定的模型通过网关开放，管理独立网关 Key、固定账号和允许协议，内置请求测试及按日期/IP/模型的用量统计。支持的入口包含 Models、Responses、Chat Completions、Messages 和 JSON 图片生成/编辑；协议须同时被上游与网关允许。见 [权限与网关](docs/settings/access-gateway.md)。
+
+### 24. 权限与可见性
+
+管理远程用户名、客户端/IP 记录、Developer 身份和非 Developer 工具过滤。Provider 可设为私有，设备共享有独立授权，云端管理员 Board 又有独立拥有者身份。设置权限前应先明确使用的是哪一种访问入口。见 [权限说明](docs/settings/access-gateway.md#authorization)。
+
+### 25. Provider 测试与压力监控
+
+**提供商测试** 查询模型并探测实际接口能力，区分不支持与无法判定。**压力测试 / Pressure** 页面展示运行时并发、排队、RPM/TPM 使用及峰值，是监控页面；打开它不会自动发起压测。见 [诊断手册](docs/settings/diagnostics.md)。
+
+### 26. 全链路审计与工具统计
+
+按日期、Graph、节点选择一次运行，查看输入、模型轮次、工具结果、文件变更与时间线；按 Provider 查看成功率、失败原因和 Token 用量。服务端未返回 usage 时显示缺失，不把缺失计作零。见 [统计与审计](docs/settings/diagnostics.md#statistics)。
+
+### 27. 外观、存储与生命周期
+
+可调整主题预设、面板颜色与背景图片、Agent 弹窗和看板尺寸、撤销步数、代理、服务监听地址及记忆目录。提供日志清理、派生长期记忆清理和退出后端入口。启动与重启保留日志，并按实现执行状态恢复；它们不保证恢复所有外部进程或原生 CLI 会话。见 [默认设置](docs/settings/defaults.md)与[维护](docs/settings/diagnostics.md#maintenance)。
+
+### 28. 执行记录与整会话检查点
+
+自有 Responses 运行路径可开启节点级 step ledger，记录请求、工具开始/结束及回答；进程中断后，将没有完成记录的工具结果标为未知，引导先核对外部状态。还可按模型窗口压力生成整会话检查点，保留近期对话与原始记录，继续长任务。
+
+这些功能需在 Provider 高级 JSON 中明确启用，与后台历史摘要和长期记忆分别工作。字段、默认值和恢复边界见 [模型高级设置](docs/settings/models.md#高级-json执行记录与整会话压缩)。
+
+## 文档与开发
+
+| 你的目标 | 阅读入口 |
+| --- | --- |
+| 安装并完成第一次对话 | [GettingStart](docs/GettingStart.md) |
+| 按 Settings 菜单查字段和步骤 | [Settings 使用手册](docs/settings/README.md) |
+| 查找专题与技术文档 | [Docs 索引](docs/README.md) |
+| 扩展 Skill / 插件 | [能力系统](docs/capability-system.md)、[编写指南](docs/skill-plugin-authoring.md) |
+| 理解代码边界 | [架构概览](docs/architecture/agentpark-architecture-overview.md)、[配置合同](docs/config-contract.md) |
+| 排查启动与配置问题 | [Troubleshooting](docs/troubleshooting.md)、[启动修复](docs/startup-repair.md) |
+
+后端为 Python / FastAPI，前端为 Vue 3 / TypeScript / Vite。开发约束见 [AGENTS.md](AGENTS.md)，许可证为 [MIT](LICENSE)。功能说明以仓库当前实现为依据；服务商的可用模型、额度及外部软件支持范围以实际查询和运行结果为准。

@@ -16,11 +16,13 @@ from .node_cancellation import NodeCancellationRegistry
 from .node_live_event_publisher import NodeLiveEventPublisher
 from .node_live_output import NodeLiveOutputStore
 from .node_voice import NodeVoiceApi
+from .node_window_api import NodeWindowApi
 from .tool_call_cancellation import ToolCallCancellationRegistry
 from .node_config_service import RUNTIME_STATE_FIELDS
 from .profile_api import ProfileApi
 from .public_gateway_api import PublicGatewayApiDomain
 from .provider_auth_api import ProviderAuthApiDomain
+from .workbuddy_api import WorkBuddyApiDomain
 from .remote_api import RemoteApiDomain
 from .peer_api import PeerApiDomain
 from .remote_workspace_api import RemoteWorkspaceApiDomain
@@ -79,11 +81,13 @@ class BackendCore:
         self.agent_domain = AgentDomain(self, self.graph_runtime)
         self.node_ops = NodeOpsDomain(self, self.graph_runtime)
         self.node_voice = NodeVoiceApi(self)
+        self.node_windows = NodeWindowApi(self)
         self.group_delivery = GroupDeliveryService(self)
         self.cron_service = CronService(self)
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
         self.provider_auth_api = ProviderAuthApiDomain(self)
+        self.workbuddy_api = WorkBuddyApiDomain(self)
         self.public_gateway_api = PublicGatewayApiDomain()
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
         self.remote_api = RemoteApiDomain(self)

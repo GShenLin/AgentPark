@@ -1,5 +1,6 @@
 import { requestApiJson } from './api'
 import { supportedVoiceProtocols, type VoiceProtocol } from './voice/voiceProtocol'
+import type { VoiceComposerSnapshot } from './voice/voiceComposer'
 
 export type VoiceTarget = { base: string; node: string; graph: string }
 export type RtcConnection = { transport: 'volcengine-rtc'; app_id: string; room_id: string; user_id: string; bot_id: string; token: string }
@@ -8,19 +9,30 @@ export type VoiceAnswer = { session_id: string; model: string; protocol: VoicePr
 export type VoiceTaskResult = { status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; text: string }
 
 export function voiceRequest(target: VoiceTarget, suffix: string, init?: RequestInit) {
-  const path = `/api/nodes/instances/${encodeURIComponent(target.node)}/voice${suffix}?graph_id=${encodeURIComponent(target.graph)}`
+  const path = `/api/nodes/instances/${encodeURIComponent(target.node)}/voice${suffix}${suffix.includes('?') ? '&' : '?'}graph_id=${encodeURIComponent(target.graph)}`
   return requestApiJson(target.base, path, init)
 }
 
-export async function describeVoiceCall(target: VoiceTarget, signal: AbortSignal): Promise<'webrtc' | 'volcengine-rtc'> {
+export type VoiceDescription = { transport: 'webrtc'; iceServers: RTCIceServer[] } | { transport: 'volcengine-rtc' }
+
+export async function describeVoiceCall(target: VoiceTarget, signal: AbortSignal): Promise<VoiceDescription> {
   const result = await voiceRequest(target, '', { signal })
   if (!supportedVoiceProtocols.includes(result?.protocol) || !['webrtc', 'volcengine-rtc'].includes(result?.transport)) {
     throw new Error('语音连接方式不受当前页面支持，请刷新页面。')
   }
-  return result.transport
+  if (result.transport === 'volcengine-rtc') return { transport: result.transport }
+  if (!Array.isArray(result.ice_servers) || result.ice_servers.some((server: unknown) => {
+    if (!server || typeof server !== 'object') return true
+    const item = server as Record<string, unknown>
+    const urls = typeof item.urls === 'string' ? [item.urls] : item.urls
+    return !Array.isArray(urls) || !urls.length || urls.some(url => typeof url !== 'string' || !/^(stun|stuns|turn|turns):/.test(url))
+      || (item.username !== undefined && typeof item.username !== 'string')
+      || (item.credential !== undefined && typeof item.credential !== 'string')
+  })) throw new Error('语音连接配置不完整，请更新执行设备服务后重试。')
+  return { transport: 'webrtc', iceServers: result.ice_servers }
 }
 
-export async function controlRtcCall(target: VoiceTarget, session: string, command: { action: 'activate' | 'heartbeat' } | { action: 'screen'; enabled: boolean; fps: number }, signal?: AbortSignal) {
+export async function controlRtcCall(target: VoiceTarget, session: string, command: { action: 'activate' | 'heartbeat' }, signal?: AbortSignal) {
   const result = await voiceRequest(target, `/${encodeURIComponent(session)}/control`, {
     method: 'POST', body: JSON.stringify(command), signal,
   })
@@ -41,9 +53,9 @@ export async function createVoiceCall(target: VoiceTarget, sdp: string | undefin
   throw new Error('语音服务返回的传输协议与连接信息不匹配。')
 }
 
-export async function submitVoiceTask(target: VoiceTarget, session: string, id: string, text: string, signal: AbortSignal): Promise<string> {
+export async function submitVoiceTask(target: VoiceTarget, session: string, id: string, text: string, signal: AbortSignal, composer?: VoiceComposerSnapshot): Promise<string> {
   const result = await voiceRequest(target, `/${encodeURIComponent(session)}/tasks`, {
-    method: 'POST', body: JSON.stringify({ delegation_id: id, text }), signal,
+    method: 'POST', body: JSON.stringify({ delegation_id: id, text, ...(composer ? { composer } : {}) }), signal,
   })
   if (typeof result?.request_id !== 'string') throw new Error('语音任务未返回有效编号。')
   return result.request_id

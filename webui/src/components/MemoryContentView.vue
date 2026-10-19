@@ -35,6 +35,7 @@ const props = defineProps<{
   graphNameInput: string
   graphWorkingPathInput: string
   graphLoading: boolean
+  graphCreating: boolean
   graphMemoryClearingId: string
   graphs: GraphInfo[]
   graphProfiles: GraphProfile[]
@@ -55,6 +56,7 @@ const emit = defineEmits<{
   (event: 'update:interactiveInputText', value: string): void
   (event: 'saveCurrentFile'): void
   (event: 'saveGraphConfig'): void
+  (event: 'newGraph'): void
   (event: 'saveGraphProfile'): void
   (event: 'createGraphFromProfile'): void
   (event: 'deleteGraphProfile'): void
@@ -160,6 +162,7 @@ defineExpose({ scrollToBottom, focusInteractiveInput })
     <GraphBrowserPanel v-if="mode === 'graph'" :graph-id="graphId"
       :graph-name-input="graphNameInput" :graph-working-path-input="graphWorkingPathInput"
       :graph-loading="graphLoading" :graph-memory-clearing-id="graphMemoryClearingId"
+      :graph-creating="graphCreating" @new-graph="emit('newGraph')"
       :graphs="graphs" :graph-profiles="graphProfiles" :selected-graph-profile-id="selectedGraphProfileId"
       @update:graph-name-input="emit('update:graphNameInput', $event)"
       @update:graph-working-path-input="emit('update:graphWorkingPathInput', $event)"

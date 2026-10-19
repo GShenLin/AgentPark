@@ -6,7 +6,7 @@ import { conversationWindowSettings } from './conversationWindowSettings'
 import { cloudBoardSession } from '../portal/boardSession'
 
 defineOptions({ inheritAttrs: false })
-const props = withDefaults(defineProps<{ floating?: boolean; label: string }>(), { floating: true })
+const props = withDefaults(defineProps<{ floating?: boolean; embedded?: boolean; label: string }>(), { floating: true, embedded: false })
 const emit = defineEmits<{ close: [] }>()
 const panel = ref<HTMLElement | null>(null)
 const settings = inject(conversationWindowSettings, ref(DEFAULT_AGENT_PANEL_SETTINGS))
@@ -21,7 +21,7 @@ useDialogLifecycle(panel, computed(() => props.floating), () => emit('close'))
 <template>
   <Teleport to="#app" :disabled="!floating">
     <div v-if="floating" class="conversation-backdrop" :inert="suspended" @click.self="emit('close')" />
-    <aside ref="panel" v-bind="$attrs" class="conversation-window" :class="{ 'is-floating': floating, 'is-docked': !floating, 'chat-appearance': floating }"
+    <aside ref="panel" v-bind="$attrs" class="conversation-window" :class="{ 'is-floating': floating, 'is-docked': !floating && !embedded, 'is-embedded': embedded, 'chat-appearance': floating || embedded }"
       :style="dimensions" :role="floating ? 'dialog' : undefined" :aria-modal="floating ? 'true' : undefined"
       :aria-label="floating ? label : undefined" :tabindex="floating ? -1 : undefined" :inert="suspended">
       <slot />
@@ -37,7 +37,7 @@ useDialogLifecycle(panel, computed(() => props.floating), () => emit('close'))
 /* Teleport does not forward a parent's scope ID to this aside. Own the
    docked height boundary here so descendants can form real scroll containers. */
 .conversation-window.is-docked {
-  position: absolute; top: 0; right: 0; bottom: 0; width: 560px; z-index: 110;
+  position: absolute; top: 0; left: 0; bottom: 0; width: 560px; z-index: 110;
   background-color: var(--theme-panel-memory-panel-background-color, var(--bg-primary));
   background-image: var(--theme-panel-memory-panel-background-image, none);
   background-size: var(--theme-panel-memory-panel-background-size, cover);
@@ -46,6 +46,7 @@ useDialogLifecycle(panel, computed(() => props.floating), () => emit('close'))
   background-blend-mode: var(--theme-panel-memory-panel-background-blend-mode, normal);
 }
 .conversation-window.is-docked.collapsed { align-items: center; justify-content: center; }
+.conversation-window.is-embedded { position: relative; flex: 1; width: 100%; border-radius: 14px; background: var(--theme-panel-memory-panel-background-color, var(--bg-primary)); }
 .conversation-window.is-floating {
   position: fixed; inset: auto auto 32px 50%; transform: translateX(-50%); z-index: 510;
   width: min(var(--conversation-width), calc(100vw - 80px)); height: min(var(--conversation-height), calc(100dvh - 80px));
