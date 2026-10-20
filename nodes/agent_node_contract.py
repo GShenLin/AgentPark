@@ -27,6 +27,7 @@ AGENT_CONFIG_DEFAULTS = {
     "tools": [],
     "mcp_servers": [],
     "skills": [],
+    "knowledge_ids": [],
     "web_search": "disabled",
     "thinking": "disabled",
     "reasoning_effort": "high",
@@ -50,6 +51,8 @@ AGENT_CONFIG_SCHEMA = {
     "tools": {"type": "multiselect", "label": "tools", "options": []},
     "mcp_servers": {"type": "multiselect", "label": "mcp_servers", "options": []},
     "skills": {"type": "multiselect", "label": "skills", "options": []},
+    "knowledge_ids": {"type": "multiselect", "label": "Knowledge", "options": [],
+                      "description": "选择此节点可访问的知识库；选中后自动启用 Knowledge 技能，清空后关闭。仅列出设置中允许 Agent 访问的知识库。"},
     "web_search": {"type": "text", "label": "web_search"},
     "thinking": {"type": "text", "label": "thinking"},
     "reasoning_effort": {

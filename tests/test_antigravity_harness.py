@@ -23,7 +23,7 @@ def test_native_schema_and_reset_preserve_workspace(tmp_path):
     schema = Node().get_config_schema({"provider_id": "unrelated"})
     assert "provider_id" not in schema and "model" not in schema
     request = load_request(context(tmp_path))
-    assert request.model == DEFAULT_MODEL and request.mode == ""
+    assert request.model == DEFAULT_MODEL and request.mode == "" and request.auto_approve is False
     assert load_request(context(tmp_path, native_model="gemini-4-argon-high")).state_dir == request.state_dir
     work = Path(request.cwd) / "keep.txt"
     work.write_text("user work", encoding="utf-8")
@@ -35,6 +35,8 @@ def test_native_schema_and_reset_preserve_workspace(tmp_path):
     {"access_role": "nondeveloper"}, {"native_model": ""}, {"native_model": "a b"},
     {"native_mode": "bypassPermissions"}, {"native_effort": "unknown"}, {"native_effort": []},
     {"timeout_seconds": False}, {"timeout_seconds": float("nan")}, {"working_path": "Z:/missing-agy-workspace"},
+    {"native_auto_approve": "true"}, {"native_auto_approve": 1}, {"native_auto_approve": None},
+    {"native_auto_approve": True, "access_role": "nondeveloper"},
 ])
 def test_invalid_request_never_launches(tmp_path, values):
     with pytest.raises(ValueError):
@@ -128,6 +130,24 @@ def test_adapter_resumes_only_owned_id_and_stdin_supports_long_text(tmp_path, mo
     with pytest.raises(ValueError, match="working directory changed"):
         Adapter().run("x", context(tmp_path, working_path=str(new_cwd)))
     assert len(runs) == 2
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_node_permission_choice_controls_process_and_overrides_stale_context(tmp_path, monkeypatch, enabled):
+    (tmp_path / "config.json").write_text(json.dumps({"native_auto_approve": enabled}), encoding="utf-8")
+    monkeypatch.setattr("src.harness.adapters.antigravity.command_argv", lambda _: ["agy"])
+    runs = []
+
+    def run(argv, **kwargs):
+        runs.append(argv)
+        for frame in [init_frame(), result_frame()]:
+            kwargs["on_line"](json.dumps(frame))
+
+    monkeypatch.setattr("src.harness.adapters.antigravity.run_process", run)
+    assert Adapter().run("hello", context(tmp_path, native_auto_approve=not enabled)).text == "hello"
+    assert len(runs) == 1
+    assert ("--dangerously-skip-permissions" in runs[0]) is enabled
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == {"native_auto_approve": enabled}
 
 
 def test_model_catalog_preserves_exact_ids_and_rejects_unstructured_text(monkeypatch):

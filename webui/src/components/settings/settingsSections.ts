@@ -2,6 +2,7 @@ import { computed, type Ref } from 'vue'
 import type { SettingsSectionInfo } from '../../settingsApi'
 
 export const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
+  { id: 'group', label: 'Group', path: 'config/group.json', filename: 'group.json' },
   { id: 'toolsets', label: 'Toolset', path: 'config/toolsets.json', filename: 'toolsets.json' },
   {
     id: 'model-provider',
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS_SECTIONS: SettingsSectionInfo[] = [
 ]
 
 export const SECTION_MESSAGE_KEYS: Record<string, string> = {
+  group: 'settings.groups',
   toolsets: 'settings.toolsets',
   authorization: 'settings.authorization',
   'model-provider': 'settings.modelProvider',

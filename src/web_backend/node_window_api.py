@@ -15,6 +15,8 @@ from pydantic import BaseModel, ConfigDict, StrictBool, ValidationError
 from src.workspace_settings import get_workspace_root
 from .request_access import is_local_request
 from .node_window_alerts import NodeWindowAlerts
+from .interaction_windows import InteractionWindows
+from src.user_interaction_store import read_interaction_request
 
 
 class FocusState(BaseModel):
@@ -26,6 +28,7 @@ class NodeWindowApi:
     def __init__(self, core: object):
         self.core = core
         self.alerts = NodeWindowAlerts(core.graph_events, self.open_local)
+        self.interactions = InteractionWindows(core.graph_events, self.open_interaction)
 
     @staticmethod
     def _require_local(request: Request | WebSocket) -> int:
@@ -74,6 +77,16 @@ class NodeWindowApi:
 
     def open_local(self, node_id: str, graph_id: str, port: int) -> dict:
         graph, node, _, _ = self.core.node_ops._resolve_node_instance_folder(node_id, graph_id)
+        return self._launch(graph, node, port)
+
+    def open_interaction(self, request_id: str, port: int) -> dict:
+        interaction = read_interaction_request(request_id)
+        if interaction["status"] != "pending":
+            return {"ok": True, "status": interaction["status"]}
+        agent = interaction["agent"]
+        return self._launch(agent["graph_id"] or self.core.default_graph_id, agent["node_id"], port, request_id)
+
+    def _launch(self, graph: str, node: str, port: int, request_id: str = "") -> dict:
         if os.name != "nt":
             raise HTTPException(501, "当前节点悬浮窗宿主支持 Windows。")
         root = Path(get_workspace_root())
@@ -91,7 +104,8 @@ class NodeWindowApi:
             with (receipts / "host.log").open("ab") as log:
                 subprocess.Popen(
                     [str(executable), str(host), f"--origin=http://127.0.0.1:{port}",
-                     f"--graph={graph}", f"--node={node}", f"--receipt={receipt_id}"],
+                     f"--graph={graph}", f"--node={node}", f"--receipt={receipt_id}",
+                     *([f"--interaction={request_id}"] if request_id else [])],
                     cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                     creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
                     close_fds=True,

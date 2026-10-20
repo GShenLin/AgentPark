@@ -17,8 +17,8 @@ from .scanner import Interrupted, check_stop
 MAX_RATE_LIMIT_RETRIES = 3
 
 
-def rate_limit_code(response):
-    """Log only a bounded machine code; upstream messages may echo input/secrets."""
+def upstream_error_code(response):
+    """Expose only a bounded machine code; upstream messages may echo input/secrets."""
     try:
         payload = response.json()
     except ValueError:
@@ -60,6 +60,21 @@ class Embedder:
     def _request(self, texts: list[str], dimensions: int | None) -> list[list[float]]:
         if not texts or len(texts) > self.config.batch_size:
             raise ValueError("invalid embedding batch size")
+        if self.config.embedding_protocol == "ark_multimodal":
+            # Ark combines all input items into one embedding. Each independent
+            # chunk must therefore be sent in its own request, never fused.
+            vectors = []
+            for text in texts:
+                vector = self._request_batch([text], dimensions)[0]
+                if dimensions is None:
+                    dimensions = len(vector)
+                vectors.append(vector)
+            return vectors
+        return self._request_batch(texts, dimensions)
+
+    def _request_batch(self, texts: list[str], dimensions: int | None) -> list[list[float]]:
+        multimodal = self.config.embedding_protocol == "ark_multimodal"
+        inputs = [{"type": "text", "text": text} for text in texts] if multimodal else texts
         api_key = self.resolve_key()
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         try:
@@ -70,12 +85,12 @@ class Embedder:
                     headers={**headers, "Content-Type": "application/json"},
                     timeout_sec=self.config.request_timeout, follow_redirects=False, cancel_event=self.stop,
                     body=json.dumps({
-                    "model": self.config.embedding_model, "input": texts, "encoding_format": "float",
+                    "model": self.config.embedding_model, "input": inputs, "encoding_format": "float",
                 }).encode("utf-8"))
                 if response.status_code == 429:
                     logging.getLogger(__name__).warning(
                         "Embedding rate limit: code=%s batch=%s characters=%s attempt=%s",
-                        rate_limit_code(response), len(texts), sum(map(len, texts)), attempt + 1,
+                        upstream_error_code(response), len(texts), sum(map(len, texts)), attempt + 1,
                     )
                 if response.status_code != 429 or attempt == MAX_RATE_LIMIT_RETRIES:
                     break
@@ -96,18 +111,29 @@ class Embedder:
         if response.status_code != 200:
             # Upstream bodies may echo credentials; expose status, never raw headers/body.
             hints = {
-                400: "请检查模型名称、输入限制和接口是否兼容 OpenAI Embeddings",
+                400: "请检查模型名称、输入限制及所选向量接口的请求协议",
                 401: "API Key 无效或未设置，请重新选择 API Key Name",
                 403: "API Key 无权访问该模型或套餐，请检查模型权限和对应的服务地址",
                 404: "请核对所填 Base URL、模型名称及服务商的接口说明",
                 429: f"已每隔 {self.config.retry_interval_seconds} 秒重试 {MAX_RATE_LIMIT_RETRIES} 次，仍被限流；请检查配额后继续任务",
             }
-            raise EmbeddingError(f"Embedding 服务返回 HTTP {response.status_code}；AgentPark 排查提示：" + hints.get(
-                response.status_code, "模型服务返回错误，请检查服务状态、模型配置和配额"))
+            code = upstream_error_code(response)
+            code_hints = {
+                "InvalidSubscription": "该 API Key 所属账号没有有效的 Agent Plan 订阅或订阅已过期；请核对套餐状态、专属 API Key 和专属 Base URL",
+                "InvalidEndpointOrModel.NotFound": "该地址下模型或推理接入点不存在，或当前 API Key 没有访问权限；请核对地址、模型名称及权限。404 本身不能证明鉴权成功",
+            }
+            hint = code_hints.get(code, hints.get(response.status_code,
+                "模型服务返回错误，请检查服务状态、模型配置和配额"))
+            code_label = f"（{code}）" if code != "unavailable" else ""
+            raise EmbeddingError(f"Embedding 服务返回 HTTP {response.status_code}{code_label}；AgentPark 排查提示：{hint}")
         try:
             payload = response.json()
         except ValueError as exc:
             raise EmbeddingError("Embedding 响应不是 JSON") from exc
+        if multimodal:
+            if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+                raise EmbeddingError("方舟多模态 Embedding 响应 data 必须是对象")
+            payload = {"data": [{"index": 0, "embedding": payload["data"].get("embedding")}]}
         return validate_vectors(payload, len(texts), dimensions)
 
 

@@ -74,6 +74,20 @@ class GroupBoundaryTests(unittest.TestCase):
         return self.owner.patch(self.url, json={'expected_revision': revision or self.repo.get(self.group['id']).revision,
             'bounds': {'x': x, 'y': 0, 'width': width, 'height': 320}})
 
+    def test_resize_includes_non_agent_nodes_and_persists_membership(self):
+        self.prepare_spatial_layout()
+        for node, type_id in (("story", "echo_node"), ("qa", "codex_node")):
+            path = self.graph / node / "config.json"
+            config = json.loads(path.read_text(encoding="utf-8"))
+            config["type_id"] = type_id
+            path.write_text(json.dumps(config), encoding="utf-8")
+        response = self.resize(0, 900)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual({m["node_id"] for m in response.json()["members"]}, self.nodes)
+        response = self.resize(300, 600)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual({m.node_id for m in self.repo.get(self.group["id"]).members}, {"story", "qa"})
+
     def test_resize_reconciles_members_tasks_and_persists_empty_frame(self):
         self.prepare_spatial_layout()
         self.owner.patch(self.url + '/members/story', json={'expected_role': '', 'role': 'writer'})
@@ -212,6 +226,24 @@ class GroupBoundaryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(self.owner.get(self.url).json()["private"])
         self.assertEqual(self.remote.get(self.url).status_code, 404)
+
+    def test_leader_assignment_requires_current_member_and_compare_value(self):
+        self.assertEqual(self.group['leader_id'], 'engine')
+        route = self.url + '/leader'
+        self.assertEqual(self.owner.patch(route, json={'leader_id': 'story'}).status_code, 422)
+        self.assertEqual(self.owner.patch(route, json={
+            'expected_leader_id': 'engine', 'leader_id': 'qa'}).status_code, 409)
+        response = self.owner.patch(route, json={'expected_leader_id': 'engine', 'leader_id': 'story'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['leader_id'], 'story')
+        self.assertEqual(self.owner.patch(route, json={
+            'expected_leader_id': 'engine', 'leader_id': 'engine'}).status_code, 409)
+        sent = self.owner.post(self.url + '/messages', json={'text': 'Handle this', 'request_id': 'leader-work'})
+        self.assertEqual(sent.json()['payload']['recipient_id'], 'story')
+        self.assertEqual([d['node_id'] for d in self.repo.pending_deliveries()], ['story'])
+        self.private.add('engine')
+        self.assertEqual(self.remote.patch(route, json={
+            'expected_leader_id': 'story', 'leader_id': 'engine'}).status_code, 404)
 
     def test_dissolve_and_move_are_revision_checked_and_keep_agents(self):
         moved = self.owner.put(self.base + "/group-members/qa", json={

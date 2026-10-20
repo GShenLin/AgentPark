@@ -45,6 +45,7 @@ import FormTextInput from '../FormTextInput.vue'
 import ProviderSelect from '../ProviderSelect.vue'
 import WorkingPathField from './WorkingPathField.vue'
 import OpenCodeNativeSelect from './OpenCodeNativeSelect.vue'
+import NativeHarnessModelSelect from './NativeHarnessModelSelect.vue'
 import { useOpenCodeOptions } from '../../composables/useOpenCodeOptions'
 import { t } from '../../i18n'
 
@@ -415,6 +416,10 @@ function isWorkingPathField(key: string) {
 }
 
 function getMultiSelectValue(key: string) {
+  if (key === 'skills' && props.typeId === 'agent_node') {
+    return (normalizeSchemaFieldValue(props.schema, key, props.fields[key]) as string[])
+      .filter(value => value !== 'knowledge')
+  }
   if (isToolSelectionField(key)) {
     const allowedTools = getFieldOptions(key).map((option) => option.value)
     return normalizeToolSelection(props.fields[key], allowedTools)
@@ -423,6 +428,7 @@ function getMultiSelectValue(key: string) {
 }
 
 function getMultiSelectPlaceholder(key: string) {
+  if (key === 'knowledge_ids') return 'Select knowledge libraries'
   if (String(key || '').trim() === 'plugins') return 'Select plugins'
   if (isToolsField(key)) return 'Select tools'
   if (String(key || '').trim() === 'mcp_servers') return 'Select MCP servers'
@@ -441,6 +447,7 @@ function getMultiSelectLabel(key: string) {
 }
 
 function getMultiSelectEmptyText(key: string) {
+  if (key === 'knowledge_ids') return 'No knowledge libraries available. 请在设置 → Knowledge 中创建知识库并允许 Agent 访问。'
   if (String(key || '').trim() === 'plugins') return 'No plugins found.'
   if (isToolSelectionField(key)) return 'No tools found.'
   if (String(key || '').trim() === 'mcp_servers') return 'No MCP servers found.'
@@ -591,6 +598,13 @@ watch(
         :catalog="nativeOpenCode.catalog"
         @change="setField(key, $event)"
         @refresh="nativeOpenCode.refresh"
+      />
+
+      <NativeHarnessModelSelect
+        v-else-if="typeId === 'antigravity_node' && key === 'native_model'"
+        harness-id="antigravity"
+        :value="String(fields[key] ?? '')"
+        @change="setField(key, $event)"
       />
 
       <FieldCombobox

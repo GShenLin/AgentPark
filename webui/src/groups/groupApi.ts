@@ -10,14 +10,14 @@ export type GroupTask = {
 }
 export type AgentGroup = {
   id: string; name: string; objective: string; bounds: GroupBounds; members: GroupMember[]
-  tasks: GroupTask[]; revision: number; private: boolean; dissolved: boolean; created_at: string; updated_at: string
+  leader_id: string | null; tasks: GroupTask[]; revision: number; private: boolean; dissolved: boolean; created_at: string; updated_at: string
 }
 export type GroupEvent = {
   seq: number; group_id: string; kind: string; actor_id: string | null
   payload: Record<string, unknown>; created_at: string
 }
 export type GroupDelivery = { event_seq: number; node_id: string; state: 'pending' | 'delivered' | 'cancelled'; attempts: number; last_error: string | null; started_at?: string | null }
-export type GroupMessage = { text: string; attachments?: MessageResource[]; request_id: string; recipient_id?: string; intent?: 'action' | 'update' }
+export type GroupMessage = { text: string; attachments?: MessageResource[]; request_id: string; recipient_id?: string; intent?: 'action' | 'update'; broadcast_reason?: string }
 
 function path(graph: string, suffix: string) { return `/api/graphs/${encodeURIComponent(graph)}${suffix}` }
 function groupPath(graph: string, group: string, suffix = '') { return path(graph, `/groups/${encodeURIComponent(group)}${suffix}`) }
@@ -40,6 +40,8 @@ export const groupApi = {
     request<{ group: AgentGroup | null }>(path(graph, `/group-members/${encodeURIComponent(node)}`), 'PUT', body),
   updateRole: (graph: string, group: string, node: string, body: { expected_role: string; role: string }) =>
     request<AgentGroup>(groupPath(graph, group, `/members/${encodeURIComponent(node)}`), 'PATCH', body),
+  setLeader: (graph: string, group: string, body: { expected_leader_id: string | null; leader_id: string }) =>
+    request<AgentGroup>(groupPath(graph, group, '/leader'), 'PATCH', body),
   events: (graph: string, group: string, after: number, options: { latest?: boolean; before?: number } = {}) =>
     request<{ events: GroupEvent[]; cursor: number; has_older: boolean }>(groupPath(graph, group, `/events?after=${after}&limit=100&latest=${!!options.latest}&before=${options.before || 0}`)),
   deliveries: (graph: string, group: string) => request<{ deliveries: GroupDelivery[] }>(groupPath(graph, group, '/deliveries')),

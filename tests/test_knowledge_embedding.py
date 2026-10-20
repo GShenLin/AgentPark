@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from src.knowledge.contracts import LibraryConfig
 from src.knowledge.embedding import Embedder, EmbeddingError
-from src.knowledge.embedding import rate_limit_code
+from src.knowledge.embedding import upstream_error_code
 from src.provider_api_key_store import add_api_key_alias, api_key_store_path
 
 
@@ -21,9 +21,9 @@ def test_rate_limit_diagnostics_only_include_machine_code():
     response = httpx.Response(429, json={"error": {
         "code": "RateLimitExceeded", "message": "secret or document contents",
     }})
-    assert rate_limit_code(response) == "RateLimitExceeded"
-    assert rate_limit_code(httpx.Response(429, text="not json")) == "unavailable"
-    assert rate_limit_code(httpx.Response(429, json={"error": {"code": "secret with spaces"}})) == "unavailable"
+    assert upstream_error_code(response) == "RateLimitExceeded"
+    assert upstream_error_code(httpx.Response(429, text="not json")) == "unavailable"
+    assert upstream_error_code(httpx.Response(429, json={"error": {"code": "secret with spaces"}})) == "unavailable"
 
 
 @pytest.mark.parametrize("url, expected", [
@@ -39,9 +39,42 @@ def test_base_url_and_complete_endpoint(url, expected):
     assert config(embedding_url=url).embedding_url == expected
 
 
-def test_multimodal_protocol_is_explicitly_unsupported():
-    with pytest.raises(ValidationError, match="尚未实现多模态请求协议"):
-        config(embedding_url="https://example.com/embeddings/multimodal")
+def test_multimodal_endpoint_keeps_path_and_selects_explicit_protocol():
+    cfg = config(embedding_url="https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal/")
+    assert cfg.embedding_url == "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal"
+    assert cfg.embedding_protocol == "ark_multimodal"
+    assert config().embedding_protocol == "openai"
+
+
+def test_multimodal_chunks_are_separate_requests_not_fused(monkeypatch):
+    bodies = []
+
+    def respond(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        assert body['input'] == [{'type': 'text', 'text': f'chunk {len(bodies)}'}]
+        assert body['encoding_format'] == 'float'
+        return httpx.Response(200, json={'data': {'embedding': [float(len(bodies))] * 8}})
+
+    mock_curl(monkeypatch, respond)
+    embedder = Embedder(config(embedding_url='https://example.com/embeddings/multimodal'))
+    assert embedder.embed(['chunk 1', 'chunk 2']) == [[1.0] * 8, [2.0] * 8]
+    assert len(bodies) == 2
+
+
+@pytest.mark.parametrize('payload', [
+    {'data': []}, {'data': {}}, {'data': {'embedding': [1.0] * 16}},
+    {'data': {'embedding': [0.0] * 8}}, {'data': {'embedding': [float('nan')] * 8}},
+])
+def test_multimodal_response_remains_strict(monkeypatch, payload):
+    mock_curl(monkeypatch, lambda request: httpx.Response(200, content=json.dumps(payload)))
+    with pytest.raises(EmbeddingError):
+        Embedder(config(embedding_url='https://example.com/embeddings/multimodal')).embed(['one'])
+
+
+def test_multimodal_dimension_detection(monkeypatch):
+    mock_curl(monkeypatch, lambda request: httpx.Response(200, json={'data': {'embedding': [1.0] * 2048}}))
+    assert Embedder(config(embedding_url='https://example.com/embeddings/multimodal')).detect_dimensions() == 2048
 
 
 @pytest.mark.parametrize("url", ["file:///tmp", "https://user:secret@example.com/v1",
@@ -97,6 +130,23 @@ def test_upstream_error_is_actionable_without_echoing_secrets(monkeypatch, statu
     with pytest.raises(EmbeddingError, match=hint) as error:
         Embedder(config()).embed(["one"])
     assert "secret-value" not in str(error.value)
+
+
+@pytest.mark.parametrize("status, code, hint", [
+    (400, "InvalidSubscription", "没有有效的 Agent Plan 订阅"),
+    (404, "InvalidEndpointOrModel.NotFound", "不能证明鉴权成功"),
+])
+def test_provider_code_overrides_generic_http_hint(monkeypatch, status, code, hint):
+    mock_curl(monkeypatch, lambda request: httpx.Response(status, json={
+        "error": {"code": code, "message": "secret-value private-account private-document"},
+    }))
+    with pytest.raises(EmbeddingError) as error:
+        Embedder(config()).embed(["one"])
+    assert code in str(error.value)
+    assert hint in str(error.value)
+    assert "secret-value" not in str(error.value)
+    assert "private-account" not in str(error.value)
+    assert "private-document" not in str(error.value)
 
 
 @pytest.mark.parametrize("detect", [False, True])

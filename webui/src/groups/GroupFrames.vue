@@ -17,7 +17,7 @@ function bounds(group: { id: string; bounds: { x: number; y: number; width: numb
     :class="{ 'is-resizing': preview?.id === group.id }" :data-group-id="group.id"
     :style="{ left: `${bounds(group).x}px`, top: `${bounds(group).y}px`, width: `${bounds(group).width}px`, height: `${bounds(group).height}px` }">
     <button type="button" class="group-frame-label" @click.stop="state.activeId.value = group.id">
-      {{ group.name }} <span>{{ group.members.length }} Agents · {{ group.tasks.filter(task => task.status === 'done').length }}/{{ group.tasks.length }}</span>
+      {{ group.name }} <span>{{ group.members.length }} 节点 · {{ group.tasks.filter(task => task.status === 'done').length }}/{{ group.tasks.length }}</span>
     </button>
     <div v-for="edge in edges" :key="edge" class="group-resize-handle" :class="`handle-${edge}`"
       :data-edge="edge" title="拖拽调整组范围，松开后更新成员；Esc 取消"

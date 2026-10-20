@@ -41,7 +41,7 @@ def ingest(office):
 
 def call(office, action, **kwargs):
     workspace, _, key, _, _ = office
-    return execute(workspace, {"action": action, "library_id": key, **kwargs})
+    return execute(workspace, {"action": action, "library_id": key, **kwargs}, library_ids=(key,))
 
 
 def make_sheet(path):
@@ -165,7 +165,6 @@ def test_bad_numeric_values_fail_instead_of_being_silently_dropped(office):
 
 
 def test_source_updates_and_library_permissions_apply_to_read_and_table(office):
-    from src.knowledge.contracts import LibraryUpdate
     workspace, folder, library_id, _, config = office
     path = folder / "销售.xlsx"
     make_sheet(path)
@@ -174,10 +173,10 @@ def test_source_updates_and_library_permissions_apply_to_read_and_table(office):
     for action, args in [("read", {}), ("table", dict(sheet="销售", metrics=[dict(name="rows", op="count_rows")]))]:
         with pytest.raises(ValueError, match="源文件已变化"):
             call(office, action, document_id=key, **args)
-    Catalog(workspace).update(library_id, LibraryUpdate(**{**config.model_dump(), "allow_agents": False}))
     for action in ["read", "list"]:
         with pytest.raises(PermissionError):
-            call(office, action, **({"document_id": key} if action == "read" else {}))
+            execute(workspace, {"action": action, "library_id": library_id,
+                               **({"document_id": key} if action == "read" else {})}, library_ids=())
 
 
 def test_existing_database_migration_preserves_chunks(office):
@@ -357,7 +356,9 @@ def test_table_tool_runs_through_real_skill_subprocess(office, monkeypatch):
     definition = next(item for item in load_skill_script_manifest(str(skill_dir), skill_name="knowledge")
                       if item.id == "table")
     result = json.loads(run_skill_script(definition, dict(library_id=library_id, document_id=document_id,
-                        sheet="Legacy", start_row=2, metrics=[dict(name="total", op="sum", column="B")])))
+                        sheet="Legacy", start_row=2, metrics=[dict(name="total", op="sum", column="B")]),
+                        runtime_env={"AGENTPARK_WORKSPACE_ROOT": str(workspace),
+                                     "AGENTPARK_KNOWLEDGE_IDS": json.dumps([library_id])}))
     assert result["status"] == "success", result
     body = json.loads(result["stdout"])
     assert body["groups"][0]["metrics"]["total"]["value"] == "37.0"

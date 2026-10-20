@@ -112,12 +112,10 @@ function startDrag(event: PointerEvent) {
   event.preventDefault()
 }
 
-async function submitActive(response: Record<string, unknown>) {
-  const request = activeRequest.value
-  if (!request) return
+async function submitActive(response: Record<string, unknown>, requestId: string, status: 'submitted' | 'cancelled' = 'submitted') {
   error.value = ''
   try {
-    await interactions.submitResponse(request.id, response)
+    await interactions.submitResponse(requestId, response, status)
   } catch (submitError) {
     error.value = submitError instanceof Error ? submitError.message : String(submitError)
   }
@@ -150,7 +148,8 @@ onBeforeUnmount(() => {
         <span class="interaction-count">{{ interactions.activeIndex.value + 1 }} / {{ interactions.requests.value.length }}</span>
         <ActionButton compact @click="interactions.showNext">{{ t('interaction.next') }}</ActionButton>
       </div>
-      <UserInteractionForm :request="activeRequest" :submitting="submitting" :error="error" @submit="submitActive" @error="error = $event" />
+      <UserInteractionForm :request="activeRequest" :submitting="submitting" :error="error" @submit="submitActive"
+        @cancel="submitActive({ error: '用户取消了交互请求' }, $event, 'cancelled')" @error="error = $event" />
     </section>
   </div>
 </template>

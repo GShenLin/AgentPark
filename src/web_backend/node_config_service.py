@@ -340,6 +340,12 @@ class NodeConfigService:
         return dict(payload)
 
     def _validate_capability_fields(self, config: dict[str, Any], config_path: str) -> None:
+        if "knowledge_ids" in config:
+            from src.knowledge.node_access import knowledge_ids
+            try:
+                knowledge_ids(config["knowledge_ids"])
+            except ValueError as exc:
+                raise NodeConfigFormatError(f"{exc}: {config_path}") from exc
         for field in CAPABILITY_FIELDS:
             value = config.get(field)
             if value in (None, ""):

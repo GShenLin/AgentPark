@@ -144,3 +144,16 @@ def test_focus_contract_rejects_non_boolean_values_and_cleans_up(setup):
         with pytest.raises(WebSocketDisconnect):
             socket.receive_json()
     assert app.state.node_windows.alerts.status()['focused_pages'] == 0
+
+
+def test_interaction_launch_uses_request_identity_and_does_not_resolve_a_node(setup):
+    from src.user_interaction_store import create_interaction_request
+    from src.user_interaction_schema import normalize_interaction_schema
+    app, calls, _, core = setup
+    def unavailable(*_args):
+        raise AssertionError('Interaction windows must not depend on node card resolution')
+    core.node_ops._resolve_node_instance_folder = unavailable
+    pending = create_interaction_request(schema=normalize_interaction_schema(title='Input'), timeout_sec=30,
+        agent=SimpleNamespace(config={'graph_id': 'g', 'node_id': 'n'}))
+    assert app.state.node_windows.open_interaction(pending['id'], 8788)['ok']
+    assert f"--interaction={pending['id']}" in calls[0][0]

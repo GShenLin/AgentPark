@@ -52,7 +52,12 @@ async function operate(item: KnowledgeLibrary, action: KnowledgeAction) {
   await run(async () => { await operateKnowledge(item.id, action); await refresh() })
 }
 function edit(item: KnowledgeLibrary | null) { editing.value = item; showForm.value = true }
-async function saved() { showForm.value = false; await run(refresh) }
+async function saved(library: KnowledgeLibrary) {
+  showForm.value = false
+  await run(refresh)
+  message.value = `知识库“${library.name}”已保存。Embedding 请求地址：${library.embedding_url}`
+  if (library.index_changed) message.value += '。已切换到新索引，旧索引保留；请点击“开始 / 增量扫描”。'
+}
 async function inspect(item: KnowledgeLibrary) {
   selected.value = item.id; stateFilter.value = ''; results.value = null
   await loadDocuments()
@@ -87,7 +92,8 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
     <article v-for="item in libraries" :key="item.id" class="knowledge-card">
       <div class="knowledge-actions"><strong>{{ item.name }}</strong><span>{{ label(item.progress.status) }}</span><span v-if="item.progress.phase !== 'idle'">{{ label(item.progress.phase) }}</span></div>
       <p class="knowledge-path">{{ item.folder }}</p>
-      <p>{{ item.embedding_model }} · {{ item.dimensions }} 维 · {{ item.allow_agents ? 'Skill 可读取' : '仅管理页可读取' }}</p>
+      <p>{{ item.embedding_model }} · {{ item.dimensions }} 维 · {{ item.allow_mcp ? '允许 MCP 访问' : '未开放 MCP 访问' }}</p>
+      <p class="knowledge-path">Embedding 请求地址：{{ item.embedding_url }}</p>
       <div class="knowledge-counts">
         <span>本次发现 {{ item.progress.discovered.toLocaleString() }} 文件</span>
         <span>可检索 {{ (item.progress.documents.ready || 0).toLocaleString() }}</span>
@@ -133,7 +139,7 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
       </div>
       <ul class="knowledge-documents"><li v-for="doc in documents" :key="doc.id"><strong>{{ doc.path }}</strong> · {{ label(doc.state) }} · {{ doc.chunk_count }} 片段<p v-if="doc.error" class="knowledge-error">{{ doc.error }}</p><p v-if="doc.warning">{{ doc.warning }}</p></li></ul>
     </section>
-    <p>Agent 节点选择 <code>knowledge</code> Skill 后，可列出、检索、读取原文并计算 Excel 表格；结果包含 PDF 页码、文本行号、Word 段落或 Excel 工作表与行列位置。</p>
+    <p>节点在 Knowledge 选项中勾选知识库后即可使用。勾选“允许通过 MCP 访问”的库，也可由连接 AgentPark MCP 的客户端通过 <code>get_knowledge</code> 发现、检索、读取和查询表格；结果包含原文出处。</p>
   </section>
 </template>
 

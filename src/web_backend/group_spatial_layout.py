@@ -21,8 +21,6 @@ def read_group_layout(graph_dir: str, bounds: GroupBounds, is_private) -> list[S
             config = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(config, dict):
                 raise ValueError("node config must be an object")
-            if config.get("type_id") != "agent_node":
-                continue
             ui = normalize_node_grid_ui(config.get("ui"))
             result.append(SpatialMember(path.parent.name,
                 ui["grid_x"] * width + ui.get("width", settings["nodeWidth"]) / 2,

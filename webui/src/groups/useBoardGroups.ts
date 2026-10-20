@@ -70,11 +70,10 @@ export function useBoardGroups(options: {
       const existing = selectionGroup(current.groups, ids)
       if (existing) { await groupApi.dissolve(graph, existing.id, existing.revision); return }
       if (current.groups.some(group => group.members.some(member => ids.includes(member.node_id)))) {
-        throw new Error('所选 Agent 已在组内。框选该组全部成员后按 G 可以解除组队。')
+        throw new Error('所选节点已在组内。框选该组全部成员后按 G 可以解除组队。')
       }
-      if (nodes.some(node => node.typeId !== 'agent_node')) throw new Error('只能将 Agent 节点编入组。')
       const bounds = groupBounds(nodes, grid)
-      if (current.groups.some(group => boundsOverlap(group.bounds, bounds))) throw new Error('新组边框与已有组重叠，请先把这些 Agent 移到空白区域。')
+      if (current.groups.some(group => boundsOverlap(group.bounds, bounds))) throw new Error('新组边框与已有组重叠，请先把这些节点移到空白区域。')
       await groupApi.create(graph, { name: `Group ${current.groups.length + 1}`, objective: '', bounds,
         members: nodes.map(node => ({ node_id: node.id, role: '' })) })
     })
@@ -91,7 +90,7 @@ export function useBoardGroups(options: {
   }
 
   async function afterNodeDrop(ids: string[]) {
-    const positions = options.nodes.value.filter(node => ids.includes(node.id) && node.typeId === 'agent_node')
+    const positions = options.nodes.value.filter(node => ids.includes(node.id))
       .map(node => ({ id: node.id, center: nodeCenter(node, options.grid.value) }))
     await perform(async (graph, checkCurrent) => {
       const current = await groupApi.list(graph)

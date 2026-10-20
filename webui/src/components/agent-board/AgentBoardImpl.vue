@@ -13,7 +13,7 @@ provide(AgentBoardKey, ctx)
 <template>
   <div class="agent-board-wrapper">
     <BoardCanvas />
-    <GroupBoardPanel :group="ctx.groups.active.value" @close="ctx.groups.activeId.value = null" @updated="ctx.groups.refresh()" :graph-id="ctx.currentGraphId.value || 'default'" :node-configs="ctx.nodeConfigs.value" />
+    <GroupBoardPanel :group="ctx.groups.active.value" @close="ctx.groups.activeId.value = null" @updated="ctx.groups.refresh()" :graph-id="ctx.currentGraphId.value || 'default'" :node-configs="ctx.nodeConfigs.value" :ready="ctx.groups.ready.value" />
   </div>
 </template>
 

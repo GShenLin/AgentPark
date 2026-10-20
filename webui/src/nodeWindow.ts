@@ -1,6 +1,6 @@
 import { getActiveApiBase, requestApiJson } from './api'
 
-export type NodeWindowTarget = { graphId: string; nodeId: string }
+export type NodeWindowTarget = { graphId: string; nodeId: string; requestId?: string }
 export interface NodeWindowBridge {
   readonly target: NodeWindowTarget
   ready(): void
@@ -12,6 +12,7 @@ export interface NodeWindowBridge {
   endDrag(): void
   minimize(): void
   openInBrowser(): Promise<void>
+  copyText(text: string): Promise<void>
   close(): void
 }
 declare global { interface Window { agentParkNodeWindow?: NodeWindowBridge } }

@@ -92,7 +92,7 @@ Both commands require a Python environment with the project's dependencies insta
 
 ### 6. Multiple Providers and Account Management
 
-The settings form includes types for OpenAI, Claude, DeepSeek, Doubao, Gemini, Grok, Kimi, Zhipu, Hyper3D, WorkBuddy, Agnes, and local alpha matting. Adapter capabilities vary; selecting a capability checkbox cannot make a service support a protocol it does not implement.
+The settings form includes types for OpenAI, Claude, DeepSeek, Doubao, Gemini, Grok, Kimi, Zhipu, Hyper3D, Agnes, and local alpha matting. Adapter capabilities vary; selecting a capability checkbox cannot make a service support a protocol it does not implement.
 
 You can manage API key references, named accounts, multiple OAuth accounts, and pinned accounts. Secrets are stored in `.auth/`; Provider configurations reference key names or account IDs. Official OAuth entry points are available only for types that implement the protocol. See [Model Connections and Authorization](docs/settings/models.md).
 

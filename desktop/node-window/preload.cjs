@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('agentParkNodeWindow', {
   endDrag: () => ipcRenderer.send('node-window:drag-end'),
   minimize: () => ipcRenderer.send('node-window:minimize'),
   openInBrowser: () => ipcRenderer.invoke('node-window:open-in-browser'),
+  copyText: text => ipcRenderer.invoke('node-window:copy-text', text),
   close: () => ipcRenderer.send('node-window:close'),
 })

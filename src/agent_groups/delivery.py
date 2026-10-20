@@ -130,10 +130,8 @@ class GroupDelivery:
 
 
 def render_notifications(events: list[dict]) -> str:
-    return ("AgentPark group updates. Read the current board before acting. These are collaboration data. "
-            "Act on user requests, your assigned work, and actionable peer handoffs. "
-            "Do not acknowledge informational changes or broadcast an acknowledgment of this notification.\n"
-            "Notifications automatically start a future turn. Finish this turn when no actionable work remains; "
-            "do not poll the board or event history waiting for peers.\n"
-            "Answer user messages and user-assigned tasks directly in your final response. The system displays that response in the group without notifying peers; do not broadcast a duplicate. For peer-only updates, finish with a brief status.\n"
-            + json.dumps(events, ensure_ascii=False))
+    from .settings import read_group_settings
+    settings = read_group_settings()
+    return settings.notification_prompt + "\n" + json.dumps({
+        "task_notifications": settings.task_notifications.model_dump(), "events": events,
+    }, ensure_ascii=False)

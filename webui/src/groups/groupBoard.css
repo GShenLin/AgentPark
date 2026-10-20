@@ -4,12 +4,16 @@
 .group-column-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border-light); }
 .group-column-heading h3 { margin: 0; font-size: 16px; }
 .group-column-heading span { display: block; color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+.group-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.group-dissolve { color: var(--accent-red); }
+button:disabled { cursor: default; opacity: 0.5; }
 .group-board-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 20px 20px; scrollbar-gutter: stable; }
 .group-board-content { display: flex; flex-direction: column; min-width: 0; gap: 8px; }
 .group-team-details { margin-top: 24px; border-top: 1px solid var(--border-light); padding-top: 16px; }
 .group-team-details > summary { margin-bottom: 12px; }
 .group-members { display: grid; gap: 10px; margin-top: 12px; }
 .group-members article { border: 1px solid var(--border-light); border-radius: 12px; padding: 12px; }
+.group-leader-badge { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 6px; color: var(--text-accent); background: color-mix(in srgb, var(--text-accent) 10%, transparent); font-size: 11px; }
 .group-members span { display: block; font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 .group-members p { margin: 8px 0 0; font-size: 13px; }
 button { cursor: pointer; min-height: 32px; padding: 6px 12px; }

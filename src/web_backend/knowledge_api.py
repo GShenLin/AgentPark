@@ -56,7 +56,13 @@ def register_knowledge_routes(app, service: KnowledgeService):
 
     @router.post("/{key}/search")
     def retrieve(key: str, payload: SearchRequest):
-        return translate(lambda: search(service.store(key), service.catalog.get(key), **payload.model_dump(), workspace=service.catalog.workspace))
+        def retrieve_snapshot():
+            from src.knowledge.database import Database
+            config, directory = service.catalog.resolve(key)
+            store = Database(directory)
+            store.initialize()
+            return search(store, config, **payload.model_dump(), workspace=service.catalog.workspace)
+        return translate(retrieve_snapshot)
 
     @router.get("/{key}/chunks/{chunk_id}")
     def chunk(key: str, chunk_id: int):

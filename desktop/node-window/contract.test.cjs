@@ -17,3 +17,14 @@ test('deduplication distinguishes server and graph as well as node', () => {
   assert.notEqual(windowKey(target), windowKey({ ...target, origin: 'http://127.0.0.1:9999' }))
   assert.equal(windowKey(target), windowKey({ ...target, receipt: 'b'.repeat(32) }))
 })
+
+test('interaction identity is independent of the node and rejects invalid request ids', () => {
+  const node = parseLaunch(args)
+  const first = parseLaunch([...args, `--interaction=${'c'.repeat(32)}`])
+  const second = { ...first, requestId: 'd'.repeat(32) }
+  assert.notEqual(windowKey(first), windowKey(node))
+  assert.notEqual(windowKey(first), windowKey(second))
+  assert.equal(windowKey(first), windowKey({ ...first, nodeId: 'renamed' }))
+  assert.throws(() => parseLaunch([...args, '--interaction=../../invalid']))
+  assert.throws(() => parseLaunch([...args, '--interaction=']))
+})

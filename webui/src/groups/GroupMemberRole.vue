@@ -35,7 +35,7 @@ async function save() {
 
 <template>
   <div class="member-role">
-    <template v-if="!editing"><p>{{ member.role || '未设角色' }}</p><button @click="begin">编辑角色</button></template>
+    <template v-if="!editing"><p>{{ member.role || '未设角色' }}</p><div class="member-actions"><button @click="begin">编辑角色</button><slot /></div></template>
     <form v-else @submit.prevent="save">
       <label>职责与分工<textarea v-model="role" rows="3" maxlength="2000" :aria-label="`${member.node_id} 的角色`" /></label>
       <p v-if="error" role="alert">{{ error }}</p>
@@ -49,7 +49,7 @@ async function save() {
 p { margin: 0 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); line-height: 1.5; }
 form, label { display: grid; gap: 6px; }
 textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 8px; font: inherit; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; }
-form > div { display: flex; gap: 6px; }
+form > div, .member-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 button { min-height: 32px; padding: 4px 8px; cursor: pointer; }
 [role='alert'] { color: var(--accent-red); }
 </style>

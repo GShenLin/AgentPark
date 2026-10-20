@@ -3,15 +3,34 @@ from __future__ import annotations
 import json
 
 import pytest
+from src.user_interaction_schema import normalize_interaction_schema
 
 from src.user_interaction_store import (
     create_interaction_request,
     list_interaction_requests,
-    normalize_interaction_schema,
     submit_interaction_response,
     wait_for_interaction_response,
 )
 from src.web_backend.core import BackendCore
+
+
+def test_selected_interaction_toolset_exposes_its_actual_callable_names():
+    from types import SimpleNamespace
+    from nodes.agent_tool_loader import load_configured_tools
+    from nodes.agent_support.capability_setup import resolve_agent_capabilities
+    from src.tool.base_tool import BaseTool
+
+    settings = {"tools": ["system_tools", "user_interaction_tools"], "skills": []}
+    plan = resolve_agent_capabilities(settings.get, node_id="direct-interaction-test")
+    agent = SimpleNamespace(config={})
+    agent.tools = BaseTool(agent)
+    agent.addTool = agent.tools.addTool
+    load_configured_tools(agent, plan.tool_names)
+
+    names = {item["function"]["name"] for item in agent.tools.tool_declarations}
+    assert {"ask_user", "tips"} <= names
+    assert {"ask_user", "tips"} <= agent.tools.function_map.keys()
+    assert "user_interactive" not in names
 
 
 def test_user_interaction_skill_exposes_tools_only_while_active(tmp_path):
@@ -206,7 +225,9 @@ def test_ask_user_emits_created_and_submitted_runtime_notices(tmp_path, monkeypa
 def test_submit_interaction_publishes_graph_event(tmp_path, monkeypatch):
     monkeypatch.setattr("src.user_interaction_store.get_memories_root", lambda: str(tmp_path / "memories"))
     request = create_interaction_request(
-        schema=normalize_interaction_schema(title="确认"),
+        schema=normalize_interaction_schema(title="确认", fields=[
+            {"id": "confirmed", "type": "checkbox", "label": "确认", "required": True},
+        ]),
         timeout_sec=30,
         agent=type(
             "FakeAgent",

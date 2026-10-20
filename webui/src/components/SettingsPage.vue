@@ -29,6 +29,7 @@ import SelectionButton from './SelectionButton.vue'
 import CompanionSettingsForm from './settings/CompanionSettingsForm.vue'
 import AccessSettingsPanel from './settings/AccessSettingsPanel.vue'
 import DefaultSettingsForm from './settings/DefaultSettingsForm.vue'
+import GroupSettingsForm from './settings/GroupSettingsForm.vue'
 import HarnessSettingsPanel from './settings/HarnessSettingsPanel.vue'
 import KnowledgeSettingsPanel from './settings/KnowledgeSettingsPanel.vue'
 import SkillsSettingsPanel from './settings/SkillsSettingsPanel.vue'
@@ -550,6 +551,13 @@ onMounted(async () => {
             :memory-defaults="loadedDocument?.long_term_memory_defaults"
             :conversation-defaults="loadedDocument?.conversation_context_defaults"
             :runtime="loadedDocument?.runtime"
+            @update:data="replaceData"
+          />
+          <GroupSettingsForm
+            v-else-if="activeSection === 'group' && formData && loadedDocument?.group_defaults"
+            :data="formData"
+            :defaults="loadedDocument.group_defaults"
+            :disabled="loading || saving"
             @update:data="replaceData"
           />
           <CompanionSettingsForm

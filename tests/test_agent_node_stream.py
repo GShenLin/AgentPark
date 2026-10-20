@@ -68,7 +68,7 @@ def test_agent_node_tools_schema_is_multiselect_with_available_tools(monkeypatch
     assert isinstance(schema["mcp_servers"]["options"], list)
     assert schema["collaboration_mode"]["type"] == "select"
     assert [item["value"] for item in schema["collaboration_mode"]["options"]] == ["default", "plan"]
-    assert list(schema.keys())[-4:] == ["tools", "mcp_servers", "skills", "plugins"]
+    assert list(schema.keys())[-5:] == ["tools", "mcp_servers", "skills", "knowledge_ids", "plugins"]
 
 
 def test_agent_node_capability_schema_uses_registry_descriptors(monkeypatch):
@@ -2037,3 +2037,4 @@ def test_graph_runner_updates_last_message_during_stream(monkeypatch, tmp_path):
         runtime_paths_module._get_resource_root = original_runtime_paths_get_resource_root
         node_runtime_module._get_runtime_root = original_node_runtime_get_runtime_root
         node_runtime_module._get_resource_root = original_node_runtime_get_resource_root
+

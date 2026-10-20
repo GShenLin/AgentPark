@@ -33,7 +33,7 @@ def library(tmp_path):
     folder.mkdir()
     catalog = Catalog(tmp_path)
     config = LibraryConfig(name="笔记", folder=str(folder), embedding_url="http://localhost:1111/v1/embeddings",
-                           embedding_model="test", dimensions=8, allow_agents=True, batch_size=2, chunk_size=256, chunk_overlap=32)
+                           embedding_model="test", dimensions=8, allow_mcp=True, batch_size=2, chunk_size=256, chunk_overlap=32)
     key = catalog.create(config)["id"]
     store = Database(catalog.directory(key))
     store.initialize()
@@ -132,17 +132,84 @@ def test_errors_are_visible_and_never_publish_partial_file(library):
     assert not search(store, config, "PDF", mode="keyword")["matches"]
 
 
-def test_secret_redaction_visibility_and_immutable_embedding_space(library):
+def test_secret_redaction_visibility_and_independent_embedding_space(library):
     catalog, key, config, _, _ = library
-    update = LibraryUpdate(**{**config.model_dump(), "api_key_alias": "shared-key", "allow_agents": False})
+    update = LibraryUpdate(**{**config.model_dump(), "api_key_alias": "shared-key", "allow_mcp": False})
     assert "api_key" not in catalog.update(key, update)
-    assert execute(catalog.workspace, {"action": "list"}) == {"libraries": []}
+    assert execute(catalog.workspace, {"action": "list"}, library_ids=()) == {"libraries": []}
     with pytest.raises(PermissionError):
-        execute(catalog.workspace, {"action": "search", "library_id": key, "query": "test"})
+        execute(catalog.workspace, {"action": "search", "library_id": key, "query": "test"}, library_ids=())
     catalog.update(key, LibraryUpdate(**{**update.model_dump(), "api_key_alias": None}))
     assert catalog.get(key).api_key_alias == "shared-key"
-    with pytest.raises(ValueError, match="dimensions"):
-        catalog.update(key, LibraryUpdate(**{**update.model_dump(), "dimensions": 16}))
+    previous_directory = catalog.directory(key)
+    changed = catalog.update(key, LibraryUpdate(**{**update.model_dump(), "dimensions": 16}))
+    assert changed['index_changed'] is True
+    assert catalog.directory(key) != previous_directory
+
+
+def test_documented_ark_alias_change_preserves_existing_vectors(library):
+    catalog, _, config, _, _ = library
+    config = LibraryConfig(**{**config.model_dump(),
+        'embedding_url': 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        'embedding_model': 'doubao-embedding-vision'})
+    key = catalog.create(config)['id']
+    store = Database(catalog.directory(key))
+    store.initialize()
+    (Path(config.folder) / 'cats.md').write_text('cats sleep', encoding='utf-8')
+    ingest((catalog, key, config, store, threading.Event()))
+    before = store.status()
+    update = LibraryUpdate(**{**config.model_dump(),
+        'embedding_url': 'https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal',
+        'embedding_model': 'doubao-embedding-vision-251215'})
+    catalog.update(key, update)
+    assert store.status() == before
+    assert search(store, catalog.get(key), 'feline', mode='semantic', embedder=TestEmbedder())['matches']
+    old_directory = catalog.directory(key)
+    changed = catalog.update(key, LibraryUpdate(**{**update.model_dump(), 'embedding_model': 'different-model'}))
+    assert changed['index_changed'] is True
+    assert catalog.directory(key) != old_directory
+    assert old_directory.exists()
+    assert search(store, config, 'cats', mode='keyword')['matches']
+    assert not catalog.directory(key).exists()  # saving does not launch a paid reindex
+
+
+def test_unrelated_provider_cannot_use_ark_alias_exception(library):
+    catalog, _, config, _, _ = library
+    config = LibraryConfig(**{**config.model_dump(), 'embedding_model': 'doubao-embedding-vision'})
+    key = catalog.create(config)['id']
+    result = catalog.update(key, LibraryUpdate(**{**config.model_dump(), 'embedding_model': 'doubao-embedding-vision-251215'}))
+    assert result['index_changed'] is True
+
+
+@pytest.mark.parametrize('changes', [
+    {'embedding_model': 'different'}, {'chunk_size': 512}, {'chunk_overlap': 64},
+    {'spreadsheet_header_row': 1}, {'dimensions': 16}, {'folder': 'NEW_FOLDER'},
+])
+def test_configuration_edit_preserves_old_generation_and_requires_explicit_scan(library, changes):
+    catalog, key, config, store, _ = library
+    (Path(config.folder) / 'a.md').write_text('cats sleep', encoding='utf-8')
+    ingest(library)
+    if changes.get('folder') == 'NEW_FOLDER':
+        new_folder = Path(config.folder).parent / 'other'
+        new_folder.mkdir()
+        changes = {'folder': str(new_folder)}
+    old_path = catalog.directory(key)
+    old_state = store.status()
+    result = catalog.update(key, LibraryUpdate(**{**config.model_dump(), **changes}))
+    assert result['index_generation'] == 1
+    assert result['index_changed'] is True
+    assert store.status() == old_state
+    with catalog.connect() as db:
+        saved = db.execute('SELECT config FROM index_configs WHERE library_id=? AND generation=0', (key,)).fetchone()[0]
+        assert LibraryConfig.model_validate_json(saved) == config
+    assert Catalog(catalog.workspace).directory(key) != old_path
+    new_store = Database(catalog.directory(key))
+    new_store.initialize()
+    assert new_store.status()['status'] == 'idle'
+    assert search(new_store, catalog.get(key), 'cats', mode='keyword')['matches'] == []
+    with pytest.raises(ValueError, match='尚未生成向量'):
+        search(new_store, catalog.get(key), 'cats', mode='semantic', embedder=TestEmbedder())
+    assert search(store, config, 'cats', mode='semantic', embedder=TestEmbedder())['matches']
 
 
 @pytest.mark.parametrize("payload", [
@@ -176,10 +243,10 @@ def test_single_skill_supports_list_search_and_read(library):
     catalog, key, config, _, _ = library
     (Path(config.folder) / "a.md").write_text("cats live here", encoding="utf-8")
     ingest(library)
-    assert execute(catalog.workspace, {"action": "list"})["libraries"][0]["id"] == key
-    result = execute(catalog.workspace, {"action": "search", "library_id": key, "query": "cats", "mode": "keyword"})
+    assert execute(catalog.workspace, {"action": "list"}, library_ids=(key,))["libraries"][0]["id"] == key
+    result = execute(catalog.workspace, {"action": "search", "library_id": key, "query": "cats", "mode": "keyword"}, library_ids=(key,))
     hit = result["matches"][0]
-    passage = execute(catalog.workspace, {"action": "read", "library_id": key, "chunk_id": hit["chunk_id"]})
+    passage = execute(catalog.workspace, {"action": "read", "library_id": key, "chunk_id": hit["chunk_id"]}, library_ids=(key,))
     assert passage["text"] == hit["text"]
 
 

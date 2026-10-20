@@ -61,7 +61,7 @@ function toggle() {
         <span v-if="option.nextRunLabel" class="multi-select-badge is-next-run">{{ option.nextRunLabel }}</span>
       </span>
       <span v-if="option.description" class="multi-select-description">{{ option.description }}</span>
-      <span v-else-if="option.meta" class="multi-select-meta">{{ option.meta }}</span>
+      <span v-if="option.meta" class="multi-select-meta">{{ option.meta }}</span>
       <span v-if="option.dependencySummary" class="multi-select-meta">{{ option.dependencySummary }}</span>
       <span
         v-for="diagnostic in option.diagnosticLines"

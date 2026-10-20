@@ -43,7 +43,6 @@ PROVIDER_REGISTRATIONS: dict[str, ProviderRegistration] = {
         ProviderRegistration("kimi", "src.providers.kimi_agent", "KimiAgent"),
         ProviderRegistration("hyper3d", "src.providers.hyper3d_agent", "Hyper3DAgent"),
         ProviderRegistration("openai", "src.providers.openai_agent", "OpenAIAgent"),
-        ProviderRegistration("workbuddy", "src.providers.workbuddy_agent", "WorkBuddyAgent"),
         ProviderRegistration("grok", "src.providers.grok_agent", "GrokAgent"),
         ProviderRegistration("zhipu", "src.providers.zhipu_agent", "ZhipuAgent"),
     )

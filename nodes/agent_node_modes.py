@@ -43,6 +43,7 @@ CHAT_FIELDS = frozenset({
     "tools",
     "mcp_servers",
     "skills",
+    "knowledge_ids",
     "web_search",
     "thinking",
     "reasoning_effort",

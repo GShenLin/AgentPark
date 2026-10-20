@@ -72,7 +72,7 @@ Skill 用相对路径标识，例如 `Game/Design/combat`。同路径重复时�
 
 ```powershell
 python -m src.cli capabilities list --graph default --node YOUR_NODE --refresh --json
-python -m src.cli capabilities enable --kind skill --name knowledge --graph default --node YOUR_NODE
+python -m src.cli capabilities enable --kind skill --name YOUR_SKILL --graph default --node YOUR_NODE
 python -m src.cli config validate --graph default --node YOUR_NODE --json
 ```
 

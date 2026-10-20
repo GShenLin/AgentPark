@@ -1,5 +1,6 @@
 """Derive actionable recipients from task transitions, never from prose."""
 from .contracts import AgentGroup, GroupTask
+from .settings import read_group_settings
 
 
 def ready(group: AgentGroup, task: GroupTask) -> bool:
@@ -11,9 +12,10 @@ def ready(group: AgentGroup, task: GroupTask) -> bool:
 def task_actions(group: AgentGroup, task: GroupTask, previous: GroupTask | None = None,
                  *, actor_id: str | None = None) -> dict[str, list[str]]:
     actions = {}
+    policy = read_group_settings().task_notifications
     # Assignment or changed requirements need the owner. Routine evidence/status
     # edits remain visible on the board without waking unrelated specialists.
-    if task.owner_id != actor_id and ready(group, task) and (
+    if policy.assignment and task.owner_id != actor_id and ready(group, task) and (
         previous is None or previous.owner_id != task.owner_id
         or previous.title != task.title
         or previous.description != task.description
@@ -21,7 +23,7 @@ def task_actions(group: AgentGroup, task: GroupTask, previous: GroupTask | None 
         or (previous.status != task.status and task.status in ("todo", "in_progress"))
     ):
         actions.setdefault(task.owner_id, []).append(task.id)
-    if task.status == "done" and previous is not None and previous.status != "done":
+    if policy.dependency_ready and task.status == "done" and previous is not None and previous.status != "done":
         for dependent in group.tasks:
             if task.id in dependent.dependencies and ready(group, dependent):
                 actions.setdefault(dependent.owner_id, []).append(dependent.id)

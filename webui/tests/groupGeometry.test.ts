@@ -11,7 +11,7 @@ function node(id: string, x: number, y: number, width = 230, height = 250): Node
 function group(id: string, ids: string[], x = 0): AgentGroup {
   return { id, name: id, objective: '', bounds: { x, y: 0, width: 600, height: 500 },
     members: ids.map(node_id => ({ node_id, role: '' })), tasks: [], revision: 1, private: false,
-    dissolved: false, created_at: '', updated_at: '' }
+    leader_id: ids[0] ?? null, dissolved: false, created_at: '', updated_at: '' }
 }
 
 describe('group canvas membership', () => {

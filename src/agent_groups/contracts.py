@@ -74,6 +74,7 @@ class AgentGroup(Contract):
     objective: str = Field(default="", max_length=32000)
     bounds: GroupBounds
     members: list[GroupMember] = Field(default_factory=list)
+    leader_id: Identifier | None = None
     tasks: list[GroupTask] = Field(default_factory=list)
     revision: int = Field(default=1, ge=1)
     dissolved: bool = False
@@ -170,6 +171,11 @@ class MoveMember(Contract):
 class UpdateMemberRole(Contract):
     expected_role: str = Field(max_length=2000)
     role: str = Field(max_length=2000)
+
+
+class UpdateLeader(Contract):
+    expected_leader_id: Identifier | None
+    leader_id: Identifier
 
 
 class UpdatePlan(Contract):

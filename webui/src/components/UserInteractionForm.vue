@@ -1,139 +1,102 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
-import type { UserInteractionField, UserInteractionRequest } from '../api'
-import { uploadFiles, type UploadedFileItem } from '../uploadApi'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { getActiveApiBase, type UserInteractionRequest } from '../api'
+import { uploadFiles } from '../uploadApi'
+import { getInteractionDraft, saveInteractionDraft, validateInteractionDraft, type InteractionDraft } from '../interactionFormState'
 import ActionButton from './ActionButton.vue'
-import ExpandableTextarea from './ExpandableTextarea.vue'
-import { t } from '../i18n'
-import FormCheckbox from './FormCheckbox.vue'
-import FormSelect from './FormSelect.vue'
-import FormTextInput from './FormTextInput.vue'
+import UserInteractionField from './UserInteractionField.vue'
 
-const props = defineProps<{
-  request: UserInteractionRequest
-  submitting?: boolean
-  error?: string
-}>()
-
+const props = defineProps<{ request: UserInteractionRequest; submitting?: boolean; error?: string }>()
 const emit = defineEmits<{
-  submit: [response: Record<string, unknown>]
+  submit: [response: Record<string, unknown>, requestId: string]
+  cancel: [requestId: string]
   error: [message: string]
 }>()
+const draft = ref<InteractionDraft | null>(null)
+const fieldErrors = ref<Record<string, string>>({})
+const uploading = ref(false)
+const draftError = ref('')
+const scope = getActiveApiBase()
+const fields = computed(() => props.request.schema.fields)
+const busy = computed(() => props.submitting || uploading.value)
 
-const values = reactive<Record<string, unknown>>({})
-const selectedFiles = reactive<Record<string, File[]>>({})
-const uploaded = reactive<Record<string, UploadedFileItem[]>>({})
-const fields = computed(() => props.request.schema?.fields || [])
-const graphLabel = computed(() => String(props.request.agent?.graph_id || '').trim())
-const nodeLabel = computed(() => String(props.request.agent?.node_name || props.request.agent?.node_id || '').trim())
+watch(() => props.request.id, () => {
+  fieldErrors.value = {}
+  draftError.value = ''
+  try { draft.value = reactive(getInteractionDraft(props.request, scope, localStorage)) }
+  catch (error) { draft.value = null; draftError.value = String(error) }
+}, { immediate: true })
 
-function fieldKey(field: UserInteractionField) {
-  return String(field.id || '').trim()
-}
+watch(draft, value => {
+  if (!value) return
+  try { saveInteractionDraft(props.request.id, scope, value, localStorage); draftError.value = '' }
+  catch (error) { draftError.value = `草稿保存失败：${String(error)}` }
+}, { deep: true, flush: 'sync' })
 
-function defaultValue(field: UserInteractionField) {
-  if (field.default !== undefined) return field.default
-  if (field.type === 'checkbox') return false
-  if (field.type === 'multiselect') return []
-  return ''
-}
-
-function resetForm() {
-  for (const key of Object.keys(values)) delete values[key]
-  for (const key of Object.keys(selectedFiles)) delete selectedFiles[key]
-  for (const key of Object.keys(uploaded)) delete uploaded[key]
-  for (const field of fields.value) {
-    const key = fieldKey(field)
-    if (!key) continue
-    values[key] = defaultValue(field)
-    selectedFiles[key] = []
-    uploaded[key] = []
-  }
-}
-
-function stringValue(field: UserInteractionField) {
-  const value = values[fieldKey(field)]
-  return typeof value === 'string' || typeof value === 'number' ? value : ''
-}
-
-function setTextValue(field: UserInteractionField, value: string) {
-  values[fieldKey(field)] = value
-}
-
-function setFiles(field: UserInteractionField, event: Event) {
-  selectedFiles[fieldKey(field)] = Array.from((event.target as HTMLInputElement).files || [])
-}
-
-function toggleMulti(field: UserInteractionField, optionValue: string) {
-  const key = fieldKey(field)
-  const current = Array.isArray(values[key]) ? [...(values[key] as string[])] : []
-  const index = current.indexOf(optionValue)
-  if (index >= 0) current.splice(index, 1)
-  else current.push(optionValue)
-  values[key] = current
-}
-
-function isMultiSelected(field: UserInteractionField, optionValue: string) {
-  const current = values[fieldKey(field)]
-  return Array.isArray(current) && current.includes(optionValue)
-}
-
-async function buildResponse() {
-  const filesPayload: Record<string, UploadedFileItem[]> = {}
-  const valuesPayload: Record<string, unknown> = { ...values }
-  for (const field of fields.value) {
-    if (field.type !== 'file') continue
-    const key = fieldKey(field)
-    const result = await uploadFiles(selectedFiles[key] || [], `interaction-${props.request.id}-${key}`)
-    uploaded[key] = result.files
-    filesPayload[key] = result.files
-  }
-  return {
-    values: valuesPayload,
-    files: filesPayload,
-    submitted_at: new Date().toISOString(),
-  }
+function selectFiles(id: string, files: File[]) {
+  if (!draft.value) return
+  draft.value.uploaded[id] = []
+  draft.value.selectedFiles[id] = files
 }
 
 async function submitForm() {
-  if (props.submitting) return
+  if (busy.value || !draft.value || props.request.status !== 'pending') return
+  const request = props.request, current = draft.value
+  fieldErrors.value = validateInteractionDraft(request.schema.fields, current)
+  if (Object.keys(fieldErrors.value).length) return
+  uploading.value = true
   try {
-    emit('submit', await buildResponse())
-  } catch (error) {
-    emit('error', error instanceof Error ? error.message : String(error))
-  }
+    for (const field of request.schema.fields) {
+      if (field.type !== 'file' || !current.selectedFiles[field.id]?.length) continue
+      const result = await uploadFiles(current.selectedFiles[field.id]!, `interaction-${request.id}-${field.id}`)
+      current.uploaded[field.id] = result.files
+      current.selectedFiles[field.id] = []
+    }
+    saveInteractionDraft(request.id, scope, current, localStorage)
+    emit('submit', { values: { ...current.values }, files: { ...current.uploaded } }, request.id)
+    await nextTick()
+  } catch (error) { emit('error', error instanceof Error ? error.message : String(error)) }
+  finally { uploading.value = false }
 }
-
-watch(() => props.request.id, resetForm, { immediate: true })
 </script>
 
 <template>
-  <p v-if="request.schema.description" class="interaction-description">{{ request.schema.description }}</p>
-  <div v-if="graphLabel || nodeLabel" class="interaction-agent">
-    <span v-if="graphLabel">Graph：{{ graphLabel }}</span>
-    <span v-if="nodeLabel">节点：{{ nodeLabel }}</span>
-  </div>
-
-  <div class="interaction-fields">
-    <label v-for="field in fields" :key="field.id" class="interaction-field">
-      <span class="interaction-label">{{ field.label }}<b v-if="field.required">*</b></span>
-      <small v-if="field.description">{{ field.description }}</small>
-      <FormTextInput v-if="field.type === 'text'" :model-value="stringValue(field)" :placeholder="field.placeholder || ''" :required="field.required" @update:model-value="setTextValue(field, $event)" />
-      <ExpandableTextarea v-else-if="field.type === 'textarea'" :model-value="String(stringValue(field))" :placeholder="field.placeholder || ''" :aria-label="field.label" :required="field.required" @update:model-value="setTextValue(field, $event)" />
-      <FormSelect v-else-if="field.type === 'select'" :model-value="stringValue(field)" :required="field.required" @change="setTextValue(field, $event)">
-        <option value="" disabled>{{ t('common.choose') }}</option>
-        <option v-for="option in field.options || []" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label || option.value }}</option>
-      </FormSelect>
-      <div v-else-if="field.type === 'multiselect'" class="interaction-options">
-        <button v-for="option in field.options || []" :key="option.value" type="button" :disabled="option.disabled" :class="{ selected: isMultiSelected(field, option.value) }" @click="toggleMulti(field, option.value)">{{ option.label || option.value }}</button>
-      </div>
-      <FormCheckbox v-else-if="field.type === 'checkbox'" :model-value="Boolean(values[field.id])" @update:model-value="values[field.id] = $event" />
-      <input v-else-if="field.type === 'file'" type="file" :accept="field.accept || undefined" :multiple="field.multiple" :required="field.required" @change="setFiles(field, $event)" />
-    </label>
-  </div>
-
-  <div v-if="error" class="interaction-error">{{ error }}</div>
-  <footer class="interaction-actions">
-    <ActionButton variant="primary" :disabled="submitting" @click="submitForm">{{ submitting ? '提交中…' : request.schema.confirm_label || '确认' }}</ActionButton>
-  </footer>
+  <form class="interaction-form" novalidate @submit.prevent="submitForm">
+    <div class="interaction-agent">
+      <span v-if="request.agent?.node_name || request.agent?.node_id">{{ request.agent.node_name || request.agent.node_id }}</span>
+      <span v-if="request.agent?.graph_id">{{ request.agent.graph_id }}</span>
+    </div>
+    <p v-if="request.schema.description" class="interaction-description">{{ request.schema.description }}</p>
+    <div v-if="request.desktop?.status === 'failed'" class="interaction-error" role="alert">独立窗口未能打开：{{ request.desktop.error }}</div>
+    <fieldset v-if="draft" class="interaction-fields" :disabled="busy || request.status !== 'pending'">
+      <UserInteractionField v-for="field in fields" :key="`${request.id}:${field.id}`" :field="field" :value="draft.values[field.id]"
+        :error="fieldErrors[field.id]" :files="[...(draft.uploaded[field.id] || []), ...(draft.selectedFiles[field.id] || [])].map(file => file.name)"
+        @value="draft.values[field.id] = $event; delete fieldErrors[field.id]" @files="selectFiles(field.id, $event)" />
+    </fieldset>
+    <div v-if="error || draftError" class="interaction-error" role="alert">{{ error || draftError }}</div>
+    <footer class="interaction-actions">
+      <ActionButton :disabled="busy" @click="emit('cancel', request.id)">取消请求</ActionButton>
+      <ActionButton type="submit" variant="primary" :disabled="busy || !draft || request.status !== 'pending'">
+        {{ uploading ? '正在准备提交…' : submitting ? '正在提交…' : request.schema.confirm_label }}
+      </ActionButton>
+    </footer>
+  </form>
 </template>
+
+<style scoped>
+.interaction-form { display: flex; flex-direction: column; min-height: 0; gap: 14px; }
+.interaction-agent { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.interaction-agent span { border: 1px solid var(--ui-dialog-border); padding: 3px 8px; border-radius: 6px; }
+.interaction-description { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.interaction-fields { display: grid; gap: 18px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.interaction-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid var(--ui-dialog-border); }
+.interaction-error, :deep(.interaction-field-error) { color: var(--text-danger, #ef7070); overflow-wrap: anywhere; }
+:deep(.interaction-field) { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+:deep(.interaction-field small) { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+:deep(.interaction-label) { display: flex; align-items: baseline; gap: 8px; font-weight: 600; }
+:deep(.interaction-required) { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+:deep(.interaction-options) { display: flex; flex-wrap: wrap; gap: 8px; }
+:deep(.interaction-options button) { padding: 7px 12px; color: inherit; background: var(--ui-control-background); border: 1px solid var(--ui-control-border); border-radius: 7px; }
+:deep(.interaction-options button.selected) { border-color: var(--ui-primary-border, #3b82f6); background: var(--ui-primary-background); }
+:deep(.interaction-options button:disabled) { opacity: .5; }
+</style>

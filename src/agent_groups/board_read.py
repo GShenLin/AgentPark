@@ -63,7 +63,7 @@ def board_overview(group: AgentGroup, command: ReadBoard):
               "evidence_chars": len(t.evidence), "dependency_count": len(t.dependencies),
               "unfinished_dependency_count": sum(states[dep] != "done" for dep in t.dependencies)}
              for t in group.tasks]
-    return {"id": group.id, "name": group.name, "revision": group.revision,
+    return {"id": group.id, "name": group.name, "revision": group.revision, "leader_id": group.leader_id,
             "objective_chars": len(group.objective),
             "members": page(members, command.member_offset, command.limit),
             "tasks": page(tasks, command.task_offset, command.limit),

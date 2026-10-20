@@ -856,6 +856,7 @@ def test_companion_mcp_endpoint_exposes_requested_tools(monkeypatch, tmp_path):
         "connect_node",
         "disconnect_node",
         "get_companion_meta",
+        "get_knowledge",
         "get_node_last_message",
         "get_node_memory",
         "get_working_node",

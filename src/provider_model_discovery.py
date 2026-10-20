@@ -87,12 +87,6 @@ def discover_provider_models(provider: dict[str, Any], *, timeout_seconds: float
     endpoint = ""
     headers: dict[str, str] = {}
     try:
-        if provider_type == "workbuddy":
-            from src.workbuddy.gateway import WorkBuddyGateway
-            gateway = WorkBuddyGateway(provider)
-            model_ids = [model.id for model in gateway.catalog().data]
-            return _model_result(True, tested_at=tested_at, endpoint=gateway.origin + "/workbuddy/models",
-                                 model_ids=model_ids, status_code=200)
         endpoint = _models_endpoint(provider, provider_type, timeout_seconds=timeout_seconds)
         if not endpoint:
             return _model_result(False, tested_at=tested_at, reason=f"provider type '{provider_type}' has no model discovery endpoint")
@@ -255,7 +249,7 @@ def _validate_model_config(provider: dict[str, Any], provider_type: str) -> str:
     if _is_codex_auth_provider(provider):
         if provider_type != "openai":
             return "provider.authMode 'codex' requires provider.type 'openai'"
-    elif provider_type != "workbuddy" and not str(provider.get("apiKey") or "").strip():
+    elif not str(provider.get("apiKey") or "").strip():
         return "provider.apiKey is required"
     if not str(provider.get("baseUrl") or "").strip():
         return "provider.baseUrl is required"

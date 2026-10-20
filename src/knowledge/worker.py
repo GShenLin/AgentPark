@@ -12,8 +12,8 @@ from .scanner import Interrupted, check_stop, prune, scan
 
 def run_pipeline(workspace: str, key: str, stop):
     catalog = Catalog(Path(workspace))
-    config = catalog.get(key)
-    store = Database(catalog.directory(key))
+    config, directory = catalog.resolve(key)
+    store = Database(directory)
     store.initialize()
     try:
         with store.connect() as db:

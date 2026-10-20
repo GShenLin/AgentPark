@@ -47,7 +47,6 @@ const emit = defineEmits<{
       <option value="alpha_matting">alpha_matting</option>
       <option value="agnes">agnes</option>
       <option value="openai">openai</option>
-      <option value="workbuddy">WorkBuddy</option>
       <option value="claude">claude</option>
       <option value="deepseek">deepseek</option>
       <option value="doubao">doubao</option>
@@ -64,7 +63,7 @@ const emit = defineEmits<{
     <small v-if="authMode === 'none'">No credentials; the endpoint must use an HTTP loopback address.</small>
   </label>
   <ApiKeyAliasField
-    v-if="providerType !== 'workbuddy' && !['codex', 'oauth', 'none'].includes(authMode)"
+    v-if="!['codex', 'oauth', 'none'].includes(authMode)"
     :model-value="apiKey"
     @update:model-value="emit('field', 'apiKey', $event)"
   />
@@ -89,7 +88,7 @@ const emit = defineEmits<{
     <small>References the Secret Access Key in .auth/api-keys/aliases.json.</small>
   </label>
   <ProviderOfficialAuthControl
-    v-if="authMode !== 'none' && providerType !== 'workbuddy'"
+    v-if="authMode !== 'none'"
     :enabled="true"
     :show-toggle="false"
     :show-status="true"

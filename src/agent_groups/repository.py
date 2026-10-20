@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .contracts import AgentGroup, GroupConflict, GroupNotFound, GroupPermissionError
-from .migrations import upgrade_task_notifications
+from .migrations import upgrade_task_notifications, upgrade_group_leaders
 
 
 def timestamp() -> str:
@@ -32,7 +32,7 @@ class GroupRepository:
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4):
+            if version not in (0, 1, 2, 3, 4, 5):
                 raise GroupConflict(f"unsupported group store version: {version}")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS groups (
@@ -91,6 +91,8 @@ class GroupRepository:
 
             if version < 4:
                 upgrade_task_notifications(db)
+            if version < 5:
+                upgrade_group_leaders(db)
 
     @contextmanager
     def connect(self):

@@ -46,6 +46,7 @@ const hasSearch = computed(() => searchText.value.length > 0)
 const availableOpen = ref(false)
 const itemName = computed(() => {
   const emptyText = props.emptyText.toLowerCase()
+  if (emptyText.includes('knowledge')) return 'knowledge libraries'
   if (emptyText.includes('skill')) return 'skills'
   if (emptyText.includes('tool')) return 'tools'
   if (emptyText.includes('plugin')) return 'plugins'
@@ -127,7 +128,7 @@ function normalizeOption(option: OptionItem): DisplayOption {
   const label = String(option.label || value).trim()
   const { title, description: labelDescription } = splitLabel(label, value)
   const description = String(option.description || '').trim() || labelDescription
-  const meta = shouldShowMeta(value, title, description) ? value : ''
+  const meta = option.kind === 'knowledge' || shouldShowMeta(value, title, description) ? value : ''
   const status = String(option.status || '').trim()
   const isDraftSelected = selectedSet.value.has(value)
   const hasPersistedEnabled = typeof option.enabled === 'boolean'

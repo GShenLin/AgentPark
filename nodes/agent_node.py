@@ -12,6 +12,7 @@ from nodes.agent_node_contract import (
 from nodes.agent_assistant_memory import persist_provider_turn_metadata
 from nodes.agent_history import load_agent_history_messages
 from nodes.agent_skill_activation import bind_deferred_skills
+from src.knowledge.node_access import render_node_knowledge
 from nodes.agent_gateway_usage import build_agent_gateway_usage_recorder
 from nodes.agent_message_adapter import (
     append_channel_meta,
@@ -208,6 +209,7 @@ class Node(BaseNode):
                 node_type_id="agent_node",
                 node_directory=agent_dir,
                 workspace_root=get_workspace_root(),
+                knowledge_ids=tuple(item["id"] for item in capability_plan.knowledge_libraries),
                 working_path=run_request.working_path,
                 remote_enabled=run_request.remote_enabled,
                 remote_worker_id=run_request.remote_worker_id,
@@ -277,12 +279,15 @@ class Node(BaseNode):
                 settings=mcp_settings,
                 role=instruction_role,
             )
+        agent._agentpark_knowledge_context = render_node_knowledge(list(capability_plan.knowledge_libraries))
         bind_deferred_skills(
             agent,
             skill_definitions,
             role=instruction_role,
             mcp_settings=mcp_settings,
         )
+        if capability_plan.knowledge_libraries:
+            agent._agentpark_skill_runtime.change("knowledge", active=True)
         goal_context = node_goal_context(run_request.config_data or ctx)
         if goal_context:
             agent.Message("user", goal_context, persist=False)

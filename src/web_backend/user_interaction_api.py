@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException, Request
 
 from .domain_base import DomainBase
+from src.user_interaction_schema import InteractionValidationError
 from src.user_interaction_store import (
     list_interaction_requests,
     read_interaction_request,
@@ -11,6 +12,14 @@ from src.user_interaction_store import (
 
 
 class UserInteractionApiDomain(DomainBase):
+    def get_user_interaction(self, request_id: str, request: Request = None):
+        try:
+            interaction = read_interaction_request(request_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "interaction request not found") from exc
+        self._require_interaction_visible(interaction, request)
+        return {"request": interaction}
+
     def _require_interaction_visible(self, interaction: dict, request: Request | None) -> None:
         if request is None:
             return
@@ -48,11 +57,15 @@ class UserInteractionApiDomain(DomainBase):
         body = payload if isinstance(payload, dict) else {}
         response = body.get("response") if isinstance(body.get("response"), dict) else body
         status = str(body.get("status") or "submitted")
+        if status not in {"submitted", "cancelled"}:
+            raise HTTPException(422, "status must be submitted or cancelled")
         try:
             self._require_interaction_visible(read_interaction_request(request_id), request)
             completed_request = submit_interaction_response(request_id, response, status=status)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InteractionValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except HTTPException:

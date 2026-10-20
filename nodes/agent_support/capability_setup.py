@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 import os
 from typing import Any, Callable
 
@@ -15,10 +16,13 @@ from nodes.agent_skill_loader import (
     load_skill_directory,
 )
 from nodes.agent_tool_loader import TOOL_NAME_LIST
+from src.knowledge.node_access import knowledge_ids, selected_libraries
+from src.workspace_settings import get_workspace_root
 
 
 @dataclass(frozen=True)
 class AgentCapabilityPlan:
+    knowledge_libraries: tuple[dict, ...] = ()
     plugin_names: tuple[str, ...] = ()
     selected_skill_definitions: tuple[SkillDefinition, ...] = ()
     plugin_capabilities: PluginCapabilitySet = field(default_factory=PluginCapabilitySet)
@@ -37,10 +41,18 @@ def resolve_agent_capabilities(
     plugin_names = PLUGIN_NAME_LIST.parse(setting("plugins", []))
     tool_names = TOOL_NAME_LIST.parse(setting("tools", []))
     plugin_capabilities = resolve_plugins(plugin_names, node_id=node_id)
+    libraries = selected_libraries(Path(get_workspace_root()), knowledge_ids(setting("knowledge_ids", [])))
+    # Knowledge has one owner: the node's library selection, including when plugins refer to it.
+    plugin_capabilities = replace(plugin_capabilities,
+        skill_definitions=tuple(skill for skill in plugin_capabilities.skill_definitions if skill.name != "knowledge"))
     selected_skill_names = SKILL_NAME_LIST.parse([
         *SKILL_NAME_LIST.parse(setting("skills", [])), *plugin_capabilities.skills,
     ])
+    selected_skill_names = [name for name in selected_skill_names if name != "knowledge"]
     selected_skill_definitions = load_skills(selected_skill_names, node_id=node_id)
+    if libraries:
+        selected_skill_definitions.append(load_skill_directory(
+            os.path.join(default_skill_root(), "knowledge"), node_id=node_id))
     selected_names = {skill.name for skill in selected_skill_definitions}
     selected_names.update(skill.name for skill in plugin_capabilities.skill_definitions)
     for name in ("node-memory",):
@@ -64,6 +76,7 @@ def resolve_agent_capabilities(
     mcp_settings = merge_mcp_server_settings(plugin_skill_dependencies.mcp_server_configs, settings=mcp_settings)
 
     return AgentCapabilityPlan(
+        knowledge_libraries=tuple(libraries),
         plugin_names=tuple(plugin_names),
         selected_skill_definitions=tuple(selected_skill_definitions),
         plugin_capabilities=plugin_capabilities,

@@ -3,9 +3,9 @@ name: knowledge
 description: 检索 AgentPark 本地 PDF、Markdown、TXT、Word 和 Excel 知识库，读取原文并引用出处，按工作表和行范围执行可核对的表格统计。适用于笔记库、论文、内部文档和表格数据问答。
 ---
 
-启用一个 knowledge Skill 后，使用以下工具：
+节点配置的 Knowledge 区域勾选知识库后，会自动启用本技能。当前已选库的名称和 ID 位于运行时提供的 `node_knowledge` 列表中；调用工具时将选中的 ID 填入 `library_id`，多个知识库分别查询。未勾选任何库时不启用本技能。
 
-- `skill__knowledge__list`：无需参数时获取开放的知识库；传 `library_id` 时列出文档及 `document_id`，用 `after` / `limit` 分页。
+- `skill__knowledge__list`：无需参数时获取当前节点勾选且允许 Agent 访问的知识库；传 `library_id` 时列出文档及 `document_id`，用 `after` / `limit` 分页。
 - `skill__knowledge__search`：传入 `library_id`、`query` 检索资料，默认 `mode=hybrid`、`limit=10`。
 - `skill__knowledge__read`：传 `library_id` 和 `chunk_id` 回读索引片段；或传 `document_id` 分页读取源文档，二者不可同时指定。Word/PDF/文本的 `offset` 是从零开始的片段偏移。Excel 首次不传 `sheet` 取得工作表列表，再指定 `sheet`；此时 `offset` 是从零开始的行偏移。用 `next_offset` 继续，不能把单页当作全文。
 - `skill__knowledge__table`：对 Excel 源文件执行过滤、分组和统计，参数及示例见 [表格计算](references/tables.md)。统计全表时使用它，不能用搜索命中的片段估算总量。

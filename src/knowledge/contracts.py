@@ -21,7 +21,7 @@ class LibraryConfig(BaseModel):
     max_file_mb: int = Field(default=256, ge=1, le=4096)
     max_page_chars: int = Field(default=200000, ge=10000, le=2000000)
     spreadsheet_header_row: int = Field(default=0, ge=0, le=1048576)
-    allow_agents: bool = True
+    allow_mcp: bool = True
 
     @field_validator("name", "embedding_model", "folder")
     @classmethod
@@ -37,9 +37,22 @@ class LibraryConfig(BaseModel):
         url = urlsplit(value)
         if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment:
             raise ValueError("use an HTTP(S) embeddings endpoint without credentials, query or fragment")
-        if url.path.endswith("/embeddings/multimodal"):
-            raise ValueError("当前客户端使用 OpenAI 文本 Embedding 协议，尚未实现多模态请求协议")
-        return value if url.path.endswith("/embeddings") else value + "/embeddings"
+        return value if url.path.endswith(("/embeddings", "/embeddings/multimodal")) else value + "/embeddings"
+
+    @property
+    def embedding_protocol(self) -> Literal["openai", "ark_multimodal"]:
+        return "ark_multimodal" if urlsplit(self.embedding_url).path.endswith("/embeddings/multimodal") else "openai"
+
+    @property
+    def embedding_identity(self) -> tuple[str, str]:
+        # Documented Ark Agent Plan alias, not a guess based on name similarity.
+        # https://docs.volcengine.com/docs/ark/agent-plan-personal-vectorized-models
+        host = urlsplit(self.embedding_url).hostname
+        if host == "ark.cn-beijing.volces.com" and self.embedding_model in {
+            "doubao-embedding-vision", "doubao-embedding-vision-251215",
+        }:
+            return ("ark", "doubao-embedding-vision-251215")
+        return ("model", self.embedding_model)
 
     @field_validator("api_key_alias")
     @classmethod

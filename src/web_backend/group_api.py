@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from src.agent_groups.contracts import (
     CreateGroup, CreateTask, GroupConflict, GroupError, GroupNotFound,
-    GroupPermissionError, MoveMember, PublishMessage, UpdateGroup, UpdateTask, UpdateMemberRole, UpdatePlan,
+    GroupPermissionError, MoveMember, PublishMessage, UpdateGroup, UpdateTask, UpdateMemberRole, UpdatePlan, UpdateLeader,
 )
 from src.agent_groups.membership import GroupMembership
 from src.agent_groups.messages import GroupMessages
@@ -102,6 +102,13 @@ class GroupApi:
         with group_errors():
             return GroupMembership(repo).update_plan(group_id, payload)
 
+    def update_leader(self, graph_id: str, group_id: str, payload: UpdateLeader, request: Request):
+        repo = self.repository(graph_id, request, write=True)
+        self.require_group(repo, graph_id, group_id, request)
+        self.core.node_ops.require_node_visible(payload.leader_id, graph_id, request)
+        with group_errors():
+            return GroupMembership(repo).set_leader(group_id, **payload.model_dump())
+
     def dissolve_group(self, graph_id: str, group_id: str, request: Request,
                        expected_revision: int = Query(ge=1)):
         repo = self.repository(graph_id, request, write=True)
@@ -171,6 +178,7 @@ def register_group_routes(app, core):
     router.add_api_route("/groups/{group_id}", api.get_group, methods=["GET"])
     router.add_api_route("/groups/{group_id}", api.update_group, methods=["PATCH"])
     router.add_api_route("/groups/{group_id}/plan", api.update_plan, methods=["PATCH"])
+    router.add_api_route("/groups/{group_id}/leader", api.update_leader, methods=["PATCH"])
     router.add_api_route("/groups/{group_id}", api.dissolve_group, methods=["DELETE"])
     router.add_api_route("/group-members/{node_id}", api.move_member, methods=["PUT"])
     router.add_api_route("/groups/{group_id}/members/{node_id}", api.update_member_role, methods=["PATCH"])

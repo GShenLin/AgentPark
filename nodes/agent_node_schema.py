@@ -7,6 +7,9 @@ from src.provider_selection_schema import provider_selection_schema
 from nodes.agent_node_modes import MODE_ORDER, capability_mode, modes_for_field
 from nodes.agent_image_generation_schema import materialize_image_generation_schema
 from nodes.agent_voice_schema import materialize_voice_schema
+from pathlib import Path
+from src.knowledge.node_access import library_options
+from src.workspace_settings import get_workspace_root
 
 
 def build_agent_config_schema(base_schema: dict, context: dict | None) -> dict:
@@ -47,6 +50,13 @@ def build_agent_config_schema(base_schema: dict, context: dict | None) -> dict:
         field_schema["type"] = "multiselect"
         field_schema["options"] = list((capability_payload.get(kind) or {}).get("available") or [])
         schema[field] = field_schema
+
+    schema["knowledge_ids"] = {
+        **schema.get("knowledge_ids", {}), "type": "multiselect", "label": "Knowledge",
+        "options": library_options(Path(get_workspace_root())),
+    }
+    schema["skills"]["options"] = [option for option in schema["skills"]["options"]
+                                    if option.get("value") != "knowledge"]
 
     for key, raw_field in tuple(schema.items()):
         field_schema = dict(raw_field or {})
@@ -95,7 +105,7 @@ def build_agent_config_schema(base_schema: dict, context: dict | None) -> dict:
                     ]
         schema[field] = field_schema
 
-    terminal_keys = ("tools", "mcp_servers", "skills", "plugins")
+    terminal_keys = ("tools", "mcp_servers", "skills", "knowledge_ids", "plugins")
     ordered_schema = {
         key: value
         for key, value in schema.items()

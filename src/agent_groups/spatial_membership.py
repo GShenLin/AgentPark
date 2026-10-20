@@ -40,6 +40,8 @@ def reconcile(repo, db, group: AgentGroup, bounds: GroupBounds, nodes: list[Spat
         if node_id not in existing:
             member = GroupMember(node_id=node_id)
             group.members.append(member)
+            if group.leader_id is None:
+                group.leader_id = node_id
             group.private = group.private or node.private
             db.execute("INSERT INTO members VALUES(?,?)", (node_id, group.id))
             repo.save(db, group)

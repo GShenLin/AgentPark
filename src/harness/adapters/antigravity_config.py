@@ -19,6 +19,7 @@ class AntigravityRequest:
     model: str
     mode: str
     effort: str
+    auto_approve: bool
     cwd: str
     instruction: str
     timeout: float
@@ -43,6 +44,9 @@ def load_request(context: HarnessContext) -> AntigravityRequest:
         raise ValueError("Antigravity native_mode must be empty, plan or accept-edits.")
     if effort not in {"", "low", "medium", "high", "xhigh", "max"}:
         raise ValueError("Invalid Antigravity native_effort.")
+    auto_approve = values.get("native_auto_approve", False)
+    if not isinstance(auto_approve, bool):
+        raise ValueError("Antigravity native_auto_approve must be a boolean.")
     timeout = values.get("timeout_seconds", 900)
     if isinstance(timeout, bool) or not isinstance(timeout, (float, int)) or not math.isfinite(timeout) or not 1 <= timeout <= 86400:
         raise ValueError("Antigravity timeout_seconds must be between 1 and 86400.")
@@ -57,5 +61,6 @@ def load_request(context: HarnessContext) -> AntigravityRequest:
         cwd = root / "workspace"
         cwd.mkdir(exist_ok=True)
     state = resolve_state_directory(root, previous_binding=[model, str(cwd)])
-    return AntigravityRequest(model, mode, effort, str(cwd), fields["instruction"], float(timeout), state,
-                              context.values.get("cancel_event") or context.values.get("cancel_check"))
+    return AntigravityRequest(model=model, mode=mode, effort=effort, auto_approve=auto_approve,
+        cwd=str(cwd), instruction=fields["instruction"], timeout=float(timeout), state_dir=state,
+        cancel_source=context.values.get("cancel_event") or context.values.get("cancel_check"))

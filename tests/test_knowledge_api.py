@@ -23,7 +23,7 @@ def setup(tmp_path):
     folder.mkdir()
     add_api_key_alias(api_key_store_path(str(tmp_path)), name="shared-key", api_key="example-secret")
     config = LibraryConfig(name="test", folder=str(folder), embedding_url="http://localhost:1234/v1",
-                           embedding_model="local", dimensions=8, api_key_alias="shared-key", allow_agents=True)
+                           embedding_model="local", dimensions=8, api_key_alias="shared-key", allow_mcp=True)
     yield service, app, config
     service.close()
 
@@ -45,7 +45,9 @@ def test_api_owner_gate_secret_retention_and_validation(setup):
     assert service.catalog.get(key).api_key_alias == "shared-key"
     assert service.catalog.get(key).retry_interval_seconds == 12
     assert local.get("/api/knowledge").json()["libraries"][0]["retry_interval_seconds"] == 12
-    assert local.put(f"/api/knowledge/{key}", json={**payload, "dimensions": 16}).status_code == 400
+    changed = local.put(f"/api/knowledge/{key}", json={**payload, "dimensions": 16})
+    assert changed.status_code == 200
+    assert changed.json()['index_changed'] is True
     assert local.post(f"/api/knowledge/{key}/search", json={"query": "cats", "limit": 999}).status_code == 422
     assert local.get(f"/api/knowledge/{key}/documents?limit=100000").status_code == 422
 
@@ -96,13 +98,40 @@ def test_real_spawned_worker_and_restart_recovery(setup):
         assert result.json()["matches"][0]["path"] == "a.md"
         assert result.json()["partial"] is False
         assert client.post(f"/api/knowledge/{key}/test").json() == {"ok": True, "dimensions": 8}
-        assert execute(service.catalog.workspace, {"action": "search", "library_id": key, "query": "feline"})["matches"]
+        assert execute(service.catalog.workspace, {"action": "search", "library_id": key, "query": "feline"}, library_ids=(key,))["matches"]
         assert len(requests) == 5  # dimension detection, worker batch, API search, connection test, Skill search
         assert all(path == "/v1/embeddings" and auth == "Bearer example-secret" for path, auth in requests)
+        # Moving the same model to another endpoint must retain the indexed data.
+        before = store.status()
+        updated = client.put(f"/api/knowledge/{key}", json={
+            **config.model_dump(), "embedding_url": f"http://127.0.0.1:{server.server_port}/moved/v1/",
+            "api_key_alias": None,
+        })
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["id"] == key
+        assert store.status() == before
+        result = client.post(f"/api/knowledge/{key}/search", json={"query": "feline", "mode": "semantic"})
+        assert result.status_code == 200, result.text
+        assert result.json()["matches"][0]["path"] == "a.md"
+        assert requests[-1] == ("/moved/v1/embeddings", "Bearer example-secret")
     finally:
         service.close()
         server.shutdown()
         server.server_close()
+
+
+@pytest.mark.parametrize("state", ["queued", "running", "stopping"])
+def test_endpoint_update_requires_idle_worker(setup, state):
+    service, app, config = setup
+    key = service.catalog.create(config)["id"]
+    with service.store(key).connect() as db:
+        db.execute("UPDATE job SET status=?", (state,))
+    client = TestClient(app, client=("127.0.0.1", 5000))
+    response = client.put(f"/api/knowledge/{key}", json={
+        **config.model_dump(), "embedding_url": "http://localhost:5678/v1",
+    })
+    assert response.status_code == 409
+    assert service.catalog.get(key).embedding_url == config.embedding_url
 
 
 def test_single_workspace_writer_lease(setup):

@@ -15,7 +15,7 @@ class GroupMembership:
     def create(self, command: CreateGroup, *, private: bool = False) -> AgentGroup:
         now = timestamp()
         group = AgentGroup(id=uuid.uuid4().hex, name=command.name, objective=command.objective,
-                           bounds=command.bounds, members=command.members, private=private,
+                           bounds=command.bounds, members=command.members, leader_id=command.members[0].node_id, private=private,
                            created_at=now, updated_at=now)
         with self.repo.transaction() as db:
             for member in group.members:
@@ -83,6 +83,8 @@ class GroupMembership:
                 # Membership removal must never publish previously private collaboration history.
                 target.private = target.private or private
                 target.members.append(member)
+                if target.leader_id is None:
+                    target.leader_id = member.node_id
                 db.execute("INSERT INTO members VALUES(?,?)", (node_id, target.id))
                 self.repo.save(db, target)
                 self.repo.event(db, target, "member_joined", None, {"member": member.model_dump()}, recipients=[])
@@ -102,6 +104,21 @@ class GroupMembership:
             current.role = member.role
             self.repo.save(db, group)
             self.repo.event(db, group, "member_role_updated", None, {"member": member.model_dump()}, recipients=[])
+            return group
+
+    def set_leader(self, group_id: str, *, expected_leader_id: str | None, leader_id: str):
+        with self.repo.transaction() as db:
+            group = self.repo.read(db, group_id)
+            if group.leader_id != expected_leader_id:
+                raise GroupConflict("组长已被修改，请刷新后重试。")
+            if leader_id not in {member.node_id for member in group.members}:
+                raise GroupConflict("只能将当前组员设为组长。")
+            if group.leader_id == leader_id:
+                return group
+            group.leader_id = leader_id
+            self.repo.save(db, group)
+            self.repo.event(db, group, "group_leader_changed", None,
+                            {"leader_id": leader_id}, recipients=[])
             return group
 
     def dissolve(self, group_id: str, expected_revision: int):

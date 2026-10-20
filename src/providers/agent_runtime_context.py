@@ -18,6 +18,7 @@ class AgentRuntimeContext:
     node_type_id: str = ""
     node_directory: str = ""
     workspace_root: str = ""
+    knowledge_ids: tuple[str, ...] = ()
     working_path: str = ""
     remote_enabled: bool = False
     remote_worker_id: str = ""
@@ -47,6 +48,7 @@ class AgentRuntimeContext:
             node_type_id=self.node_type_id,
             node_directory=self.node_directory,
             workspace_root=self.workspace_root,
+            knowledge_ids=tuple(self.knowledge_ids),
             working_path=self.working_path,
             remote_enabled=bool(self.remote_enabled),
             remote_worker_id=self.remote_worker_id,

@@ -4,7 +4,7 @@ import { gridPositionToBoardPoint, type BoardGridSettings } from '../components/
 import { nodeCardHeight, nodeCardWidth } from '../components/agent-board/boardModel'
 
 export function groupBounds(nodes: NodeCard[], grid: BoardGridSettings): GroupBounds {
-  if (!nodes.length) throw new Error('请选择需要分组的 Agent。')
+  if (!nodes.length) throw new Error('请选择需要分组的节点。')
   const rects = nodes.map(node => ({ ...gridPositionToBoardPoint(node.ui, grid),
     width: Math.ceil(nodeCardWidth(node) / grid.cellWidth) * grid.cellWidth,
     height: Math.ceil(nodeCardHeight(node) / grid.cellHeight) * grid.cellHeight }))

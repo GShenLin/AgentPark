@@ -9,12 +9,10 @@ const error = ref('')
 const activeRequest = interactions.activeRequest
 const submitting = computed(() => interactions.submittingRequestId.value === activeRequest.value?.id)
 
-async function submitActive(response: Record<string, unknown>) {
-  const request = activeRequest.value
-  if (!request) return
+async function submitActive(response: Record<string, unknown>, requestId: string, status: 'submitted' | 'cancelled' = 'submitted') {
   error.value = ''
   try {
-    await interactions.submitResponse(request.id, response)
+    await interactions.submitResponse(requestId, response, status)
   } catch (submitError) {
     error.value = submitError instanceof Error ? submitError.message : String(submitError)
   }
@@ -40,7 +38,8 @@ watch(() => activeRequest.value?.id, () => { error.value = '' })
         <ActionButton compact @click="interactions.showNext">下一项</ActionButton>
       </div>
       <div class="mobile-interaction-content">
-        <UserInteractionForm :request="activeRequest" :submitting="submitting" :error="error" @submit="submitActive" @error="error = $event" />
+        <UserInteractionForm :request="activeRequest" :submitting="submitting" :error="error" @submit="submitActive"
+          @cancel="submitActive({ error: '用户取消了交互请求' }, $event, 'cancelled')" @error="error = $event" />
       </div>
     </section>
   </div>

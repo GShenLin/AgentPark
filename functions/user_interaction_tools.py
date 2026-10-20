@@ -6,9 +6,10 @@ from typing import Any
 
 from src.tool.tool_json_response import tool_json_payload
 from src.tool.tool_event_protocol import RuntimeNoticeEvent
+from src.user_interaction_schema import normalize_interaction_schema
 from src.user_interaction_store import (
+    close_pending_interaction,
     create_interaction_request,
-    normalize_interaction_schema,
     wait_for_interaction_response,
 )
 
@@ -63,7 +64,10 @@ def ask_user(
     timeout_sec: int = 600,
     agent: object | None = None,
 ) -> str:
+    request = None
     try:
+        if not callable(getattr(agent, "tool_event_callback", None)):
+            raise RuntimeError("ask_user requires an active WebUI event channel")
         schema = normalize_interaction_schema(
             title=title,
             description=description,
@@ -79,6 +83,8 @@ def ask_user(
             stage=f"user_interaction_{str(completed.get('status') or 'closed').strip().lower()}",
         )
     except Exception as exc:
+        if request is not None:
+            close_pending_interaction(request["id"], f"交互请求执行失败：{exc}")
         return tool_json_payload({"status": "error", "tool": "ask_user", "error": f"{type(exc).__name__}: {exc}"})
 
     status = str(completed.get("status") or "").strip().lower()
@@ -132,8 +138,12 @@ ask_user_declaration = {
     "function": {
         "name": "ask_user",
         "description": (
-            "Ask the user for additional information through the WebUI. "
+            "Ask the user for information using AgentPark's user_interaction_tools toolset. "
+            "The backend opens an independent desktop interaction widget on supported local desktops, "
+            "so the user can respond even when the main page is closed or unfocused; "
+            "pending requests are also available in the WebUI. "
             "Use this when you need text, choices, or file attachments from the user before continuing. "
+            "This is a user-input tool, not desktop automation: it cannot click or control other applications. "
             "The call waits until the user confirms the dialog or the request times out."
         ),
         "parameters": {
@@ -146,9 +156,12 @@ ask_user_declaration = {
                     "type": "integer",
                     "description": "Maximum seconds to wait for the user. Default 600, max 3600.",
                     "default": 600,
+                    "minimum": 1,
+                    "maximum": 3600,
                 },
                 "fields": {
                     "type": "array",
+                    "maxItems": 20,
                     "description": "UI fields to render: text, textarea, select, multiselect, checkbox, file.",
                     "items": {
                         "type": "object",
@@ -165,6 +178,8 @@ ask_user_declaration = {
                             "default": {"description": "Default value for text, textarea, select, multiselect, or checkbox."},
                             "options": {
                                 "type": "array",
+                                "minItems": 1,
+                                "maxItems": 100,
                                 "description": "Required for select and multiselect fields.",
                                 "items": {
                                     "type": "object",

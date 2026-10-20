@@ -369,6 +369,7 @@ export type UserInteractionRequest = {
     node_name?: string
   }
   response?: Record<string, unknown> | null
+  desktop?: { status: 'opening' | 'opened' | 'failed'; error: string }
 }
 
 export type RuntimeToolCall = {

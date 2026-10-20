@@ -2,13 +2,13 @@
 
 ## Requested outcome
 
-Groups are persistent task boards, not agents. Marquee-select agents and press G
+Groups are persistent task boards, not agents. Marquee-select nodes of any type and press G
 to group; select an existing group's members and press G again to dissolve it.
-The Graph panel lists groups and can dissolve them without deleting agents.
-A rectangular canvas frame encloses members. Dropping an agent into/out of that
+The Graph panel lists groups and can dissolve them without deleting nodes.
+A rectangular canvas frame encloses members. Dropping a node into/out of that
 frame joins/leaves the group. Clicking empty space inside opens the task board.
 The board shows the plan, tasks, members' live work, and a message composer.
-User messages broadcast to the members. Members receive group context and tools
+User messages default to the group's leader; explicit broadcasts still reach all members. Members receive group context and tools
 to communicate, create/claim/update tasks, and notify teammates of changes.
 
 ## Boundaries and contracts
@@ -22,8 +22,21 @@ to communicate, create/claim/update tasks, and notify teammates of changes.
   tool callers cannot supply another actor. Membership is rechecked on every call.
 - Frontend: typed API/state, group geometry and selection behavior, canvas frames,
   shared board panel, Graph group list. Existing node selection/drag stays intact.
-- One agent belongs to at most one group within its graph. Moving between groups
-  is atomic. Group deletion dissolves membership but never deletes agents.
+- One node belongs to at most one group within its graph. Moving between groups
+  is atomic. Group deletion dissolves membership but never deletes nodes.
+- `leader_id` identifies an ordinary member as the default recipient, without extra permissions.
+  Creation and store version 5 migration persist the first member as leader. Leader changes
+  compare `expected_leader_id` independently of task revisions and produce audit-only events.
+  Departure selects the first remaining member; rename preserves the selection. Empty groups
+  have no leader, and the next member added becomes leader. User default routing resolves inside
+  the message transaction, while retries retain the first event's recipient. Previously queued
+  messages keep their original targets. `broadcast_reason` explicitly selects all members.
+- `settings.py` defines strict workspace-wide policy and prompt contracts; `prompt_defaults.py`
+  owns built-in instructions. Settings API exposes `group` through the existing document editor,
+  with atomic UTF-8 persistence to `config/group.json`. Invalid configuration is reported.
+  New task transitions read notification policy; agent binding and notification rendering read
+  editable instructions. Tool parameter schemas, authorization and task validation stay fixed.
+  Membership accepts all node types; only nodes implementing group tool binding receive those tools.
 - Persist groups separately from graph presentation configuration so a stale
   canvas save cannot overwrite agent-authored task/message updates.
 - Store mutations and recipient outbox entries in one SQLite transaction. Use

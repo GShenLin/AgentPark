@@ -103,3 +103,28 @@ def test_unconfigured_reference_remains_readable_in_settings(companion):
     path, _ = companion
     path.write_text('{"profile_id":"deleted"}', encoding="utf-8")
     assert SettingsApiDomain(SimpleNamespace()).get_settings_section("companion")["data"] == {"profile_id": "deleted"}
+
+
+def test_settings_select_preset_from_inline_config(companion):
+    path, preset = companion
+    preset_before = preset.read_text()
+    local = {"node_id": "Companion", "graph_id": "Companion", "type_id": "agent_node",
+             "working_path": "local-directory", "ui": {"grid_x": 2, "grid_y": 3}}
+    inline = {**local, "provider_id": "old", "model": "old-model", "tools": ["old-tool"],
+              "asr_audio_bits": 16, "system_prompt": "Old instructions"}
+    path.write_text(json.dumps(inline), encoding="utf-8")
+    domain = SettingsApiDomain(SimpleNamespace())
+    document = domain.get_settings_section("companion")
+    assert document["data"] == local
+    assert json.loads(document["content"]) == local
+    assert document["warnings"]
+    assert json.loads(path.read_text()) == inline  # Reading never rewrites user settings.
+    selected = {**json.loads(document["content"]), "profile_id": "Companion"}
+    domain.update_settings_section("companion", {"content": json.dumps(selected)})
+    assert json.loads(path.read_text()) == selected
+    assert preset.read_text() == preset_before
+    effective = read_companion_config(str(path))
+    assert effective["model"] == "second"
+    assert effective["tools"] == ["console_tools"]
+    assert effective["working_path"] == "local-directory"
+    assert not domain.get_settings_section("companion")["warnings"]

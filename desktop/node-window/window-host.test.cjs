@@ -6,7 +6,7 @@ const vm = require('node:vm')
 const { EventEmitter } = require('node:events')
 
 function fixture() {
-  const handlers = new Map(), files = new Map(), created = [], externalUrls = []
+  const handlers = new Map(), files = new Map(), created = [], externalUrls = [], copiedTexts = []
   const cursor = { x: 1000, y: 700 }
   class FakeWindow extends EventEmitter {
     constructor(options) {
@@ -33,6 +33,7 @@ function fixture() {
   }
   const electron = {
     app: { setPath() {}, setName() {} }, BrowserWindow: FakeWindow,
+    clipboard: { writeText: text => copiedTexts.push(text) },
     ipcMain: { on: (name, fn) => handlers.set(name, fn), handle: (name, fn) => handlers.set(name, fn) },
     screen: { getCursorScreenPoint: () => ({ ...cursor }), getDisplayMatching: () => ({ workArea: { x: 0, y: 0, width: 1280, height: 800 } }) },
     shell: { async openExternal(url) { externalUrls.push(url) } },
@@ -49,8 +50,25 @@ function fixture() {
   const target = { origin: 'http://127.0.0.1:8788', graphId: 'g', nodeId: 'n', receipt: 'a'.repeat(32) }
   const context = mod.exports.openNodeWindow(target)
   const event = { sender: context.win.webContents, senderFrame: context.win.webContents.mainFrame }
-  return { ...mod.exports, handlers, files, created, context, target, event, cursor, externalUrls, shell: electron.shell }
+  return { ...mod.exports, handlers, files, created, context, target, event, cursor, externalUrls, copiedTexts, clipboard: electron.clipboard, shell: electron.shell }
 }
+
+test('native clipboard accepts text only from the registered top-level origin', () => {
+  const f = fixture(), copy = f.handlers.get('node-window:copy-text')
+  copy(f.event, '中文\n```typescript\nconst value = 1\n```')
+  assert.deepEqual(f.copiedTexts, ['中文\n```typescript\nconst value = 1\n```'])
+  assert.throws(() => copy(f.event, { text: 'invalid' }), /must be a string/)
+  assert.throws(() => copy({ ...f.event, senderFrame: {} }, 'subframe'), /Untrusted/)
+  assert.throws(() => copy({ ...f.event, sender: { id: 999 } }, 'unknown'), /Untrusted/)
+  f.event.senderFrame.url = 'https://other.example/'
+  assert.throws(() => copy(f.event, 'external'), /Untrusted/)
+  assert.equal(f.copiedTexts.length, 1)
+  f.event.senderFrame.url = `${f.target.origin}/`
+  f.clipboard.writeText = () => { throw new Error('Clipboard unavailable') }
+  assert.throws(() => copy(f.event, 'failure'), /Clipboard unavailable/)
+  f.context.win.close()
+  assert.throws(() => copy(f.event, 'closed'), /Untrusted/)
+})
 
 test('browser links use the owning window graph and current renamed node, with encoded IDs', async () => {
   const f = fixture(), open = f.handlers.get('node-window:open-in-browser')
@@ -119,6 +137,22 @@ test('independent nodes and graphs coexist, only an identical target reuses its 
   f.openNodeWindow(f.target)
   assert.equal(f.windows.size, 22)
   assert.equal(f.context.win.focused, true)
+})
+
+test('interaction widgets coexist with their node window and other requests', () => {
+  const f = fixture()
+  const target = { ...f.target, requestId: 'c'.repeat(32) }
+  const widget = f.openNodeWindow(target)
+  f.openNodeWindow({ ...target, requestId: 'd'.repeat(32) })
+  assert.equal(f.windows.size, 3)
+  assert.equal(f.openNodeWindow(target), widget)
+  const event = { sender: widget.win.webContents, senderFrame: widget.win.webContents.mainFrame }
+  f.handlers.get('node-window:target')(event)
+  assert.equal(event.returnValue.requestId, target.requestId)
+  assert.throws(() => f.handlers.get('node-window:retarget')(event, 'other'), /cannot be changed/)
+  widget.win.close()
+  assert.equal(f.windows.size, 2)
+  assert.equal(f.context.win.isDestroyed(), false)
 })
 
 test('note space grows separately from the card, survives chat mode, and shrinks when removed', () => {

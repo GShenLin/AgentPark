@@ -94,9 +94,11 @@ class WebBackendFacade:
                 runtime_supervisor.record("application_lifespan_stopped")
 
     def _startup_services(self) -> None:
+        from src.user_interaction_store import interrupt_pending_interactions
+        interrupt_pending_interactions()
         if os.name == 'nt' and self.server_port is not None:
             self.core.node_windows.alerts.start(self.server_port)
-        self.core.workbuddy_api.manager.startup()
+            self.core.node_windows.interactions.start(self.server_port)
         self.core.knowledge_service.start()
         self.core.group_delivery.start()
         try:
@@ -143,8 +145,8 @@ class WebBackendFacade:
             print(f"[RestartRecovery] startup failed; checkpoint retained: {e}")
 
     def _shutdown_services(self) -> None:
+        self.core.node_windows.interactions.close()
         self.core.node_windows.alerts.close()
-        self.core.workbuddy_api.manager.close()
         self.core.cron_service.close()
         self.node_sync_jobs.cloud.close()
         self.core.group_delivery.close()

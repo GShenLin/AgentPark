@@ -16,6 +16,10 @@ def search(store: Database, config, query: str, limit: int = 10, mode: str = "hy
     channels: dict[int, list[str]] = {}
     lists = []
     if mode in {"hybrid", "semantic"}:
+        with store.connect() as db:
+            has_vectors = db.execute('SELECT 1 FROM chunks WHERE embedded=1 LIMIT 1').fetchone() is not None
+        if not has_vectors:
+            raise ValueError("当前索引尚未生成向量；请在 Knowledge 设置中点击“开始 / 增量扫描”")
         vector = (embedder or Embedder(config, workspace=workspace)).embed([query])[0]
         results = VectorIndex(store.directory, config.dimensions, readonly=True).search(vector, candidates)
         lists.append(("semantic", [row["id"] for row in results]))

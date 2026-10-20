@@ -9,6 +9,8 @@ from .repository import GroupRepository, timestamp
 
 def detach_member(repo, db, group, node_id: str, *, reason: str = "left"):
     group.members = [member for member in group.members if member.node_id != node_id]
+    if group.leader_id == node_id:
+        group.leader_id = group.members[0].node_id if group.members else None
     released = []
     for task in group.tasks:
         if task.owner_id == node_id and task.status != "done":
@@ -22,7 +24,8 @@ def detach_member(repo, db, group, node_id: str, *, reason: str = "left"):
         AND event_seq IN (SELECT seq FROM events WHERE group_id=?)""", (node_id, group.id))
     repo.save(db, group)
     repo.event(db, group, "member_left", None,
-               {"node_id": node_id, "reason": reason, "released_tasks": released}, recipients=[])
+               {"node_id": node_id, "reason": reason, "released_tasks": released,
+                "leader_id": group.leader_id}, recipients=[])
 
 
 @contextmanager
@@ -56,7 +59,7 @@ def _rename_references(value, old: str, new: str):
     if isinstance(value, list):
         return [_rename_references(item, old, new) for item in value]
     if isinstance(value, dict):
-        return {key: new if key in {"node_id", "owner_id", "actor_id", "recipient_id"} and item == old
+        return {key: new if key in {"node_id", "owner_id", "actor_id", "recipient_id", "leader_id"} and item == old
                 else _rename_references(item, old, new) for key, item in value.items()}
     return value
 

@@ -51,11 +51,11 @@ class GroupRoutingTests(unittest.TestCase):
         self.tools.broadcast(text='Stop editor writes', broadcast_reason='Shared editor is restarting; all members must stop writes', request_id='broadcast')
         self.assertEqual(self.targets(), {'Character', 'Animation', 'PCG', 'VFX', 'Gameplay'})
 
-    def test_note_cannot_smuggle_action_and_user_broadcast_is_preserved(self):
+    def test_note_cannot_smuggle_action_and_user_default_only_reaches_leader(self):
         with self.assertRaises(ValidationError):
             PublishMessage(text='note', request_id='invalid', intent='update', recipient_id='PCG')
         GroupMessages(self.repo).publish(self.group.id, PublishMessage(text='New project goal', request_id='user'), None)
-        self.assertEqual(len(self.targets()), 6)
+        self.assertEqual(self.targets(), {'UI'})
 
     def test_progress_and_plan_edits_are_silent_assignment_is_targeted(self):
         task = self.tasks.create(self.group.id, CreateTask(title='HUD', owner_id='UI'), None)
@@ -135,7 +135,7 @@ class GroupRoutingTests(unittest.TestCase):
     def test_upgrade_preserves_real_assignments_and_cancels_old_broadcast_recipients(self):
         task = self.tasks.create(self.group.id, CreateTask(title='Review', owner_id='UI'), None)
         message = GroupMessages(self.repo).publish(self.group.id,
-            PublishMessage(text='User request', request_id='preserve'), None)
+            PublishMessage(text='User request', request_id='preserve', broadcast_reason='All members act'), None)
         with self.repo.transaction() as db:
             row = db.execute("SELECT seq,payload FROM events WHERE kind='task_created'").fetchone()
             payload = json.loads(row['payload'])

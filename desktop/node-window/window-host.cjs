@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, shell } = require('electron')
+const { app, BrowserWindow, clipboard, ipcMain, screen, shell } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { ROOT, windowKey, receiptPath } = require('./contract.cjs')
@@ -57,7 +57,8 @@ function openNodeWindow(target) {
     return existing
   }
   const win = new BrowserWindow({
-    width: 360, height: 340, minWidth: 240, minHeight: 180,
+    width: target.requestId ? 500 : 360, height: target.requestId ? 650 : 340,
+    minWidth: target.requestId ? 340 : 240, minHeight: target.requestId ? 280 : 180,
     title: 'AgentPark · 小 Agent', show: false, frame: false, transparent: true,
     alwaysOnTop: true, resizable: true, backgroundColor: '#00000000',
     webPreferences: {
@@ -112,10 +113,12 @@ ipcMain.on('node-window:ready', event => {
 ipcMain.on('node-window:target', event => {
   const context = contexts.get(event.sender.id)
   if (!context || event.senderFrame !== event.sender.mainFrame) { event.returnValue = null; return }
-  event.returnValue = { graphId: context.target.graphId, nodeId: context.target.nodeId }
+  event.returnValue = { graphId: context.target.graphId, nodeId: context.target.nodeId,
+    ...(context.target.requestId ? { requestId: context.target.requestId } : {}) }
 })
 ipcMain.handle('node-window:retarget', (event, nodeId) => {
   const context = senderContext(event)
+  if (context.target.requestId) throw new Error('Interaction window identity cannot be changed.')
   if (typeof nodeId !== 'string' || !nodeId.trim()) throw new Error('Invalid node identity.')
   const next = { ...context.target, nodeId }
   const existing = windows.get(windowKey(next))
@@ -130,6 +133,11 @@ ipcMain.on('node-window:fail', (event, error) => {
   acknowledge(context, { ok: false, error: context.failure })
 })
 ipcMain.handle('node-window:mode', (event, options) => resize(senderContext(event), options))
+ipcMain.handle('node-window:copy-text', (event, text) => {
+  senderContext(event)
+  if (typeof text !== 'string') throw new TypeError('Clipboard text must be a string.')
+  clipboard.writeText(text)
+})
 ipcMain.handle('node-window:open-in-browser', async event => {
   const { target } = senderContext(event)
   const url = new URL('/', target.origin)

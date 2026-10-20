@@ -22,7 +22,6 @@ from .node_config_service import RUNTIME_STATE_FIELDS
 from .profile_api import ProfileApi
 from .public_gateway_api import PublicGatewayApiDomain
 from .provider_auth_api import ProviderAuthApiDomain
-from .workbuddy_api import WorkBuddyApiDomain
 from .remote_api import RemoteApiDomain
 from .peer_api import PeerApiDomain
 from .remote_workspace_api import RemoteWorkspaceApiDomain
@@ -87,7 +86,6 @@ class BackendCore:
         self.graph_api = GraphApiDomain(self, self.graph_runtime)
         self.profile_api = ProfileApi(self)
         self.provider_auth_api = ProviderAuthApiDomain(self)
-        self.workbuddy_api = WorkBuddyApiDomain(self)
         self.public_gateway_api = PublicGatewayApiDomain()
         self.mobile_api = MobileApiDomain(self, self.graph_runtime)
         self.remote_api = RemoteApiDomain(self)

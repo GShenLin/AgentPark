@@ -30,8 +30,8 @@ watch(
 </script>
 
 <template>
-  <details class="runtime-events-field-group" :open="expanded" @toggle="onToggle">
-    <summary class="runtime-events-field-group-summary">
+  <details class="runtime-events-field-group config-field-group" :open="expanded" @toggle="onToggle">
+    <summary class="runtime-events-field-group-summary config-field-group-summary">
       <span>Event</span>
       <span class="runtime-events-field-group-chevron" aria-hidden="true">›</span>
     </summary>
@@ -51,7 +51,7 @@ watch(
   flex: 0 0 auto;
   border: 1px solid var(--theme-panel-node-side-editor-input-border, rgba(148, 163, 184, 0.22));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.28);
+  background: var(--theme-panel-node-side-editor-input-background, #fff);
   overflow: hidden;
 }
 

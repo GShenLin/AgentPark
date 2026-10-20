@@ -3,7 +3,7 @@ import { ApiHttpError, getActiveApiBase, requestApiJson } from './api'
 export interface KnowledgeConfig {
   name: string; folder: string; embedding_url: string; embedding_model: string; dimensions: number
   api_key_alias: string; batch_size: number; chunk_size: number; chunk_overlap: number
-  request_timeout: number; retry_interval_seconds: number; max_file_mb: number; max_page_chars: number; spreadsheet_header_row: number; allow_agents: boolean
+  request_timeout: number; retry_interval_seconds: number; max_file_mb: number; max_page_chars: number; spreadsheet_header_row: number; allow_mcp: boolean
 }
 export interface KnowledgeProgress {
   status: string; phase: string; discovered: number; excluded: number; current_path: string; error: string
@@ -11,6 +11,22 @@ export interface KnowledgeProgress {
 }
 export interface KnowledgeLibrary extends KnowledgeConfig {
   id: string; has_api_key: boolean; progress: KnowledgeProgress
+  index_generation?: number; index_changed?: boolean
+}
+
+export function knowledgeIndexWillChange(previous: KnowledgeConfig, next: KnowledgeConfig): boolean {
+  const identity = (config: KnowledgeConfig) => {
+    let host = ''
+    try { host = new URL(config.embedding_url).hostname } catch { return config.embedding_model.trim() }
+    const model = config.embedding_model.trim()
+    if (host === 'ark.cn-beijing.volces.com' && ['doubao-embedding-vision', 'doubao-embedding-vision-251215'].includes(model)) {
+      return 'ark:doubao-embedding-vision-251215'
+    }
+    return `model:${model}`
+  }
+  return identity(previous) !== identity(next) ||
+    (['folder', 'dimensions', 'chunk_size', 'chunk_overlap', 'spreadsheet_header_row'] as const)
+      .some(field => previous[field] !== next[field])
 }
 export interface KnowledgeDocument {
   id: number; path: string; state: string; error: string; warning: string; chunk_count: number
@@ -37,7 +53,7 @@ export type KnowledgeAction = 'scan' | 'pause' | 'resume' | 'retry'
 export const emptyKnowledgeConfig = (): KnowledgeConfig => ({
   name: '', folder: '', embedding_url: 'http://localhost:11434/v1/embeddings', embedding_model: '',
   dimensions: 1024, api_key_alias: '', batch_size: 32, chunk_size: 1600, chunk_overlap: 200,
-  request_timeout: 60, retry_interval_seconds: 5, max_file_mb: 256, max_page_chars: 200000, spreadsheet_header_row: 0, allow_agents: true,
+  request_timeout: 60, retry_interval_seconds: 5, max_file_mb: 256, max_page_chars: 200000, spreadsheet_header_row: 0, allow_mcp: true,
 })
 export async function knowledgeRequest<T>(path = '', method = 'GET', body?: unknown): Promise<T> {
   try {

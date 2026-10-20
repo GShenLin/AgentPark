@@ -10,7 +10,9 @@
   --ui-primary-background: var(--theme-panel-settings-panel-button-primary-background, var(--accent-blue-soft));
   --ui-primary-text: var(--theme-panel-settings-panel-button-primary-text, #93c5fd);
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -70,6 +72,7 @@
 .settings-body {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
   gap: 0;
@@ -79,6 +82,7 @@
 /* 侧边标签栏 */
 .settings-tabs {
   min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -102,6 +106,7 @@
 .settings-editor {
   min-width: 0;
   min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0;

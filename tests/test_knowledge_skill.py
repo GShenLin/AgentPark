@@ -43,14 +43,15 @@ def test_one_skill_registers_four_tools_with_distinct_contracts():
 ])
 def test_action_specific_arguments_are_validated_before_access(tmp_path, arguments):
     with pytest.raises(ValidationError):
-        execute(tmp_path, arguments)
+        execute(tmp_path, arguments, library_ids=())
     assert not (tmp_path / ".auth").exists()
 
 
 def test_script_dispatches_tool_identity(tmp_path, monkeypatch, capsys):
     script = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "knowledge" / "scripts" / "query.py"
     namespace = runpy.run_path(str(script))
-    namespace["main"].__globals__["WORKSPACE"] = tmp_path
+    monkeypatch.setenv("AGENTPARK_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("AGENTPARK_KNOWLEDGE_IDS", "[]")
     monkeypatch.setenv("AGENTPARK_SKILL_SCRIPT_ID", "list")
     monkeypatch.setattr("sys.stdin", io.StringIO('{}'))
     namespace["main"]()
@@ -60,7 +61,8 @@ def test_script_dispatches_tool_identity(tmp_path, monkeypatch, capsys):
 def test_script_rejects_action_override(tmp_path, monkeypatch, capsys):
     script = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "knowledge" / "scripts" / "query.py"
     namespace = runpy.run_path(str(script))
-    namespace["main"].__globals__["WORKSPACE"] = tmp_path
+    monkeypatch.setenv("AGENTPARK_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("AGENTPARK_KNOWLEDGE_IDS", "[]")
     monkeypatch.setenv("AGENTPARK_SKILL_SCRIPT_ID", "read")
     monkeypatch.setattr("sys.stdin", io.StringIO('{"action":"list"}'))
     with pytest.raises(SystemExit) as error:

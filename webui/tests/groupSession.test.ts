@@ -18,7 +18,7 @@ function deferred<T>() {
 }
 const group: AgentGroup = {
   id: 'team', name: 'Team', objective: '', bounds: { x: 0, y: 0, width: 600, height: 500 },
-  members: [], tasks: [], revision: 1, private: false, dissolved: false, created_at: '', updated_at: '',
+  members: [], leader_id: null, tasks: [], revision: 1, private: false, dissolved: false, created_at: '', updated_at: '',
 }
 const scopes: EffectScope[] = []
 async function setup() {
@@ -32,7 +32,7 @@ async function setup() {
   const state = scope.run(() => useBoardGroups({ graphId, ready, nodes, selectedIds: ref(['a', 'b']),
     grid: ref({ cellWidth: 300, cellHeight: 320 }), lastError: ref(null), board: ref(null) }))!
   await nextTick()
-  return { state, graphId, ready }
+  return { state, graphId, ready, nodes }
 }
 beforeEach(() => {
   vi.resetAllMocks()
@@ -42,6 +42,27 @@ beforeEach(() => {
 afterEach(() => { for (const scope of scopes.splice(0)) scope.stop() })
 
 describe('group commands across graph and connection changes', () => {
+  it('creates a group containing different node types', async () => {
+    const { state, nodes } = await setup()
+    nodes.value[1]!.typeId = 'echo_node'
+    await state.toggleSelection()
+    expect(api.create).toHaveBeenCalledWith('first', expect.objectContaining({
+      members: [{ node_id: 'a', role: '' }, { node_id: 'b', role: '' }],
+    }))
+  })
+
+  it('moves non-Agent nodes into and out of groups', async () => {
+    const { state, nodes } = await setup()
+    nodes.value[0]!.typeId = 'echo_node'
+    api.list.mockResolvedValue({ groups: [group] })
+    await state.afterNodeDrop(['a'])
+    expect(api.move).toHaveBeenLastCalledWith('first', 'a', { expected_source: null, target_group_id: 'team' })
+    api.list.mockResolvedValue({ groups: [{ ...group, members: [{ node_id: 'a', role: '' }] }] })
+    nodes.value[0]!.ui.grid_x = 10
+    await state.afterNodeDrop(['a'])
+    expect(api.move).toHaveBeenLastCalledWith('first', 'a', { expected_source: 'team', target_group_id: null })
+  })
+
   it('does not create a group after its prerequisite read belongs to the previous graph', async () => {
     const { state, graphId } = await setup()
     const read = deferred<{ groups: AgentGroup[] }>()

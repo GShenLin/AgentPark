@@ -2,35 +2,18 @@
 from pathlib import Path
 
 from .catalog import Catalog
-from .database import Database
-from .retrieval import read_chunk, search
-from .skill_contracts import ListLibraries, SearchLibrary, knowledge_request
-from .source_reader import read_source
-from .table_contracts import TableQuery
-from .table_query import query_table
+from .reader import read_library
+from .skill_contracts import ListLibraries, knowledge_request
+from .node_access import selected_libraries
 
 
-def execute(workspace: Path, arguments: dict):
+def execute(workspace: Path, arguments: dict, *, library_ids: tuple[str, ...]):
     request = knowledge_request.validate_python(arguments)
     catalog = Catalog(workspace)
     if isinstance(request, ListLibraries) and request.library_id is None:
-        return {"libraries": [{"id": item["id"], "name": item["name"],
-                               "embedding_model": item["embedding_model"]}
-                              for item in catalog.list() if item["allow_agents"]]}
+        return {"libraries": selected_libraries(workspace, library_ids)}
     key = request.library_id
-    config = catalog.get(key)
-    if not config.allow_agents:
-        raise PermissionError("此知识库未向 Agent Skill 开放")
-    store = Database(catalog.directory(key))
-    if not store.path.is_file():
-        raise ValueError("知识库尚未建立索引，请在 Knowledge 设置中启动扫描")
-    store.initialize()
-    if isinstance(request, ListLibraries):
-        return store.documents(after=request.after, limit=request.limit)
-    if isinstance(request, SearchLibrary):
-        return search(store, config, request.query, request.limit, request.mode, workspace=workspace)
-    if isinstance(request, TableQuery):
-        return query_table(store, config, request)
-    if request.document_id is not None:
-        return read_source(store, config, request)
-    return read_chunk(store, request.chunk_id)
+    if key not in library_ids:
+        raise PermissionError(f"此知识库未被当前节点勾选：{key}")
+    config, directory = catalog.resolve(key)
+    return read_library(workspace, config, directory, request)

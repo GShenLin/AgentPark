@@ -24,7 +24,7 @@ class GroupDeliveryTests(unittest.TestCase):
             bounds=GroupBounds(x=0, y=0, width=100, height=100),
             members=[GroupMember(node_id="engine"), GroupMember(node_id="story")]))
         GroupMessages(self.repo).publish(self.group.id,
-            PublishMessage(text="Start the assigned work", request_id="initial-work"), None)
+            PublishMessage(text="Start the assigned work", request_id="initial-work", broadcast_reason="Start all members"), None)
         self.delivery = GroupDelivery(self.repo)
         self.queued = {}
         self.events = []
@@ -59,7 +59,7 @@ class GroupDeliveryTests(unittest.TestCase):
             self.assertEqual(self.queued, {})
         team = self.members.create(CreateGroup(name="Ready", bounds=self.group.bounds, members=self.group.members))
         event = GroupMessages(self.repo).publish(team.id,
-            PublishMessage(text="Actual broadcast", request_id="real-work"), None)
+            PublishMessage(text="Actual broadcast", request_id="real-work", broadcast_reason="All members must act"), None)
         self.service.poll_graph(self.graph)
         self.assertEqual(len(self.queued), 2)
         self.assertEqual([e['seq'] for e in self.run_for('engine').events], [event['seq']])
@@ -167,7 +167,7 @@ class GroupDeliveryTests(unittest.TestCase):
         image.write_bytes(image_bytes)
         document = self.graph / "brief.txt"
         document.write_text("Group attachment acceptance", encoding="utf-8")
-        command = PublishMessage(text="Inspect attached files", request_id="resources", attachments=[
+        command = PublishMessage(text="Inspect attached files", request_id="resources", broadcast_reason="All members review attachments", attachments=[
             {"uri": str(image), "name": "sample.png", "kind": "image", "mime": "image/png"},
             {"uri": str(document), "name": "brief.txt", "kind": "doc", "mime": "text/plain"},
         ])

@@ -62,6 +62,9 @@ def render_skill_context(agent: object) -> str:
         if skill.name in runtime.active:
             lines.append(f"<instructions>{_escape(skill.content)}</instructions>")
         lines.append("</skill>")
+    knowledge_context = getattr(agent, "_agentpark_knowledge_context", "")
+    if knowledge_context:
+        lines.append(knowledge_context)
     lines.append(f"</{SKILL_ACTIVATION_CATALOG_TAG}>")
     return "\n".join(lines)
 

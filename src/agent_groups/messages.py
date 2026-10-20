@@ -33,10 +33,15 @@ class GroupMessages:
                 row = dict(db.execute("SELECT * FROM events WHERE seq=?", (previous["event_seq"],)).fetchone())
                 row["payload"] = json.loads(row["payload"])
                 return row
+            recipient_id = command.recipient_id
+            if actor_id is None and command.intent == "action" and recipient_id is None and not command.broadcast_reason.strip():
+                if group.leader_id is None or group.leader_id not in members:
+                    raise GroupConflict("组内没有可接收消息的组长。")
+                recipient_id = group.leader_id
             recipients = ([] if command.intent == "update" else
-                          [command.recipient_id] if command.recipient_id else [m.node_id for m in group.members])
+                          [recipient_id] if recipient_id else [m.node_id for m in group.members])
             event = self.repo.event(db, group, "update" if command.intent == "update" else "message", actor_id,
-                                   {"text": command.text, "recipient_id": command.recipient_id,
+                                   {"text": command.text, "recipient_id": recipient_id,
                                     "intent": command.intent, "broadcast_reason": command.broadcast_reason,
                                     "attachments": [item.model_dump() for item in command.attachments]},
                                    recipients=recipients)

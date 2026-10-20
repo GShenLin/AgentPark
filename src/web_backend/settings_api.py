@@ -7,6 +7,7 @@ from dataclasses import asdict
 from fastapi import File, Form, HTTPException, UploadFile
 
 from src import workspace_settings
+from src.agent_groups.settings import GroupSettings, group_settings_path, read_group_settings
 from src.board_layout_settings import normalize_board_layout_settings
 from src.agent_panel_settings import normalize_agent_panel_settings
 from src.companion_paths import companion_node_config_path
@@ -48,6 +49,7 @@ from .turn_audit_query import get_turn_audit, list_turn_audits
 
 
 SETTINGS_SECTIONS = {
+    "group": {"label": "Group", "filename": "group.json"},
     "toolsets": {"label": "Toolset", "filename": "toolsets.json"},
     "model-provider": {
         "label": "modelProvider",
@@ -95,6 +97,8 @@ class SettingsApiDomain(DomainBase):
         return {"id": safe_section, **meta}
 
     def _settings_path(self, section: str) -> str:
+        if section == "group":
+            return str(group_settings_path())
         if section == "toolsets":
             from src.tool.toolset_registry import toolsets_path
             return toolsets_path()
@@ -117,6 +121,8 @@ class SettingsApiDomain(DomainBase):
         raise HTTPException(status_code=404, detail=f"unknown settings section: {section}")
 
     def _settings_runtime_metadata(self, section: str, payload: dict) -> dict:
+        if section == "group":
+            return {"group_defaults": GroupSettings().model_dump()}
         if section == "toolsets":
             from .toolset_settings import toolset_metadata
             return toolset_metadata()
@@ -157,6 +163,12 @@ class SettingsApiDomain(DomainBase):
         }
 
     def _read_payload(self, path: str, section: str) -> tuple[str, dict, list[str]]:
+        if section == "group":
+            try:
+                payload = read_group_settings().model_dump()
+            except (OSError, ValueError) as exc:
+                raise HTTPException(status_code=500, detail=f"Group settings are invalid: {exc}") from exc
+            return json.dumps(payload, ensure_ascii=False, indent=2) + "\n", payload, []
         if section == "toolsets":
             from .toolset_settings import read_toolsets
             payload = read_toolsets()
@@ -218,9 +230,17 @@ class SettingsApiDomain(DomainBase):
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail=f"{section} settings JSON is invalid: {exc}") from exc
         self._validate_payload(section, payload)
+        if section == "group":
+            return GroupSettings.model_validate(payload).model_dump()
         return payload
 
     def _validate_payload(self, section: str, payload: object) -> None:
+        if section == "group":
+            try:
+                GroupSettings.model_validate(payload)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            return
         if section == "toolsets":
             from .toolset_settings import validate_toolset_settings
             validate_toolset_settings(payload)
@@ -342,6 +362,17 @@ class SettingsApiDomain(DomainBase):
         meta = self._section_meta(section)
         path = self._settings_path(meta["id"])
         content, payload, warnings = self._read_payload(path, meta["id"])
+        if meta["id"] == "companion":
+            from src.companion_config import COMPANION_LOCAL_FIELDS
+
+            preset_fields = set(payload) - COMPANION_LOCAL_FIELDS
+            if preset_fields:
+                payload = {key: value for key, value in payload.items() if key in COMPANION_LOCAL_FIELDS}
+                content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+                warnings.append(
+                    "Companion contains inline Preset settings. Select a Preset and save to replace "
+                    "those settings with the selected Preset; node identity and working path are preserved."
+                )
         if meta["id"] == "defaults":
             try:
                 local_config = workspace_settings.load_memory_local_config()

@@ -88,7 +88,7 @@ python -m src.cli doctor --json
 
 ### 6. 多提供商与账号管理
 
-设置表单提供 OpenAI、Claude、DeepSeek、Doubao、Gemini、Grok、Kimi、智谱、Hyper3D、WorkBuddy、Agnes 和本地 alpha matting 等类型入口。不同适配器的能力不同，不能仅靠勾选能力就让服务支持某种协议。
+设置表单提供 OpenAI、Claude、DeepSeek、Doubao、Gemini、Grok、Kimi、智谱、Hyper3D、Agnes 和本地 alpha matting 等类型入口。不同适配器的能力不同，不能仅靠勾选能力就让服务支持某种协议。
 
 可管理 API Key 引用、命名账号、多 OAuth 账号及固定账号。密钥存放在 `.auth/`；Provider 配置引用密钥名或账号 ID。官方 OAuth 入口只对已经实现该协议的类型开放。详见 [模型连接与授权](docs/settings/models.md)。
 
@@ -235,3 +235,4 @@ Agent 的可用字段按 Provider 的 `supportmode` 动态显示，支持图片�
 | 排查启动与配置问题 | [Troubleshooting](docs/troubleshooting.md)、[启动修复](docs/startup-repair.md) |
 
 后端为 Python / FastAPI，前端为 Vue 3 / TypeScript / Vite。开发约束见 [AGENTS.md](AGENTS.md)，许可证为 [MIT](LICENSE)。功能说明以仓库当前实现为依据；服务商的可用模型、额度及外部软件支持范围以实际查询和运行结果为准。
+

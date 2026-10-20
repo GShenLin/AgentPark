@@ -139,7 +139,7 @@ python -m src.fast_api --host 127.0.0.1 --port 8766
 
 | 想做的事 | 下一步 |
 | --- | --- |
-| 让 Agent 查询本地笔记或表格 | [添加知识库](settings/knowledge.md)，完成扫描，再在节点选择 `knowledge` Skill |
+| 让 Agent 查询本地笔记或表格 | [添加知识库](settings/knowledge.md)，完成扫描，再在节点的 Knowledge 选项中勾选；外部客户端使用 AgentPark MCP 的 `get_knowledge` |
 | 使用专门的任务流程 | [Skill 管理](settings/skills.md)，阅读依赖并在节点选择 |
 | 使用 Codex 等编程 Agent | [Harness](settings/models.md#harness)，检查安装，再创建对应节点 |
 | 让多个 Agent 分工 | [协作组](agent-groups-guide.md)，框选后按 G，明确角色、任务和验收证据 |

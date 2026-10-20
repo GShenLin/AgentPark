@@ -27,7 +27,7 @@ Duplicate 复制配置草稿，并在保存时处理对应的 ProviderLimit 复�
 | Models | 一行一个模型项目，通过添加按钮新增 | 模型 ID 与服务目录一致；节点明确选中其中一个 |
 | Description | 连接用途说明 | 便于区分生产、测试和不同账号 |
 
-Type 选项包括 `alpha_matting`、`agnes`、`openai`、`workbuddy`、`claude`、`deepseek`、`doubao`、`gemini`、`grok`、`kimi`、`zhipu`、`hyper3d`。各自支持范围由代码适配器与服务共同决定。
+Type 选项包括 `alpha_matting`、`agnes`、`openai`、`claude`、`deepseek`、`doubao`、`gemini`、`grok`、`kimi`、`zhipu`、`hyper3d`。各自支持范围由代码适配器与服务共同决定。
 
 OpenAI 兼容服务通常填写到 `/v1` 或服务指定的兼容根路径；Claude 使用 Messages 协议；Gemini、Hyper3D 等按各自适配器处理。不能为所有 Type 套用同一地址格式。
 
@@ -128,19 +128,6 @@ Step ledger 记录工具副作用边界。如果工具开始后进程退出且�
 在 **Doubao Speech Management** 中，选择操作后核对 JSON payload，再点击 Run operation。当前有内置音色列表、训练克隆音色、查询、升级和设计音色五种操作。克隆时选择音频文件，前端上限 10 MB；根据服务要求补齐 speaker ID、文本与参数。Reset payload 恢复该操作模板。操作会调用真实服务，结果与错误显示在面板，成功读取音色后可写入 `config/audio_speaker.json`。先保存 Provider 的授权与连接，再执行管理请求。
 
 节点的聊天语音选择也使用节点自己的 Provider、Model、Voice 字段；当前 OpenAI 语音支持条件由 `src/voice_settings.py` 校验。没有独立全局语音菜单时，在节点配置中检查，不要修改过时的全局语音项。
-
-### WorkBuddy 连接
-
-选择 WorkBuddy 类型后显示本机服务与账号面板，不使用通用 API Key 表单：
-
-1. 先保存 Provider，再安装服务依赖，等待作业成功。
-2. 核对本机端口，使用“保存服务设置”保存；需要时勾选随 AgentPark 启动。
-3. 点击启动服务，再点击“使用本机服务地址”，保存更新后的 Provider。
-4. 登录 WorkBuddy，打开返回的授权页，在五分钟有效期内完成授权；面板会自动检测结果。
-5. 点击刷新账号与模型，可搜索模型 ID、筛选明确标为免费者，单独加入模型或加入全部模型。
-6. 保存 Provider 后在节点选择 Model，再验证请求。停止服务会中断使用它的请求；退出此服务账号和停止进程是两个动作。
-
-卡片显示模型的上下文、输出上限、图片支持、思考强度及服务返回的计费/活动说明。费用未知不会被标成免费，活动说明不保证长期有效。安装与运行日志路径直接显示在面板，排错见 [WorkBuddy](../workbuddy.md)。
 
 ### 常见问题
 

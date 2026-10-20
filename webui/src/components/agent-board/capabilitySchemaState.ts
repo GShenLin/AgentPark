@@ -5,6 +5,7 @@ const capabilityFieldKeys = new Set([
   'tools',
   'mcp_servers',
   'skills',
+  'knowledge_ids',
 ])
 
 export function withPersistedCapabilityState(rawSchema: SchemaRecord, cfg: Record<string, unknown> | null): SchemaRecord {
@@ -16,6 +17,7 @@ export function withPersistedCapabilityState(rawSchema: SchemaRecord, cfg: Recor
       continue
     }
     const selected = persistedStringSet(cfg?.[key])
+    if (key === 'skills' && rawSchema.knowledge_ids) selected.delete('knowledge')
     const seen = new Set<string>()
     const rawOptions = Array.isArray((field as SchemaRecord).options) ? (field as SchemaRecord).options : []
     const options = rawOptions.map((option: unknown) => {

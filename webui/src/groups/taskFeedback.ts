@@ -16,7 +16,7 @@ export function taskFeedback(task: GroupTask, tasks: GroupTask[], delivery?: Gro
   if (delivery?.last_error) return `${task.owner_id} 处理通知失败：${delivery.last_error}`
   if (task.status === 'done') return '任务已完成，查看完成证据或组内答复'
   const waiting = task.dependencies.filter(id => tasks.find(item => item.id === id)?.status !== 'done')
-  if (waiting.length) return `等待 ${waiting.length} 个前置任务，完成后自动交给 ${task.owner_id}`
+  if (waiting.length) return `等待 ${waiting.length} 个前置任务，负责人：${task.owner_id}`
   if (delivery?.state === 'pending') {
     if (delivery.started_at) return `${task.owner_id} 正在处理这条任务`
     if (ownerState === 'stop') return `已加入 ${task.owner_id} 的队列，成员暂停中，恢复后处理`

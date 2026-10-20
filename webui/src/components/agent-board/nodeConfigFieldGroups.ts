@@ -21,6 +21,7 @@ const CAPABILITY_SECTIONS = [
   { key: 'tools', label: 'Tool' },
   { key: 'mcp_servers', label: 'MCP' },
   { key: 'skills', label: 'Skill' },
+  { key: 'knowledge_ids', label: 'Knowledge' },
   { key: 'plugins', label: 'Plugin' },
 ] as const
 

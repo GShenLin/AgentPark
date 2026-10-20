@@ -5,6 +5,27 @@ from .contracts import AgentGroup
 from .task_notifications import ready
 
 
+def upgrade_group_leaders(db):
+    """Version 5: persist the first member as leader for existing groups.
+
+    Previously submitted messages keep their original recipients and audit trail.
+    """
+    db.execute('BEGIN IMMEDIATE')
+    try:
+        if db.execute('PRAGMA user_version').fetchone()[0] < 5:
+            for row in db.execute('SELECT id,document FROM groups').fetchall():
+                document = json.loads(row['document'])
+                if 'leader_id' not in document:
+                    document['leader_id'] = document['members'][0]['node_id'] if document['members'] else None
+                    db.execute('UPDATE groups SET document=? WHERE id=?',
+                               (json.dumps(document, ensure_ascii=False), row['id']))
+            db.execute('PRAGMA user_version=5')
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+
+
 def upgrade_task_notifications(db):
     """Version 4: restrict pending old task broadcasts to still-relevant owners.
 

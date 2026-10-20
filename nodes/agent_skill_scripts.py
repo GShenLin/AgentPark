@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Iterable
 
@@ -58,7 +59,11 @@ def _script_callable(agent: object, script: SkillScriptDefinition):
         return run_skill_script(
             script,
             kwargs,
-            runtime_env={"AGENTPARK_NODE_DIRECTORY": context.node_directory},
+            runtime_env={
+                "AGENTPARK_NODE_DIRECTORY": context.node_directory,
+                "AGENTPARK_WORKSPACE_ROOT": context.workspace_root,
+                "AGENTPARK_KNOWLEDGE_IDS": json.dumps(context.knowledge_ids),
+            },
         )
 
     call_skill_script.__name__ = _script_tool_name(script)

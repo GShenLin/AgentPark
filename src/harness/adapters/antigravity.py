@@ -31,6 +31,8 @@ class Adapter:
                 argv += ["--conversation", conversation]
             if request.mode:
                 argv += ["--mode", request.mode]
+            if request.auto_approve:
+                argv.append("--dangerously-skip-permissions")
             if request.effort:
                 argv += ["--effort", request.effort]
             prompt = f"{request.instruction}\n\n{text}" if request.instruction else text

@@ -23,12 +23,16 @@ conversation owned by that node. A separate gateway service is not required.
 ## Permissions and errors
 
 The default preserves CLI permissions. `plan` and `accept-edits` are explicit node
-options. AgentPark does not pass `--dangerously-skip-permissions` or change global
-permission settings. Native headless mode cannot prompt for permission or ask an
+options. The node's **自动批准所有工具** (`native_auto_approve`) switch defaults to
+off. Enabling it explicitly passes `--dangerously-skip-permissions` for that node's
+next execution, approving all native tools including commands and file writes.
+Disabling it restores native permission enforcement on the next execution.
+AgentPark does not change global permission settings. Native headless mode cannot prompt for permission or ask an
 interactive follow-up. Denied actions are surfaced as errors even when the CLI
 returns exit code zero and `status: SUCCESS`. Tool failures, incomplete streams,
 model/session mismatches, timeouts and cancellation are not treated as successful
-turns. Native permission rules still apply when `accept-edits` is selected.
+turns. Selecting `accept-edits` alone still leaves commands subject to native
+permission rules. Native host tools remain restricted to developer access.
 
 ## State and lifecycle
 

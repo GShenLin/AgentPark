@@ -11,6 +11,7 @@ import { primeUserInteractions } from './composables/useUserInteractions'
 import { initializeForegroundAlerts } from './composables/useWorkAlerts'
 import DesktopWorkspace from './DesktopWorkspace.vue'
 import NodeWindowWorkspace from './NodeWindowWorkspace.vue'
+import InteractionWindowWorkspace from './InteractionWindowWorkspace.vue'
 import MobileWorkspace from './mobile/MobileWorkspace.vue'
 import MobileUserInteractionDrawer from './mobile/MobileUserInteractionDrawer.vue'
 import { applyThemeConfig } from './theme'
@@ -106,7 +107,7 @@ async function submitAccessUsername(username: string) {
 }
 
 onMounted(async () => {
-  stopForegroundAlerts = initializeForegroundAlerts()
+  if (!nodeWindow?.target.requestId) stopForegroundAlerts = initializeForegroundAlerts()
   mediaQuery = window.matchMedia(MOBILE_QUERY)
   syncViewportMode()
   mediaQuery.addEventListener('change', syncViewportMode)
@@ -133,6 +134,7 @@ onBeforeUnmount(() => {
       :error="accessError"
       @submit="submitAccessUsername"
     />
+    <InteractionWindowWorkspace v-else-if="workspaceBootstrap && nodeWindow?.target.requestId" />
     <NodeWindowWorkspace v-else-if="workspaceBootstrap && nodeWindow" :bootstrap="workspaceBootstrap" />
     <MobileWorkspace v-else-if="accessReady && isMobile && accessStatus" :access="accessStatus" />
     <DesktopWorkspace v-else-if="workspaceBootstrap" :bootstrap="workspaceBootstrap" />
@@ -140,7 +142,7 @@ onBeforeUnmount(() => {
       {{ bootstrapError || t('app.loadingWorkspace') }}
     </div>
     <MobileUserInteractionDrawer v-if="isMobile" />
-    <UserInteractionDialog v-else global />
+    <UserInteractionDialog v-else-if="!nodeWindow" global />
     <WorkAlertToast v-if="!nodeWindow" />
     <WorkspaceVoiceHost />
   </div>

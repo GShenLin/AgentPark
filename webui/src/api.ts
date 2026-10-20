@@ -36,7 +36,6 @@ import type {
   RemoteStatus,
   RemoteWorker,
   RunInfo,
-  UserInteractionRequest,
   WorkspaceBootstrap,
 } from './apiTypes'
 import { accessRequestHeaders, syncCanonicalAccessUsername } from './accessIdentity'
@@ -416,21 +415,6 @@ export async function listTools(): Promise<string[]> {
 
 export async function loadWorkspaceBootstrap(): Promise<WorkspaceBootstrap> {
   return apiFetch('/api/workspace/bootstrap') as Promise<WorkspaceBootstrap>
-}
-
-export async function listUserInteractions(): Promise<UserInteractionRequest[]> {
-  const res = await apiFetch('/api/user-interactions?status=pending')
-  return (res.requests || []) as UserInteractionRequest[]
-}
-
-export async function submitUserInteraction(
-  requestId: string,
-  response: Record<string, unknown>,
-): Promise<{ ok: boolean; request: UserInteractionRequest }> {
-  return apiFetch(`/api/user-interactions/${encodeURIComponent(requestId)}/submit`, {
-    method: 'POST',
-    body: JSON.stringify({ status: 'submitted', response }),
-  })
 }
 
 export async function listNodes(): Promise<NodeInfo[]> {

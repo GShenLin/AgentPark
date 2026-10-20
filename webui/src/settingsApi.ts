@@ -22,6 +22,7 @@ export type SettingsDocument = {
   restart_required?: boolean
   long_term_memory_defaults?: LongTermMemorySettings
   conversation_context_defaults?: ConversationContextSettings
+  group_defaults?: Record<string, unknown>
   runtime?: {
     active_memories_root?: string
     configured_memories_root?: string

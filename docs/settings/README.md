@@ -27,7 +27,7 @@
 | 节点预设 / Node Presets | `node-preset-editor` | [预设字段、模型、指令、能力与事件元数据](presets-companion.md#node-presets) |
 | 退出 / Exit | `exit` | [退出后端与重新启动](diagnostics.md#exit) |
 
-语音字段在模型与节点配置中按能力显示；独立的 WorkBuddy 与豆包音色管理嵌在 Provider 表单中。源码目录中存在某个组件或翻译名称，并不代表它已经作为独立 Settings 菜单开放。
+语音字段在模型与节点配置中按能力显示；独立的 豆包音色管理嵌在 Provider 表单中。源码目录中存在某个组件或翻译名称，并不代表它已经作为独立 Settings 菜单开放。
 
 ## 先掌握保存方式
 

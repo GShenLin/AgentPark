@@ -26,7 +26,6 @@
 | Harness | [配置步骤](settings/models.md#harness)、[通用实现](harness.md)、[OpenCode](opencode-harness.md)、[Antigravity](antigravity-harness.md) |
 | Provider | [字段合同](../config/modelProvider.README.md)、[授权存储](provider-authorization.md)、[功能矩阵](provider-feature-matrix.md) |
 | 图片与媒体 | [OpenAI Images](openai-image-provider.md)、[网关图片](public-gateway-images.md)、[语音截图工具](voice-screenshot-tools.md)、[语音错误隔离](voice-error-isolation.md) |
-| WorkBuddy | [连接说明](workbuddy.md) |
 | 桌面与命令执行 | [Computer Use](computer-use.md)、[命令会话](console-sessions.md)、[节点小窗](node-windows.md) |
 | 移动与协作组 | [协作组](agent-groups-guide.md)、[移动组聊](mobile-group-chat.md)、[定向协作](group-directed-collaboration.md) |
 | 设备互联 | [用户操作](settings/connectivity.md)、[P2P 与鉴权中心部署](peer-network.md)、[云端前端](../deploy/peer-network/README-frontend.md) |

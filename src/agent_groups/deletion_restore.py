@@ -33,6 +33,8 @@ def restore_deleted_member(graph_directory: str, snapshot: dict | None):
                     or current.owner_id is not None or current.status != "blocked"):
                 raise GroupConflict("released task changed after deletion; undo would overwrite newer work")
         group.members.append(saved.member)
+        if group.leader_id is None:
+            group.leader_id = saved.member.node_id
         for original in saved.tasks:
             restored = original.model_copy(update={"revision": tasks[original.id].revision + 1,
                                                    "updated_at": timestamp()})

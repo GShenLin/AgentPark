@@ -1,9 +1,8 @@
 import { computed, ref } from 'vue'
-import {
-  listUserInteractions,
-  submitUserInteraction,
-  type UserInteractionRequest,
-} from '../api'
+import { getActiveApiBase } from '../api'
+import type { UserInteractionRequest } from '../apiTypes'
+import { listUserInteractions, submitUserInteraction } from '../userInteractionApi'
+import { clearInteractionDraft } from '../interactionFormState'
 import { useGlobalState } from './useGlobalState'
 
 const requests = ref<UserInteractionRequest[]>([])
@@ -13,10 +12,12 @@ const submittingRequestId = ref('')
 const loadError = ref('')
 let refreshPromise: Promise<void> | null = null
 let refreshQueued = false
+const completedIds = new Set<string>()
 
 const activeRequest = computed(() => requests.value[activeIndex.value] || null)
 
 function replaceRequests(nextRequests: UserInteractionRequest[]) {
+  nextRequests = nextRequests.filter(item => !completedIds.has(item.id))
   const activeId = activeRequest.value?.id || ''
   requests.value = nextRequests
   if (!nextRequests.length) {
@@ -80,13 +81,15 @@ function showNext() {
   activeIndex.value = (activeIndex.value + 1) % requests.value.length
 }
 
-async function submitResponse(requestId: string, response: Record<string, unknown>) {
+async function submitResponse(requestId: string, response: Record<string, unknown>, status: 'submitted' | 'cancelled' = 'submitted') {
   const safeRequestId = String(requestId || '').trim()
   if (!safeRequestId || submittingRequestId.value) return
   submittingRequestId.value = safeRequestId
   try {
-    await submitUserInteraction(safeRequestId, response)
+    await submitUserInteraction(safeRequestId, response, status)
+    completedIds.add(safeRequestId)
     replaceRequests(requests.value.filter((item) => item.id !== safeRequestId))
+    clearInteractionDraft(safeRequestId, getActiveApiBase(), localStorage)
     useGlobalState().memoryRefreshRequest.value += 1
   } finally {
     submittingRequestId.value = ''
@@ -98,6 +101,7 @@ function notifyUserInteractionGraphEvent(payload: Record<string, unknown>) {
   const source = String(payload.source || '').trim()
   const stage = String(payload.stage || '').trim()
   const isInteractionEvent =
+    eventName === 'stream_gap' || eventName === 'stream_snapshot' || eventName === 'user_interaction_delivery' ||
     eventName === 'user_interaction_submitted' ||
     eventName === 'user_interaction_cancelled' ||
     eventName === 'user_interaction_expired' ||

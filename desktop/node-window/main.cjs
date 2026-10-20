@@ -7,7 +7,8 @@ function start() {
   if (!app.requestSingleInstanceLock(target)) { app.quit(); return }
   app.on('second-instance', (_event, _argv, _cwd, data) => {
     // Validate the same contract for forwarded requests.
-    const launch = parseLaunch([`--origin=${data.origin}`, `--graph=${data.graphId}`, `--node=${data.nodeId}`, `--receipt=${data.receipt}`])
+    const launch = parseLaunch([`--origin=${data.origin}`, `--graph=${data.graphId}`, `--node=${data.nodeId}`, `--receipt=${data.receipt}`,
+      ...(data.requestId ? [`--interaction=${data.requestId}`] : [])])
     void app.whenReady().then(() => openNodeWindow(launch))
   })
   void app.whenReady().then(() => openNodeWindow(target))

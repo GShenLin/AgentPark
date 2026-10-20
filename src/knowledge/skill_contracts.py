@@ -45,6 +45,7 @@ class ReadPassage(BaseModel):
         return self
 
 
-knowledge_request = TypeAdapter(Annotated[
+KnowledgeRequest = Annotated[
     ListLibraries | SearchLibrary | ReadPassage | TableQuery, Field(discriminator="action"),
-])
+]
+knowledge_request = TypeAdapter(KnowledgeRequest)

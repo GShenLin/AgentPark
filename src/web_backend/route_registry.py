@@ -6,9 +6,6 @@ from .node_open_diagnostics import receive_browser_trace
 
 class ApiRouteRegistry:
     ROUTES = [
-        ("get", "/api/workbuddy/service", lambda core: core.workbuddy_api.status),
-        ("post", "/api/workbuddy/service", lambda core: core.workbuddy_api.service),
-        ("post", "/api/providers/{provider_id}/workbuddy", lambda core: core.workbuddy_api.account),
         ("get", "/api/nodes/instances/{node_id}/voice", lambda core: core.node_voice.describe),
         ("post", "/api/nodes/instances/{node_id}/voice", lambda core: core.node_voice.start),
         ("post", "/api/nodes/instances/{node_id}/voice/{session_id}/control", lambda core: core.node_voice.control),
@@ -57,6 +54,7 @@ class ApiRouteRegistry:
         ("post", "/api/config/input-bundles", lambda core: core.agent_domain.save_input_bundle),
         ("get", "/api/tools", lambda core: core.node_ops.list_tools),
         ("get", "/api/user-interactions", lambda core: core.user_interaction_api.list_user_interactions),
+        ("get", "/api/user-interactions/{request_id}", lambda core: core.user_interaction_api.get_user_interaction),
         ("post", "/api/user-interactions/{request_id}/submit", lambda core: core.user_interaction_api.submit_user_interaction),
         ("get", "/api/nodes", lambda core: core.node_ops.list_nodes),
         ("get", "/api/nodes/templates/{type_id}", lambda core: core.node_ops.get_node_template),
