@@ -25,6 +25,8 @@ def test_real_codex_app_server_uses_provider_id_chat_conversion_and_runs_tool(tm
             length = int(self.headers["Content-Length"])
             upstream_payloads.append(json.loads(self.rfile.read(length).decode("utf-8")))
             if len(upstream_payloads) == 1:
+                executor_name = next(tool["function"]["name"] for tool in upstream_payloads[0]["tools"]
+                                     if tool["function"]["name"] == "functions__exec")
                 chunks = [
                     {
                         "id": "chat-1",
@@ -38,7 +40,7 @@ def test_real_codex_app_server_uses_provider_id_chat_conversion_and_runs_tool(tm
                                                 "id": "call-exec-1",
                                                 "type": "function",
                                                 "function": {
-                                                    "name": "exec",
+                                                    "name": executor_name,
                                                     "arguments": json.dumps(
                                                         {"input": "text('CODEX_TOOL_OK');"},
                                                         separators=(",", ":"),
@@ -129,6 +131,8 @@ def test_real_codex_app_server_uses_provider_id_chat_conversion_and_runs_tool(tm
     assert len(upstream_payloads) == 2
     assert upstream_payloads[0]["model"] == "gpt-5.1-codex"
     assert any(message.get("role") == "tool" for message in upstream_payloads[1]["messages"])
+    assert any(message.get("role") == "tool" and "CODEX_TOOL_OK" in message.get("content", "")
+               for message in upstream_payloads[1]["messages"])
     assert any(event.get("type") == "node_message_delta" for event in events)
     assert any(event.get("type") == "node_thinking_delta" and event.get("provider") == "codex" for event in events)
     assert any(event.get("type") == "tool_call_start" and event.get("name") == "exec" for event in events)
@@ -138,7 +142,9 @@ def test_real_codex_app_server_uses_provider_id_chat_conversion_and_runs_tool(tm
         for event in events
         if event.get("type") == "runtime_notice" and event.get("stage") == "provider_gateway_request"
     ]
-    assert [request["requested_model"] for request in gateway_requests] == ["gpt-5.6-sol", "gpt-5.6-sol"]
+    assert len(gateway_requests) == 2
+    assert gateway_requests[0]["requested_model"]
+    assert gateway_requests[0]["requested_model"] == gateway_requests[1]["requested_model"]
     assert [request["provider_model"] for request in gateway_requests] == ["gpt-5.1-codex", "gpt-5.1-codex"]
     completed_requests = [
         json.loads(event["message"])

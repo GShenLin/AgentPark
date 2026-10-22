@@ -74,7 +74,7 @@ def test_curl_tool_does_not_emit_progress_to_stdout(monkeypatch, capsys):
         stderr = b""
         returncode = 0
 
-    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _Completed())
+    monkeypatch.setattr("functions.curl_tools.CurlHttpTransport.execute_cli", lambda *_args, **_kwargs: _Completed())
 
     result = json.loads(execute_curl_command("https://example.com"))
 
@@ -89,7 +89,7 @@ def test_curl_tool_html_output_remains_json_string(monkeypatch):
         stderr = b""
         returncode = 0
 
-    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: _Completed())
+    monkeypatch.setattr("functions.curl_tools.CurlHttpTransport.execute_cli", lambda *_args, **_kwargs: _Completed())
 
     raw = execute_curl_command("https://example.com")
     result = json.loads(raw)

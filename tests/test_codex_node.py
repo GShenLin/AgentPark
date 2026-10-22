@@ -40,10 +40,11 @@ def test_codex_node_exposes_provider_dropdown_and_runtime_configuration(monkeypa
     }
     assert schema["codex_command"]["type"] == "text"
     assert [item["value"] for item in schema["sandbox"]["options"]] == [
-        "read-only",
-        "workspace-write",
         "danger-full-access",
+        "workspace-write",
+        "read-only",
     ]
+    assert defaults["sandbox"] == "danger-full-access"
     assert defaults["codex_command"] == "codex"
     assert "tools" not in schema
     assert "skills" not in schema
@@ -67,6 +68,12 @@ def test_codex_node_on_input_uses_node_thread_pointer(tmp_path, monkeypatch):
     captured = {}
 
     class FakeManager:
+        def prepare(self, spec):
+            pass
+        def close_session(self, key):
+            pass
+        def is_alive(self, key):
+            return True
         def run_turn(self, spec, text, **_kwargs):
             captured["spec"] = spec
             captured["text"] = text

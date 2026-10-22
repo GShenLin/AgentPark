@@ -4,7 +4,7 @@ import copy
 import json
 import os
 import re
-import subprocess
+from src.tool.reporting_process import run_reporting_process
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -118,7 +118,7 @@ def run_skill_script(
         if name.startswith("AGENTPARK_") and str(value or "").strip():
             env[name] = str(value)
     try:
-        completed = subprocess.run(
+        completed = run_reporting_process(
             command,
             input=args_payload,
             text=True,
@@ -127,19 +127,6 @@ def run_skill_script(
             env=env,
             timeout=definition.timeout_seconds,
             shell=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return tool_json_payload(
-            {
-                "status": "timeout",
-                "script": definition.id,
-                "exit_code": None,
-                "timed_out": True,
-                "timeout_seconds": definition.timeout_seconds,
-                "stdout": _coerce_process_text(exc.stdout),
-                "stderr": _coerce_process_text(exc.stderr),
-                "error": f"skill script timed out after {definition.timeout_seconds}s",
-            }
         )
     except OSError as exc:
         return tool_json_payload(

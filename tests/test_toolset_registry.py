@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.tool.base_tool import BaseTool
+from src.tool.tool_task_tools import TASK_CONTROL_TOOLS
 from src.tool import toolset_registry as registry
 from src.web_backend.settings_api import SettingsApiDomain
 
@@ -32,7 +33,7 @@ def test_defaults_preserve_every_schema_order_and_callable(isolated):
         tool.addTool(name)
         assert tool.tool_declarations == declarations, name
         assert tool.function_map == functions, name
-    assert len(before["system_tools"][0]) == 14
+    assert len(before["system_tools"][0]) == 14 + len(TASK_CONTROL_TOOLS)
 
 
 def test_membership_empty_sets_dedup_and_next_load(isolated):
@@ -42,14 +43,14 @@ def test_membership_empty_sets_dedup_and_next_load(isolated):
     tool = BaseTool(SimpleNamespace())
     tool.addTool("system_tools")
     tool.addTool("custom")
-    assert list(tool.function_map) == ["read_file", "write_file"]
-    assert len(tool.tool_declarations) == 2
+    assert list(tool.function_map) == [*TASK_CONTROL_TOOLS, "read_file", "write_file"]
+    assert len(tool.tool_declarations) == 2 + len(TASK_CONTROL_TOOLS)
     sets["system_tools"]["tools"] = []
     save(isolated, sets)
     next_tool = BaseTool(SimpleNamespace())
     next_tool.addTool("system_tools")
-    assert not next_tool.function_map
-    assert len(tool.function_map) == 2  # Running agents retain their snapshot.
+    assert next_tool.function_map == TASK_CONTROL_TOOLS
+    assert len(tool.function_map) == 2 + len(TASK_CONTROL_TOOLS)  # Running agents retain their snapshot.
 
 
 @pytest.mark.parametrize("references", [
@@ -72,7 +73,7 @@ def test_failed_resolution_does_not_partially_register(isolated):
     tool = BaseTool(SimpleNamespace())
     with pytest.raises(Exception, match="Unknown tool reference"):
         tool.addTool("custom")
-    assert not tool.function_map and not tool.tool_declarations
+    assert tool.function_map == TASK_CONTROL_TOOLS and len(tool.tool_declarations) == len(TASK_CONTROL_TOOLS)
 
 
 def test_api_catalog_and_node_options_reflect_saved_custom_sets(isolated):
@@ -99,7 +100,7 @@ def test_access_filter_blocks_custom_set_alias(isolated):
     agent.tools = BaseTool(agent)
     agent.tools.addTool("custom")
     assert filter_registered_agent_tools(agent, ["console_tools"]) == ("execute_console_command",)
-    assert list(agent.tools.function_map) == ["read_file"]
+    assert list(agent.tools.function_map) == [*TASK_CONTROL_TOOLS, "read_file"]
 
 
 def test_default_policy_keeps_explicit_read_tools_available(isolated):
@@ -110,7 +111,7 @@ def test_default_policy_keeps_explicit_read_tools_available(isolated):
     agent.tools = BaseTool(agent)
     agent.tools.addTool("file_read_tools")
     filter_registered_agent_tools(agent, DEFAULT_NONDEVELOPER_FILTERED_TOOLS)
-    assert list(agent.tools.function_map) == ["read_file"]
+    assert list(agent.tools.function_map) == [*TASK_CONTROL_TOOLS, "read_file"]
 
 
 def test_capability_summary_uses_actual_members(isolated):

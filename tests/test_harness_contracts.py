@@ -60,6 +60,8 @@ def test_gateway_keeps_node_reasoning_per_lease_and_preserves_other_fields(provi
 
 @pytest.mark.parametrize("gateway_class,patch_path,endpoint", [
     (HarnessResponsesGateway, "src.harness.responses_gateway.dispatch_responses", "/responses"),
+    (HarnessResponsesGateway, "src.harness.responses_gateway.dispatch_chat_completions", "/chat/completions"),
+    (HarnessResponsesGateway, "src.harness.responses_gateway.dispatch_chat_completions", "/v1/chat/completions"),
     (ClaudeProviderGateway, "nodes.claude_node.runtime.provider_gateway.dispatch_messages", "/v1/messages"),
 ])
 def test_gateway_binds_model_per_lease_and_revokes_access(provider, monkeypatch, gateway_class, patch_path, endpoint):
@@ -97,7 +99,7 @@ def test_all_registered_nodes_have_concrete_adapters():
         assert callable(create_adapter(item.id).run)
 
 
-@pytest.mark.parametrize("module", sorted(HARNESS_NODE_TYPES - {"opencode_node", "antigravity_node"}))
+@pytest.mark.parametrize("module", sorted(HARNESS_NODE_TYPES))
 def test_harness_node_schema_exposes_selected_provider_models(provider, module):
     from importlib import import_module
     Node = import_module("nodes." + module).Node

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functions.console_session_registry import console_session_scope
+from src.tool.tool_tasks import tool_task_scope
 from src.providers.agent_config import AgentSendContext
 from src.providers.agent_invocation import send_agent
 
@@ -78,7 +79,7 @@ class AgentStreamRuntime:
         previous_tool_event_callback = getattr(agent, "tool_event_callback", None)
         agent.tool_event_callback = self.on_tool_event
         try:
-            with console_session_scope(agent):
+            with console_session_scope(agent), tool_task_scope(agent):
                 return send_agent(agent, context)
         finally:
             agent.tool_event_callback = previous_tool_event_callback

@@ -24,6 +24,7 @@ from .node_memory_errors import raise_if_failures as _raise_if_failures
 from .node_memory_limits import read_max_active_memory_entries as _read_max_active_memory_entries
 from .node_memory_markdown import render_memory_markdown_entry
 from .node_memory_paths import MEMORY_FILENAME
+from .node_conversation_activity import record_conversation_commit
 from .node_memory_paths import MESSAGES_FILENAME
 from .node_memory_paths import active_paths as _active_paths
 from .node_memory_paths import iter_archive_date_dirs as _iter_archive_date_dirs
@@ -138,6 +139,7 @@ def _append_node_memory_record_unlocked(memory_path: str, messages_path: str, re
         active_state = advance_active_memory_state(active_state, record, paths["messages_path"])
         _enforce_active_memory_limit(memory_path, messages_path, failures, active_state=active_state)
     _raise_if_failures(failures)
+    record_conversation_commit(_node_memory_dir(memory_path, messages_path))
 
 
 def append_node_tool_call_entry(memory_path: str, messages_path: str, event: dict[str, Any]) -> None:

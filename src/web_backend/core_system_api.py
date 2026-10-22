@@ -3,7 +3,7 @@ import subprocess
 import threading
 import uuid
 
-from fastapi import HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 
 from src.provider_options import build_provider_support_list
 from src.cli_commands.companion_restart import build_restart_command
@@ -64,12 +64,15 @@ class SystemApiDomain(FileSystemApiMixin, DomainBase):
         return {"ok": True, "script": restart_path, "label": restart_script_label(restart_path), "instance_id": SERVER_INSTANCE_ID}
 
     def exit_server(self, request: Request):
-        exit_func = getattr(request.app.state, "request_workspace_exit", None)
+        return self.request_workspace_exit(request.app, reason="exit requested by Settings")
+
+    def request_workspace_exit(self, app: FastAPI, *, reason: str):
+        exit_func = getattr(app.state, "request_workspace_exit", None)
         if not callable(exit_func):
             raise HTTPException(status_code=500, detail="workspace exit hook is not available")
 
         def request_exit() -> None:
-            exit_func("exit requested by Settings")
+            exit_func(reason)
 
         timer = threading.Timer(0.2, request_exit)
         timer.daemon = True

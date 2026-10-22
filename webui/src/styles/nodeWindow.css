@@ -2,7 +2,8 @@ html.node-window-document, .node-window-document body, .node-window-document #ap
   background: transparent !important; min-width: 0; overflow: hidden;
 }
 .node-window-workspace { height: 100dvh; display: flex; flex-direction: column; padding: 6px 12px 12px; position: relative; }
-.node-window-card { flex: 1; min-height: 0; margin-top: 20px; user-select: none; touch-action: none; }
+.node-window-card { position: relative; flex: 1; min-height: 0; margin-top: 20px; user-select: none; touch-action: none; }
+.node-window-card > .node-card { transition-property: background-color, border-color, box-shadow; }
 .node-window-card .node-header { flex-shrink: 0; }
 .node-window-note { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 .node-window-workspace.has-note .node-window-card { min-height: 120px; margin-top: 28px; }

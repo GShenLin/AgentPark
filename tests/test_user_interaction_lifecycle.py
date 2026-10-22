@@ -54,12 +54,12 @@ def test_concurrent_clients_have_exactly_one_winner():
     assert store.close_pending_interaction(pending["id"], "Stopped")["response"] == accepted["response"]
 
 
-def test_late_answer_expires_before_accepting_even_without_a_list_or_waiter(monkeypatch):
+def test_reporting_interval_does_not_expire_an_unanswered_request(monkeypatch):
     pending = request()
-    monkeypatch.setattr(store.time, "time", lambda: pending["expires_at"] + 1)
-    with pytest.raises(ValueError, match="expired"):
-        store.submit_interaction_response(pending["id"], {"values": {"message": "too late"}})
-    assert store.read_interaction_request(pending["id"])["status"] == "expired"
+    future = store.time.time() + 3601
+    monkeypatch.setattr(store.time, "time", lambda: future)
+    assert store.read_interaction_request(pending["id"])["status"] == "pending"
+    assert store.submit_interaction_response(pending["id"], {"values": {"message": "accepted"}})["status"] == "submitted"
 
 
 def test_stopping_agent_closes_the_visible_request(monkeypatch):

@@ -1,7 +1,8 @@
 """Editable toolsets refer to individual, existing Python tool exports.
 
 References are module:function pairs, never nested toolsets. Python remains the
-authority for schemas and execution; JSON only controls membership and order.
+authority for schemas and execution; JSON controls membership, order and optional
+model-facing tool description overrides.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from pathlib import Path
 from src import workspace_settings
 from src.tool.tool_load_errors import ToolLoadError
 from src.tool.tool_module_loader import get_functions_dir, load_tool_module
+from src.tool.tool_prompts import validate_tool_prompts
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ToolEntry = tuple[dict, Callable]
@@ -23,8 +25,9 @@ def toolsets_path() -> str:
 
 
 def validate_structure(payload: object) -> dict:
-    if not isinstance(payload, dict) or "toolsets" not in payload or set(payload) - {"toolsets", "deleted_toolsets"}:
-        raise ValueError("Toolset settings require 'toolsets' and optional 'deleted_toolsets' fields only.")
+    if not isinstance(payload, dict) or "toolsets" not in payload or set(payload) - {"toolsets", "deleted_toolsets", "tool_prompts"}:
+        raise ValueError("Toolset settings require 'toolsets' and optional 'deleted_toolsets' and 'tool_prompts' fields only.")
+    validate_tool_prompts(payload.get("tool_prompts", {}))
     sets = payload["toolsets"]
     if not isinstance(sets, dict):
         raise ValueError("toolsets must be an object.")
@@ -61,9 +64,10 @@ def split_reference(reference: object) -> tuple[str, str]:
 def load_toolset_config() -> dict:
     path = Path(toolsets_path())
     if not path.exists():
-        return {"toolsets": {}, "deleted_toolsets": []}
+        return {"toolsets": {}, "deleted_toolsets": [], "tool_prompts": {}}
     payload = validate_structure(json.loads(path.read_text(encoding="utf-8")))
-    return {"toolsets": payload["toolsets"], "deleted_toolsets": payload.get("deleted_toolsets", [])}
+    return {"toolsets": payload["toolsets"], "deleted_toolsets": payload.get("deleted_toolsets", []),
+            "tool_prompts": payload.get("tool_prompts", {})}
 
 
 def module_tools(module_name: str) -> list[ToolEntry]:
@@ -153,7 +157,7 @@ def settings_document() -> dict:
     sets = {**catalog["defaults"], **config["toolsets"]}
     for name in config["deleted_toolsets"]:
         sets.pop(name, None)
-    return {"toolsets": sets, "deleted_toolsets": config["deleted_toolsets"]}
+    return {"toolsets": sets, "deleted_toolsets": config["deleted_toolsets"], "tool_prompts": config["tool_prompts"]}
 
 
 def validate_toolsets(payload: object) -> None:

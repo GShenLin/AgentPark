@@ -8,7 +8,8 @@ import pytest
 
 from nodes.antigravity_node import Node
 from src.harness.adapters.antigravity import Adapter
-from src.harness.adapters.antigravity_config import DEFAULT_MODEL, load_request
+from src.harness.adapters.antigravity_config import execution_options, RUNTIME_MODEL as DEFAULT_MODEL
+from src.harness.config import load_cli_request
 from src.harness.adapters.antigravity_events import AntigravityEvents
 from src.harness.contracts import HarnessContext
 from src.harness.events import HarnessEvents
@@ -16,15 +17,22 @@ from src.harness.memory_reset import clear_harness_memory
 
 
 def context(tmp_path, **values):
-    return HarnessContext(str(tmp_path / "config.json"), str(tmp_path), values)
+    return HarnessContext(str(tmp_path / "config.json"), str(tmp_path), {"provider_id": "test-provider", "model": "selected-model", **values})
 
 
-def test_native_schema_and_reset_preserve_workspace(tmp_path):
-    schema = Node().get_config_schema({"provider_id": "unrelated"})
-    assert "provider_id" not in schema and "model" not in schema
-    request = load_request(context(tmp_path))
-    assert request.model == DEFAULT_MODEL and request.mode == "" and request.auto_approve is False
-    assert load_request(context(tmp_path, native_model="gemini-4-argon-high")).state_dir == request.state_dir
+@pytest.fixture(autouse=True)
+def provider_config(monkeypatch):
+    monkeypatch.setattr("src.config_loader.ConfigLoader.get_provider_config", lambda self, key: {
+        "id": key, "type": "openai", "supportmode": ["chat"], "model": "selected-model",
+        "models": ["selected-model", "other"], "baseUrl": "http://localhost:9/v1", "apiKey": "unused"})
+
+
+def test_shared_provider_schema_and_reset_preserve_workspace(tmp_path):
+    schema = Node().get_config_schema({"provider_id": "test-provider"})
+    assert "provider_id" in schema and "model" in schema and "native_model" not in schema
+    request = load_cli_request("antigravity", context(tmp_path))
+    assert request.binding.model_id == "selected-model"
+    assert load_cli_request("antigravity", context(tmp_path, model="other")).state_dir == request.state_dir
     work = Path(request.cwd) / "keep.txt"
     work.write_text("user work", encoding="utf-8")
     clear_harness_memory(str(tmp_path), {"type_id": "antigravity_node"})
@@ -32,15 +40,13 @@ def test_native_schema_and_reset_preserve_workspace(tmp_path):
 
 
 @pytest.mark.parametrize("values", [
-    {"access_role": "nondeveloper"}, {"native_model": ""}, {"native_model": "a b"},
-    {"native_mode": "bypassPermissions"}, {"native_effort": "unknown"}, {"native_effort": []},
-    {"timeout_seconds": False}, {"timeout_seconds": float("nan")}, {"working_path": "Z:/missing-agy-workspace"},
-    {"native_auto_approve": "true"}, {"native_auto_approve": 1}, {"native_auto_approve": None},
-    {"native_auto_approve": True, "access_role": "nondeveloper"},
+    {"provider_id": ""}, {"access_role": "nondeveloper"},
+    {"timeout_seconds": False}, {"timeout_seconds": float("nan")},
+    {"working_path": "Z:/missing-harness-workspace"},
 ])
 def test_invalid_request_never_launches(tmp_path, values):
     with pytest.raises(ValueError):
-        load_request(context(tmp_path, **values))
+        load_cli_request("antigravity", context(tmp_path, **values))
 
 
 def init_frame(model=DEFAULT_MODEL, conversation="session-one"):
@@ -110,54 +116,67 @@ def test_partial_output_and_interrupted_tools_do_not_complete():
     assert output[-1]["status"] == "failed" and not value.events.started
 
 
+class FakeResidentAntigravity:
+    instances = []
+
+    def __init__(self, argv, **kwargs):
+        self.argv, self.frames, self.closed, self.sent = argv, [init_frame()], False, []
+        self.instances.append(self)
+
+    def send(self, frame):
+        self.sent.append(frame)
+        self.frames.extend([step_frame(text_delta="hello"), result_frame()])
+
+    def receive(self):
+        return self.frames.pop(0)
+
+    def reset(self, timeout, cancel_source):
+        pass
+
+    def is_alive(self):
+        return not self.closed
+
+    def close(self):
+        self.closed = True
+
+
 def test_adapter_resumes_only_owned_id_and_stdin_supports_long_text(tmp_path, monkeypatch):
-    runs = []
-    monkeypatch.setattr("src.harness.adapters.antigravity.command_argv", lambda _: ["agy"])
-    def run(argv, **kwargs):
-        runs.append(argv)
-        content = json.loads(kwargs["stdin"])["message"]["content"]
-        assert content == "x" * 40000
-        assert "--continue" not in argv and "--dangerously-skip-permissions" not in argv and "-p" not in argv
-        for frame in [init_frame(), step_frame(text_delta="hello"), result_frame()]:
-            kwargs["on_line"](json.dumps(frame))
-    monkeypatch.setattr("src.harness.adapters.antigravity.run_process", run)
+    FakeResidentAntigravity.instances = []
+    monkeypatch.setattr("src.harness.adapters.resident.command_argv", lambda _: ["agy"])
+    monkeypatch.setattr("src.harness.adapters.antigravity.JsonlProcess", FakeResidentAntigravity)
+    adapter = Adapter()
+    adapter.prepare(context(tmp_path))
+    first = FakeResidentAntigravity.instances[0]
+    assert not first.sent
     for _ in range(2):
-        assert Adapter().run("x" * 40000, context(tmp_path)).text == "hello"
-    assert "--conversation" not in runs[0]
-    assert runs[1][runs[1].index("--conversation") + 1] == "session-one"
+        assert adapter.run("x" * 40000, context(tmp_path)).text == "hello"
+    assert len(FakeResidentAntigravity.instances) == 1
+    assert not first.closed
+    assert all(frame["message"]["content"] == "x" * 40000 for frame in first.sent)
+    assert "--continue" not in first.argv and "--dangerously-skip-permissions" not in first.argv
+    adapter.close()
+    assert adapter.run("again", context(tmp_path)).text == "hello"
+    second = FakeResidentAntigravity.instances[1]
+    assert second.argv[second.argv.index("--conversation") + 1] == "session-one"
+    adapter.close()
     new_cwd = tmp_path / "different"
     new_cwd.mkdir()
     with pytest.raises(ValueError, match="working directory changed"):
-        Adapter().run("x", context(tmp_path, working_path=str(new_cwd)))
-    assert len(runs) == 2
+        adapter.run("x", context(tmp_path, working_path=str(new_cwd)))
+    assert len(FakeResidentAntigravity.instances) == 2
 
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_node_permission_choice_controls_process_and_overrides_stale_context(tmp_path, monkeypatch, enabled):
     (tmp_path / "config.json").write_text(json.dumps({"native_auto_approve": enabled}), encoding="utf-8")
-    monkeypatch.setattr("src.harness.adapters.antigravity.command_argv", lambda _: ["agy"])
-    runs = []
-
-    def run(argv, **kwargs):
-        runs.append(argv)
-        for frame in [init_frame(), result_frame()]:
-            kwargs["on_line"](json.dumps(frame))
-
-    monkeypatch.setattr("src.harness.adapters.antigravity.run_process", run)
-    assert Adapter().run("hello", context(tmp_path, native_auto_approve=not enabled)).text == "hello"
-    assert len(runs) == 1
-    assert ("--dangerously-skip-permissions" in runs[0]) is enabled
+    FakeResidentAntigravity.instances = []
+    monkeypatch.setattr("src.harness.adapters.resident.command_argv", lambda _: ["agy"])
+    monkeypatch.setattr("src.harness.adapters.antigravity.JsonlProcess", FakeResidentAntigravity)
+    adapter = Adapter()
+    assert adapter.run("hello", context(tmp_path, native_auto_approve=not enabled)).text == "hello"
+    assert ("--dangerously-skip-permissions" in adapter.client.argv) is enabled
+    adapter.close()
     assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == {"native_auto_approve": enabled}
-
-
-def test_model_catalog_preserves_exact_ids_and_rejects_unstructured_text(monkeypatch):
-    from src.harness import antigravity_catalog as catalog
-    monkeypatch.setattr(catalog, "command_argv", lambda _: ["agy"])
-    monkeypatch.setattr(catalog, "run_process", lambda *a, **k: "gemini-4-argon-high\tGemini 4 Argon (High)\n")
-    assert catalog.list_models() == ["gemini-4-argon-high"]
-    monkeypatch.setattr(catalog, "run_process", lambda *a, **k: "login required\n")
-    with pytest.raises(ValueError, match="invalid model catalog"):
-        catalog.list_models()
 
 
 def test_native_install_verifies_hash_before_replacing_binary(tmp_path, monkeypatch):
@@ -186,22 +205,7 @@ def test_external_native_install_is_not_removed(tmp_path, monkeypatch):
         install.mutate(tmp_path, "install")
 
 
-def test_native_catalog_api_requires_owner_and_preserves_native_errors(monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from src.web_backend.core import BackendCore
-    from src.web_backend.route_registry import ApiRouteRegistry
-    from src.harness import antigravity_catalog
-    app = FastAPI()
-    ApiRouteRegistry.register(app, BackendCore())
-    monkeypatch.setattr(antigravity_catalog, "list_models", lambda: [DEFAULT_MODEL])
-    with TestClient(app, client=("127.0.0.1", 12345)) as client:
-        assert client.get("/api/harnesses/antigravity/models").json() == {"models": [DEFAULT_MODEL]}
-        assert client.get("/api/harnesses/unknown/models").status_code == 404
-        def failed():
-            raise RuntimeError("authentication required")
-        monkeypatch.setattr(antigravity_catalog, "list_models", failed)
-        response = client.get("/api/harnesses/antigravity/models")
-        assert response.status_code == 502 and "authentication required" in response.text
-    with TestClient(app, client=("203.0.113.8", 12345)) as client:
-        assert client.get("/api/harnesses/antigravity/models").status_code == 403
+@pytest.mark.parametrize("values", [{"native_mode": "invalid"}, {"native_auto_approve": "true"}, {"native_auto_approve": 1}])
+def test_invalid_permissions(values, tmp_path):
+    with pytest.raises(ValueError):
+        execution_options(context(tmp_path, **values))

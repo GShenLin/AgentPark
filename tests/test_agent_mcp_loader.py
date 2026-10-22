@@ -116,7 +116,8 @@ def test_base_tool_registers_external_tool():
 
     tool.register_external_tool(declaration, external_echo)
 
-    assert tool.tool_declarations == [declaration]
+    assert tool.tool_declarations[-1] == declaration
+    assert {"read_tool_task", "wait_tool_task", "stop_tool_task"} <= tool.function_map.keys()
     assert tool.execute_tool("external_echo", {"text": "ok"}) == {"text": "ok"}
 
 
@@ -187,6 +188,7 @@ def test_asset_to_json_mcp_uses_read_only_default_allowlist(monkeypatch):
         if isinstance(item, dict) and isinstance(item.get("function"), dict)
     ]
     assert declaration_names == [
+        "read_tool_task", "wait_tool_task", "stop_tool_task",
         "mcp__asset-to-json__find_assets",
         "mcp__asset-to-json__read_asset_json",
         "mcp__asset-to-json__get_editor_context",
@@ -278,11 +280,13 @@ def test_mcp_timeout_parsing_rejects_boolean_values():
         runtime._timeout_seconds({"timeout": True}, "timeout", 30)
 
 
-def test_mcp_call_read_timeout_tracks_tool_timeout_argument():
+def test_mcp_read_timeout_configures_reporting_instead_of_cancelling():
     import nodes.agent_mcp_runtime as runtime
+    from nodes.agent_mcp_loader import McpServerDefinition
 
-    assert runtime._call_read_timeout({"readTimeoutSeconds": 10}, {"timeout_seconds": 600}).total_seconds() == 630
-    assert runtime._call_read_timeout({"readTimeoutSeconds": 700}, {"timeout_seconds": 600}).total_seconds() == 700
+    server = McpServerDefinition(name="test", label="Test", config={"readTimeoutSeconds": 10})
+    callback = runtime._build_tool_callable(runtime.McpServerClient(server), server, "slow", "mcp__test__slow")
+    assert callback.tool_timeout_seconds == 10
 
 
 def test_mcp_materialize_records_lifecycle_failure(monkeypatch):

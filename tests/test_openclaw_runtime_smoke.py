@@ -10,6 +10,8 @@ import pytest
 
 from src.harness.contracts import HarnessContext
 from src.harness.registry import create_adapter
+from src.harness.install_manager import command_argv
+from src.harness.openclaw_session import OpenClawSessions
 from src.web_backend.node_runtime_event_sink import NodeRuntimeEventSink
 
 
@@ -116,9 +118,7 @@ def test_openclaw_emits_tools_and_text_before_model_completion(tmp_path, monkeyp
     if tool_name == "write":
         provider["responsesApi"] = True
     monkeypatch.setattr("src.config_loader.ConfigLoader.get_provider_config", lambda self, key: dict(provider))
-    monkeypatch.setattr("src.harness.adapters.openclaw.command_argv",
-                        lambda key: ["node", os.environ["AGENTPARK_TEST_OPENCLAW_ENTRY"]])
-    monkeypatch.setattr("src.harness.adapters.cli_session.stream_callback", lambda values: capture)
+    assert os.path.samefile(command_argv("openclaw")[-1], os.environ["AGENTPARK_TEST_OPENCLAW_ENTRY"])
     node = tmp_path / "node"
     node.mkdir()
     (node / "config.json").write_text(json.dumps({"reasoning_effort": effort}), encoding="utf-8")
@@ -128,7 +128,8 @@ def test_openclaw_emits_tools_and_text_before_model_completion(tmp_path, monkeyp
         log_graph_event=lambda graph, event, **fields: process_events.append({"event": event, **fields}),
         append_tool_call_entry=lambda *args: None, append_runtime_log=lambda *args, **fields: None)
     context = HarnessContext(str(node / "config.json"), str(node),
-        {"provider_id": "p", "model": "test-model", "working_path": str(workspace), "timeout_seconds": 90})
+        {"provider_id": "p", "model": "test-model", "working_path": str(workspace),
+         "timeout_seconds": 90, "stream_callback": capture})
     try:
         result = create_adapter("openclaw").run(f"Use {tool_name} on read-me.txt, then answer.", context)
         assert result.text == "STREAM_BEFORE_DONE"
@@ -150,6 +151,7 @@ def test_openclaw_emits_tools_and_text_before_model_completion(tmp_path, monkeyp
         assert process_types.index("tool_call_start") < process_types.index("node_message_done")
         assert process_types.index("tool_call_end") < process_types.index("node_message_done")
     finally:
+        OpenClawSessions.instance().close_under(node)
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)

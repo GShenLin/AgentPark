@@ -74,11 +74,18 @@ class NodeAsyncRuns(HostBoundService):
 
         run_id = str(uuid.uuid4())
         context["task_id"] = run_id
-        result_queue = self.mp_ctx.Queue()
-        process = self.mp_ctx.Process(
-            target=_node_worker,
-            args=(nodes_dir, node_id, message, context, result_queue, node_config_path),
-        )
+        from src.harness.registry import HARNESS_NODE_TYPES
+        if node_id in HARNESS_NODE_TYPES:
+            from .harness_run import HarnessRun
+            result_queue = queue.Queue()
+            process = HarnessRun(_node_worker,
+                (nodes_dir, node_id, message, context, result_queue, node_config_path), context)
+        else:
+            result_queue = self.mp_ctx.Queue()
+            process = self.mp_ctx.Process(
+                target=_node_worker,
+                args=(nodes_dir, node_id, message, context, result_queue, node_config_path),
+            )
         process.start()
         self.node_runs[run_id] = {
             "process": process,

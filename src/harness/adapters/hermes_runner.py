@@ -1,7 +1,7 @@
 """Standalone bridge executed by Hermes's Python, never imported into AgentPark's environment.
 
 The real Hermes SDK owns inference and tool execution. This bridge owns the JSONL wire contract
-and atomic conversation snapshot so every process uses the current short-lived gateway lease.
+and atomic conversation snapshot while one native agent survives successive turns.
 """
 from __future__ import annotations
 
@@ -60,10 +60,10 @@ def main() -> None:
             wire.flush()
 
     try:
-        request = json.load(sys.stdin)
-        if not isinstance(request, dict):
+        request = json.loads(sys.stdin.readline())
+        if not isinstance(request, dict) or request.get("type") != "initialize":
             raise ValueError("Hermes runner input must be an object.")
-        for key in ("text", "model", "base_url", "instruction", "state_dir", "reasoning_effort"):
+        for key in ("model", "base_url", "instruction", "state_dir", "reasoning_effort"):
             if not isinstance(request.get(key), str):
                 raise ValueError(f"Hermes runner requires string {key}.")
         state_path = Path(request["state_dir"]) / "conversation.json"
@@ -133,21 +133,28 @@ def main() -> None:
                         # Restore any snapshot messages not yet in native storage before
                         # Hermes treats conversation_history as already durable.
                         flush_history(agent, history)
-                    result = agent.run_conversation(user_message=request["text"], conversation_history=history, task_id=session_id)
-                    final, messages = completed_turn(result)
-                    flush_history(agent, messages)
-                    # Context compression may rotate Hermes's native session identity.
-                    session_id = agent.session_id
-                    if not isinstance(session_id, str) or not session_id:
-                        raise ValueError("Hermes returned an invalid session identity.")
+                    emit({"type": "ready"})
+                    for line in sys.stdin:
+                        turn = json.loads(line)
+                        if (not isinstance(turn, dict) or turn.get("type") != "turn"
+                                or not isinstance(turn.get("text"), str)):
+                            raise ValueError("Hermes requires a typed turn with string text.")
+                        result = agent.run_conversation(user_message=turn["text"], conversation_history=history, task_id=session_id)
+                        final, messages = completed_turn(result)
+                        flush_history(agent, messages)
+                        # Context compression may rotate Hermes's native session identity.
+                        session_id = agent.session_id
+                        if not isinstance(session_id, str) or not session_id:
+                            raise ValueError("Hermes returned an invalid session identity.")
+                        state_path.parent.mkdir(parents=True, exist_ok=True)
+                        temporary = state_path.with_suffix(".tmp")
+                        temporary.write_text(json.dumps({"schema": 1, "session_id": session_id, "messages": messages},
+                                                        ensure_ascii=False), encoding="utf-8")
+                        os.replace(temporary, state_path)
+                        history = messages
+                        emit({"type": "result", "text": final})
                 finally:
                     agent.close()
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = state_path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"schema": 1, "session_id": session_id, "messages": messages},
-                                        ensure_ascii=False), encoding="utf-8")
-        os.replace(temporary, state_path)
-        emit({"type": "result", "text": final})
     except Exception as exc:
         emit({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
         raise SystemExit(1) from exc

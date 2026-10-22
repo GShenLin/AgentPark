@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 
+import pytest
+
 from src.cli_provider_runtime.http_transport import UpstreamResponse
 from src.cli_provider_runtime.responses_passthrough import ResponsesPassthrough
 
@@ -71,6 +73,41 @@ def test_openai_responses_keeps_native_namespace_tools():
     assert prepared.payload["reasoning"] == {"effort": "high", "summary": "auto"}
     assert prepared.payload["client_metadata"] == {"session_id": "session-1"}
     assert prepared.tools_by_wire_name == {}
+
+
+@pytest.mark.parametrize("with_format", [False, True])
+def test_doubao_removes_codex_generation_hints_preserving_history_and_format(with_format):
+    original = _request()
+    original["reasoning"] = {"effort": "high", "summary": "detailed", "context": "all_turns"}
+    original["text"] = {"verbosity": "high"}
+    if with_format:
+        original["text"]["format"] = {
+            "type": "json_schema", "name": "result", "strict": True,
+            "schema": {"type": "object", "properties": {"ok": {"type": "boolean"}},
+                       "required": ["ok"], "additionalProperties": False},
+        }
+    prepared = ResponsesPassthrough({"type": "doubao"}).prepare_request(original).payload
+    assert prepared["reasoning"] == {"effort": "high"}
+    assert len(prepared["input"]) == len(original["input"])
+    assert prepared["input"][1] == original["input"][1]
+    if with_format:
+        assert prepared["text"] == {"format": original["text"]["format"]}
+    else:
+        assert "text" not in prepared
+    assert original["reasoning"]["context"] == "all_turns"
+    assert original["text"]["verbosity"] == "high"
+
+
+def test_generation_hint_translation_is_doubao_specific_and_does_not_mask_unknown_fields():
+    original = _request()
+    original["reasoning"] = {"context": "all_turns", "summary": "auto"}
+    original["text"] = {"verbosity": "high"}
+    native = ResponsesPassthrough({"type": "openai"}).prepare_request(original).payload
+    assert native == original
+    assert "reasoning" not in ResponsesPassthrough({"type": "doubao"}).prepare_request(original).payload
+    original["reasoning"]["future_option"] = "unsupported"
+    prepared = ResponsesPassthrough({"type": "doubao"}).prepare_request(original).payload
+    assert prepared["reasoning"] == {"future_option": "unsupported"}
 
 
 def test_responses_complete_restores_namespace_tool_identity():

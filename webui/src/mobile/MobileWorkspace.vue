@@ -558,13 +558,14 @@ const { scrollToBottom: scrollFeedToBottom } = useMobileChatScroll(
   [messageSignature, liveMessage, thinkingMessage, activityMessage, activityBlocks],
 )
 
-function consumeWorkAlertNavigation(request: { graphId: string; nodeId: string; nonce: number }) {
+async function openNodeTarget(request: { graphId: string; nodeId: string }) {
   settingsOpen.value = false
-  void workspace.openGraphNode(request.graphId, request.nodeId)
-    .catch((error: unknown) => {
-      workspace.error.value = String((error as { message?: unknown })?.message || error)
-    })
-    .finally(() => completeWorkAlertNavigation(request.nonce))
+  try { await workspace.openGraphNode(request.graphId, request.nodeId) }
+  catch (error: unknown) { workspace.error.value = String((error as { message?: unknown })?.message || error) }
+}
+
+function consumeWorkAlertNavigation(request: { graphId: string; nodeId: string; nonce: number }) {
+  void openNodeTarget(request).finally(() => completeWorkAlertNavigation(request.nonce))
 }
 
 watch(
@@ -618,6 +619,7 @@ onMounted(async () => {
         v-if="settingsOpen"
         :back-label="t('common.back')"
         @back="closeSettings"
+        @open-node="openNodeTarget"
         @providers-updated="workspace.refreshEditorCatalog"
         @tools-updated="workspace.availableTools.value = $event"
       />

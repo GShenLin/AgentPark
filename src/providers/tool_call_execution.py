@@ -73,7 +73,6 @@ def execute_tool_call_envelopes_parallel(
         run_task=execute_tool_call,
         task_to_meta=_tool_call_meta,
         build_error_result=_build_tool_worker_error,
-        build_timeout_result=_build_tool_worker_timeout,
     )
 
 
@@ -86,14 +85,6 @@ def _build_tool_worker_error(tool_call: ToolCallEnvelope, error: Exception, _ind
         tool_call,
         status="error",
         error=f"{type(error).__name__}: {error}",
-    )
-
-
-def _build_tool_worker_timeout(tool_call: ToolCallEnvelope, timeout_seconds: float, _index: int) -> ToolCallExecution:
-    return build_tool_call_error_execution(
-        tool_call,
-        status="timeout",
-        error=f"Tool worker exceeded {timeout_seconds:.2f}s.",
     )
 
 

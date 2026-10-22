@@ -25,6 +25,8 @@ import {
 } from './boardModel'
 import { t } from '../../i18n'
 import { useNodeUnread } from '../../composables/useNodeUnread'
+import HarnessProcessControls from '../HarnessProcessControls.vue'
+import { harnessNodeTypes } from '../../harnessApi'
 
 const injectedCtx = inject(AgentBoardKey)
 if (!injectedCtx) {
@@ -245,6 +247,7 @@ onBeforeUnmount(cleanupNodeCard)
           </DangerButton>
         </div>
       </div>
+      <HarnessProcessControls v-if="harnessNodeTypes.has(props.node.typeId || '')" :node-id="props.node.id" :graph-id="ctx.currentGraphId.value || 'default'" />
       <slot name="content">
       <NodeAgentMeta v-if="isAgentNode" :mode="props.node.mode" :provider-id="props.node.providerId" />
       <div class="node-body">

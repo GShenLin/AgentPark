@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import FormCheckbox from '../FormCheckbox.vue'
 
 type DisplayOption = {
@@ -12,6 +13,7 @@ type DisplayOption = {
   dependencySummary: string
   diagnosticLines: string[]
   nextRunLabel: string
+  status?: string
 }
 
 const props = defineProps<{
@@ -24,7 +26,10 @@ const emit = defineEmits<{
   toggle: [value: string]
 }>()
 
+const disabled = computed(() => !props.selected && props.option.status === 'unavailable')
+
 function toggle() {
+  if (disabled.value) return
   emit('toggle', props.option.value)
 }
 </script>
@@ -32,16 +37,18 @@ function toggle() {
 <template>
   <div
     class="multi-select-option"
-    :class="{ 'is-selected': selected }"
+    :class="{ 'is-selected': selected, 'is-disabled': disabled }"
     role="checkbox"
     tabindex="0"
     :aria-checked="selected ? 'true' : 'false'"
+    :aria-disabled="disabled ? 'true' : 'false'"
     @click="toggle"
     @keydown.enter.prevent="toggle"
     @keydown.space.prevent="toggle"
   >
     <FormCheckbox
       :model-value="selected"
+      :disabled="disabled"
       tabindex="-1"
       @click.stop
       @update:model-value="toggle"
@@ -99,6 +106,10 @@ function toggle() {
 .multi-select-option.is-selected {
   border-color: rgba(56, 189, 248, 0.46);
   background: rgba(8, 47, 73, 0.55);
+}
+
+.multi-select-option.is-disabled {
+  cursor: not-allowed;
 }
 
 .multi-select-copy {

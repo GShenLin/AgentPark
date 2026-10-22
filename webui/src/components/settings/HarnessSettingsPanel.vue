@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import ActionButton from '../ActionButton.vue'
-import NativeHarnessModelsPanel from './NativeHarnessModelsPanel.vue'
+import HarnessProcesses from './HarnessProcesses.vue'
 import { t } from '../../i18n'
 import { checkHarness, getHarnessJob, listHarnesses, operateHarness, type HarnessInfo, type HarnessJob } from '../../harnessApi'
 
+const emit = defineEmits<{ openNode: [target: { graphId: string; nodeId: string }] }>()
 const harnesses = ref<HarnessInfo[]>([])
 const jobs = ref<Record<string, HarnessJob>>({})
 const pending = ref<Record<string, boolean>>({})
@@ -73,6 +74,7 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
       <ActionButton compact :disabled="loading" @click="load">{{ t('settings.reload') }}</ActionButton>
     </div>
     <p class="harness-note">{{ t('harness.installNote') }}</p>
+    <p class="harness-note">{{ t('harness.process.updateHint') }}</p>
     <p v-if="error" role="alert" class="harness-error">{{ error }}</p>
     <p v-if="loading">{{ t('harness.checking') }}</p>
     <div class="harness-grid">
@@ -98,6 +100,7 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
         <p v-if="item.update_status === 'available' && item.upgrade_error" role="alert" class="harness-error">{{ item.upgrade_error }}</p>
         <p v-if="jobs[item.id]?.status === 'failed'" role="alert" class="harness-error">{{ jobs[item.id]?.error }}</p>
         <p v-if="jobs[item.id]?.status === 'completed'" role="status">{{ t('harness.completed') }}</p>
+        <p v-for="failure in jobs[item.id]?.restore_errors || []" :key="failure.node_id" role="alert" class="harness-error">{{ t('harness.process.restoreFailed') }} {{ failure.node_id }}: {{ failure.error }}</p>
         <div class="harness-actions">
           <ActionButton compact :disabled="busy(item.id)" @click="act(item.id, 'check')">{{ t('harness.check') }}</ActionButton>
           <ActionButton v-if="item.update_status === 'available' && item.status === 'ready'" compact variant="primary" :disabled="busy(item.id) || !item.can_upgrade" @click="act(item.id, 'upgrade')">{{ t('harness.upgrade') }}</ActionButton>
@@ -105,7 +108,7 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
           <ActionButton compact :disabled="busy(item.id) || !item.can_uninstall" @click="act(item.id, 'uninstall')">{{ t('harness.uninstall') }}</ActionButton>
         </div>
         <details v-if="jobs[item.id]?.output"><summary>{{ t('harness.output') }}</summary><pre>{{ jobs[item.id]?.output }}</pre></details>
-        <NativeHarnessModelsPanel v-if="item.id === 'opencode' || item.id === 'antigravity'" :harness-id="item.id" :disabled="busy(item.id) || item.status !== 'ready'" />
+        <HarnessProcesses :harness-id="item.id" :updating="busy(item.id)" @open-node="emit('openNode', $event)" />
       </article>
     </div>
   </section>

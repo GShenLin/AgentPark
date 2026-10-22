@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import json
 import os
-import time
 from src.base_agent_manager import BaseAgentManager
 from src.providers.agent_config import AgentSendContext
 from src.providers.agent_invocation import send_agent
@@ -330,32 +329,11 @@ class BaseAgent(
             configured = task_count
         return max(1, min(task_count, configured))
 
-    def _resolve_tool_worker_timeout_sec(self):
-        config = self._get_provider_config()
-        sec_value = config.get("toolWorkerTimeoutSec")
-        if sec_value is not None:
-            try:
-                sec_value = float(sec_value)
-                return sec_value if sec_value > 0 else 20.0
-            except Exception:
-                return 20.0
-
-        ms_value = config.get("toolWorkerTimeoutMs")
-        if ms_value is not None:
-            try:
-                ms_value = float(ms_value)
-                return (ms_value / 1000.0) if ms_value > 0 else 20.0
-            except Exception:
-                return 20.0
-
-        return 20.0
-
     def _execute_tasks_parallel_ordered(
         self,
         tasks,
         run_task,
         build_error_result=None,
-        build_timeout_result=None,
         task_to_meta=None,
     ):
         if not isinstance(tasks, list) or not tasks:
@@ -379,17 +357,7 @@ class BaseAgent(
                 error=str(error),
             )
 
-        def _default_timeout_result(task, timeout_seconds, _index):
-            tool_name, call_id = _get_task_meta(task)
-            return self._build_tool_execution_result(
-                status="timeout",
-                tool_name=tool_name,
-                call_id=call_id,
-                error=f"Tool worker exceeded {timeout_seconds:.2f}s.",
-            )
-
         error_builder = build_error_result if callable(build_error_result) else _default_error_result
-        timeout_builder = build_timeout_result if callable(build_timeout_result) else _default_timeout_result
 
         max_workers = self._resolve_parallel_workers(len(tasks))
         if max_workers <= 1 or len(tasks) == 1:
@@ -402,38 +370,19 @@ class BaseAgent(
             return ordered
 
         ordered_results = [None] * len(tasks)
-        worker_timeout = self._resolve_tool_worker_timeout_sec()
-        executor = ThreadPoolExecutor(max_workers=max_workers)
-        try:
+        # Each tool owns a resumable ToolTask and its reporting interval. A
+        # second batch deadline would discard task IDs and misreport running work.
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
                 executor.submit(run_task, task): index
                 for index, task in enumerate(tasks)
             }
-            pending = set(future_to_index.keys())
-            deadline = time.monotonic() + worker_timeout
-
-            while pending:
-                remain = deadline - time.monotonic()
-                if remain <= 0:
-                    break
-
-                done, pending = wait(pending, timeout=remain, return_when=FIRST_COMPLETED)
-                if not done:
-                    break
-
-                for future in done:
-                    index = future_to_index[future]
-                    try:
-                        ordered_results[index] = future.result()
-                    except Exception as e:
-                        ordered_results[index] = error_builder(tasks[index], e, index)
-
-            for future in pending:
+            for future in as_completed(future_to_index):
                 index = future_to_index[future]
-                future.cancel()
-                ordered_results[index] = timeout_builder(tasks[index], worker_timeout, index)
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+                try:
+                    ordered_results[index] = future.result()
+                except Exception as e:
+                    ordered_results[index] = error_builder(tasks[index], e, index)
 
         for index, result in enumerate(ordered_results):
             if result is None:

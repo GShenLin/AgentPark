@@ -13,6 +13,7 @@ import NodeWindowConversation from './components/NodeWindowConversation.vue'
 import ActionButton from './components/ActionButton.vue'
 import AppErrorToast from './components/AppErrorToast.vue'
 import { createNodeWindowDrag } from './nodeWindowDrag'
+import NodeWindowResizeHandles from './components/NodeWindowResizeHandles.vue'
 
 const props = defineProps<{ bootstrap: WorkspaceBootstrap }>()
 const bridge = window.agentParkNodeWindow
@@ -128,6 +129,7 @@ onBeforeUnmount(() => {
       @pointerdown.capture="drag.down" @pointermove="drag.move" @pointerup="drag.up"
       @pointercancel="drag.up" @lostpointercapture="drag.up" @click.capture="drag.click"
       @contextmenu.prevent="node && menu?.openAt({ x: $event.clientX, y: $event.clientY }, node.id)">
+      <NodeWindowResizeHandles :host="host" />
       <NodeCardItem v-if="node" :node="node" detached @minimize="host.minimize" @close="host.close">
         <template #content>
           <NodeWindowConversation v-if="initialized" :graphs="bootstrap.graphs" :graph-profiles="bootstrap.graph_profiles"

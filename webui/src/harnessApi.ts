@@ -32,6 +32,32 @@ export type HarnessJob = {
   error: string
   output: string
   harness?: HarnessInfo
+  restore_errors?: { node_id: string; error: string }[]
+  restored_count?: number
+}
+
+export type HarnessProcessState = 'stopped' | 'starting' | 'ready' | 'running' | 'stopping' | 'error'
+export type HarnessProcess = {
+  harness_id: string
+  graph_id: string
+  node_id: string
+  state: HarnessProcessState
+  error: string
+}
+export const harnessNodeTypes = new Set([
+  'codex_node', 'claude_node', 'openclaw_node', 'deepseek_harness_node', 'minimax_code_node',
+  'opencode_node', 'antigravity_node', 'pi_node', 'hermes_agent_node',
+])
+export function listHarnessProcesses(id: string): Promise<{ processes: HarnessProcess[] }> {
+  return requestApiJson(getActiveApiBase(), `/api/harnesses/${encodeURIComponent(id)}/processes`)
+}
+export function getHarnessProcess(nodeId: string, graphId: string): Promise<HarnessProcess> {
+  return requestApiJson(getActiveApiBase(), `/api/nodes/instances/${encodeURIComponent(nodeId)}/harness-process?graph_id=${encodeURIComponent(graphId)}`)
+}
+export function controlHarnessProcess(nodeId: string, graphId: string, action: 'start' | 'stop'): Promise<HarnessProcess> {
+  return requestApiJson(getActiveApiBase(), `/api/nodes/instances/${encodeURIComponent(nodeId)}/harness-process?graph_id=${encodeURIComponent(graphId)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
+  })
 }
 
 export function listHarnesses(): Promise<{ harnesses: HarnessInfo[]; jobs: HarnessJob[] }> {
@@ -47,19 +73,4 @@ export function operateHarness(id: string, action: HarnessJob['action']): Promis
 }
 export function getHarnessJob(id: string): Promise<HarnessJob> {
   return requestApiJson(getActiveApiBase(), `/api/harness-jobs/${encodeURIComponent(id)}`)
-}
-
-export function listNativeHarnessModels(id: 'opencode' | 'antigravity'): Promise<{ models: string[] }> {
-  return requestApiJson(getActiveApiBase(), `/api/harnesses/${id}/models`)
-}
-
-export type OpenCodeField = 'native_model' | 'native_agent' | 'native_effort'
-export type NativeOption = { value: string; label: string }
-export type OpenCodeOptions = Record<OpenCodeField, NativeOption[]> & { selection_error: string }
-
-export function getOpenCodeOptions(model: string, agent: string, workingPath: string): Promise<OpenCodeOptions> {
-  return requestApiJson(getActiveApiBase(), '/api/harnesses/opencode/config-options', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, agent, working_path: workingPath }),
-  })
 }

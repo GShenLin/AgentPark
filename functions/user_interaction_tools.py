@@ -144,7 +144,8 @@ ask_user_declaration = {
             "pending requests are also available in the WebUI. "
             "Use this when you need text, choices, or file attachments from the user before continuing. "
             "This is a user-input tool, not desktop automation: it cannot click or control other applications. "
-            "The call waits until the user confirms the dialog or the request times out."
+            "At timeout_sec the call reports a running task; the dialog remains open. "
+            "Continue with wait_tool_task and choose wait_seconds; do not open a duplicate dialog."
         ),
         "parameters": {
             "type": "object",
@@ -154,7 +155,7 @@ ask_user_declaration = {
                 "confirm_label": {"type": "string", "description": "Confirm button label.", "default": "确认"},
                 "timeout_sec": {
                     "type": "integer",
-                    "description": "Maximum seconds to wait for the user. Default 600, max 3600.",
+                    "description": "Seconds before reporting pending input to the model; does not expire the dialog. Default 600, max 3600.",
                     "default": 600,
                     "minimum": 1,
                     "maximum": 3600,

@@ -48,7 +48,10 @@ def managed_argv(harness_id: str) -> list[str] | None:
         node = shutil.which("node")
         if not node:
             raise RuntimeError("Node.js is required to run this Harness.")
-        return [node, str(target)]
+        # Supply OpenClaw's required Windows stack size in the first process.
+        # Otherwise its launcher starts a second Node process solely to add it.
+        flags = ["--stack-size=8192"] if harness_id == "openclaw" and os.name == "nt" else []
+        return [node, *flags, str(target)]
     return [str(target)]
 
 
@@ -86,7 +89,8 @@ def command_argv(harness_id: str) -> list[str]:
             node = shutil.which("node")
             if not node:
                 raise RuntimeError("Node.js is required.")
-            return [node, str(target)]
+            flags = ["--stack-size=8192"] if harness_id == "openclaw" and os.name == "nt" else []
+            return [node, *flags, str(target)]
         return [str(target)]
     return [executable]
 
@@ -99,39 +103,48 @@ def check_installation(harness_id: str, *, include_updates: bool = False) -> dic
     with _LOCK:
         if harness_id in _MUTATING:
             return {**result, "status": "busy"}
+    with runtime_lease(harness_id):
+        return _inspect_installation(harness_id, include_updates=include_updates)
+
+
+def _inspect_installation(harness_id: str, *, include_updates: bool = False) -> dict:
+    """Inspect while the caller owns a shared runtime or exclusive update lease."""
+    spec = descriptor(harness_id)
+    result = {**asdict(spec), "status": "missing", "version": "", "source": "none",
+              "executable_path": "", "error": "", "can_uninstall": False,
+              "can_upgrade": False, "upgrade_error": "", **asdict(HarnessUpdate())}
     try:
-        with runtime_lease(harness_id):
-            if spec.installation == "antigravity-native":
-                from .antigravity_installation import check
-                return {**asdict(spec), **check(install_root(harness_id), include_updates=include_updates)}
-            if spec.installation == "hermes-python":
-                from .hermes_installation import check
-                return {**asdict(spec), **check(install_root(harness_id), include_updates=include_updates)}
-            managed = (install_root(harness_id) / "node_modules" / spec.package / "package.json").exists()
-            external = shutil.which(spec.executable)
-            if not managed and not external:
-                return result
-            result.update(source="managed" if managed else "external", can_uninstall=managed)
-            argv = command_argv(harness_id)
-            result["executable_path"] = argv[-1]
-            version = run_process([*argv, "--version"], cwd=get_workspace_root(), timeout=20).strip()
-            if not version:
-                raise ValueError("Harness --version returned no version.")
-            result.update(status="ready", version=version[:300])
-            update_root = install_root(harness_id)
-            try:
-                installation = upgrade_installation(harness_id, update_root)
-                update_root = installation.package_base
-                result["package"] = installation.package
-                result["can_upgrade"] = True
-            except (OSError, ValueError, RuntimeError) as exc:
-                result["upgrade_error"] = str(exc)
-            if include_updates and result["can_upgrade"]:
-                result.update(check_updates(harness_id, update_root, result, cwd=get_workspace_root()))
-            elif include_updates:
-                # Without a verified distribution, an upstream release is not
-                # evidence of an update for this external executable.
-                result.update(update_status="error", update_error=result["upgrade_error"])
+        if spec.installation == "antigravity-native":
+            from .antigravity_installation import check
+            return {**asdict(spec), **check(install_root(harness_id), include_updates=include_updates)}
+        if spec.installation == "hermes-python":
+            from .hermes_installation import check
+            return {**asdict(spec), **check(install_root(harness_id), include_updates=include_updates)}
+        managed = (install_root(harness_id) / "node_modules" / spec.package / "package.json").exists()
+        external = shutil.which(spec.executable)
+        if not managed and not external:
+            return result
+        result.update(source="managed" if managed else "external", can_uninstall=managed)
+        argv = command_argv(harness_id)
+        result["executable_path"] = argv[-1]
+        version = run_process([*argv, "--version"], cwd=get_workspace_root(), timeout=20).strip()
+        if not version:
+            raise ValueError("Harness --version returned no version.")
+        result.update(status="ready", version=version[:300])
+        update_root = install_root(harness_id)
+        try:
+            installation = upgrade_installation(harness_id, update_root)
+            update_root = installation.package_base
+            result["package"] = installation.package
+            result["can_upgrade"] = True
+        except (OSError, ValueError, RuntimeError) as exc:
+            result["upgrade_error"] = str(exc)
+        if include_updates and result["can_upgrade"]:
+            result.update(check_updates(harness_id, update_root, result, cwd=get_workspace_root()))
+        elif include_updates:
+            # Without a verified distribution, an upstream release is not
+            # evidence of an update for this external executable.
+            result.update(update_status="error", update_error=result["upgrade_error"])
     except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
         result.update(status="error", error=str(exc))
     return result
@@ -153,67 +166,85 @@ def runtime_lease(harness_id: str):
 
 
 def mutate_installation(harness_id: str, action: str) -> dict:
-    with file_lease(install_root(harness_id).parent / f"{harness_id}.lock", exclusive=True):
-        output = _mutate_installation(harness_id, action)
-    status = check_installation(harness_id)
-    if action in {"install", "upgrade"} and status["status"] != "ready":
-        raise RuntimeError(f"Installation verification failed: {status['error'] or status['status']}")
-    return {"harness": status, "output": output[-12000:]}
+    descriptor(harness_id)
+    if action not in {"install", "upgrade", "uninstall"}:
+        raise ValueError(f"Unknown Harness operation: {action}")
+    from .process_manager import HarnessProcesses
+    manager = HarnessProcesses.instance()
+    with _LOCK:
+        if harness_id in _MUTATING:
+            raise RuntimeError(f"Harness {harness_id} installation is being changed.")
+        _MUTATING.add(harness_id)
+    try:
+        # Mark unavailable before cancelling turns, then wait for their shared
+        # runtime leases to drain before acquiring the exclusive file lease.
+        # This order prevents an updater waiting on a turn it still needs to stop.
+        restore_paths = manager.suspend_type(harness_id)
+        with file_lease(install_root(harness_id).parent / f"{harness_id}.lock", exclusive=True):
+            output = _mutate_installation(harness_id, action)
+            status = _inspect_installation(harness_id)
+            if action in {"install", "upgrade"} and status["status"] != "ready":
+                raise RuntimeError(f"Installation verification failed: {status['error'] or status['status']}")
+    finally:
+        with _LOCK:
+            _MUTATING.remove(harness_id)
+    failures = manager.restore(restore_paths) if action != "uninstall" else []
+    if action == "uninstall":
+        for path in restore_paths:
+            manager.stop(path)
+    return {"harness": status, "output": output[-12000:], "restore_errors": failures,
+            "restored_count": sum(manager.status(path)["state"] == "ready" for path in restore_paths)}
 
 
 def _mutate_installation(harness_id: str, action: str) -> str:
     spec = descriptor(harness_id)
     if action not in {"install", "upgrade", "uninstall"}:
         raise ValueError(f"Unknown Harness operation: {action}")
-    with _LOCK:
-        if harness_id in _MUTATING or _ACTIVE.get(harness_id, 0):
-            raise RuntimeError(f"Harness {harness_id} is busy; stop its nodes before changing its installation.")
-        _MUTATING.add(harness_id)
-    try:
-        if spec.installation == "antigravity-native":
-            from .antigravity_installation import mutate
-            return mutate(install_root(harness_id), action)
-        if spec.installation == "hermes-python":
-            from .hermes_installation import mutate
-            return mutate(install_root(harness_id), action)
-        root = install_root(harness_id)
-        installation = NpmInstallation(root, root, False, spec.package)
-        target = "latest"
-        if action == "upgrade":
-            installation = upgrade_installation(harness_id, root)
-            # Recheck under the exclusive lease: another client may have updated since the UI check.
-            argv = command_argv(harness_id)
-            version = run_process([*argv, "--version"], cwd=get_workspace_root(), timeout=20).strip()
-            current = installed_version(harness_id, installation.package_base, version,
-                                        package=installation.package)
-            target = latest_version(installation.package, str(installation.prefix))
-            if version_key(target) <= version_key(current):
-                raise ValueError(f"No newer release is available (installed {current}, latest {target}).")
-        # Persistent native clients must release executable handles before npm replaces files.
-        if harness_id == "codex":
-            from nodes.codex_node.runtime.session_manager import CodexSessionManager
-            if CodexSessionManager._instance is not None:
-                CodexSessionManager._instance.close_all()
-        if harness_id == "claude":
-            from nodes.claude_node.runtime.session_manager import ClaudeSessionManager
-            if ClaudeSessionManager._instance is not None:
-                ClaudeSessionManager._instance.close_all()
-                ClaudeSessionManager._instance = None
-        if action == "uninstall" and not (root / "node_modules" / spec.package / "package.json").exists():
-            raise ValueError("Only installations owned by AgentPark can be uninstalled here.")
-        installation.prefix.mkdir(parents=True, exist_ok=True)
-        args = [*npm_argv(), "uninstall" if action == "uninstall" else "install",
-                *installation.scope_args(), "--no-audit", "--no-fund"]
-        if action in {"install", "upgrade"}:
-            args += ["--save-exact", "--engine-strict", installation.package + "@" + target]
-        else:
-            args += [spec.package]
-        output = run_process(args, cwd=str(installation.prefix), timeout=900)
-        if action == "upgrade":
-            actual = installed_version(harness_id, installation.package_base, "", package=installation.package)
-            if actual != target:
-                raise RuntimeError(f"Upgrade verification failed: expected {target}, found {actual}.")
-    finally:
-        with _LOCK:
-            _MUTATING.remove(harness_id)
+    if spec.installation == "antigravity-native":
+        from .antigravity_installation import mutate
+        return mutate(install_root(harness_id), action)
+    if spec.installation == "hermes-python":
+        from .hermes_installation import mutate
+        return mutate(install_root(harness_id), action)
+    root = install_root(harness_id)
+    installation = NpmInstallation(root, root, False, spec.package)
+    target = "latest"
+    if action == "upgrade":
+        installation = upgrade_installation(harness_id, root)
+        # Recheck under the exclusive lease: another client may have updated since the UI check.
+        argv = command_argv(harness_id)
+        version = run_process([*argv, "--version"], cwd=get_workspace_root(), timeout=20).strip()
+        current = installed_version(harness_id, installation.package_base, version,
+                                    package=installation.package)
+        target = latest_version(installation.package, str(installation.prefix))
+        if version_key(target) <= version_key(current):
+            raise ValueError(f"No newer release is available (installed {current}, latest {target}).")
+    # Persistent native clients must release executable handles before npm replaces files.
+    if harness_id == "openclaw":
+        from .openclaw_session import OpenClawSessions
+        if OpenClawSessions._instance is not None:
+            OpenClawSessions._instance.close_all()
+    if harness_id == "codex":
+        from nodes.codex_node.runtime.session_manager import CodexSessionManager
+        if CodexSessionManager._instance is not None:
+            CodexSessionManager._instance.close_all()
+    if harness_id == "claude":
+        from nodes.claude_node.runtime.session_manager import ClaudeSessionManager
+        if ClaudeSessionManager._instance is not None:
+            ClaudeSessionManager._instance.close_all()
+            ClaudeSessionManager._instance = None
+    if action == "uninstall" and not (root / "node_modules" / spec.package / "package.json").exists():
+        raise ValueError("Only installations owned by AgentPark can be uninstalled here.")
+    installation.prefix.mkdir(parents=True, exist_ok=True)
+    args = [*npm_argv(), "uninstall" if action == "uninstall" else "install",
+            *installation.scope_args(), "--no-audit", "--no-fund"]
+    if action in {"install", "upgrade"}:
+        args += ["--save-exact", "--engine-strict", installation.package + "@" + target]
+    else:
+        args += [spec.package]
+    output = run_process(args, cwd=str(installation.prefix), timeout=900)
+    if action == "upgrade":
+        actual = installed_version(harness_id, installation.package_base, "", package=installation.package)
+        if actual != target:
+            raise RuntimeError(f"Upgrade verification failed: expected {target}, found {actual}.")
     return output

@@ -101,6 +101,21 @@ def test_busy_node_keeps_native_memory(tmp_path):
         registry.end(str(tmp_path / "config.json"), event)
 
 
+def test_openclaw_runtime_closes_before_its_state_is_removed(tmp_path, monkeypatch):
+    from src.harness.openclaw_session import OpenClawSessions
+    root = tmp_path / ".harness" / "openclaw"
+    state = seed(root)
+    closed = []
+
+    def close(directory):
+        assert directory == root and state.is_dir()
+        closed.append(directory)
+
+    monkeypatch.setattr(OpenClawSessions, "_instance", SimpleNamespace(close_under=close))
+    clear_harness_memory(str(tmp_path), {})
+    assert closed == [root] and not state.exists()
+
+
 def test_deletion_error_is_not_reported_as_success(tmp_path, monkeypatch):
     (tmp_path / "config.json").write_text("{}", encoding="utf-8")
     old = seed(tmp_path / ".harness" / "hermes_agent")

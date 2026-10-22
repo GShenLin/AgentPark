@@ -121,6 +121,9 @@ class CliSessionRuntime(HostBoundService):
             write_selected_session_id(target["state_path"], session_id)
 
     def _close_runtime_session(self, target: dict[str, Any]) -> None:
+        from src.harness.process_manager import HarnessProcesses
+        if HarnessProcesses._instance is not None:
+            HarnessProcesses._instance.stop(os.path.dirname(target["config_path"]))
         if target["session_kind"] == "codex":
             runtime_key = codex_runtime_key(
                 target["graph_id"],

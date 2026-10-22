@@ -163,3 +163,7 @@ Stable fields:
 - `configSchema`: object reserved for future node UI mapping
 
 Only `agentpark.plugin.json` and `plugin.json` are read. OpenClaw-specific `contracts` fields are not part of the AgentPark plugin schema.
+
+### Discovery diagnostics
+
+A plugin with an unreadable or invalid manifest remains visible as `unavailable`, identified by its plugin directory path rather than an inferred manifest ID. Diagnostics include the manifest path, discovery stage, exception type, and reason. Other plugins remain discoverable. Unavailable plugins cannot be newly enabled in capability selectors or capability-management commands; an already selected plugin can still be removed. After fixing the manifest, refresh capability discovery to clear the cached diagnostic. This does not change plugin loading or runtime lifecycle behavior.

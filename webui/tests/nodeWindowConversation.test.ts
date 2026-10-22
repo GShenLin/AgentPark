@@ -6,6 +6,8 @@ import { AgentBoardKey, type AgentBoardContext, type NodeCard } from '../src/com
 vi.mock('../src/voice/VoiceCallButton.vue', () => ({ default: { render: () => null } }))
 vi.mock('../src/composables/useNodeUnread', () => ({ useNodeUnread: () => ({ receipt: () => '', acknowledge: vi.fn() }) }))
 vi.mock('../src/i18n', () => ({ t: (key: string) => key }))
+const processApi = vi.hoisted(() => ({ getHarnessProcess: vi.fn(), controlHarnessProcess: vi.fn() }))
+vi.mock('../src/harnessApi', () => ({ ...processApi, harnessNodeTypes: new Set(['codex_node']) }))
 
 type Element = { type: string; children: Element[]; parent: Element | null; props: Record<string, any>; text: string }
 const element = (type: string): Element => ({ type, children: [], parent: null, props: {}, text: '' })
@@ -25,9 +27,10 @@ const disposers: (() => void)[] = []
 afterEach(() => disposers.splice(0).forEach(dispose => dispose()))
 const walk = (node: Element): Element[] => [node, ...node.children.flatMap(walk)]
 
-function mountCard(withConversation = true) {
+function mountCard(withConversation = true, typeId = 'text_node', detached = true) {
   const pulse = ref<Record<string, number>>({}), liveReply = ref('正在执行'), draft = ref('未发送的草稿'), mounts = vi.fn(), unmounts = vi.fn()
   const trigger = vi.fn(async () => {}), pause = vi.fn(async () => {}), close = vi.fn(), minimize = vi.fn(), remove = vi.fn(async () => {})
+  const openConversation = vi.fn(), pointerDown = vi.fn()
   const context = {
     nodeDonePulse: pulse, currentGraphId: ref('graph'), selectedNodeId: ref('Agent'), renamingNodeId: ref(''),
     nodeConfigs: ref({}), nodeNotes: ref({}), dragHoverTargetId: ref(''), suppressClickUntil: ref(0),
@@ -35,20 +38,51 @@ function mountCard(withConversation = true) {
     isNodeSelected: () => false, isDragging: () => false, isNodeWorking: () => false, itemStyle: () => ({}),
     previewMessage: (text: string) => text, finishNodeRename: vi.fn(),
     triggerNode: trigger, toggleNodeStop: pause, deleteNodeCard: remove,
+    onItemClick: openConversation, onItemPointerDown: pointerDown,
   } as unknown as AgentBoardContext
   const Conversation = defineComponent({ setup() {
     onMounted(mounts); onBeforeUnmount(unmounts)
     return () => h('section', [h('p', liveReply.value), h('textarea', { value: draft.value })])
   } })
   const root = element('root')
-  const node = { id: 'Agent', name: 'GPT1', typeId: 'text_node', last_message: '普通画布预览' } as NodeCard
+  const node = { id: 'Agent', name: 'GPT1', typeId, last_message: '普通画布预览' } as NodeCard
   const app = renderer.createApp({ setup() {
     provide(AgentBoardKey, context)
-    return () => h(NodeCardItem, { node, detached: true, onClose: close, onMinimize: minimize }, withConversation ? { content: () => h(Conversation) } : undefined)
+    return () => h(NodeCardItem, { node, detached, onClose: close, onMinimize: minimize }, withConversation ? { content: () => h(Conversation) } : undefined)
   } })
   app.mount(root); disposers.push(() => app.unmount())
-  return { root, pulse, liveReply, draft, mounts, unmounts, trigger, pause, close, minimize, remove }
+  return { root, pulse, liveReply, draft, mounts, unmounts, trigger, pause, close, minimize, remove, openConversation, pointerDown }
 }
+
+function bubble(target: Element, name: 'onClick' | 'onPointerdown') {
+  let stopped = false
+  const event = { target, stopPropagation: () => { stopped = true } }
+  for (let node: Element | null = target; node && !stopped; node = node.parent) node.props[name]?.(event)
+}
+
+test('Harness status, error and blank space open the card; process buttons act without opening or dragging', async () => {
+  processApi.getHarnessProcess.mockResolvedValue({ state: 'error', error: 'Provider configuration error' })
+  processApi.controlHarnessProcess.mockResolvedValue({ state: 'ready', error: '' })
+  const c = mountCard(false, 'codex_node', false)
+  await nextTick(); await nextTick()
+  const controls = walk(c.root).find(node => node.props.class === 'harness-process-controls')!
+  const status = walk(controls).find(node => node.props.role === 'status')!
+  const error = walk(controls).find(node => node.props.role === 'alert')!
+  for (const target of [controls, status, error]) {
+    bubble(target, 'onPointerdown'); bubble(target, 'onClick')
+  }
+  expect(c.openConversation).toHaveBeenCalledTimes(3)
+  expect(c.pointerDown).toHaveBeenCalledTimes(3)
+  const start = walk(controls).find(node => node.type === 'button')!
+  bubble(start, 'onPointerdown'); bubble(start, 'onClick')
+  await nextTick(); await nextTick()
+  expect(processApi.controlHarnessProcess).toHaveBeenCalledWith('Agent', 'graph', 'start')
+  const stop = walk(controls).find(node => node.type === 'button')!
+  bubble(stop, 'onPointerdown'); bubble(stop, 'onClick')
+  expect(processApi.controlHarnessProcess).toHaveBeenCalledWith('Agent', 'graph', 'stop')
+  expect(c.openConversation).toHaveBeenCalledTimes(3)
+  expect(c.pointerDown).toHaveBeenCalledTimes(3)
+})
 
 test('completion and streamed replies preserve the mounted conversation and draft', async () => {
   const c = mountCard(), originalInput = walk(c.root).find(node => node.type === 'textarea')!

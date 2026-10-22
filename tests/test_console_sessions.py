@@ -84,7 +84,7 @@ def test_session_ownership_cursor_binding_and_validation(agent, tmp_path):
         assert json.loads(wait_console_session(sid, agent=agent, **kwargs))["status"] == "invalid_arguments"
 
 
-@pytest.mark.parametrize("mode", ["stop", "timeout", "cancel", "scope"])
+@pytest.mark.parametrize("mode", ["stop", "cancel", "scope"])
 def test_termination_kills_descendant_and_cleans_spools(agent, tmp_path, mode):
     child = "import time,pathlib; time.sleep(3); pathlib.Path('leaked').write_text('bad')"
     script = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r}]); print('spawned',flush=True); time.sleep(30)"
@@ -241,3 +241,9 @@ def test_explicit_helper_cleanup_policy_is_reported(agent, tmp_path):
     assert result['terminated_children_on_shell_exit'] >= 1
     time.sleep(2.2)
     assert not (tmp_path/'helper-leak').exists()
+
+
+def test_session_reporting_interval_does_not_terminate_process(agent):
+    sid = start(agent, "import time; time.sleep(2); print('completed')", timeout=1)
+    result = json.loads(wait_console_session(sid, wait_seconds=10, agent=agent))
+    assert result["status"] == "success" and "completed" in result["stdout"]

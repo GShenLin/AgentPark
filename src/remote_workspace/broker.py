@@ -222,20 +222,25 @@ class RemoteWorkspaceBroker:
             },
         )
         deadline = time.monotonic() + timeout_seconds
+        reporting = False
+        owns_task = False
         try:
             with session.condition:
                 self._discard_expired_pre_cancellations(session)
                 if task_id in session.pre_cancelled:
                     session.pre_cancelled.pop(task_id, None)
                     return REMOTE_CANCELLED_RESULT
-                if (
-                    task_id in session.active_task_ids
-                    or task_id in session.results
-                    or any(item.task_id == task_id for item in session.pending)
-                ):
-                    raise ValueError(f"duplicate remote task_id: {task_id}")
-                session.pending.append(task)
-                session.condition.notify_all()
+                existing = (task_id in session.active_task_ids or task_id in session.results
+                            or any(item.task_id == task_id for item in session.pending))
+                if payload.get("action", "execute") == "wait":
+                    if not existing:
+                        raise ValueError(f"Unknown remote task_id: {task_id}")
+                else:
+                    if existing:
+                        raise ValueError(f"duplicate remote task_id: {task_id}")
+                    session.pending.append(task)
+                    session.condition.notify_all()
+                owns_task = True
                 while not self._closed:
                     result = session.results.pop(task_id, None)
                     if result is not None:
@@ -246,21 +251,22 @@ class RemoteWorkspaceBroker:
                         raise LookupError(f"Remote worker disconnected while executing {tool_name}: {worker_id}")
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise TimeoutError(f"Remote worker tool execution exceeded {timeout_seconds:g}s: {tool_name}")
+                        reporting = True
+                        return json.dumps({"status": "running", "remote_task_id": task_id, "finished": False})
                     session.condition.wait(timeout=min(1.0, remaining))
         finally:
-            with session.condition:
-                session.results.pop(task_id, None)
-                # A timed-out queued task must never execute later. An active
-                # task receives cancellation instead of silently continuing.
-                for pending in tuple(session.pending):
-                    if pending.task_id == task_id:
-                        session.pending.remove(pending)
-                if task_id in session.active_task_ids:
-                    if task_id not in session.cancellation_requests:
-                        session.cancellation_requests.append(task_id)
-                    session.condition.notify_all()
-                session.pre_cancelled.pop(task_id, None)
+            if owns_task and not reporting:
+                with session.condition:
+                    session.results.pop(task_id, None)
+                    # Completion/failure cleanup only; reporting retains the task.
+                    for pending in tuple(session.pending):
+                        if pending.task_id == task_id:
+                            session.pending.remove(pending)
+                    if task_id in session.active_task_ids:
+                        if task_id not in session.cancellation_requests:
+                            session.cancellation_requests.append(task_id)
+                        session.condition.notify_all()
+                    session.pre_cancelled.pop(task_id, None)
         raise RuntimeError("Remote workspace broker is shutting down.")
 
     def close(self) -> None:

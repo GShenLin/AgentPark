@@ -3,7 +3,8 @@ from __future__ import annotations
 # HTTP transport primitives shared by protocol adapters.
 import io
 import json
-import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from itertools import chain
 from typing import Any, BinaryIO, Iterable, Iterator
@@ -11,6 +12,7 @@ from typing import Any, BinaryIO, Iterable, Iterator
 from src.providers.curl_transport import CurlHttpTransport
 from src.providers.curl_transport import CurlResponse
 from src.providers.curl_transport import CurlTransportError
+from src.runtime_cancellation import is_cancel_requested, raise_if_cancel_requested, sleep_with_cancel
 
 
 class UpstreamHttpError(RuntimeError):
@@ -85,7 +87,19 @@ class _StreamingBody:
             closer()
 
 
+_CANCEL_SOURCE = ContextVar("cli_upstream_cancel_source", default=None)
 _CURL = CurlHttpTransport()
+_CURL.cancel_check = lambda: is_cancel_requested(_CANCEL_SOURCE.get())
+
+
+@contextmanager
+def upstream_cancellation_scope(cancel_source):
+    """Keep cancellation attached through lazy stream consumption and retries."""
+    token = _CANCEL_SOURCE.set(cancel_source)
+    try:
+        yield
+    finally:
+        _CANCEL_SOURCE.reset(token)
 
 
 def resolve_upstream_request_policy(config: dict[str, Any]) -> UpstreamRequestPolicy:
@@ -156,6 +170,7 @@ def _post_with_retry(
 ) -> CurlResponse:
     retry_attempt = 0
     while True:
+        raise_if_cancel_requested(_CANCEL_SOURCE.get())
         try:
             response = _CURL.post_json_response(
                 url=url,
@@ -191,6 +206,7 @@ def _stream_with_retry(
 ) -> Iterator[bytes]:
     retry_attempt = 0
     while True:
+        raise_if_cancel_requested(_CANCEL_SOURCE.get())
         emitted = False
         try:
             for item in _CURL.stream_sse_data(
@@ -242,8 +258,7 @@ def _http_status_retryable(status: int) -> bool:
 
 
 def _retry_delay(seconds: float) -> None:
-    if seconds > 0:
-        time.sleep(seconds)
+    sleep_with_cancel(seconds, _CANCEL_SOURCE.get())
 
 
 def _transport_error(error: Exception, attempts: int) -> UpstreamTransportError:

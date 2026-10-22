@@ -1,6 +1,7 @@
 """One command's process, output and completion lifecycle; independent of tools."""
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 import os
 import subprocess
 import tempfile
@@ -20,7 +21,8 @@ class ConsoleSession:
         self.session_id = uuid.uuid4().hex
         self.command, self.cwd = command, cwd
         self.started = time.monotonic()
-        self.deadline = self.started + timeout_seconds if timeout_seconds else None
+        self.report_interval_seconds = timeout_seconds
+        self.report_due = self.started + timeout_seconds if timeout_seconds else None
         self.cancel_source = cancel_source
         self.child_process_policy = child_process_policy
         self.terminated_children = 0
@@ -72,8 +74,6 @@ class ConsoleSession:
             while self.proc.poll() is None:
                 if self.stop_requested.is_set() or is_cancel_requested(self.cancel_source):
                     outcome, error = "stopped", "Command cancelled; its process tree was terminated."
-                elif self.deadline is not None and time.monotonic() >= self.deadline:
-                    outcome, error = "timeout", "Command execution deadline exceeded."
                 elif any(output.error for output in self.outputs):
                     outcome, error = "error", "Console output capture failed."
                 if outcome != "running":
@@ -151,7 +151,15 @@ class ConsoleSession:
                 "child_process_policy": self.child_process_policy,
                 "terminated_children_on_shell_exit": self.terminated_children,
                 "elapsed_seconds": round(time.monotonic() - self.started, 3),
+                "report_due": self.report_due is not None and time.monotonic() >= self.report_due,
+                "report_interval_seconds": self.report_interval_seconds,
             }
+            if not self.done.is_set():
+                tail_size = min(1000, max_chars // 2)
+                result["latest_stdout"] = self.stdout.read(max(0, self.stdout.length - tail_size), tail_size)
+                result["latest_stderr"] = self.stderr.read(max(0, self.stderr.length - tail_size), tail_size)
+                result["next_report_at"] = None if self.report_due is None else (datetime.now(timezone.utc) + timedelta(seconds=self.report_due - time.monotonic())).isoformat()
+                result["continuation"] = "Use wait_console_session with wait_seconds for the next report; stop_console_session explicitly cancels."
             if self.error:
                 result["error"] = self.error
             return result

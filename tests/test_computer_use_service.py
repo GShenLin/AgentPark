@@ -233,7 +233,7 @@ def test_shared_desktop_epoch_invalidates_other_process_observation():
     assert not first_backend.actions
 
 
-def test_native_tool_configured_timeout_waits_for_cleanup(monkeypatch, desktop):
+def test_native_tool_reports_then_explicit_stop_waits_for_cleanup(monkeypatch, desktop):
     import time
     from src.computer_use import runtime
     from src.runtime_cancellation import raise_if_cancel_requested
@@ -254,8 +254,13 @@ def test_native_tool_configured_timeout_waits_for_cleanup(monkeypatch, desktop):
     tools = BaseTool(agent)
     tools.addTool('computer_use_tools')
     state = json.loads(tools.execute_tool('get_window_state', {'window': WINDOW}))
-    result = json.loads(tools.execute_tool('click', {'window': WINDOW,
-        'observation_id': state['observation_id'], 'x': 10, 'y': 20}))
-    assert result['status'] == 'timeout'
+    result = tools.execute_tool('click', {'window': WINDOW,
+        'observation_id': state['observation_id'], 'x': 10, 'y': 20})
+    try:
+        assert result['status'] == 'running'
+        assert not cleaned.is_set()
+    finally:
+        stopped = tools.execute_tool_result('stop_tool_task', {'task_id': result['task_id']})
+    assert stopped.status == 'stopped'
     assert cleaned.is_set()
     assert not service.observations

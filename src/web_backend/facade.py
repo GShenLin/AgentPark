@@ -145,6 +145,9 @@ class WebBackendFacade:
             print(f"[RestartRecovery] startup failed; checkpoint retained: {e}")
 
     def _shutdown_services(self) -> None:
+        from src.harness.process_manager import HarnessProcesses
+        if HarnessProcesses._instance is not None:
+            HarnessProcesses._instance.close_all()
         self.core.node_windows.interactions.close()
         self.core.node_windows.alerts.close()
         self.core.cron_service.close()

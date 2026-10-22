@@ -12,11 +12,9 @@ const bridge = window.agentParkNodeWindow
 if (!bridge?.target.requestId) throw new Error('Interaction window host is required')
 const host = bridge, requestId = bridge.target.requestId
 const request = ref<UserInteractionRequest | null>(null)
-const error = ref(''), submitting = ref(false), now = ref(Date.now())
-let timer: ReturnType<typeof setInterval> | undefined
+const error = ref(''), submitting = ref(false)
 let refreshing: Promise<void> | null = null
 let refreshQueued = false, disposed = false
-const remaining = computed(() => Math.max(0, Math.ceil(((request.value?.expires_at || 0) * 1000 - now.value) / 1000)))
 const statusLabel = computed(() => {
   if (!request.value) return '正在加载请求'
   return { pending: '等待你的输入', submitted: '已提交，Agent 将继续执行', cancelled: '请求已取消', expired: '请求已过期' }[request.value.status]
@@ -76,16 +74,11 @@ onMounted(async () => {
     error.value = cause instanceof Error ? cause.message : String(cause)
     host.fail(error.value)
   }
-  timer = setInterval(() => {
-    now.value = Date.now()
-    if (request.value?.status === 'pending' && remaining.value === 0) void refreshVisible()
-  }, 1000)
 })
 
 onBeforeUnmount(() => {
   disposed = true
   stopEvents()
-  if (timer) clearInterval(timer)
   document.documentElement.classList.remove('interaction-window-document')
 })
 </script>
@@ -101,7 +94,7 @@ onBeforeUnmount(() => {
       <ActionButton v-if="request && request.status !== 'pending'" compact @click="host.close">关闭</ActionButton>
     </header>
     <div v-if="request?.status === 'pending'" class="interaction-widget-meta">
-      <span>填写后提交给 Agent</span><span>剩余 {{ Math.floor(remaining / 60) }}:{{ String(remaining % 60).padStart(2, '0') }}</span>
+      <span>填写后提交给 Agent</span>
     </div>
     <section class="interaction-widget-content">
       <UserInteractionForm v-if="request?.status === 'pending'" :request="request" :submitting="submitting" :error="error"

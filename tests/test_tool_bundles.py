@@ -12,7 +12,7 @@ def _function_names(tool: BaseTool) -> set[str]:
     return {
         item.get("function", {}).get("name")
         for item in tool.tool_declarations
-        if isinstance(item, dict)
+        if isinstance(item, dict) and item.get("function", {}).get("name") not in {"read_tool_task", "wait_tool_task", "stop_tool_task"}
     }
 
 

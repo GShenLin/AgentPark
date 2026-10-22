@@ -84,55 +84,35 @@ def test_execute_console_command_rejects_non_utf8_output_without_replacement(mon
     assert "�" not in result["error"]
 
 
-def test_execute_console_command_timeout_uses_same_decoder(monkeypatch, capsys):
-    def _fake_popen(*args, **kwargs):
-        return _FakePopen(stdout="回显输入\n".encode("utf-8"), stderr=b"", running=True)
-
+def test_execute_console_command_reporting_uses_same_decoder(monkeypatch, capsys):
+    proc = _FakePopen(stdout="progress\n".encode("utf-8"), running=True)
     times = iter([0, 2])
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+    reports = []
+    def report(progress, *, request_report=False):
+        if request_report:
+            reports.append(progress)
+            proc._running = False
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: proc)
     monkeypatch.setattr(console_tools.time, "monotonic", lambda: next(times, 2))
-    monkeypatch.setattr(console_tools.time, "sleep", lambda _seconds: None)
-
-    result = json.loads(execute_console_command("powershell.exe -NoProfile -Command \"'回显输入'\"", timeout_seconds=1))
-
-    assert result["status"] == "timeout"
-    assert result["stdout"] == "回显输入\n"
+    monkeypatch.setattr(console_tools, "report_tool_progress", report)
+    result = json.loads(execute_console_command("echo progress", timeout_seconds=1))
+    assert result["status"] == "success" and result["stdout"] == "progress\n"
+    assert len(reports) == 1 and not proc.terminated and not proc.killed
     assert capsys.readouterr().out == ""
 
 
-def test_execute_console_command_timeout_kills_windows_process_tree(monkeypatch):
-    fake_proc = _FakePopen(stdout=b"", stderr=b"", running=True, pid=4242)
-    run_calls = []
-
-    class _Completed:
-        def __init__(self, stdout="", returncode=0):
-            self.stdout = stdout
-            self.stderr = ""
-            self.returncode = returncode
-
-    def _fake_popen(*args, **kwargs):
-        return fake_proc
-
-    def _fake_run(args, **kwargs):
-        run_calls.append(list(args))
-        if args[:3] == ["powershell", "-NoProfile", "-Command"]:
-            return _Completed(stdout="5252\n")
-        if args and args[0] == "taskkill":
-            return _Completed()
-        raise AssertionError(f"unexpected subprocess.run call: {args}")
-
+def test_execute_console_command_reporting_does_not_kill_windows_process_tree(monkeypatch):
+    proc = _FakePopen(running=True, pid=4242)
     times = iter([0, 2])
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)
-    monkeypatch.setattr(subprocess, "run", _fake_run)
-    monkeypatch.setattr(console_process_runtime.os, "name", "nt")
+    def report(progress, *, request_report=False):
+        if request_report:
+            assert progress["pid"] == 4242
+            proc._running = False
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: proc)
     monkeypatch.setattr(console_tools.time, "monotonic", lambda: next(times, 2))
-    monkeypatch.setattr(console_tools.time, "sleep", lambda _seconds: None)
-
-    result = json.loads(execute_console_command("powershell -NoProfile -Command \"Start-Sleep 60\"", timeout_seconds=1))
-
-    assert result["status"] == "timeout"
-    assert ["taskkill", "/PID", "4242", "/T", "/F"] in run_calls
-    assert ["taskkill", "/PID", "5252", "/T", "/F"] in run_calls
+    monkeypatch.setattr(console_tools, "report_tool_progress", report)
+    result = json.loads(execute_console_command("echo ok", timeout_seconds=1))
+    assert result["status"] == "success" and not proc.terminated and not proc.killed
 
 
 def test_execute_console_command_blocks_interactive_npx_skills_find(monkeypatch):
@@ -221,35 +201,41 @@ def test_execute_console_command_blocks_rg_files_line_count_pipeline(monkeypatch
     assert "rg_list_files" in result["hint"]
 
 
-def test_execute_console_command_webui_build_timeout_reports_partial_success(monkeypatch):
-    def _fake_popen(*args, **kwargs):
-        return _FakePopen(stdout=b"vite v5.0.0 building...\nbuilt in 4.21s\n", stderr=b"", running=True)
+def test_execute_console_command_webui_build_reporting_waits_for_real_exit(monkeypatch):
+    proc = _FakePopen(stdout=b"vite v5.0.0 building...\nbuilt in 4.21s\n", stderr=b"", running=True)
 
     times = iter([0, 541])
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: proc)
+    def report(progress, *, request_report=False):
+        if request_report:
+            proc._running = False
+    monkeypatch.setattr(console_tools, "report_tool_progress", report)
     monkeypatch.setattr(console_tools.time, "monotonic", lambda: next(times, 541))
     monkeypatch.setattr(console_tools.time, "sleep", lambda _seconds: None)
 
     result = json.loads(execute_console_command("cd webui && npm run build", timeout_seconds=1))
 
-    assert result["status"] == "partial_success_timeout"
+    assert result["status"] == "success"
     assert result["detected_completion"]["kind"] == "webui_build"
     assert result["detected_completion"]["completed"] is True
-    assert "completed WebUI build" in result["error"]
+    assert "error" not in result
 
 
-def test_execute_console_command_pytest_collect_timeout_reports_partial_success(monkeypatch):
-    def _fake_popen(*args, **kwargs):
-        return _FakePopen(stdout=b"123 tests collected in 3.44s\n", stderr=b"", running=True)
+def test_execute_console_command_pytest_collect_reporting_waits_for_real_exit(monkeypatch):
+    proc = _FakePopen(stdout=b"123 tests collected in 3.44s\n", stderr=b"", running=True)
 
     times = iter([0, 181])
-    monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: proc)
+    def report(progress, *, request_report=False):
+        if request_report:
+            proc._running = False
+    monkeypatch.setattr(console_tools, "report_tool_progress", report)
     monkeypatch.setattr(console_tools.time, "monotonic", lambda: next(times, 181))
     monkeypatch.setattr(console_tools.time, "sleep", lambda _seconds: None)
 
     result = json.loads(execute_console_command("python -m pytest --collect-only -q", timeout_seconds=1))
 
-    assert result["status"] == "partial_success_timeout"
+    assert result["status"] == "success"
     assert result["detected_completion"]["kind"] == "pytest_collect"
     assert result["detected_completion"]["collected_tests"] == 123
 
@@ -420,56 +406,36 @@ def test_execute_console_command_limits_stderr_to_tail_and_reports_truncation(mo
     assert result["output_truncation"]["streams"][0]["strategy"] == "head_tail"
 
 
-def test_execute_console_command_timeout_preserves_failure_head_and_tail(monkeypatch):
-    stderr = b"ROOT_CAUSE:" + (b"x" * 100) + b":LAST_ERROR"
-    proc = _FakePopen(stdout=b"", stderr=stderr, running=True)
+def test_execute_console_command_reporting_preserves_final_failure_output(monkeypatch):
+    stderr = b"ROOT_CAUSE:" + b"x" * 100 + b":LAST_ERROR"
+    proc = _FakePopen(stderr=stderr, running=True, returncode=1)
     times = iter([0, 2])
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: proc)
+    def report(progress, *, request_report=False):
+        if request_report:
+            proc._running = False
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: proc)
     monkeypatch.setattr(console_tools.time, "monotonic", lambda: next(times, 2))
-    monkeypatch.setattr(console_tools.time, "sleep", lambda _seconds: None)
-
-    result = json.loads(
-        execute_console_command(
-            "cmd.exe /c hangs",
-            timeout_seconds=1,
-            agent=_Agent({"consoleCommandOutputMaxChars": 80}),
-        )
-    )
-
-    assert result["status"] == "timeout"
-    assert result["stderr"].startswith("ROOT_CA")
-    assert result["stderr"].endswith(":LAST_ERROR")
-    assert result["output_truncation"]["streams"][0]["strategy"] == "head_tail"
+    monkeypatch.setattr(console_tools, "report_tool_progress", report)
+    result = json.loads(execute_console_command("echo bad", timeout_seconds=1, agent=_Agent({"consoleCommandOutputMaxChars": 80})))
+    assert result["status"] == "error" and not proc.terminated
+    assert result["stderr"].startswith("ROOT_CA") and result["stderr"].endswith(":LAST_ERROR")
 
 
-def test_execute_console_command_pytest_no_progress_watchdog(monkeypatch):
-    proc = _FakePopen(
-        stdout=b"collecting tests\n",
-        stderr=b"E   registration request.token must be a string\n" * 100,
-        running=True,
-    )
+def test_execute_console_command_pytest_no_progress_reports_without_stopping(monkeypatch):
+    proc = _FakePopen(stdout=b"collecting tests\n", stderr=b"repeated errors\n", running=True)
     times = iter([0, 61])
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: proc)
+    reports = []
+    def report(progress, *, request_report=False):
+        if request_report:
+            reports.append(progress)
+            proc._running = False
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: proc)
     monkeypatch.setattr(console_tools.time, "monotonic", lambda: next(times, 61))
-    monkeypatch.setattr(console_tools.time, "sleep", lambda _seconds: None)
-
-    result = json.loads(
-        execute_console_command(
-            "python -m pytest -q tests/test_contracts.py",
-            timeout_seconds=300,
-            progress_timeout_seconds=60,
-        )
-    )
-
-    assert result["status"] == "no_progress_timeout"
-    assert result["progress_watchdog"] == {
-        "kind": "pytest",
-        "timeout_seconds": 60.0,
-        "progress_events": 0,
-        "elapsed_seconds": 61.0,
-        "seconds_since_progress": 61.0,
-    }
-    assert "stderr activity does not reset it" in result["error"]
+    monkeypatch.setattr(console_tools, "report_tool_progress", report)
+    result = json.loads(execute_console_command("python -m pytest -q tests/test_contracts.py", timeout_seconds=300, progress_timeout_seconds=60))
+    assert result["status"] == "success" and not proc.terminated
+    assert reports[0]["report_reason"] == "no_progress"
+    assert reports[0]["progress_watchdog"]["timeout_seconds"] == 60
 
 
 def test_execute_console_command_rejects_zero_exit_when_pytest_reports_failures(monkeypatch):

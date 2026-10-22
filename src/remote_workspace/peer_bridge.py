@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from concurrent.futures import TimeoutError as FutureTimeout
 
 from src.peer_network.remote_contracts import RemoteRequest
@@ -73,9 +74,14 @@ class RemotePeerBridge:
         task_id = hashlib.sha256(f"{peer}:{request.task_id}".encode()).hexdigest()
         if request.action == "cancel":
             return {"state": self.broker.cancel(request.worker_id, task_id)}
-        payload = {**request.task_payload(), "task_id": task_id}
+        payload = {**request.task_payload(), "task_id": task_id, "action": request.action}
         try:
-            return {"result": await asyncio.to_thread(self.broker.execute, payload)}
+            result = await asyncio.to_thread(self.broker.execute, payload)
+            decoded = json.loads(result) if isinstance(result, str) else result
+            if isinstance(decoded, dict) and decoded.get("remote_task_id") == task_id:
+                decoded["remote_task_id"] = request.task_id
+                result = json.dumps(decoded)
+            return {"result": result}
         except asyncio.CancelledError:
             self.broker.cancel(request.worker_id, task_id)
             raise

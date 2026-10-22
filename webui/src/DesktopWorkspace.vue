@@ -240,7 +240,7 @@ async function refreshProviders() {
   providers.value = await listProviders()
 }
 
-async function openWorkAlertTarget(request: { graphId: string; nodeId: string; nonce: number }) {
+async function openNodeTarget(request: { graphId: string; nodeId: string; nonce?: number }) {
   const graphId = String(request.graphId || '').trim()
   const nodeId = String(request.nodeId || '').trim()
   if (!graphId || !nodeId) return
@@ -255,13 +255,13 @@ async function openWorkAlertTarget(request: { graphId: string; nodeId: string; n
   currentGraphName.value = String(targetGraph.name || resolvedId)
   currentGraphWorkingPath.value = String((targetGraph as { working_path?: unknown }).working_path || '').trim()
   graphLoadRequest.value = targetGraph
-  graphNodeFocusRequest.value = { graphId: resolvedId, nodeId, nonce: request.nonce }
+  graphNodeFocusRequest.value = { graphId: resolvedId, nodeId, nonce: request.nonce ?? Date.now() }
   workspaceReady.value = true
   await setStartupGraphConfig(resolvedId, currentGraphName.value || resolvedId).catch(() => null)
 }
 
 function consumeWorkAlertNavigation(request: { graphId: string; nodeId: string; nonce: number }) {
-  void openWorkAlertTarget(request)
+  void openNodeTarget(request)
     .catch((error: unknown) => {
       lastError.value = String((error as { message?: unknown })?.message || error)
     })
@@ -412,6 +412,7 @@ watch(
       ref="settingsPageRef"
       :show-back-button="false"
       @back="activeView = 'board'"
+      @open-node="openNodeTarget($event).catch(error => { lastError = String(error?.message || error) })"
       @providers-updated="refreshProviders"
       @tools-updated="availableTools = $event"
       @defaults-updated="applyDefaultSettings"

@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from src.harness.adapters.deepseek_harness import DeepSeekEvents, resume_models
+from src.harness.adapters.deepseek_harness import DeepSeekEvents
 from src.harness.adapters.pi import PiEvents
 from src.harness.adapters.openclaw import parse_result
 from src.harness.events import HarnessEvents
@@ -47,24 +47,13 @@ def test_deepseek_acp_validates_session_and_text_contract():
         parser.handle({"sessionId": "session-123", "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "image"}}})
 
 
-def test_deepseek_resume_keeps_historical_model_descriptors(tmp_path):
-    settings = tmp_path / "settings.yaml"
-    assert resume_models(settings, "first") == [{"id": "first"}]
-    settings.write_text(json.dumps({"llm-pi-ai": {"providers": {"agentpark": {
-        "models": [{"id": "first"}, {"id": "second"}]}}}}), encoding="utf-8")
-    assert resume_models(settings, "third") == [{"id": "first"}, {"id": "second"}, {"id": "third"}]
-    assert resume_models(settings, "first") == [{"id": "first"}, {"id": "second"}]
-    settings.write_text('{"llm-pi-ai": []}', encoding="utf-8")
-    with pytest.raises(ValueError, match="Invalid DeepSeek"):
-        resume_models(settings, "first")
 
-
-def test_openclaw_accepts_only_local_payload_contract():
-    assert parse_result('{"payloads":[{"text":"hello"},{"text":"world"}]}') == "hello\nworld"
+def test_openclaw_accepts_only_payload_contract():
+    assert parse_result({"payloads":[{"text":"hello"},{"text":"world"}]}) == "hello\nworld"
     with pytest.raises(ValueError):
-        parse_result('{"result":"unstructured"}')
+        parse_result({"result":"unstructured"})
     with pytest.raises(RuntimeError):
-        parse_result('{"payloads":[]}')
+        parse_result({"payloads":[]})
 
 
 def test_process_reads_utf8_stdin_and_surfaces_exit_error(tmp_path):

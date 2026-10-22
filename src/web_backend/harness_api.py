@@ -6,12 +6,16 @@ from functools import partial
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from typing import Literal
+import os
 
 from src.harness.install_manager import check_installation
 from src.harness.jobs import HarnessJobs
 from src.harness.registry import DESCRIPTORS, descriptor
 from .domain_base import DomainBase
 from .request_access import has_owner_access
+from .shared import _read_json_dict
+from src.harness.contracts import HarnessContext
+from src.harness.process_manager import HarnessProcesses
 
 
 class HarnessOperation(BaseModel):
@@ -19,11 +23,9 @@ class HarnessOperation(BaseModel):
     action: Literal["install", "upgrade", "uninstall"]
 
 
-class OpenCodeOptionsRequest(BaseModel):
+class HarnessProcessOperation(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model: str
-    agent: str
-    working_path: str = ""
+    action: Literal["start", "stop"]
 
 
 class HarnessApiDomain(DomainBase):
@@ -66,23 +68,45 @@ class HarnessApiDomain(DomainBase):
         except KeyError as exc:
             raise HTTPException(404, "Harness installation job not found.") from exc
 
-    def native_models(self, harness_id: str, request: Request):
+    def list_processes(self, harness_id: str, request: Request):
         self._require_owner(request)
-        if harness_id == "opencode":
-            from src.harness.opencode_catalog import list_models
-        elif harness_id == "antigravity":
-            from src.harness.antigravity_catalog import list_models
-        else:
-            raise HTTPException(404, "This Harness does not expose a native model catalog.")
         try:
-            return {"models": list_models()}
-        except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
-            raise HTTPException(502, str(exc)) from exc
+            descriptor(harness_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"processes": HarnessProcesses.instance().list(harness_id)}
 
-    def opencode_options(self, payload: OpenCodeOptionsRequest, request: Request):
+    def _process_target(self, node_id, graph_id):
+        graph = self.graph_runtime._sanitize_graph_id(graph_id)
+        node = self.graph_runtime._resolve_existing_node_id(graph, node_id)
+        path = self.graph_runtime._node_config_path(node, graph)
+        config = _read_json_dict(path)
+        harness_id = next((item.id for item in DESCRIPTORS if item.node_type == config.get("type_id")), None)
+        if harness_id is None:
+            raise HTTPException(400, "This node is not a Harness.")
+        if config.get("_delete_requested"):
+            raise HTTPException(409, "Node is being deleted.")
+        return harness_id, HarnessContext(path, os.path.dirname(path),
+            {"graph_id": graph, "node_instance_id": node, "access_role": "developer"})
+
+    def process_status(self, node_id: str, request: Request, graph_id: str = ""):
         self._require_owner(request)
-        from src.harness.opencode_options import configuration_options
+        harness_id, context = self._process_target(node_id, graph_id)
+        return {"harness_id": harness_id, "graph_id": context.values["graph_id"],
+                "node_id": context.values["node_instance_id"],
+                **HarnessProcesses.instance().status(context.node_directory)}
+
+    def control_process(self, node_id: str, payload: HarnessProcessOperation,
+                        request: Request, graph_id: str = ""):
+        self._require_owner(request)
+        harness_id, context = self._process_target(node_id, graph_id)
+        manager = HarnessProcesses.instance()
         try:
-            return configuration_options(**payload.model_dump())
-        except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
-            raise HTTPException(502, str(exc)) from exc
+            if payload.action == "start":
+                manager.execute(harness_id, context)
+            else:
+                manager.stop(context.node_directory)
+        except (RuntimeError, ValueError, OSError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"harness_id": harness_id, "graph_id": context.values["graph_id"],
+                "node_id": context.values["node_instance_id"], **manager.status(context.node_directory)}

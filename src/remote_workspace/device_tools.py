@@ -10,7 +10,7 @@ from src.providers.agent_runtime_context import bind_agent_runtime_context, get_
 from src.providers.curl_transport import CurlHttpTransport
 from src.runtime_cancellation import cancel_source_from_agent, raise_if_cancel_requested
 from src.tool.tool_json_response import tool_json_payload
-from .client import _post_internal_request
+from .client import execute_remote_request
 from .device_state import device_state, switching_device
 from .inspection import WorkspaceInspection, inspect_workspace
 
@@ -68,7 +68,7 @@ def list_execution_devices(agent=None) -> str:
     })
 
 
-def _inspect(device_id: str, working_path: str) -> WorkspaceInspection:
+def _inspect(device_id: str, working_path: str, agent=None) -> WorkspaceInspection:
     if not isinstance(device_id, str) or not device_id.strip():
         raise ValueError("device_id must be a non-empty catalog ID or local.")
     if not isinstance(working_path, str) or not working_path.strip():
@@ -83,19 +83,19 @@ def _inspect(device_id: str, working_path: str) -> WorkspaceInspection:
         raise ConnectionError("Execution device is offline.")
     if "inspect_workspace" not in worker["capabilities"]:
         raise RuntimeError("Device needs an AgentPark/Remote update: inspect_workspace is unavailable.")
-    result = _post_internal_request("/api/remote-workers/internal/execute", {
+    result = execute_remote_request({
         "task_id": uuid.uuid4().hex, "worker_id": device_id,
         "tool_name": "inspect_workspace", "working_path": working_path,
         "arguments": {}, "timeout_seconds": 20.0,
-    }, 70)
-    if result.get("ok") is not True or not isinstance(result.get("result"), str):
+    }, cancel_source=cancel_source_from_agent(agent))
+    if not isinstance(result, str):
         raise ValueError("Device returned an invalid workspace inspection response.")
-    return WorkspaceInspection.model_validate_json(result["result"])
+    return WorkspaceInspection.model_validate_json(result)
 
 
 def inspect_execution_workspace(device_id: str, working_path: str, agent=None) -> str:
     device_state(agent)
-    inspection = _inspect(device_id, working_path)
+    inspection = _inspect(device_id, working_path, agent)
     return tool_json_payload({"status": "success", "device_id": device_id,
                               "workspace": inspection.model_dump()})
 
@@ -103,7 +103,7 @@ def inspect_execution_workspace(device_id: str, working_path: str, agent=None) -
 def switch_execution_device(device_id: str, working_path: str, expected_revision: int, agent=None) -> str:
     with switching_device(agent, expected_revision) as state:
         previous = _current(agent)
-        inspection = _inspect(device_id, working_path)
+        inspection = _inspect(device_id, working_path, agent)
         raise_if_cancel_requested(cancel_source_from_agent(agent))
         context = get_agent_runtime_context(agent)
         updated = replace(context, remote_enabled=device_id != "local",

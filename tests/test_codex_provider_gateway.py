@@ -7,6 +7,25 @@ from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 
 from src.harness.responses_gateway import HarnessResponsesGateway
+from src.runtime_cancellation import CancellationRequested
+
+
+def test_cancelled_gateway_request_closes_without_error_response(monkeypatch):
+    from types import SimpleNamespace
+    handler_type = HarnessResponsesGateway._handler_type(None)
+    handler = object.__new__(handler_type)
+    handler.server = SimpleNamespace(gateway=SimpleNamespace(
+        provider_for_token=lambda token: "provider",
+        cancellation_for_token=lambda token: threading.Event()))
+    monkeypatch.setattr(handler, "_route_token", lambda: "token")
+    monkeypatch.setattr(handler, "_read_payload", lambda: {})
+    responses = []
+    monkeypatch.setattr(handler, "_send_error", lambda *args: responses.append(args))
+    def cancelled(*args):
+        raise CancellationRequested("Process stopped")
+    monkeypatch.setattr(handler, "_dispatch", cancelled)
+    handler.do_POST()
+    assert handler.close_connection and responses == []
 
 
 def test_gateway_transparently_forwards_responses_for_non_openai_provider_type(monkeypatch):

@@ -1,6 +1,7 @@
-"""Model-facing process sessions. Waiting never changes the execution deadline."""
+"""Model-facing process sessions. Reporting waits never cancel execution."""
 
 import json
+import time
 
 from functions.console_completion_policy import classify_console_command
 from functions.console_output_policy import resolve_tool_submission_char_limit
@@ -71,10 +72,11 @@ def read_console_session(session_id, cursor=None, max_chars=8000, agent=None):
 
 def wait_console_session(session_id, cursor=None, wait_seconds=10, max_chars=8000, agent=None):
     def run():
-        wait = _integer(wait_seconds, "wait_seconds", 0, 60)
+        wait = _integer(wait_seconds, "wait_seconds", 0, 3600)
         session = registry_for(agent).get(session_id)
         # Validate output arguments before waiting or triggering any cancellation.
         _serialize(session, cursor, max_chars, agent)
+        session.report_due = time.monotonic() + wait
         session.wait(wait, cancel_source_from_agent(agent))
         return _serialize(session, cursor, max_chars, agent)
     return _invoke(run)
@@ -117,8 +119,8 @@ start_console_session_declaration = _declaration(
     "On Windows, child_process_policy=terminate explicitly permits cleaning up known remaining helper processes "
     "after the foreground command exits; result records their count, and status then reflects the shell exit. "
     "Never use terminate to infer success for an asynchronously launched GUI task. Default policy is error. "
-    "Read with read_console_session or wait_console_session. timeout_seconds is the total execution deadline "
-    "(default 120, 0 disables it). Sessions are owned by this Agent run and stopped/cleaned at run end or Stop. "
+    "Read with read_console_session or wait_console_session. timeout_seconds is a suggested reporting interval, never a process deadline "
+    "(default 120, 0 disables the suggestion). Commands keep running after it expires. Sessions are owned by this Agent run and stopped/cleaned at run end or Stop. "
     "Sessions do not persist across runs and currently do not support remote workers or stdin input.",
     {"command": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 0, "maximum": 3600},
      "child_process_policy": {"type": "string", "enum": ["error", "terminate"]}},
@@ -134,10 +136,10 @@ read_console_session_declaration = _declaration(
 )
 wait_console_session_declaration = _declaration(
     "wait_console_session",
-    "Wait up to wait_seconds (default 10, maximum 60) for command completion, then read output using the cursor. "
+    "Wait up to wait_seconds (default 10, maximum 3600) for command completion, then read output using the cursor. "
     "If still running, reuse session_id and next_cursor; an expired wait does NOT terminate the command. "
     "A finished command can still have unread output: drain while has_more_output is true.",
-    {**_READ, "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 60}}, ["session_id"],
+    {**_READ, "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 3600}}, ["session_id"],
 )
 stop_console_session_declaration = _declaration(
     "stop_console_session", "Stop this run's process session and its children, wait for cleanup, and return remaining output. "

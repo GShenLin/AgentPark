@@ -2,12 +2,23 @@ const { app, BrowserWindow, clipboard, ipcMain, screen, shell } = require('elect
 const fs = require('node:fs')
 const path = require('node:path')
 const { ROOT, windowKey, receiptPath } = require('./contract.cjs')
+const { RESIZE_EDGES, fitBounds, resizeBounds } = require('./window-geometry.cjs')
+const { WindowLayoutStore } = require('./window-layout-store.cjs')
 
 // Separate from the browser profile. Windows survive the page that launched them.
 app.setPath('userData', path.join(ROOT, '.runtime/node-window-profile'))
 app.setName('AgentPark Node')
 const windows = new Map()
 const contexts = new Map()
+const layouts = new WindowLayoutStore(path.join(ROOT, '.runtime/node-window-profile/window-layouts.json'))
+
+function rememberLayout(context, previousKey) {
+  if (context.target.requestId || !context.ready) return
+  layouts.save(windowKey(context.target), {
+    bounds: { ...context.bounds, [context.mode]: context.win.getBounds() },
+    noteHeight: context.noteHeight ?? 0,
+  }, previousKey)
+}
 
 function acknowledge(context, result) {
   for (const id of context.receipts.splice(0)) {
@@ -38,11 +49,7 @@ function resize(context, { mode, width, height, noteHeight }) {
     if (context.bounds.card && desired) context.bounds.card = desired
   }
   const area = screen.getDisplayMatching(win.getBounds()).workArea
-  const w = Math.min(area.width, Math.max(240, Math.round(desired?.width ?? width)))
-  const h = Math.min(area.height, Math.max(180, Math.round(desired?.height ?? height)))
-  const x = Math.max(area.x, Math.min(desired?.x ?? win.getBounds().x, area.x + area.width - w))
-  const y = Math.max(area.y, Math.min(desired?.y ?? win.getBounds().y, area.y + area.height - h))
-  win.setBounds({ x, y, width: w, height: h })
+  win.setBounds(fitBounds(desired ?? { ...win.getBounds(), width, height }, area, context.minimum))
 }
 
 function openNodeWindow(target) {
@@ -56,18 +63,28 @@ function openNodeWindow(target) {
     existing.win.show(); existing.win.focus()
     return existing
   }
+  const saved = target.requestId ? undefined : layouts.get(key)
+  const minimum = { width: target.requestId ? 340 : 240, height: target.requestId ? 280 : 180 }
+  const restored = saved ? fitBounds(saved.bounds.card, screen.getDisplayMatching(saved.bounds.card).workArea, minimum) : undefined
+  if (saved) saved.bounds.card = restored
   const win = new BrowserWindow({
     width: target.requestId ? 500 : 360, height: target.requestId ? 650 : 340,
-    minWidth: target.requestId ? 340 : 240, minHeight: target.requestId ? 280 : 180,
+    minWidth: minimum.width, minHeight: minimum.height,
+    ...restored,
     title: 'AgentPark · 小 Agent', show: false, frame: false, transparent: true,
-    alwaysOnTop: true, resizable: true, backgroundColor: '#00000000',
+    // Node cards resize through their visible-edge handles and setBounds.
+    // Native resizing adds a second hit region around the transparent margins.
+    // Interaction forms do not have custom handles and still use native resizing.
+    alwaysOnTop: true, resizable: !!target.requestId, backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), sandbox: true,
       contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
     },
   })
-  const context = { win, target, mode: 'card', bounds: {}, receipts: [target.receipt], ready: false, failure: '' }
-  win.on('blur', () => { context.drag = null })
+  const context = { win, target, minimum, mode: 'card', bounds: saved?.bounds ?? {}, noteHeight: saved?.noteHeight ?? 0,
+    receipts: [target.receipt], ready: false, failure: '' }
+  win.on('blur', () => { context.drag = null; context.resize = null })
+  win.on('close', () => rememberLayout(context))
   windows.set(key, context); contexts.set(win.webContents.id, context)
   const fail = error => { context.ready = false; context.failure = error; acknowledge(context, { ok: false, error }) }
   win.webContents.on('did-start-loading', () => { context.ready = false; context.failure = '' })
@@ -123,8 +140,12 @@ ipcMain.handle('node-window:retarget', (event, nodeId) => {
   const next = { ...context.target, nodeId }
   const existing = windows.get(windowKey(next))
   if (existing && existing !== context) throw new Error('A window for this node already exists.')
-  windows.delete(windowKey(context.target))
+  const previousKey = windowKey(context.target)
+  const previousTarget = context.target
   context.target = next
+  try { rememberLayout(context, previousKey) }
+  catch (error) { context.target = previousTarget; throw error }
+  windows.delete(previousKey)
   windows.set(windowKey(next), context)
 })
 ipcMain.on('node-window:fail', (event, error) => {
@@ -149,10 +170,12 @@ ipcMain.on('node-window:close', event => senderContext(event).win.close())
 ipcMain.on('node-window:minimize', event => {
   const context = senderContext(event)
   context.drag = null
+  context.resize = null
   context.win.minimize()
 })
 ipcMain.on('node-window:drag-start', event => {
   const context = senderContext(event)
+  context.resize = null
   if (context.mode === 'card') context.drag = { cursor: screen.getCursorScreenPoint(), bounds: context.win.getBounds() }
 })
 ipcMain.on('node-window:drag-move', event => {
@@ -162,5 +185,20 @@ ipcMain.on('node-window:drag-move', event => {
   context.win.setPosition(drag.bounds.x + cursor.x - drag.cursor.x, drag.bounds.y + cursor.y - drag.cursor.y)
 })
 ipcMain.on('node-window:drag-end', event => { senderContext(event).drag = null })
+
+ipcMain.on('node-window:resize-start', (event, edge) => {
+  const context = senderContext(event)
+  if (!RESIZE_EDGES.has(edge)) throw new Error('Invalid window resize edge.')
+  context.drag = null
+  context.resize = { edge, cursor: screen.getCursorScreenPoint(), bounds: context.win.getBounds() }
+})
+ipcMain.on('node-window:resize-move', event => {
+  const context = senderContext(event), session = context.resize
+  if (!session) return
+  const cursor = screen.getCursorScreenPoint()
+  context.win.setBounds(resizeBounds(session.bounds, session.edge,
+    { x: cursor.x - session.cursor.x, y: cursor.y - session.cursor.y }, context.minimum))
+})
+ipcMain.on('node-window:resize-end', event => { senderContext(event).resize = null })
 
 module.exports = { openNodeWindow, windows }

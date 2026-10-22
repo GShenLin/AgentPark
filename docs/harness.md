@@ -129,9 +129,10 @@ preserving the old state on disk without replaying its host-project context.
 - `src/web_backend/harness_api.py`: owner-only management routes and closed request schema.
 
 The adapter boundary is a complete graph turn, not a fabricated universal session protocol. Codex app-server and
-Claude SDK continue to own persistent clients, permissions and their existing event projections. Pi and OpenClaw own
+Claude SDK continue to own persistent clients and their existing event projections. Pi and OpenClaw own
 their on-disk histories; DeepSeek uses ACP `session/new`, `session/resume`, `session/set_config_option`, `session/prompt`
-and `session/close`. Unsupported client permission requests fail explicitly. No adapter substitutes another runtime.
+and `session/close`. Unsupported client permission requests fail explicitly, except where the adapter resolves them
+itself as described for Claude Code below. No adapter substitutes another runtime.
 
 Hermes runs its real `AIAgent` SDK in its own interpreter. `hermes_runner.py` owns only the process wire protocol and
 atomic conversation snapshot; Hermes owns inference, tools, memory and skill discovery. AgentPark supplies the current
@@ -144,10 +145,26 @@ The existing large SettingsPage remains orchestration-only for this feature: UI 
 are in the new HarnessSettingsPanel. Existing large runtime modules are retained where their responsibility is
 unchanged; new Harness modules stay below 400 lines.
 
+## Unattended permissions
+
+A Codex or Claude node turn has no terminal and no permission dialog. Codex app-server already runs with
+`approvalPolicy: "never"`, so its sandbox is the only authorization boundary; the node defaults to
+**Full Access** (`danger-full-access`) and its schema orders that option first.
+Claude raises a native `can_use_tool` control request instead, and the SDK fails the turn with
+`canUseTool callback is not provided` if one arrives unanswered. The node therefore defaults to
+**Full Access** (`bypassPermissions`), which never raises the request.
+
+Claude modes that can still raise a request — `default`, `acceptEdits` and `auto` — run with an explicit resolver in
+`nodes/claude_node/runtime/permissions.py` that allows the call instead of blocking the turn.
+`plan` and `dontAsk` need no resolver because Claude Code never asks in those modes.
+Both nodes treat the selected mode as an authorization decision made at configuration time; neither
+implements an enforced read-only sandbox. Nondeveloper access still forces Codex `read-only` and Claude `plan`.
+
 ## Current limits
 
 - Pi, OpenClaw, DeepSeek Harness, MiniMax Code and Hermes Agent require developer access. They do not implement AgentPark's enforced read-only
   sandbox. Codex and Claude preserve their existing read-only/plan mapping for nondevelopers.
+
 - OpenClaw's local JSON CLI returns the final payload, so it does not expose live tool or token deltas here.
   Pi and DeepSeek project text, reasoning and tool lifecycle events into AgentPark's live protocol.
 - DeepSeek uses the **published ACP interface**. The repository's newer headless `--json` documentation was ahead

@@ -1,6 +1,6 @@
 # Long-Term Architecture
 
-This document records the P3 boundary decisions from `TODO.md`. These are not compatibility shims; they define where future optimization work should attach without weakening the current Python contracts.
+This document records the P3 boundary decisions. These are not compatibility shims; they define where future optimization work should attach without weakening the current Python contracts.
 
 ## Rust Sidecar Evaluation
 

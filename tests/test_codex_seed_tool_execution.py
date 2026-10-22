@@ -24,9 +24,11 @@ def test_real_codex_executes_two_seed_commands_and_returns_results(tmp_path, mon
 
     def upstream(_config, payload, **_kwargs):
         requests.append(payload)
+        assert payload["reasoning"] == {"effort": "high"}
+        assert "verbosity" not in payload.get("text", {})
         assert not any(item.get("type") in {"additional_tools", "custom_tool_call", "custom_tool_call_output"} for item in payload["input"])
         assert not any(tool.get("type") == "custom" for tool in payload["tools"])
-        assert any(tool.get("name") == "exec" and tool.get("type") == "function" for tool in payload["tools"])
+        assert any(tool.get("name") == "functions__exec" and tool.get("type") == "function" for tool in payload["tools"])
         if len(requests) > 2:
             raise AssertionError("Seed normalization caused an unexpected extra model request.")
         text = "SEED_EXECUTION_FINISHED"
@@ -54,7 +56,7 @@ def test_real_codex_executes_two_seed_commands_and_returns_results(tmp_path, mon
              }}},
         ])
         if len(requests) == 1 and native_function:
-            executor = next(tool for tool in payload["tools"] if tool.get("name") == "exec")
+            executor = next(tool for tool in payload["tools"] if tool.get("name") == "functions__exec")
             nested = "exec_command" if "exec_command(args:" in executor["description"] else "shell_command"
             key = "cmd" if nested == "exec_command" else "command"
             items = []
@@ -62,7 +64,7 @@ def test_real_codex_executes_two_seed_commands_and_returns_results(tmp_path, mon
             for index, marker in enumerate(["SEED_COMMAND_FIRST", "SEED_COMMAND_SECOND"]):
                 source = f"text(await tools.{nested}({json.dumps({key: f'Write-Output {marker}'})}));"
                 args = json.dumps({"input": source})
-                call = {"type": "function_call", "name": "exec", "id": f"fc_{index}",
+                call = {"type": "function_call", "name": executor["name"], "id": f"fc_{index}",
                         "call_id": f"call_{index}", "arguments": args, "status": "completed"}
                 items.append(call)
                 events.append({"type": "response.output_item.added", "output_index": index,
@@ -97,7 +99,9 @@ def test_real_codex_executes_two_seed_commands_and_returns_results(tmp_path, mon
 
     assert result.endswith("SEED_EXECUTION_FINISHED")
     if not native_function:
-        assert any(event.get("type") == "node_message_delta" and "检查命令执行" in json.dumps(event, ensure_ascii=False) for event in events)
+        streamed_text = "".join(event.get("delta", "") for event in events
+                                if event.get("type") == "node_message_delta")
+        assert "检查命令执行" in streamed_text
     assert len(requests) == 2
     tool_outputs = [item for item in requests[1]["input"] if item.get("type") in {
         "custom_tool_call_output", "function_call_output",

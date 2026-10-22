@@ -11,6 +11,7 @@ from uvicorn.config import LOGGING_CONFIG
 
 from src.project_process_environment import apply_project_process_environment
 from src.runtime_supervision import runtime_supervisor
+from src.desktop_runtime import DesktopServer
 from src.server_pid_file import get_server_pid_file_path, install_server_pid_file, remove_server_pid_file
 from src.web_backend import create_app
 from src.web_backend import runtime_paths
@@ -62,7 +63,7 @@ def _run_server(app, *, host: str, port: int, log_config: dict) -> None:
         workers=1,
         log_config=log_config,
     )
-    server = uvicorn.Server(config)
+    server = DesktopServer(config)
     exit_requested = threading.Event()
     force_exit_scheduled = threading.Event()
 

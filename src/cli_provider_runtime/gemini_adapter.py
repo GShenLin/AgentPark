@@ -20,14 +20,7 @@ from .http_transport import open_json_request
 from .http_transport import read_json_response
 from .http_transport import resolve_upstream_request_policy
 from .provider_adapter import flatten_tool_choice
-from .responses_conversion import message_item
-from .responses_conversion import stream_completed
-from .responses_conversion import stream_created
-from .responses_conversion import stream_item_added
-from .responses_conversion import stream_item_done
-from .responses_conversion import stream_text_delta
-from .responses_conversion import tool_call_item
-from .responses_reasoning import ResponsesReasoningStream
+from .responses_emitter import ResponsesEmitter
 
 
 class GeminiGenerateContentAdapter:
@@ -48,9 +41,7 @@ class GeminiGenerateContentAdapter:
     def stream(self, request: CanonicalRequest, *, response_id: str = "") -> Iterable[bytes]:
         response_id = str(response_id or "").strip() or f"resp_agentpark_{uuid.uuid4().hex}"
         result = CanonicalResult(response_id=response_id)
-        message_id = f"msg_{uuid.uuid4().hex}"
-        message_started = False
-        reasoning = ResponsesReasoningStream()
+        emitter = ResponsesEmitter(response_id, request.model)
         response = open_json_request(
             url=self._url(request.model, stream=True),
             headers={},
@@ -58,7 +49,7 @@ class GeminiGenerateContentAdapter:
             policy=resolve_upstream_request_policy(self.config),
             stream=True,
         )
-        yield stream_created(response_id)
+        yield emitter.created()
         for data in iter_sse_data(response):
             if not data:
                 continue
@@ -70,27 +61,20 @@ class GeminiGenerateContentAdapter:
                 if isinstance(part.get("text"), str) and part["text"]:
                     text = part["text"]
                     if part.get("thought") is True:
-                        for chunk in reasoning.feed(text):
+                        for chunk in emitter.reasoning(text):
                             yield chunk
                         continue
-                    for chunk in reasoning.finish():
+                    for chunk in emitter.finish_reasoning():
                         yield chunk
-                    if not message_started:
-                        yield stream_item_added(message_item(message_id))
-                        message_started = True
                     result.text += text
-                    yield stream_text_delta(text)
+                    yield from emitter.text(text)
                 function_call = part.get("functionCall")
                 if isinstance(function_call, dict):
                     result.tool_calls.append(self._tool_call(function_call))
 
-        for chunk in reasoning.finish():
+        for chunk in emitter.finish_reasoning():
             yield chunk
-        if message_started:
-            yield stream_item_done(message_item(message_id, result.text, status="completed"))
-        for call in result.tool_calls:
-            yield stream_item_done(tool_call_item(call))
-        yield stream_completed(result)
+        yield from emitter.completed(result)
 
     def _payload(self, request: CanonicalRequest) -> dict[str, Any]:
         self._tools_by_wire = {tool.wire_name: tool for tool in request.tools}

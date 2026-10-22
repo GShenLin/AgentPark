@@ -17,7 +17,7 @@ Missing or unsupported shells produce an explicit error.
 `system_tools.execute_console_command` and `workspace_exec` run commands in that
 same shell. Local Agent environment context reports it as well; remote worker
 shell metadata remains separate. Commands must use the reported shell syntax.
-On POSIX, timeout and Stop terminate the command's process group, including
+Reporting deadlines keep commands running. On POSIX, explicit Stop terminates the command's process group, including
 ordinary child processes that keep output pipes open. Windows keeps its existing
 process-tree cleanup. Windows GUI/desktop tools still require Windows.
 

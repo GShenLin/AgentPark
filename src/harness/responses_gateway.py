@@ -14,11 +14,13 @@ from http.server import ThreadingHTTPServer
 from typing import Any, Iterator
 
 from src.cli_provider_runtime.http_transport import UpstreamHttpError
-from src.cli_provider_runtime.gateway_dispatch import dispatch_responses
+from src.cli_provider_runtime.gateway_dispatch import dispatch_responses, dispatch_chat_completions
+from src.cli_provider_runtime.http_transport import upstream_cancellation_scope
 from src.cli_provider_runtime.provider_adapter import provider_protocol
 from src.cli_provider_runtime.responses_conversion import stream_failed
 from src.config_loader import ConfigLoader
 from src.provider_models import resolve_provider_model
+from src.runtime_cancellation import CancellationRequested
 
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ class HarnessResponsesGateway:
         self._models: dict[str, str] = {}
         self._reasoning_efforts: dict[str, str] = {}
         self._leases: dict[str, str] = {}
+        self._cancellations: dict[str, threading.Event] = {}
         self._request_indices: dict[str, int] = {}
         self._request_observers: dict[str, Callable[[dict[str, Any]], None]] = {}
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler_type())
@@ -72,6 +75,7 @@ class HarnessResponsesGateway:
             self._models[token] = selected_model
             self._reasoning_efforts[token] = reasoning_effort
             self._leases[token] = safe_provider_id
+            self._cancellations[token] = threading.Event()
             self._request_indices[token] = 0
         host, port = self._server.server_address
         return GatewayLease(
@@ -83,6 +87,9 @@ class HarnessResponsesGateway:
     def release(self, token: str) -> None:
         with self._lock:
             normalized_token = str(token or "")
+            cancellation = self._cancellations.pop(normalized_token, None)
+            if cancellation is not None:
+                cancellation.set()
             self._leases.pop(normalized_token, None)
             self._models.pop(normalized_token, None)
             self._reasoning_efforts.pop(normalized_token, None)
@@ -119,11 +126,18 @@ class HarnessResponsesGateway:
             raise KeyError("Unknown or expired Harness Provider gateway token.")
         return provider_id
 
+    def cancellation_for_token(self, token: str) -> threading.Event:
+        with self._lock:
+            return self._cancellations[token]
+
     def close(self) -> None:
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=2.0)
         with self._lock:
+            for cancellation in self._cancellations.values():
+                cancellation.set()
+            self._cancellations.clear()
             self._leases.clear()
             self._models.clear()
             self._reasoning_efforts.clear()
@@ -174,7 +188,12 @@ class HarnessResponsesGateway:
                     token = self._route_token()
                     provider_id = self.server.gateway.provider_for_token(token)  # type: ignore[attr-defined]
                     payload = self._read_payload()
-                    self._dispatch(token, provider_id, payload)
+                    with upstream_cancellation_scope(self.server.gateway.cancellation_for_token(token)):
+                        self._dispatch(token, provider_id, payload)
+                except CancellationRequested:
+                    # The owning process was stopped and its lease cancelled;
+                    # there is no client left to receive an error response.
+                    logger.debug("Harness Provider request cancelled")
                 except KeyError as exc:
                     self._send_error(404, str(exc))
                 except UpstreamHttpError as exc:
@@ -194,16 +213,21 @@ class HarnessResponsesGateway:
                 if self._streaming:
                     response_id = self._stream_response_id or f"resp_agentpark_{uuid.uuid4().hex}"
                     try:
-                        self.wfile.write(stream_failed(response_id, message))
+                        if self._chat:
+                            body = {"error": {"message": message, "type": "agentpark_gateway_error"}}
+                            self.wfile.write(("data: " + json.dumps(body) + "\n\n").encode())
+                        else:
+                            self.wfile.write(stream_failed(response_id, message))
                         self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
+                    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                         return
 
             def _route_token(self) -> str:
                 path = urllib.parse.urlsplit(self.path).path
                 parts = [urllib.parse.unquote(part) for part in path.split("/") if part]
-                if len(parts) != 3 or parts[0] != "v1" or parts[2] != "responses":
-                    raise ValueError("Harness Provider gateway accepts only POST /v1/{token}/responses.")
+                self._chat = parts[2:] in (["chat", "completions"], ["v1", "chat", "completions"])
+                if len(parts) < 3 or parts[0] != "v1" or (parts[2:] != ["responses"] and not self._chat):
+                    raise ValueError("Harness Provider gateway requires a Responses or Chat Completions endpoint.")
                 return parts[1]
 
             def _read_payload(self) -> dict[str, Any]:
@@ -241,7 +265,10 @@ class HarnessResponsesGateway:
                     reasoning = payload.get("reasoning", {})
                     if not isinstance(reasoning, dict):
                         raise ValueError("Harness reasoning must be an object.")
-                    payload["reasoning"] = {**reasoning, "effort": effort}
+                    if self._chat:
+                        payload["reasoning_effort"] = effort
+                    else:
+                        payload["reasoning"] = {**reasoning, "effort": effort}
                 self.server.gateway._observe_request(  # type: ignore[attr-defined]
                     token,
                     provider_id=provider_id,
@@ -249,7 +276,8 @@ class HarnessResponsesGateway:
                     provider_model=model,
                     payload=payload,
                 )
-                result = dispatch_responses(config, payload)
+                dispatch = dispatch_chat_completions if self._chat else dispatch_responses
+                result = dispatch(config, payload)
                 if result.stream is not None:
                     response_id = f"resp_agentpark_{uuid.uuid4().hex}"
                     self._streaming = True

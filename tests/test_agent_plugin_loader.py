@@ -68,7 +68,11 @@ def test_plugin_manifest_requires_explicit_id(tmp_path):
 
     _write_plugin_manifest(tmp_path / "implicit-id", payload={"name": "Implicit"})
 
-    assert list_available_plugin_options(str(tmp_path)) == []
+    options = list_available_plugin_options(str(tmp_path))
+    assert len(options) == 1
+    assert options[0]["value"] == "implicit-id"
+    assert options[0]["status"] == "unavailable"
+    assert "PluginManifestError" in options[0]["diagnostics"][0]
 
 
 def test_plugin_option_discovery_cache_refreshes_on_explicit_invalidation(tmp_path):

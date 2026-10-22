@@ -15,6 +15,32 @@ from src.runtime_cancellation import CancellationRequested, raise_if_cancel_requ
 
 
 class CurlHttpTransport(CurlStreamMixin):
+    def execute_cli(self, arguments, *, report_seconds=15, cancel_event=None):
+        """Run an explicitly requested curl CLI operation with soft reporting waits."""
+        from src.tool.tool_tasks import report_tool_progress
+        command = [self._curl_executable(), *arguments]
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        started = time.monotonic()
+        report_due = started + report_seconds if report_seconds and report_seconds > 0 else None
+        try:
+            while True:
+                raise_if_cancel_requested(cancel_event)
+                now = time.monotonic()
+                if report_due is not None and now >= report_due:
+                    report_tool_progress({"phase": "curl_request", "pid": proc.pid,
+                                          "elapsed_seconds": round(now - started, 3)}, request_report=True)
+                    report_due = None
+                try:
+                    stdout, stderr = proc.communicate(timeout=.05)
+                    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.communicate()
+
     _WINDOWS_PROXY_CACHE: str | None = None
     _GENERIC_HTTP_MARKER = "__AGENTPARK_HTTP_CODE__:"
 

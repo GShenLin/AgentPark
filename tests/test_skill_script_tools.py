@@ -6,6 +6,7 @@ import pytest
 from nodes.agent_skill_loader import SkillLoadError, load_node_skills, render_skill_instructions
 from nodes.agent_skill_scripts import register_skill_script_tools
 from src.tool.base_tool import BaseTool
+from src.tool.tool_task_tools import TASK_CONTROL_TOOLS, control_declarations
 
 
 class _Agent:
@@ -85,7 +86,7 @@ def test_declared_readonly_skill_script_registers_and_executes(tmp_path):
     result = json.loads(agent.tools.function_map["skill__demo__echo"](text="hello"))
 
     assert registered == ["skill__demo__echo"]
-    assert [item["function"]["name"] for item in agent.tools.tool_declarations] == ["skill__demo__echo"]
+    assert [item["function"]["name"] for item in agent.tools.tool_declarations] == [*TASK_CONTROL_TOOLS, "skill__demo__echo"]
     assert result["status"] == "success"
     assert json.loads(result["stdout"]) == {"echo": "hello"}
     registered_callable = agent.tools.function_map["skill__demo__echo"]
@@ -125,7 +126,7 @@ def test_undeclared_script_resource_is_not_registered(tmp_path):
     registered = register_skill_script_tools(agent, skills)
 
     assert registered == []
-    assert agent.tools.tool_declarations == []
+    assert agent.tools.tool_declarations == list(control_declarations())
 
 
 def test_write_capable_skill_script_requires_explicit_enabled_switch(tmp_path):
@@ -215,11 +216,13 @@ def test_skill_script_timeout_is_visible_to_model(tmp_path):
     agent = _Agent()
     register_skill_script_tools(agent, skills)
 
-    result = json.loads(agent.tools.function_map["skill__demo__slow"]())
-
-    assert result["status"] == "timeout"
-    assert result["timed_out"] is True
-    assert "started" in result["stdout"]
+    result = agent.tools.execute_tool("skill__demo__slow", {})
+    assert result["status"] == "running"
+    final = agent.tools.execute_tool("wait_tool_task", {"task_id": result["task_id"], "wait_seconds": 10})
+    final = json.loads(final) if isinstance(final, str) else final
+    assert final["status"] == "success"
+    assert final["timed_out"] is False
+    assert "started" in final["stdout"]
 
 
 def test_invalid_skill_script_manifest_fails_skill_load(tmp_path):

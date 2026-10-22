@@ -13,6 +13,7 @@ from src.mcp.lifecycle import mark_mcp_failed, mark_mcp_ready, mark_mcp_starting
 from src.mcp.tool_list_cache import DEFAULT_MCP_TOOL_LIST_TTL_SECONDS, cached_mcp_tool_list
 from src.runtime_cancellation import CancellationRequested, current_tool_call_cancel_source, is_cancel_requested
 from src.tool.tool_execution_result import build_error_result
+from src.tool.tool_tasks import report_tool_progress
 from src.value_parsing import parse_optional_float_value
 
 
@@ -105,7 +106,6 @@ class McpServerClient:
             self._call_tool_with_cancel_async,
             tool_name,
             arguments,
-            _call_read_timeout(self.server.config, arguments),
             current_tool_call_cancel_source(),
         )
 
@@ -113,18 +113,17 @@ class McpServerClient:
         self,
         tool_name: str,
         arguments: dict[str, Any],
-        read_timeout_override: timedelta | None,
         cancel_source: Any,
     ) -> Any:
         if cancel_source is None:
-            return await self._call_tool_async(tool_name, arguments, read_timeout_override)
+            return await self._call_tool_async(tool_name, arguments)
 
         result: dict[str, Any] = {}
         cancelled = False
 
         async with anyio.create_task_group() as task_group:
             async def execute() -> None:
-                result["value"] = await self._call_tool_async(tool_name, arguments, read_timeout_override)
+                result["value"] = await self._call_tool_async(tool_name, arguments)
                 task_group.cancel_scope.cancel()
 
             async def watch_cancellation() -> None:
@@ -154,21 +153,27 @@ class McpServerClient:
         self,
         tool_name: str,
         arguments: dict[str, Any],
-        read_timeout_override: timedelta | None = None,
     ) -> Any:
-        async def op(session):
-            return await session.call_tool(tool_name, arguments or {})
+        async def progress(value, total, message):
+            report_tool_progress({"server": self.server.name, "remote_tool": tool_name,
+                                  "progress": value, "total": total, "message": message})
 
-        result = await self._with_session(op, read_timeout_override=read_timeout_override)
+        async def op(session):
+            return await session.call_tool(tool_name, arguments or {}, progress_callback=progress)
+
+        result = await self._with_session(op, tool_execution=True)
         return normalize_mcp_call_result(result)
 
-    async def _with_session(self, op: Callable[[Any], Any], *, read_timeout_override: timedelta | None = None) -> Any:
+    async def _with_session(self, op: Callable[[Any], Any], *, tool_execution: bool = False) -> Any:
         try:
             from mcp import ClientSession
         except ImportError as exc:
             raise McpServerLoadError("Python package `mcp` is required for MCP server support.") from exc
 
-        read_timeout = read_timeout_override or _read_timeout(self.server.config)
+        # The owning ToolTask supplies reporting deadlines without closing the MCP
+        # session. Discovery keeps bounded reads; execution can finish at any time.
+        read_timeout = None if tool_execution else _read_timeout(self.server.config)
+        stream_read_timeout = None if tool_execution else _timeout_seconds(self.server.config, "sseReadTimeout", 300)
         transport = _transport_name(self.server.config)
         if transport == "stdio":
             from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -191,7 +196,7 @@ class McpServerClient:
                 _required_string(self.server.config, "url", self.server.name),
                 headers=_string_map_optional(self.server.config.get("headers"), "headers", self.server.name),
                 timeout=_timeout_seconds(self.server.config, "timeout", 30),
-                sse_read_timeout=_timeout_seconds(self.server.config, "sseReadTimeout", 300),
+                sse_read_timeout=stream_read_timeout,
             ) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream, read_timeout_seconds=read_timeout) as session:
                     await session.initialize()
@@ -204,7 +209,7 @@ class McpServerClient:
                 _required_string(self.server.config, "url", self.server.name),
                 headers=_string_map_optional(self.server.config.get("headers"), "headers", self.server.name),
                 timeout=_timeout_seconds(self.server.config, "timeout", 30),
-                sse_read_timeout=_timeout_seconds(self.server.config, "sseReadTimeout", 300),
+                sse_read_timeout=stream_read_timeout,
             ) as (read_stream, write_stream, _get_session_id):
                 async with ClientSession(read_stream, write_stream, read_timeout_seconds=read_timeout) as session:
                     await session.initialize()
@@ -228,6 +233,7 @@ def _build_tool_callable(
     function_name: str,
 ) -> Callable[..., Any]:
     def call_mcp_tool(agent=None, **arguments):
+        report_tool_progress({"server": server.name, "remote_tool": remote_tool_name, "state": "waiting_for_server"})
         try:
             result = client.call_tool(remote_tool_name, dict(arguments or {}))
         except CancellationRequested:
@@ -247,7 +253,7 @@ def _build_tool_callable(
         )
 
     call_mcp_tool.__name__ = function_name
-    call_mcp_tool.tool_timeout_seconds = 0
+    call_mcp_tool.tool_timeout_seconds = _timeout_seconds(server.config, "readTimeoutSeconds", 5)
     return call_mcp_tool
 
 
@@ -314,22 +320,6 @@ def _read_timeout(config: dict[str, Any]) -> timedelta | None:
     if value in (None, ""):
         return None
     return timedelta(seconds=_positive_float(value, "readTimeoutSeconds"))
-
-
-def _call_read_timeout(config: dict[str, Any], arguments: dict[str, Any]) -> timedelta | None:
-    configured = _read_timeout(config)
-    if not isinstance(arguments, dict):
-        return configured
-    raw = arguments.get("timeout_seconds")
-    if raw in (None, ""):
-        return configured
-    try:
-        requested = _positive_float(raw, "timeout_seconds") + 30.0
-    except McpServerLoadError:
-        return configured
-    if configured is None or requested > configured.total_seconds():
-        return timedelta(seconds=requested)
-    return configured
 
 
 def _timeout_seconds(config: dict[str, Any], key: str, default: float) -> float:

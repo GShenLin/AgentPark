@@ -18,6 +18,7 @@ class ClaudeSessionSpec:
     state_path: str
     instruction: str = ""
     reasoning_effort: str = ""
+    inherit_mcp_servers: bool = False
 
     def signature(self) -> str:
         payload = {
@@ -29,6 +30,7 @@ class ClaudeSessionSpec:
             "permission_mode": self.permission_mode,
             "instruction": self.instruction,
             "reasoning_effort": self.reasoning_effort,
+            "inherit_mcp_servers": self.inherit_mcp_servers,
         }
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()

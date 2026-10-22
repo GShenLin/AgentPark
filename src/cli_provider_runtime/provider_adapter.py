@@ -26,7 +26,7 @@ def provider_protocol(config: dict[str, Any]) -> str:
         return "anthropic"
     if provider_type == "gemini":
         return "gemini"
-    if provider_type in {"openai", "deepseek", "kimi", "grok", "zhipu", "doubao"}:
+    if provider_type in {"openai", "deepseek", "kimi", "grok", "zhipu", "doubao", "agnes"}:
         return "openai_chat"
     raise ValueError(
         f"Provider type {provider_type or '<empty>'!r} has no Codex conversational protocol adapter."

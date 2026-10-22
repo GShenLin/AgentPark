@@ -8,6 +8,7 @@ from typing import Any
 
 from src.runtime_cancellation import raise_if_cancel_requested
 from src.runtime_cancellation import register_cancel_callback
+from src.tool.tool_tasks import report_tool_progress
 
 from .routing import remote_workspace_target
 
@@ -40,31 +41,44 @@ def _dispatch_remote_workspace_tool(agent, tool_name, args, *, timeout_seconds, 
         "working_path": target.working_path,
         "timeout_seconds": _request_timeout_seconds(tool_name, args, timeout_seconds),
     }
+    return True, execute_remote_request(payload, cancel_source=cancel_source)
+
+
+def execute_remote_request(payload: dict, *, cancel_source=None):
+    """Submit once, then await that same remote task until terminal or stopped."""
+    payload = dict(payload)
+    task_id = payload["task_id"]
+    worker_id = payload["worker_id"]
     unregister_cancel = register_cancel_callback(
         cancel_source,
         lambda: _post_internal_request(
             f"/api/remote-workers/internal/tasks/{task_id}/cancel",
-            {"worker_id": target.worker_id},
+            {"worker_id": worker_id},
             10.0,
         ),
     )
     try:
-        raise_if_cancel_requested(cancel_source)
-        response = _post_internal_request(
-            "/api/remote-workers/internal/execute",
-            payload,
-            payload["timeout_seconds"] + (50.0 if target.worker_id.startswith("peer:") else 10.0),
-        )
-        if not response.get("ok"):
-            raise RuntimeError(str(response.get("error") or "Remote workspace execution failed."))
-        return True, response.get("result")
+        while True:
+            raise_if_cancel_requested(cancel_source)
+            response = _post_internal_request(
+                "/api/remote-workers/internal/execute", payload,
+                payload["timeout_seconds"] + (50.0 if worker_id.startswith("peer:") else 10.0),
+            )
+            if not response.get("ok"):
+                raise RuntimeError(str(response.get("error") or "Remote workspace execution failed."))
+            result = response.get("result")
+            decoded = json.loads(result) if isinstance(result, str) else result
+            if not isinstance(decoded, dict) or decoded.get("status") != "running" or decoded.get("remote_task_id") != task_id:
+                return result
+            report_tool_progress({"remote_task_id": task_id, "worker_id": worker_id, "state": "running"}, request_report=True)
+            payload["action"] = "wait"
     finally:
         unregister_cancel()
 
 
 def _request_timeout_seconds(tool_name: str, args: Any, configured: float | None) -> float:
     if configured is not None and configured > 0:
-        return max(1.0, float(configured))
+        return max(1.0, min(30.0, float(configured)))
     if str(tool_name) == "execute_console_command" and isinstance(args, dict):
         raw = args.get("timeout_seconds")
         try:
@@ -72,8 +86,8 @@ def _request_timeout_seconds(tool_name: str, args: Any, configured: float | None
         except (TypeError, ValueError):
             parsed = 0.0
         if parsed > 0:
-            return parsed
-    return 3600.0
+            return min(30.0, parsed)
+    return 30.0
 
 
 def _post_internal_request(path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:

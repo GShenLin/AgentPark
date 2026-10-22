@@ -94,10 +94,17 @@ def test_same_worker_reconnect_preserves_an_executing_task():
     assert not errors and results == ["completed"]
 
 
-def test_expired_queued_task_is_not_executed_after_worker_returns():
+def test_reporting_keeps_queued_task_and_wait_retrieves_result_without_reexecution():
+    import json
     broker = RemoteWorkspaceBroker()
     broker.register(registration(), "10.0.0.8")
-    with pytest.raises(TimeoutError):
-        broker.execute({"worker_id": "worker", "tool_name": "read_file", "working_path": "C:/Workspace",
-                        "timeout_seconds": 1})
+    payload = {"worker_id": "worker", "tool_name": "read_file", "working_path": "C:/Workspace",
+               "timeout_seconds": 1, "task_id": "reporting-test"}
+    result = json.loads(broker.execute(payload))
+    assert result["status"] == "running" and result["remote_task_id"] == "reporting-test"
+    task = broker.poll("worker", "secret", 0)
+    assert task is not None and task["task_id"] == "reporting-test"
+    assert broker.poll_cancellations("worker", "secret", 0) == []
+    broker.submit_result("worker", "secret", task["task_id"], {"ok": True, "result": "finished"})
+    assert broker.execute({**payload, "action": "wait"}) == "finished"
     assert broker.poll("worker", "secret", 0) is None

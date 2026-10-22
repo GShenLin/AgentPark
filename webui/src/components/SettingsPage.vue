@@ -44,7 +44,7 @@ import RuntimeEventsSettingsForm from './settings/RuntimeEventsSettingsForm.vue'
 import StaticSettingsPanel from './settings/StaticSettingsPanel.vue'
 import SystemExitPanel from './settings/SystemExitPanel.vue'
 import ThemeSettingsForm from './settings/ThemeSettingsForm.vue'
-import ToolsetSettingsForm from './settings/ToolsetSettingsForm.vue'
+import ToolSettingsForm from './settings/ToolSettingsForm.vue'
 import { applyWorkspaceTheme, DEFAULT_THEME_PRESET_ID } from '../theme'
 import { t } from '../i18n'
 
@@ -62,6 +62,7 @@ const compact = useCompactSettings()
 
 const emit = defineEmits<{
   back: []
+  openNode: [target: { graphId: string; nodeId: string }]
   providersUpdated: []
   toolsUpdated: [tools: string[]]
   defaultsUpdated: [value: Record<string, unknown>]
@@ -500,7 +501,7 @@ onMounted(async () => {
 
         <LocalModelSettingsPanel v-if="isLocalModel" @dirty="localModelDirty = $event" />
         <AccessSettingsPanel v-else-if="isAuthorization" />
-        <HarnessSettingsPanel v-else-if="isHarness" />
+        <HarnessSettingsPanel v-else-if="isHarness" @open-node="confirmLeave() && emit('openNode', $event)" />
         <KnowledgeSettingsPanel v-else-if="isKnowledge" />
         <SkillsSettingsPanel v-else-if="isSkills" />
         <GatewaySettingsPanel v-else-if="isGateway" @dirty="gatewayDirty = $event" />
@@ -539,10 +540,11 @@ onMounted(async () => {
             @provider-deleted="handleProviderDeleted"
             @provider-model-added="handleProviderModelAdded"
           />
-          <ToolsetSettingsForm
+          <ToolSettingsForm
             v-else-if="activeSection === 'toolsets' && formData"
             :data="formData"
             :catalog="loadedDocument?.tool_catalog || []"
+            :prompt-catalog="loadedDocument?.tool_prompt_catalog || []"
             @update:data="replaceData"
           />
           <DefaultSettingsForm

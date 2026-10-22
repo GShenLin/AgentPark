@@ -37,7 +37,7 @@ def load_codex_node_run_request(context: dict[str, Any] | None, *, config_path: 
     command = str(setting("codex_command", "codex") or "").strip()
     if not command:
         raise ValueError("codex_command is required")
-    sandbox = str(setting("sandbox", "workspace-write") or "").strip()
+    sandbox = str(setting("sandbox", "danger-full-access") or "").strip()
     if sandbox not in {"read-only", "workspace-write", "danger-full-access"}:
         raise ValueError(f"Unsupported Codex sandbox: {sandbox or '<empty>'}")
     reasoning_effort = str(setting("reasoning_effort", "high") or "").strip()

@@ -14,6 +14,7 @@ test('preload exposes an awaited text-copy bridge without exposing generic IPC',
       bridge = value
     } },
     ipcRenderer: {
+      send: (...args) => calls.push(args),
       sendSync: () => ({ graphId: 'g', nodeId: 'n' }),
       invoke: async (...args) => { calls.push(args); if (reject) throw failure },
     },
@@ -24,6 +25,8 @@ test('preload exposes an awaited text-copy bridge without exposing generic IPC',
   await bridge.copyText('中文\ntext')
   assert.deepEqual(calls, [['node-window:copy-text', '中文\ntext']])
   assert.equal(bridge.invoke, undefined)
+  bridge.beginResize('nw'); bridge.moveResize(); bridge.endResize()
+  assert.deepEqual(calls.slice(1), [['node-window:resize-start', 'nw'], ['node-window:resize-move'], ['node-window:resize-end']])
   reject = true
   await assert.rejects(bridge.copyText('failure'), error => error === failure)
 })

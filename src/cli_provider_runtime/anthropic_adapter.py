@@ -19,14 +19,7 @@ from .http_transport import open_json_request
 from .http_transport import read_json_response
 from .http_transport import resolve_upstream_request_policy
 from .provider_adapter import flatten_tool_choice
-from .responses_conversion import message_item
-from .responses_conversion import stream_completed
-from .responses_conversion import stream_created
-from .responses_conversion import stream_item_added
-from .responses_conversion import stream_item_done
-from .responses_conversion import stream_text_delta
-from .responses_conversion import tool_call_item
-from .responses_reasoning import ResponsesReasoningStream
+from .responses_emitter import ResponsesEmitter
 
 
 class AnthropicMessagesAdapter:
@@ -48,9 +41,7 @@ class AnthropicMessagesAdapter:
     def stream(self, request: CanonicalRequest, *, response_id: str = "") -> Iterable[bytes]:
         response_id = str(response_id or "").strip() or f"resp_agentpark_{uuid.uuid4().hex}"
         result = CanonicalResult(response_id=response_id)
-        message_id = f"msg_{uuid.uuid4().hex}"
-        message_started = False
-        reasoning = ResponsesReasoningStream()
+        emitter = ResponsesEmitter(response_id, request.model)
         blocks: dict[int, dict[str, Any]] = {}
         url, headers = self._request_target()
         response = open_json_request(
@@ -60,7 +51,7 @@ class AnthropicMessagesAdapter:
             policy=resolve_upstream_request_policy(self.config),
             stream=True,
         )
-        yield stream_created(response_id)
+        yield emitter.created()
         for data in iter_sse_data(response):
             if not data:
                 continue
@@ -87,7 +78,7 @@ class AnthropicMessagesAdapter:
                     "input": block.get("input"),
                 }
                 if str(block.get("type") or "") == "thinking":
-                    for chunk in reasoning.feed(str(block.get("thinking") or "")):
+                    for chunk in emitter.reasoning(str(block.get("thinking") or "")):
                         yield chunk
                 continue
             if event_type == "content_block_delta":
@@ -100,16 +91,13 @@ class AnthropicMessagesAdapter:
                 if delta_type == "text_delta":
                     text = str(delta.get("text") or "")
                     if text:
-                        for chunk in reasoning.finish():
+                        for chunk in emitter.finish_reasoning():
                             yield chunk
-                        if not message_started:
-                            yield stream_item_added(message_item(message_id))
-                            message_started = True
                         state["text"] = str(state.get("text") or "") + text
                         result.text += text
-                        yield stream_text_delta(text)
+                        yield from emitter.text(text)
                 elif delta_type == "thinking_delta":
-                    for chunk in reasoning.feed(str(delta.get("thinking") or "")):
+                    for chunk in emitter.reasoning(str(delta.get("thinking") or "")):
                         yield chunk
                 elif delta_type == "input_json_delta":
                     state["json"] = str(state.get("json") or "") + str(delta.get("partial_json") or "")
@@ -119,14 +107,10 @@ class AnthropicMessagesAdapter:
                 if isinstance(usage, dict):
                     result.output_tokens = _count(usage.get("output_tokens"))
 
-        for chunk in reasoning.finish():
+        for chunk in emitter.finish_reasoning():
             yield chunk
-        if message_started:
-            yield stream_item_done(message_item(message_id, result.text, status="completed"))
         result.tool_calls = [self._tool_call(state) for _, state in sorted(blocks.items()) if state.get("type") == "tool_use"]
-        for call in result.tool_calls:
-            yield stream_item_done(tool_call_item(call))
-        yield stream_completed(result)
+        yield from emitter.completed(result)
 
     def _payload(self, request: CanonicalRequest, *, stream: bool) -> dict[str, Any]:
         self._tools_by_wire = {tool.wire_name: tool for tool in request.tools}

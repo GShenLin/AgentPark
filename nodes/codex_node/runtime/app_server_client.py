@@ -2,14 +2,14 @@ from __future__ import annotations
 
 # Codex app-server subprocess and JSON-RPC client.
 import json
-import os
 import queue
-import shutil
-import subprocess
 import threading
 import time
 from collections.abc import Callable
 from typing import Any
+
+from .executable import resolve_executable
+from .server_process import ServerProcess
 
 from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import raise_if_cancel_requested
@@ -21,7 +21,8 @@ class CodexAppServerError(RuntimeError):
 
 class CodexAppServerClient:
     def __init__(self, command: str = "codex") -> None:
-        self.command = _resolve_command(command)
+        executable = resolve_executable(command)
+        self.command = executable.path
         self._write_lock = threading.Lock()
         self._request_lock = threading.Lock()
         self._next_id = 1
@@ -29,40 +30,33 @@ class CodexAppServerClient:
         self._notifications: queue.Queue = queue.Queue()
         self._stderr_lines: list[str] = []
         self._closed = False
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        self._close_lock = threading.Lock()
         try:
-            self._proc = subprocess.Popen(
-                _app_server_command(self.command),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                creationflags=creationflags,
-            )
+            self._server_process = ServerProcess(executable)
+            self._proc = self._server_process.process
         except OSError as exc:
-            raise CodexAppServerError(
-                f"Failed to launch Codex app-server with {self.command!r}: {exc}"
-            ) from exc
+            raise CodexAppServerError(f"Failed to launch Codex app-server with {self.command!r}: {exc}") from exc
         self._stdout_thread = threading.Thread(target=self._read_stdout, name="codex-app-server-stdout", daemon=True)
         self._stderr_thread = threading.Thread(target=self._read_stderr, name="codex-app-server-stderr", daemon=True)
-        self._stdout_thread.start()
-        self._stderr_thread.start()
-        self.request(
-            "initialize",
-            {
-                "clientInfo": {
-                    "name": "agentpark",
-                    "title": "AgentPark Codex Node",
-                    "version": "0.1.0",
+        try:
+            self._stdout_thread.start()
+            self._stderr_thread.start()
+            self.request(
+                "initialize",
+                {
+                    "clientInfo": {
+                        "name": "agentpark",
+                        "title": "AgentPark Codex Node",
+                        "version": "0.1.0",
+                    },
+                    "capabilities": {"experimentalApi": True},
                 },
-                "capabilities": {"experimentalApi": True},
-            },
-            timeout=20.0,
-        )
-        self.notify("initialized", {})
+                timeout=20.0,
+            )
+            self.notify("initialized", {})
+        except BaseException:
+            self.close()
+            raise
 
     def request(self, method: str, params: dict[str, Any], *, timeout: float = 30.0) -> dict[str, Any]:
         if self._closed:
@@ -74,12 +68,17 @@ class CodexAppServerClient:
             self._pending[request_id] = response_queue
         try:
             self._send({"method": method, "id": request_id, "params": params})
-            try:
-                response = response_queue.get(timeout=max(0.1, timeout))
-            except queue.Empty as exc:
-                raise CodexAppServerError(
-                    f"Codex app-server request {method!r} timed out. {self._stderr_summary()}"
-                ) from exc
+            deadline = time.monotonic() + max(0.1, timeout)
+            while True:
+                try:
+                    response = response_queue.get(timeout=0.1)
+                    break
+                except queue.Empty as exc:
+                    self._raise_if_exited()
+                    if time.monotonic() >= deadline:
+                        raise CodexAppServerError(
+                            f"Codex app-server request {method!r} timed out. {self._stderr_summary()}"
+                        ) from exc
         finally:
             with self._request_lock:
                 self._pending.pop(request_id, None)
@@ -252,55 +251,65 @@ class CodexAppServerClient:
         return not self._closed and self._proc.poll() is None
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        proc = self._proc
-        if proc.poll() is None:
-            try:
-                proc.terminate()
-                proc.wait(timeout=2.0)
-            except Exception:
+        with self._close_lock:
+            if self._closed:
+                return
+            self._server_process.close()
+            self._fail_pending("Codex app-server closed.")
+            for worker in (self._stdout_thread, self._stderr_thread):
+                if worker.ident is None:
+                    continue
+                worker.join(timeout=5)
+                if worker.is_alive():
+                    raise CodexAppServerError("Codex reader did not exit after its process tree stopped.")
+            for pipe in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
+                if pipe is not None:
+                    pipe.close()
+            self._closed = True
+
+    def _fail_pending(self, message: str) -> None:
+        with self._request_lock:
+            for pending in self._pending.values():
                 try:
-                    proc.kill()
-                except Exception:
-                    pass
-        for pending in list(self._pending.values()):
-            try:
-                pending.put_nowait({"error": "Codex app-server closed."})
-            except queue.Full:
-                pass
+                    pending.put_nowait({"error": message})
+                except queue.Full:
+                    pass  # A response already won the race with shutdown.
 
     def _read_stdout(self) -> None:
         stdout = self._proc.stdout
         if stdout is None:
             return
-        for line in stdout:
-            text = line.strip()
-            if not text:
-                continue
-            try:
-                message = json.loads(text)
-            except json.JSONDecodeError:
-                self._append_stderr(f"invalid app-server JSON: {text}")
-                continue
-            if not isinstance(message, dict):
-                continue
-            request_id = message.get("id")
-            if isinstance(request_id, int) and ("result" in message or "error" in message):
-                with self._request_lock:
-                    pending = self._pending.get(request_id)
-                if pending is not None:
-                    try:
-                        pending.put_nowait(message)
-                    except queue.Full:
-                        pass
-                continue
-            if isinstance(request_id, int) and isinstance(message.get("method"), str):
-                self._handle_server_request(message)
-                continue
-            if isinstance(message.get("method"), str):
-                self._notifications.put(message)
+        try:
+            for line in stdout:
+                text = line.strip()
+                if not text:
+                    continue
+                try:
+                    message = json.loads(text)
+                except json.JSONDecodeError:
+                    self._append_stderr(f"invalid app-server JSON: {text}")
+                    continue
+                if not isinstance(message, dict):
+                    continue
+                request_id = message.get("id")
+                if isinstance(request_id, int) and ("result" in message or "error" in message):
+                    with self._request_lock:
+                        pending = self._pending.get(request_id)
+                    if pending is not None:
+                        try:
+                            pending.put_nowait(message)
+                        except queue.Full:
+                            pass
+                    continue
+                if isinstance(request_id, int) and isinstance(message.get("method"), str):
+                    self._handle_server_request(message)
+                    continue
+                if isinstance(message.get("method"), str):
+                    self._notifications.put(message)
+        except (OSError, UnicodeError) as exc:
+            self._append_stderr(f"app-server stdout failed: {exc}")
+        finally:
+            self._fail_pending(f"Codex app-server output closed. {self._stderr_summary()}")
 
     def _read_stderr(self) -> None:
         stderr = self._proc.stderr
@@ -361,63 +370,6 @@ class CodexAppServerClient:
     def _stderr_summary(self) -> str:
         text = " | ".join(self._stderr_lines[-5:])
         return f"stderr: {text}" if text else "stderr is empty."
-
-
-def _resolve_command(command: str) -> str:
-    raw = str(command or "codex").strip() or "codex"
-    expanded = os.path.abspath(os.path.expanduser(raw)) if any(separator in raw for separator in ("/", "\\")) else raw
-    if os.path.isfile(expanded):
-        if os.name == "nt" and _is_windows_apps_path(expanded):
-            raise ValueError(
-                "Codex command resolves to a WindowsApps package executable that cannot be launched "
-                "by AgentPark. Configure a standalone Codex CLI path instead."
-            )
-        return expanded
-    if any(separator in raw for separator in ("/", "\\")):
-        raise ValueError(f"Codex command does not exist: {expanded}")
-    if os.name == "nt":
-        shim = shutil.which(f"{raw}.cmd")
-        if shim and not _is_windows_apps_path(shim):
-            return shim
-        bundled = _bundled_windows_codex_command(raw)
-        if bundled:
-            return bundled
-        candidates = [f"{raw}.exe", raw]
-    else:
-        candidates = [raw]
-    for candidate in candidates:
-        resolved = shutil.which(candidate)
-        if resolved and not _is_windows_apps_path(resolved):
-            return resolved
-    if os.name == "nt":
-        raise ValueError(
-            "Cannot find a launchable Codex command. Install the Codex CLI or configure codex_command "
-            "with a standalone executable path."
-        )
-    raise ValueError(f"Cannot find Codex command on PATH: {raw}")
-
-
-def _bundled_windows_codex_command(raw: str) -> str:
-    if raw.casefold() not in {"codex", "codex.exe"}:
-        return ""
-    codex_home = os.path.join(os.path.expanduser("~"), ".codex")
-    candidates = (
-        os.path.join(codex_home, ".sandbox-bin", "codex.exe"),
-        os.path.join(codex_home, "plugins", ".plugin-appserver", "codex.exe"),
-    )
-    return next((candidate for candidate in candidates if os.path.isfile(candidate)), "")
-
-
-def _is_windows_apps_path(path: str) -> bool:
-    normalized = os.path.normcase(os.path.abspath(os.path.expanduser(str(path or ""))))
-    return "\\windowsapps\\" in normalized
-
-
-def _app_server_command(command: str) -> list[str]:
-    if os.name == "nt" and os.path.splitext(command)[1].lower() in {".cmd", ".bat"}:
-        command_line = subprocess.list2cmdline([command, "app-server", "--listen", "stdio://"])
-        return [os.environ.get("COMSPEC") or "cmd.exe", "/d", "/s", "/c", command_line]
-    return [command, "app-server", "--listen", "stdio://"]
 
 
 def _notification_identity(params: dict[str, Any]) -> tuple[str, str]:

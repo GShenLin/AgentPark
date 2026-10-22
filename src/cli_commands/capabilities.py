@@ -41,8 +41,13 @@ def mutate_capability(args) -> dict[str, Any]:
         raise ValueError("--name is required")
 
     current = node_config_service.read_strict(path)
-    CapabilityRegistry().validate_requested(kind, names, current)
     field = FIELD_BY_KIND[kind]
+    names_to_validate = names
+    if args.capability_action == "disable":
+        selected = set(_current_values(current.get(field)))
+        names_to_validate = [name for name in names if name not in selected]
+    if names_to_validate:
+        CapabilityRegistry().validate_requested(kind, names_to_validate, current)
 
     def mutate(config: dict[str, Any]) -> None:
         selected = _current_values(config.get(field))

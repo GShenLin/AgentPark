@@ -58,6 +58,8 @@ def accepts_pointer(hwnd, foreground):
 
 
 def activate(hwnd):
+    from src.runtime_cancellation import current_tool_call_cancel_source, raise_if_cancel_requested
+    from src.tool.tool_tasks import report_tool_progress
     import win32con
     import win32gui
     import pywintypes
@@ -79,10 +81,11 @@ def activate(hwnd):
     # state, without resending activation or changing child keyboard focus.
     deadline = time.monotonic() + 1
     while win32gui.GetForegroundWindow() != hwnd:
-        if time.monotonic() >= deadline:
-            raise ComputerUseError(
-                f'Activation did not complete for {hwnd}; foreground_id={win32gui.GetForegroundWindow()}. '
-                'Call list_windows and observe the foreground window.')
+        raise_if_cancel_requested(current_tool_call_cancel_source())
+        if deadline is not None and time.monotonic() >= deadline:
+            report_tool_progress({'state': 'waiting_for_window_activation', 'window_id': hwnd,
+                                  'foreground_id': win32gui.GetForegroundWindow()}, request_report=True)
+            deadline = None
         time.sleep(0.01)
 
 

@@ -26,6 +26,8 @@ from src.runtime_cancellation import CancellationRequested
 from src.runtime_cancellation import is_cancel_requested
 
 from .contracts import ClaudeSessionSpec
+from .permissions import allow_unattended_tool_use
+from .permissions import needs_permission_callback
 from .provider_gateway import ClaudeGatewayLease
 from .provider_gateway import ClaudeProviderGateway
 from .session_state import read_selected_session_id
@@ -96,6 +98,20 @@ class ClaudeSessionManager:
                 atexit.register(cls._instance.close_all)
             return cls._instance
 
+    def prepare(self, spec: ClaudeSessionSpec) -> None:
+        with self._lock:
+            self._session_for(spec)
+
+    def is_alive(self, session_key: str) -> bool:
+        session = self._sessions.get(session_key)
+        if session is None:
+            return False
+        # SDK owns its transport; inspect its explicit readiness and child exit
+        # state, never infer liveness from a saved conversation identifier.
+        transport = session.client._transport
+        return (transport is not None and transport.is_ready()
+                and transport._process is not None and transport._process.returncode is None)
+
     def run_turn(
         self,
         spec: ClaudeSessionSpec,
@@ -161,7 +177,7 @@ class ClaudeSessionManager:
         self._validate_spec(spec)
         signature = spec.signature()
         current = self._sessions.get(spec.session_key)
-        if current is not None and current.signature == signature:
+        if current is not None and current.signature == signature and self.is_alive(spec.session_key):
             return current
         if current is not None:
             with current.turn_lock:
@@ -290,6 +306,11 @@ def _agent_options(
     return ClaudeAgentOptions(
         system_prompt=system_prompt,  # type: ignore[arg-type]
         permission_mode=spec.permission_mode,  # type: ignore[arg-type]
+        can_use_tool=(
+            allow_unattended_tool_use
+            if needs_permission_callback(spec.permission_mode)
+            else None
+        ),
         resume=session_id if resume else None,
         session_id=None if resume else session_id,
         model=spec.model,
@@ -299,6 +320,7 @@ def _agent_options(
         setting_sources=["user", "project", "local"],
         env=env,
         include_partial_messages=True,
+        extra_args={} if spec.inherit_mcp_servers else {"strict-mcp-config": None},
         effort=spec.reasoning_effort or None,  # type: ignore[arg-type]
     )
 

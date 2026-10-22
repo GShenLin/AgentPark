@@ -17,7 +17,7 @@ class _RegistrationAgent:
 
     def __init__(self, agent):
         self._owner = agent
-        self.tools = BaseTool(agent)
+        self.tools = BaseTool(agent, prompt_overrides=agent.tools.prompt_overrides)
 
     def __getattr__(self, name):
         return getattr(self._owner, name)
@@ -110,7 +110,7 @@ class SkillRuntime:
             existing[name] = declaration
 
     def _commit(self, names, *, persist):
-        staged = BaseTool(self.agent)
+        staged = BaseTool(self.agent, prompt_overrides=self.agent.tools.prompt_overrides)
         staged.function_map.update(self.base_functions)
         staged.tool_declarations.extend(self.base_declarations)
         roots = dict(self.base_roots)

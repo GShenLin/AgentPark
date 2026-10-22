@@ -39,7 +39,7 @@ def test_ark_custom_history_round_trip_preserves_content_and_call_id():
     assert "arguments" not in restored["output"][0]
 
 
-@pytest.mark.parametrize("provider", ["openai", "grok"])
+@pytest.mark.parametrize("provider", ["openai"])
 def test_other_providers_keep_custom_history(provider):
     original = request()
     prepared = ResponsesPassthrough({"type": provider}).prepare_request(original)

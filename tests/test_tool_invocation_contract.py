@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from src.tool.tool_function_execution import execute_local_tool_function
 
@@ -17,7 +18,7 @@ def test_invalid_top_level_arguments_return_exact_retry_contract():
     result = execute_local_tool_function(
         func=_sample_tool,
         args={"required": "value", "response_length": "long"},
-        agent=object(),
+        agent=SimpleNamespace(),
         tool_name="sample_tool",
         timeout_seconds=None,
         cancel_source=None,
@@ -40,7 +41,7 @@ def test_internal_type_error_remains_an_execution_exception():
     result = execute_local_tool_function(
         func=broken_tool,
         args={"value": 1},
-        agent=object(),
+        agent=SimpleNamespace(),
         tool_name="broken_tool",
         timeout_seconds=None,
         cancel_source=None,
@@ -51,7 +52,7 @@ def test_internal_type_error_remains_an_execution_exception():
 
 
 def test_valid_arguments_bind_agent_without_exposing_it_to_the_model():
-    agent = object()
+    agent = SimpleNamespace()
 
     result = execute_local_tool_function(
         func=_sample_tool,

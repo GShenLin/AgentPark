@@ -8,6 +8,7 @@ import type { HarnessInfo } from '../src/harnessApi'
 
 const api = vi.hoisted(() => ({
   listHarnesses: vi.fn(), checkHarness: vi.fn(), operateHarness: vi.fn(), getHarnessJob: vi.fn(),
+  listHarnessProcesses: vi.fn(), controlHarnessProcess: vi.fn(),
 }))
 vi.mock('../src/harnessApi', () => api)
 vi.mock('../src/i18n', () => ({ t: (key: string) => key }))
@@ -15,10 +16,15 @@ vi.mock('../src/components/ActionButton.vue', () => ({
   default: { setup: (_: unknown, { attrs, slots }: Vue.SetupContext) => () => h('button', attrs, slots.default?.()) },
 }))
 import Panel from '../src/components/settings/HarnessSettingsPanel.vue'
+import Processes from '../src/components/settings/HarnessProcesses.vue'
 
 const { descriptor } = parse(readFileSync(new URL('../src/components/settings/HarnessSettingsPanel.vue', import.meta.url), 'utf8'))
 Panel.render = new Function('Vue', compile(descriptor.template!.content, {
   mode: 'function', prefixIdentifiers: true, bindingMetadata: compileScript(descriptor, { id: 'harness-test' }).bindings,
+}).code)(Vue)
+const processDescriptor = parse(readFileSync(new URL('../src/components/settings/HarnessProcesses.vue', import.meta.url), 'utf8')).descriptor
+Processes.render = new Function('Vue', compile(processDescriptor.template!.content, {
+  mode: 'function', prefixIdentifiers: true, bindingMetadata: compileScript(processDescriptor, { id: 'process-test' }).bindings,
 }).code)(Vue)
 
 type Host = { type: string; text: string; props: Record<string, unknown>; children: Host[]; parent?: Host }
@@ -57,17 +63,17 @@ function info(overrides: Partial<HarnessInfo> = {}): HarnessInfo {
     ...overrides }
 }
 let unmount: (() => void) | undefined
-async function mount(value: HarnessInfo) {
+async function mount(value: HarnessInfo, onOpenNode = vi.fn()) {
   api.listHarnesses.mockResolvedValue({ harnesses: [value], jobs: [] })
   const root = node('root')
-  const app = renderer.createApp(Panel)
+  const app = renderer.createApp(Panel, { onOpenNode })
   app.provide(Vue.ssrContextKey, { modules: new Set() })
   app.mount(root)
   unmount = () => app.unmount()
   await settle()
   return root
 }
-beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers() })
+beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers(); api.listHarnessProcesses.mockResolvedValue({ processes: [] }) })
 afterEach(() => { unmount?.(); vi.useRealTimers() })
 
 it('offers upgrade after check, disables concurrent actions, and refreshes after completion', async () => {
@@ -146,4 +152,39 @@ it('surfaces a failed upgrade and allows retry after polling', async () => {
   expect(content(root)).toContain('EBADENGINE')
   expect(button(root, 'upgrade')!.props.disabled).toBeFalsy()
   expect(content(root)).not.toContain('harness.completed')
+})
+
+it('opens the exact graph/node without stopping its process', async () => {
+  api.listHarnessProcesses.mockResolvedValue({ processes: [{ harness_id: 'pi', graph_id: 'other-graph', node_id: 'Pi worker', state: 'ready', error: '' }] })
+  const openNode = vi.fn()
+  const root = await mount(info(), openNode)
+  await click(root, 'process.openNode')
+  expect(openNode).toHaveBeenCalledExactlyOnceWith({ graphId: 'other-graph', nodeId: 'Pi worker' })
+  expect(api.controlHarnessProcess).not.toHaveBeenCalled()
+})
+
+it('lists the processes of its Harness and stops the selected graph/node', async () => {
+  api.listHarnessProcesses.mockResolvedValue({ processes: [{ harness_id: 'pi', graph_id: 'other-graph', node_id: 'Pi worker', state: 'ready', error: '' }] })
+  const root = await mount(info())
+  expect(api.listHarnessProcesses).toHaveBeenCalledWith('pi')
+  expect(content(root)).toContain('Pi worker')
+  expect(content(root)).toContain('other-graph')
+  api.controlHarnessProcess.mockResolvedValue({ state: 'stopped', error: '' })
+  await click(root, 'process.stop')
+  expect(api.controlHarnessProcess).toHaveBeenCalledWith('Pi worker', 'other-graph', 'stop')
+  expect(content(root)).not.toContain('Pi worker')
+})
+
+it('reports restoration failures separately from a completed installation', async () => {
+  const root = await mount(info())
+  api.operateHarness.mockResolvedValue({ id: 'job', harness_id: 'pi', action: 'upgrade', status: 'running' })
+  await click(root, 'upgrade')
+  api.getHarnessJob.mockResolvedValue({ id: 'job', harness_id: 'pi', action: 'upgrade', status: 'completed',
+    restore_errors: [{ node_id: 'Pi worker', error: 'Native initialization failed' }] })
+  api.checkHarness.mockResolvedValue(info({ update_status: 'current' }))
+  await vi.advanceTimersByTimeAsync(1500)
+  await settle()
+  expect(content(root)).toContain('harness.completed')
+  expect(content(root)).toContain('harness.process.restoreFailed')
+  expect(content(root)).toContain('Pi worker: Native initialization failed')
 })

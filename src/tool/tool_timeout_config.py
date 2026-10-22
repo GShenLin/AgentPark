@@ -16,6 +16,7 @@ def resolve_tool_timeout_seconds(
     func: Callable | None = None,
     default_timeout: float = 5,
 ) -> float | None:
+    # Historical setting names now describe reporting intervals, not kill deadlines.
     payload = config if isinstance(config, dict) else {}
 
     if isinstance(name, str) and name.strip():

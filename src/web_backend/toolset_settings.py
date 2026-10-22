@@ -3,6 +3,8 @@ from fastapi import HTTPException
 
 from src.tool.tool_load_errors import ToolLoadError
 from src.tool.toolset_registry import build_catalog, settings_document, validate_toolsets
+from src.tool.tool_prompts import prompt_catalog
+from src.tool.tool_task_tools import control_declarations
 
 
 def read_toolsets() -> dict:
@@ -15,7 +17,8 @@ def read_toolsets() -> dict:
 def toolset_metadata() -> dict:
     try:
         catalog = build_catalog()
-        return {"tool_catalog": catalog["tools"], "builtin_toolsets": list(catalog["defaults"])}
+        return {"tool_catalog": catalog["tools"], "builtin_toolsets": list(catalog["defaults"]),
+                "tool_prompt_catalog": prompt_catalog(catalog["tools"], list(control_declarations()))}
     except (OSError, ValueError, ImportError, ToolLoadError) as exc:
         raise HTTPException(status_code=500, detail=f"Unable to discover tools: {exc}") from exc
 

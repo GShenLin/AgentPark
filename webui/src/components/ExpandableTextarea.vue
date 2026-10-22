@@ -18,6 +18,7 @@ const props = withDefaults(
     readonly?: boolean
     minHeight?: string
     maxHeight?: string
+    maxLength?: number
   }>(),
   {
     rows: 3,
@@ -114,6 +115,7 @@ onBeforeUnmount(() => {
       ref="inputTextarea"
       v-bind="$attrs"
       class="expandable-textarea__input"
+      :maxlength="maxLength"
       :value="modelValue"
       :rows="rows"
       :placeholder="placeholder"
@@ -163,6 +165,7 @@ onBeforeUnmount(() => {
         <textarea
           ref="expandedTextarea"
           class="expandable-textarea__editor"
+          :maxlength="maxLength"
           :value="modelValue"
           :placeholder="placeholder"
           :aria-label="ariaLabel"

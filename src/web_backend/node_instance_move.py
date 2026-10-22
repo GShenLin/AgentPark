@@ -94,6 +94,9 @@ class NodeInstanceMove(HostBoundService):
                 self._reserve_idle_node(source_config_path)
                 reservation_acquired = True
                 self._require_no_active_execution(source_config_path)
+                from src.harness.process_manager import HarnessProcesses
+                if HarnessProcesses._instance is not None:
+                    HarnessProcesses._instance.forget(source_node_dir)
                 self.graph_runtime._unregister_scheduled_node(source_graph_id, safe_node_id)
                 schedule_unregistered = True
 

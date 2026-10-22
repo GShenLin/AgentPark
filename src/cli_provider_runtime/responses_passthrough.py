@@ -12,7 +12,8 @@ from .contracts import CodexProtocolError
 from .doubao_seed_response import SeedResponseNormalizer
 from .doubao_seed_stream import normalize_seed_stream
 from .doubao_seed_tools import SeedToolRegistry
-from .doubao_responses_request import prepare_doubao_request, unwrap_custom_arguments
+from .doubao_responses_request import normalize_generation_options
+from .responses_function_tools import collect_additional_tools, wrap_custom_tools, unwrap_custom_arguments
 from .http_transport import UpstreamResponse
 
 
@@ -39,13 +40,14 @@ class ResponsesPassthrough:
     @property
     def flattens_namespace_tools(self) -> bool:
         provider_type = str(self.config.get("type") or "").strip().lower()
-        return provider_type in {"doubao", "grok"}
+        return provider_type in {"doubao", "grok", "deepseek"}
 
     def prepare_request(self, payload: dict[str, Any]) -> PreparedResponsesRequest:
         request = copy.deepcopy(payload)
+        provider_type = str(self.config.get("type") or "").strip().lower()
         seed_tools = (
             SeedToolRegistry(payload)
-            if str(self.config.get("type") or "").strip().lower() == "doubao"
+            if provider_type == "doubao"
             else None
         )
         if str(self.config.get("authMode") or "").strip().lower() == "codex":
@@ -56,16 +58,20 @@ class ResponsesPassthrough:
         if not self.flattens_namespace_tools:
             return PreparedResponsesRequest(payload=request, tools_by_wire_name={})
 
-        custom_names = prepare_doubao_request(request) if seed_tools is not None else set()
+        function_tools_only = provider_type in {"doubao", "deepseek", "grok"}
+        if function_tools_only:
+            collect_additional_tools(request)
         tools, identities = _flatten_namespace_tools(request.get("tools"))
-        for name in custom_names:
-            if name in identities:
-                raise CodexProtocolError("Doubao custom tool name collides with a flattened namespace tool.")
-            identities[name] = ResponsesToolIdentity(namespace="", name=name, kind="custom")
         if tools is not None:
             request["tools"] = tools
         _flatten_tool_choice(request, identities)
         _flatten_input_calls(request.get("input"), identities)
+        if function_tools_only:
+            for name in wrap_custom_tools(request, text_only_outputs=provider_type == "doubao"):
+                if name not in identities:
+                    identities[name] = ResponsesToolIdentity(namespace="", name=name, kind="custom")
+        if provider_type == "doubao":
+            normalize_generation_options(request)
         _remove_unsupported_reasoning_summary(request)
         request.pop("client_metadata", None)
         return PreparedResponsesRequest(payload=request, tools_by_wire_name=identities, seed_tools=seed_tools)
@@ -141,34 +147,30 @@ def _flatten_namespace_tools(
         namespace = _required_text(raw, "name", "namespace tool")
         children = raw.get("tools")
         if not isinstance(children, list) or not children:
-            raise CodexProtocolError(f"namespace tool {namespace!r} must contain function tools.")
+            raise CodexProtocolError(f"namespace tool {namespace!r} must contain child tools.")
         for child in children:
-            if not isinstance(child, dict) or str(child.get("type") or "").strip() != "function":
-                raise CodexProtocolError(f"namespace tool {namespace!r} supports only function children.")
+            if not isinstance(child, dict) or child.get("type") not in {"function", "custom"}:
+                raise CodexProtocolError(f"namespace tool {namespace!r} supports only function or custom children.")
             name = _required_text(child, "name", f"namespace tool {namespace!r} child")
             schema = child.get("parameters")
-            if not isinstance(schema, dict):
+            if child["type"] == "function" and not isinstance(schema, dict):
                 raise CodexProtocolError(f"namespace tool {namespace!r} child {name!r} parameters must be an object.")
             wire_name = CanonicalTool(
                 name=name,
                 namespace=namespace,
                 description=str(child.get("description") or ""),
-                input_schema=schema,
+                input_schema=schema if child["type"] == "function" else {},
             ).wire_name
             if wire_name in identities or any(
                 isinstance(item, dict) and str(item.get("name") or "") == wire_name
                 for item in output
             ):
                 raise CodexProtocolError(f"Responses tools collide after namespace flattening: {wire_name!r}.")
-            identities[wire_name] = ResponsesToolIdentity(namespace=namespace, name=name)
-            output.append(
-                {
-                    "type": "function",
-                    "name": wire_name,
-                    "description": str(child.get("description") or ""),
-                    "parameters": copy.deepcopy(schema),
-                }
-            )
+            identities[wire_name] = ResponsesToolIdentity(namespace=namespace, name=name, kind=child["type"])
+            output.append({**copy.deepcopy(child), "name": wire_name})
+    names = [item["name"] for item in output if isinstance(item.get("name"), str)]
+    if len(names) != len(set(names)):
+        raise CodexProtocolError("Responses tools collide after namespace flattening.")
     return output, identities
 
 
@@ -197,7 +199,7 @@ def _flatten_input_calls(
     if not isinstance(raw_input, list):
         return
     for item in raw_input:
-        if not isinstance(item, dict) or str(item.get("type") or "") != "function_call":
+        if not isinstance(item, dict) or item.get("type") not in {"function_call", "custom_tool_call"}:
             continue
         namespace = str(item.get("namespace") or "").strip()
         name = str(item.get("name") or "").strip()
@@ -229,21 +231,25 @@ def _restore_calls(
         return
     if not isinstance(value, dict):
         return
-    if str(value.get("type") or "") == "function_call":
+    kind = value.get("type")
+    if isinstance(kind, str) and kind in {"function_call", "custom_tool_call"}:
         identity = identities.get(str(value.get("name") or ""))
         if identity is not None:
             value["name"] = identity.name
-            if identity.kind == "custom":
+            if identity.kind == "custom" and value["type"] == "function_call":
                 arguments = value.pop("arguments", "")
                 value["input"] = (
                     "" if arguments == "" and value.get("status") == "in_progress"
                     else unwrap_custom_arguments(arguments)
                 )
                 value["type"] = "custom_tool_call"
-            elif identity.namespace:
+            if identity.namespace:
                 value["namespace"] = identity.namespace
-    for child in value.values():
-        _restore_calls(child, identities)
+    # Traverse protocol containers only. Response echoes include tool JSON
+    # schemas and arbitrary user data, whose `type` fields are not event types.
+    for key in ("response", "output", "item"):
+        if key in value:
+            _restore_calls(value[key], identities)
 
 
 def _transform_sse_frame(

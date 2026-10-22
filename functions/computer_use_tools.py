@@ -121,9 +121,9 @@ perform_secondary_action_declaration = _declaration('perform_secondary_action', 
     {**_INPUT, 'element_index': _INDEX, 'action': {'type': 'string', 'enum': ['invoke', 'expand', 'collapse', 'select', 'toggle']}},
     ['window', 'observation_id', 'element_index', 'action'])
 
-# These calls cooperate with cancellation themselves. The generic tool timeout
-# must not detach a still-running native input operation into a background thread.
+# Running native actions retain their task and the desktop serialization lock.
+# Reporting does not replay input; wait for completion before the next action.
 for _tool in (list_windows, list_apps, get_window, launch_app, activate_window, get_window_state,
               click, drag, scroll, press_key, type_text, set_value, perform_secondary_action):
-    _tool.tool_timeout_seconds = 0
+    _tool.tool_timeout_seconds = 5
     _tool.tool_cooperative_cancellation = True

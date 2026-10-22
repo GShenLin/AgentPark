@@ -19,6 +19,7 @@ from functions.console_progress_watchdog import PytestProgressWatchdog
 from src.providers.agent_environment_context import resolve_agent_working_directory
 from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 from src.workspace_settings import load_workspace_settings
+from src.tool.tool_tasks import report_tool_progress
 
 
 DEFAULT_CONSOLE_COMMAND_TIMEOUT_SECONDS = 120
@@ -208,7 +209,7 @@ def execute_console_command(
 ):
     """
     Executes a console command and returns the output.
-    Uses a configurable timeout. If it times out, returns captured output so far (if possible) or a timeout message.
+    Uses a configurable reporting interval. At that interval the owning task reports progress and keeps the process running.
     """
     try:
         profile = classify_console_command(command)
@@ -284,54 +285,22 @@ def execute_console_command(
                         extra={"cwd": cwd} if cwd else None,
                     )
                 now = time.monotonic()
-                if deadline is not None and now >= deadline:
-                    terminate_process(proc)
-                    stdout_raw, stderr_raw = collect_process_output(proc, stdout_reader, stderr_reader)
-                    stdout = _decode_output(stdout_raw)
-                    stderr = _decode_output(stderr_raw)
-                    timeout_label = f"{command_timeout} seconds" if command_timeout is not None else "disabled timeout"
-                    status, completion_error, extra = analyze_console_completion(
-                        stdout,
-                        stderr,
-                        "timeout",
-                        profile,
-                    )
-                    return _build_console_command_result(
-                        command=command,
-                        stdout=stdout,
-                        stderr=stderr,
-                        status=status,
-                        agent=agent,
-                        error=completion_error or f"Command execution timed out after {timeout_label}.",
-                        extra={**extra, **({"cwd": cwd} if cwd else {})},
-                    )
+                report_due = deadline is not None and now >= deadline
+                progress = {"command": command, "pid": proc.pid, "cwd": cwd,
+                            "elapsed_seconds": round(now - started_at, 3),
+                            "stdout_tail": b"".join(stdout_reader.chunks[-8:]).decode("utf-8", errors="replace")[-4000:] if stdout_reader else "",
+                            "stderr_tail": b"".join(stderr_reader.chunks[-8:]).decode("utf-8", errors="replace")[-4000:] if stderr_reader else ""}
+                if report_due:
+                    deadline = None
+                    progress["report_reason"] = "report_interval_elapsed"
                 if progress_watchdog is not None:
                     progress_watchdog.observe(now=now)
                     if progress_watchdog.expired(now=now):
-                        watchdog_payload = progress_watchdog.snapshot(now=now).to_payload()
-                        terminate_process(proc)
-                        stdout_raw, stderr_raw = collect_process_output(
-                            proc,
-                            stdout_reader,
-                            stderr_reader,
-                        )
-                        return _build_console_command_result(
-                            command=command,
-                            stdout=_decode_output(stdout_raw),
-                            stderr=_decode_output(stderr_raw),
-                            status="no_progress_timeout",
-                            agent=agent,
-                            error=(
-                                "Pytest produced no semantic test completion marker for "
-                                f"{progress_timeout:g} seconds. The opt-in watchdog tracks "
-                                "quiet progress glyph runs and verbose terminal statuses on "
-                                "stdout; stderr activity does not reset it."
-                            ),
-                            extra={
-                                "progress_watchdog": watchdog_payload,
-                                **({"cwd": cwd} if cwd else {}),
-                            },
-                        )
+                        progress["progress_watchdog"] = progress_watchdog.snapshot(now=now).to_payload()
+                        progress["report_reason"] = "no_progress"
+                        report_due = True
+                        progress_watchdog = None
+                report_tool_progress(progress, request_report=report_due)
                 time.sleep(0.05)
 
             stdout_raw, stderr_raw = collect_process_output(proc, stdout_reader, stderr_reader)
@@ -360,23 +329,6 @@ def execute_console_command(
                 agent=agent,
                 error=str(e),
             )
-        except subprocess.TimeoutExpired as e:
-            stdout = _decode_output(e.stdout)
-            stderr = _decode_output(e.stderr)
-            command_timeout = _resolve_command_timeout_seconds(timeout_seconds, agent, profile=profile)
-            timeout_label = f"{command_timeout} seconds" if command_timeout is not None else "disabled timeout"
-            status, completion_error, extra = analyze_console_completion(stdout, stderr, "timeout", profile)
-
-            return _build_console_command_result(
-                command=command,
-                stdout=stdout,
-                stderr=stderr,
-                status=status,
-                agent=agent,
-                error=completion_error or f"Command execution timed out after {timeout_label}.",
-                extra=extra,
-            )
-
         finally:
             if launch is not None:
                 launch.close()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from nodes.agent_mcp_loader import list_available_mcp_server_options
 from nodes.agent_plugin_loader import list_available_plugin_options, load_node_plugins
@@ -73,6 +73,11 @@ class CapabilityRegistry:
 
     def validate_requested(self, kind: str, names: Iterable[str], config: dict[str, Any] | None = None) -> None:
         descriptors = self.discover(config).get(kind, [])
+        names = list(names)
+        unavailable = [item for item in descriptors if item.id in names and item.status == "unavailable"]
+        if unavailable:
+            details = "; ".join(f"{item.id}: {'; '.join(item.diagnostics)}" for item in unavailable)
+            raise ValueError(f"unavailable {kind} name(s): {details}")
         available = {item.id for item in descriptors if item.status != "unavailable"}
         missing = [name for name in names if name not in available]
         if missing:
@@ -81,7 +86,7 @@ class CapabilityRegistry:
     def _options(
         self,
         kind: str,
-        options: Iterable[dict[str, Any]],
+        options: Iterable[Mapping[str, Any]],
         selected: set[str],
         *,
         source: str,
@@ -103,7 +108,8 @@ class CapabilityRegistry:
                     version=version,
                     source=source,
                     enabled=value in selected,
-                    status="selected" if value in selected else "available",
+                    status=option.get("status") or ("selected" if value in selected else "available"),
+                    diagnostics=tuple(option.get("diagnostics", ())),
                 )
             )
         return sorted(descriptors, key=lambda item: (item.label.casefold(), item.id.casefold()))
@@ -191,7 +197,7 @@ class CapabilityRegistry:
     def _plugin_descriptors(self, selected: set[str]) -> list[CapabilityDescriptor]:
         by_id = {item.id: item for item in self._options("plugin", list_available_plugin_options(), selected, source="plugin")}
         for name in selected:
-            if name not in by_id:
+            if name not in by_id or by_id[name].status == "unavailable":
                 continue
             try:
                 plugins = load_node_plugins([name])

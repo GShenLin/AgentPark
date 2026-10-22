@@ -25,10 +25,11 @@ export function withPersistedCapabilityState(rawSchema: SchemaRecord, cfg: Recor
       const value = String((option as Record<string, unknown>).value || '').trim()
       if (value) seen.add(value)
       const enabled = value ? selected.has(value) : false
+      const status = String((option as Record<string, unknown>).status || 'available')
       return {
         ...(option as Record<string, unknown>),
         enabled,
-        status: enabled ? 'selected' : String((option as Record<string, unknown>).status || 'available'),
+        status: status === 'error' || status === 'unavailable' ? status : (enabled ? 'selected' : status),
       }
     })
     for (const value of selected) {

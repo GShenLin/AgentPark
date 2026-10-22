@@ -1,69 +1,17 @@
-"""OpenClaw's public plugin event bus -> AgentPark live process events.
-
-The managed plugin frames JSON events on stderr; stdout remains the native
-CLI's final JSON result. Ordinary diagnostics remain subprocess diagnostics.
-"""
+"""OpenClaw public Gateway agent events projected into node progress."""
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-from src.file_transaction import atomic_write_text
 from src.harness.events import HarnessEvents
-from .cli_session import string_field, write_json
-
-
-PREFIX = "AGENTPARK_OPENCLAW_EVENT:"
-PLUGIN_ID = "agentpark-progress"
-PLUGIN_SOURCE = '''export default {
-  id: "agentpark-progress",
-  name: "AgentPark progress",
-  register(api) {
-    const emit = (value) => process.stderr.write("AGENTPARK_OPENCLAW_EVENT:" + JSON.stringify(value) + "\\n");
-    api.agent.events.registerAgentEventSubscription({
-      id: "progress",
-      streams: ["assistant", "thinking", "tool", "lifecycle", "compaction", "approval", "error"],
-      handle(event) { emit({ type: "event", event }); }
-    });
-    emit({ type: "ready", version: 1 });
-  }
-};
-'''
-
-
-def install_progress_plugin(state_dir: Path) -> dict:
-    root = state_dir / PLUGIN_ID
-    root.mkdir(exist_ok=True)
-    write_json(root / "package.json", {"name": PLUGIN_ID, "version": "1.0.0", "type": "module",
-                                      "openclaw": {"extensions": ["./index.js"]}})
-    write_json(root / "openclaw.plugin.json", {"id": PLUGIN_ID,
-        "configSchema": {"type": "object", "additionalProperties": False, "properties": {}}})
-    atomic_write_text(str(root / "index.js"), PLUGIN_SOURCE, encoding="utf-8")
-    return {"load": {"paths": [str(root)]},
-            "entries": {PLUGIN_ID: {"enabled": True}}}
+from .cli_session import string_field
 
 
 class OpenClawProgress:
     def __init__(self, events: HarnessEvents):
         self.events = events
-        self.ready = False
         self.sequences: dict[str, int] = {}
 
-    def handle_stderr(self, line: str) -> None:
-        if not line.startswith(PREFIX):
-            return
-        envelope = json.loads(line[len(PREFIX):])
-        if not isinstance(envelope, dict):
-            raise ValueError("OpenClaw progress envelope must be an object.")
-        if envelope.get("type") == "ready":
-            if envelope.get("version") != 1:
-                raise ValueError("Unsupported OpenClaw progress protocol version.")
-            self.ready = True
-            self.notice("ready", {"message": "OpenClaw progress connected"})
-            return
-        if envelope.get("type") != "event" or not self.ready:
-            raise ValueError("Invalid OpenClaw progress event before bridge readiness.")
-        event = envelope.get("event")
+    def handle(self, event: dict) -> None:
         if not isinstance(event, dict) or not isinstance(event.get("data"), dict):
             raise ValueError("OpenClaw event requires an object payload.")
         run_id = string_field(event, "runId")
@@ -72,6 +20,10 @@ class OpenClawProgress:
             raise ValueError("OpenClaw progress events must be ordered per run.")
         self.sequences[run_id] = sequence
         stream, data = string_field(event, "stream"), event["data"]
+        if stream in {"usage", "item", "command_output"}:
+            # Gateway also publishes transcript/usage projections; text and tool
+            # streams below already carry their user-visible contents.
+            return
         if stream == "assistant":
             self.events.text_delta(string_field(data, "delta"))
         elif stream == "thinking":
@@ -121,7 +73,7 @@ class OpenClawProgress:
             raise ValueError(f"Unsupported OpenClaw tool phase: {phase}")
 
     def notice(self, stage: str, data: dict, *, call_id: str = "") -> None:
-        labels = {"ready": "OpenClaw ready", "lifecycle": "OpenClaw run",
+        labels = {"lifecycle": "OpenClaw run",
                   "compaction": "Context compaction", "approval": "Approval",
                   "error": "OpenClaw error", "tool_update": "Tool progress",
                   "tool_input": "Preparing tool arguments", "tool_review": "Tool review"}
@@ -141,7 +93,5 @@ class OpenClawProgress:
                           "message": json.dumps(data, ensure_ascii=False)})
 
     def finish(self) -> None:
-        if not self.ready:
-            raise RuntimeError("OpenClaw progress plugin did not load; check the installed OpenClaw plugin API.")
         if self.events.started:
             raise RuntimeError("OpenClaw exited with unfinished tool calls.")

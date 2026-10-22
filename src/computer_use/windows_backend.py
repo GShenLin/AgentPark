@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from src.tool.reporting_process import run_reporting_process
 
 from src.runtime_cancellation import raise_if_cancel_requested
 from .contracts import ComputerUseError, PointerFeedback, PointerPoint, integer
@@ -84,7 +85,7 @@ class WindowsBackend:
             app = apps.setdefault(window['app'], {'id': window['app'],
                                   'displayName': Path(window['app'][8:]).stem, 'windows': []})
             app['windows'].append(window)
-        completed = subprocess.run(
+        completed = run_reporting_process(
             ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
              "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); @(Get-StartApps) | ConvertTo-Json -Compress"],
             capture_output=True, encoding='utf-8', timeout=15, check=True,

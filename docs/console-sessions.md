@@ -14,9 +14,9 @@
 | 接口 | 用途 |
 |---|---|
 | `execute_console_command(command, timeout_seconds, ...)` | 同步短命令，保留原有输出大小限制和测试完成判定 |
-| `start_console_session(command, timeout_seconds=120, child_process_policy="error")` | 立即返回 session_id、PID、cwd、初始游标；执行总时限 0–3600 秒，0 禁用 |
+| `start_console_session(command, timeout_seconds=120, child_process_policy="error")` | 立即返回 session_id、PID、cwd、初始游标；timeout_seconds 是建议汇报间隔，过期不终止进程 |
 | `read_console_session(session_id, cursor=null, max_chars=8000)` | 不等待，读取当前输出和状态 |
-| `wait_console_session(session_id, cursor=null, wait_seconds=10, max_chars=8000)` | 最多等待 0–60 秒后读取；等待到期不终止命令 |
+| `wait_console_session(session_id, cursor=null, wait_seconds=10, max_chars=8000)` | 模型选择等待 0–3600 秒后汇报，提前完成则立即返回；等待到期不终止命令 |
 | `stop_console_session(session_id, cursor=null, max_chars=8000)` | 终止会话及其子进程，等待清理后返回结果 |
 
 构建、测试、编辑器任务优先用会话。命令内直接以前台方式运行可执行文件，不要用后台操作脱离会话。Windows GUI 程序需显式等待：将调用接入 `Out-Default` 管道，或使用 `Start-Process -Wait -PassThru` 并把其 `ExitCode` 作为命令退出码。Windows shell 结束时若仍有活跃子进程，会话明确返回 error 并清理它们；不把提前退出误报成程序执行成功。会话不提供交互式 stdin。
@@ -31,7 +31,9 @@ Windows 若前台程序本身已退出，但设计上留下了辅助进程（例
 
 ## 生命周期与边界
 
-会话归创建它的 Agent 运行所有；其他 Agent 无法读取或停止它。节点 Stop、执行期限、显式停止，以及 Agent 正常结束或抛异常，都会清理运行中的会话。完成会话的输出保留到当前 Agent 运行结束，之后删除，不支持跨轮次或重启恢复。
+会话归创建它的 Agent 运行所有；其他 Agent 无法读取或停止它。节点 Stop、显式停止，以及 Agent 正常结束或抛异常，都会清理运行中的会话。等待或汇报期限到期不会终止进程。完成会话的输出保留到当前 Agent 运行结束，之后删除，不支持跨轮次或重启恢复。
+
+所有模型工具调用均受统一任务管理。公共执行层的超时配置现在表示首次汇报间隔，返回 `status=running` 和 `task_id`，不会取消操作。模型使用 `wait_tool_task(task_id, wait_seconds)` 选择下一次汇报间隔，或通过 `read_tool_task` 查看、`stop_tool_task` 明确停止。不要重复调用原始工具来代替等待；不要在仍需完成任务时结束 Agent 运行。详见 [工具任务汇报](tool-task-reporting.md)。
 
 Windows 先挂起创建 shell，把它放入 kill-on-close Job Object 后恢复，保证其后代归属同一进程树；进程结束或停止时关闭 Job。POSIX 使用独立进程组并清理组内后代。工具不支持进程主动脱离所属 Job / 进程组。
 

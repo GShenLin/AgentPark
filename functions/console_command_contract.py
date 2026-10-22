@@ -36,16 +36,16 @@ execute_console_command_declaration = {
                 "timeout_seconds": {
                     "type": "number",
                     "description": (
-                        "Optional command timeout in seconds. Defaults to 120; use 300 or more for known long "
-                        "project builds such as WebUI production builds. Use 0 to disable the command timeout "
-                        "and rely on Stop cancellation."
+                        "Initial status reporting interval in seconds. Defaults to 120; use 300 or more for known long "
+                        "project builds. At expiry the command keeps running and a task_id is returned. Continue with wait_tool_task(task_id, wait_seconds). Use 0 to disable timed reports "
+                        "and wait for completion. Only explicit Stop cancels execution."
                     ),
                 },
                 "progress_timeout_seconds": {
                     "type": ["number", "null"],
                     "description": (
-                        "Optional pytest-only semantic no-progress watchdog. It terminates the "
-                        "test command when no quiet progress glyph run or verbose test terminal "
+                        "Optional pytest-only semantic no-progress reporting threshold. It reports the "
+                        "running test without stopping it when no quiet progress glyph run or verbose test terminal "
                         "status appears on stdout for this many seconds. Repeated logs and "
                         "tracebacks do not count as progress. Use null to disable it. A numeric "
                         f"value must be between {MIN_PROGRESS_TIMEOUT_SECONDS} and "

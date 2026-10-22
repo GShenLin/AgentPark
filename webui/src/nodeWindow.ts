@@ -1,6 +1,7 @@
 import { getActiveApiBase, requestApiJson } from './api'
 
 export type NodeWindowTarget = { graphId: string; nodeId: string; requestId?: string }
+export type NodeWindowResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 export interface NodeWindowBridge {
   readonly target: NodeWindowTarget
   ready(): void
@@ -10,6 +11,9 @@ export interface NodeWindowBridge {
   beginDrag(): void
   moveDrag(): void
   endDrag(): void
+  beginResize(edge: NodeWindowResizeEdge): void
+  moveResize(): void
+  endResize(): void
   minimize(): void
   openInBrowser(): Promise<void>
   copyText(text: string): Promise<void>

@@ -22,7 +22,7 @@ export const reasoningEffortOptions = [
 
 export const CODEX_NODE_TYPE = 'codex_node'
 export const CLAUDE_NODE_TYPE = 'claude_node'
-export const PROVIDER_HARNESS_NODE_TYPES = [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE, 'openclaw_node', 'deepseek_harness_node', 'pi_node', 'hermes_agent_node', 'minimax_code_node']
+export const PROVIDER_HARNESS_NODE_TYPES = [CODEX_NODE_TYPE, CLAUDE_NODE_TYPE, 'openclaw_node', 'deepseek_harness_node', 'pi_node', 'hermes_agent_node', 'minimax_code_node', 'opencode_node', 'antigravity_node']
 export const AUDIO_GENERATION_MODE = 'audio_generation'
 
 export function dedupeStrings(values: unknown[]): string[] {
@@ -201,7 +201,7 @@ export function useAgentNodeCreateSchema(options: {
       const selectedProvider = providers.value.find(item => item.id === providerId)
       const modelIds = providerModelIds(selectedProvider)
       if (!modelIds.includes(String(selectedNodeFields.value.model || ''))) selectedNodeFields.value.model = modelIds[0] || ''
-      if (['hermes_agent_node', 'openclaw_node', 'minimax_code_node'].includes(selectedTypeId.value)) {
+      if (['hermes_agent_node', 'openclaw_node', 'minimax_code_node', 'opencode_node', 'antigravity_node'].includes(selectedTypeId.value)) {
         const feature = selectedProvider?.features?.reasoning_effort
         const efforts = feature?.supported ? feature.values || [] : []
         if (!efforts.includes(String(selectedNodeFields.value.reasoning_effort || ''))) {

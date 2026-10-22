@@ -18,12 +18,19 @@ CLI_HARNESSES = ("hermes_agent", "openclaw", "deepseek_harness", "pi", "minimax_
 
 def clear_harness_memory(node_directory: str, config: dict) -> tuple[str, ...]:
     node = Path(node_directory).resolve()
+    from .process_manager import HarnessProcesses
+    if HarnessProcesses._instance is not None:
+        HarnessProcesses._instance.forget(node)
     cleared: list[str] = []
     for harness_id in CLI_HARNESSES:
         root = node / ".harness" / harness_id
         if not root.exists():
             continue
         _require_owned_path(root, node)
+        if harness_id == "openclaw":
+            from .openclaw_session import OpenClawSessions
+            if OpenClawSessions._instance is not None:
+                OpenClawSessions._instance.close_under(root)
         with file_lease(root / ".session-state.lock", exclusive=True):
             # Clear all managed sessions, including those created before the
             # stable session pointer was introduced, not just the selected one.

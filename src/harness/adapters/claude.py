@@ -18,7 +18,26 @@ from src.harness.provider_binding import ProviderBinding
 from src.harness.install_manager import resolve_command
 
 class Adapter:
-    def run(self, text: str, context: HarnessContext) -> HarnessResult:
+    def __init__(self):
+        self.session_key = ""
+        self.manager = None
+
+    def prepare(self, context):
+        request, spec = self._spec(context)
+        self.session_key = spec.session_key
+        self.manager = ClaudeSessionManager.instance()
+        self.manager.prepare(spec)
+        return request
+
+    def is_alive(self):
+        return bool(self.session_key) and self.manager is not None and self.manager.is_alive(self.session_key)
+
+    def close(self):
+        if self.session_key and self.manager is not None:
+            self.manager.close_session(self.session_key)
+            self.session_key = ""
+
+    def _spec(self, context):
         ctx = context.values
         config_path = context.config_path
         node_directory = context.node_directory
@@ -28,6 +47,25 @@ class Adapter:
         binding = ProviderBinding.resolve(request.provider_id, request.model_id)
         model = binding.model_id
 
+        state_path = os.path.join(node_directory, SESSION_STATE_FILENAME)
+        session_key = session_runtime_key(request.graph_id, request.node_id, state_path)
+        return request, ClaudeSessionSpec(
+            session_key=session_key,
+            provider_id=request.provider_id,
+            model=model,
+            command=resolve_command("claude", request.command),
+            cwd=request.cwd,
+            permission_mode=permission_mode,
+            state_path=state_path,
+            instruction=request.instruction,
+            reasoning_effort=request.reasoning_effort,
+            inherit_mcp_servers=request.inherit_mcp_servers,
+        )
+
+    def run(self, text: str, context: HarnessContext) -> HarnessResult:
+        ctx = context.values
+        request, spec = self._spec(context)
+        self.session_key = spec.session_key
         cancel_source = ctx.get("cancel_event") or ctx.get("cancel_check")
         raise_if_cancel_requested(cancel_source)
         tool_stats = ToolCallStatsRecorder(
@@ -40,20 +78,9 @@ class Adapter:
             tool_event_callback=tool_stats.handle,
             provider_id=request.provider_id,
         )
-        state_path = os.path.join(node_directory, SESSION_STATE_FILENAME)
-        session_key = session_runtime_key(request.graph_id, request.node_id, state_path)
-        final_text = ClaudeSessionManager.instance().run_turn(
-            ClaudeSessionSpec(
-                session_key=session_key,
-                provider_id=request.provider_id,
-                model=model,
-                command=resolve_command("claude", request.command),
-                cwd=request.cwd,
-                permission_mode=permission_mode,
-                state_path=state_path,
-                instruction=request.instruction,
-                reasoning_effort=request.reasoning_effort,
-            ),
+        self.manager = ClaudeSessionManager.instance()
+        final_text = self.manager.run_turn(
+            spec,
             text,
             event_handler=bridge.handle,
             gateway_observer=bridge.observe_gateway_request,

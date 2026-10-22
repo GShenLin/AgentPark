@@ -66,7 +66,7 @@ def test_running_operation_and_session_block_switch(tmp_path):
     assert switch(agent, tmp_path)["status"] == "success"
 
 
-def test_detached_timed_out_tool_keeps_device_ownership(tmp_path):
+def test_reporting_tool_keeps_device_ownership(tmp_path):
     agent = make_agent(tmp_path)
     entered, release, finished = threading.Event(), threading.Event(), threading.Event()
     def slow_tool(agent=None):
@@ -80,7 +80,7 @@ def test_detached_timed_out_tool_keeps_device_ownership(tmp_path):
     agent.tools.function_map["slow_tool"] = slow_tool
     try:
         result = agent.tools.execute_tool_result("slow_tool", {})
-        assert result.status == "timeout" and entered.is_set()
+        assert result.status == "running" and entered.is_set()
         assert "still running" in switch(agent, tmp_path)["error"]
     finally:
         release.set()
@@ -131,7 +131,7 @@ def test_remote_inspection_rejects_offline_unsupported_and_malformed_targets(tmp
     worker["online"] = True
     assert "update" in switch(agent, "/workspace", device="worker-b")["error"]
     worker["capabilities"] = ["inspect_workspace"]
-    monkeypatch.setattr(device_tools, "_post_internal_request", lambda *args: {"ok": True, "result": '{}'})
+    monkeypatch.setattr(device_tools, "execute_remote_request", lambda *args, **kwargs: '{}')
     assert switch(agent, "/workspace", device="worker-b")["status"] == "exception"
     assert device_state(agent).revision == 0
 

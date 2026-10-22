@@ -21,6 +21,7 @@ class ClaudeNodeRunRequest:
     cwd: str
     permission_mode: str
     reasoning_effort: str
+    inherit_mcp_servers: bool = False
 
 
 def load_claude_node_run_request(
@@ -40,8 +41,8 @@ def load_claude_node_run_request(
     command = str(setting("claude_command", "claude") or "").strip()
     if not command:
         raise ValueError("claude_command is required")
-    permission_mode = str(setting("permission_mode", "acceptEdits") or "").strip()
-    if permission_mode not in {"plan", "dontAsk", "acceptEdits", "auto", "bypassPermissions"}:
+    permission_mode = str(setting("permission_mode", "bypassPermissions") or "").strip()
+    if permission_mode not in {"plan", "dontAsk", "acceptEdits", "auto", "default", "bypassPermissions"}:
         raise ValueError(f"Unsupported Claude permission_mode: {permission_mode or '<empty>'}")
     reasoning_effort = str(setting("reasoning_effort", "high") or "").strip()
     if reasoning_effort not in {"low", "medium", "high", "xhigh", "max"}:
@@ -52,6 +53,9 @@ def load_claude_node_run_request(
     cwd = os.path.abspath(os.path.expanduser(raw_cwd)) if raw_cwd else workspace_root
     if not os.path.isdir(cwd):
         raise ValueError(f"Claude working_path does not exist: {cwd}")
+    inherit_mcp = setting("inherit_mcp_servers", False)
+    if not isinstance(inherit_mcp, bool):
+        raise ValueError("Claude inherit_mcp_servers must be a boolean.")
 
     return ClaudeNodeRunRequest(
         graph_id=str(ctx.get("graph_id") or "default").strip() or "default",
@@ -63,6 +67,7 @@ def load_claude_node_run_request(
         cwd=cwd,
         permission_mode=permission_mode,
         reasoning_effort=reasoning_effort,
+        inherit_mcp_servers=inherit_mcp,
     )
 
 

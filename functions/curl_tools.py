@@ -1,6 +1,8 @@
 import json
 import locale
 import subprocess
+from src.providers.curl_transport import CurlHttpTransport
+from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent
 
 from src.tool_helpers import decode_bytes, redact_sensitive_curl_args, truncate_text
 
@@ -13,6 +15,7 @@ def execute_curl_command(
     extra_args=None,
     timeout=15,
     max_output_chars=12000,
+    agent=None,
 ):
     try:
         system_encoding = locale.getpreferredencoding()
@@ -22,8 +25,6 @@ def execute_curl_command(
 
         cmd = ["curl", "-L", "-sS"]
 
-        if isinstance(timeout, (int, float)) and timeout > 0:
-            cmd += ["--max-time", str(int(timeout))]
 
         if isinstance(method, str) and method.strip() and method.upper() != "GET":
             cmd += ["-X", method.upper()]
@@ -51,7 +52,7 @@ def execute_curl_command(
         cmd.append(url)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            result = CurlHttpTransport().execute_cli(cmd[1:], report_seconds=timeout, cancel_event=cancel_source_from_agent(agent))
 
             stdout = decode_bytes(result.stdout, system_encoding)
             stderr = decode_bytes(result.stderr, system_encoding)
@@ -73,27 +74,10 @@ def execute_curl_command(
                 }
             )
 
-        except subprocess.TimeoutExpired as e:
-            stdout = decode_bytes(e.stdout, system_encoding)
-            stderr = decode_bytes(e.stderr, system_encoding)
-            stdout, stdout_truncated, stdout_total_chars = truncate_text(stdout, max_output_chars)
-            stderr, stderr_truncated, stderr_total_chars = truncate_text(stderr, max_output_chars)
-
-            return json.dumps(
-                {
-                    "command": " ".join(redact_sensitive_curl_args(cmd)),
-                    "url": url,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "stdout_truncated": stdout_truncated,
-                    "stderr_truncated": stderr_truncated,
-                    "stdout_total_chars": stdout_total_chars,
-                    "stderr_total_chars": stderr_total_chars,
-                    "error": f"curl execution timed out after {timeout} seconds.",
-                    "status": "timeout",
-                }
-            )
-
+        except CancellationRequested:
+            raise
+    except CancellationRequested:
+        raise
     except Exception as e:
         return json.dumps({"url": url, "error": str(e), "status": "exception"})
 
@@ -130,7 +114,7 @@ execute_curl_command_declaration = {
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Timeout in seconds (default: 15)",
+                    "description": "Status reporting interval in seconds (default: 15); expiry does not stop curl. Continue with wait_tool_task.",
                     "default": 15,
                 },
                 "max_output_chars": {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
@@ -12,9 +13,38 @@ from src.cli_provider_runtime.http_transport import open_json_request
 from src.cli_provider_runtime.http_transport import read_json_response
 from src.providers.curl_transport import CurlResponse
 from src.providers.curl_transport import CurlTransportError
+from src.runtime_cancellation import CancellationRequested
 
 
 POLICY = UpstreamRequestPolicy(timeout_seconds=5, max_retries=2, retry_delay_seconds=0)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_cancelled_lease_stops_upstream_retries_and_scope_does_not_leak(monkeypatch, stream):
+    cancellation = threading.Event()
+
+    class Transport:
+        attempts = 0
+
+        def post_json_response(self, **kwargs):
+            self.attempts += 1
+            cancellation.set()
+            raise CurlTransportError("interrupted connection")
+
+        def stream_sse_data(self, **kwargs):
+            self.post_json_response(**kwargs)
+            yield "unreachable"
+
+    transport = Transport()
+    monkeypatch.setattr(http_transport, "_CURL", transport)
+    with http_transport.upstream_cancellation_scope(cancellation):
+        with pytest.raises(CancellationRequested):
+            _open(stream=stream)
+    assert transport.attempts == 1
+    # A subsequent unrelated request has its own lifetime, even on this thread.
+    with pytest.raises(UpstreamTransportError):
+        _open(stream=stream)
+    assert transport.attempts == 4
 
 
 def _open(*, stream: bool):

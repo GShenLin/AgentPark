@@ -153,7 +153,12 @@ def manage_agent_capabilities(action, kind="all", names=None, config_path="", re
             raise ValueError("kind must be specific for enable/disable")
         normalized_names = _validate_names(names)
         current_config = node_config_service.read_strict(resolved_config_path)
-        CapabilityRegistry().validate_requested(normalized_kind, normalized_names, current_config)
+        names_to_validate = normalized_names
+        if normalized_action == "disable":
+            selected = set(_current_values(current_config, _FIELD_BY_KIND[normalized_kind]))
+            names_to_validate = [name for name in normalized_names if name not in selected]
+        if names_to_validate:
+            CapabilityRegistry().validate_requested(normalized_kind, names_to_validate, current_config)
         change_box = {}
 
         def mutate(config):

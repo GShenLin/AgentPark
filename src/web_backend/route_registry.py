@@ -24,9 +24,10 @@ class ApiRouteRegistry:
         ("post", "/api/skills/operations", lambda core: core.skills_api.operate),
         ("post", "/api/skills/roots", lambda core: core.skills_api.configure_roots),
         ("get", "/api/harnesses", lambda core: core.harness_api.list_harnesses),
-        ("get", "/api/harnesses/{harness_id}/models", lambda core: core.harness_api.native_models),
-        ("post", "/api/harnesses/opencode/config-options", lambda core: core.harness_api.opencode_options),
         ("get", "/api/harnesses/{harness_id}", lambda core: core.harness_api.check_harness),
+        ("get", "/api/harnesses/{harness_id}/processes", lambda core: core.harness_api.list_processes),
+        ("get", "/api/nodes/instances/{node_id}/harness-process", lambda core: core.harness_api.process_status),
+        ("post", "/api/nodes/instances/{node_id}/harness-process", lambda core: core.harness_api.control_process),
         ("post", "/api/harnesses/{harness_id}/operations", lambda core: core.harness_api.operate_harness),
         ("get", "/api/harness-jobs/{job_id}", lambda core: core.harness_api.get_job),
         ("post", "/api/nodes/instances/{node_id}/open-diagnostics", lambda core: receive_browser_trace),
@@ -196,6 +197,9 @@ class ApiRouteRegistry:
 
     @classmethod
     def register(cls, app: FastAPI, core: object) -> None:
+        from .desktop_tray_api import DesktopTrayApi
+        app.state.desktop_tray = DesktopTrayApi(core)
+        app.websocket('/api/desktop/tray')(app.state.desktop_tray.connect)
         app.websocket('/api/desktop/node-windows/focus')(core.node_windows.focus)
         app.get('/api/desktop/node-windows/status')(core.node_windows.status)
 

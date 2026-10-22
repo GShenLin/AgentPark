@@ -18,7 +18,7 @@ class RemoteDescriptor(BaseModel):
 
 class RemoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
-    action: Literal["execute", "cancel"]
+    action: Literal["execute", "wait", "cancel"]
     # Routed IDs contain "peer:" + 64-hex host + ":" + a 128-character worker ID.
     worker_id: str = Field(min_length=1, max_length=198)
     task_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,128}$")
@@ -28,7 +28,7 @@ class RemoteRequest(BaseModel):
     timeout_seconds: float = Field(default=3600.0, gt=0, le=86400)
 
     def task_payload(self) -> dict:
-        if self.action != "execute" or not self.tool_name or not self.working_path:
+        if self.action not in {"execute", "wait"} or not self.tool_name or not self.working_path:
             raise ValueError("Remote execution requires a tool and an absolute WorkingPath.")
         return self.model_dump(exclude={"action"})
 

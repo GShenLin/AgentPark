@@ -129,14 +129,14 @@ def reasoning_item(item_id: str, text: str = "") -> dict[str, Any]:
 def tool_call_item(call: CanonicalToolCall) -> dict[str, Any]:
     item_id = f"fc_{uuid.uuid4().hex}"
     if call.kind == "custom":
-        return {
+        item = {
             "type": "custom_tool_call",
             "id": item_id,
             "call_id": call.call_id,
             "name": call.name,
             "input": call.arguments,
         }
-    if call.kind == "tool_search":
+    elif call.kind == "tool_search":
         return {
             "type": "tool_search_call",
             "id": item_id,
@@ -145,14 +145,15 @@ def tool_call_item(call: CanonicalToolCall) -> dict[str, Any]:
             "execution": "client",
             "arguments": _decoded_json_object(call.arguments, "tool_search call arguments"),
         }
-    item = {
-        "type": "function_call",
-        "id": item_id,
-        "call_id": call.call_id,
-        "name": call.name,
-        "arguments": call.arguments,
-        "status": "completed",
-    }
+    else:
+        item = {
+            "type": "function_call",
+            "id": item_id,
+            "call_id": call.call_id,
+            "name": call.name,
+            "arguments": call.arguments,
+            "status": "completed",
+        }
     if call.namespace:
         item["namespace"] = call.namespace
     return item

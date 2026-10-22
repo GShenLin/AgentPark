@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-import json
-import uuid
-
-from src.file_transaction import atomic_write_text
+from src.harness.config import load_cli_request
 from src.harness.contracts import HarnessContext, HarnessResult
+from src.harness.execution import execution_session
 from src.harness.install_manager import command_argv
-from src.harness.process import run_process
-from src.harness.reasoning_config import reasoning_options
-from .cli_session import cli_session, string_field, write_json
-from .openclaw_progress import OpenClawProgress, install_progress_plugin
+from src.harness.openclaw_session import OpenClawSessions
+from .cli_session import string_field
+from .openclaw_progress import OpenClawProgress
 
 
-def parse_result(output: str) -> str:
-    result = json.loads(output)
+def parse_result(result: dict) -> str:
     if not isinstance(result, dict) or not isinstance(result.get("payloads"), list):
-        raise ValueError("OpenClaw local JSON result requires a payloads array.")
+        raise ValueError("OpenClaw result requires a payloads array.")
     if result.get("ok") is False:
         raise RuntimeError(f"OpenClaw turn failed: {result.get('error')}")
     payloads = result["payloads"]
@@ -25,38 +21,29 @@ def parse_result(output: str) -> str:
 
 
 class Adapter:
+    def __init__(self):
+        self.state_dir = None
+
+    def prepare(self, context):
+        request = load_cli_request("openclaw", context)
+        request.state_dir.mkdir(parents=True, exist_ok=True)
+        self.state_dir = request.state_dir
+        OpenClawSessions.instance().run(request, command_argv("openclaw"), None, None)
+
+    def is_alive(self):
+        return self.state_dir is not None and OpenClawSessions.instance().is_alive(self.state_dir)
+
+    def close(self):
+        if self.state_dir is not None:
+            OpenClawSessions.instance().close_under(self.state_dir)
+            self.state_dir = None
+
     def run(self, text: str, context: HarnessContext) -> HarnessResult:
-        with cli_session("openclaw", context) as (request, lease, env, events):
-            env["OPENCLAW_STATE_DIR"] = str(request.state_dir)
-            config_path = request.state_dir / "openclaw.json"
-            env["OPENCLAW_CONFIG_PATH"] = str(config_path)
-            efforts = reasoning_options(request.binding.request_config())
-            model = {"id": request.binding.model_id, "name": request.binding.model_id,
-                     "reasoning": bool(efforts), "compat": {"supportedReasoningEfforts": efforts}}
-            write_json(config_path, {
-                "plugins": install_progress_plugin(request.state_dir),
-                "models": {"mode": "replace", "providers": {"agentpark": {
-                    "baseUrl": lease.base_url, "apiKey": "${AGENTPARK_HARNESS_TOKEN}",
-                    "api": "openai-responses", "models": [model],
-                }}},
-                "agents": {"defaults": {"workspace": request.cwd,
-                                        "model": {"primary": f"agentpark/{request.binding.model_id}"}}},
-            })
-            # The local CLI persists its own conversation under the isolated state directory.
-            session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(request.state_dir)))
-            prompt_path = request.state_dir / "prompt.txt"
-            prompt = f"{request.instruction}\n\n{text}" if request.instruction else text
-            atomic_write_text(str(prompt_path), prompt, encoding="utf-8")
+        request = load_cli_request("openclaw", context)
+        self.state_dir = request.state_dir
+        with execution_session("openclaw", request.binding.provider_id, request, context) as events:
             progress = OpenClawProgress(events)
-            thinking_level = "off" if request.reasoning_effort == "none" else request.reasoning_effort
-            thinking_args = ["--thinking", thinking_level] if thinking_level else []
-            try:
-                output = run_process(
-                    [*command_argv("openclaw"), "agent", "--local", "--json", "--session-id", session_id,
-                     "--message-file", str(prompt_path), "--timeout", str(int(request.timeout)), *thinking_args],
-                    cwd=request.cwd, env=env, timeout=request.timeout, cancel_source=request.cancel_source,
-                    on_stderr_line=progress.handle_stderr)
-            finally:
-                prompt_path.unlink()
+            prompt = f"{request.instruction}\n\n{text}" if request.instruction else text
+            result = OpenClawSessions.instance().run(request, command_argv("openclaw"), prompt, progress.handle)
             progress.finish()
-            return events.done(parse_result(output))
+            return events.done(parse_result(result))

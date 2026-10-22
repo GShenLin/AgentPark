@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from src.harness.contracts import HarnessContext, HarnessResult
-from src.harness.install_manager import command_argv
-from src.harness.process import run_process
-from .cli_session import cli_session, read_event, string_field, write_json
+import json
+import uuid
+from src.harness.jsonl_process import JsonlProcess
+from .resident import ResidentCliAdapter
+from .cli_session import read_event, string_field, write_json
 
 
 class PiEvents:
@@ -43,24 +44,52 @@ class PiEvents:
             raise RuntimeError(f"Pi extension failed: {event}")
 
 
-class Adapter:
-    def run(self, text: str, context: HarnessContext) -> HarnessResult:
-        with cli_session("pi", context) as (request, lease, env, events):
-            home = request.state_dir / "agent"
-            home.mkdir(exist_ok=True)
-            env["PI_CODING_AGENT_DIR"] = str(home)
-            write_json(home / "models.json", {"providers": {"agentpark": {
-                "baseUrl": lease.base_url, "api": "openai-responses", "apiKey": "AGENTPARK_HARNESS_TOKEN",
-                "models": [{"id": request.binding.model_id, "name": request.binding.model_id}],
-            }}})
-            argv = [*command_argv("pi"), "--print", "--mode", "json", "--provider", "agentpark",
-                    "--model", request.binding.model_id, "--session", str(request.state_dir / "session.jsonl"),
-                    "--no-extensions"]
-            if request.instruction:
-                argv += ["--append-system-prompt", request.instruction]
-            parser = PiEvents(events)
-            run_process(argv, cwd=request.cwd, env=env, stdin=text, timeout=request.timeout,
-                        cancel_source=request.cancel_source, on_line=parser.handle)
-            if parser.final_text is None:
-                raise RuntimeError("Pi exited without an assistant message.")
-            return events.done(parser.final_text)
+
+class Adapter(ResidentCliAdapter):
+    harness_id = "pi"
+
+    def open(self, request, argv, env, options, events):
+        home = request.state_dir / "agent"
+        home.mkdir(exist_ok=True)
+        env["PI_CODING_AGENT_DIR"] = str(home)
+        write_json(home / "models.json", {"providers": {"agentpark": {
+            "baseUrl": self.lease.base_url, "api": "openai-responses", "apiKey": "AGENTPARK_HARNESS_TOKEN",
+            "models": [{"id": request.binding.model_id, "name": request.binding.model_id}],
+        }}})
+        argv = [*argv, "--mode", "rpc", "--provider", "agentpark",
+                "--model", request.binding.model_id, "--session", str(request.state_dir / "session.jsonl"),
+                "--no-extensions"]
+        if request.instruction:
+            argv += ["--append-system-prompt", request.instruction]
+        self.client = JsonlProcess(argv, cwd=request.cwd, env=env,
+            timeout=request.timeout, cancel_source=request.cancel_source)
+        self.client.send({"id": "initialize", "type": "get_state"})
+        self._response(self.client.receive(), "initialize", "get_state")
+
+    @staticmethod
+    def _response(frame, request_id, command):
+        if (frame.get("type") != "response" or frame.get("id") != request_id
+                or frame.get("command") != command or frame.get("success") is not True):
+            raise RuntimeError(f"Pi {command} failed: {frame}")
+
+    def turn(self, text, request, events):
+        parser = PiEvents(events)
+        request_id = uuid.uuid4().hex
+        self.client.send({"id": request_id, "type": "prompt", "message": text})
+        accepted = settled = False
+        while not (accepted and settled):
+            frame = self.client.receive()
+            if frame.get("type") == "response":
+                self._response(frame, request_id, "prompt")
+                if frame.get("data", {}).get("disposition") != "started":
+                    raise RuntimeError(f"Pi did not start this turn: {frame}")
+                accepted = True
+            elif frame.get("type") == "agent_settled":
+                if frame.get("aborted") is not False:
+                    raise RuntimeError("Pi turn was aborted.")
+                settled = True
+            else:
+                parser.handle(json.dumps(frame, ensure_ascii=False))
+        if parser.final_text is None or events.started:
+            raise RuntimeError("Pi settled without a completed assistant result.")
+        return events.done(parser.final_text)

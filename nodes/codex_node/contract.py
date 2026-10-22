@@ -21,7 +21,7 @@ CODEX_CONFIG_DEFAULTS = {
     "model": "",
     "instruction": "",
     "codex_command": "codex",
-    "sandbox": "workspace-write",
+    "sandbox": "danger-full-access",
     "reasoning_effort": "high",
     "web_search": "disabled",
 }
@@ -42,10 +42,11 @@ CODEX_CONFIG_SCHEMA = {
         "type": "select",
         "label": "Sandbox",
         "options": [
-            {"value": "read-only", "label": "read-only"},
+            {"value": "danger-full-access", "label": "Full Access (danger-full-access)"},
             {"value": "workspace-write", "label": "workspace-write"},
-            {"value": "danger-full-access", "label": "danger-full-access"},
+            {"value": "read-only", "label": "read-only"},
         ],
+        "description": "Native Codex sandbox. Node turns run unattended, so approvalPolicy stays never; Full Access runs commands without a sandbox.",
     },
     "reasoning_effort": {
         "type": "select",

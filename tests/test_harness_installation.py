@@ -52,7 +52,7 @@ def test_mutation_uses_fixed_package_and_workspace_prefix(tmp_path, monkeypatch)
     monkeypatch.setattr(manager, "npm_argv", lambda: ["node", "npm-cli.js"])
     called = []
     monkeypatch.setattr(manager, "run_process", lambda argv, **kwargs: called.append(argv) or "installed")
-    monkeypatch.setattr(manager, "check_installation", lambda key: {"status": "ready"})
+    monkeypatch.setattr(manager, "_inspect_installation", lambda key: {"status": "ready"})
     manager.mutate_installation("pi", "install")
     assert called[0][-1] == "@earendil-works/pi-coding-agent@latest"
     assert "--engine-strict" in called[0]

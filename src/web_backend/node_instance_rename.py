@@ -60,6 +60,9 @@ class NodeInstanceRename(HostBoundService):
             self._reserve_rename(old_config_path)
             reserved = True
             self._require_no_active_execution(old_config_path)
+            from src.harness.process_manager import HarnessProcesses
+            if HarnessProcesses._instance is not None:
+                HarnessProcesses._instance.forget(old_dir)
             self.graph_runtime._unregister_scheduled_node(safe_graph_id, safe_node_id)
             unregistered = True
             with (

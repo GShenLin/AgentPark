@@ -1,62 +1,30 @@
-"""Native OpenCode configuration; no AgentPark Provider or credential gateway."""
+"""OpenCode ACP selection and AgentPark-owned provider configuration."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-import math
 import os
-from pathlib import Path
-
-from src.harness.contracts import HarnessContext
-from src.harness.session_state import resolve_state_directory
 from src.web_backend.node_config_service import read_node_config_optional
 
-DEFAULT_MODEL = "opencode/deepseek-v4.1-flash-free"
+RUNTIME_MODEL = "agentpark/selected"
 
 
-@dataclass(frozen=True)
-class OpenCodeRequest:
-    model: str
-    mode: str
-    effort: str
-    cwd: str
-    instruction: str
-    timeout: float
-    state_dir: Path
-    cancel_source: object
+def runtime_config(base_url: str) -> dict:
+    return {
+        "model": RUNTIME_MODEL,
+        "providers": {"agentpark": {
+            "name": "AgentPark", "env": ["AGENTPARK_HARNESS_TOKEN"],
+            "package": "@opencode/ai/providers/openai-compatible/responses",
+            "settings": {"baseURL": base_url, "apiKey": "{env:AGENTPARK_HARNESS_TOKEN}", "transport": "http"},
+            "models": {"selected": {"name": "AgentPark selected model"}},
+        }},
+    }
 
 
-def load_request(context: HarnessContext) -> OpenCodeRequest:
-    if context.values.get("access_role") == "nondeveloper":
-        raise ValueError("OpenCode exposes native host tools; developer access is required.")
+def agent_mode(context) -> str:
     config = read_node_config_optional(context.config_path) if os.path.isfile(context.config_path) else {}
-    values = {**context.values, **config}
-    fields = {key: values.get(key, default) for key, default in (
-        ("native_model", DEFAULT_MODEL), ("native_agent", "build"), ("native_effort", ""),
-        ("working_path", ""), ("instruction", ""))}
-    if any(not isinstance(value, str) for value in fields.values()):
-        raise ValueError("OpenCode model, agent, effort, working path and instruction must be strings.")
-    model = fields["native_model"].strip()
-    if "/" not in model or any(not part for part in model.split("/")) or any(c.isspace() for c in model):
-        raise ValueError("OpenCode native_model must be an explicit provider/model identifier.")
-    mode = fields["native_agent"].strip()
-    if not mode:
-        raise ValueError("OpenCode native_agent is required.")
-    timeout = values.get("timeout_seconds", 900)
-    if isinstance(timeout, bool) or not isinstance(timeout, (float, int)) or not math.isfinite(timeout) or not 1 <= timeout <= 86400:
-        raise ValueError("OpenCode timeout_seconds must be between 1 and 86400.")
-    root = Path(context.node_directory).resolve() / ".harness" / "opencode"
-    root.mkdir(parents=True, exist_ok=True)
-    raw_cwd = fields["working_path"].strip()
-    if raw_cwd:
-        cwd = Path(os.path.expanduser(raw_cwd)).resolve()
-        if not cwd.is_dir():
-            raise ValueError(f"OpenCode working_path does not exist: {cwd}")
-    else:
-        cwd = root / "workspace"
-        cwd.mkdir(exist_ok=True)
-    state = resolve_state_directory(root, previous_binding=[model, str(cwd)])
-    return OpenCodeRequest(model, mode, fields["native_effort"].strip(), str(cwd), fields["instruction"],
-                           float(timeout), state, context.values.get("cancel_event") or context.values.get("cancel_check"))
+    value = {**context.values, **config}.get("agent_mode", "build")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("OpenCode agent_mode must be a non-empty string.")
+    return value.strip()
 
 
 def select_option(control: dict, config_id: str, value: str) -> str:
@@ -81,5 +49,5 @@ def select_option(control: dict, config_id: str, value: str) -> str:
         else:
             values.append(item.get("value"))
     if values.count(value) != 1:
-        raise ValueError(f"OpenCode {config_id} is unavailable: {value}. Check OpenCode's model catalog and login in Settings → Harness.")
+        raise ValueError(f"OpenCode {config_id} is unavailable: {value}. Check the selected agent and AgentPark Provider configuration.")
     return value

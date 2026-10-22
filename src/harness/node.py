@@ -7,8 +7,7 @@ from nodes.agent_message_adapter import append_channel_meta, build_response_meta
 from nodes.base_node import BaseNode
 from src.config_loader import ConfigLoader
 from src.harness.contracts import HarnessContext
-from src.harness.install_manager import runtime_lease
-from src.harness.registry import create_adapter
+from src.harness.process_manager import HarnessProcesses
 from src.harness.reasoning_config import reasoning_options
 from src.message_protocol import build_text_envelope, envelope_text, normalize_envelope
 from src.provider_selection_schema import provider_selection_schema
@@ -18,7 +17,6 @@ from src.provider_options import build_provider_options_for_support_modes, provi
 class HarnessNode(BaseNode):
     harness_id = ""
     provider_reasoning_options = False
-    uses_agentpark_provider = True
     support_modes = ("chat",)
     input_capabilities = ["text", "resource:image", "resource:video", "resource:audio",
                           "resource:doc", "resource:file", "resource:url", "structured", "meta"]
@@ -31,8 +29,6 @@ class HarnessNode(BaseNode):
 
     def get_config_schema(self, context: dict | None = None) -> dict:
         schema = super().get_config_schema(context)
-        if not self.uses_agentpark_provider:
-            return schema
         provider_id = str((context or {}).get("provider_id") or "").strip()
         config = ConfigLoader().get_provider_config(provider_id) if provider_id else {}
         selection = provider_selection_schema(
@@ -58,9 +54,8 @@ class HarnessNode(BaseNode):
         explicit = str(ctx.get("node_config_path") or "").strip()
         config_path = os.path.abspath(explicit) if explicit else os.path.join(
             os.path.dirname(self._resolve_memory_path(ctx)), "config.json")
-        with runtime_lease(self.harness_id):
-            response = create_adapter(self.harness_id).run(
-                text, HarnessContext(config_path, os.path.dirname(config_path), ctx))
+        response = HarnessProcesses.instance().execute(self.harness_id,
+            HarnessContext(config_path, os.path.dirname(config_path), ctx), text)
         output = append_channel_meta(build_text_envelope(response.text, role="assistant"),
                                      extract_channel_meta(input_message))
         result = {"display": envelope_text(output), "display_message": output,

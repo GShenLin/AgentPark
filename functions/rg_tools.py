@@ -413,7 +413,11 @@ def iter_files_fallback(root):
 
 
 def deadline_expired(deadline):
-    return time.monotonic() >= deadline
+    # Scan budgets are status checkpoints, never termination conditions.
+    from src.tool.tool_tasks import report_tool_progress
+    if time.monotonic() >= deadline:
+        report_tool_progress({"phase": "scanning", "report_reason": "report_interval_elapsed"}, request_report=True)
+    return False
 
 
 def append_rg_globs(cmd, include_globs, exclude_globs):
@@ -479,8 +483,9 @@ def run_rg_stream_lines(
         while True:
             raise_if_cancel_requested(cancel_source)
             if timeout_sec and time.monotonic() >= deadline:
-                timed_out = True
-                break
+                from src.tool.tool_tasks import report_tool_progress
+                report_tool_progress({"phase": "scanning", "report_reason": "report_interval_elapsed"}, request_report=True)
+                timeout_sec = None
 
             try:
                 line = line_queue.get(timeout=0.05)

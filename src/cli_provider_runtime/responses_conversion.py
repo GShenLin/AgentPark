@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # Conversion between Responses API payloads and canonical messages.
 import json
+from dataclasses import replace
 from typing import Any
 
 from .contracts import CanonicalMessage
@@ -220,16 +221,9 @@ def _convert_tools(raw: Any) -> tuple[CanonicalTool, ...]:
             raise CodexProtocolError(f"namespace tool {namespace!r} contains no child tools.")
         output: list[CanonicalTool] = []
         for child in children:
-            if not isinstance(child, dict) or str(child.get("type") or "") != "function":
-                raise CodexProtocolError(f"namespace tool {namespace!r} supports only function children.")
-            output.append(
-                CanonicalTool(
-                    name=_required_text(child, "name", f"namespace tool {namespace!r} child"),
-                    description=str(child.get("description") or ""),
-                    input_schema=_schema(child.get("parameters"), "namespace child parameters"),
-                    namespace=namespace,
-                )
-            )
+            if not isinstance(child, dict) or child.get("type") not in {"function", "custom"}:
+                raise CodexProtocolError(f"namespace tool {namespace!r} supports only function or custom children.")
+            output.extend(replace(tool, namespace=namespace) for tool in _convert_tools(child))
         return tuple(output)
     raise CodexProtocolError(f"Unsupported Responses tool type for Chat conversion: {tool_type or '<empty>'}")
 

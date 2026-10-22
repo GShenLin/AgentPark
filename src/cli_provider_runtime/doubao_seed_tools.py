@@ -123,7 +123,7 @@ class SeedToolRegistry:
         source = f"text(await tools.{target}({_json(arguments)}));"
         return tool_call_item(CanonicalToolCall(
             call_id=f"call_seed_{uuid.uuid4().hex}", name=executor.name,
-            kind="custom", arguments=source,
+            kind="custom", arguments=source, namespace=executor.namespace,
         ))
 
 

@@ -87,6 +87,14 @@ class CodexSessionManager:
                 atexit.register(cls._instance.close_all)
             return cls._instance
 
+    def prepare(self, spec: CodexSessionSpec) -> None:
+        with self._lock:
+            self._session_for(spec)
+
+    def is_alive(self, session_key: str) -> bool:
+        session = self._sessions.get(session_key)
+        return session is not None and session.client.is_alive()
+
     def run_turn(
         self,
         spec: CodexSessionSpec,
@@ -111,10 +119,12 @@ class CodexSessionManager:
 
     def close_session(self, session_key: str) -> None:
         with self._lock:
-            session = self._sessions.pop(str(session_key or ""), None)
-        if session is not None:
-            with session.turn_lock:
-                self._close_session_resources(session)
+            key = str(session_key or "")
+            session = self._sessions.get(key)
+            if session is not None:
+                with session.turn_lock:
+                    self._close_session_resources(session)
+                self._sessions.pop(key)
 
     def list_threads(self, command: str) -> list[dict]:
         return self._catalog_client(command).list_threads()
@@ -124,15 +134,11 @@ class CodexSessionManager:
 
     def close_all(self) -> None:
         with self._lock:
-            sessions = list(self._sessions.values())
-            self._sessions.clear()
-            catalog_clients = list(self._catalog_clients.values())
-            self._catalog_clients.clear()
-        for session in sessions:
-            with session.turn_lock:
-                self._close_session_resources(session)
-        for client in catalog_clients:
-            client.close()
+            for key in list(self._sessions):
+                self.close_session(key)
+            for key, client in list(self._catalog_clients.items()):
+                client.close()
+                self._catalog_clients.pop(key)
 
     def _session_for(self, spec: CodexSessionSpec) -> _ManagedSession:
         self._validate_spec(spec)
@@ -194,10 +200,8 @@ class CodexSessionManager:
             raise
 
     def _close_session_resources(self, session: _ManagedSession) -> None:
-        try:
-            session.client.close()
-        finally:
-            self._gateway.release(session.lease.token)
+        session.client.close()
+        self._gateway.release(session.lease.token)
 
     def _catalog_client(self, command: str) -> CodexAppServerClient:
         command_key = _command_key(command)

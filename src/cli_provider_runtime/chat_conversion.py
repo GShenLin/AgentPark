@@ -136,7 +136,7 @@ def _content(raw: Any) -> str | list[dict[str, Any]]:
 
 
 def _tool_choice(raw: Any) -> object:
-    if raw is None or raw in {"auto", "none", "required"}:
+    if raw is None or (isinstance(raw, str) and raw in {"auto", "none", "required"}):
         return "auto" if raw is None else raw
     if not isinstance(raw, dict) or str(raw.get("type") or "") != "function":
         raise CodexProtocolError("Chat Completions tool_choice must be auto, none, required, or a function.")

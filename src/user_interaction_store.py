@@ -13,6 +13,7 @@ from src.file_transaction import atomic_write_text, run_with_interprocess_lock
 from src.memory_root import get_memories_root
 from src.runtime_cancellation import CancellationRequested, cancel_source_from_agent, raise_if_cancel_requested
 from src.user_interaction_schema import validate_interaction_response
+from src.tool.tool_tasks import report_tool_progress
 
 
 def _interaction_dir() -> str:
@@ -43,13 +44,6 @@ def _read(path: str) -> dict:
     return payload
 
 
-def _expire(path: str, payload: dict) -> dict:
-    if payload["status"] == "pending" and payload["expires_at"] <= time.time():
-        payload.update(status="expired", updated_at=_now_iso(), response={"error": "交互请求已超时"})
-        _write(path, payload)
-    return payload
-
-
 def create_interaction_request(*, schema: dict, timeout_sec: int | float, agent: object | None = None) -> dict:
     if isinstance(timeout_sec, bool) or not isinstance(timeout_sec, (int, float)) or not 1 <= timeout_sec <= 3600:
         raise ValueError("timeout_sec must be between 1 and 3600")
@@ -57,7 +51,7 @@ def create_interaction_request(*, schema: dict, timeout_sec: int | float, agent:
     request_id = uuid.uuid4().hex
     payload = {
         "id": request_id, "status": "pending", "created_at": _now_iso(), "updated_at": _now_iso(),
-        "expires_at": time.time() + timeout_sec, "timeout_sec": timeout_sec, "schema": schema,
+        "timeout_sec": timeout_sec, "schema": schema,
         "agent": {"graph_id": str(config.get("graph_id") or ""),
                   "node_id": str(config.get("node_instance_id") or config.get("node_id") or ""),
                   "node_name": str(config.get("name") or "")},
@@ -69,7 +63,7 @@ def create_interaction_request(*, schema: dict, timeout_sec: int | float, agent:
 
 def read_interaction_request(request_id: str) -> dict:
     path = _request_path(request_id)
-    return run_with_interprocess_lock(path + ".lock", lambda: _expire(path, _read(path)))
+    return run_with_interprocess_lock(path + ".lock", lambda: _read(path))
 
 
 def list_interaction_requests(status: str = "pending") -> list[dict]:
@@ -85,7 +79,7 @@ def submit_interaction_response(request_id: str, response: Any, status: str = "s
     path = _request_path(request_id)
 
     def transition() -> dict:
-        payload = _expire(path, _read(path))
+        payload = _read(path)
         if payload["status"] != "pending":
             raise ValueError(f"interaction request is already {payload['status']}")
         validated = validate_interaction_response(payload["schema"], response) if status == "submitted" else response
@@ -105,7 +99,7 @@ def close_pending_interaction(request_id: str, reason: str, *, status: str = "ca
     path = _request_path(request_id)
 
     def transition() -> dict:
-        payload = _expire(path, _read(path))
+        payload = _read(path)
         if payload["status"] == "pending":
             payload.update(status=status, updated_at=_now_iso(), response={"error": reason})
             _write(path, payload)
@@ -125,7 +119,7 @@ def set_interaction_delivery(request_id: str, status: str, error: str = "") -> d
     path = _request_path(request_id)
 
     def update() -> dict:
-        payload = _expire(path, _read(path))
+        payload = _read(path)
         payload["desktop"] = {"status": status, "error": error}
         _write(path, payload)
         return payload
@@ -144,6 +138,7 @@ def wait_for_interaction_response(request_id: str, *, timeout_sec: int | float, 
         payload = read_interaction_request(request_id)
         if payload["status"] != "pending":
             return payload
-        if time.monotonic() >= deadline:
-            return close_pending_interaction(request_id, "交互请求已超时", status="expired")
+        if deadline is not None and time.monotonic() >= deadline:
+            report_tool_progress({"request_id": request_id, "state": "waiting_for_user"}, request_report=True)
+            deadline = None
         time.sleep(0.2)

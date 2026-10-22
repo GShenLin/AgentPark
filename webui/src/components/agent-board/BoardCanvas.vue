@@ -7,6 +7,7 @@ import NodeContextMenu from './NodeContextMenu.vue'
 import NodeCardItem from './NodeCardItem.vue'
 import NodeOutputRoutesPanel from './NodeOutputRoutesPanel.vue'
 import GroupFrames from '../../groups/GroupFrames.vue'
+import { useDesktopNodeCreation } from './useDesktopNodeCreation'
 
 const injected = inject(AgentBoardKey, null)
 if (!injected) {
@@ -48,7 +49,7 @@ const nodesWithOutputRoutes = computed(() => {
   return ctx.nodes.value.filter((node) => sourceIds.has(node.id))
 })
 
-function getBoardPoint(event: MouseEvent) {
+function getBoardPoint(event: { clientX: number; clientY: number }) {
   return canvasPointFromClient({
     canvas: canvasEl.value,
     clientX: event.clientX,
@@ -58,6 +59,13 @@ function getBoardPoint(event: MouseEvent) {
     contentOffsetTop: BOARD_CANVAS_PADDING_PX + ctx.canvasPaddingTop.value,
   })
 }
+
+useDesktopNodeCreation({
+  ready: () => !!ctx.currentGraphId.value && ctx.availableNodes.value.length > 0,
+  board: boardEl,
+  menu: contextMenuRef,
+  toBoard: point => getBoardPoint({ clientX: point.x, clientY: point.y }),
+})
 
 function onBoardContextMenu(event: MouseEvent) {
   const target = event.target as HTMLElement | null

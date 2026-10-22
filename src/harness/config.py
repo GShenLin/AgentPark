@@ -51,7 +51,7 @@ def load_cli_request(harness_id: str, context: HarnessContext) -> CliRunRequest:
         raise ValueError("Harness provider_id and model must be strings; provider_id is required.")
     binding = ProviderBinding.resolve(provider.strip(), model.strip())
     reasoning_effort = ""
-    if harness_id in {"hermes_agent", "openclaw", "minimax_code"}:
+    if harness_id in {"hermes_agent", "openclaw", "minimax_code", "opencode", "antigravity"}:
         from .reasoning_config import validate_reasoning_effort
         reasoning_effort = validate_reasoning_effort(values.get("reasoning_effort", ""), binding.request_config())
     raw_cwd = values.get("working_path", "")

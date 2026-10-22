@@ -6,12 +6,14 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 from src.harness.contracts import HarnessContext
-from src.harness.registry import create_adapter
+from src.harness.process_manager import HarnessProcesses
+from src.harness.install_manager import command_argv
 
 
 @pytest.fixture
@@ -35,17 +37,26 @@ def cli_workspace(harness_id, tmp_path):
     ("openclaw", "AGENTPARK_TEST_OPENCLAW_ENTRY"),
     ("hermes_agent", "AGENTPARK_TEST_HERMES_PYTHON"),
     ("minimax_code", "AGENTPARK_TEST_MCODE_ENTRY"),
+    ("opencode", "AGENTPARK_TEST_OPENCODE_ENTRY"),
+    ("antigravity", "AGENTPARK_TEST_AGY_ENTRY"),
 ])
 def test_real_cli_routes_selected_model_and_resumes(harness_id, env_key, explicit_workspace, cli_workspace, monkeypatch):
     tmp_path = cli_workspace
     entry = os.environ.get(env_key)
     if not entry:
         pytest.skip(f"Set {env_key} to the installed CLI JS entry point.")
+    timings = []
+    turn_start = 0.0
+    first_request = None
+    first_delta = None
     received = []
     authorizations = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
+            nonlocal first_request
+            if first_request is None:
+                first_request = time.perf_counter() - turn_start
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             received.append(payload)
             authorizations.append(self.headers.get("Authorization"))
@@ -72,8 +83,10 @@ def test_real_cli_routes_selected_model_and_resumes(harness_id, env_key, explici
               "baseUrl": f"http://127.0.0.1:{server.server_port}/v1"}
     monkeypatch.setattr("src.config_loader.ConfigLoader.get_provider_config",
                         lambda self, key: {**config, "id": key, "apiKey": "stub-secret-" + key})
-    monkeypatch.setattr(f"src.harness.adapters.{harness_id}.command_argv",
-                        lambda key: [entry] if harness_id == "hermes_agent" else ["node", entry])
+    installed_command = command_argv(harness_id)
+    assert Path(installed_command[-1]).resolve() == Path(entry).resolve()
+    module = "openclaw" if harness_id == "openclaw" else "resident"
+    monkeypatch.setattr(f"src.harness.adapters.{module}.command_argv", lambda key: installed_command)
     host = tmp_path / "host"
     host.mkdir()
     (host / "AGENTS.md").write_text("HOST_INSTRUCTIONS_MUST_NOT_LEAK", encoding="utf-8")
@@ -94,8 +107,26 @@ def test_real_cli_routes_selected_model_and_resumes(harness_id, env_key, explici
         for index, (provider_id, model) in enumerate([
                 ("p", "second"), ("p", "first"), ("other", "first"), ("p", "second")]):
             context.values.update(provider_id=provider_id, model=model)
+            first_request = first_delta = None
+            turn_start = time.perf_counter()
+            def on_event(event):
+                nonlocal first_delta
+                if first_delta is None and event.get("type") in {"node_message_delta", "node_thinking_delta"}:
+                    first_delta = time.perf_counter() - turn_start
+            context.values["stream_callback"] = on_event
             question = f"Turn marker CONTINUITY_{index}. Say HARNESS_OK. Do not use tools."
-            assert create_adapter(harness_id).run(question, context).text == "HARNESS_OK"
+            assert HarnessProcesses.instance().execute(harness_id, context, question).text.strip() == "HARNESS_OK"
+            timings.append({"turn": index, "first_request_seconds": first_request,
+                            "first_output_seconds": first_delta, "total_seconds": time.perf_counter() - turn_start})
+        report = os.environ.get("AGENTPARK_TEST_TIMING_REPORT")
+        if report:
+            with open(report, "a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"harness": harness_id, "explicit_workspace": explicit_workspace, "timings": timings}) + "\n")
+        if harness_id in {"antigravity", "opencode"}:
+            # Native auxiliary title generation also uses the selected gateway.
+            main = [(item, auth) for item, auth in zip(received, authorizations) if not any("title generator" in str(m.get("content", "")).lower() or "conversation title" in str(m.get("content", "")).lower() for m in item["messages"] if m["role"] == "system")]
+            assert main and all(auth.startswith("Bearer stub-secret-") for auth in authorizations)
+            received[:], authorizations[:] = map(list, zip(*main))
         assert len(received) == 4
         assert [item["model"] for item in received] == ["second", "first", "first", "second"]
         assert authorizations == ["Bearer stub-secret-p", "Bearer stub-secret-p",
@@ -116,6 +147,10 @@ def test_real_cli_routes_selected_model_and_resumes(harness_id, env_key, explici
             if path.is_file() and path.suffix in {".json", ".yaml"}:
                 assert "stub-secret" not in path.read_text(encoding="utf-8")
     finally:
+        HarnessProcesses.instance().stop(node)
+        if harness_id == "openclaw":
+            from src.harness.openclaw_session import OpenClawSessions
+            OpenClawSessions.instance().close_under(node)
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)

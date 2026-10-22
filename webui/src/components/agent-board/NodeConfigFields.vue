@@ -44,9 +44,6 @@ import FormSelect from '../FormSelect.vue'
 import FormTextInput from '../FormTextInput.vue'
 import ProviderSelect from '../ProviderSelect.vue'
 import WorkingPathField from './WorkingPathField.vue'
-import OpenCodeNativeSelect from './OpenCodeNativeSelect.vue'
-import NativeHarnessModelSelect from './NativeHarnessModelSelect.vue'
-import { useOpenCodeOptions } from '../../composables/useOpenCodeOptions'
 import { t } from '../../i18n'
 
 type NodeFields = Record<string, any>
@@ -87,7 +84,6 @@ const emit = defineEmits<{
 }>()
 
 const multiSelectSearchQueries = ref<Record<string, string>>({})
-const nativeOpenCode = useOpenCodeOptions(props)
 const promptActionBusy = ref('')
 const promptActionMessage = ref('')
 const promptLibraryMode = ref<'' | 'save' | 'load'>('')
@@ -127,9 +123,7 @@ function setField(key: string, value: any, applyMode: NodeConfigFieldApplyMode =
   const changes = props.typeId === 'agent_node' ? voiceFieldChanges(props.schema, props.fields, key, value) : { [key]: value }
   // Synchronous changes are persisted together by the form's auto-apply queue.
   for (const [field, next] of Object.entries(changes)) emit('update-field', field, next, applyMode)
-  if (props.typeId === 'opencode_node' && ['native_model', 'native_agent'].includes(key)) {
-    emit('update-field', 'native_effort', '', applyMode)
-  }
+
 }
 
 function setExplicitField(key: string, value: any) {
@@ -285,7 +279,7 @@ function setProvider(providerId: string) {
   const modelIds = providerModelIds(provider)
   setField('model', modelIds[0] || '')
   if (props.typeId === 'agent_node') setField('thinking', providerThinkingDefault(provider))
-  if (['hermes_agent_node', 'openclaw_node', 'minimax_code_node'].includes(props.typeId)) {
+  if (['hermes_agent_node', 'openclaw_node', 'minimax_code_node', 'opencode_node', 'antigravity_node'].includes(props.typeId)) {
     const feature = provider?.features?.reasoning_effort
     const efforts = feature?.supported ? feature.values || [] : []
     const current = String(props.fields.reasoning_effort || '')
@@ -591,24 +585,8 @@ watch(
             />
           </span>
 
-      <OpenCodeNativeSelect
-        v-if="nativeOpenCode.isNativeField(key)"
-        :field-key="key"
-        :value="String(fields[key] ?? '')"
-        :catalog="nativeOpenCode.catalog"
-        @change="setField(key, $event)"
-        @refresh="nativeOpenCode.refresh"
-      />
-
-      <NativeHarnessModelSelect
-        v-else-if="typeId === 'antigravity_node' && key === 'native_model'"
-        harness-id="antigravity"
-        :value="String(fields[key] ?? '')"
-        @change="setField(key, $event)"
-      />
-
       <FieldCombobox
-        v-else-if="isComboboxField(key)"
+        v-if="isComboboxField(key)"
         :id="`node-config-${typeId}-${key}`"
         :value="String(fields[key] ?? '')"
         :options="getFieldOptions(key)"

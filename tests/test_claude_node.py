@@ -32,14 +32,15 @@ def test_claude_node_exposes_provider_and_native_permission_contract(monkeypatch
         "include_private": False,
     }
     assert [item["value"] for item in schema["permission_mode"]["options"]] == [
-        "plan",
-        "dontAsk",
-        "acceptEdits",
-        "auto",
         "bypassPermissions",
+        "acceptEdits",
+        "default",
+        "auto",
+        "dontAsk",
+        "plan",
     ]
     assert defaults["claude_command"] == "claude"
-    assert defaults["permission_mode"] == "acceptEdits"
+    assert defaults["permission_mode"] == "bypassPermissions"
 
 
 def test_claude_node_uses_native_session_state_and_live_bridge(tmp_path, monkeypatch):
@@ -62,6 +63,12 @@ def test_claude_node_uses_native_session_state_and_live_bridge(tmp_path, monkeyp
     stream_events = []
 
     class FakeManager:
+        def prepare(self, spec):
+            pass
+        def close_session(self, key):
+            pass
+        def is_alive(self, key):
+            return True
         def run_turn(self, spec, text, **kwargs):
             captured["spec"] = spec
             captured["text"] = text
@@ -117,3 +124,45 @@ def test_claude_node_uses_native_session_state_and_live_bridge(tmp_path, monkeyp
     context["access_role"] = "nondeveloper"
     Node().on_input("Restricted session", context)
     assert captured["spec"].permission_mode == "plan"
+
+def test_external_mcp_loading_is_explicit_and_restarts_session(monkeypatch, tmp_path):
+    from dataclasses import replace
+    from nodes.claude_node.runtime.contracts import ClaudeSessionSpec
+    from nodes.claude_node.runtime.session_manager import _agent_options
+    monkeypatch.setattr('nodes.claude_node.runtime.session_manager._resolve_cli_path', lambda _: 'C:/cli/claude.exe')
+    spec = ClaudeSessionSpec('session', 'provider', 'model', 'claude', str(tmp_path), 'acceptEdits', str(tmp_path/'state.json'))
+    lease = SimpleNamespace(base_url='http://localhost:1234/token', token='local-token')
+    assert _agent_options(spec, lease, 'id', False).extra_args == {'strict-mcp-config': None}
+    inherited = replace(spec, inherit_mcp_servers=True)
+    assert _agent_options(inherited, lease, 'id', False).extra_args == {}
+    assert inherited.signature() != spec.signature()
+
+
+def test_prompting_permission_modes_resolve_tool_use_unattended(monkeypatch, tmp_path):
+    from dataclasses import replace
+    from nodes.claude_node.runtime.contracts import ClaudeSessionSpec
+    from nodes.claude_node.runtime.permissions import allow_unattended_tool_use
+    from nodes.claude_node.runtime.session_manager import _agent_options
+    monkeypatch.setattr('nodes.claude_node.runtime.session_manager._resolve_cli_path', lambda _: 'C:/cli/claude.exe')
+    spec = ClaudeSessionSpec('session', 'provider', 'model', 'claude', str(tmp_path), 'bypassPermissions', str(tmp_path/'state.json'))
+    lease = SimpleNamespace(base_url='http://localhost:1234/token', token='local-token')
+
+    # Full access never raises a permission request, so it must not install a
+    # callback that could shadow other options.
+    assert _agent_options(spec, lease, 'id', False).can_use_tool is None
+
+    for mode in ('default', 'acceptEdits', 'auto'):
+        options = _agent_options(replace(spec, permission_mode=mode), lease, 'id', False)
+        assert options.can_use_tool is allow_unattended_tool_use
+
+    for mode in ('plan', 'dontAsk'):
+        assert _agent_options(replace(spec, permission_mode=mode), lease, 'id', False).can_use_tool is None
+
+
+def test_unattended_tool_use_allows_without_prompting():
+    import asyncio
+    from claude_agent_sdk import PermissionResultAllow
+    from nodes.claude_node.runtime.permissions import allow_unattended_tool_use
+
+    result = asyncio.run(allow_unattended_tool_use('Bash', {'command': 'git branch -D x'}, None))
+    assert isinstance(result, PermissionResultAllow)

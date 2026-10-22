@@ -3,6 +3,7 @@ import threading
 import time
 
 from src.runtime_cancellation import raise_if_cancel_requested
+from src.tool.tool_tasks import report_tool_progress
 from .contracts import ComputerUseError
 
 
@@ -39,8 +40,10 @@ def capture_window(hwnd, cancel, timeout=8):
         deadline = time.monotonic() + timeout
         while not done.wait(0.05):
             raise_if_cancel_requested(cancel)
-            if time.monotonic() >= deadline:
-                raise ComputerUseError('Window capture timed out; verify the window is not minimized.')
+            if deadline is not None and time.monotonic() >= deadline:
+                report_tool_progress({'state': 'waiting_for_window_frame', 'window_id': hwnd,
+                                      'hint': 'Check whether the window is minimized.'}, request_report=True)
+                deadline = None
         raise_if_cancel_requested(cancel)
         if 'error' in result:
             raise ComputerUseError(f"Window capture failed: {result['error']}") from result['error']

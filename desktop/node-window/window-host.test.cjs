@@ -5,12 +5,12 @@ const path = require('node:path')
 const vm = require('node:vm')
 const { EventEmitter } = require('node:events')
 
-function fixture() {
-  const handlers = new Map(), files = new Map(), created = [], externalUrls = [], copiedTexts = []
+function fixture(files = new Map()) {
+  const handlers = new Map(), created = [], externalUrls = [], copiedTexts = []
   const cursor = { x: 1000, y: 700 }
   class FakeWindow extends EventEmitter {
     constructor(options) {
-      super(); this.options = options; this.rect = { x: 900, y: 600, width: options.width, height: options.height }
+      super(); this.options = options; this.rect = { x: options.x ?? 900, y: options.y ?? 600, width: options.width, height: options.height }
       this.webContents = new EventEmitter()
       Object.assign(this.webContents, {
         id: created.length + 1, mainFrame: { url: 'http://127.0.0.1:8788/' },
@@ -29,7 +29,7 @@ function fixture() {
     minimize() { this.minimized = true }
     restore() { this.minimized = false }
     isDestroyed() { return this.destroyed }
-    close() { this.destroyed = true; this.emit('closed') }
+    close() { this.emit('close'); this.destroyed = true; this.emit('closed') }
   }
   const electron = {
     app: { setPath() {}, setName() {} }, BrowserWindow: FakeWindow,
@@ -39,19 +39,88 @@ function fixture() {
     shell: { async openExternal(url) { externalUrls.push(url) } },
   }
   const fakeFs = {
+    readFileSync: key => {
+      if (!files.has(key)) throw Object.assign(new Error('Missing file'), { code: 'ENOENT' })
+      return files.get(key)
+    },
     mkdirSync() {}, writeFileSync: (key, value) => files.set(key, value),
     renameSync: (from, to) => { files.set(to, files.get(from)); files.delete(from) },
   }
-  const mod = { exports: {} }
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'window-host.cjs'), 'utf8'), {
-    module: mod, __dirname, URL, console,
-    require: id => id === 'electron' ? electron : id === 'node:fs' ? fakeFs : require(id),
-  })
+  function loadModule(name) {
+    const mod = { exports: {} }
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, name), 'utf8'), {
+      module: mod, __dirname, URL, console,
+      require: id => id === 'electron' ? electron : id === 'node:fs' ? fakeFs
+        : id === './window-layout-store.cjs' ? loadModule(id) : require(id),
+    })
+    return mod.exports
+  }
+  const host = loadModule('window-host.cjs')
   const target = { origin: 'http://127.0.0.1:8788', graphId: 'g', nodeId: 'n', receipt: 'a'.repeat(32) }
-  const context = mod.exports.openNodeWindow(target)
+  const context = host.openNodeWindow(target)
   const event = { sender: context.win.webContents, senderFrame: context.win.webContents.mainFrame }
-  return { ...mod.exports, handlers, files, created, context, target, event, cursor, externalUrls, copiedTexts, clipboard: electron.clipboard, shell: electron.shell }
+  return { ...host, handlers, files, created, context, target, event, cursor, externalUrls, copiedTexts, clipboard: electron.clipboard, shell: electron.shell }
 }
+
+test('closing and restarting the host preserves node geometry through renderer initialization', () => {
+  const f = fixture(), rect = { x: 80, y: 60, width: 680, height: 520 }
+  f.handlers.get('node-window:mode')(f.event, { mode: 'card', width: 444, height: 546, noteHeight: 48 })
+  f.handlers.get('node-window:ready')(f.event)
+  f.context.win.setBounds(rect)
+  f.context.win.close()
+  const restarted = fixture(f.files)
+  assert.deepEqual({ ...restarted.context.win.getBounds() }, rect)
+  restarted.handlers.get('node-window:mode')(restarted.event, { mode: 'card', width: 444, height: 546, noteHeight: 48 })
+  assert.deepEqual({ ...restarted.context.win.getBounds() }, rect)
+  const other = restarted.openNodeWindow({ ...restarted.target, nodeId: 'other' })
+  assert.equal(other.win.getBounds().width, 360)
+  const otherGraph = restarted.openNodeWindow({ ...restarted.target, graphId: 'other' })
+  assert.equal(otherGraph.win.getBounds().width, 360)
+})
+
+test('restoration fits disconnected displays and accounts for changed note height only once', () => {
+  const f = fixture()
+  f.handlers.get('node-window:mode')(f.event, { mode: 'card', width: 444, height: 546, noteHeight: 48 })
+  f.handlers.get('node-window:ready')(f.event)
+  f.context.win.setBounds({ x: 3000, y: -1000, width: 600, height: 500 })
+  f.context.win.close()
+  const reopened = f.openNodeWindow(f.target)
+  assert.deepEqual({ ...reopened.win.getBounds() }, { x: 680, y: 0, width: 600, height: 500 })
+  const event = { sender: reopened.win.webContents, senderFrame: reopened.win.webContents.mainFrame }
+  const mode = () => f.handlers.get('node-window:mode')(event, { mode: 'card', width: 444, height: 566, noteHeight: 68 })
+  mode(); mode()
+  assert.equal(reopened.win.getBounds().height, 520)
+})
+
+test('renaming moves the saved layout to the new node identity', () => {
+  const f = fixture(), rect = { x: 100, y: 120, width: 600, height: 500 }
+  f.handlers.get('node-window:ready')(f.event)
+  f.context.win.setBounds(rect)
+  f.handlers.get('node-window:retarget')(f.event, 'renamed')
+  f.context.win.close()
+  const restarted = fixture(f.files)
+  assert.equal(restarted.context.win.getBounds().width, 360)
+  const renamed = restarted.openNodeWindow({ ...restarted.target, nodeId: 'renamed' })
+  assert.deepEqual({ ...renamed.win.getBounds() }, rect)
+})
+
+test('edge resize anchors opposite edges, uses screen deltas, and ends on release or blur', () => {
+  const f = fixture(), call = (name, edge) => f.handlers.get(`node-window:resize-${name}`)(f.event, edge)
+  f.context.win.setBounds({ x: 100, y: 100, width: 500, height: 400 })
+  f.context.drag = {}
+  call('start', 'nw')
+  assert.equal(f.context.drag, null)
+  f.cursor.x += 40; f.cursor.y += 20; call('move')
+  assert.deepEqual({ ...f.context.win.getBounds() }, { x: 140, y: 120, width: 460, height: 380 })
+  f.cursor.x += 400; f.cursor.y += 400; call('move')
+  assert.deepEqual({ ...f.context.win.getBounds() }, { x: 360, y: 320, width: 240, height: 180 })
+  call('end'); f.cursor.x -= 100; call('move')
+  assert.equal(f.context.win.getBounds().width, 240)
+  call('start', 'se'); f.context.win.emit('blur'); f.cursor.x += 80; call('move')
+  assert.equal(f.context.win.getBounds().width, 240)
+  assert.throws(() => call('start', 'invalid'), /Invalid/)
+  assert.throws(() => f.handlers.get('node-window:resize-start')({ ...f.event, senderFrame: {} }, 'se'), /Untrusted/)
+})
 
 test('native clipboard accepts text only from the registered top-level origin', () => {
   const f = fixture(), copy = f.handlers.get('node-window:copy-text')

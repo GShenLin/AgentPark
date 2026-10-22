@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Iterable, Literal, NotRequired, TypedDict
 
 from nodes.agent_mcp_loader import MCP_SERVER_NAME_LIST
 from nodes.agent_plugin_manifest import (
@@ -28,6 +28,14 @@ from src.name_lists import NameListContract, path_reference_key
 
 
 PLUGIN_ROOT_DIRNAME = "plugins"
+
+
+class PluginOption(TypedDict):
+    value: str
+    label: str
+    version: NotRequired[str]
+    status: NotRequired[Literal["unavailable"]]
+    diagnostics: NotRequired[list[str]]
 
 
 @dataclass(frozen=True)
@@ -74,7 +82,7 @@ def default_plugin_root() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), PLUGIN_ROOT_DIRNAME)
 
 
-def list_available_plugin_options(plugin_root: str | None = None) -> list[dict[str, str]]:
+def list_available_plugin_options(plugin_root: str | None = None) -> list[PluginOption]:
     root = os.path.abspath(plugin_root or default_plugin_root())
     if not os.path.isdir(root):
         return []
@@ -82,8 +90,8 @@ def list_available_plugin_options(plugin_root: str | None = None) -> list[dict[s
     return cached_discovery_value("plugins", root, lambda: _list_available_plugin_options_uncached(root))
 
 
-def _list_available_plugin_options_uncached(root: str) -> list[dict[str, str]]:
-    options: list[dict[str, str]] = []
+def _list_available_plugin_options_uncached(root: str) -> list[PluginOption]:
+    options: list[PluginOption] = []
     root_real = os.path.realpath(root)
     for current_dir, dirnames, filenames in os.walk(root_real):
         dirnames[:] = [
@@ -99,15 +107,22 @@ def _list_available_plugin_options_uncached(root: str) -> list[dict[str, str]]:
         value = rel.replace(os.sep, "/")
         if not _is_valid_plugin_reference(value):
             continue
+        manifest_path = os.path.join(current_dir, manifest_name)
         try:
-            manifest = read_plugin_manifest(os.path.join(current_dir, manifest_name))
+            manifest = read_plugin_manifest(manifest_path)
             name = manifest.name
             description = manifest.description
             label = f"{name} - {description}" if description else name
             version = manifest.version
-        except Exception:
+        except (PluginManifestError, OSError, UnicodeError) as exc:
+            options.append({
+                "value": value,
+                "label": value,
+                "status": "unavailable",
+                "diagnostics": [f"manifest discovery: {manifest_path}: {type(exc).__name__}: {exc}"],
+            })
             continue
-        option = {"value": value, "label": label}
+        option: PluginOption = {"value": value, "label": label}
         if version:
             option["version"] = version
         options.append(option)

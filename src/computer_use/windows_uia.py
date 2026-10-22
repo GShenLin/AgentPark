@@ -8,10 +8,11 @@ import threading
 import time
 from collections import deque
 from concurrent.futures import Future
+from contextvars import Context, copy_context
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from src.runtime_cancellation import raise_if_cancel_requested
+from src.runtime_cancellation import CancellationRequested, raise_if_cancel_requested
 from .contracts import ComputerUseError
 
 
@@ -26,6 +27,7 @@ class _ThreadState:
 class _Request:
     operation: Callable[[Any], Any]
     future: Future
+    context: Context
 
 
 _STOP = object()
@@ -116,11 +118,13 @@ class _AutomationRuntime:
                 if request is _STOP:
                     return
                 try:
-                    result = request.operation(self._state.desktop)
+                    result = request.context.run(request.operation, self._state.desktop)
                 except BaseException as exc:
                     # Never transfer a traceback holding UIA wrappers to another
                     # thread. Only a fresh, data-only exception crosses the boundary.
-                    if isinstance(exc, ComputerUseError):
+                    if isinstance(exc, CancellationRequested):
+                        forwarded = CancellationRequested(str(exc))
+                    elif isinstance(exc, ComputerUseError):
                         forwarded = ComputerUseError(str(exc))
                     else:
                         forwarded = RuntimeError(f'UI Automation {type(exc).__name__}: {exc}')
@@ -139,7 +143,7 @@ class _AutomationRuntime:
                 raise RuntimeError('UI Automation runtime is closed.')
             # Enqueue under the same lock used by close(), so no request can be
             # placed behind the stop marker and wait forever.
-            self._requests.put(_Request(operation, future))
+            self._requests.put(_Request(operation, future, copy_context()))
         return future.result()
 
     def close(self) -> None:
@@ -196,6 +200,7 @@ def observe(hwnd, include_text, limit, cancel):
 
 
 def _observe(desktop, hwnd, include_text, limit, cancel):
+    from src.tool.tool_tasks import report_tool_progress
     root = desktop.window(handle=hwnd).wrapper_object()
     focus = _focused_element()
     focus_id = _runtime_id(focus) if focus is not None else None
@@ -210,9 +215,9 @@ def _observe(desktop, hwnd, include_text, limit, cancel):
     text_budget = 12000
     while pending and len(elements) < limit:
         raise_if_cancel_requested(cancel)
-        if time.monotonic() >= deadline:
-            truncated = True
-            break
+        if deadline is not None and time.monotonic() >= deadline:
+            report_tool_progress({'state': 'reading_accessibility_tree', 'elements_read': len(elements)}, request_report=True)
+            deadline = None
         element, depth = pending.popleft()
         info = element.element_info
         box = info.rectangle
@@ -260,11 +265,15 @@ def _observe(desktop, hwnd, include_text, limit, cancel):
 
 def _resolve_element(desktop, hwnd, record, cancel=None):
     """Resolve by runtime identity, never by a potentially shifted list index."""
+    from src.tool.tool_tasks import report_tool_progress
     pending = deque([desktop.window(handle=hwnd).wrapper_object()])
     deadline = time.monotonic() + 4
     count = 0
-    while pending and count < 1000 and time.monotonic() < deadline:
+    while pending and count < 1000:
         raise_if_cancel_requested(cancel)
+        if deadline is not None and time.monotonic() >= deadline:
+            report_tool_progress({'state': 'resolving_control', 'elements_read': count}, request_report=True)
+            deadline = None
         item = pending.popleft()
         count += 1
         if _runtime_id(item) == record['runtime_id']:

@@ -65,6 +65,9 @@ def delete_node_directory(
         raise NodeDeletionBlocked(f"node still has {active_count} active task(s)")
 
     wait_for_node_memory_idle(memory_path, messages_path)
+    from src.harness.process_manager import HarnessProcesses
+    if HarnessProcesses._instance is not None:
+        HarnessProcesses._instance.forget(dir_real)
     if archive_directory is None:
         remove_tree_with_retry(dir_real)
     else:

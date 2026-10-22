@@ -42,6 +42,18 @@ def test_activation_waits_for_cross_thread_foreground_change(gui, monkeypatch):
     assert state.calls == [20]
 
 
+def test_activation_reporting_does_not_repeat_input_or_abort(gui, monkeypatch):
+    from src.tool import tool_tasks
+    state, _ = gui
+    reports = []
+    monkeypatch.setattr(native, 'time', SimpleNamespace(
+        monotonic=iter([0, 2]).__next__, sleep=lambda seconds: setattr(state, 'foreground', 20)))
+    monkeypatch.setattr(tool_tasks, 'report_tool_progress', lambda value, **kwargs: reports.append(value))
+    native.activate(20)
+    assert reports[0]['state'] == 'waiting_for_window_activation'
+    assert state.calls == [20] and state.foreground == 20
+
+
 def test_activation_denial_reports_actual_foreground(gui):
     _, api = gui
     def denied(hwnd):

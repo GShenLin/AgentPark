@@ -1,4 +1,5 @@
 import type { ToolDefinition } from './toolsetEditor'
+import type { ToolPromptDefinition } from './toolPromptEditor'
 import { createApiNetworkError, getActiveApiBase, requestApiJson } from './api'
 import type { LongTermMemorySettings } from './longTermMemorySettings'
 import type { ConversationContextSettings } from './conversationContextSettings'
@@ -12,6 +13,7 @@ export type SettingsSectionInfo = {
 
 export type SettingsDocument = {
   tool_catalog?: ToolDefinition[]
+  tool_prompt_catalog?: ToolPromptDefinition[]
   builtin_toolsets?: string[]
   section: string
   label: string

@@ -5,27 +5,24 @@ import sys
 
 import pytest
 
-from src.harness.adapters.openclaw_progress import OpenClawProgress, PREFIX
+from src.harness.adapters.openclaw_progress import OpenClawProgress
 from src.harness.events import HarnessEvents
 from src.harness.process import run_process
 
 
 def send(parser, stream, data, seq, run="run-one"):
-    parser.handle_stderr(PREFIX + json.dumps({"type": "event", "event": {
-        "runId": run, "seq": seq, "stream": stream, "data": data}}))
+    parser.handle({"runId": run, "seq": seq, "stream": stream, "data": data})
 
 
 def setup():
     received = []
     events = HarnessEvents("openclaw", "provider", received.append)
     parser = OpenClawProgress(events)
-    parser.handle_stderr(PREFIX + '{"type":"ready","version":1}')
     return parser, events, received
 
 
 def test_native_progress_projects_text_thinking_tools_and_status():
     parser, events, received = setup()
-    parser.handle_stderr("ordinary CLI diagnostic\n")
     send(parser, "lifecycle", {"phase": "start"}, 1)
     send(parser, "thinking", {"delta": "Considering"}, 2)
     send(parser, "assistant", {"delta": "Reading file."}, 3)
@@ -93,9 +90,7 @@ def test_tool_review_reports_status_without_creating_an_execution():
     assert received[-1]["name"] == "exec: review aborted"
 
 
-def test_missing_bridge_invalid_order_and_incomplete_calls_fail_explicitly():
-    with pytest.raises(RuntimeError, match="did not load"):
-        OpenClawProgress(HarnessEvents("openclaw", "p", None)).finish()
+def test_invalid_order_and_incomplete_calls_fail_explicitly():
     parser, _, _ = setup()
     send(parser, "assistant", {"delta": "Hi"}, 1)
     with pytest.raises(ValueError, match="ordered"):

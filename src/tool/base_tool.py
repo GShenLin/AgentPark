@@ -2,9 +2,12 @@ import json
 import re
 import threading
 
-from .toolset_registry import resolve_toolset
+from .toolset_registry import resolve_toolset, load_toolset_config
+from .tool_prompts import apply_tool_prompt
 from .tool_load_errors import ToolLoadError
 from .tool_function_execution import execute_local_tool_function
+from .tool_invocation import invoke_tool_function
+from .tool_task_tools import TASK_CONTROL_TOOLS, control_declarations
 
 from .tool_event_protocol import build_tool_call_end
 from .tool_event_protocol import build_tool_call_start
@@ -38,11 +41,15 @@ class BaseTool:
         "execute_console_command",
     }
 
-    def __init__(self, agent):
+    def __init__(self, agent, *, prompt_overrides=None):
         self.agent = agent
+        self.prompt_overrides = dict(load_toolset_config()["tool_prompts"] if prompt_overrides is None else prompt_overrides)
         self.tool_declarations = []
         self.function_map = {}
         self.preflight_enabled = True
+        for declaration in control_declarations():
+            name = declaration["function"]["name"]
+            self.register_external_tool(declaration, TASK_CONTROL_TOOLS[name])
 
     def addTool(self, tool_name):
         try:
@@ -83,7 +90,7 @@ class BaseTool:
         if existing_func is not None and existing_func is not func:
             raise ValueError(f"Tool function name {func_name!r} is declared by multiple callables.")
         if existing_func is None:
-            self.tool_declarations.append(declaration)
+            self.tool_declarations.append(apply_tool_prompt(declaration, self.prompt_overrides))
         self.function_map[func_name] = func
 
     @staticmethod
@@ -124,43 +131,29 @@ class BaseTool:
             return build_error_result("error", tool_name=name, error=f"Tool {name} not found.")
 
         func = self.function_map[name]
-        try:
-            remote_timeout_seconds = resolve_tool_timeout_seconds(
-                config=getattr(self.agent, "config", None),
-                name=name,
-                func=func,
-                default_timeout=0,
-            )
-            remote_handled, remote_result = dispatch_remote_workspace_tool(
-                self.agent,
-                name,
-                args,
-                timeout_seconds=remote_timeout_seconds,
-                cancel_source=cancel_source,
-            )
-            if remote_handled:
-                return normalize_tool_execution_result(remote_result, tool_name=name)
-        except CancellationRequested as exc:
-            return build_error_result("stopped", tool_name=name, error=str(exc))
-        except ToolTimeoutConfigError as exc:
-            return build_error_result("error", tool_name=name, error=str(exc))
-        except Exception as exc:
-            return build_error_result("exception", tool_name=name, error=f"{type(exc).__name__}: {str(exc)}")
+        if name in TASK_CONTROL_TOOLS:
+            return normalize_tool_execution_result(invoke_tool_function(func, args, agent=self.agent), tool_name=name)
         try:
             timeout_seconds = resolve_tool_timeout_seconds(
-                config=getattr(self.agent, "config", None),
-                name=name,
-                func=func,
+                config=getattr(self.agent, "config", None), name=name, func=func,
             )
         except ToolTimeoutConfigError as exc:
             return build_error_result("error", tool_name=name, error=str(exc))
+
+        def dispatch():
+            # Keep remote calls inside the same resumable lifetime as local tools.
+            remote_handled, remote_result = dispatch_remote_workspace_tool(
+                self.agent, name, args, timeout_seconds=timeout_seconds,
+                cancel_source=cancel_source_from_agent(self.agent),
+            )
+            if remote_handled:
+                return remote_result
+            return invoke_tool_function(func, args, agent=self.agent)
+
+        dispatch.__name__ = name
         return execute_local_tool_function(
-            func=func,
-            args=args,
-            agent=self.agent,
-            tool_name=name,
-            timeout_seconds=timeout_seconds,
-            cancel_source=cancel_source,
+            func=dispatch, args={}, agent=self.agent, tool_name=name,
+            timeout_seconds=timeout_seconds, cancel_source=cancel_source,
         )
 
     def execute_tool_call(self, call):
@@ -189,7 +182,7 @@ class BaseTool:
             status = tool_result.status
             error = tool_result.error
             finish_checkpoint = getattr(self.agent, "_record_tool_call_finished", None)
-            if callable(finish_checkpoint):
+            if callable(finish_checkpoint) and status != "running":
                 finish_checkpoint(call, status=status, error=error)
             event_feedback = emit_tool_event(
                 event_callback,
@@ -204,6 +197,20 @@ class BaseTool:
             )
             cleaned_result = _attach_memory_persistence_warning(cleaned_result, event_feedback)
             model_output = ensure_json_text(cleaned_result)
+            if status == "running" and isinstance(tool_result.result, dict) and tool_result.result.get("task_id"):
+                from .tool_tasks import task_registry_for
+                task = task_registry_for(self.agent).get(tool_result.result["task_id"])
+
+                def completed(final_result):
+                    final = process_tool_result_outcome(final_result.model_output())
+                    if callable(finish_checkpoint):
+                        finish_checkpoint(call, status=final_result.status, error=final_result.error)
+                    emit_tool_event(event_callback, build_tool_call_end(
+                        call, status=final_result.status, duration_ms=elapsed_ms(started_at),
+                        error=final_result.error, result=final.cleaned_result, diagnostics=final.diagnostics,
+                    ))
+
+                task.on_completed(completed)
             return ToolCallExecution(
                 func_name=call.name,
                 call_id=call.call_id,
